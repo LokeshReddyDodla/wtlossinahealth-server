@@ -1,20 +1,20 @@
-version: "3.8"
-
 services:
 
-  bowled-api:
-    container_name: bowled-api
+  aihealth-api:
+    container_name: aihealth-api
     build:
-      context: ""
+      context: "."
       dockerfile: ./deployment/rest_server/Dockerfile
-    image: bowled-api:latest
+    image: aihealth-api:latest
     depends_on:
-      - bowled-redis
+      - aihealth-redis
+      - aihealth-postgres
     restart: unless-stopped
     ports:
-      - 6000:5000
+      - 8000:8000
     environment:
       - REDIS_HOST
+      - REDIS_PASSWORD
       - JWT_ALGORITHM
       - JWT_SECRET
       - JWT_AUDIENCE
@@ -23,8 +23,8 @@ services:
     volumes:
       - ./logs:/src/logs
 
-  bowled-redis:
-    container_name: bowled-redis
+  aihealth-redis:
+    container_name: aihealth-redis
     image: redis:alpine
     command:
       - "-- requirepass ${REDIS_PASSWORD}"
@@ -33,3 +33,15 @@ services:
       - 6001:6379
     volumes:
       - ./deployment/volumes/redis:/data
+
+  aihealth-postgres:
+    container_name: aihealth-postgres
+    image: postgres:alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=db_name
+    ports:
+      - 5432:5432
+

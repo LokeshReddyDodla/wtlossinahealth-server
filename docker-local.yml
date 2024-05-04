@@ -1,8 +1,8 @@
 version: "3.8"
 
 services:
-  bowled-redis:
-    container_name: bowled-redis
+  aihealth-redis:
+    container_name: aihealth-redis
     image: redis:alpine
     restart: unless-stopped
     volumes:

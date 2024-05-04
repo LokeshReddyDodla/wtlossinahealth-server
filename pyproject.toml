@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "bowled"
+name = "aihealth"
 version = "0.1.0"
-description = "Bowled backend server"
-authors = ["madhukar01 <mholla8@gmail.com>"]
+description = "AiHealth backend server"
+authors = ["Mukhtar <mukhtar@ahealth.in>"]
 
 [tool.poetry.dependencies]
 python = "^3.8.10"
@@ -17,6 +17,9 @@ numpy = "^1.23.5"
 asyncpg = "^0.27.0"
 PyPika = "^0.48.9"
 ujson = "^5.7.0"
+openai = "^1.25.1"
+python-decouple = "^3.8"
+jsonex = "^1.2"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"

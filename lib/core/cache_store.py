@@ -7,8 +7,9 @@ from pottery import RedisDict
 
 
 # Read redis host from env
-REDIS_HOST = os.getenv(key="REDIS_HOST", default="redis://127.0.0.1:6379/0")
-
+REDIS_HOST = os.getenv(key="REDIS_HOST", default="127.0.0.1:6379")
+REDIS_PASSWORD = os.getenv(key="REDIS_PASSWORD", default=None)
+REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}/0"
 
 class CacheStore:
     """
@@ -21,7 +22,7 @@ class CacheStore:
         Connect to redis client
         Raises exception if unable to connect to redis
         """
-        redis_client = redis.from_url(REDIS_HOST)
+        redis_client = redis.from_url(REDIS_URL)        
 
         # Validate string namespace
         if not isinstance(namespace, str):
