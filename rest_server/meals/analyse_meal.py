@@ -32,7 +32,8 @@ async def analyse_meal(
     try:
         ai_response = get_nutritional_info(image_url, description)
         print('==> ai response: %s' % ai_response)
-        parsed_json = parse_json_garbage(ai_response)        
+        parsed_json = parse_json_garbage(ai_response)   
+        print('==> parsed json: %s' % parsed_json)     
         
         food_description = FoodDescription(
             items=parsed_json["items"],
