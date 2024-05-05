@@ -19,7 +19,7 @@ PyPika = "^0.48.9"
 ujson = "^5.7.0"
 openai = "^1.25.1"
 python-decouple = "^3.8"
-jsonex = "^1.2"
+boto3 = "^1.34.98"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
