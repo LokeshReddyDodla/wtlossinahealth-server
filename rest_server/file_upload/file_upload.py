@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from lib.utils.s3_utils import generate_presigned_url
+from rest_server.response_models import SuccessResponse
 from .api_schema import PresignedURLRequest, ImageUploadNotification
 
 router = APIRouter(prefix="/file_upload")
@@ -13,7 +14,7 @@ def generate_presigned_url_endpoint(request: PresignedURLRequest):
     )
     if response is None:
         raise HTTPException(status_code=500, detail="Failed to generate pre-signed URL")
-    return response
+    return SuccessResponse(data=response)
 
 
 @router.post("/upload_completed/", tags=["File Upload"])
