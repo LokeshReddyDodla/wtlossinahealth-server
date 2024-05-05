@@ -1,7 +1,39 @@
 from typing import Optional
 
-from pydantic import BaseModel
 from pydantic import Field
+from pydantic import BaseModel
+from typing import List, Dict, Optional, Union
+
+from rest_server.response_models import SuccessResponse
+
+
+class NutritionalValues(BaseModel):
+    calories: str
+    proteins: str
+    carbohydrates: str
+    fats: str
+    fiber: str
+
+
+class FoodItem(BaseModel):
+    name: str
+    nutritional_values: NutritionalValues
+
+class TotalNutritionalValue(BaseModel):
+    calories: str
+    proteins: str
+    carbohydrates: str
+    fats: str
+    fiber: str
+
+class FoodDescription(BaseModel):
+    items: List[FoodItem]
+    total_nutritional_value: TotalNutritionalValue
+
+
+class MealAnalysisResponse(SuccessResponse):
+    data: FoodDescription
+
 
 
 class CreateUser(BaseModel):

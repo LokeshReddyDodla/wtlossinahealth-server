@@ -39,9 +39,20 @@ services:
     image: postgres:alpine
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=db_name
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
     ports:
       - 5432:5432
+  
+  aihealth-nginx:
+    container_name: aihealth-nginx
+    build:
+      context: "."
+      dockerfile: "./deployment/nginx/Dockerfile"
+    restart: unless-stopped
+    ports:
+      - 80:80
+    depends_on:
+      - aihealth-api
 

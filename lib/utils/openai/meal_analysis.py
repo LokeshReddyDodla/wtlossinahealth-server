@@ -7,24 +7,25 @@ def get_nutritional_info(image_url, food_description=None):
     
     prompt_text = """Analyze the provided image and identify all visible food items. For each item identified, and for the total meal, return the nutritional values in the following JSON structure:
         {
-        "items": [
-            {
-            "name": "<Dish Name>",
-            "nutritional_values": {
-                "calories": "<calories> kcal",
-                "proteins": "<proteins> g",
-                "carbohydrates": "<carbohydrates> g",
-                "fats": "<fats> g",
-                "fiber": "<fiber> g"
+            "items": [
+                {
+                    "name": "<Dish Name>",
+                    "nutritional_values": {
+                        "calories": "<calories> kcal",
+                        "proteins": "<proteins> g",
+                        "carbohydrates": "<carbohydrates> g",
+                        "fats": "<fats> g",
+                        "fiber": "<fiber> g"
+                    }
+                }
+            ],
+            "total_nutritional_value": {
+                "calories": "<total calories> kcal",
+                "proteins": "<total proteins> g",
+                "carbohydrates": "<total carbohydrates> g",
+                "fats": "<total fats> g",
+                "fiber": "<total fiber> g"
             }
-            }
-        ],
-        "total_nutritional_value": {
-            "calories": "<total calories> kcal",
-            "proteins": "<total proteins> g",
-            "carbohydrates": "<total carbohydrates> g",
-            "fats": "<total fats> g"
-        }
         }
 
         Please follow this structure precisely for the response."""
