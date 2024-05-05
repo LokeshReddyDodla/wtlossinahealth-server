@@ -2,11 +2,11 @@ from pydantic import BaseModel
 from typing import Any, Optional
 
 class SuccessResponse(BaseModel):
-    success: bool = True
+    status: str = 'success'
     data: Optional[Any] = None
     message: Optional[str] = None
     
 class ErrorResponse(BaseModel):
-    success: bool = False
+    status: str = 'error'
     message: str
     detail: Optional[str] = None

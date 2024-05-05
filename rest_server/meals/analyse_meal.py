@@ -43,9 +43,9 @@ async def analyse_meal(
         return MealAnalysisResponse(data=food_description)
     
     except json.JSONDecodeError as e:
-        response = ErrorResponse(success=False, message="Invalid JSON", detail=str(e))
+        response = ErrorResponse(message="Invalid JSON", detail=str(e))
         return JSONResponse(status_code=400, content=response.dict())
     
     except Exception as e:
-        response = ErrorResponse(success=False, message="Internal Server Error", detail=str(e))
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
         return JSONResponse(status_code=500, content=response.dict())
