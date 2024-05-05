@@ -29,6 +29,8 @@ class TotalNutritionalValue(BaseModel):
 class FoodDescription(BaseModel):
     items: List[FoodItem]
     total_nutritional_value: TotalNutritionalValue
+    image_url: str
+    description: Optional[str] = None
 
 
 class MealAnalysisResponse(SuccessResponse):

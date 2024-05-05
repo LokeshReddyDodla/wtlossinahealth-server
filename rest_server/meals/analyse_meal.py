@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from lib.core.auth_bearer import handler
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
-from rest_server.meals.api_schema import MealAnalysisResponse
+from rest_server.meals.api_schema import FoodDescription, MealAnalysisResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 
@@ -33,7 +33,14 @@ async def analyse_meal(
         ai_response = get_nutritional_info(image_url, description)
         parsed_json = parse_json_garbage(ai_response)        
         
-        return SuccessResponse(data=parsed_json, message="Successfully analysed.")
+        food_description = FoodDescription(
+            items=parsed_json["items"],
+            total_nutritional_value=parsed_json["total_nutritional_value"],
+            image_url=image_url,
+            description=description,
+        )
+        
+        return MealAnalysisResponse(data=food_description)
     
     except json.JSONDecodeError as e:
         response = ErrorResponse(success=False, message="Invalid JSON", detail=str(e))
