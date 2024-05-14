@@ -65,7 +65,7 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
     response = openai.chat.completions.create(
         model="gpt-4o", # gpt-4-vision-preview
         messages=messages,
-        max_tokens=3000,
+        # max_tokens=3000,
     )
 
     return response.choices[0].message.content
