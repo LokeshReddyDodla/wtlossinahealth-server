@@ -18,6 +18,7 @@ class NutritionalValues(BaseModel):
 class FoodItem(BaseModel):
     name: str
     serving_size: str
+    serving_quantity: str
     serving_unit: str
     nutritional_values: NutritionalValues
 
