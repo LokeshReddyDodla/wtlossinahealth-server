@@ -1,3 +1,4 @@
+import datetime
 from email import message
 import json
 from typing import Dict, Optional
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/meal")
 async def analyse_meal(
     request: Request,
     image_url: str,
+    mealtime_ms: int,
     description: Optional[str] = None,
     # user=handler,
 ) -> Union[MealAnalysisResponse, HTTPException]:
@@ -31,16 +33,19 @@ async def analyse_meal(
     """
     try:
         print('==> analysing meal...')
-        ai_response = get_nutritional_info(image_url, description)
+        ai_response = get_nutritional_info(mealtime_ms, image_url, description)
         print('==> ai response: %s' % ai_response)
         parsed_json = parse_json_garbage(ai_response)   
         print('==> parsed json: %s' % parsed_json)     
         
         food_description = FoodDescription(
+            meal_type=parsed_json["meal_type"],
             items=parsed_json["items"],
             total_nutritional_value=parsed_json["total_nutritional_value"],
             image_url=image_url,
             description=description,
+            feedback=parsed_json["feedback"],
+
         )
         
         return MealAnalysisResponse(data=food_description)

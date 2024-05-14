@@ -17,6 +17,8 @@ class NutritionalValues(BaseModel):
 
 class FoodItem(BaseModel):
     name: str
+    serving_size: str
+    serving_unit: str
     nutritional_values: NutritionalValues
 
 class TotalNutritionalValue(BaseModel):
@@ -27,10 +29,12 @@ class TotalNutritionalValue(BaseModel):
     fiber: str
 
 class FoodDescription(BaseModel):
+    meal_type: str
     items: List[FoodItem]
     total_nutritional_value: TotalNutritionalValue
     image_url: str
     description: Optional[str] = None
+    feedback: str
 
 
 class MealAnalysisResponse(SuccessResponse):
