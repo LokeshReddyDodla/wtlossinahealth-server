@@ -1,21 +1,23 @@
-from lib.utils.datetime_utils import convert_milliseconds_to_datetime
+from lib.utils.retry_utils import retry_request
 import openai
 from decouple import config
+
+from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 
 
 def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone='Asia/Kolkata'):
     openai.api_key = config('OPENAI_API_KEY')
     
     mealtime = convert_milliseconds_to_datetime(mealtime_ms, timezone)
-    print("==> mealtime: ", mealtime)
 
     prompt_text = """
-    You are a dietitian expert. Analyze the provided image considering it was taken at {mealtime}. Identify the meal type (e.g., breakfast, lunch, dinner, morning_snack, evening_snack) based on the image and the mealtime. Then, identify all visible food items and provide the nutritional values in the following JSON structure:
+    You are a dietitian expert. Analyze the provided image considering it was taken at {mealtime}. Identify the meal type (e.g., breakfast, lunch, dinner, morning_snack, evening_snack) based on the image and the mealtime. Then, identify all visible food items, provide their coordinates, and give  the nutritional values in the following JSON structure:
     {{
         "meal_type": "<meal type>",
         "items": [
             {{
                 "name": "<Dish Name>",
+                "coordinates": [<left>, <top>, <right>, <bottom>],
                 "serving_size": "<serving size>",
                 "serving_quantity": "<serving quantity>",
                 "serving_unit": "<serving unit>",
@@ -62,10 +64,13 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
 
     messages[0]["content"].append({"type": "text", "text": prompt_text})
 
-    response = openai.chat.completions.create(
-        model="gpt-4o", # gpt-4-vision-preview
+    response = retry_request(
+        openai.chat.completions.create,
+        max_retries=3,
+        delay=2,
+        model="gpt-4o",
         messages=messages,
-        # max_tokens=3000,
+        max_tokens=3000
     )
 
     return response.choices[0].message.content

@@ -1,5 +1,7 @@
 from datetime import datetime
+
 import pytz
+
 
 def convert_milliseconds_to_datetime(timestamp_ms: int, timezone_str: str) -> datetime:
     timestamp_s = timestamp_ms / 1000

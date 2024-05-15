@@ -1,12 +1,9 @@
-import datetime
-from email import message
 import json
-from typing import Dict, Optional
-from typing import Union
+from datetime import datetime
+from email import message
+from typing import Dict, Optional, Union
 
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from lib.core.auth_bearer import handler
@@ -14,7 +11,6 @@ from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.meals.api_schema import FoodDescription, MealAnalysisResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
-
 
 # Create FastAPI router
 router = APIRouter(prefix="/meal")
@@ -46,7 +42,6 @@ async def analyse_meal(
             image_url=image_url,
             description=description,
             feedback=parsed_json["feedback"],
-
         )
         
         return MealAnalysisResponse(data=food_description)
