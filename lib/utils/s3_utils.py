@@ -27,3 +27,19 @@ def generate_presigned_url(bucket_name: str, object_name: str, content_type: str
     except ClientError as e:
         print(f"ClientError: {e}")
         return None
+
+
+def upload_file_to_s3(file_bytes: bytes, bucket_name: str, object_name: str, content_type: str) -> Optional[str]:
+    """Upload a file to an S3 bucket."""
+    try:
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=object_name,
+            Body=file_bytes,
+            ContentType=content_type
+        )
+        file_url = f"https://{bucket_name}.s3.amazonaws.com/{object_name}"
+        return file_url
+    except ClientError as e:
+        print(f"ClientError: {e}")
+        return None
