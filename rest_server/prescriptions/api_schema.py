@@ -20,6 +20,6 @@ class PrescriptionData(BaseModel):
     prescription_date: Optional[str]
     medicines: Optional[List[Medicine]]
 
-class PrescriptionAnalysisResponse(BaseModel):
+class PrescriptionAnalysisResponse(SuccessResponse):
     data: PrescriptionData
 
