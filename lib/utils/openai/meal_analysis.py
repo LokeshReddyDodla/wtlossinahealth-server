@@ -37,7 +37,11 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
             "fats": "<total fats> g",
             "fiber": "<total fiber> g"
         }},
-        "feedback": "<personalized feedback>"
+        "feedback": "<personalized feedback>",
+        "tags": [
+            "<tag1>",
+            "<tag2>"
+        ]
     }}
 
     For each item:
@@ -45,6 +49,7 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
     2. Provide personalized feedback to help the user meet average macronutrient values for the detected meal type.
     3. Suggest similar foods from the same cuisine or region that can help improve or maintain a balanced diet.
     4. Ensure serving sizes are realistic and provided in common units such as grams, cups, or pieces. If unsure, make a best guess.
+    5. Add appropriate tags such as 'good meal', 'bad meal', 'healthy meal', or 'unhealthy meal' based on the nutritional analysis.
 
     Please follow this structure precisely for the response.
     """.format(mealtime=mealtime)

@@ -37,6 +37,7 @@ class FoodDescription(BaseModel):
     image_url: str
     description: Optional[str] = None
     feedback: str
+    tags: List[str]
 
 
 class MealAnalysisResponse(SuccessResponse):

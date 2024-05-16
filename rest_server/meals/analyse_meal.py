@@ -42,6 +42,7 @@ async def analyse_meal_api(
             image_url=image_url,
             description=description,
             feedback=parsed_json["feedback"],
+            tags=parsed_json["tags"]
         )
         
         return MealAnalysisResponse(data=food_description)
