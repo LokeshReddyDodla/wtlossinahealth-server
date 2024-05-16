@@ -9,42 +9,44 @@ from fastapi.responses import JSONResponse
 from lib.core.auth_bearer import handler
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
+from lib.utils.openai.prescription_analysis import analyse_prescription
 from rest_server.meals.api_schema import FoodDescription, MealAnalysisResponse
+from rest_server.prescriptions.api_schema import Medicine, PrescriptionAnalysisResponse, PrescriptionData
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 # Create FastAPI router
-router = APIRouter(prefix="/meal")
+router = APIRouter(prefix="/prescription")
 
     
-@router.post(path="/analyse", response_model=MealAnalysisResponse, tags=["Meal"])
-async def analyse_meal_api(
+@router.post(path="/analyse", tags=["Prescription"])
+async def analyse_prescription_api(
     request: Request,
     image_url: str,
-    mealtime_ms: int,
-    description: Optional[str] = None,
     # user=handler,
-) -> Union[MealAnalysisResponse, HTTPException]:
+) -> Union[PrescriptionAnalysisResponse, HTTPException]:
     """
-    Analyse Meal API
+    Analyse Prescription API
     """
     try:
-        print('==> analysing meal...')
-        print('==> image url: ', image_url)
-        ai_response = get_nutritional_info(mealtime_ms, image_url, description)
+        print('==> analysing prescription...')
+        ai_response = analyse_prescription( image_url)
         print('==> ai response: %s' % ai_response)
         parsed_json = parse_json_garbage(ai_response)   
         print('==> parsed json: %s' % parsed_json)     
         
-        food_description = FoodDescription(
-            meal_type=parsed_json["meal_type"],
-            items=parsed_json["items"],
-            total_nutritional_value=parsed_json["total_nutritional_value"],
-            image_url=image_url,
-            description=description,
-            feedback=parsed_json["feedback"],
+        if not parsed_json.get("prescription_valid"):
+            raise HTTPException(status_code=400, detail=parsed_json.get("message", "Invalid prescription image"))
+        
+        
+        prescription_data = PrescriptionData(
+            prescription_valid=parsed_json["prescription_valid"],
+            doctor_name=parsed_json.get("doctor_name"),
+            patient_name=parsed_json.get("patient_name"),
+            prescription_date=parsed_json.get("prescription_date"),
+            medicines=[Medicine(**med) for med in parsed_json.get("medicines", [])]
         )
         
-        return MealAnalysisResponse(data=food_description)
+        return PrescriptionAnalysisResponse(data=prescription_data)
     
     except json.JSONDecodeError as e:
         response = ErrorResponse(message="Invalid JSON", detail=str(e))
