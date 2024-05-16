@@ -12,6 +12,8 @@ class Medicine(BaseModel):
     dosage: str
     frequency: str
     duration: str
+    purpose: str
+    effects: str
 
 class PrescriptionData(BaseModel):
     prescription_valid: bool

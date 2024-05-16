@@ -19,7 +19,9 @@ def analyse_prescription(image_url: str):
                 "name": "<medicine name>",
                 "dosage": "<dosage>",
                 "frequency": "<frequency>",
-                "duration": "<duration>"
+                "duration": "<duration>",
+                "purpose": "<what this medicine is for>",
+                "effects": "<potential effects>"
             }}
         ]
     }}
