@@ -4,6 +4,7 @@ from rest_server.meals import analyse_meal
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
 from rest_server.prescriptions import analyse_prescription
+from rest_server.fitness import log as fitness_log
 
 
 def import_routes(app: FastAPI) -> None:
@@ -30,3 +31,8 @@ def import_routes(app: FastAPI) -> None:
     # Prescriptions
     ###########################################################################
     app.include_router(analyse_prescription.router)
+    
+    ###########################################################################
+    # Fitness
+    ###########################################################################
+    app.include_router(fitness_log.router)
