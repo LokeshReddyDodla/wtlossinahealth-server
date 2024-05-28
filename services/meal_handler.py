@@ -20,19 +20,22 @@ def handle_meal_context(message: str, history: list, context_id: str, media_url)
     
     openai_messages = [
         {"role": "system", "content": prompt_text}
-    ] + history + [
-        {"role": "user", "content": message}]
+    ] 
     
     if media_url is not None:
         openai_messages += [
         {
             "role": "user", "content": [
-                {"type": "text", "text": "Act as a dietitian expert."},
+                {"type": "text", "text": "Act as a dietitian expert. Analyze the provided image."},
                 {"type": "image_url", "image_url": {"url": message}}
             ]
         }
     ]
         
+    openai_messages +=  history + [
+        {"role": "user", "content": message}]
+    
+ 
     logger.info("==> openai_messages: %s", openai_messages)
         
     response = retry_request(
