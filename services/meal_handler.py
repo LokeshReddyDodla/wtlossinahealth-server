@@ -33,6 +33,8 @@ def handle_meal_context(message: str, history: list, context_id: str, media_url)
         }
     ]
         
+    logger.info("==> openai_messages: %s", openai_messages)
+        
     response = retry_request(
         openai.chat.completions.create,
         max_retries=3,
