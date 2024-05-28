@@ -9,14 +9,23 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class ContextManager:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(ContextManager, cls).__new__(cls, *args, **kwargs)
+        return cls._instance
+    
     def __init__(self, token_limit=3000, context_dir="contexts"):
-        self.token_limit = token_limit
-        self.contexts = {}
-        self.context_dir = context_dir
-        if not os.path.exists(context_dir):
-            os.makedirs(context_dir)
-        
-        logger.info("ContextManager initialized with token limit %d and context directory %s", token_limit, context_dir)
+        if not hasattr(self, '_initialized'):  # Ensure init is run only once
+            self._initialized = True
+            self.token_limit = token_limit
+            self.contexts = {}
+            self.context_dir = context_dir
+            if not os.path.exists(context_dir):
+                os.makedirs(context_dir)
+            
+            logger.info("ContextManager initialized with token limit %d and context directory %s", token_limit, context_dir)
 
     
     def save_context_history_to_file(self, context_id: str, history: list):
