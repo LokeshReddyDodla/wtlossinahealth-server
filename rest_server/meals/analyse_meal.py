@@ -32,8 +32,10 @@ async def analyse_meal_api(
     try:
         print('==> analysing meal...')
         print('==> image url: ', image_url)
+        
         ai_response = get_nutritional_info(mealtime_ms, image_url, description)
         print('==> ai response: %s' % ai_response)
+        
         parsed_json = parse_json_garbage(ai_response)   
         print('==> parsed json: %s' % parsed_json)     
         
@@ -50,7 +52,7 @@ async def analyse_meal_api(
             context_id=context_id
         )
         
-        context_manager.add_message(context_id, ai_response, "assistant", "meal")
+        context_manager.add_message(context_id, ai_response, "assistant", "meal", media_url=image_url)
         
         return MealAnalysisResponse(data=food_description)
     

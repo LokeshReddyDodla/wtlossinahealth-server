@@ -8,16 +8,17 @@ from services.report_handler import handle_report_context
 
 logger = logging.getLogger(__name__)
 
-def chat_handler(message: str, context_window: dict, is_contextual:bool = False) -> str:
+def chat_handler(message: str, context_window: dict) -> str:
     context_type = context_window.get("type")
     history = context_window.get("history", [])
     context_id = context_window.get("id")
+    media_url = context_window.get("media_url")
     
     if context_id is None:
         raise ValueError("Context ID cannot be None")
     
     if context_type == "meal":
-        return handle_meal_context(message, history, context_id, is_contextual=is_contextual)
+        return handle_meal_context(message, history, context_id, media_url)
     elif context_type == "report":
         return handle_report_context(message, history, context_id)
     else:

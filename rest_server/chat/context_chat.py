@@ -37,7 +37,6 @@ async def context_chat(
         if context_id not in context_manager.contexts:
             raise HTTPException(status_code=404, detail="Context not found")
 
-        print("==> Context chat id: %s" % context_id)
         # Add message to context
         context_manager.add_message(context_id, body.message, "user")
         
@@ -45,7 +44,7 @@ async def context_chat(
         context_window = context_manager.get_context_window(context_id)
         
         # Chat with user
-        result = chat_handler(body.message, context_window, is_contextual=True)
+        result = chat_handler(body.message, context_window)
         
         return ChatResponse(content=result, context_id=context_id)
     except Exception as e:

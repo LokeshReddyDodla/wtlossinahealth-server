@@ -7,39 +7,31 @@ from lib.managers.context_manager import context_manager
 
 logger = logging.getLogger(__name__)
 
-def handle_meal_context(message: str, history: list, context_id: str, is_contextual: bool = False) -> str:
+def handle_meal_context(message: str, history: list, context_id: str, media_url) -> str:
     if not context_id:
         raise ValueError("Context ID must be provided")
     
     openai.api_key = config('OPENAI_API_KEY')
     
-    if is_contextual:
-        # When contextual, respond with minimal information
-        prompt_text = wrap_prompt("""
-            You are a dietitian expert.
-            Ensure the response is correct and short.
-        """.strip())
-        openai_messages = [{"role": "system", "content": prompt_text}] + history + [{"role": "user", "content": message}]
-        openai_messages = [{"role": "user", "content": message}] + history
-    else:
-        # Define the prompt for the meal context
-        prompt_text = wrap_prompt("""
-            You are a dietitian expert. Analyze the provided image considering it was taken at a specific mealtime. Identify the meal type (e.g., breakfast, lunch, dinner, morning_snack, evening_snack) based on the image and the mealtime. Then, identify all visible food items and provide a detailed analysis of the meal in a well-structured paragraph. Include the following points:
-            1. The meal type.
-            2. A summary of all visible food items.
-            3. The nutritional values of the meal (total calories, proteins, carbohydrates, fats, and fiber).
-            4. Personalized feedback to help the user meet average macronutrient values for the detected meal type.
-            5. Suggestions for similar foods from the same cuisine or region that can help improve or maintain a balanced diet.
-            6. Appropriate tags such as 'good meal', 'bad meal', 'healthy meal', or 'unhealthy meal' based on the nutritional analysis.
-            Ensure the response is short and is easy to understand.
-        """.strip())
-        # Prepare messages for the OpenAI request, including the image URL
-        openai_messages = [
-            {"role": "system", "content": prompt_text}] + history + [
-            {"role": "user", "content": [
+    prompt_text = wrap_prompt("""
+        You are a dietitian expert.
+        Ensure the response is correct and short.
+    """.strip())
+    
+    openai_messages = [
+        {"role": "system", "content": prompt_text}
+    ] + history + [
+        {"role": "user", "content": message}]
+    
+    if media_url is not None:
+        openai_messages += [
+        {
+            "role": "user", "content": [
                 {"type": "text", "text": "Act as a dietitian expert."},
-                {"type": "image_url", "image_url": {"url": message}}]}
-        ]
+                {"type": "image_url", "image_url": {"url": message}}
+            ]
+        }
+    ]
         
     response = retry_request(
         openai.chat.completions.create,
@@ -52,7 +44,7 @@ def handle_meal_context(message: str, history: list, context_id: str, is_context
 
     # Add the assistant's response to the conversation history
     assistant_message = response.choices[0].message.content
-    history.append({"role": "assistant", "content": assistant_message})
+    context_manager.add_message(context_id,  assistant_message, "assistant")
     logger.info("Assistant message added to history for context %s: %s", context_id, assistant_message)
     
     # save the conversation history to the file

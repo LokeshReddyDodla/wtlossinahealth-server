@@ -15,9 +15,9 @@ class ContextManager:
         if not cls._instance:
             cls._instance = super(ContextManager, cls).__new__(cls, *args, **kwargs)
         return cls._instance
-    
+
     def __init__(self, token_limit=3000, context_dir="contexts"):
-        if not hasattr(self, '_initialized'):  # Ensure init is run only once
+        if not hasattr(self, '_initialized'):
             self._initialized = True
             self.token_limit = token_limit
             self.contexts = {}
@@ -26,20 +26,13 @@ class ContextManager:
                 os.makedirs(context_dir)
             
             logger.info("ContextManager initialized with token limit %d and context directory %s", token_limit, context_dir)
-
-    
-    def save_context_history_to_file(self, context_id: str, history: list):
-        context_file = os.path.join(self.context_dir, f"{context_id}.json")
-        with open(context_file, 'w') as f:
-            json.dump(history, f, indent=4)
-
-        logger.info("Saved context history for %s to file %s", context_id, context_file)
-
-    def add_message(self, context_id: str, message: str, role: str, context_type = "unknown"):
+            
+    def add_message(self, context_id: str, message: str, role: str, context_type = "unknown", media_url = None):
         if context_id not in self.contexts:
             self.contexts[context_id] = {
                 "id": context_id,
                 "type": context_type,
+                "media_url": media_url,
                 "created_at": datetime.now().isoformat(),
                 "history": []
             }
@@ -69,5 +62,13 @@ class ContextManager:
             }
         
         logger.info("Created context %s with document type %s", context_id, document_type)
+        
+    def save_context_history_to_file(self, context_id: str, history: list):
+        context_file = os.path.join(self.context_dir, f"{context_id}.json")
+        with open(context_file, 'w') as f:
+            json.dump(history, f, indent=4)
+
+        logger.info("Saved context history for %s to file %s", context_id, context_file)
+
         
 context_manager = ContextManager()
