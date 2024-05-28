@@ -14,20 +14,19 @@ def handle_meal_context(message: str, history: list, context_id: str, media_url)
     openai.api_key = config('OPENAI_API_KEY')
     
     prompt_text = wrap_prompt("""
-        You are a dietitian expert.
-        Ensure the response is correct and short.
+        You are a dietitian expert. Provide a concise and accurate response.
     """.strip())
     
     openai_messages = [
         {"role": "system", "content": prompt_text}
     ] 
     
-    if media_url is not None:
+    if media_url:
         openai_messages += [
         {
             "role": "user", "content": [
-                {"type": "text", "text": "Act as a dietitian expert. Analyze the provided image."},
-                {"type": "image_url", "image_url": {"url": message}}
+                {"type": "text", "text": "Act as a dietitian expert. Analyze the provided image and Provide a concise and accurate response."},
+                {"type": "image_url", "image_url": {"url": media_url}}
             ]
         }
     ]

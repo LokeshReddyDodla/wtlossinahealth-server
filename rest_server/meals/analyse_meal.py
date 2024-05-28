@@ -54,6 +54,8 @@ async def analyse_meal_api(
         
         context_manager.add_message(context_id, ai_response, "assistant", "meal", media_url=image_url)
         
+        print("==> context_id: ", context_id)
+        
         return MealAnalysisResponse(data=food_description)
     
     except json.JSONDecodeError as e:
