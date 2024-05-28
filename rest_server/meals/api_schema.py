@@ -38,6 +38,7 @@ class FoodDescription(BaseModel):
     description: Optional[str] = None
     feedback: str
     tags: List[str]
+    context_id: str
 
 
 class MealAnalysisResponse(SuccessResponse):

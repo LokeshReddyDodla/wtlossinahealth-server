@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from email import message
 from typing import Dict, Optional, Union
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -11,6 +12,7 @@ from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.meals.api_schema import FoodDescription, MealAnalysisResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
+from lib.managers.context_manager import context_manager
 
 # Create FastAPI router
 router = APIRouter(prefix="/meal")
@@ -35,6 +37,8 @@ async def analyse_meal_api(
         parsed_json = parse_json_garbage(ai_response)   
         print('==> parsed json: %s' % parsed_json)     
         
+        context_id = uuid.uuid4().hex
+        
         food_description = FoodDescription(
             meal_type=parsed_json["meal_type"],
             items=parsed_json["items"],
@@ -42,8 +46,11 @@ async def analyse_meal_api(
             image_url=image_url,
             description=description,
             feedback=parsed_json["feedback"],
-            tags=parsed_json["tags"]
+            tags=parsed_json["tags"],
+            context_id=context_id
         )
+        
+        context_manager.add_message(context_id, ai_response, "assistant", "meal")
         
         return MealAnalysisResponse(data=food_description)
     
