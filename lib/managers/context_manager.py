@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import logging
 import os
+from typing import Optional
 from lib.utils.context_utils import identify_context, truncate_conversation_history
 
 
@@ -27,7 +28,7 @@ class ContextManager:
             
             logger.info("ContextManager initialized with token limit %d and context directory %s", token_limit, context_dir)
             
-    def add_message(self, context_id: str, message: str, role: str, context_type = "unknown", media_url = None):
+    def add_message(self, context_id: str, message: str, role: str, context_type = "unknown", media_url: Optional[str] = None):
         if context_id not in self.contexts:
             self.contexts[context_id] = {
                 "id": context_id,

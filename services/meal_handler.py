@@ -1,3 +1,4 @@
+from typing import Optional
 from lib.utils.prompt_wrapper import wrap_prompt
 import openai
 from decouple import config
@@ -7,7 +8,7 @@ from lib.managers.context_manager import context_manager
 
 logger = logging.getLogger(__name__)
 
-def handle_meal_context(message: str, history: list, context_id: str, media_url) -> str:
+def handle_meal_context(message: str, history: list, context_id: str, media_url: Optional[str] = None) -> str:
     if not context_id:
         raise ValueError("Context ID must be provided")
     
@@ -15,6 +16,8 @@ def handle_meal_context(message: str, history: list, context_id: str, media_url)
     
     prompt_text = wrap_prompt("""
         You are a dietitian expert. Provide a concise and accurate response.
+        Ensure the response is relevant to the meal context and the history provided.
+        If the question is not related to the meal context, respond with "Inappropriate question. Please ask questions related to your meal."
     """.strip())
     
     openai_messages = [
