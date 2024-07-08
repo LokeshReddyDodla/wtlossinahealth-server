@@ -9,6 +9,8 @@ from app.import_routes import import_routes
 from app.middlewares import create_context
 from lib.core.cache_store import CacheStore
 from lib.core.data_store import get_connection_pool
+from lib.core.mongo_store import MongoStore
+from lib.core.influx_store import InfluxStore
 from lib.core.logger import initialize_logger
 
 
@@ -40,6 +42,8 @@ async def startup_event() -> None:
     # cachestore
     app.cache_store = CacheStore(namespace="rest_server")
     app.data_store = await get_connection_pool()
+    app.mongo_store = MongoStore()
+    app.influx_store = InfluxStore()
 
     # TODO delete legacy from here
     app.secret_store = CacheStore(namespace="secrets")
@@ -52,3 +56,13 @@ async def startup_event() -> None:
 
     # routers
     import_routes(app)
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    """
+    Cleanup and close connections
+    """
+    await app.data_store.close()
+    app.mongo_store.client.close()
+    app.influx_store.client.close()
