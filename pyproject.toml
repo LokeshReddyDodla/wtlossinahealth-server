@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "aihealth"
+name = "aihealth-server"
 version = "0.1.0"
 description = "AiHealth backend server"
 authors = ["Mukhtar <mukhtar@ahealth.in>"]
