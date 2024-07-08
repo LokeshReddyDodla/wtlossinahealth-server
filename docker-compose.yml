@@ -13,13 +13,19 @@ services:
     ports:
       - 8000:8000
     environment:
-      - REDIS_HOST
-      - REDIS_PASSWORD
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - JWT_ALGORITHM
       - JWT_SECRET
       - JWT_AUDIENCE
-      - POSTGRES_URL
+      - POSTGRES_URL=${POSTGRES_URL}
       - POSTGRES_SCHEMA
+      - MONGO_URL=${MONGO_URL}
+      - INFLUXDB_URL=${INFLUXDB_URL}
+      - INFLUXDB_USER=${INFLUXDB_USER}
+      - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
     volumes:
       - ./logs:/src/logs
 
@@ -30,7 +36,7 @@ services:
       - "-- requirepass ${REDIS_PASSWORD}"
     restart: unless-stopped
     ports:
-      - 6001:6379
+      - 6379:6379
     volumes:
       - ./deployment/volumes/redis:/data
 
@@ -39,11 +45,38 @@ services:
     image: postgres:alpine
     restart: unless-stopped
     environment:
-      - POSTGRES_USER
-      - POSTGRES_PASSWORD
-      - POSTGRES_DB
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - 5432:5432
+    volumes:
+      - ./deployment/volumes/postgres:/var/lib/postgresql/data
+
+  aihealth-mongo:
+    container_name: aihealth-mongo
+    image: mongo:latest
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - 27017:27017
+    volumes:
+      - ./deployment/volumes/mongo:/data/db
+
+  aihealth-influxdb:
+    container_name: aihealth-influxdb
+    image: influxdb:latest
+    restart: unless-stopped
+    environment:
+      - INFLUXDB_DB=${INFLUXDB_BUCKET}
+      - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
+      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+    ports:
+      - 8086:8086
+    volumes:
+      - ./deployment/volumes/influxdb:/var/lib/influxdb
   
   aihealth-nginx:
     container_name: aihealth-nginx
@@ -56,3 +89,8 @@ services:
     depends_on:
       - aihealth-api
 
+volumes:
+  redis:
+  postgres:
+  mongo:
+  influxdb:
