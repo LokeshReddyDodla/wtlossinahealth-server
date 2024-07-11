@@ -30,9 +30,11 @@ COPY ../../../poetry.lock ../../../pyproject.toml ./
 # install runtime deps - uses $POETRY_VIRTUALENVS_IN_PROJECT internally
 RUN poetry install --no-dev
 
+# Install Alembic
+RUN $VENV_PATH/bin/pip install alembic
+
 COPY . /src
 WORKDIR /src
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8000",\
-    "--timeout", "0", "--workers", "3", "--threads", "2", "app.main:app", \
-    "-k", "uvicorn.workers.UvicornWorker"]
+# Set up entrypoint to run migrations before starting the server
+CMD ["sh", "-c", "alembic upgrade head && gunicorn --bind 0.0.0.0:8000 --timeout 0 --workers 3 --threads 2 app.main:app -k uvicorn.workers.UvicornWorker"]

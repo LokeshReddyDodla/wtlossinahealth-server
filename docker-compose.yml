@@ -9,7 +9,7 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-postgres
-    restart: unless-stopped
+    restart: no
     ports:
       - 8000:8000
     environment:
@@ -19,7 +19,10 @@ services:
       - JWT_SECRET
       - JWT_AUDIENCE
       - POSTGRES_URL=${POSTGRES_URL}
-      - POSTGRES_SCHEMA
+      - POSTGRES_SCHEMA=${POSTGRES_SCHEMA}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
       - INFLUXDB_URL=${INFLUXDB_URL}
       - INFLUXDB_USER=${INFLUXDB_USER}
@@ -28,13 +31,15 @@ services:
       - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
     volumes:
       - ./logs:/src/logs
+      - .:/src
+
 
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
     command:
       - "-- requirepass ${REDIS_PASSWORD}"
-    restart: unless-stopped
+    restart: no
     ports:
       - 6379:6379
     volumes:
@@ -43,7 +48,7 @@ services:
   aihealth-postgres:
     container_name: aihealth-postgres
     image: postgres:alpine
-    restart: unless-stopped
+    restart: no
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -56,7 +61,7 @@ services:
   aihealth-mongo:
     container_name: aihealth-mongo
     image: mongo:latest
-    restart: unless-stopped
+    restart: no
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
@@ -68,7 +73,7 @@ services:
   aihealth-influxdb:
     container_name: aihealth-influxdb
     image: influxdb:latest
-    restart: unless-stopped
+    restart: no
     environment:
       - INFLUXDB_DB=${INFLUXDB_BUCKET}
       - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
@@ -83,14 +88,27 @@ services:
     build:
       context: "."
       dockerfile: "./deployment/nginx/Dockerfile"
-    restart: unless-stopped
+    restart: no
     ports:
       - 80:80
     depends_on:
       - aihealth-api
+
+  pgadmin:
+    image: elestio/pgadmin:latest
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "8081:80"
 
 volumes:
   redis:
   postgres:
   mongo:
   influxdb:
+
+networks:
+  shared_network: 
+    external: true
