@@ -26,6 +26,9 @@ requests = "^2.31.0"
 tiktoken = "^0.7.0"
 motor = "^3.5.0"
 influxdb-client = "^1.44.0"
+sqlalchemy = "^2.0.31"
+psycopg2-binary = "^2.9.9"
+alembic = "^1.13.2"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
