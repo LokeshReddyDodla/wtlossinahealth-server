@@ -22,7 +22,9 @@ async def create_context(request: Request, call_next):
         logger=request.app.logger,
         request_id=request_id,
         cache_store=request.app.cache_store,
-        data_store=request.app.data_store,
+        postgres_store=request.app.postgres_store,
+        mongo_store=request.app.mongo_store,
+        influx_store=request.app.influx_store,
         ds_connection=None,
     )
 

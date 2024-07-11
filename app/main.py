@@ -1,5 +1,6 @@
 import json
 
+from app.dependencies import Base, engine
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,11 +9,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.import_routes import import_routes
 from app.middlewares import create_context
 from lib.core.cache_store import CacheStore
-from lib.core.data_store import get_connection_pool
+from lib.core.postgres_store import get_connection_pool
 from lib.core.mongo_store import MongoStore
 from lib.core.influx_store import InfluxStore
 from lib.core.logger import initialize_logger
 
+# Create all tables
+Base.metadata.create_all(bind=engine)
 
 # Create fastAPI app
 app = FastAPI()
@@ -41,7 +44,7 @@ async def startup_event() -> None:
     """
     # cachestore
     app.cache_store = CacheStore(namespace="rest_server")
-    app.data_store = await get_connection_pool()
+    app.postgres_store = await get_connection_pool()
     app.mongo_store = MongoStore()
     app.influx_store = InfluxStore()
 
@@ -63,6 +66,6 @@ async def shutdown_event() -> None:
     """
     Cleanup and close connections
     """
-    await app.data_store.close()
+    await app.postgres_store.close()
     app.mongo_store.client.close()
     app.influx_store.client.close()
