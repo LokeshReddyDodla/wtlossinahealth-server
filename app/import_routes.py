@@ -7,6 +7,7 @@ from rest_server.prescriptions import analyse_prescription
 from rest_server.fitness import log as fitness_log
 from rest_server.report import analyse_report
 from rest_server.chat import chat, context_chat
+from rest_server.users import users
 
 def import_routes(app: FastAPI) -> None:
     """
@@ -48,4 +49,9 @@ def import_routes(app: FastAPI) -> None:
     ########################################################################### 
     app.include_router(chat.router)
     app.include_router(context_chat.router)
+    
+    ###########################################################################
+    # User
+    ########################################################################### 
+    app.include_router(users.router)
     

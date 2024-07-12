@@ -1,0 +1,141 @@
+from app.models.user import User
+from fastapi import APIRouter, HTTPException, Request, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from typing import List, Optional, Union
+
+from fastapi.responses import JSONResponse
+from rest_server.users.api_schema import (
+    UserCreate, UserUpdate, DailyActivity, FoodAllergy, MedicineAllergy, 
+    DietPreference, AlcoholConsumption, SmokingHabit, MealTiming, 
+    CuisinePreference, SleepSummary, DiabeticHistory, FamilyDiabeticHistory, 
+    MedicalHistory, CurrentMedication, Prescription
+)
+from rest_server.response_models import SuccessResponse, ErrorResponse
+
+router = APIRouter(prefix="/user")
+
+@router.post(path="/basic", tags=["User"])
+async def create_basic_user(
+    user_data: UserCreate,
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            new_user = User(**user_data.dict())
+            session.add(new_user)
+            await session.commit()
+            await session.refresh(new_user)
+            return SuccessResponse(message="User basic data created successfully.", data=new_user)
+        except Exception as e:
+            await session.rollback()
+            response = ErrorResponse(message="Internal Server Error", detail=str(e))
+            return JSONResponse(status_code=500, content=response.dict())
+        
+@router.put(path="/basic/{user_id}", tags=["User"])
+async def update_basic_user(
+    user_id: int,
+    user_data: UserUpdate,
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            user = await session.get(User, user_id)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            for key, value in user_data.dict().items():
+                setattr(user, key, value)
+            
+            await session.commit()
+            await session.refresh(user)
+            return SuccessResponse(message="User basic data updated successfully.", data=user)
+        except Exception as e:
+            await session.rollback()
+            response = ErrorResponse(message="Internal Server Error", detail=str(e))
+            return JSONResponse(status_code=500, content=response.dict())
+
+# 3. Create User Fitness and Lifestyle Data
+@router.post(path="/lifestyle", tags=["User"])
+async def create_user_lifestyle(
+    activities: DailyActivity,
+    food_allergies: Optional[List[FoodAllergy]],
+    medicine_allergies: Optional[List[MedicineAllergy]],
+    diet_preference: DietPreference,
+    alcohol_consumption: AlcoholConsumption,
+    smoking_habits: SmokingHabit,
+    meal_timings: Optional[List[MealTiming]],
+    cuisine_preferences: Optional[List[CuisinePreference]],
+    sleep_summary: SleepSummary,
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    try:
+        db: Session = request.state.context.postgres_store
+        # Add logic to create user lifestyle data in the database
+        return SuccessResponse(message="User lifestyle data created successfully.")
+    except Exception as e:
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
+        return JSONResponse(status_code=500, content=response.dict())
+
+# 4. Update User Fitness and Lifestyle Data
+@router.put(path="/lifestyle/{user_id}", tags=["User"])
+async def update_user_lifestyle(
+    user_id: int,
+    activities: DailyActivity,
+    food_allergies: Optional[List[FoodAllergy]],
+    medicine_allergies: Optional[List[MedicineAllergy]],
+    diet_preference: DietPreference,
+    alcohol_consumption: AlcoholConsumption,
+    smoking_habits: SmokingHabit,
+    meal_timings: Optional[List[MealTiming]],
+    cuisine_preferences: Optional[List[CuisinePreference]],
+    sleep_summary: SleepSummary,
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    try:
+        db: Session = request.state.context.postgres_store
+        # Add logic to update user lifestyle data in the database
+        return SuccessResponse(message="User lifestyle data updated successfully.")
+    except Exception as e:
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
+        return JSONResponse(status_code=500, content=response.dict())
+
+# 5. Create User Diabetes-Related Information
+@router.post(path="/diabetes", tags=["User"])
+async def create_user_diabetes(
+    diabetic_history: DiabeticHistory,
+    family_diabetic_history: Optional[List[FamilyDiabeticHistory]],
+    medical_history: Optional[List[MedicalHistory]],
+    current_medication: CurrentMedication,
+    prescriptions: Optional[List[Prescription]],
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    try:
+        db: Session = request.state.context.postgres_store
+        # Add logic to create user diabetes-related data in the database
+        return SuccessResponse(message="User diabetes-related data created successfully.")
+    except Exception as e:
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
+        return JSONResponse(status_code=500, content=response.dict())
+
+# 6. Update User Diabetes-Related Information
+@router.put(path="/diabetes/{user_id}", tags=["User"])
+async def update_user_diabetes(
+    user_id: int,
+    diabetic_history: DiabeticHistory,
+    family_diabetic_history: Optional[List[FamilyDiabeticHistory]],
+    medical_history: Optional[List[MedicalHistory]],
+    current_medication: CurrentMedication,
+    prescriptions: Optional[List[Prescription]],
+    request: Request = None
+) -> Union[SuccessResponse, HTTPException]:
+    try:
+        db: Session = request.state.context.postgres_store
+        # Add logic to update user diabetes-related data in the database
+        return SuccessResponse(message="User diabetes-related data updated successfully.")
+    except Exception as e:
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
+        return JSONResponse(status_code=500, content=response.dict())
