@@ -1,13 +1,16 @@
-from pydantic import BaseModel, Field
+from uuid import UUID
+from pydantic import BaseModel, Field, HttpUrl
 from typing import List, Optional
 from datetime import date
+
+from rest_server.response_models import SuccessResponse
 
 class UserBase(BaseModel):
     first_name: str
     last_name: str
     dob: date
     gender: str
-    profile_picture: Optional[str] = None
+    profile_picture: Optional[HttpUrl] = None
     height: float
     waist: float
     weight: float
@@ -74,3 +77,26 @@ class CurrentMedication(BaseModel):
 
 class Prescription(BaseModel):
     prescription_file: str
+
+class UserDetail(UserBase):
+    user_id: UUID
+    daily_activities: List[DailyActivity] = []
+    food_allergies: List[FoodAllergy] = []
+    medicine_allergies: List[MedicineAllergy] = []
+    diet_preference: Optional[DietPreference] = None
+    alcohol_consumption: Optional[AlcoholConsumption] = None
+    smoking_habits: Optional[SmokingHabit] = None
+    meal_timings: List[MealTiming] = []
+    cuisine_preferences: List[CuisinePreference] = []
+    sleep_summary: Optional[SleepSummary] = None
+    diabetic_history: Optional[DiabeticHistory] = None
+    family_diabetic_history: List[FamilyDiabeticHistory] = []
+    medical_history: List[MedicalHistory] = []
+    current_medication: Optional[CurrentMedication] = None
+
+    class Config:
+        orm_mode = True
+        
+        
+class UserResponse(SuccessResponse):
+    data: UserDetail
