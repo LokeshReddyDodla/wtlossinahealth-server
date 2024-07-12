@@ -6,10 +6,12 @@ from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.security import HTTPBearer
 from jose import jwt
+from decouple import config
 
-JWT_SECRET = os.getenv("JWT_SECRET")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
-JWT_AUDIENCE = os.getenv("JWT_AUDIENCE")
+
+JWT_SECRET = config("JWT_SECRET")
+JWT_ALGORITHM = config("JWT_ALGORITHM")
+JWT_AUDIENCE = config("JWT_AUDIENCE")
 
 
 class JWTBearer(HTTPBearer):

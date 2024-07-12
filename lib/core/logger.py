@@ -1,12 +1,14 @@
 import logging
 import os
 from logging import handlers
+from decouple import config
+
 
 import structlog
 
 
-LOG_ROTATE_WHEN = os.getenv(key="LOG_ROTATE_WHEN", default="W6")
-LOG_ROTATE_BACKUP = int(os.getenv(key="LOG_ROTATE_BACKUP", default="4"))
+LOG_ROTATE_WHEN = config("LOG_ROTATE_WHEN", default="W6")
+LOG_ROTATE_BACKUP = config("LOG_ROTATE_BACKUP", default="4", cast=int)
 
 
 def initialize_logger():
