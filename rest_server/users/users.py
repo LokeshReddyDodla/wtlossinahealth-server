@@ -25,6 +25,17 @@ async def create_basic_user(
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
+            # Check if the user already exists
+            existing_user = await session.execute(
+                select(User).filter(User.email == user_data.email)
+            )
+            existing_user = existing_user.scalar_one_or_none()
+
+            if existing_user:
+                response = ErrorResponse(message="User already exists")
+                return JSONResponse(status_code=400, content=response.dict())
+
+            # Create a new user
             new_user = User(**user_data.dict())
             session.add(new_user)
             await session.commit()
@@ -33,11 +44,11 @@ async def create_basic_user(
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(message="Internal Server Error", detail=str(e))
-            return JSONResponse(status_code=500, content=response.dict())
+            return JSONResponse(status_code=400, content=response.dict())
         
 @router.put(path="/basic/{user_id}", tags=["User"])
 async def update_basic_user(
-    user_id: int,
+    user_id: str,
     user_data: UserUpdate,
     request: Request = None
 ) -> Union[SuccessResponse, HTTPException]:
