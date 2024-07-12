@@ -4,11 +4,13 @@ from typing import Optional
 import redis
 from pottery import NextId
 from pottery import RedisDict
+from decouple import config
+
 
 
 # Read redis host from env
-REDIS_HOST = os.getenv(key="REDIS_HOST", default="127.0.0.1:6379")
-REDIS_PASSWORD = os.getenv(key="REDIS_PASSWORD", default=None)
+REDIS_HOST = config("REDIS_HOST", default="127.0.0.1:6379")
+REDIS_PASSWORD = config("REDIS_PASSWORD", default=None)
 REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}/0"
 
 class CacheStore:

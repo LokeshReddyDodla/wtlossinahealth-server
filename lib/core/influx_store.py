@@ -1,16 +1,23 @@
 import os
 from influxdb_client import InfluxDBClient
+from decouple import config
+
 
 # Read InfluxDB URL and credentials from env
-INFLUXDB_URL = os.getenv("INFLUXDB_URL", "http://localhost:8086")
-INFLUXDB_USER = os.getenv("INFLUXDB_USER", "admin")
-INFLUXDB_PASSWORD = os.getenv("INFLUXDB_PASSWORD", "password")
-INFLUXDB_ORG = os.getenv("INFLUXDB_ORG", "your_influxdb_org")
-INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "your_influxdb_bucket")
+INFLUXDB_URL = config("INFLUXDB_URL", default="http://localhost:8086")
+INFLUXDB_USER = config("INFLUXDB_USER", default="admin")
+INFLUXDB_PASSWORD = config("INFLUXDB_PASSWORD", default="password")
+INFLUXDB_ORG = config("INFLUXDB_ORG", default="your_influxdb_org")
+INFLUXDB_BUCKET = config("INFLUXDB_BUCKET", default="your_influxdb_bucket")
 
 class InfluxStore:
     def __init__(self):
-        self.client = InfluxDBClient(url=INFLUXDB_URL, username=INFLUXDB_USER, password=INFLUXDB_PASSWORD)
+        self.client = InfluxDBClient(
+            url=INFLUXDB_URL, 
+            username=INFLUXDB_USER, 
+            password=INFLUXDB_PASSWORD,
+            org=INFLUXDB_ORG
+        )
         self.bucket = INFLUXDB_BUCKET
 
     def write_data(self, data):
@@ -20,3 +27,7 @@ class InfluxStore:
     def query_data(self, query):
         query_api = self.client.query_api()
         return query_api.query(query)
+
+
+def get_influx_store() -> InfluxStore:
+    return InfluxStore()
