@@ -1,6 +1,7 @@
+from uuid import UUID
 from app.models.user import User
 from fastapi import APIRouter, HTTPException, Request, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -9,7 +10,7 @@ from typing import List, Optional, Union
 
 from fastapi.responses import JSONResponse
 from rest_server.users.api_schema import (
-    UserCreate, UserUpdate, DailyActivity, FoodAllergy, MedicineAllergy, 
+    UserCreate, UserResponse, UserUpdate, DailyActivity, FoodAllergy, MedicineAllergy, 
     DietPreference, AlcoholConsumption, SmokingHabit, MealTiming, 
     CuisinePreference, SleepSummary, DiabeticHistory, FamilyDiabeticHistory, 
     MedicalHistory, CurrentMedication, Prescription
@@ -18,6 +19,37 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 
 router = APIRouter(prefix="/user")
 
+
+@router.get(path="/{user_id}", tags=["User"], response_model=UserResponse)
+async def get_user_details(user_id: UUID, request: Request) -> UserResponse:
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            result = await session.execute(
+                select(User).where(User.user_id == user_id).options(
+                    selectinload(User.daily_activities),
+                    selectinload(User.food_allergies),
+                    selectinload(User.medicine_allergies),
+                    selectinload(User.diet_preference),
+                    selectinload(User.alcohol_consumption),
+                    selectinload(User.smoking_habits),
+                    selectinload(User.meal_timings),
+                    selectinload(User.cuisine_preferences),
+                    selectinload(User.sleep_summary),
+                    selectinload(User.diabetic_history),
+                    selectinload(User.family_diabetic_history),
+                    selectinload(User.medical_history),
+                    selectinload(User.current_medication),
+                )
+            )
+            user = result.scalars().first()
+            if user is None:
+                response = ErrorResponse(message="User not found")
+                raise JSONResponse(status_code=404, content=response.dict())
+            return UserResponse(message="User data fetched successfully.", data=user)
+        except Exception as e:
+            response = ErrorResponse(message="Internal Server Error", detail=str(e))
+            raise JSONResponse(status_code=500, detail=response.dict())
+        
 @router.post(path="/basic", tags=["User"])
 async def create_basic_user(
     user_data: UserCreate,
@@ -48,7 +80,7 @@ async def create_basic_user(
         
 @router.put(path="/basic/{user_id}", tags=["User"])
 async def update_basic_user(
-    user_id: str,
+    user_id: UUID,
     user_data: UserUpdate,
     request: Request = None
 ) -> Union[SuccessResponse, HTTPException]:
