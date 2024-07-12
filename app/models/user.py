@@ -1,13 +1,16 @@
 from sqlalchemy import Column, Integer, String, Date, Float, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+
 
 Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
 
-    user_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True, index=True)
     first_name = Column(String, index=True)
     last_name = Column(String, index=True)
     dob = Column(Date)
@@ -35,40 +38,40 @@ class User(Base):
 
 class DailyActivity(Base):
     __tablename__ = 'daily_activity'
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     activity_level = Column(String(50))
     user = relationship("User", back_populates="daily_activities")
 
 class FoodAllergy(Base):
     __tablename__ = 'food_allergies'
 
-    allergy_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    allergy_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     allergy_name = Column(String(100))
     user = relationship("User", back_populates="food_allergies")
 
 class MedicineAllergy(Base):
     __tablename__ = 'medicine_allergies'
 
-    allergy_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    allergy_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     allergy_name = Column(String(100))
     user = relationship("User", back_populates="medicine_allergies")
 
 class DietPreference(Base):
     __tablename__ = 'diet_preferences'
 
-    user_id = Column(Integer, ForeignKey('users.user_id'), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), primary_key=True)
     preference = Column(String(50))
     user = relationship("User", back_populates="diet_preference")
 
 class AlcoholConsumption(Base):
     __tablename__ = 'alcohol_consumption'
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     consume_alcohol = Column(Boolean)
     frequency = Column(String(50), nullable=True)
     quantity = Column(String(50), nullable=True)
@@ -78,8 +81,8 @@ class AlcoholConsumption(Base):
 class SmokingHabit(Base):
     __tablename__ = 'smoking_habits'
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     smoke_status = Column(String(20))
     years_of_smoking = Column(Integer, nullable=True)
     cigarettes_per_day = Column(Integer, nullable=True)
@@ -89,23 +92,23 @@ class SmokingHabit(Base):
 class MealTiming(Base):
     __tablename__ = 'meal_timings'
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     timing = Column(String(50))
     user = relationship("User", back_populates="meal_timings")
 
 class CuisinePreference(Base):
     __tablename__ = 'cuisine_preferences'
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     cuisine = Column(String(50))
     user = relationship("User", back_populates="cuisine_preferences")
 
 class SleepSummary(Base):
     __tablename__ = 'sleep_summary'
 
-    user_id = Column(Integer, ForeignKey('users.user_id'), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), primary_key=True)
     sleep_quality = Column(String(50))
     wake_up_fresh = Column(Boolean)
     drowsy_day = Column(Boolean)
@@ -114,7 +117,7 @@ class SleepSummary(Base):
 class DiabeticHistory(Base):
     __tablename__ = 'diabetic_history'
 
-    user_id = Column(Integer, ForeignKey('users.user_id'), primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'), primary_key=True)
     type_of_diabetes = Column(String(50), nullable=True)
     years_with_diabetes = Column(Integer, nullable=True)
     is_pregnant = Column(Boolean, nullable=True)
@@ -124,16 +127,16 @@ class DiabeticHistory(Base):
 class FamilyDiabeticHistory(Base):
     __tablename__ = 'family_diabetic_history'
 
-    history_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    history_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     family_member = Column(String(50))
     user = relationship("User", back_populates="family_diabetic_history")
 
 class MedicalHistory(Base):
     __tablename__ = 'medical_history'
 
-    history_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    history_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     condition = Column(String(100))
     duration_years = Column(Integer)
     details = Column(Text, nullable=True)
@@ -142,8 +145,8 @@ class MedicalHistory(Base):
 class CurrentMedication(Base):
     __tablename__ = 'current_medication'
 
-    medication_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'))
+    medication_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.user_id'))
     has_medication = Column(Boolean)
     prescription_description = Column(Text, nullable=True)
     user = relationship("User", back_populates="current_medication")
@@ -151,6 +154,6 @@ class CurrentMedication(Base):
 class Prescription(Base):
     __tablename__ = 'prescriptions'
 
-    prescription_id = Column(Integer, primary_key=True, index=True)
-    medication_id = Column(Integer, ForeignKey('current_medication.medication_id'))
+    prescription_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    medication_id = Column(UUID(as_uuid=True), ForeignKey('current_medication.medication_id'))
     prescription_file = Column(Text)

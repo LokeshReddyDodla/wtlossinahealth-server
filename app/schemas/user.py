@@ -20,7 +20,7 @@ class UserUpdate(UserBase):
     pass
 
 class User(UserBase):
-    user_id: int
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -32,8 +32,8 @@ class DailyActivityCreate(DailyActivityBase):
     pass
 
 class DailyActivity(DailyActivityBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -45,8 +45,8 @@ class FoodAllergyCreate(FoodAllergyBase):
     pass
 
 class FoodAllergy(FoodAllergyBase):
-    allergy_id: int
-    user_id: int
+    allergy_id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -58,8 +58,8 @@ class MedicineAllergyCreate(MedicineAllergyBase):
     pass
 
 class MedicineAllergy(MedicineAllergyBase):
-    allergy_id: int
-    user_id: int
+    allergy_id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -71,7 +71,7 @@ class DietPreferenceCreate(DietPreferenceBase):
     pass
 
 class DietPreference(DietPreferenceBase):
-    user_id: int
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -86,8 +86,8 @@ class AlcoholConsumptionCreate(AlcoholConsumptionBase):
     pass
 
 class AlcoholConsumption(AlcoholConsumptionBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -102,8 +102,8 @@ class SmokingHabitCreate(SmokingHabitBase):
     pass
 
 class SmokingHabit(SmokingHabitBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -115,8 +115,8 @@ class MealTimingCreate(MealTimingBase):
     pass
 
 class MealTiming(MealTimingBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -128,8 +128,8 @@ class CuisinePreferenceCreate(CuisinePreferenceBase):
     pass
 
 class CuisinePreference(CuisinePreferenceBase):
-    id: int
-    user_id: int
+    id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -143,7 +143,7 @@ class SleepSummaryCreate(SleepSummaryBase):
     pass
 
 class SleepSummary(SleepSummaryBase):
-    user_id: int
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -158,7 +158,7 @@ class DiabeticHistoryCreate(DiabeticHistoryBase):
     pass
 
 class DiabeticHistory(DiabeticHistoryBase):
-    user_id: int
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -170,8 +170,8 @@ class FamilyDiabeticHistoryCreate(FamilyDiabeticHistoryBase):
     pass
 
 class FamilyDiabeticHistory(FamilyDiabeticHistoryBase):
-    history_id: int
-    user_id: int
+    history_id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -185,8 +185,8 @@ class MedicalHistoryCreate(MedicalHistoryBase):
     pass
 
 class MedicalHistory(MedicalHistoryBase):
-    history_id: int
-    user_id: int
+    history_id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -199,8 +199,8 @@ class CurrentMedicationCreate(CurrentMedicationBase):
     pass
 
 class CurrentMedication(CurrentMedicationBase):
-    medication_id: int
-    user_id: int
+    medication_id: str
+    user_id: str
 
     class Config:
         orm_mode = True
@@ -212,8 +212,8 @@ class PrescriptionCreate(PrescriptionBase):
     pass
 
 class Prescription(PrescriptionBase):
-    prescription_id: int
-    medication_id: int
+    prescription_id: str
+    medication_id: str
 
     class Config:
         orm_mode = True
