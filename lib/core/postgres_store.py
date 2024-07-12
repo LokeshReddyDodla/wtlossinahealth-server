@@ -1,21 +1,35 @@
-import os
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from decouple import config
 
-import asyncpg
+# Read PostgreSQL URL from env
+SQLALCHEMY_DATABASE_URL = config('POSTGRES_ASYNCPG_URL')
 
+# Ensure the URL is using asyncpg
+if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
+    raise ValueError("POSTGRES_URL must start with 'postgresql+asyncpg://'")
 
-# READ postgres url from env
-POSTGRES_URL = os.getenv(
-    key="POSTGRES_URL",
-    default=None,
-)
+# Create the SQLAlchemy engine
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
 
+# Create a configured "Session" class
+AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
-async def get_connection_pool() -> asyncpg.pool.Pool:
-    """
-    Connect to postgres and return connection pool
-    :return: Connection pool
-    """
-    if not POSTGRES_URL:
-        raise ValueError("Invalid POSTGRES_URL")
+# Create a Base class for our models to inherit
+Base = declarative_base()
 
-    return await asyncpg.create_pool(dsn=POSTGRES_URL)
+class PostgresStore:
+    def __init__(self):
+        self.engine = engine
+        self.session_local = AsyncSessionLocal
+
+    async def __aenter__(self):
+        self.session = self.session_local()
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.session.close()
+
+    def get_session(self):
+        return self
