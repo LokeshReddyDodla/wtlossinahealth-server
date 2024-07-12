@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
@@ -20,7 +21,7 @@ class UserUpdate(UserBase):
     pass
 
 class User(UserBase):
-    user_id: str
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -32,8 +33,8 @@ class DailyActivityCreate(DailyActivityBase):
     pass
 
 class DailyActivity(DailyActivityBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -45,8 +46,8 @@ class FoodAllergyCreate(FoodAllergyBase):
     pass
 
 class FoodAllergy(FoodAllergyBase):
-    allergy_id: str
-    user_id: str
+    allergy_id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -58,8 +59,8 @@ class MedicineAllergyCreate(MedicineAllergyBase):
     pass
 
 class MedicineAllergy(MedicineAllergyBase):
-    allergy_id: str
-    user_id: str
+    allergy_id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -71,7 +72,7 @@ class DietPreferenceCreate(DietPreferenceBase):
     pass
 
 class DietPreference(DietPreferenceBase):
-    user_id: str
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -86,8 +87,8 @@ class AlcoholConsumptionCreate(AlcoholConsumptionBase):
     pass
 
 class AlcoholConsumption(AlcoholConsumptionBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -102,8 +103,8 @@ class SmokingHabitCreate(SmokingHabitBase):
     pass
 
 class SmokingHabit(SmokingHabitBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -115,8 +116,8 @@ class MealTimingCreate(MealTimingBase):
     pass
 
 class MealTiming(MealTimingBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -128,8 +129,8 @@ class CuisinePreferenceCreate(CuisinePreferenceBase):
     pass
 
 class CuisinePreference(CuisinePreferenceBase):
-    id: str
-    user_id: str
+    id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -143,7 +144,7 @@ class SleepSummaryCreate(SleepSummaryBase):
     pass
 
 class SleepSummary(SleepSummaryBase):
-    user_id: str
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -158,7 +159,7 @@ class DiabeticHistoryCreate(DiabeticHistoryBase):
     pass
 
 class DiabeticHistory(DiabeticHistoryBase):
-    user_id: str
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -170,8 +171,8 @@ class FamilyDiabeticHistoryCreate(FamilyDiabeticHistoryBase):
     pass
 
 class FamilyDiabeticHistory(FamilyDiabeticHistoryBase):
-    history_id: str
-    user_id: str
+    history_id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -185,8 +186,8 @@ class MedicalHistoryCreate(MedicalHistoryBase):
     pass
 
 class MedicalHistory(MedicalHistoryBase):
-    history_id: str
-    user_id: str
+    history_id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -199,8 +200,8 @@ class CurrentMedicationCreate(CurrentMedicationBase):
     pass
 
 class CurrentMedication(CurrentMedicationBase):
-    medication_id: str
-    user_id: str
+    medication_id: UUID
+    user_id: UUID
 
     class Config:
         orm_mode = True
@@ -212,8 +213,8 @@ class PrescriptionCreate(PrescriptionBase):
     pass
 
 class Prescription(PrescriptionBase):
-    prescription_id: str
-    medication_id: str
+    prescription_id: UUID
+    medication_id: UUID
 
     class Config:
         orm_mode = True
