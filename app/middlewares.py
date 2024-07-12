@@ -37,7 +37,11 @@ async def create_context(request: Request, call_next):
 
     # Bind context to request state
     request.state.context = server_context
+    
+    # Acquire PostgreSQL connection
+    # server_context.ds_connection = await server_context.postgres_store.acquire()
 
     # Process API call
     response = await call_next(request)
+
     return response
