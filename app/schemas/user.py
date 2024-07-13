@@ -1,7 +1,7 @@
-from uuid import UUID
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date
+from uuid import UUID
 
 class UserBase(BaseModel):
     first_name: str
@@ -67,11 +67,13 @@ class MedicineAllergy(MedicineAllergyBase):
 
 class DietPreferenceBase(BaseModel):
     preference: str
+    detail: Optional[str] = None
 
 class DietPreferenceCreate(DietPreferenceBase):
     pass
 
 class DietPreference(DietPreferenceBase):
+    id: UUID
     user_id: UUID
 
     class Config:
@@ -81,7 +83,7 @@ class AlcoholConsumptionBase(BaseModel):
     consume_alcohol: bool
     frequency: Optional[str] = None
     quantity: Optional[str] = None
-    type_of_alcohol: Optional[str] = None
+    type_of_alcohol: Optional[List[str]] = None
 
 class AlcoholConsumptionCreate(AlcoholConsumptionBase):
     pass
@@ -110,7 +112,8 @@ class SmokingHabit(SmokingHabitBase):
         orm_mode = True
 
 class MealTimingBase(BaseModel):
-    timing: str
+    meal_type: str
+    time: str
 
 class MealTimingCreate(MealTimingBase):
     pass
@@ -166,6 +169,7 @@ class DiabeticHistory(DiabeticHistoryBase):
 
 class FamilyDiabeticHistoryBase(BaseModel):
     family_member: str
+    duration: Optional[str] = None
 
 class FamilyDiabeticHistoryCreate(FamilyDiabeticHistoryBase):
     pass
@@ -195,6 +199,7 @@ class MedicalHistory(MedicalHistoryBase):
 class CurrentMedicationBase(BaseModel):
     has_medication: bool
     prescription_description: Optional[str] = None
+    prescription_image_url: Optional[str] = None
 
 class CurrentMedicationCreate(CurrentMedicationBase):
     pass
@@ -215,6 +220,25 @@ class PrescriptionCreate(PrescriptionBase):
 class Prescription(PrescriptionBase):
     prescription_id: UUID
     medication_id: UUID
+
+    class Config:
+        orm_mode = True
+
+class UserDetail(UserBase):
+    user_id: UUID
+    daily_activities: List[DailyActivity] = []
+    food_allergies: List[FoodAllergy] = []
+    medicine_allergies: List[MedicineAllergy] = []
+    diet_preferences: List[DietPreference] = []
+    alcohol_consumption: Optional[AlcoholConsumption] = None
+    smoking_habits: Optional[SmokingHabit] = None
+    meal_timings: List[MealTiming] = []
+    cuisine_preferences: List[CuisinePreference] = []
+    sleep_summary: Optional[SleepSummary] = None
+    diabetic_history: Optional[DiabeticHistory] = None
+    family_diabetic_history: List[FamilyDiabeticHistory] = []
+    medical_history: List[MedicalHistory] = []
+    current_medication: Optional[CurrentMedication] = None
 
     class Config:
         orm_mode = True
