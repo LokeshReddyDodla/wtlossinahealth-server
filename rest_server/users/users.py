@@ -103,7 +103,6 @@ async def update_basic_user(
             response = ErrorResponse(message="Internal Server Error", detail=str(e))
             return JSONResponse(status_code=500, content=response.dict())
 
-
 @router.patch(path="/lifestyle/{user_id}", tags=["User"])
 async def upsert_user_lifestyle(
     user_id: UUID,
