@@ -150,10 +150,7 @@ async def upsert_user_lifestyle(
             else:
                 user.daily_activities = [DailyActivity(**activities.dict(), user_id=user_id)]
                 
-            if user.diet_preferences:
-                user.diet_preferences = [DietPreference(**preference.dict(), user_id=user_id) for preference in diet_preferences]
-            else:
-                user.diet_preferences = [DietPreference(**preference.dict(), user_id=user_id) for preference in diet_preferences]
+            user.diet_preferences = [DietPreference(**preference.dict(), user_id=user_id) for preference in diet_preferences]
                 
             if user.alcohol_consumption:
                 for key, value in alcohol_consumption.dict().items():
