@@ -9,11 +9,17 @@ from rest_server.fitness import log as fitness_log
 from rest_server.report import analyse_report
 from rest_server.chat import chat, context_chat
 from rest_server.users import users
+from rest_server.health import health_check
 
 def import_routes(app: FastAPI) -> None:
     """
     Import routes from different modules and add them to the main application
     """
+    
+    ###########################################################################
+    # Health
+    ########################################################################### 
+    app.include_router(health_check.router)
     
     ###########################################################################
     # System management
