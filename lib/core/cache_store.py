@@ -7,6 +7,7 @@ REDIS_HOST = config("REDIS_HOST", default="127.0.0.1:6379")
 REDIS_PASSWORD = config("REDIS_PASSWORD", default=None)
 REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}/0"
 
+
 class CacheStore:
     def __init__(self, namespace: str) -> None:
         redis_client = redis.from_url(REDIS_URL)
@@ -27,7 +28,9 @@ class CacheStore:
         key = f"{self.__namespace}_{key.strip()}"
         return self.__client.get(key)
 
-    def set_key(self, key: str, value: str, expire: Optional[Union[int, None]] = 300) -> Optional[bool]:
+    def set_key(
+        self, key: str, value: str, expire: Optional[Union[int, None]] = 300
+    ) -> Optional[bool]:
         key = f"{self.__namespace}_{key.strip()}"
         if expire is None:
             expire = 300

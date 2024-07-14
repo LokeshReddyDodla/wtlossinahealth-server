@@ -10,13 +10,14 @@ INFLUXDB_PASSWORD = config("INFLUXDB_PASSWORD", default="password")
 INFLUXDB_ORG = config("INFLUXDB_ORG", default="your_influxdb_org")
 INFLUXDB_BUCKET = config("INFLUXDB_BUCKET", default="your_influxdb_bucket")
 
+
 class InfluxStore:
     def __init__(self):
         self.client = InfluxDBClient(
-            url=INFLUXDB_URL, 
-            username=INFLUXDB_USER, 
+            url=INFLUXDB_URL,
+            username=INFLUXDB_USER,
             password=INFLUXDB_PASSWORD,
-            org=INFLUXDB_ORG
+            org=INFLUXDB_ORG,
         )
         self.bucket = INFLUXDB_BUCKET
 

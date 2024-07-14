@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from decouple import config
 
 # Read PostgreSQL URL from env
-SQLALCHEMY_DATABASE_URL = config('POSTGRES_ASYNCPG_URL')
+SQLALCHEMY_DATABASE_URL = config("POSTGRES_ASYNCPG_URL")
 
 # Ensure the URL is using asyncpg
 if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
@@ -14,10 +14,13 @@ if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
 engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
 
 # Create a configured "Session" class
-AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = sessionmaker(
+    bind=engine, class_=AsyncSession, expire_on_commit=False
+)
 
 # Create a Base class for our models to inherit
 Base = declarative_base()
+
 
 class PostgresStore:
     def __init__(self):

@@ -7,6 +7,7 @@ from decouple import config
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
 MONGO_DB_NAME = config("MONGO_DB_NAME", default="your_db_name")
 
+
 class MongoStore:
     def __init__(self):
         self.client = AsyncIOMotorClient(MONGO_URL)
@@ -22,15 +23,18 @@ class MongoStore:
         document = await collection.find_one(query)
         return document
 
-    async def update_document(self, collection_name: str, query: dict, update: dict):
+    async def update_document(
+        self, collection_name: str, query: dict, update: dict
+    ):
         collection = self.db[collection_name]
-        result = await collection.update_one(query, {'$set': update})
+        result = await collection.update_one(query, {"$set": update})
         return result.modified_count
 
     async def delete_document(self, collection_name: str, query: dict):
         collection = self.db[collection_name]
         result = await collection.delete_one(query)
         return result.deleted_count
+
 
 def get_mongo_store() -> MongoStore:
     return MongoStore()
