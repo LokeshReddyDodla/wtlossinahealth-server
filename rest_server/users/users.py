@@ -3,6 +3,7 @@ from uuid import UUID
 from app.models.user import AlcoholConsumption, CuisinePreference, CurrentMedication, DailyActivity, DiabeticHistory, DietPreference, FamilyDiabeticHistory, FoodAllergy, MealTiming, MedicalHistory, MedicineAllergy, SleepSummary, SmokingHabit, User
 from app.schemas.user import AlcoholConsumptionCreate, CuisinePreferenceCreate, CurrentMedicationCreate, DailyActivityCreate, DiabeticHistoryCreate, DietPreferenceCreate, FamilyDiabeticHistoryCreate, FoodAllergyCreate, MealTimingCreate, MedicalHistoryCreate, MedicineAllergyCreate, Prescription, SleepSummaryCreate, SmokingHabitCreate, UserCreate, UserDetail, UserUpdate
 from fastapi import APIRouter, HTTPException, Request, Depends
+from lib.dependencies.auth import get_current_user
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,11 +18,11 @@ router = APIRouter(prefix="/user")
 
 
 @router.get(path="/{user_id}", tags=["User"])
-async def get_user_details(user_id: UUID, request: Request):
+async def get_user_details(current_user: User = Depends(get_current_user), request: Request = None):
     async with request.state.context.postgres_store.get_session() as session:
         try:
             result = await session.execute(
-                select(User).where(User.user_id == user_id).options(
+                select(User).where(User.user_id == current_user.user_id).options(
                     selectinload(User.daily_activities),
                     selectinload(User.food_allergies),
                     selectinload(User.medicine_allergies),
@@ -39,11 +40,9 @@ async def get_user_details(user_id: UUID, request: Request):
             )
         
             user = result.scalars().first()
-            print("==> user: ", user)
             if user is None:
                 raise HTTPException(status_code=404, detail="User not found")
             
-            return user
             # Convert the user to the response model
             user_detail = UserDetail.from_orm(user)
             return SuccessResponse(message="User data fetched successfully.", data=user_detail)
@@ -82,13 +81,13 @@ async def create_basic_user(
         
 @router.put(path="/basic/{user_id}", tags=["User"])
 async def update_basic_user(
-    user_id: UUID,
     user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
     request: Request = None
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
-            user = await session.get(User, user_id)
+            user = await session.get(User, current_user.user_id)
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
             
@@ -105,7 +104,6 @@ async def update_basic_user(
 
 @router.patch(path="/lifestyle/{user_id}", tags=["User"])
 async def upsert_user_lifestyle(
-    user_id: UUID,
     activities: DailyActivityCreate,
     diet_preferences: List[DietPreferenceCreate],
     alcohol_consumption: AlcoholConsumptionCreate,
@@ -114,10 +112,12 @@ async def upsert_user_lifestyle(
     food_allergies: Optional[List[FoodAllergyCreate]] = None,
     meal_timings: Optional[List[MealTimingCreate]] = None,
     cuisine_preferences: Optional[List[CuisinePreferenceCreate]] = None,
+    current_user: User = Depends(get_current_user),
     request: Request = None
 ) -> Union[SuccessResponse, HTTPException]:
     try:
         async with request.state.context.postgres_store.get_session() as session:
+            user_id = current_user.user_id
             user_result = await session.execute(
                 select(User).where(User.user_id == user_id).options(
                     selectinload(User.daily_activities),
@@ -178,16 +178,17 @@ async def upsert_user_lifestyle(
     
 @router.patch(path="/medical_history/{user_id}", tags=["User"])
 async def upsert_user_medical_history(
-    user_id: UUID,
     diabetic_history: DiabeticHistoryCreate,
     current_medication: CurrentMedicationCreate,
     medicine_allergies: Optional[List[MedicineAllergyCreate]] = None,
     family_diabetic_history: Optional[List[FamilyDiabeticHistoryCreate]] = None,
     medical_history: Optional[List[MedicalHistoryCreate]] = None,
+    current_user: User = Depends(get_current_user),
     request: Request = None
 ) -> Union[SuccessResponse, HTTPException]:
     try:
         async with request.state.context.postgres_store.get_session() as session:
+            user_id = current_user.user_id
             user = await session.get(User, user_id, options=[
                 selectinload(User.diabetic_history),
                 selectinload(User.current_medication),
