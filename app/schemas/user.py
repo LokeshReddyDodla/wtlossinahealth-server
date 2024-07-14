@@ -13,6 +13,7 @@ class UserBase(BaseModel):
     waist: float
     weight: float
     email: str
+    phone_number: str
 
 class UserCreate(UserBase):
     pass
@@ -25,6 +26,13 @@ class User(UserBase):
 
     class Config:
         orm_mode = True
+
+class UserPhoneNumber(BaseModel):
+    phone_number: str
+
+class UserOTP(BaseModel):
+    phone_number: str
+    otp: str
 
 class DailyActivityBase(BaseModel):
     activity_level: str

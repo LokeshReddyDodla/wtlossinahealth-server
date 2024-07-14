@@ -19,6 +19,7 @@ class User(Base):
     waist = Column(Float)
     weight = Column(Float)
     email = Column(String, unique=True, index=True)
+    phone_number = Column(String, unique=True, index=True)
 
     # Relationships
     daily_activities = relationship("DailyActivity", back_populates="user")
