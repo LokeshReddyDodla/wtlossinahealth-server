@@ -28,7 +28,6 @@ def run_migrations_offline():
 def run_migrations_online():
     """Run migrations in 'online' mode."""
     url = os.getenv('POSTGRES_URL_SYNC')
-    print("==> url: ", url)
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
