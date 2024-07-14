@@ -15,17 +15,19 @@ async def create_context(request: Request, call_next):
     request_id = uuid.uuid4().hex
 
     # Create context
-    # ds_connection is kept null by default
-    # individual request should acquire a connection from the pool
-    # and bind it to the context whenever required
     server_context = Context(
         logger=request.app.logger,
         request_id=request_id,
         cache_store=request.app.cache_store,
+        secret_store=request.app.secret_store,
+        session_store=request.app.session_store,
+        otp_store=request.app.otp_store,
+        config_store=request.app.config_store,
+        rate_limit_store=request.app.rate_limit_store,
+        address_mapping_store=request.app.address_mapping_store,
         postgres_store=request.app.postgres_store,
         mongo_store=request.app.mongo_store,
         influx_store=request.app.influx_store,
-        ds_connection=None,
     )
 
     # Bind vars to structlog logger
@@ -37,9 +39,6 @@ async def create_context(request: Request, call_next):
 
     # Bind context to request state
     request.state.context = server_context
-    
-    # Acquire PostgreSQL connection
-    # server_context.ds_connection = await server_context.postgres_store.acquire()
 
     # Process API call
     response = await call_next(request)

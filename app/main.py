@@ -43,22 +43,25 @@ async def startup_event() -> None:
     """
     Initialize modules and attach them to app
     """
-    # cachestore
+    # cachestore with different namespaces
     app.cache_store = CacheStore(namespace="rest_server")
+    app.secret_store = CacheStore(namespace="secrets")
+    app.session_store = CacheStore(namespace="user_sessions")
+    app.otp_store = CacheStore(namespace="user_otp")
+    app.config_store = CacheStore(namespace="app_config")
+    app.rate_limit_store = CacheStore(namespace="rate_limiting")
+    app.address_mapping_store = CacheStore(namespace="address_mapping")
+    
+    # Databases
     app.postgres_store = PostgresStore()
     app.mongo_store = MongoStore()
     app.influx_store = InfluxStore()
 
-    # TODO delete legacy from here
-    app.secret_store = CacheStore(namespace="secrets")
-    address_key = "user_address"
-    app.address_mapping = app.cache_store.get_dictionary(address_key)
-
-    # logger
+    # Logger
     initialize_logger()
     app.logger = structlog.get_logger("rest_server")
 
-    # routers
+    # Routers
     import_routes(app)
     
     # Create tables

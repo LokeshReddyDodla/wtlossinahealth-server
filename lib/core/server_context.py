@@ -24,7 +24,12 @@ class Context:
     logger: structlog.stdlib.AsyncBoundLogger
     request_id: str
     cache_store: CacheStore
+    secret_store: CacheStore
+    session_store: CacheStore
+    otp_store: CacheStore
+    config_store: CacheStore
+    rate_limit_store: CacheStore
+    address_mapping_store: CacheStore
     postgres_store: asyncpg.pool.Pool
     mongo_store: MongoStore
     influx_store: InfluxStore
-    ds_connection: asyncpg.connection.Connection = None
