@@ -1,4 +1,4 @@
-from app.models.user import (
+from lib.models.user import (
     AlcoholConsumption,
     CuisinePreference,
     CurrentMedication,
@@ -14,7 +14,7 @@ from app.models.user import (
     SmokingHabit,
     User,
 )
-from app.schemas.user import (
+from lib.schemas.user import (
     AlcoholConsumptionCreate,
     CuisinePreferenceCreate,
     CurrentMedicationCreate,

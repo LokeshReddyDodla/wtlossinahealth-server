@@ -1,7 +1,7 @@
 from jose import jwt
 from jose.exceptions import JWTError, ExpiredSignatureError
 from decouple import config
-from app.models.user import User
+from lib.models.user import User
 
 JWT_SECRET = config("JWT_SECRET")
 JWT_ALGORITHM = config("JWT_ALGORITHM")

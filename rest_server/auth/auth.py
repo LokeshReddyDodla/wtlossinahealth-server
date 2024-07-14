@@ -1,5 +1,5 @@
-from app.models.user import User
-from app.schemas.user import UserOTP, UserPhoneNumber
+from lib.models.user import User
+from lib.schemas.user import UserOTP, UserPhoneNumber
 from fastapi import APIRouter, HTTPException, Request
 from lib.core.otp import create_and_send_otp, verify_otp
 from lib.utils.jwt import create_jwt_token
