@@ -104,12 +104,21 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
       - "8081:80"
+  
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    container_name: redisinsight
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight:/data
 
 volumes:
   redis:
   postgres:
   mongo:
   influxdb:
+  redisinsight:
 
 networks:
   shared_network: 
