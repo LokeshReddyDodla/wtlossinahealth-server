@@ -1,5 +1,3 @@
-import traceback
-from uuid import UUID
 from app.models.user import (
     AlcoholConsumption,
     CuisinePreference,
@@ -52,7 +50,7 @@ router = APIRouter(prefix="/user")
 
 @router.get(path="/{user_id}", tags=["User"], response_model=SuccessResponse)
 async def get_user_details(
-    current_user: User = Depends(get_current_user), request: Request = None
+    request: Request, current_user: User = Depends(get_current_user)
 ):
     async with request.state.context.postgres_store.get_session() as session:
         try:
@@ -86,16 +84,15 @@ async def get_user_details(
                 message="User data fetched successfully.", data=user_detail
             )
         except Exception as e:
-            print("==> exception: ", e)
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
-            raise JSONResponse(status_code=500, detail=response.dict())
-
+            raise HTTPException(status_code=500, detail=response.dict())
 
 @router.post(path="/basic", tags=["User"], response_model=SuccessResponse)
 async def create_basic_user(
-    user_data: UserCreate, request: Request = None
+    request: Request,
+    user_data: UserCreate,
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
@@ -107,7 +104,7 @@ async def create_basic_user(
 
             if existing_user:
                 response = ErrorResponse(message="User already exists")
-                return JSONResponse(status_code=400, content=response.dict())
+                raise HTTPException(status_code=400, detail=response.dict())
 
             # Create a new user
             new_user = User(**user_data.dict())
@@ -122,16 +119,16 @@ async def create_basic_user(
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
-            return JSONResponse(status_code=400, content=response.dict())
+            raise HTTPException(status_code=400, detail=response.dict())
 
 
 @router.put(
     path="/basic/{user_id}", tags=["User"], response_model=SuccessResponse
 )
 async def update_basic_user(
+    request: Request,
     user_data: UserUpdate,
     current_user: User = Depends(get_current_user),
-    request: Request = None,
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
@@ -152,13 +149,14 @@ async def update_basic_user(
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
-            return JSONResponse(status_code=500, content=response.dict())
+            raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.patch(
     path="/lifestyle/{user_id}", tags=["User"], response_model=SuccessResponse
 )
 async def upsert_user_lifestyle(
+    request: Request,
     activities: DailyActivityCreate,
     diet_preferences: List[DietPreferenceCreate],
     alcohol_consumption: AlcoholConsumptionCreate,
@@ -168,7 +166,6 @@ async def upsert_user_lifestyle(
     meal_timings: Optional[List[MealTimingCreate]] = None,
     cuisine_preferences: Optional[List[CuisinePreferenceCreate]] = None,
     current_user: User = Depends(get_current_user),
-    request: Request = None,
 ) -> Union[SuccessResponse, HTTPException]:
     try:
         async with request.state.context.postgres_store.get_session() as session:
@@ -255,7 +252,7 @@ async def upsert_user_lifestyle(
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
-        return JSONResponse(status_code=500, content=response.dict())
+        raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.patch(
@@ -264,6 +261,7 @@ async def upsert_user_lifestyle(
     response_model=SuccessResponse,
 )
 async def upsert_user_medical_history(
+    request: Request,
     diabetic_history: DiabeticHistoryCreate,
     current_medication: CurrentMedicationCreate,
     medicine_allergies: Optional[List[MedicineAllergyCreate]] = None,
@@ -272,7 +270,6 @@ async def upsert_user_medical_history(
     ] = None,
     medical_history: Optional[List[MedicalHistoryCreate]] = None,
     current_user: User = Depends(get_current_user),
-    request: Request = None,
 ) -> Union[SuccessResponse, HTTPException]:
     try:
         async with request.state.context.postgres_store.get_session() as session:
@@ -335,4 +332,4 @@ async def upsert_user_medical_history(
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
-        return JSONResponse(status_code=500, content=response.dict())
+        raise HTTPException(status_code=500, detail=response.dict())
