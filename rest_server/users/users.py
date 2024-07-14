@@ -26,7 +26,6 @@ from app.schemas.user import (
     MealTimingCreate,
     MedicalHistoryCreate,
     MedicineAllergyCreate,
-    Prescription,
     SleepSummaryCreate,
     SmokingHabitCreate,
     UserCreate,
@@ -35,14 +34,12 @@ from app.schemas.user import (
 )
 from fastapi import APIRouter, HTTPException, Request, Depends
 from lib.dependencies.auth import get_current_user
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from typing import List, Optional, Union
 
-from fastapi.responses import JSONResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 
 router = APIRouter(prefix="/user")
