@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from rest_server.auth import auth
 from rest_server.meals import analyse_meal
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
@@ -49,6 +50,11 @@ def import_routes(app: FastAPI) -> None:
     ########################################################################### 
     app.include_router(chat.router)
     app.include_router(context_chat.router)
+    
+    ###########################################################################
+    # Auth
+    ########################################################################### 
+    app.include_router(auth.router)
     
     ###########################################################################
     # User
