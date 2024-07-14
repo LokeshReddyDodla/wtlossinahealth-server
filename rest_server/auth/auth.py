@@ -13,6 +13,7 @@ from sqlalchemy.future import select
 
 router = APIRouter()
 
+
 @router.post("/generate-otp", tags=["Auth"], response_model=SuccessResponse)
 async def generate_otp(request: Request, user_phone: UserPhoneNumber):
     try:
@@ -22,6 +23,7 @@ async def generate_otp(request: Request, user_phone: UserPhoneNumber):
     except Exception as e:
         return ErrorResponse(message="Failed to generate OTP", detail=str(e))
 
+
 @router.post("/verify-otp", tags=["Auth"], response_model=SuccessResponse)
 async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
     try:
@@ -29,7 +31,9 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
         if await verify_otp(user_otp.phone_number, user_otp.otp, cache_store):
             async with request.state.context.postgres_store.get_session() as session:
                 result = await session.execute(
-                    select(User).where(User.phone_number == user_otp.phone_number)
+                    select(User).where(
+                        User.phone_number == user_otp.phone_number
+                    )
                 )
                 user = result.scalars().first()
                 if not user:
@@ -38,7 +42,9 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
                     await session.commit()
                     await session.refresh(user)
                 token = create_jwt_token(user)
-                return SuccessResponse(message="OTP verified", data={"token": token})
+                return SuccessResponse(
+                    message="OTP verified", data={"token": token}
+                )
         else:
             raise HTTPException(status_code=400, detail="Invalid OTP")
     except HTTPException as e:
