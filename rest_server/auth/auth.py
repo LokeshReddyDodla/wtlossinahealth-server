@@ -15,13 +15,13 @@ router = APIRouter()
 
 @router.post("/generate-otp", tags=["Auth"])
 async def generate_otp(request: Request, user_otp: UserPhoneNumber):
-    cache_store = request.state.context.cache_store
+    cache_store = request.state.context.otp_store
     await create_and_send_otp(user_otp.phone_number, cache_store)
     return SuccessResponse(message="OTP sent successfully")
 
 @router.post("/verify-otp", tags=["Auth"])
 async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
-    cache_store = request.state.context.cache_store
+    cache_store = request.state.context.otp_store
     if await verify_otp(user_otp.phone_number, user_otp.otp, cache_store):
         async with request.state.context.postgres_store.get_session() as session:
             result = await session.execute(
