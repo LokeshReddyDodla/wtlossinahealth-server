@@ -1,13 +1,9 @@
 from app.models.user import User
 from app.schemas.user import UserOTP, UserPhoneNumber
-from fastapi import APIRouter, Depends, HTTPException, Request
-from lib.core.cache_store import CacheStore
+from fastapi import APIRouter, HTTPException, Request
 from lib.core.otp import create_and_send_otp, verify_otp
 from lib.utils.jwt import create_jwt_token
-from pydantic import BaseModel
-from rest_server.auth.api_schema import OTPRequest, OTPVerifyRequest
 from rest_server.response_models import ErrorResponse, SuccessResponse
-from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 
 
