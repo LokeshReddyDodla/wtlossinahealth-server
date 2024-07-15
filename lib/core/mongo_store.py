@@ -1,11 +1,10 @@
-import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from decouple import config
 
 
 # Read MongoDB URL and credentials from env
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
-MONGO_DB_NAME = config("MONGO_DB_NAME", default="your_db_name")
+MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 
 
 class MongoStore:
