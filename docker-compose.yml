@@ -26,6 +26,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
       - INFLUXDB_URL=${INFLUXDB_URL}
       - INFLUXDB_USER=${INFLUXDB_USER}
       - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
@@ -67,6 +68,7 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
     ports:
       - 27017:27017
     volumes:
@@ -113,12 +115,38 @@ services:
     volumes:
       - redisinsight:/data
 
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - ME_CONFIG_MONGODB_SERVER=aihealth-mongo
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGOEXPRESS_LOGIN}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGOEXPRESS_PASSWORD}
+    ports:
+      - "8082:8081"
+    depends_on:
+      - aihealth-mongo
+    volumes:
+      - ./config.js:/node_modules/mongo-express/config.default.js
+
+  chronograf:
+    image: chronograf:latest
+    container_name: chronograf
+    ports:
+      - "8888:8888"
+    environment:
+      - INFLUXDB_URL=${INFLUXDB_URL}
+
 volumes:
   redis:
   postgres:
   mongo:
   influxdb:
   redisinsight:
+  mongoku:
+  chronograf:
 
 networks:
   shared_network: 
