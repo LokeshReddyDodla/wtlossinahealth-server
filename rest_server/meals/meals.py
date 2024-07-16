@@ -1,5 +1,6 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.future import select
@@ -10,11 +11,11 @@ from lib.models.user import User
 from lib.models.meal import FoodItem, Meal
 from lib.schemas.meal import (
     MealResponse,
-    NutritionalValues,
-    TotalNutritionalValue,
 )
-from rest_server.response_models import ErrorResponse
+from rest_server.meals.api_schema import MealUploadRequest
+from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import SQLAlchemyError
 
 # Create FastAPI router
 router = APIRouter(prefix="/meal")
@@ -56,6 +57,47 @@ async def get_meals_api(
 
             return meals
         except Exception as e:
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.post(path="/upload", tags=["Meal"])
+async def meal_upload_api(
+    request: Request,
+    meal_data: MealUploadRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Meal Upload API
+    """
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            context_id = uuid.uuid4().hex
+
+            meal = Meal(
+                type=meal_data.type,
+                time=meal_data.time,
+                source=meal_data.source,
+                description=meal_data.description,
+                context_id=context_id,
+                image_url=meal_data.image_url,
+                user_id=current_user.user_id,
+            )
+            session.add(meal)
+            await session.commit()
+            await session.refresh(meal)
+
+            return SuccessResponse(
+                data=meal, message="Meal Uploaded Successfully"
+            )
+        except SQLAlchemyError as e:
+            await session.rollback()
+            response = ErrorResponse(message="Database Error", detail=str(e))
+            raise HTTPException(status_code=500, detail=response.dict())
+        except Exception as e:
+            await session.rollback()
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
