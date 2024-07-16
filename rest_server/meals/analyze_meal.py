@@ -4,7 +4,7 @@ from typing import Optional, Union
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from lib.dependencies.auth import get_current_user
 from lib.models.user import User
@@ -14,60 +14,69 @@ from lib.models.meal import (
     NutritionalValues,
     TotalNutritionalValue,
 )
-from lib.schemas.meal import MealDescription
+from lib.schemas.meal import MealResponse
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.meals.api_schema import MealAnalysisResponse
 from rest_server.response_models import ErrorResponse
 from lib.managers.context_manager import context_manager
+from sqlalchemy.orm import selectinload
+
 
 # Create FastAPI router
 router = APIRouter(prefix="/meal")
 
 
-@router.post(
-    path="/analyse", response_model=MealAnalysisResponse, tags=["Meal"]
-)
-async def analyse_meal_api(
+@router.post(path="/analyze", response_model=MealResponse, tags=["Meal"])
+async def analyze_meal_api(
     request: Request,
-    image_url: str,
-    meal_time: datetime,
-    source: str,
-    description: Optional[str] = None,
+    meal_id: str,
+    force: Optional[bool] = False,
     current_user: User = Depends(get_current_user),
-) -> Union[MealAnalysisResponse, HTTPException]:
+) -> Union[MealResponse, HTTPException]:
     """
     Analyse Meal API
     """
     async with request.state.context.postgres_store.get_session() as session:
         try:
-            print("==> analysing meal...")
-            print("==> image url: ", image_url)
+            # Fetch the meal entry by ID
+            meal_query = await session.execute(
+                select(Meal)
+                .filter(
+                    Meal.id == meal_id, Meal.user_id == current_user.user_id
+                )
+                .options(
+                    selectinload(Meal.items).selectinload(
+                        FoodItem.nutritional_values
+                    ),
+                    selectinload(Meal.total_nutritional_value),
+                )
+            )
+            meal = meal_query.scalars().first()
+
+            if not meal:
+                response = ErrorResponse(
+                    message="Meal not found",
+                    detail=f"Meal with ID {meal_id} not found",
+                )
+                raise HTTPException(status_code=404, detail=response.dict())
+
+            if meal.analyzed and not force:
+                return MealResponse.from_orm(meal)
 
             ai_response = get_nutritional_info(
-                meal_time.timestamp(), image_url, description
+                meal.time.timestamp(), meal.image_url, meal.description
             )
             print("==> ai response: %s" % ai_response)
 
             parsed_json = parse_json_garbage(ai_response)
             print("==> parsed json: %s" % parsed_json)
 
-            context_id = uuid.uuid4().hex
-
-            # Create the meal entry
-            meal = Meal(
-                type=parsed_json["meal_type"],
-                time=datetime.now(),
-                source=source,
-                description=description,
-                feedback=parsed_json["feedback"],
-                tags=parsed_json["tags"],
-                context_id=context_id,
-                image_url=image_url,
-                user_id=current_user.user_id,
-            )
-            session.add(meal)
-            await session.flush()  # Flush to get the meal ID
+            # Update the meal entry
+            meal.analyzed = True
+            meal.analyzed_at = datetime.now()
+            meal.feedback = parsed_json["feedback"]
+            meal.tags = parsed_json["tags"]
 
             # Create total nutritional value entry
             total_nutritional_value = TotalNutritionalValue(
@@ -81,8 +90,10 @@ async def analyse_meal_api(
                 meal_id=meal.id,
             )
             session.add(total_nutritional_value)
+            meal.total_nutritional_value = total_nutritional_value
 
             # Create food items and their nutritional values
+            food_items = []
             for item in parsed_json["items"]:
                 food_item = FoodItem(
                     name=item["name"],
@@ -104,29 +115,24 @@ async def analyse_meal_api(
                     food_item_id=food_item.id,
                 )
                 session.add(nutritional_values)
+                food_item.nutritional_values = nutritional_values
+
+                food_items.append(food_item)
+
+            meal.items = food_items
 
             await session.commit()
 
-            # Prepare response
-            food_description = MealDescription(
-                type=parsed_json["meal_type"],
-                items=parsed_json["items"],
-                total_nutritional_value=parsed_json["total_nutritional_value"],
-                image_url=image_url,
-                description=description,
-                feedback=parsed_json["feedback"],
-                tags=parsed_json["tags"],
-                context_id=context_id,
-            )
-
             context_manager.add_message(
-                context_id,
-                ai_response,
+                meal.context_id,
+                ai_response or "",
                 "assistant",
                 "meal",
-                media_url=image_url,
+                media_url=meal.image_url,
             )
-            return MealAnalysisResponse(data=food_description)
+
+            meal_response = MealResponse.from_orm(meal)
+            return meal_response
         except json.JSONDecodeError as e:
             await session.rollback()
             response = ErrorResponse(message="Invalid JSON", detail=str(e))
