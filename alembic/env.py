@@ -7,7 +7,8 @@ from alembic import context
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from lib.models.user import Base  # Import your models here
+# Import the Base where all models are registered
+from lib.models import Base
 
 config = context.config
 fileConfig(config.config_file_name)
