@@ -1,8 +1,7 @@
 from typing import Optional
 
-from pydantic import Field
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Union
+from typing import List, Optional
 
 from rest_server.response_models import SuccessResponse
 
@@ -17,7 +16,7 @@ class NutritionalValues(BaseModel):
 
 class FoodItem(BaseModel):
     name: str
-    coordinates: List
+    coordinates: Optional[List[float]]
     serving_size: str
     serving_quantity: str
     serving_unit: str
