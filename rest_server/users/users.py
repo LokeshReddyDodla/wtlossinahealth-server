@@ -45,7 +45,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 router = APIRouter(prefix="/user")
 
 
-@router.get(path="/{user_id}", tags=["User"], response_model=SuccessResponse)
+@router.get(path="/profile", tags=["User"], response_model=SuccessResponse)
 async def get_user_details(
     request: Request, current_user: User = Depends(get_current_user)
 ):
