@@ -2,6 +2,7 @@ import uuid
 from sqlalchemy import (
     ARRAY,
     JSON,
+    Boolean,
     Column,
     Float,
     Integer,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import UUID
 from lib.models import Base
 
@@ -43,7 +44,7 @@ class FoodItem(Base):
     serving_quantity = Column(Float)
     serving_unit = Column(String)
     nutritional_values = relationship(
-        "NutritionalValues", back_populates="food_item"
+        "NutritionalValues", back_populates="food_item", uselist=False
     )
     meal_id = Column(UUID(as_uuid=True), ForeignKey("meals.id"))
     meal = relationship("Meal", back_populates="items")
@@ -74,7 +75,7 @@ class Meal(Base):
     time = Column(DateTime)
     items = relationship("FoodItem", back_populates="meal")
     total_nutritional_value = relationship(
-        "TotalNutritionalValue", back_populates="meal"
+        "TotalNutritionalValue", back_populates="meal", uselist=False
     )
     image_url = Column(Text)
     description = Column(String, nullable=True)
@@ -82,6 +83,7 @@ class Meal(Base):
     feedback = Column(String)
     tags = Column(ARRAY(String))
     context_id = Column(String)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    analyzed = Column(Boolean, default=False)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     user = relationship("User", back_populates="meals")

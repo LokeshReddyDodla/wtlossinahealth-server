@@ -1,7 +1,10 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
 from typing import List, Optional
+
+from uuid import UUID
 
 
 class NutritionalValues(BaseModel):
@@ -10,6 +13,9 @@ class NutritionalValues(BaseModel):
     carbohydrates: str
     fats: str
     fiber: str
+
+    class Config:
+        orm_mode = True
 
 
 class FoodItem(BaseModel):
@@ -20,6 +26,9 @@ class FoodItem(BaseModel):
     serving_unit: str
     nutritional_values: NutritionalValues
 
+    class Config:
+        orm_mode = True
+
 
 class TotalNutritionalValue(BaseModel):
     calories: str
@@ -27,6 +36,29 @@ class TotalNutritionalValue(BaseModel):
     carbohydrates: str
     fats: str
     fiber: str
+
+    class Config:
+        orm_mode = True
+
+
+class MealResponse(BaseModel):
+    id: UUID
+    type: str
+    time: datetime
+    items: List[FoodItem]
+    total_nutritional_value: TotalNutritionalValue
+    image_url: Optional[str]
+    description: Optional[str]
+    source: Optional[str]
+    feedback: Optional[str]
+    tags: Optional[List[str]]
+    context_id: Optional[str]
+    analyzed: bool
+    uploaded_at: datetime
+    user_id: UUID
+
+    class Config:
+        orm_mode = True
 
 
 class MealDescription(BaseModel):
