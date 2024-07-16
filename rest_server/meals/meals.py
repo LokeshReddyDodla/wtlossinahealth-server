@@ -27,6 +27,7 @@ async def get_meals_api(
     from_time: Optional[datetime] = Query(None),
     to_time: Optional[datetime] = Query(None),
     source: Optional[str] = Query(None),
+    analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -51,6 +52,10 @@ async def get_meals_api(
                 query = query.filter(Meal.time <= to_time)
             if source:
                 query = query.filter(Meal.source == source)
+            if analyzed == "true":
+                query = query.filter(Meal.analyzed == True)
+            elif analyzed == "false":
+                query = query.filter(Meal.analyzed == False)
 
             result = await session.execute(query)
             meals = result.scalars().all()
