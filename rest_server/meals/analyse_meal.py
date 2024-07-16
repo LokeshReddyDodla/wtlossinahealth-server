@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from typing import Optional, Union
 import uuid
@@ -13,7 +14,7 @@ from lib.models.meal import (
     NutritionalValues,
     TotalNutritionalValue,
 )
-from lib.schemas.meal import FoodDescription
+from lib.schemas.meal import MealDescription
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.meals.api_schema import MealAnalysisResponse
@@ -30,7 +31,8 @@ router = APIRouter(prefix="/meal")
 async def analyse_meal_api(
     request: Request,
     image_url: str,
-    mealtime_ms: int,
+    meal_time: datetime,
+    source: str,
     description: Optional[str] = None,
     current_user: User = Depends(get_current_user),
 ) -> Union[MealAnalysisResponse, HTTPException]:
@@ -43,7 +45,7 @@ async def analyse_meal_api(
             print("==> image url: ", image_url)
 
             ai_response = get_nutritional_info(
-                mealtime_ms, image_url, description
+                meal_time.timestamp(), image_url, description
             )
             print("==> ai response: %s" % ai_response)
 
@@ -54,12 +56,14 @@ async def analyse_meal_api(
 
             # Create the meal entry
             meal = Meal(
-                meal_type=parsed_json["meal_type"],
-                image_url=image_url,
+                type=parsed_json["meal_type"],
+                time=datetime.now(),
+                source=source,
                 description=description,
                 feedback=parsed_json["feedback"],
                 tags=parsed_json["tags"],
                 context_id=context_id,
+                image_url=image_url,
                 user_id=current_user.user_id,
             )
             session.add(meal)
@@ -104,8 +108,8 @@ async def analyse_meal_api(
             await session.commit()
 
             # Prepare response
-            food_description = FoodDescription(
-                meal_type=parsed_json["meal_type"],
+            food_description = MealDescription(
+                type=parsed_json["meal_type"],
                 items=parsed_json["items"],
                 total_nutritional_value=parsed_json["total_nutritional_value"],
                 image_url=image_url,
