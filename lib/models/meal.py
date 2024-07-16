@@ -84,6 +84,7 @@ class Meal(Base):
     tags = Column(ARRAY(String), nullable=True)
     context_id = Column(String, nullable=True)
     analyzed = Column(Boolean, default=False)
+    analyzed_at = Column(DateTime, nullable=True)
     uploaded_at = Column(DateTime, default=lambda: datetime.now())
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     user = relationship("User", back_populates="meals")

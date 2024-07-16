@@ -54,6 +54,7 @@ class MealResponse(BaseModel):
     tags: Optional[List[str]] = []
     context_id: Optional[str]
     analyzed: bool
+    analyzed_at: Optional[datetime]
     uploaded_at: datetime
     user_id: UUID
 
