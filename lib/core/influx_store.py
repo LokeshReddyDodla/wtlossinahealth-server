@@ -1,4 +1,3 @@
-import os
 from influxdb_client import InfluxDBClient
 from decouple import config
 
@@ -7,7 +6,7 @@ from decouple import config
 INFLUXDB_URL = config("INFLUXDB_URL", default="http://localhost:8086")
 INFLUXDB_USER = config("INFLUXDB_USER", default="admin")
 INFLUXDB_PASSWORD = config("INFLUXDB_PASSWORD", default="password")
-INFLUXDB_ORG = config("INFLUXDB_ORG", default="your_influxdb_org")
+INFLUXDB_ORG = config("INFLUXDB_ORG", default="aihealth")
 INFLUXDB_BUCKET = config("INFLUXDB_BUCKET", default="your_influxdb_bucket")
 
 

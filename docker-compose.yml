@@ -36,7 +36,6 @@ services:
       - ./logs:/src/logs
       - .:/src
 
-
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
@@ -79,14 +78,17 @@ services:
     image: influxdb:latest
     restart: no
     environment:
-      - INFLUXDB_DB=${INFLUXDB_BUCKET}
-      - INFLUXDB_ADMIN_USER=${INFLUXDB_USER}
-      - INFLUXDB_ADMIN_PASSWORD=${INFLUXDB_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USER}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
     ports:
       - 8086:8086
     volumes:
-      - ./deployment/volumes/influxdb:/var/lib/influxdb
-  
+      - ./deployment/volumes/influxdb:/var/lib/influxdb2
+      - ./deployment/volumes/influxdb_config:/etc/influxdb2
+
   aihealth-nginx:
     container_name: aihealth-nginx
     build:
@@ -106,7 +108,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
       - "8081:80"
-  
+
   redisinsight:
     image: redislabs/redisinsight:latest
     container_name: redisinsight
@@ -134,10 +136,15 @@ services:
   chronograf:
     image: chronograf:latest
     container_name: chronograf
+    restart: no
     ports:
       - "8888:8888"
     environment:
       - INFLUXDB_URL=${INFLUXDB_URL}
+    volumes:
+      - ./deployment/volumes/chronograf:/var/lib/chronograf
+    depends_on:
+      - aihealth-influxdb
 
 volumes:
   redis:
@@ -148,6 +155,7 @@ volumes:
   mongoku:
   chronograf:
 
+
 networks:
-  shared_network: 
+  shared_network:
     external: true
