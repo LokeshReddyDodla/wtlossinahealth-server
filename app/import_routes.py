@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from rest_server.auth import auth
-from rest_server.meals import analyse_meal
+from rest_server.meals import analyse_meal, meals
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
 from rest_server.prescriptions import analyse_prescription
@@ -36,6 +36,7 @@ def import_routes(app: FastAPI) -> None:
     # Meals
     ###########################################################################
     app.include_router(analyse_meal.router)
+    app.include_router(meals.router)
     
     ###########################################################################
     # Prescriptions
