@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     ForeignKey,
     DateTime,
+    Text,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -28,6 +29,7 @@ class NutritionalValues(Base):
     fiber = Column(String)
     food_item_id = Column(UUID(as_uuid=True), ForeignKey("food_items.id"))
     food_item = relationship("FoodItem", back_populates="nutritional_values")
+
 
 class FoodItem(Base):
     __tablename__ = "food_items"
@@ -68,13 +70,15 @@ class Meal(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
-    meal_type = Column(String)
+    type = Column(String)
+    time = Column(DateTime)
     items = relationship("FoodItem", back_populates="meal")
     total_nutritional_value = relationship(
         "TotalNutritionalValue", back_populates="meal"
     )
-    image_url = Column(String)
+    image_url = Column(Text)
     description = Column(String, nullable=True)
+    source = Column(String, nullable=True)
     feedback = Column(String)
     tags = Column(ARRAY(String))
     context_id = Column(String)
