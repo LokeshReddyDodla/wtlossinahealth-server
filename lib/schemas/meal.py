@@ -45,8 +45,8 @@ class MealResponse(BaseModel):
     id: UUID
     type: str
     time: datetime
-    items: List[FoodItem]
-    total_nutritional_value: TotalNutritionalValue
+    items: Optional[List[FoodItem]] = None
+    total_nutritional_value: Optional[TotalNutritionalValue] = None
     image_url: Optional[str]
     description: Optional[str]
     source: Optional[str]
