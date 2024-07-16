@@ -29,8 +29,8 @@ class TotalNutritionalValue(BaseModel):
     fiber: str
 
 
-class FoodDescription(BaseModel):
-    meal_type: str
+class MealDescription(BaseModel):
+    type: str
     items: List[FoodItem]
     total_nutritional_value: TotalNutritionalValue
     image_url: str

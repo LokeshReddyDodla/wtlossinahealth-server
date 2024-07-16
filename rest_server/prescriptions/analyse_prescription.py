@@ -10,7 +10,7 @@ from lib.core.auth_bearer import handler
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from lib.utils.openai.prescription_analysis import analyse_prescription
-from rest_server.meals.api_schema import FoodDescription, MealAnalysisResponse
+from rest_server.meals.api_schema import MealDescription, MealAnalysisResponse
 from rest_server.prescriptions.api_schema import Medicine, PrescriptionAnalysisResponse, PrescriptionData
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
