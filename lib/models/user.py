@@ -1,5 +1,6 @@
 from sqlalchemy import (
     Column,
+    DateTime,
     Integer,
     String,
     Date,
@@ -13,6 +14,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
+from datetime import datetime, timezone
+
 
 Base = declarative_base()
 
@@ -37,6 +40,12 @@ class User(Base):
     weight = Column(Float)
     email = Column(String, unique=True, index=True)
     phone_number = Column(String, unique=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationships
     daily_activities = relationship("DailyActivity", back_populates="user")
