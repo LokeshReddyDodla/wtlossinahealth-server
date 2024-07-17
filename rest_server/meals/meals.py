@@ -130,7 +130,7 @@ async def meal_upload_api(
 
 
 @router.delete(
-    path="/meals/{meal_id}", tags=["Meal"], response_model=SuccessResponse
+    path="/{meal_id}", tags=["Meal"], response_model=SuccessResponse
 )
 async def delete_meal_api(
     request: Request,
