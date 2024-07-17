@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 
-class MealAnalysisResponse(SuccessResponse):
+class MealAnalysisResponse(SuccessResponse):  # TODO: remove this
     data: MealResponse
 
 
