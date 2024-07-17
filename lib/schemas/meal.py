@@ -56,7 +56,7 @@ class MealResponse(BaseModel):
     analyzed: bool
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
-    user_id: UUID
+    patient_id: UUID
 
     class Config:
         orm_mode = True

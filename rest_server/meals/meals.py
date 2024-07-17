@@ -7,8 +7,8 @@ from sqlalchemy import asc, desc
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
-from lib.dependencies.auth import get_current_user
-from lib.models.user import User
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient import Patient
 from lib.models.meal import FoodItem, Meal
 from lib.schemas.meal import (
     MealResponse,
@@ -31,7 +31,7 @@ async def get_meals_api(
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     order_by: Optional[str] = Query("time"),
     order: Optional[str] = Query("desc"),
-    current_user: User = Depends(get_current_user),
+    current_patient: Patient = Depends(get_current_patient),
     limit: Optional[int] = Query(None),
 ):
     """
@@ -41,7 +41,7 @@ async def get_meals_api(
         try:
             query = (
                 select(Meal)
-                .where(Meal.user_id == current_user.user_id)
+                .where(Meal.patient_id == current_patient.patient_id)
                 .options(
                     selectinload(Meal.items).selectinload(
                         FoodItem.nutritional_values
@@ -92,7 +92,7 @@ async def get_meals_api(
 async def meal_upload_api(
     request: Request,
     meal_data: MealUploadRequest,
-    current_user: User = Depends(get_current_user),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     """
     Meal Upload API
@@ -108,7 +108,7 @@ async def meal_upload_api(
                 description=meal_data.description,
                 context_id=context_id,
                 image_url=meal_data.image_url,
-                user_id=current_user.user_id,
+                patient_id=current_patient.patient_id,
             )
             session.add(meal)
             await session.commit()
@@ -135,7 +135,7 @@ async def meal_upload_api(
 async def delete_meal_api(
     request: Request,
     meal_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_patient: Patient = Depends(get_current_patient),
 ) -> Union[SuccessResponse, HTTPException]:
     """
     Delete Meal API
@@ -146,7 +146,7 @@ async def delete_meal_api(
             if not meal:
                 raise HTTPException(status_code=404, detail="Meal not found")
 
-            if meal.user_id != current_user.user_id:
+            if meal.patient_id != current_patient.patient_id:
                 raise HTTPException(
                     status_code=403,
                     detail="Not authorized to delete this meal",

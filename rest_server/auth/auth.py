@@ -1,4 +1,4 @@
-from lib.models.user import User
+from lib.models.patient import Patient
 from lib.schemas.user import UserOTP, UserPhoneNumber
 from fastapi import APIRouter, HTTPException, Request
 from lib.core.otp import create_and_send_otp, verify_otp
@@ -21,23 +21,19 @@ async def generate_otp(request: Request, user_phone: UserPhoneNumber):
 
 
 @router.post("/verify-otp", tags=["Auth"], response_model=SuccessResponse)
-async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
+async def verify_otp_endpoint(request: Request, user_otp: UserOTP, role: str):
     try:
         cache_store = request.state.context.otp_store
         if await verify_otp(user_otp.phone_number, user_otp.otp, cache_store):
             async with request.state.context.postgres_store.get_session() as session:
-                result = await session.execute(
-                    select(User).where(
-                        User.phone_number == user_otp.phone_number
-                    )
+                user, user_id = await get_or_create_user(
+                    session, user_otp.phone_number, role
                 )
-                user = result.scalars().first()
-                if not user:
-                    user = User(phone_number=user_otp.phone_number)
-                    session.add(user)
-                    await session.commit()
-                    await session.refresh(user)
-                token = create_jwt_token(user)
+                token = create_jwt_token(
+                    user_id=user_id,
+                    phone_number=str(user.phone_number),
+                    role=role,
+                )
                 return SuccessResponse(
                     message="OTP verified", data={"token": token}
                 )
@@ -47,3 +43,22 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP):
         raise e
     except Exception as e:
         return ErrorResponse(message="Failed to verify OTP", detail=str(e))
+
+
+async def get_or_create_user(session, phone_number: str, role: str):
+    if role == "Patient":
+        result = await session.execute(
+            select(Patient).where(Patient.phone_number == phone_number)
+        )
+        user = result.scalars().first()
+        if not user:
+            user = Patient(phone_number=phone_number)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+        user_id = str(user.patient_id)
+    elif role == "Doctor":
+        pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    return user, user_id

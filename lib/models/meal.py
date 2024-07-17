@@ -102,7 +102,8 @@ class Meal(Base):
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE")
+    patient_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("patients.patient_id", ondelete="CASCADE"),
     )
-    user = relationship("User", back_populates="meals")
+    patient = relationship("Patient", back_populates="meals")
