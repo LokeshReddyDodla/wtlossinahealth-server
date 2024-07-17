@@ -6,8 +6,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
-from lib.dependencies.auth import get_current_user
-from lib.models.user import User
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient import Patient
 from lib.models.meal import (
     Meal,
     FoodItem,
@@ -32,7 +32,7 @@ async def analyze_meal_api(
     request: Request,
     meal_id: str,
     force: Optional[bool] = False,
-    current_user: User = Depends(get_current_user),
+    current_patient: Patient = Depends(get_current_patient),
 ) -> Union[MealResponse, HTTPException]:
     """
     Analyse Meal API
@@ -43,7 +43,8 @@ async def analyze_meal_api(
             meal_query = await session.execute(
                 select(Meal)
                 .filter(
-                    Meal.id == meal_id, Meal.user_id == current_user.user_id
+                    Meal.id == meal_id,
+                    Meal.patient_id == current_patient.patient_id,
                 )
                 .options(
                     selectinload(Meal.items).selectinload(
@@ -76,7 +77,7 @@ async def analyze_meal_api(
             meal.analyzed = True
             meal.analyzed_at = datetime.now()
             meal.feedback = parsed_json["feedback"]
-            meal.tags = parsed_json["tags"]
+            # meal.tags = parsed_json["tags"]
 
             # Create total nutritional value entry
             total_nutritional_value = TotalNutritionalValue(
