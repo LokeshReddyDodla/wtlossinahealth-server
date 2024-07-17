@@ -53,66 +53,70 @@ class Patient(Base):
 
     # Relationships
     daily_activities = relationship(
-        "DailyActivity", back_populates="user", cascade="all, delete-orphan"
+        "DailyActivity", back_populates="patient", cascade="all, delete-orphan"
     )
     food_allergies = relationship(
-        "FoodAllergy", back_populates="user", cascade="all, delete-orphan"
+        "FoodAllergy", back_populates="patient", cascade="all, delete-orphan"
     )
     drug_allergies = relationship(
-        "DrugAllergy", back_populates="user", cascade="all, delete-orphan"
+        "DrugAllergy", back_populates="patient", cascade="all, delete-orphan"
     )
     diet_preferences = relationship(
-        "DietPreference", back_populates="user", cascade="all, delete-orphan"
+        "DietPreference",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
     alcohol_consumption = relationship(
         "AlcoholConsumption",
         uselist=False,
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     smoking_habits = relationship(
         "SmokingHabit",
         uselist=False,
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     meal_timings = relationship(
-        "MealTiming", back_populates="user", cascade="all, delete-orphan"
+        "MealTiming", back_populates="patient", cascade="all, delete-orphan"
     )
     cuisine_preferences = relationship(
         "CuisinePreference",
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     sleep_summary = relationship(
         "SleepSummary",
         uselist=False,
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     diabetic_history = relationship(
         "DiabeticHistory",
         uselist=False,
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     family_diabetic_history = relationship(
         "FamilyDiabeticHistory",
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
     medical_history = relationship(
-        "MedicalHistory", back_populates="user", cascade="all, delete-orphan"
+        "MedicalHistory",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
     current_medication = relationship(
         "CurrentMedication",
         uselist=False,
-        back_populates="user",
+        back_populates="patient",
         cascade="all, delete-orphan",
     )
 
     meals = relationship(
-        "Meal", back_populates="user", cascade="all, delete-orphan"
+        "Meal", back_populates="patient", cascade="all, delete-orphan"
     )
 
 
