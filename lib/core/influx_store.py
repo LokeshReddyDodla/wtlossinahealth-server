@@ -1,3 +1,4 @@
+from datetime import datetime
 from influxdb_client import InfluxDBClient
 from decouple import config
 
@@ -27,6 +28,34 @@ class InfluxStore:
     def query_data(self, query):
         query_api = self.client.query_api()
         return query_api.query(query)
+
+    def delete_data(
+        self,
+        measurement: str,
+        start_time: str,
+        end_time: str,
+        tags: dict = None,
+    ):
+        delete_api = self.client.delete_api()
+        start = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
+        end = datetime.strptime(end_time, "%Y-%m-%dT%H:%M:%SZ")
+        predicate = f'_measurement="{measurement}"'
+        if tags:
+            for tag_key, tag_value in tags.items():
+                predicate += f' AND "{tag_key}"="{tag_value}"'
+        delete_api.delete(
+            start, end, predicate, bucket=self.bucket, org=INFLUXDB_ORG
+        )
+
+    def clear_all_data(self, measurement: str):
+        delete_api = self.client.delete_api()
+        # Define a very wide time range to cover all data points
+        start = "1970-01-01T00:00:00Z"
+        end = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        predicate = f'_measurement="{measurement}"'
+        delete_api.delete(
+            start, end, predicate, bucket=self.bucket, org=INFLUXDB_ORG
+        )
 
 
 def get_influx_store() -> InfluxStore:
