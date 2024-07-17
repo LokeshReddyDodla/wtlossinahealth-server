@@ -51,35 +51,68 @@ class User(Base):
     locale = Column(String(50), nullable=True)
 
     # Relationships
-    daily_activities = relationship("DailyActivity", back_populates="user")
-    food_allergies = relationship("FoodAllergy", back_populates="user")
-    medicine_allergies = relationship("MedicineAllergy", back_populates="user")
-    diet_preferences = relationship("DietPreference", back_populates="user")
+    daily_activities = relationship(
+        "DailyActivity", back_populates="user", cascade="all, delete-orphan"
+    )
+    food_allergies = relationship(
+        "FoodAllergy", back_populates="user", cascade="all, delete-orphan"
+    )
+    medicine_allergies = relationship(
+        "MedicineAllergy", back_populates="user", cascade="all, delete-orphan"
+    )
+    diet_preferences = relationship(
+        "DietPreference", back_populates="user", cascade="all, delete-orphan"
+    )
     alcohol_consumption = relationship(
-        "AlcoholConsumption", uselist=False, back_populates="user"
+        "AlcoholConsumption",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     smoking_habits = relationship(
-        "SmokingHabit", uselist=False, back_populates="user"
+        "SmokingHabit",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
-    meal_timings = relationship("MealTiming", back_populates="user")
+    meal_timings = relationship(
+        "MealTiming", back_populates="user", cascade="all, delete-orphan"
+    )
     cuisine_preferences = relationship(
-        "CuisinePreference", back_populates="user"
+        "CuisinePreference",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     sleep_summary = relationship(
-        "SleepSummary", uselist=False, back_populates="user"
+        "SleepSummary",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     diabetic_history = relationship(
-        "DiabeticHistory", uselist=False, back_populates="user"
+        "DiabeticHistory",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
     family_diabetic_history = relationship(
-        "FamilyDiabeticHistory", back_populates="user"
+        "FamilyDiabeticHistory",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
-    medical_history = relationship("MedicalHistory", back_populates="user")
+    medical_history = relationship(
+        "MedicalHistory", back_populates="user", cascade="all, delete-orphan"
+    )
     current_medication = relationship(
-        "CurrentMedication", uselist=False, back_populates="user"
+        "CurrentMedication",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
-    meals = relationship("Meal", back_populates="user")
+    meals = relationship(
+        "Meal", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class DailyActivity(Base):

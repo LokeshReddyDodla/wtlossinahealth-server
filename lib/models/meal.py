@@ -28,7 +28,9 @@ class NutritionalValues(Base):
     carbohydrates = Column(String)
     fats = Column(String)
     fiber = Column(String)
-    food_item_id = Column(UUID(as_uuid=True), ForeignKey("food_items.id"))
+    food_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("food_items.id", ondelete="CASCADE")
+    )
     food_item = relationship("FoodItem", back_populates="nutritional_values")
 
 
@@ -44,9 +46,14 @@ class FoodItem(Base):
     serving_quantity = Column(Float)
     serving_unit = Column(String)
     nutritional_values = relationship(
-        "NutritionalValues", back_populates="food_item", uselist=False
+        "NutritionalValues",
+        back_populates="food_item",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
-    meal_id = Column(UUID(as_uuid=True), ForeignKey("meals.id"))
+    meal_id = Column(
+        UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE")
+    )
     meal = relationship("Meal", back_populates="items")
 
 
@@ -61,7 +68,9 @@ class TotalNutritionalValue(Base):
     carbohydrates = Column(String)
     fats = Column(String)
     fiber = Column(String)
-    meal_id = Column(UUID(as_uuid=True), ForeignKey("meals.id"))
+    meal_id = Column(
+        UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE")
+    )
     meal = relationship("Meal", back_populates="total_nutritional_value")
 
 
@@ -73,9 +82,14 @@ class Meal(Base):
     )
     type = Column(String)
     time = Column(DateTime)
-    items = relationship("FoodItem", back_populates="meal")
+    items = relationship(
+        "FoodItem", back_populates="meal", cascade="all, delete-orphan"
+    )
     total_nutritional_value = relationship(
-        "TotalNutritionalValue", back_populates="meal", uselist=False
+        "TotalNutritionalValue",
+        back_populates="meal",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
     image_url = Column(Text)
     description = Column(String, nullable=True)
@@ -88,5 +102,7 @@ class Meal(Base):
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE")
+    )
     user = relationship("User", back_populates="meals")
