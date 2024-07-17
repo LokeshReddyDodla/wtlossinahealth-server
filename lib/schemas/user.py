@@ -15,8 +15,8 @@ class UserBase(BaseModel):
     weight: float
     email: str
     phone_number: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
 
 class UserCreate(UserBase):
