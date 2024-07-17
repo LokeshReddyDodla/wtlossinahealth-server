@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from sqlalchemy import asc, desc
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,8 @@ async def get_meals_api(
     to_time: Optional[datetime] = Query(None),
     source: Optional[str] = Query(None),
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
+    order_by: Optional[str] = Query("time"),  # Default ordering by time
+    order: Optional[str] = Query("desc"),  # Default order descending
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -56,6 +59,18 @@ async def get_meals_api(
                 query = query.filter(Meal.analyzed == True)
             elif analyzed == "false":
                 query = query.filter(Meal.analyzed == False)
+
+            # Add ordering
+            if order_by == "time":
+                if order == "asc":
+                    query = query.order_by(asc(Meal.time))
+                else:
+                    query = query.order_by(desc(Meal.time))
+            elif order_by == "created_at":
+                if order == "asc":
+                    query = query.order_by(asc(Meal.uploaded_at))
+                else:
+                    query = query.order_by(desc(Meal.uploaded_at))
 
             result = await session.execute(query)
             meals = result.scalars().all()
