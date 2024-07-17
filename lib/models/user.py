@@ -57,8 +57,8 @@ class User(Base):
     food_allergies = relationship(
         "FoodAllergy", back_populates="user", cascade="all, delete-orphan"
     )
-    medicine_allergies = relationship(
-        "MedicineAllergy", back_populates="user", cascade="all, delete-orphan"
+    drug_allergies = relationship(
+        "DrugAllergy", back_populates="user", cascade="all, delete-orphan"
     )
     diet_preferences = relationship(
         "DietPreference", back_populates="user", cascade="all, delete-orphan"
@@ -137,15 +137,15 @@ class FoodAllergy(Base):
     user = relationship("User", back_populates="food_allergies")
 
 
-class MedicineAllergy(Base):
-    __tablename__ = "medicine_allergies"
+class DrugAllergy(Base):
+    __tablename__ = "drug_allergies"
 
     allergy_id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     allergy_name = Column(String(100))
-    user = relationship("User", back_populates="medicine_allergies")
+    user = relationship("User", back_populates="drug_allergies")
 
 
 class DietPreference(Base):
@@ -244,7 +244,6 @@ class FamilyDiabeticHistory(Base):
     )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     family_member = Column(String(50))
-    duration = Column(String(50), nullable=True)
     user = relationship("User", back_populates="family_diabetic_history")
 
 

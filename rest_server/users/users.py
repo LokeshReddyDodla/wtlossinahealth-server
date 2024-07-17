@@ -10,7 +10,7 @@ from lib.models.user import (
     FoodAllergy,
     MealTiming,
     MedicalHistory,
-    MedicineAllergy,
+    DrugAllergy,
     SleepSummary,
     SmokingHabit,
     User,
@@ -58,7 +58,7 @@ async def get_user_details(
                 .options(
                     selectinload(User.daily_activities),
                     selectinload(User.food_allergies),
-                    selectinload(User.medicine_allergies),
+                    selectinload(User.drug_allergies),
                     selectinload(User.diet_preferences),
                     selectinload(User.alcohol_consumption),
                     selectinload(User.smoking_habits),
@@ -283,7 +283,7 @@ async def upsert_user_medical_history(
     request: Request,
     diabetic_history: DiabeticHistoryCreate,
     current_medication: CurrentMedicationCreate,
-    medicine_allergies: Optional[List[MedicineAllergyCreate]] = None,
+    drug_allergies: Optional[List[MedicineAllergyCreate]] = None,
     family_diabetic_history: Optional[
         List[FamilyDiabeticHistoryCreate]
     ] = None,
@@ -299,7 +299,7 @@ async def upsert_user_medical_history(
                 options=[
                     selectinload(User.diabetic_history),
                     selectinload(User.current_medication),
-                    selectinload(User.medicine_allergies),
+                    selectinload(User.drug_allergies),
                     selectinload(User.family_diabetic_history),
                     selectinload(User.medical_history),
                 ],
@@ -326,9 +326,9 @@ async def upsert_user_medical_history(
                 )
 
             # Handling lists of related objects
-            user.medicine_allergies = [
-                MedicineAllergy(**allergy.dict(), user_id=user_id)
-                for allergy in (medicine_allergies or [])
+            user.drug_allergies = [
+                DrugAllergy(**allergy.dict(), user_id=user_id)
+                for allergy in (drug_allergies or [])
             ]
             user.family_diabetic_history = [
                 FamilyDiabeticHistory(**history.dict(), user_id=user_id)

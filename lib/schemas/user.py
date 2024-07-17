@@ -84,7 +84,7 @@ class MedicineAllergyCreate(MedicineAllergyBase):
     pass
 
 
-class MedicineAllergy(MedicineAllergyBase):
+class DrugAllergy(MedicineAllergyBase):
     allergy_id: UUID
     user_id: UUID
 
@@ -217,7 +217,6 @@ class DiabeticHistory(DiabeticHistoryBase):
 
 class FamilyDiabeticHistoryBase(BaseModel):
     family_member: str
-    duration: Optional[str] = None
 
 
 class FamilyDiabeticHistoryCreate(FamilyDiabeticHistoryBase):
@@ -288,7 +287,7 @@ class UserDetail(UserBase):
     user_id: UUID
     daily_activities: List[DailyActivity] = []
     food_allergies: List[FoodAllergy] = []
-    medicine_allergies: List[MedicineAllergy] = []
+    drug_allergies: List[DrugAllergy] = []
     diet_preferences: List[DietPreference] = []
     alcohol_consumption: Optional[AlcoholConsumption] = None
     smoking_habits: Optional[SmokingHabit] = None
