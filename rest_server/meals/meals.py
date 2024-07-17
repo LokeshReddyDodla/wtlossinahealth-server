@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime, timezone
 import uuid
 
@@ -121,6 +121,43 @@ async def meal_upload_api(
             await session.rollback()
             response = ErrorResponse(message="Database Error", detail=str(e))
             raise HTTPException(status_code=500, detail=response.dict())
+        except Exception as e:
+            await session.rollback()
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.delete(
+    path="/meals/{meal_id}", tags=["Meal"], response_model=SuccessResponse
+)
+async def delete_meal_api(
+    request: Request,
+    meal_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+) -> Union[SuccessResponse, HTTPException]:
+    """
+    Delete Meal API
+    """
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            meal = await session.get(Meal, meal_id)
+            if not meal:
+                raise HTTPException(status_code=404, detail="Meal not found")
+
+            if meal.user_id != current_user.user_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Not authorized to delete this meal",
+                )
+
+            await session.delete(meal)
+            await session.commit()
+
+            return SuccessResponse(message="Meal deleted successfully.")
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(
