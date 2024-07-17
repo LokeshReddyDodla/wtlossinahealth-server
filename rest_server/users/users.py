@@ -360,3 +360,31 @@ async def upsert_user_medical_history(
             message="Internal Server Error", detail=str(e)
         )
         raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.delete(path="/delete", tags=["User"], response_model=SuccessResponse)
+async def delete_user_api(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> Union[SuccessResponse, HTTPException]:
+    """
+    Delete User API
+    """
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            user = await session.get(User, current_user.user_id)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            await session.delete(user)
+            await session.commit()
+
+            return SuccessResponse(message="User deleted successfully.")
+        except HTTPException as http_exc:
+            raise http_exc
+        except Exception as e:
+            await session.rollback()
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
