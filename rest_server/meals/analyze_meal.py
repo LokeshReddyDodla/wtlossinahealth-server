@@ -137,7 +137,8 @@ async def analyze_meal_api(
             await session.rollback()
             response = ErrorResponse(message="Invalid JSON", detail=str(e))
             raise HTTPException(status_code=400, detail=response.dict())
-
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(

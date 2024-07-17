@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from lib.models.user import (
     AlcoholConsumption,
     CuisinePreference,
@@ -48,7 +49,7 @@ router = APIRouter(prefix="/user")
 @router.get(path="/profile", tags=["User"], response_model=SuccessResponse)
 async def get_user_details(
     request: Request, current_user: User = Depends(get_current_user)
-):
+) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
             result = await session.execute(
@@ -80,11 +81,14 @@ async def get_user_details(
             return SuccessResponse(
                 message="User data fetched successfully.", data=user_detail
             )
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
             raise HTTPException(status_code=500, detail=response.dict())
+
 
 @router.post(path="/basic", tags=["User"], response_model=SuccessResponse)
 async def create_basic_user(
@@ -95,7 +99,12 @@ async def create_basic_user(
         try:
             # Check if the user already exists
             existing_user = await session.execute(
-                select(User).filter(User.email == user_data.email)
+                select(User).filter(
+                    or_(
+                        User.email == user_data.email,
+                        User.phone_number == user_data.phone_number,
+                    )
+                )
             )
             existing_user = existing_user.scalar_one_or_none()
 
@@ -111,12 +120,14 @@ async def create_basic_user(
             return SuccessResponse(
                 message="User basic data created successfully.", data=new_user
             )
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
-            raise HTTPException(status_code=400, detail=response.dict())
+            raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.put(
@@ -133,14 +144,17 @@ async def update_basic_user(
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
-            for key, value in user_data.dict().items():
-                setattr(user, key, value)
+            for key, value in user_data.dict(exclude_unset=True).items():
+                if key not in ["created_at", "updated_at"]:
+                    setattr(user, key, value)
 
             await session.commit()
             await session.refresh(user)
             return SuccessResponse(
                 message="User basic data updated successfully.", data=user
             )
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(
@@ -249,6 +263,14 @@ async def upsert_user_lifestyle(
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
+        raise HTTPException(status_code=400, detail=response.dict())
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        await session.rollback()
+        response = ErrorResponse(
+            message="Internal Server Error", detail=str(e)
+        )
         raise HTTPException(status_code=500, detail=response.dict())
 
 
@@ -325,6 +347,14 @@ async def upsert_user_medical_history(
                 data=user,
             )
     except SQLAlchemyError as e:
+        await session.rollback()
+        response = ErrorResponse(
+            message="Internal Server Error", detail=str(e)
+        )
+        raise HTTPException(status_code=500, detail=response.dict())
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
         await session.rollback()
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
