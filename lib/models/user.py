@@ -48,6 +48,7 @@ class User(Base):
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
+    locale = Column(String(50), nullable=True)
 
     # Relationships
     daily_activities = relationship("DailyActivity", back_populates="user")

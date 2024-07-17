@@ -17,6 +17,7 @@ class UserBase(BaseModel):
     phone_number: str
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    locale: Optional[str] = None
 
 
 class UserCreate(UserBase):
