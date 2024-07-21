@@ -9,6 +9,8 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-postgres
+      - aihealth-mongo
+      - aihealth-clickhouse
     restart: no
     ports:
       - 8000:8000
@@ -89,6 +91,16 @@ services:
       - ./deployment/volumes/influxdb:/var/lib/influxdb2
       - ./deployment/volumes/influxdb_config:/etc/influxdb2
 
+  aihealth-clickhouse:
+    container_name: aihealth-clickhouse
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    ports:
+      - 8123:8123 # HTTP interface
+      - 9000:9000 # Native client
+    volumes:
+      - ./deployment/volumes/clickhouse:/var/lib/clickhouse
+
   aihealth-nginx:
     container_name: aihealth-nginx
     build:
@@ -133,19 +145,6 @@ services:
     volumes:
       - ./config.js:/node_modules/mongo-express/config.default.js
 
-  chronograf:
-    image: chronograf:latest
-    container_name: chronograf
-    restart: no
-    ports:
-      - "8888:8888"
-    environment:
-      - INFLUXDB_URL=${INFLUXDB_URL}
-    volumes:
-      - ./deployment/volumes/chronograf:/var/lib/chronograf
-    depends_on:
-      - aihealth-influxdb
-
 volumes:
   redis:
   postgres:
@@ -153,7 +152,6 @@ volumes:
   influxdb:
   redisinsight:
   mongoku:
-  chronograf:
 
 
 networks:
