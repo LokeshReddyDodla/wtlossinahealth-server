@@ -16,18 +16,18 @@ async def create_context(request: Request, call_next):
 
     # Create context
     server_context = Context(
-        logger=request.app.logger,
+        logger=request.app.state.logger,
         request_id=request_id,
-        cache_store=request.app.cache_store,
-        secret_store=request.app.secret_store,
-        session_store=request.app.session_store,
-        otp_store=request.app.otp_store,
-        config_store=request.app.config_store,
-        rate_limit_store=request.app.rate_limit_store,
-        address_mapping_store=request.app.address_mapping_store,
-        postgres_store=request.app.postgres_store,
-        mongo_store=request.app.mongo_store,
-        influx_store=request.app.influx_store,
+        cache_store=request.app.state.cache_store,
+        secret_store=request.app.state.secret_store,
+        session_store=request.app.state.session_store,
+        otp_store=request.app.state.otp_store,
+        config_store=request.app.state.config_store,
+        rate_limit_store=request.app.state.rate_limit_store,
+        address_mapping_store=request.app.state.address_mapping_store,
+        postgres_store=request.app.state.postgres_store,
+        mongo_store=request.app.state.mongo_store,
+        clickhouse_store=request.app.state.clickhouse_store,
     )
 
     # Bind vars to structlog logger

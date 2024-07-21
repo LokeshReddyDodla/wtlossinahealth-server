@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import asyncpg
-from lib.core.influx_store import InfluxStore
+from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
 import structlog
 
@@ -32,4 +32,4 @@ class Context:
     address_mapping_store: CacheStore
     postgres_store: asyncpg.pool.Pool
     mongo_store: MongoStore
-    influx_store: InfluxStore
+    clickhouse_store: ClickHouseStore
