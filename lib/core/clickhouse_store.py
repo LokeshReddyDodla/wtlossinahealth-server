@@ -1,0 +1,55 @@
+from clickhouse_driver import Client
+from decouple import config
+
+# Read ClickHouse URL and credentials from env
+CLICKHOUSE_HOST = config("CLICKHOUSE_HOST", default="localhost")
+CLICKHOUSE_PORT = config("CLICKHOUSE_PORT", default="9000")
+
+
+class ClickHouseStore:
+    def __init__(self):
+        self.client = Client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT)
+
+    def create_cgm_data_table(self):
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS aihealth.cgm_data (
+            patient_id String,
+            time DateTime,
+            glucose_level Float32
+        ) ENGINE = MergeTree()
+        ORDER BY time;
+        """
+        self.client.execute(create_table_query)
+
+    def create_all_tables(self):
+        self.create_cgm_data_table()
+
+    def write_data(self, table_name, data):
+        if not data:
+            return
+        columns = ", ".join(data[0].keys())
+        values = ", ".join(
+            f"({', '.join(map(repr, record.values()))})" for record in data
+        )
+        query = f"INSERT INTO {table_name} ({columns}) VALUES {values}"
+        self.client.execute(query)
+
+    def query_data(self, query):
+        try:
+            result = self.client.execute(query)
+            return result
+        except Exception as e:
+            print(f"Error executing query: {e}")
+            return []
+
+    def delete_data(self, table_name, condition):
+        query = f"ALTER TABLE {table_name} DELETE WHERE {condition}"
+        self.client.execute(query)
+
+    def clear_all_data(self, table_name):
+        query = f"TRUNCATE TABLE {table_name}"
+        self.client.execute(query)
+
+
+def get_clickhouse_store() -> ClickHouseStore:
+    return ClickHouseStore()
