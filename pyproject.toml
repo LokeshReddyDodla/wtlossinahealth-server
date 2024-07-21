@@ -33,6 +33,7 @@ psycopg2-binary = "^2.9.9"
 uuid = "^1.30"
 python-multipart = "^0.0.9"
 pandas = "^2.2.2"
+clickhouse-driver = "^0.2.8"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
