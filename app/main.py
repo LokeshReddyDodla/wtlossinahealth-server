@@ -81,4 +81,4 @@ async def shutdown_event() -> None:
     """
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
-    app.state.influx_store.client.close()
+    app.state.clickhouse_store.client.close()

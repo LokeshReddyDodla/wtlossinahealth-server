@@ -18,7 +18,7 @@ class Context:
     :param postgres_store: Datastore connector instance
     :param ds_connection: Datastore connection instance
     :param mongo_store: MongoDB connector instance
-    :param influx_store: InfluxDB connector instance
+    :param clickhouse_store: ClickHouseDB connector instance
     """
 
     logger: structlog.stdlib.AsyncBoundLogger

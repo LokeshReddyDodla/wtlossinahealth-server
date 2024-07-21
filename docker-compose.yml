@@ -29,11 +29,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
-      - INFLUXDB_URL=${INFLUXDB_URL}
-      - INFLUXDB_USER=${INFLUXDB_USER}
-      - INFLUXDB_PASSWORD=${INFLUXDB_PASSWORD}
-      - INFLUXDB_ORG=${INFLUXDB_ORG}
-      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+
     volumes:
       - ./logs:/src/logs
       - .:/src
@@ -74,22 +70,6 @@ services:
       - 27017:27017
     volumes:
       - ./deployment/volumes/mongo:/data/db
-
-  aihealth-influxdb:
-    container_name: aihealth-influxdb
-    image: influxdb:latest
-    restart: no
-    environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USER}
-      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}
-      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
-      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
-    ports:
-      - 8086:8086
-    volumes:
-      - ./deployment/volumes/influxdb:/var/lib/influxdb2
-      - ./deployment/volumes/influxdb_config:/etc/influxdb2
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
@@ -145,11 +125,22 @@ services:
     volumes:
       - ./config.js:/node_modules/mongo-express/config.default.js
 
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: cloudbeaver
+    restart: unless-stopped
+    ports:
+      - "8084:8978"
+    environment:
+      - CB_ADMIN_NAME=cbadmin
+      - CB_ADMIN_PASSWORD=Vostro@1540
+    volumes:
+      - /var/cloudbeaver/workspace:/opt/cloudbeaver/workspace
+
 volumes:
   redis:
   postgres:
   mongo:
-  influxdb:
   redisinsight:
   mongoku:
 
