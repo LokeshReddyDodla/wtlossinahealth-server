@@ -11,7 +11,6 @@ from fastapi import (
 from typing import Union
 from datetime import datetime
 
-from influxdb_client import Point
 import pandas as pd
 
 from lib.dependencies.auth.patient_auth import get_current_patient
@@ -29,7 +28,7 @@ async def upload_cgm_data(
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[SuccessResponse, HTTPException]:
     try:
-        influx_store = request.state.context.influx_store
+        clickhouse_store = request.state.context.clickhouse_store
 
         # Read and parse the CSV file
         contents = await file.read()
@@ -46,34 +45,22 @@ async def upload_cgm_data(
             df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
         )
 
-        # Prepare data for InfluxDB
+        # Prepare data for ClickHouseDB
         data_points = []
         uploaded_at = datetime.now().isoformat()
         for _, row in df.iterrows():
-            point = (
-                Point("cgm_data")
-                .tag("patient_id", current_patient.patient_id)
-                .tag("uploaded_at", uploaded_at)
-                .time(row["Device Timestamp"].strftime("%Y-%m-%dT%H:%M:%S"))
-                .field("scan_glucose_mg_dl", int(row["Scan Glucose mg/dL"]))
+            data_points.append(
+                {
+                    "patient_id": str(current_patient.patient_id),
+                    "time": row["Device Timestamp"].strftime(
+                        "%Y-%m-%dT%H:%M:%S"
+                    ),
+                    "glucose_level": int(row["Scan Glucose mg/dL"]),
+                }
             )
-            data_points.append(point)
 
-        # Optionally delete existing data within the time range
-        start_time = (
-            df["Device Timestamp"].min().strftime("%Y-%m-%dT%H:%M:%SZ")
-        )
-        end_time = df["Device Timestamp"].max().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        influx_store.delete_data(
-            measurement="cgm_data",
-            start_time=start_time,
-            end_time=end_time,
-            tags={"patient_id": current_patient.patient_id},
-        )
-
-        # Write data to InfluxDB
-        influx_store.write_data(data_points)
+        # Insert data into ClickHouse
+        clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
         return SuccessResponse(
             message="CGM data uploaded and stored successfully."
@@ -86,15 +73,15 @@ async def upload_cgm_data(
         raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.delete("/clear/{measurement}", tags=["CGM"])
+@router.delete("/clear/{table_name}", tags=["CGM"])
 async def clear_all_data(
-    measurement: str, request: Request
+    table_name: str, request: Request
 ) -> Union[dict, HTTPException]:
     try:
-        influx_store = request.state.context.influx_store
-        influx_store.clear_all_data(measurement)
+        clickhouse_store = request.state.context.clickhouse_store
+        clickhouse_store.clear_all_data(table_name)
         return {
-            "message": f"All data for measurement '{measurement}' cleared successfully."
+            "message": f"All data for table '{table_name}' cleared successfully."
         }
     except Exception as e:
         response = {"message": "Internal Server Error", "detail": str(e)}
