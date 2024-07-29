@@ -37,9 +37,6 @@ async def upload_cgm_data(
         # Skip metadata rows and set correct headers
         df = pd.read_csv(StringIO(decoded), skiprows=2)
 
-        # Filter out rows where "Scan Glucose mg/dL" is empty
-        df = df[df["Scan Glucose mg/dL"].notna()]
-
         # Convert timestamps to the correct format without changing the timezone
         df["Device Timestamp"] = pd.to_datetime(
             df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
@@ -49,13 +46,23 @@ async def upload_cgm_data(
         data_points = []
         uploaded_at = datetime.now().isoformat()
         for _, row in df.iterrows():
+            if pd.notna(row["Scan Glucose mg/dL"]):
+                record_type = "scan"
+                glucose_level = int(row["Scan Glucose mg/dL"])
+            elif pd.notna(row["Historic Glucose mg/dL"]):
+                record_type = "historic"
+                glucose_level = int(row["Historic Glucose mg/dL"])
+            else:
+                continue
+
             data_points.append(
                 {
                     "patient_id": str(current_patient.patient_id),
                     "time": row["Device Timestamp"].strftime(
                         "%Y-%m-%dT%H:%M:%S"
                     ),
-                    "glucose_level": int(row["Scan Glucose mg/dL"]),
+                    "glucose_level": glucose_level,
+                    "record_type": record_type,
                 }
             )
 
