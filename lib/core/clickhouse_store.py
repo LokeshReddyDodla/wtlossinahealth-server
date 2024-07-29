@@ -15,9 +15,10 @@ class ClickHouseStore:
         CREATE TABLE IF NOT EXISTS aihealth.cgm_data (
             patient_id String,
             time DateTime,
-            glucose_level Float32
+            glucose_level Float32,
+            record_type String
         ) ENGINE = MergeTree()
-        ORDER BY time;
+        ORDER BY (patient_id, time);
         """
         self.client.execute(create_table_query)
 
