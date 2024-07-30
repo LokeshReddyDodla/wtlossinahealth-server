@@ -1,7 +1,7 @@
 from typing import Any, Dict
 import pandas as pd
 
-from rest_server.cgm.api_schema import (
+from lib.schemas.glucose import (
     GlucoseRangeStats,
     GlucoseSummaryStats,
     HyperEvent,
