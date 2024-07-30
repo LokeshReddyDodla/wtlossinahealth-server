@@ -4,11 +4,14 @@ from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from sqlalchemy import select
 
+from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
+from lib.schemas.patient import PatientDetail
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 from lib.utils.date_utils import split_into_days, split_into_weeks
 from lib.utils.glucose.events import HyperStatsFetcher, HypoStatsFetcher
@@ -199,6 +202,35 @@ async def get_detailed_glucose_report(
 
         processor = PeriodicStatsProcessor(clickhouse_store, patient_id)
 
+        # Fetch patient details
+        async with request.state.context.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(Patient)
+                .where(Patient.patient_id == current_patient.patient_id)
+                .options(
+                    selectinload(Patient.daily_activities),
+                    selectinload(Patient.food_allergies),
+                    selectinload(Patient.drug_allergies),
+                    selectinload(Patient.diet_preferences),
+                    selectinload(Patient.alcohol_consumption),
+                    selectinload(Patient.smoking_habits),
+                    selectinload(Patient.meal_timings),
+                    selectinload(Patient.cuisine_preferences),
+                    selectinload(Patient.sleep_summary),
+                    selectinload(Patient.diabetic_history),
+                    selectinload(Patient.family_diabetic_history),
+                    selectinload(Patient.medical_history),
+                    selectinload(Patient.current_medication),
+                )
+            )
+            patient = result.scalars().first()
+            if not patient:
+                raise HTTPException(
+                    status_code=404, detail="Patient not found"
+                )
+
+            patient_detail = PatientDetail.from_orm(patient)
+
         # Overall Stats
         overall_period = OverallPeriod(from_date, to_date)
         overall_stats = processor.process(overall_period.periods)
@@ -216,16 +248,16 @@ async def get_detailed_glucose_report(
         )
 
         return {
-            "patient_id": patient_id,
+            "patient_detail": patient_detail,
             "overall_stats": overall_stats,
             "day_wise_stats": day_wise_stats,
             "week_wise_stats": week_wise_stats,
         }
 
     except Exception as e:
-        response = {"message": "Internal Server Error", "detail": str(e)}
         error_message = f"Exception occurred: {str(e)}"
         traceback_message = traceback.format_exc()
         print("🚀 ~ error_message:", error_message)
         print("🚀 ~ traceback_message:", traceback_message)
+        response = {"message": "Internal Server Error", "detail": str(e)}
         raise HTTPException(status_code=500, detail=response)
