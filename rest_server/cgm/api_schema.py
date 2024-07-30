@@ -55,6 +55,7 @@ class HypoStats(BaseModel):
 
 class GlucoseLevelStats(BaseModel):
     glucose_readings: Optional[Any] = None
+    meals: Optional[Any] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]

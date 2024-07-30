@@ -1,11 +1,16 @@
 from datetime import datetime
 from typing import Any, Dict, List
 import pandas as pd
+from sqlalchemy import select
+from lib.models.meal import FoodItem, Meal
+from lib.models.patient import Patient
+from lib.schemas.patient import PatientDetail
 from lib.utils.glucose.events import (
     HyperStatsFetcher,
     HypoStatsFetcher,
     execute_query,
 )
+from sqlalchemy.orm import selectinload
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from rest_server.cgm.api_schema import (
@@ -18,8 +23,9 @@ from rest_server.cgm.api_schema import (
 
 
 class PeriodicStatsProcessor:
-    def __init__(self, clickhouse_store, patient_id):
+    def __init__(self, clickhouse_store, postgres_session, patient_id):
         self.clickhouse_store = clickhouse_store
+        self.postgres_session = postgres_session
         self.patient_id = patient_id
 
     def fetch_glucose_readings_by_date(
@@ -73,14 +79,58 @@ class PeriodicStatsProcessor:
         ]
         return grouped
 
-    def process(
+    async def fetch_meals(self, from_date, to_date):
+        query = (
+            select(Meal)
+            .where(Meal.patient_id == self.patient_id)
+            .filter(Meal.time >= from_date)
+            .filter(Meal.time <= to_date)
+            .options(
+                selectinload(Meal.items).selectinload(
+                    FoodItem.nutritional_values
+                ),
+                selectinload(Meal.total_nutritional_value),
+            )
+        )
+        result = await self.postgres_session.execute(query)
+        meals = result.scalars().all()
+        return meals
+
+    async def fetch_profile(self) -> PatientDetail:
+        query = (
+            select(Patient)
+            .where(Patient.patient_id == self.patient_id)
+            .options(
+                selectinload(Patient.daily_activities),
+                selectinload(Patient.food_allergies),
+                selectinload(Patient.drug_allergies),
+                selectinload(Patient.diet_preferences),
+                selectinload(Patient.alcohol_consumption),
+                selectinload(Patient.smoking_habits),
+                selectinload(Patient.meal_timings),
+                selectinload(Patient.cuisine_preferences),
+                selectinload(Patient.sleep_summary),
+                selectinload(Patient.diabetic_history),
+                selectinload(Patient.family_diabetic_history),
+                selectinload(Patient.medical_history),
+                selectinload(Patient.current_medication),
+            )
+        )
+        result = await self.postgres_session.execute(query)
+        patient = result.scalars().first()
+        patient_detail = PatientDetail.from_orm(patient)
+        return patient_detail
+
+    async def process(
         self, periods: List[Dict[str, datetime]], include_readings=False
     ):
         stats = {}
 
         for period in periods:
-            from_date_str = period["from_date"].strftime("%Y-%m-%dT%H:%M:%S")
-            to_date_str = period["to_date"].strftime("%Y-%m-%dT%H:%M:%S")
+            from_date = period["from_date"]
+            to_date = period["to_date"]
+            from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
+            to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
             glucose_summary = GlucoseSummaryStatsFetcher.fetch(
                 self.clickhouse_store,
@@ -140,6 +190,7 @@ class PeriodicStatsProcessor:
             )
 
             glucose_readings = None
+            meals = None
 
             if "date" in period:
                 period_key = period["date"]
@@ -147,6 +198,7 @@ class PeriodicStatsProcessor:
                     glucose_readings = self.fetch_glucose_readings_by_date(
                         from_date_str, to_date_str
                     )
+                    meals = await self.fetch_meals(from_date, to_date)
             elif "week_no" in period:
                 period_key = f"Week {period['week_no']}"
                 if include_readings:
@@ -158,6 +210,7 @@ class PeriodicStatsProcessor:
 
             stats[period_key] = GlucoseLevelStats(
                 glucose_readings=glucose_readings,
+                meals=meals,
                 glucose_summary_stats=glucose_summary_stats,
                 glucose_range_stats=glucose_range_stats,
                 hyper_stats=hyper_stats,

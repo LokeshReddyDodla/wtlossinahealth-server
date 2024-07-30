@@ -200,59 +200,37 @@ async def get_detailed_glucose_report(
 
         patient_id = str(current_patient.patient_id)
 
-        processor = PeriodicStatsProcessor(clickhouse_store, patient_id)
-
         # Fetch patient details
         async with request.state.context.postgres_store.get_session() as session:
-            result = await session.execute(
-                select(Patient)
-                .where(Patient.patient_id == current_patient.patient_id)
-                .options(
-                    selectinload(Patient.daily_activities),
-                    selectinload(Patient.food_allergies),
-                    selectinload(Patient.drug_allergies),
-                    selectinload(Patient.diet_preferences),
-                    selectinload(Patient.alcohol_consumption),
-                    selectinload(Patient.smoking_habits),
-                    selectinload(Patient.meal_timings),
-                    selectinload(Patient.cuisine_preferences),
-                    selectinload(Patient.sleep_summary),
-                    selectinload(Patient.diabetic_history),
-                    selectinload(Patient.family_diabetic_history),
-                    selectinload(Patient.medical_history),
-                    selectinload(Patient.current_medication),
-                )
+            processor = PeriodicStatsProcessor(
+                clickhouse_store, session, patient_id
             )
-            patient = result.scalars().first()
-            if not patient:
-                raise HTTPException(
-                    status_code=404, detail="Patient not found"
-                )
 
-            patient_detail = PatientDetail.from_orm(patient)
+            # Fetch patient details
+            patient_detail = await processor.fetch_profile()
 
-        # Overall Stats
-        overall_period = OverallPeriod(from_date, to_date)
-        overall_stats = processor.process(overall_period.periods)
+            # Overall Stats
+            overall_period = OverallPeriod(from_date, to_date)
+            overall_stats = await processor.process(overall_period.periods)
 
-        # Day-wise Stats
-        day_periods = DayWisePeriod(from_date, to_date)
-        day_wise_stats = processor.process(
-            day_periods.periods, include_readings=True
-        )
+            # Day-wise Stats
+            day_periods = DayWisePeriod(from_date, to_date)
+            day_wise_stats = await processor.process(
+                day_periods.periods, include_readings=True
+            )
 
-        # Week-wise Stats
-        week_periods = WeekWisePeriod(from_date, to_date)
-        week_wise_stats = processor.process(
-            week_periods.periods, include_readings=True
-        )
+            # Week-wise Stats
+            week_periods = WeekWisePeriod(from_date, to_date)
+            week_wise_stats = await processor.process(
+                week_periods.periods, include_readings=True
+            )
 
-        return {
-            "patient_detail": patient_detail,
-            "overall_stats": overall_stats,
-            "day_wise_stats": day_wise_stats,
-            "week_wise_stats": week_wise_stats,
-        }
+            return {
+                "patient_detail": patient_detail,
+                "overall_stats": overall_stats,
+                "day_wise_stats": day_wise_stats,
+                "week_wise_stats": week_wise_stats,
+            }
 
     except Exception as e:
         error_message = f"Exception occurred: {str(e)}"
