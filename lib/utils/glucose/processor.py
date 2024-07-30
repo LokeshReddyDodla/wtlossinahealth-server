@@ -22,38 +22,34 @@ class PeriodicStatsProcessor:
         self.clickhouse_store = clickhouse_store
         self.patient_id = patient_id
 
-    def fetch_glucose_readings_grouped_by_date(
+    def fetch_glucose_readings_by_date(
         self, from_date_str: str, to_date_str: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> List[Dict[str, Any]]:
         query = f"""
         SELECT
-            toDate(time) AS date,
-            groupArray((time, glucose_level)) AS readings
+            time AS Device_Timestamp,
+            glucose_level AS Glucose_Level
         FROM
             aihealth.cgm_data
         WHERE
             patient_id = '{self.patient_id}'
             AND time >= '{from_date_str}'
             AND time <= '{to_date_str}'
-        GROUP BY date
-        ORDER BY date
+        ORDER BY time
         """
         data = self.clickhouse_store.client.execute(query)
         if not data:
-            return {}
+            return []
 
-        grouped = {
-            row[0]: [
-                {"Device_Timestamp": ts, "Glucose_Level": lvl}
-                for ts, lvl in row[1]
-            ]
+        readings = [
+            {"Device_Timestamp": row[0], "Glucose_Level": row[1]}
             for row in data
-        }
-        return grouped
+        ]
+        return readings
 
     def fetch_avg_glucose_readings_by_hour(
         self, from_date_str: str, to_date_str: str
-    ) -> Dict[str, float]:
+    ) -> List[Dict[str, Any]]:
         query = f"""
         SELECT
             formatDateTime(time, '%H:00') AS hour,
@@ -69,9 +65,12 @@ class PeriodicStatsProcessor:
         """
         data = self.clickhouse_store.client.execute(query)
         if not data:
-            return {}
+            return []
 
-        grouped = {row[0]: row[1] for row in data}
+        grouped = [
+            {"Device_Timestamp": row[0], "Glucose_Level": row[1]}
+            for row in data
+        ]
         return grouped
 
     def process(
@@ -145,10 +144,8 @@ class PeriodicStatsProcessor:
             if "date" in period:
                 period_key = period["date"]
                 if include_readings:
-                    glucose_readings = (
-                        self.fetch_glucose_readings_grouped_by_date(
-                            from_date_str, to_date_str
-                        )
+                    glucose_readings = self.fetch_glucose_readings_by_date(
+                        from_date_str, to_date_str
                     )
             elif "week_no" in period:
                 period_key = f"Week {period['week_no']}"
