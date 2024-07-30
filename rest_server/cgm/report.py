@@ -11,6 +11,13 @@ from sqlalchemy.orm import selectinload
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
+from lib.schemas.glucose import (
+    GlucoseLevelStats,
+    GlucoseRangeStats,
+    GlucoseSummaryStats,
+    HyperStats,
+    HypoStats,
+)
 from lib.schemas.patient import PatientDetail
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 from lib.utils.date_utils import split_into_days, split_into_weeks
@@ -27,11 +34,7 @@ from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.utils.glucose_events import calculate_glucose_events
 
 from rest_server.cgm.api_schema import (
-    GlucoseLevelStats,
-    GlucoseRangeStats,
-    GlucoseSummaryStats,
-    HyperStats,
-    HypoStats,
+    GlucoseReportResponse,
 )
 
 # Create FastAPI router
@@ -201,9 +204,9 @@ async def get_detailed_glucose_report(
         patient_id = str(current_patient.patient_id)
 
         # Fetch patient details
-        async with request.state.context.postgres_store.get_session() as session:
+        async with request.state.context.postgres_store.get_session() as postgres_session:
             processor = PeriodicStatsProcessor(
-                clickhouse_store, session, patient_id
+                clickhouse_store, postgres_session, patient_id
             )
 
             # Fetch patient details
@@ -225,12 +228,12 @@ async def get_detailed_glucose_report(
                 week_periods.periods, include_readings=True
             )
 
-            return {
-                "patient_detail": patient_detail,
-                "overall_stats": overall_stats,
-                "day_wise_stats": day_wise_stats,
-                "week_wise_stats": week_wise_stats,
-            }
+            return GlucoseReportResponse(
+                patient_detail=patient_detail,
+                overall_stats=overall_stats,
+                day_wise_stats=day_wise_stats,
+                week_wise_stats=week_wise_stats,
+            )
 
     except Exception as e:
         error_message = f"Exception occurred: {str(e)}"

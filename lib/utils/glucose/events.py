@@ -1,6 +1,6 @@
 from typing import Any, Dict
 import pandas as pd
-from rest_server.cgm.api_schema import HyperEvent, HypoEvent
+from lib.schemas.glucose import HyperEvent, HyperStats, HypoEvent, HypoStats
 
 
 def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
@@ -107,7 +107,9 @@ class HyperStatsFetcher(GlucoseEventsProcessor):
     def __init__(self):
         super().__init__(threshold=180)
 
-    def fetch(self, clickhouse_store, patient_id, from_date_str, to_date_str):
+    def fetch(
+        self, clickhouse_store, patient_id, from_date_str, to_date_str
+    ) -> HyperStats:
         query = f"""
         SELECT
             time AS Device_Timestamp,
@@ -122,21 +124,29 @@ class HyperStatsFetcher(GlucoseEventsProcessor):
         """
         df = execute_query(clickhouse_store, query)
         if df.empty:
-            return {
-                "total_hyper_duration": 0,
-                "average_hyper_duration": 0,
-                "hyper_events": [],
-                "hyper_events_count": 0,
-            }
+            return HyperStats(
+                total_hyper_duration=0,
+                average_hyper_duration=0,
+                hyper_events_count=0,
+                hyper_events=[],
+            )
 
-        return self.process_events(df, event_type="hyper")
+        processed_events = self.process_events(df, event_type="hyper")
+        return HyperStats(
+            total_hyper_duration=processed_events["total_hyper_duration"],
+            average_hyper_duration=processed_events["average_hyper_duration"],
+            hyper_events_count=processed_events["hyper_events_count"],
+            hyper_events=processed_events["hyper_events"],
+        )
 
 
 class HypoStatsFetcher(GlucoseEventsProcessor):
     def __init__(self):
         super().__init__(threshold=70)
 
-    def fetch(self, clickhouse_store, patient_id, from_date_str, to_date_str):
+    def fetch(
+        self, clickhouse_store, patient_id, from_date_str, to_date_str
+    ) -> HypoStats:
         query = f"""
         SELECT
             time AS Device_Timestamp,
@@ -151,11 +161,17 @@ class HypoStatsFetcher(GlucoseEventsProcessor):
         """
         df = execute_query(clickhouse_store, query)
         if df.empty:
-            return {
-                "total_hypo_duration": 0,
-                "average_hypo_duration": 0,
-                "hypo_events": [],
-                "hypo_events_count": 0,
-            }
+            return HypoStats(
+                total_hypo_duration=0,
+                average_hypo_duration=0,
+                hypo_events_count=0,
+                hypo_events=[],
+            )
 
-        return self.process_events(df, event_type="hypo")
+        processed_events = self.process_events(df, event_type="hypo")
+        return HypoStats(
+            total_hypo_duration=processed_events["total_hypo_duration"],
+            average_hypo_duration=processed_events["average_hypo_duration"],
+            hypo_events_count=processed_events["hypo_events_count"],
+            hypo_events=processed_events["hypo_events"],
+        )

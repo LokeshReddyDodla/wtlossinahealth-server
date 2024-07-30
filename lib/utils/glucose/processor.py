@@ -13,7 +13,7 @@ from lib.utils.glucose.events import (
 from sqlalchemy.orm import selectinload
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
-from rest_server.cgm.api_schema import (
+from lib.schemas.glucose import (
     GlucoseLevelStats,
     GlucoseRangeStats,
     GlucoseSummaryStats,
@@ -132,14 +132,14 @@ class PeriodicStatsProcessor:
             from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
             to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-            glucose_summary = GlucoseSummaryStatsFetcher.fetch(
+            glucose_summary_stats = GlucoseSummaryStatsFetcher.fetch(
                 self.clickhouse_store,
                 self.patient_id,
                 from_date_str,
                 to_date_str,
             )
 
-            glucose_range = GlucoseRangeStatsFetcher.fetch(
+            glucose_range_stats = GlucoseRangeStatsFetcher.fetch(
                 self.clickhouse_store,
                 self.patient_id,
                 from_date_str,
@@ -158,35 +158,6 @@ class PeriodicStatsProcessor:
                 self.patient_id,
                 from_date_str,
                 to_date_str,
-            )
-
-            glucose_range_stats = GlucoseRangeStats(
-                below_54=glucose_range["below_54"],
-                below_70_above_54=glucose_range["below_70_above_54"],
-                in_target_70_180=glucose_range["in_target_70_180"],
-                above_180_below_250=glucose_range["above_180_below_250"],
-                above_250=glucose_range["above_250"],
-            )
-
-            glucose_summary_stats = GlucoseSummaryStats(
-                average_glucose=glucose_summary["average_glucose"],
-                gmi=glucose_summary["gmi"],
-                gmi_mmol=glucose_summary["gmi_mmol"],
-                glucose_variability=glucose_summary["glucose_variability"],
-            )
-
-            hyper_stats = HyperStats(
-                total_hyper_duration=hyper_stats["total_hyper_duration"],
-                average_hyper_duration=hyper_stats["average_hyper_duration"],
-                hyper_events_count=hyper_stats["hyper_events_count"],
-                hyper_events=hyper_stats["hyper_events"],
-            )
-
-            hypo_stats = HypoStats(
-                total_hypo_duration=hypo_stats["total_hypo_duration"],
-                average_hypo_duration=hypo_stats["average_hypo_duration"],
-                hypo_events_count=hypo_stats["hypo_events_count"],
-                hypo_events=hypo_stats["hypo_events"],
             )
 
             glucose_readings = None
