@@ -1,7 +1,12 @@
 from typing import Any, Dict
 import pandas as pd
 
-from rest_server.cgm.api_schema import HyperEvent, HypoEvent
+from rest_server.cgm.api_schema import (
+    GlucoseRangeStats,
+    GlucoseSummaryStats,
+    HyperEvent,
+    HypoEvent,
+)
 
 
 def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
@@ -159,3 +164,50 @@ def calculate_glucose_events(
     hypo_events_metrics = process_hypo_events(df, threshold=hypo_threshold)
 
     return {**hyper_events_metrics, **hypo_events_metrics}
+
+
+def calculate_glucose_summary_stats(df: pd.DataFrame) -> GlucoseSummaryStats:
+    total_readings = len(df)
+    average_glucose = df["Glucose_Level"].mean()
+    glucose_stddev = df["Glucose_Level"].std()
+    gmi = 3.31 + 0.02392 * average_glucose
+    gmi_mmol = gmi * 10.93
+    glucose_variability = (
+        (glucose_stddev / average_glucose) * 100 if average_glucose else 0
+    )
+
+    return GlucoseSummaryStats(
+        average_glucose=average_glucose,
+        gmi=gmi,
+        gmi_mmol=gmi_mmol,
+        glucose_variability=glucose_variability,
+    )
+
+
+def calculate_glucose_range_stats(df: pd.DataFrame) -> GlucoseRangeStats:
+    total_readings = len(df)
+    below_54 = (df["Glucose_Level"] < 54).sum() / total_readings * 100
+    below_70_above_54 = (
+        ((df["Glucose_Level"] >= 54) & (df["Glucose_Level"] < 70)).sum()
+        / total_readings
+        * 100
+    )
+    in_target_70_180 = (
+        ((df["Glucose_Level"] >= 70) & (df["Glucose_Level"] <= 180)).sum()
+        / total_readings
+        * 100
+    )
+    above_180_below_250 = (
+        ((df["Glucose_Level"] > 180) & (df["Glucose_Level"] < 250)).sum()
+        / total_readings
+        * 100
+    )
+    above_250 = (df["Glucose_Level"] >= 250).sum() / total_readings * 100
+
+    return GlucoseRangeStats(
+        below_54=below_54,
+        below_70_above_54=below_70_above_54,
+        in_target_70_180=in_target_70_180,
+        above_180_below_250=above_180_below_250,
+        above_250=above_250,
+    )

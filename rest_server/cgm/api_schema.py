@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Any, List
+from typing import Any, List, Optional
 
 
 class CGMDataUpload(BaseModel):
@@ -43,20 +43,19 @@ class HyperStats(BaseModel):
     total_hyper_duration: float
     average_hyper_duration: float
     hyper_events_count: int
+    hyper_events: List[HyperEvent]
 
 
 class HypoStats(BaseModel):
     total_hypo_duration: float
     average_hypo_duration: float
     hypo_events_count: int
+    hypo_events: List[HypoEvent]
 
 
 class GlucoseLevelStats(BaseModel):
-    patient_id: str
-    total_readings: int
+    glucose_readings: Optional[Any] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
-    hyper_stats: HyperStats
-    hyper_events: List[HyperEvent]
-    hypo_stats: HypoStats
-    hypo_events: List[HypoEvent]
+    hyper_stats: Optional[HyperStats]
+    hypo_stats: Optional[HypoStats]

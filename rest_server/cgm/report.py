@@ -1,3 +1,4 @@
+import traceback
 from typing import Union
 from datetime import datetime, timedelta
 import uuid
@@ -8,11 +9,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
-from lib.utils.glucose_events import calculate_glucose_events
-from lib.utils.glucose_queries import (
+from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
+from lib.utils.date_utils import split_into_days, split_into_weeks
+from lib.utils.glucose.events import HyperStatsFetcher, HypoStatsFetcher
+from lib.utils.glucose.hyper import fetch_hyper_stats
+from lib.utils.glucose.hypo import fetch_hypo_stats
+from lib.utils.glucose.processor import PeriodicStatsProcessor
+from lib.utils.glucose.queries import (
     generate_glucose_level_query,
     generate_overall_glucose_stats_query,
 )
+from lib.utils.glucose.range import GlucoseRangeStatsFetcher
+from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
+from lib.utils.glucose_events import calculate_glucose_events
+
 from rest_server.cgm.api_schema import (
     GlucoseLevelStats,
     GlucoseRangeStats,
@@ -151,6 +161,7 @@ async def get_overall_glucose_stats(
                 "average_hyper_duration"
             ],
             hyper_events_count=glucose_events_metrics["hyper_events_count"],
+            hyper_events=glucose_events_metrics["hyper_events"],
         )
 
         hypo_stats = HypoStats(
@@ -159,19 +170,62 @@ async def get_overall_glucose_stats(
                 "average_hypo_duration"
             ],
             hypo_events_count=glucose_events_metrics["hypo_events_count"],
+            hypo_events=glucose_events_metrics["hypo_events"],
         )
 
         return GlucoseLevelStats(
-            patient_id=patient_id,
-            total_readings=total_readings,
             glucose_summary_stats=glucose_summary_stats,
             glucose_range_stats=glucose_range_stats,
             hyper_stats=hyper_stats,
-            hyper_events=glucose_events_metrics["hyper_events"],
             hypo_stats=hypo_stats,
-            hypo_events=glucose_events_metrics["hypo_events"],
         )
 
     except Exception as e:
         response = {"message": "Internal Server Error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=response)
+
+
+@router.get("/detailed_glucose_report", tags=["CGM"])
+async def get_detailed_glucose_report(
+    request: Request,
+    from_date: datetime = Query(...),
+    to_date: datetime = Query(...),
+    current_patient: Patient = Depends(get_current_patient),
+):
+    try:
+        clickhouse_store = request.state.context.clickhouse_store
+
+        patient_id = str(current_patient.patient_id)
+
+        processor = PeriodicStatsProcessor(clickhouse_store, patient_id)
+
+        # Overall Stats
+        overall_period = OverallPeriod(from_date, to_date)
+        overall_stats = processor.process(overall_period.periods)
+
+        # Day-wise Stats
+        day_periods = DayWisePeriod(from_date, to_date)
+        day_wise_stats = processor.process(
+            day_periods.periods, include_readings=True
+        )
+
+        # Week-wise Stats
+        week_periods = WeekWisePeriod(from_date, to_date)
+        week_wise_stats = processor.process(
+            week_periods.periods, include_readings=True
+        )
+
+        return {
+            "patient_id": patient_id,
+            "overall_stats": overall_stats,
+            "day_wise_stats": day_wise_stats,
+            "week_wise_stats": week_wise_stats,
+        }
+
+    except Exception as e:
+        response = {"message": "Internal Server Error", "detail": str(e)}
+        error_message = f"Exception occurred: {str(e)}"
+        traceback_message = traceback.format_exc()
+        print("🚀 ~ error_message:", error_message)
+        print("🚀 ~ traceback_message:", traceback_message)
         raise HTTPException(status_code=500, detail=response)
