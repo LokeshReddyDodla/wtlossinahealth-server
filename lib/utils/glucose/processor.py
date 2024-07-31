@@ -180,6 +180,8 @@ class PeriodicStatsProcessor:
                 period_key = "overall"
 
             stats[period_key] = GlucoseLevelStats(
+                from_date=from_date,
+                to_date=to_date,
                 glucose_readings=glucose_readings,
                 meals=meals,
                 glucose_summary_stats=glucose_summary_stats,

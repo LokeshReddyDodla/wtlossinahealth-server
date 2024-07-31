@@ -79,6 +79,8 @@ class HypoStats(BaseModel):
 
 
 class GlucoseLevelStats(BaseModel):
+    from_date: datetime
+    to_date: datetime
     glucose_readings: Optional[Any] = None
     meals: Optional[Any] = None
     glucose_summary_stats: GlucoseSummaryStats
