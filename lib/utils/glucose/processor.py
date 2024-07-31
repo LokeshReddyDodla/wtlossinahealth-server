@@ -16,6 +16,7 @@ from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.schemas.glucose import (
     GlucoseLevelStats,
     GlucoseRangeStats,
+    GlucoseReading,
     GlucoseSummaryStats,
     HyperStats,
     HypoStats,
@@ -30,7 +31,7 @@ class PeriodicStatsProcessor:
 
     def fetch_glucose_readings_by_date(
         self, from_date_str: str, to_date_str: str
-    ) -> List[Dict[str, Any]]:
+    ) -> List[GlucoseReading]:
         query = f"""
         SELECT
             time AS Device_Timestamp,
@@ -48,14 +49,14 @@ class PeriodicStatsProcessor:
             return []
 
         readings = [
-            {"Device_Timestamp": row[0], "Glucose_Level": row[1]}
+            GlucoseReading(Device_Timestamp=row[0], Glucose_Level=row[1])
             for row in data
         ]
         return readings
 
     def fetch_avg_glucose_readings_by_hour(
         self, from_date_str: str, to_date_str: str
-    ) -> List[Dict[str, Any]]:
+    ) -> List[GlucoseReading]:
         query = f"""
         SELECT
             formatDateTime(time, '%H:00') AS hour,
@@ -74,7 +75,7 @@ class PeriodicStatsProcessor:
             return []
 
         grouped = [
-            {"Device_Timestamp": row[0], "Glucose_Level": row[1]}
+            GlucoseReading(Device_Timestamp=row[0], Glucose_Level=row[1])
             for row in data
         ]
         return grouped
@@ -123,7 +124,7 @@ class PeriodicStatsProcessor:
 
     async def process(
         self, periods: List[Dict[str, datetime]], include_readings=False
-    ):
+    ) -> Dict[str, GlucoseLevelStats]:
         stats = {}
 
         for period in periods:

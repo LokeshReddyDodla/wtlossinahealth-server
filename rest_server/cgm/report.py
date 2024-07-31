@@ -11,22 +11,11 @@ from sqlalchemy.orm import selectinload
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
-from lib.schemas.glucose import (
-    GlucoseLevelStats,
-    GlucoseRangeStats,
-    GlucoseSummaryStats,
-    HyperStats,
-    HypoStats,
-)
+
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 
 from lib.utils.glucose.processor import PeriodicStatsProcessor
-from lib.utils.glucose.queries import (
-    generate_glucose_level_query,
-    generate_overall_glucose_stats_query,
-)
 
-from lib.utils.glucose_events import calculate_glucose_events
 
 from rest_server.cgm.api_schema import (
     GlucoseReportResponse,
@@ -35,7 +24,12 @@ from rest_server.cgm.api_schema import (
 # Create FastAPI router
 router = APIRouter(prefix="/cgm/report")
 
-@router.get("/detailed_glucose_report", tags=["CGM"])
+
+@router.get(
+    "/detailed_glucose_report",
+    tags=["CGM"],
+    response_model=GlucoseReportResponse,
+)
 async def get_detailed_glucose_report(
     request: Request,
     from_date: datetime = Query(...),

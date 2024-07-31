@@ -1,6 +1,8 @@
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+from lib.schemas.meal import MealResponse
 
 
 class GlucoseRangeStats(BaseModel):
@@ -78,11 +80,16 @@ class HypoStats(BaseModel):
     rapid_drop_stats: RapidDropStats
 
 
+class GlucoseReading(BaseModel):
+    Device_Timestamp: Union[datetime, str]
+    Glucose_Level: float
+
+
 class GlucoseLevelStats(BaseModel):
     from_date: datetime
     to_date: datetime
-    glucose_readings: Optional[Any] = None
-    meals: Optional[Any] = None
+    glucose_readings: Optional[List[GlucoseReading]] = None
+    meals: Optional[List[MealResponse]] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]

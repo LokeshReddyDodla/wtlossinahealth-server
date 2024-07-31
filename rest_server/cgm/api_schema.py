@@ -1,7 +1,8 @@
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
+from lib.schemas.glucose import GlucoseLevelStats
 from lib.schemas.patient import PatientDetail
 
 
@@ -12,9 +13,8 @@ class CGMDataUpload(BaseModel):
     serial_number: str
 
 
-
 class GlucoseReportResponse(BaseModel):
     patient_detail: PatientDetail
-    overall_stats: Any
-    day_wise_stats: Any
-    week_wise_stats: Any
+    overall_stats: Dict[str, GlucoseLevelStats]
+    day_wise_stats: Dict[str, GlucoseLevelStats]
+    week_wise_stats: Dict[str, GlucoseLevelStats]
