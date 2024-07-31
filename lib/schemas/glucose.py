@@ -32,11 +32,42 @@ class GlucoseSummaryStats(BaseModel):
     glucose_variability: float
 
 
+class RapidSpikeEvent(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    initial_glucose_level: float
+    peak_glucose_level: float
+    duration: float
+
+
+class RapidSpikeStats(BaseModel):
+    total_spike_duration: float
+    average_spike_duration: float
+    spike_events_count: int
+    spike_events: List[RapidSpikeEvent]
+
+
+class RapidDropEvent(BaseModel):
+    start_time: datetime
+    end_time: datetime
+    initial_glucose_level: float
+    lowest_glucose_level: float
+    duration: float
+
+
+class RapidDropStats(BaseModel):
+    total_drop_duration: float
+    average_drop_duration: float
+    drop_events_count: int
+    drop_events: List[RapidDropEvent]
+
+
 class HyperStats(BaseModel):
     total_hyper_duration: float
     average_hyper_duration: float
     hyper_events_count: int
     hyper_events: List[HyperEvent]
+    rapid_spike_stats: RapidSpikeStats
 
 
 class HypoStats(BaseModel):
@@ -44,6 +75,7 @@ class HypoStats(BaseModel):
     average_hypo_duration: float
     hypo_events_count: int
     hypo_events: List[HypoEvent]
+    rapid_drop_stats: RapidDropStats
 
 
 class GlucoseLevelStats(BaseModel):

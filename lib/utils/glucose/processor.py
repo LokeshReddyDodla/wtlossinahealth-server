@@ -6,11 +6,11 @@ from lib.models.meal import FoodItem, Meal
 from lib.models.patient import Patient
 from lib.schemas.patient import PatientDetail
 from lib.utils.glucose.events import (
-    HyperStatsFetcher,
-    HypoStatsFetcher,
     execute_query,
 )
 from sqlalchemy.orm import selectinload
+from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
+from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.schemas.glucose import (
