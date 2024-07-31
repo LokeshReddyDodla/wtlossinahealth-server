@@ -1,4 +1,8 @@
-from lib.utils.glucose.queries import generate_overall_glucose_stats_query
+from datetime import datetime
+from lib.utils.glucose.queries import (
+    generate_highest_glucose_query,
+    generate_overall_glucose_stats_query,
+)
 from lib.schemas.glucose import GlucoseSummaryStats
 
 
@@ -21,9 +25,27 @@ class GlucoseSummaryStatsFetcher:
             (glucose_stddev / average_glucose) * 100 if average_glucose else 0
         )
 
+        highest_glucose_result_query = generate_highest_glucose_query(
+            patient_id, from_date_str, to_date_str
+        )
+        highest_glucose_result = clickhouse_store.client.execute(
+            highest_glucose_result_query
+        )
+
+        highest_glucose = (
+            highest_glucose_result[0][0] if highest_glucose_result else 0.0
+        )
+        highest_glucose_date = (
+            highest_glucose_result[0][1]
+            if highest_glucose_result
+            else datetime.min
+        )
+
         return GlucoseSummaryStats(
             average_glucose=average_glucose,
             gmi=gmi,
             gmi_mmol=gmi_mmol,
             glucose_variability=glucose_variability,
+            highest_glucose=highest_glucose,
+            highest_glucose_date=highest_glucose_date,
         )

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional, Union
 
@@ -32,6 +32,8 @@ class GlucoseSummaryStats(BaseModel):
     gmi: float
     gmi_mmol: float
     glucose_variability: float
+    highest_glucose: float
+    highest_glucose_date: datetime
 
 
 class RapidSpikeEvent(BaseModel):

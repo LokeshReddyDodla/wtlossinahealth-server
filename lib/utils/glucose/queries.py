@@ -15,6 +15,20 @@ def generate_glucose_level_query(
     """
 
 
+def generate_highest_glucose_query(patient_id, from_date, to_date):
+    return f"""
+    SELECT
+            MAX(glucose_level),
+            MAX(time)
+        FROM
+            aihealth.cgm_data
+        WHERE
+            patient_id = '{patient_id}'
+            AND time >= '{from_date}'
+            AND time <= '{to_date}'
+    """
+
+
 def generate_overall_glucose_stats_query(patient_id, from_date, to_date):
     return f"""
     SELECT
