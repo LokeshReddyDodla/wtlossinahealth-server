@@ -27,6 +27,15 @@ class HypoEvent(GlucoseEvent):
     lowest_glucose_level: float
 
 
+class AGPPoint(BaseModel):
+    hour: str
+    median: float
+    tenth_percentile: float
+    ninetieth_percentile: float
+    twenty_fifth_percentile: float
+    seventy_fifth_percentile: float
+
+
 class GlucoseSummaryStats(BaseModel):
     average_glucose: float
     gmi: float
@@ -34,6 +43,9 @@ class GlucoseSummaryStats(BaseModel):
     glucose_variability: float
     highest_glucose: float
     highest_glucose_date: datetime
+    lowest_glucose: float
+    lowest_glucose_date: datetime
+    agp_points: Optional[List[AGPPoint]] = None
 
 
 class RapidSpikeEvent(BaseModel):

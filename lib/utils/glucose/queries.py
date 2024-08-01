@@ -29,6 +29,22 @@ def generate_highest_glucose_query(patient_id, from_date, to_date):
     """
 
 
+def generate_lowest_glucose_query(
+    patient_id: str, from_date: str, to_date: str
+) -> str:
+    return f"""
+    SELECT
+        MIN(glucose_level),
+        MIN(time)
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    """
+
+
 def generate_overall_glucose_stats_query(patient_id, from_date, to_date):
     return f"""
     SELECT
