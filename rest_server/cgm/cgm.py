@@ -42,9 +42,20 @@ async def upload_cgm_data(
             df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
         )
 
+        # Determine the time range of the new data
+        start_time = df["Device Timestamp"].min()
+        end_time = df["Device Timestamp"].max()
+
+        # Delete existing data for the patient in the time range
+        clickhouse_store.delete_existing_data(
+            "aihealth.cgm_data",
+            current_patient.patient_id,
+            start_time,
+            end_time,
+        )
+
         # Prepare data for ClickHouseDB
         data_points = []
-        uploaded_at = datetime.now().isoformat()
         for _, row in df.iterrows():
             if pd.notna(row["Scan Glucose mg/dL"]):
                 record_type = "scan"

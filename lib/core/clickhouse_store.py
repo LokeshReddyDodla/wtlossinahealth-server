@@ -1,3 +1,5 @@
+from datetime import datetime
+from typing import Optional
 from clickhouse_driver import Client
 from decouple import config
 
@@ -34,6 +36,39 @@ class ClickHouseStore:
         )
         query = f"INSERT INTO {table_name} ({columns}) VALUES {values}"
         self.client.execute(query)
+
+    def delete_existing_data(
+        self,
+        table_name: str,
+        patient_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ):
+        query = f"""
+        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND time BETWEEN '{start_time}' AND '{end_time}'
+        """
+        self.client.execute(query)
+
+    def get_last_uploaded_timestamp(
+        self, table_name: str, patient_id: str
+    ) -> Optional[datetime]:
+        query = f"""
+        SELECT max(time) as last_time
+        FROM {table_name}
+        WHERE patient_id = '{patient_id}'
+        """
+
+        result = self.client.execute(query)
+        if (
+            result
+            and isinstance(result, list)
+            and len(result) > 0
+            and len(result[0]) > 0
+        ):
+            last_time_str = result[0][0]
+            if last_time_str:
+                return datetime.fromisoformat(last_time_str)
+        return None
 
     def query_data(self, query):
         try:
