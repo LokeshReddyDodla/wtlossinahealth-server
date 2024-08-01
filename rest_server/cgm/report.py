@@ -12,6 +12,7 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
 
+from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 
 from lib.utils.glucose.processor import PeriodicStatsProcessor
@@ -20,6 +21,7 @@ from lib.utils.glucose.processor import PeriodicStatsProcessor
 from rest_server.cgm.api_schema import (
     GlucoseReportResponse,
 )
+from rest_server.response_models import ErrorResponse
 
 # Create FastAPI router
 router = APIRouter(prefix="/cgm/report")
@@ -38,8 +40,18 @@ async def get_detailed_glucose_report(
 ):
     try:
         clickhouse_store = request.state.context.clickhouse_store
+        cgm_data_utils = CGMDataUtils(clickhouse_store)
 
         patient_id = str(current_patient.patient_id)
+
+        # Check if data exists and is continuous within the provided date range
+        if not await cgm_data_utils.is_data_available_and_continuous(
+            patient_id, from_date, to_date
+        ):
+            response = ErrorResponse(
+                message="No continuous data available for the provided date range."
+            )
+            raise HTTPException(status_code=400, detail=response.dict())
 
         # Fetch patient details
         async with request.state.context.postgres_store.get_session() as postgres_session:
@@ -72,7 +84,8 @@ async def get_detailed_glucose_report(
                 day_wise_stats=day_wise_stats,
                 week_wise_stats=week_wise_stats,
             )
-
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
         error_message = f"Exception occurred: {str(e)}"
         traceback_message = traceback.format_exc()
