@@ -119,6 +119,13 @@ class Patient(Base):
         "Meal", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    permissions = relationship(
+        "PatientPermission",
+        uselist=False,
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
 
 class DailyActivity(Base):
     __tablename__ = "daily_activity"

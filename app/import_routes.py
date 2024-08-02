@@ -9,7 +9,7 @@ from rest_server.prescriptions import analyse_prescription
 from rest_server.fitness import log as fitness_log
 from rest_server.report import analyse_report
 from rest_server.chat import chat, context_chat
-from rest_server.patients import patients
+from rest_server.patients import patients, permissions as patient_permissions
 from rest_server.health import health_check
 from rest_server.test import test
 
@@ -76,6 +76,7 @@ def import_routes(app: FastAPI) -> None:
     # Patient
     ###########################################################################
     app.include_router(patients.router)
+    app.include_router(patient_permissions.router)
 
     ###########################################################################
     # Test

@@ -1,0 +1,102 @@
+from typing import Union
+from fastapi import APIRouter, Depends, HTTPException, Request
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient import Patient
+from lib.models.patient_permission import PatientPermission
+from lib.schemas.patient_permission import (
+    PatientPermissionCreate,
+    PatientPermissionUpdate,
+)
+from sqlalchemy.future import select
+
+from rest_server.response_models import ErrorResponse, SuccessResponse
+from sqlalchemy.orm import selectinload
+
+router = APIRouter(prefix="/patient")
+
+
+@router.get(
+    path="/permissions", tags=["Patient"], response_model=SuccessResponse
+)
+async def get_patient_permissions(
+    request: Request, current_patient: Patient = Depends(get_current_patient)
+) -> Union[SuccessResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            result = await session.execute(
+                select(PatientPermission).where(
+                    PatientPermission.patient_id == current_patient.patient_id
+                )
+            )
+
+            permissions = result.scalars().first()
+            if permissions is None:
+                raise HTTPException(
+                    status_code=404, detail="Permissions not found"
+                )
+
+            return SuccessResponse(
+                message="Permissions fetched successfully.",
+                data=permissions,
+            )
+        except HTTPException as http_exc:
+            raise http_exc
+        except Exception as e:
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.post(
+    "/sync-permissions", tags=["Patient"], response_model=SuccessResponse
+)
+async def sync_permissions(
+    request: Request,
+    permissions: PatientPermissionUpdate,
+    current_patient: Patient = Depends(get_current_patient),
+) -> Union[SuccessResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            result = await session.execute(
+                select(Patient)
+                .where(Patient.patient_id == current_patient.patient_id)
+                .options(
+                    selectinload(Patient.permissions),
+                )
+            )
+
+            patient = result.scalars().first()
+            if patient is None:
+                raise HTTPException(
+                    status_code=404, detail="Patient not found"
+                )
+
+            if not patient.permissions:
+                patient.permissions = PatientPermission(
+                    patient_id=current_patient.patient_id,
+                    camera_permission=permissions.camera_permission,
+                    fitness_sync_permission=permissions.fitness_sync_permission,
+                    audio_permission=permissions.audio_permission,
+                )
+            else:
+                patient.permissions.camera_permission = (
+                    permissions.camera_permission
+                )
+                patient.permissions.fitness_sync_permission = (
+                    permissions.fitness_sync_permission
+                )
+                patient.permissions.audio_permission = (
+                    permissions.audio_permission
+                )
+                # Update other permissions as needed
+
+            await session.commit()
+            return SuccessResponse(message="Permissions synced successfully.")
+        except HTTPException as http_exc:
+            raise http_exc
+        except Exception as e:
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
