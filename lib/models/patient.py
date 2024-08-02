@@ -49,7 +49,7 @@ class Patient(Base):
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
-    locale = Column(String(50), nullable=True)
+    locale = Column(String(50), nullable=True, default="Asia/Kolkata")
 
     # Relationships
     daily_activities = relationship(
