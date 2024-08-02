@@ -75,21 +75,24 @@ async def sync_permissions(
             if not patient.permissions:
                 patient.permissions = PatientPermission(
                     patient_id=current_patient.patient_id,
+                    notification_permission=permissions.notification_permission,
+                    health_permission=permissions.health_permission,
                     camera_permission=permissions.camera_permission,
-                    fitness_sync_permission=permissions.fitness_sync_permission,
-                    audio_permission=permissions.audio_permission,
+                    storage_permission=permissions.storage_permission,
                 )
             else:
+                patient.permissions.notification_permission = (
+                    permissions.notification_permission
+                )
+                patient.permissions.health_permission = (
+                    permissions.health_permission
+                )
                 patient.permissions.camera_permission = (
                     permissions.camera_permission
                 )
-                patient.permissions.fitness_sync_permission = (
-                    permissions.fitness_sync_permission
+                patient.permissions.storage_permission = (
+                    permissions.storage_permission
                 )
-                patient.permissions.audio_permission = (
-                    permissions.audio_permission
-                )
-                # Update other permissions as needed
 
             await session.commit()
             return SuccessResponse(message="Permissions synced successfully.")

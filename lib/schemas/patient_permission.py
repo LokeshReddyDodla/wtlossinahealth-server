@@ -4,9 +4,10 @@ from uuid import UUID
 
 
 class PatientPermissionBase(BaseModel):
+    notification_permission: Optional[bool] = False
+    health_permission: Optional[bool] = False
     camera_permission: Optional[bool] = False
-    fitness_sync_permission: Optional[bool] = False
-    audio_permission: Optional[bool] = False
+    storage_permission: Optional[bool] = False
 
 
 class PatientPermissionCreate(PatientPermissionBase):
