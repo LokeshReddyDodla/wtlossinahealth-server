@@ -10,6 +10,9 @@ DATE=$(date +"%Y%m%d%H%M")
 TEMP_DIR="/tmp/clickhouse_backup_$DATE"
 mkdir -p "$TEMP_DIR"
 
+# Export the ClickHouse host environment variable
+export CLICKHOUSE_HOST=localhost
+
 # Create backup
 sudo -E clickhouse-backup create aihealth_backup_$DATE
 
