@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey
+from datetime import datetime
+from sqlalchemy import Column, DateTime, String, Boolean, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -16,5 +17,10 @@ class PatientPermission(Base):
     health_permission = Column(Boolean, default=False)
     camera_permission = Column(Boolean, default=False)
     storage_permission = Column(Boolean, default=False)
+    last_sync_time = Column(
+        DateTime,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        onupdate=lambda: datetime.now().replace(tzinfo=None),
+    )
 
     patient = relationship("Patient", back_populates="permissions")
