@@ -18,7 +18,7 @@ mkdir -p "$TEMP_DIR"
 CONTAINER_NAME="aihealth-clickhouse"
 
 # Create backup
-docker exec $CONTAINER_NAME clickhouse-client --query="BACKUP DATABASE aihealth TO DISK '$TEMP_DIR/default_backup_$DATE'"
+docker exec $CONTAINER_NAME clickhouse-client --query="BACKUP DATABASE aihealth TO Disk('$TEMP_DIR/default_backup_$DATE')"
 
 # Check if the backup was successful
 if [ $? -ne 0 ]; then
@@ -37,6 +37,6 @@ rm -r "$TEMP_DIR"
 rm "/tmp/clickhouse_backup_$DATE.zip"
 
 # Make a POST request to the specified URL
-# curl -X POST 
+curl -X POST 
 
 echo "ClickHouse backup completed and heartbeat sent."
