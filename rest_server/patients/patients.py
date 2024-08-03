@@ -71,6 +71,7 @@ async def get_patient_details(
                     selectinload(Patient.current_medication),
                     selectinload(Patient.permissions),
                     selectinload(Patient.vitals),
+                    selectinload(Patient.smbg),
                 )
             )
 

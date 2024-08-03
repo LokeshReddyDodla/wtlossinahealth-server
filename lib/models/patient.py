@@ -130,6 +130,10 @@ class Patient(Base):
         "PatientVitals", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    smbg = relationship(
+        "PatientSMBG", back_populates="patient", cascade="all, delete-orphan"
+    )
+
 
 class DailyActivity(Base):
     __tablename__ = "daily_activity"

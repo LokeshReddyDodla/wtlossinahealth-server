@@ -6,6 +6,7 @@ Base = declarative_base()
 from lib.models.patient import *
 from lib.models.patient_permission import *
 from lib.models.patient_vitals import *
+from lib.models.patient_smbg import *
 from lib.models.meal import *
 
     
