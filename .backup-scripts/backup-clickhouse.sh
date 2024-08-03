@@ -20,6 +20,12 @@ CONTAINER_NAME="aihealth-clickhouse"
 # Create backup
 docker exec $CONTAINER_NAME clickhouse-client --query="BACKUP DATABASE default TO DISK '$TEMP_DIR/default_backup_$DATE'"
 
+# Check if the backup was successful
+if [ $? -ne 0 ]; then
+  echo "Clickhouse backup failed."
+  exit 1
+fi
+
 # Create a zip archive of the ClickHouse dump file
 zip -r "/tmp/clickhouse_backup_$DATE.zip" "$TEMP_DIR"
 

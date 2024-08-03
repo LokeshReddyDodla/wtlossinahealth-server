@@ -20,6 +20,12 @@ CONTAINER_NAME="aihealth-postgres"
 # Create backup
 docker exec $CONTAINER_NAME pg_dump -U $POSTGRES_USER $POSTGRES_DB > $TEMP_DIR/postgres_backup_$DATE.sql
 
+# Check if the backup was successful
+if [ $? -ne 0 ]; then
+  echo "Postgres backup failed."
+  exit 1
+fi
+
 # Create a zip archive of the PostgreSQL dump file
 zip -r "/tmp/postgres_backup_$DATE.zip" "$TEMP_DIR"
 
