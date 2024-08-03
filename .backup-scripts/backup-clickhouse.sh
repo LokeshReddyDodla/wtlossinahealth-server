@@ -18,7 +18,7 @@ mkdir -p "$TEMP_DIR"
 CONTAINER_NAME="aihealth-clickhouse"
 
 # Create backup
-docker exec $CONTAINER_NAME clickhouse-client --query="BACKUP DATABASE aihealth TO Disk('$TEMP_DIR/default_backup_$DATE')"
+docker exec $CONTAINER_NAME clickhouse-client --query="BACKUP DATABASE aihealth TO Disk('default', '$TEMP_DIR/default_backup_$DATE')"
 
 # Check if the backup was successful
 if [ $? -ne 0 ]; then
