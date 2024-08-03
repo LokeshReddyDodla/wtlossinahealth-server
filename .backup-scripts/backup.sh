@@ -5,10 +5,14 @@ if [ -f /home/deployer/aihealth-deployment/aihealth-server/.env ]; then
     source /home/deployer/aihealth-deployment/aihealth-server/.env
 fi
 
+# Define backup scripts directory
+BACKUP_SCRIPTS_DIR="/home/deployer/aihealth-deployment/aihealth-server/.backup-scripts"
+
+
 # Run all backup scripts
-backup-redis.sh
-backup-postgres.sh
-backup-mongo.sh
-backup-clickhouse.sh
+$BACKUP_SCRIPTS_DIR/backup-redis.sh
+$BACKUP_SCRIPTS_DIR/backup-postgres.sh
+$BACKUP_SCRIPTS_DIR/backup-mongo.sh
+$BACKUP_SCRIPTS_DIR/backup-clickhouse.sh
 
 echo "All backups completed."
