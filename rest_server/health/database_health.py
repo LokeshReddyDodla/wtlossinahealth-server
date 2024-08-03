@@ -3,6 +3,7 @@ from redis import RedisError
 from pymongo.errors import PyMongoError
 from fastapi import HTTPException
 from sqlalchemy.sql import text
+from clickhouse_driver.errors import Error as ClickHouseError
 
 
 async def check_postgres_health(request):
@@ -28,3 +29,14 @@ async def check_mongodb_health(request):
             return "available"
     except PyMongoError:
         raise HTTPException(status_code=503, detail="MongoDB unavailable")
+
+
+async def check_clickhouse_health(request):
+    try:
+        result = request.state.context.clickhouse_store.client.execute(
+            "SELECT 1"
+        )
+        if result:
+            return "available"
+    except ClickHouseError:
+        raise HTTPException(status_code=503, detail="ClickHouse unavailable")

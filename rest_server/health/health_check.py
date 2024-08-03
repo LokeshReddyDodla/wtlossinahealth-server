@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from rest_server.health.database_health import (
+    check_clickhouse_health,
     check_postgres_health,
     check_redis_health,
     check_mongodb_health,
@@ -26,6 +27,12 @@ async def redis_health_check(request: Request):
 async def mongodb_health_check(request: Request):
     await check_mongodb_health(request)
     return SuccessResponse(message="MongoDB is available")
+
+
+@router.get("/health/clickhouse", tags=["Health"])
+async def clickhouse_health_check(request: Request):
+    await check_clickhouse_health(request)
+    return SuccessResponse(message="ClickHouse is available")
 
 
 @router.get("/health/user-api", tags=["Health"])
