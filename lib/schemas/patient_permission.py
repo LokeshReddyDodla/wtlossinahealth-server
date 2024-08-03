@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -8,6 +9,7 @@ class PatientPermissionBase(BaseModel):
     health_permission: Optional[bool] = False
     camera_permission: Optional[bool] = False
     storage_permission: Optional[bool] = False
+    last_sync_time: Optional[datetime]
 
 
 class PatientPermissionCreate(PatientPermissionBase):
