@@ -11,7 +11,7 @@ TEMP_DIR="/tmp/clickhouse_backup_$DATE"
 mkdir -p "$TEMP_DIR"
 
 # Create backup
-clickhouse-backup create aihealth_backup_$DATE
+sudo -E clickhouse-backup create aihealth_backup_$DATE
 
 # Check if the backup was successful
 if [ $? -ne 0 ]; then
@@ -20,7 +20,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Upload the backup to S3
-clickhouse-backup upload aihealth_backup_$DATE
+sudo -E clickhouse-backup upload aihealth_backup_$DATE
 
 # Check if the upload was successful
 if [ $? -ne 0 ]; then
