@@ -11,6 +11,13 @@ CLICKHOUSE_PORT = config("CLICKHOUSE_PORT", default="9000")
 class ClickHouseStore:
     def __init__(self):
         self.client = Client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT)
+        self.create_database()
+
+    def create_database(self):
+        create_db_query = """
+        CREATE DATABASE IF NOT EXISTS aihealth
+        """
+        self.client.execute(create_db_query)
 
     def create_cgm_data_table(self):
         create_table_query = """
