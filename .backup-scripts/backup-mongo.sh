@@ -20,6 +20,12 @@ CONTAINER_NAME="aihealth-mongo"
 # Create backup
 docker exec $CONTAINER_NAME mongodump --archive=$TEMP_DIR/mongo_backup_$DATE.gz --gzip
 
+# Check if the backup was successful
+if [ $? -ne 0 ]; then
+  echo "MongoDB backup failed."
+  exit 1
+fi
+
 # Upload the backup file to S3
 aws s3 cp "$TEMP_DIR/mongo_backup_$DATE.gz" "s3://$S3_BUCKET/$S3_FOLDER/mongo_backup_$DATE.gz"
 
