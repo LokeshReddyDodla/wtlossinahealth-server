@@ -137,12 +137,23 @@ services:
     volumes:
       - /var/cloudbeaver/workspace:/opt/cloudbeaver/workspace
 
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:latest
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
 volumes:
   redis:
   postgres:
   mongo:
   redisinsight:
   mongoku:
+  portainer_data:
 
 
 networks:
