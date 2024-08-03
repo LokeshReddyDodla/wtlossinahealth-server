@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Source the .env file
-export $(grep -v '^#' /home/deployer/aihealth-deployment/aihealth-server.env | xargs)
+export $(grep -v '^#' /home/deployer/aihealth-deployment/aihealth-server/.env | xargs)
 
 # Set the date format for the backup file
 DATE=$(date +"%Y%m%d%H%M")
