@@ -18,7 +18,7 @@ mkdir -p "$TEMP_DIR"
 CONTAINER_NAME="aihealth-redis"
 
 # Command to trigger Redis backup inside the container
-docker exec $CONTAINER_NAME redis-cli save
+docker exec $CONTAINER_NAME redis-cli -a $REDIS_PASSWORD save
 
 # Copy the Redis dump file from the container to the temporary directory
 docker cp $CONTAINER_NAME:$REDIS_BACKUP_DIR/dump.rdb $TEMP_DIR/dump_$DATE.rdb

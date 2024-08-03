@@ -1,9 +1,14 @@
 #!/bin/bash
 
+# Source environment variables if needed
+if [ -f ../.env ]; then
+    source ../.env
+fi
+
 # Run all backup scripts
-/home/deployer/backup-scripts/backup-redis.sh
-/home/deployer/backup-scripts/backup-postgres.sh
-/home/deployer/backup-scripts/backup-mongo.sh
-/home/deployer/backup-scripts/backup-clickhouse.sh
+./backup-redis.sh
+# ./backup-postgres.sh
+# ./backup-mongo.sh
+# ./backup-clickhouse.sh
 
 echo "All backups completed."
