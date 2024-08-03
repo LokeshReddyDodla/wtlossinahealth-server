@@ -11,31 +11,31 @@ from rest_server.response_models import SuccessResponse
 router = APIRouter(prefix="/health")
 
 
-@router.get("/health/postgres", tags=["Health"])
+@router.get("/postgres", tags=["Health"])
 async def postgres_health_check(request: Request):
     await check_postgres_health(request)
     return SuccessResponse(message="Postgres is available")
 
 
-@router.get("/health/redis", tags=["Health"])
+@router.get("/redis", tags=["Health"])
 async def redis_health_check(request: Request):
     await check_redis_health(request)
     return SuccessResponse(message="Redis is available")
 
 
-@router.get("/health/mongodb", tags=["Health"])
+@router.get("/mongodb", tags=["Health"])
 async def mongodb_health_check(request: Request):
     await check_mongodb_health(request)
     return SuccessResponse(message="MongoDB is available")
 
 
-@router.get("/health/clickhouse", tags=["Health"])
+@router.get("/clickhouse", tags=["Health"])
 async def clickhouse_health_check(request: Request):
     await check_clickhouse_health(request)
     return SuccessResponse(message="ClickHouse is available")
 
 
-@router.get("/health/user-api", tags=["Health"])
+@router.get("/user-api", tags=["Health"])
 async def user_api_health_check():
     await check_user_api_health()
     return SuccessResponse(message="User API is available")
