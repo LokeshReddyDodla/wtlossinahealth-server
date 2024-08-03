@@ -69,6 +69,8 @@ async def get_patient_details(
                     selectinload(Patient.family_diabetic_history),
                     selectinload(Patient.medical_history),
                     selectinload(Patient.current_medication),
+                    selectinload(Patient.permissions),
+                    selectinload(Patient.vitals),
                 )
             )
 

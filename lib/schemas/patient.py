@@ -3,6 +3,9 @@ from typing import List, Optional
 from datetime import date, datetime
 from uuid import UUID
 
+from lib.schemas.patient_permission import PatientPermission
+from lib.schemas.patient_vitals import PatientVitals
+
 
 class PatientBase(BaseModel):
     first_name: str
@@ -293,6 +296,8 @@ class PatientDetail(PatientBase):
     family_diabetic_history: List[FamilyDiabeticHistory] = []
     medical_history: List[MedicalHistory] = []
     current_medication: Optional[CurrentMedication] = None
+    permissions: Optional[PatientPermission] = None
+    vitals: List[PatientVitals] = []
 
     class Config:
         orm_mode = True
