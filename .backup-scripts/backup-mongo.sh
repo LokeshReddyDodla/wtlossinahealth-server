@@ -47,6 +47,6 @@ aws s3 cp "$TEMP_DIR/mongo_backup_$DATE.gz" "s3://$S3_BUCKET/$S3_FOLDER/mongo_ba
 rm -r "$TEMP_DIR"
 
 # Make a POST request to the specified URL
-# curl -X POST 
+curl -X POST https://uptime.betterstack.com/api/v1/heartbeat/UaStBus5EsqcjKtbJ9zhPmGm
 
 echo "MongoDB backup completed and heartbeat sent."

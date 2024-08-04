@@ -49,6 +49,6 @@ rm -r "$TEMP_DIR"
 rm "/tmp/redis_backup_$DATE.zip"
 
 # Make a POST request to the specified URL
-# curl -X POST 
+curl -X POST https://uptime.betterstack.com/api/v1/heartbeat/iTvctLu8zyuiQeqMUDRVA86Y
 
 echo "Redis backup completed and heartbeat sent."
