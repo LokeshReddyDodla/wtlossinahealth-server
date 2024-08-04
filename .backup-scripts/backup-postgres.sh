@@ -37,6 +37,6 @@ rm -r "$TEMP_DIR"
 rm "/tmp/postgres_backup_$DATE.zip"
 
 # Make a POST request to the specified URL
-# curl -X POST 
+curl -X POST https://uptime.betterstack.com/api/v1/heartbeat/i2ENUpS6LLUwrBfZoUap7ar1
 
 echo "PostgreSQL backup completed and heartbeat sent."

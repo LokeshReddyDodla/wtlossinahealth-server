@@ -35,6 +35,6 @@ fi
 rm -r "$TEMP_DIR"
 
 # Make a POST request to the specified URL
-# curl -X POST 
+curl -X POST https://uptime.betterstack.com/api/v1/heartbeat/ziREw9gejUhPeNcqMh3AHWEW
 
 echo "ClickHouse backup completed and heartbeat sent."
