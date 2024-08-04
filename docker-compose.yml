@@ -31,8 +31,8 @@ services:
       - MONGO_DB_NAME=${MONGO_DB_NAME}
 
     volumes:
-      - ./logs:/src/logs
-      - .:/src
+      - api_logs:/src/logs
+      - api_data:/src
 
   aihealth-redis:
     container_name: aihealth-redis
@@ -43,7 +43,7 @@ services:
     ports:
       - 6379:6379
     volumes:
-      - ./deployment/volumes/redis:/data
+      - redis_data:/data
 
   aihealth-postgres:
     container_name: aihealth-postgres
@@ -56,7 +56,7 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - ./deployment/volumes/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
 
   aihealth-mongo:
     container_name: aihealth-mongo
@@ -69,7 +69,7 @@ services:
     ports:
       - 27017:27017
     volumes:
-      - ./deployment/volumes/mongo:/data/db
+      - mongo_data:/data/db
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
@@ -79,7 +79,7 @@ services:
       - 8123:8123 # HTTP interface
       - 9000:9000 # Native client
     volumes:
-      - ./deployment/volumes/clickhouse:/var/lib/clickhouse
+      - clickhouse_data:/var/lib/clickhouse
 
   aihealth-nginx:
     container_name: aihealth-nginx
@@ -91,6 +91,8 @@ services:
       - 80:80
     depends_on:
       - aihealth-api
+    volumes:
+      - ssl_certs:/etc/ssl
 
   pgadmin:
     image: elestio/pgadmin:latest
@@ -107,7 +109,7 @@ services:
     ports:
       - "5540:5540"
     volumes:
-      - redisinsight:/data
+      - redisinsight_data:/data
 
   mongo-express:
     image: mongo-express:latest
@@ -135,7 +137,7 @@ services:
       - CB_ADMIN_NAME=cbadmin
       - CB_ADMIN_PASSWORD=Vostro@1540
     volumes:
-      - /var/cloudbeaver/workspace:/opt/cloudbeaver/workspace
+      - cloudbeaver_workspace:/opt/cloudbeaver/workspace
 
   portainer:
     container_name: portainer
@@ -158,11 +160,15 @@ services:
   #     - ./cloudflared:/etc/cloudflared
 
 volumes:
-  redis:
-  postgres:
-  mongo:
-  redisinsight:
-  mongoku:
+  api_logs:
+  api_data:
+  redis_data:
+  postgres_data:
+  mongo_data:
+  clickhouse_data:
+  ssl_certs:
+  redisinsight_data:
+  cloudbeaver_workspace:
   portainer_data:
 
 
