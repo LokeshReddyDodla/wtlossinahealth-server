@@ -25,7 +25,7 @@ jobs:
 
     - name: Debug SSH Key
       run: |
-        ssh -i /home/runner/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "echo SSH connection successful"
+        ssh -vvv -i /home/runner/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "echo SSH connection successful"
 
     - name: Deploy to Server
       uses: appleboy/ssh-action@master
