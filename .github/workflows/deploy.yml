@@ -28,5 +28,4 @@ jobs:
           script: |
             cd /home/deployer/aihealth-deployment/aihealth-server
             git pull origin main
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose down
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose up --build -d
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose up --build -d --no-deps
