@@ -37,5 +37,4 @@ async def clickhouse_health_check(request: Request):
 
 @router.get("/user-api", tags=["Health"])
 async def user_api_health_check():
-    await check_user_api_health()
     return SuccessResponse(message="User API is available")
