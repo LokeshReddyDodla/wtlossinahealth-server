@@ -89,6 +89,7 @@ services:
     restart: no
     ports:
       - 80:80
+      - 443:443
     depends_on:
       - aihealth-api
     volumes:
