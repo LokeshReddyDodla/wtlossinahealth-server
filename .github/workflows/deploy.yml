@@ -19,12 +19,13 @@ jobs:
         key: ${{ secrets.SSH_KEY }}
         known_hosts: ${{ secrets.SSH_HOST }}
     
+    - name: Set permissions for SSH Key
+      run: |
+        chmod 600 /home/runner/.ssh/id_rsa
+
     - name: Debug SSH Key
       run: |
-        echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "echo SSH connection successful"
-
+        ssh -i /home/runner/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }} "echo SSH connection successful"
 
     - name: Deploy to Server
       uses: appleboy/ssh-action@master
