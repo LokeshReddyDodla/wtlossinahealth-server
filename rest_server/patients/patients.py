@@ -138,7 +138,7 @@ async def create_basic_patient(
 
 
 @router.put(
-    path="/basic/{patient_id}",
+    path="/basic",
     tags=["Patient"],
     response_model=SuccessResponse,
 )
@@ -176,7 +176,7 @@ async def update_basic_patient(
 
 
 @router.patch(
-    path="/lifestyle/{patient_id}",
+    path="/lifestyle",
     tags=["Patient"],
     response_model=SuccessResponse,
 )
@@ -292,7 +292,7 @@ async def upsert_patient_lifestyle(
 
 
 @router.patch(
-    path="/medical_history/{patient_id}",
+    path="/medical_history",
     tags=["Patient"],
     response_model=SuccessResponse,
 )
