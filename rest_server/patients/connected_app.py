@@ -10,8 +10,11 @@ from lib.schemas.patient_connected_app import LibreViewCreate, OtherAppCreate
 from sqlalchemy.future import select
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
+from sqlalchemy.orm import selectinload
+
 
 router = APIRouter(prefix="/patient")
+
 
 @router.post(
     "/connected-apps/libreview",
@@ -110,9 +113,13 @@ async def get_patient_connected_apps(
     async with request.state.context.postgres_store.get_session() as session:
         try:
             result = await session.execute(
-                select(PatientConnectedApp).where(
+                select(PatientConnectedApp)
+                .where(
                     PatientConnectedApp.patient_id
                     == current_patient.patient_id
+                )
+                .options(
+                    selectinload(PatientConnectedApp.libreview),
                 )
             )
 
