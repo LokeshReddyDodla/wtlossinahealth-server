@@ -11,8 +11,7 @@ from sqlalchemy import (
     JSON,
     Time,
 )
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, Session, object_session
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
@@ -21,6 +20,7 @@ from sqlalchemy.event import listens_for
 
 from lib.models import Base
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_permission import PatientPermission
 
 
 class Patient(Base):
@@ -144,14 +144,25 @@ class Patient(Base):
     )
 
 
-# @listens_for(Patient, "after_insert")
-# def create_connected_app(mapper, connection, target):
-#     connection.execute(
-#         PatientConnectedApp.__table__.insert(),
-#         {
-#             "patient_id": target.patient_id,
-#         },
-#     )
+@listens_for(Patient, "after_insert")
+def create_related_records(mapper, connection, target):
+    connection.execute(
+        PatientConnectedApp.__table__.insert(),
+        {
+            "patient_id": target.patient_id,
+        },
+    )
+    connection.execute(
+        PatientPermission.__table__.insert(),
+        {
+            "patient_id": target.patient_id,
+            "notification_permission": False,
+            "health_permission": False,
+            "camera_permission": False,
+            "storage_permission": False,
+            "last_sync_time": datetime.now(),
+        },
+    )
 
 
 class DailyActivity(Base):

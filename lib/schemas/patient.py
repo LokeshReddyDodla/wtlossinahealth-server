@@ -3,6 +3,7 @@ from typing import List, Optional
 from datetime import date, datetime
 from uuid import UUID
 
+from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_vitals import PatientVitals
@@ -300,6 +301,7 @@ class PatientDetail(PatientBase):
     permissions: Optional[PatientPermission] = None
     vitals: List[PatientVitals] = []
     smbg: List[PatientSMBG] = []
+    connected_apps: PatientConnectedApp
 
     class Config:
         orm_mode = True
