@@ -5,7 +5,7 @@ services:
     build:
       context: "."
       dockerfile: ./deployment/rest_server/Dockerfile
-    # image: aihealth-api:latest
+    image: aihealth-api:latest
     depends_on:
       - aihealth-redis
       - aihealth-postgres
@@ -32,7 +32,7 @@ services:
 
     volumes:
       - api_logs:/src/logs
-      - api_data:/src
+      - alembic_data:/src/alembic/versions
       # - ./src:/src # for dev use only
 
   aihealth-redis:
@@ -165,7 +165,7 @@ services:
 
 volumes:
   api_logs:
-  api_data:
+  alembic_data:
   redis_data:
   postgres_data:
   mongo_data:
