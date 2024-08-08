@@ -14,8 +14,11 @@ class Admin(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(
+        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
+    )
     updated_at = Column(
+        DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
