@@ -72,27 +72,18 @@ async def sync_permissions(
                     status_code=404, detail="Patient not found"
                 )
 
-            if not patient.permissions:
-                patient.permissions = PatientPermission(
-                    patient_id=current_patient.patient_id,
-                    notification_permission=permissions.notification_permission,
-                    health_permission=permissions.health_permission,
-                    camera_permission=permissions.camera_permission,
-                    storage_permission=permissions.storage_permission,
-                )
-            else:
-                patient.permissions.notification_permission = (
-                    permissions.notification_permission
-                )
-                patient.permissions.health_permission = (
-                    permissions.health_permission
-                )
-                patient.permissions.camera_permission = (
-                    permissions.camera_permission
-                )
-                patient.permissions.storage_permission = (
-                    permissions.storage_permission
-                )
+            patient.permissions.notification_permission = (
+                permissions.notification_permission
+            )
+            patient.permissions.health_permission = (
+                permissions.health_permission
+            )
+            patient.permissions.camera_permission = (
+                permissions.camera_permission
+            )
+            patient.permissions.storage_permission = (
+                permissions.storage_permission
+            )
 
             await session.commit()
             return SuccessResponse(message="Permissions synced successfully.")
