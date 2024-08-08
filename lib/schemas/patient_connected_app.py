@@ -16,7 +16,6 @@ class PatientConnectedApp(PatientConnectedAppBase):
 
 
 class LibreViewBase(BaseModel):
-    connected_app_id: UUID
     libreview_id: str
     last_sync_timestamp: Optional[datetime] = None
     connected_at: Optional[datetime] = None
@@ -34,7 +33,6 @@ class LibreView(LibreViewBase):
 
 
 class OtherAppBase(BaseModel):
-    connected_app_id: UUID
     other_app_id: str
     additional_field: Optional[str] = None
     connected_at: Optional[datetime] = None
