@@ -33,7 +33,6 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP, role: str):
                 )
                 token = create_jwt_token(
                     user_id=user_id,
-                    phone_number=str(user.phone_number),
                     role=role,
                 )
                 return SuccessResponse(
