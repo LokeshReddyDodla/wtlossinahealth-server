@@ -4,17 +4,6 @@ from datetime import datetime
 from uuid import UUID
 
 
-class PatientConnectedAppBase(BaseModel):
-    patient_id: UUID
-
-
-class PatientConnectedApp(PatientConnectedAppBase):
-    id: UUID
-
-    class Config:
-        orm_mode = True
-
-
 class LibreViewBase(BaseModel):
     libreview_id: str
     last_sync_timestamp: Optional[datetime] = None
@@ -44,6 +33,19 @@ class OtherAppCreate(OtherAppBase):
 
 class OtherApp(OtherAppBase):
     id: UUID
+
+    class Config:
+        orm_mode = True
+
+
+class PatientConnectedAppBase(BaseModel):
+    patient_id: UUID
+
+
+class PatientConnectedApp(PatientConnectedAppBase):
+    id: UUID
+    libreview: Optional[LibreView] = None
+    other_app: Optional[OtherApp] = None
 
     class Config:
         orm_mode = True
