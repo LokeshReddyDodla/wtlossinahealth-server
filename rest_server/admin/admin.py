@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, validator
 from sqlalchemy.future import select
 from lib.models.admin import Admin
 from lib.utils.jwt import create_jwt_token
 from lib.utils.security import hash_password, verify_password
+from lib.utils.validators import validate_email
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 
@@ -12,8 +13,12 @@ router = APIRouter(prefix="/admin")
 
 
 class AdminCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+
+    @validator("email")
+    def validate_email_format(cls, value):
+        return validate_email(value)
 
 
 @router.post("/register", tags=["Admin"], response_model=SuccessResponse)
@@ -78,7 +83,9 @@ async def login_admin(
             return SuccessResponse(
                 message="User verified", data={"token": token}
             )
+        except HTTPException as e:
+            raise e
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail="Internal Server Error"
+            return ErrorResponse(
+                message="Failed to authenticate", detail=str(e)
             )
