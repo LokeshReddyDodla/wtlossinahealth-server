@@ -18,6 +18,7 @@ from rest_server.patients import (
 )
 from rest_server.health import health_check
 from rest_server.test import test
+from rest_server.admin import admin
 
 
 def import_routes(app: FastAPI) -> None:
@@ -91,3 +92,8 @@ def import_routes(app: FastAPI) -> None:
     # Test
     ###########################################################################
     app.include_router(test.router)
+
+    ###########################################################################
+    # Admin
+    ###########################################################################
+    app.include_router(admin.router)
