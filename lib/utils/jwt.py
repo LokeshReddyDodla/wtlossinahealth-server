@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from jose import jwt
 from jose.exceptions import JWTError, ExpiredSignatureError
 from decouple import config
@@ -5,12 +6,16 @@ from decouple import config
 JWT_SECRET = config("JWT_SECRET")
 JWT_ALGORITHM = config("JWT_ALGORITHM")
 JWT_AUDIENCE = config("JWT_AUDIENCE")
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
-def create_jwt_token(user_id: str, phone_number: str, role: str):
+def create_jwt_token(user_id: str, role: str):
+    expire = datetime.now().replace(tzinfo=None) + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+    # "exp": expire
     token_data = {
         "sub": user_id,
-        "phone_number": phone_number,
         "role": role,  # Store the user type (Patient, Doctor, etc.)
         "aud": JWT_AUDIENCE,
     }
