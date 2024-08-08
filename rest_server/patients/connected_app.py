@@ -11,8 +11,7 @@ from sqlalchemy.future import select
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 
-router = APIRouter()
-
+router = APIRouter(prefix="/patient")
 
 @router.post(
     "/connected-apps/libreview",
