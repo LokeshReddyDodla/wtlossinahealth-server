@@ -17,8 +17,10 @@ from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
 
+from sqlalchemy.event import listens_for
 
-Base = declarative_base()
+from lib.models import Base
+from lib.models.patient_connected_app import PatientConnectedApp
 
 
 class Patient(Base):
@@ -133,6 +135,23 @@ class Patient(Base):
     smbg = relationship(
         "PatientSMBG", back_populates="patient", cascade="all, delete-orphan"
     )
+
+    connected_apps = relationship(
+        "PatientConnectedApp",
+        uselist=False,
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
+
+# @listens_for(Patient, "after_insert")
+# def create_connected_app(mapper, connection, target):
+#     connection.execute(
+#         PatientConnectedApp.__table__.insert(),
+#         {
+#             "patient_id": target.patient_id,
+#         },
+#     )
 
 
 class DailyActivity(Base):
