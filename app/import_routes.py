@@ -14,6 +14,7 @@ from rest_server.patients import (
     permissions as patient_permissions,
     vitals as patient_vitals,
     smbg as patient_smbg,
+    connected_app as patient_connected_app,
 )
 from rest_server.health import health_check
 from rest_server.test import test
@@ -84,6 +85,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(patient_permissions.router)
     app.include_router(patient_vitals.router)
     app.include_router(patient_smbg.router)
+    app.include_router(patient_connected_app.router)
 
     ###########################################################################
     # Test
