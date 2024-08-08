@@ -32,7 +32,7 @@ services:
 
     volumes:
       - api_logs:/src/logs
-      # - api_data:/src
+      - api_data:/src
 
   aihealth-redis:
     container_name: aihealth-redis
