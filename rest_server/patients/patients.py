@@ -15,6 +15,7 @@ from lib.models.patient import (
     SmokingHabit,
     Patient,
 )
+from lib.models.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient import (
     AlcoholConsumptionCreate,
     CuisinePreferenceCreate,
@@ -73,7 +74,9 @@ async def get_patient_details(
                     selectinload(Patient.permissions),
                     selectinload(Patient.vitals),
                     selectinload(Patient.smbg),
-                    selectinload(Patient.connected_apps),
+                    selectinload(Patient.connected_apps).selectinload(
+                        PatientConnectedApp.libreview
+                    ),
                 )
             )
 
@@ -125,7 +128,7 @@ async def create_basic_patient(
             session.add(new_patient)
             await session.commit()
             await session.refresh(new_patient)
-            
+
             return SuccessResponse(
                 message="Patient basic data created successfully.",
                 data=new_patient,
