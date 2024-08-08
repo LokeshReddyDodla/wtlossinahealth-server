@@ -40,6 +40,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 
 from typing import List, Optional, Union
+from sqlalchemy.exc import IntegrityError
 
 from rest_server.response_models import SuccessResponse, ErrorResponse
 
@@ -72,6 +73,7 @@ async def get_patient_details(
                     selectinload(Patient.permissions),
                     selectinload(Patient.vitals),
                     selectinload(Patient.smbg),
+                    selectinload(Patient.connected_apps),
                 )
             )
 
@@ -123,12 +125,17 @@ async def create_basic_patient(
             session.add(new_patient)
             await session.commit()
             await session.refresh(new_patient)
+            
             return SuccessResponse(
                 message="Patient basic data created successfully.",
                 data=new_patient,
             )
         except HTTPException as http_exc:
             raise http_exc
+        except IntegrityError as e:
+            await session.rollback()
+            response = ErrorResponse(message="Integrity Error", detail=str(e))
+            raise HTTPException(status_code=400, detail=response.dict())
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(
@@ -167,6 +174,10 @@ async def update_basic_patient(
             )
         except HTTPException as http_exc:
             raise http_exc
+        except IntegrityError as e:
+            await session.rollback()
+            response = ErrorResponse(message="Integrity Error", detail=str(e))
+            raise HTTPException(status_code=400, detail=response.dict())
         except Exception as e:
             await session.rollback()
             response = ErrorResponse(
