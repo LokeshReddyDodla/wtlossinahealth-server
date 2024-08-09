@@ -19,7 +19,7 @@ from rest_server.patients import (
 from rest_server.health import health_check
 from rest_server.test import test
 from rest_server.admin import admin
-from rest_server.admin.patients import patients as admin_patients
+from rest_server.admin.patients import connected_apps as admin_patients
 
 
 def import_routes(app: FastAPI) -> None:
