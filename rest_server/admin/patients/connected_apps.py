@@ -13,7 +13,7 @@ router = APIRouter(prefix="/admin/patient")
 
 
 @router.get(
-    "/connected-apps/libreview", tags=["Admin"], response_model=SuccessResponse
+    "/connected-apps/libreview", tags=["Admin Patient"], response_model=SuccessResponse
 )
 async def get_libreview_connected_patients(
     request: Request, current_admin: Admin = Depends(get_current_admin)
