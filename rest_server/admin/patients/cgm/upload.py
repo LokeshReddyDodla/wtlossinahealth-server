@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 router = APIRouter(prefix="/admin/patient")
 
 
-@router.post("/cgm/upload", tags=["CGM"])
+@router.post("/cgm/upload", tags=["Admin Patient"])
 async def admin_upload_cgm_data(
     request: Request,
     patient_id: str,
