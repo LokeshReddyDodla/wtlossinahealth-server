@@ -32,8 +32,6 @@ async def admin_upload_cgm_data(
 ) -> Union[SuccessResponse, HTTPException]:
     try:
         clickhouse_store = request.state.context.clickhouse_store
-        print("==> entered cgm/upload api...")
-        print("==> patient_id: ", patient_id)
 
         # Fetch the patient from the database using patient_id
         async with request.state.context.postgres_store.get_session() as session:
@@ -47,15 +45,12 @@ async def admin_upload_cgm_data(
                     status_code=404, detail="Patient not found"
                 )
 
-            print("==> patient found!")
             # Read and parse the CSV file
             contents = await file.read()
             decoded = contents.decode("utf-8")
 
             # Skip metadata rows and set correct headers
             df = pd.read_csv(StringIO(decoded), skiprows=2)
-            
-            print("==> read csv")
 
             # Convert timestamps to the correct format without changing the timezone
             df["Device Timestamp"] = pd.to_datetime(
@@ -65,8 +60,6 @@ async def admin_upload_cgm_data(
             # Determine the time range of the new data
             start_time = df["Device Timestamp"].min()
             end_time = df["Device Timestamp"].max()
-            
-            print("==> got the start and end date ", start_time, end_time)
 
             # Delete existing data for the patient in the time range
             clickhouse_store.delete_existing_data(
@@ -99,7 +92,6 @@ async def admin_upload_cgm_data(
                     }
                 )
 
-            print("==> inserting data...")
             # Insert data into ClickHouse
             clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
@@ -113,9 +105,7 @@ async def admin_upload_cgm_data(
             )
             connected_app = connected_app.scalars().first()
 
-            print("==> updated connected_apps")
             if connected_app and connected_app.libreview:
-                print("==> updating last_sync_timestamp!!!")
                 connected_app.libreview.last_sync_timestamp = datetime.now()
                 await session.commit()
 
