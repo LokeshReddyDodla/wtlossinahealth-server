@@ -112,6 +112,9 @@ class PeriodicStatsProcessor:
                 selectinload(Patient.connected_apps).selectinload(
                     PatientConnectedApp.libreview
                 ),
+                selectinload(Patient.connected_apps).selectinload(
+                    PatientConnectedApp.other_app
+                ),
             )
         )
         result = await self.postgres_session.execute(query)
