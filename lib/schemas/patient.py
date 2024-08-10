@@ -7,6 +7,7 @@ from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_vitals import PatientVitals
+from sqlalchemy.orm import attributes
 
 
 class PatientBase(BaseModel):
@@ -305,3 +306,16 @@ class PatientDetail(PatientBase):
 
     class Config:
         orm_mode = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        kwargs = {}
+        state = obj._sa_instance_state  # Access the internal state of the SQLAlchemy instance
+        
+        for name, field in cls.__fields__.items():
+            if name in state.dict:  # Check if the attribute is already loaded
+                kwargs[name] = getattr(obj, name)
+            elif name not in state.unloaded:  # Ensure it's not an unloaded attribute
+                kwargs[name] = getattr(obj, name)
+
+        return cls(**kwargs)
