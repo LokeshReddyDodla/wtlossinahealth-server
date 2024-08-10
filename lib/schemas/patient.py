@@ -301,7 +301,7 @@ class PatientDetail(PatientBase):
     permissions: Optional[PatientPermission] = None
     vitals: List[PatientVitals] = []
     smbg: List[PatientSMBG] = []
-    connected_apps: PatientConnectedApp
+    connected_apps: Optional[PatientConnectedApp] = None
 
     class Config:
         orm_mode = True

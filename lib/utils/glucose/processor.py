@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from sqlalchemy import select
 from lib.models.meal import FoodItem, Meal
 from lib.models.patient import Patient
+from lib.models.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient import PatientDetail
 
 from sqlalchemy.orm import selectinload
@@ -108,6 +109,9 @@ class PeriodicStatsProcessor:
                 selectinload(Patient.family_diabetic_history),
                 selectinload(Patient.medical_history),
                 selectinload(Patient.current_medication),
+                selectinload(Patient.connected_apps).selectinload(
+                    PatientConnectedApp.libreview
+                ),
             )
         )
         result = await self.postgres_session.execute(query)
