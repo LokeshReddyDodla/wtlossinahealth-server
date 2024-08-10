@@ -33,6 +33,7 @@ async def admin_upload_cgm_data(
     try:
         clickhouse_store = request.state.context.clickhouse_store
         print("==> entered cgm/upload api...")
+        print("==> patient_id: ", patient_id)
 
         # Fetch the patient from the database using patient_id
         async with request.state.context.postgres_store.get_session() as session:
