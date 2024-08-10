@@ -115,6 +115,7 @@ async def admin_upload_cgm_data(
 
             print("==> updated connected_apps")
             if connected_app and connected_app.libreview:
+                print("==> updating last_sync_timestamp!!!")
                 connected_app.libreview.last_sync_timestamp = datetime.now()
                 await session.commit()
 
