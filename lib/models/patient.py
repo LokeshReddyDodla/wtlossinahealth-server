@@ -144,10 +144,11 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    fitness_data_sync = relationship(
+    fitness_syncs = relationship(
         "FitnessDataSync",
         back_populates="patient",
         cascade="all, delete-orphan",
+        uselist=False,
     )
 
 
