@@ -10,12 +10,15 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.fitness_data_sync import FitnessDataSync
 from lib.models.patient import Patient
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import List, Union
 import pandas as pd
 from io import StringIO
 from datetime import datetime
+from sqlalchemy.future import select
+
 
 router = APIRouter(prefix="/fitness")
 
@@ -50,7 +53,7 @@ async def upload_fitness_data(
         end_time = max(
             datetime.fromisoformat(item.dateTo).strftime("%Y-%m-%d %H:%M:%S")
             for item in fitness_data
-)
+        )
 
         print("==> start_time: ", start_time)
         print("==> end_time: ", end_time)
@@ -83,8 +86,29 @@ async def upload_fitness_data(
         # Insert data into ClickHouse
         clickhouse_store.write_data("aihealth.fitness_data", data_points)
 
+        # Update last sync time in the FitnessDataSync table
+        async with request.state.context.postgres_store.get_session() as session:
+            fitness_sync = await session.execute(
+                select(FitnessDataSync).where(
+                    FitnessDataSync.patient_id == current_patient.patient_id
+                )
+            )
+            fitness_sync = fitness_sync.scalars().first()
+
+            if fitness_sync:
+                fitness_sync.last_sync_timestamp = end_time
+            else:
+                fitness_sync = FitnessDataSync(
+                    patient_id=current_patient.patient_id,
+                    last_sync_timestamp=end_time,
+                )
+                session.add(fitness_sync)
+
+            await session.commit()
+
         return SuccessResponse(
-            message="Fitness data uploaded and stored successfully."
+            message="Fitness data uploaded and stored successfully.",
+            data={"last_sync_timestamp": end_time},
         )
 
     except Exception as e:
