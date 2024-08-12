@@ -3,6 +3,7 @@ from typing import List, Optional
 from datetime import date, datetime
 from uuid import UUID
 
+from lib.schemas.fitness_data_sync import FitnessDataSync
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_smbg import PatientSMBG
@@ -303,6 +304,7 @@ class PatientDetail(PatientBase):
     vitals: List[PatientVitals] = []
     smbg: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
+    fitness_data_sync: Optional[FitnessDataSync] = None
 
     class Config:
         orm_mode = True
@@ -310,12 +312,16 @@ class PatientDetail(PatientBase):
     @classmethod
     def from_orm(cls, obj):
         kwargs = {}
-        state = obj._sa_instance_state  # Access the internal state of the SQLAlchemy instance
-        
+        state = (
+            obj._sa_instance_state
+        )  # Access the internal state of the SQLAlchemy instance
+
         for name, field in cls.__fields__.items():
             if name in state.dict:  # Check if the attribute is already loaded
                 kwargs[name] = getattr(obj, name)
-            elif name not in state.unloaded:  # Ensure it's not an unloaded attribute
+            elif (
+                name not in state.unloaded
+            ):  # Ensure it's not an unloaded attribute
                 kwargs[name] = getattr(obj, name)
 
         return cls(**kwargs)

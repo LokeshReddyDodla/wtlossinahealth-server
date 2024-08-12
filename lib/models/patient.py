@@ -19,6 +19,7 @@ from datetime import datetime
 from sqlalchemy.event import listens_for
 
 from lib.models import Base
+from lib.models.fitness_data_sync import FitnessDataSync
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
 
@@ -143,15 +144,23 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    fitness_data_sync = relationship(
+        "FitnessDataSync",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
 
 @listens_for(Patient, "after_insert")
 def create_related_records(mapper, connection, target):
+    # Insert into PatientConnectedApp
     connection.execute(
         PatientConnectedApp.__table__.insert(),
         {
             "patient_id": target.patient_id,
         },
     )
+    # Insert into PatientPermission
     connection.execute(
         PatientPermission.__table__.insert(),
         {
@@ -160,7 +169,14 @@ def create_related_records(mapper, connection, target):
             "health_permission": False,
             "camera_permission": False,
             "storage_permission": False,
-            "last_sync_time": datetime.now(),
+        },
+    )
+    # Insert into FitnessDataSync
+    connection.execute(
+        FitnessDataSync.__table__.insert(),
+        {
+            "patient_id": target.patient_id,
+            "last_sync_timestamp": None,
         },
     )
 

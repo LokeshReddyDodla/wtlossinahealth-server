@@ -44,11 +44,13 @@ async def upload_fitness_data(
 
         # Extract time range from the fitness data
         start_time = min(
-            datetime.fromisoformat(item.dateFrom) for item in fitness_data
+            datetime.fromisoformat(item.dateFrom).strftime("%Y-%m-%d %H:%M:%S")
+            for item in fitness_data
         )
         end_time = max(
-            datetime.fromisoformat(item.dateTo) for item in fitness_data
-        )
+            datetime.fromisoformat(item.dateTo).strftime("%Y-%m-%d %H:%M:%S")
+            for item in fitness_data
+)
 
         print("==> start_time: ", start_time)
         print("==> end_time: ", end_time)
