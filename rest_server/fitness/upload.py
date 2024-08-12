@@ -43,16 +43,13 @@ async def upload_fitness_data(
     try:
         clickhouse_store = request.state.context.clickhouse_store
         fitness_data = body.fitness_data
-        print("==> fitness_data: ", fitness_data)
 
         # Extract time range from the fitness data
         start_time = min(
-            datetime.fromisoformat(item.dateFrom).strftime("%Y-%m-%d %H:%M:%S")
-            for item in fitness_data
+            datetime.fromisoformat(item.dateFrom) for item in fitness_data
         )
         end_time = max(
-            datetime.fromisoformat(item.dateTo).strftime("%Y-%m-%d %H:%M:%S")
-            for item in fitness_data
+            datetime.fromisoformat(item.dateTo) for item in fitness_data
         )
 
         print("==> start_time: ", start_time)
@@ -62,8 +59,8 @@ async def upload_fitness_data(
         clickhouse_store.delete_existing_fitness_data(
             "aihealth.fitness_data",
             current_patient.patient_id,
-            start_time,
-            end_time,
+            start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            end_time.strftime("%Y-%m-%d %H:%M:%S"),
         )
 
         # Prepare data for ClickHouseDB
