@@ -80,7 +80,7 @@ async def get_patient_details(
                     selectinload(Patient.connected_apps).selectinload(
                         PatientConnectedApp.other_app
                     ),
-                    selectinload(Patient.fitness_data_sync),
+                    selectinload(Patient.fitness_syncs),
                 )
             )
 

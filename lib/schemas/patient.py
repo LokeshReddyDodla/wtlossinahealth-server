@@ -304,7 +304,7 @@ class PatientDetail(PatientBase):
     vitals: List[PatientVitals] = []
     smbg: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
-    fitness_data_sync: Optional[FitnessDataSync] = None
+    fitness_syncs: Optional[FitnessDataSync] = None
 
     class Config:
         orm_mode = True
