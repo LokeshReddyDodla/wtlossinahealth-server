@@ -7,6 +7,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.security import HTTPBearer
 from jose import jwt
 from decouple import config
+from loguru import logger
+
 
 
 JWT_SECRET = config("JWT_SECRET")
@@ -52,7 +54,7 @@ class JWTBearer(HTTPBearer):
                 audience=JWT_AUDIENCE,
             )
         except Exception as exc:
-            print(exc)  # TODO: Add logging
+            logger.error(exc)  # TODO: Add logging
             user_metadata = {}
 
         if not user_metadata:

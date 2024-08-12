@@ -1,7 +1,6 @@
 import random
 import string
-from datetime import datetime, timedelta
-
+from loguru import logger
 from lib.core.cache_store import CacheStore
 
 OTP_EXPIRY_TIME = 300  # 5 minutes in seconds
@@ -15,7 +14,7 @@ async def create_and_send_otp(phone_number: str, cache_store: CacheStore):
     otp = generate_otp()
     cache_store.set_key(phone_number, otp, OTP_EXPIRY_TIME)
     # Simulate sending OTP via SMS
-    print(f"Sending OTP {otp} to {phone_number}")
+    logger.info(f"Sending OTP {otp} to {phone_number}")
 
 
 async def verify_otp(
