@@ -3,10 +3,12 @@ from pydantic import Json
 from typing import Union
 from loguru import logger
 
+from rest_server.response_models import SuccessResponse
+
 router = APIRouter()
 
 
-@router.post(path="/dump", tags=["Data Dump"])
+@router.post(path="/dump", tags=["Data Dump"], response_model=SuccessResponse)
 async def dump_data(request: Request, data: Union[Json, dict] = Body(...)):
     """
     Dump raw data into MongoDB.
@@ -18,7 +20,7 @@ async def dump_data(request: Request, data: Union[Json, dict] = Body(...)):
             "raw_data_collection", data
         )
         logger.info("Data inserted successfully")
-        return {"message": "Data inserted successfully"}
+        return SuccessResponse(message="Data inserted successfully")
     except Exception as e:
         logger.error(f"Failed to insert data: {str(e)}")
         raise HTTPException(
