@@ -6,7 +6,6 @@ from rest_server.meals import analyze_meal, meals
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
 from rest_server.prescriptions import analyse_prescription
-from rest_server.fitness import log as fitness_log
 from rest_server.report import analyse_report
 from rest_server.chat import chat, context_chat
 from rest_server.patients import (
@@ -58,7 +57,6 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Fitness
     ###########################################################################
-    app.include_router(fitness_log.router)
 
     ###########################################################################
     # Report
@@ -96,7 +94,7 @@ def import_routes(app: FastAPI) -> None:
     # Test
     ###########################################################################
     app.include_router(test.router)
-    
+
     ###########################################################################
     # DUMP
     ###########################################################################
