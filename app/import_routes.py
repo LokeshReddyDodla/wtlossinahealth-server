@@ -21,6 +21,7 @@ from rest_server.test import test
 from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
+from rest_server.dump import dump
 
 
 def import_routes(app: FastAPI) -> None:
@@ -95,6 +96,11 @@ def import_routes(app: FastAPI) -> None:
     # Test
     ###########################################################################
     app.include_router(test.router)
+    
+    ###########################################################################
+    # DUMP
+    ###########################################################################
+    app.include_router(dump.router)
 
     ###########################################################################
     # Admin
