@@ -62,7 +62,7 @@ async def admin_upload_cgm_data(
             end_time = df["Device Timestamp"].max()
 
             # Delete existing data for the patient in the time range
-            clickhouse_store.delete_existing_data(
+            clickhouse_store.delete_existing_cgm_data(
                 "aihealth.cgm_data",
                 patient.patient_id,
                 start_time,
