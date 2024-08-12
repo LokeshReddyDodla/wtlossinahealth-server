@@ -10,3 +10,4 @@ from lib.models.patient_vitals import *
 from lib.models.patient_smbg import *
 from lib.models.meal import *
 from lib.models.admin import *
+from lib.models.fitness_data_sync import *
