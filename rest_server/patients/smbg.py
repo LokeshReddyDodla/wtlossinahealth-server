@@ -2,7 +2,10 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from lib.models.patient_smbg import PatientSMBG
-from lib.schemas.patient_smbg import PatientSMBGCreate
+from lib.schemas.patient_smbg import (
+    PatientSMBGCreate,
+    PatientSMBG as PatientSMBGSchema,
+)
 from sqlalchemy.future import select
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
@@ -55,9 +58,13 @@ async def get_patient_smbg(
             )
 
             smbg_records = result.scalars().all()
+            smbgs = [
+                PatientSMBGSchema.from_orm(record) for record in smbg_records
+            ]
+
             return SuccessResponse(
                 message="SMBG data fetched successfully.",
-                data=smbg_records,
+                data=smbgs,
             )
         except Exception as e:
             response = ErrorResponse(

@@ -2,7 +2,10 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from lib.models.patient_vitals import PatientVitals
-from lib.schemas.patient_vitals import PatientVitalsCreate
+from lib.schemas.patient_vitals import (
+    PatientVitalsCreate,
+    PatientVitals as PatientVitalsSchema,
+)
 from sqlalchemy.future import select
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
@@ -32,6 +35,7 @@ async def upload_vitals(
                 systolic_bp=vitals.systolic_bp,
                 temperature=vitals.temperature,
                 weight=vitals.weight,
+                source=vitals.source,
             )
             session.add(new_vitals)
             await session.commit()
@@ -59,7 +63,8 @@ async def get_patient_vitals(
                 .order_by(PatientVitals.test_time.desc())
             )
 
-            vitals = result.scalars().all()
+            vital_records = result.scalars().all()
+            vitals = [PatientVitalsSchema.from_orm(record) for record in vital_records]
             return SuccessResponse(
                 message="Vitals fetched successfully.",
                 data=vitals,
