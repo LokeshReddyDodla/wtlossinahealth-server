@@ -36,6 +36,8 @@ class ClickHouseStore:
         CREATE TABLE IF NOT EXISTS aihealth.fitness_data (
             patient_id String,
             type String,
+            source String,
+            unit String,
             value Float64,
             date_from DateTime,
             date_to DateTime
