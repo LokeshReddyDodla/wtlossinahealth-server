@@ -26,6 +26,10 @@ class FitnessUploadService:
             FitnessUploadUtils.flatten_and_extract_dates(fitness_data)
         )
 
+        if not dateFrom or not dateTo or not source:
+            # No data to process
+            return None
+
         await self.delete_existing_data(dateFrom, dateTo, source)
         await self.insert_new_data(fitness_data)
         await self.update_last_sync(dateTo)

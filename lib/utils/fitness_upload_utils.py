@@ -18,6 +18,9 @@ class FitnessUploadUtils:
             for item in data_list
         ]
 
+        if not all_data:
+            return None, None, None  # No data found
+
         # Create a DataFrame
         df = pd.DataFrame(all_data)
         df["dateFrom"] = pd.to_datetime(
