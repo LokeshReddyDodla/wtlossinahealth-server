@@ -27,5 +27,6 @@ class PatientVitals(Base):
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
+    source = Column(String, nullable=False)
 
     patient = relationship("Patient", back_populates="vitals")

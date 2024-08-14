@@ -15,7 +15,7 @@ class PatientSMBG(Base):
     )
     glucose_level = Column(Float, nullable=False)
     reading_time = Column(DateTime, nullable=False)
-    source = Column(String, default="app")
+    source = Column(String, nullable=False)
     type = Column(String, nullable=False)  # pre_meal, post_meal, etc.
     meal_type = Column(
         String, nullable=True

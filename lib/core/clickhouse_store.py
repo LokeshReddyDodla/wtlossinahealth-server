@@ -31,8 +31,24 @@ class ClickHouseStore:
         """
         self.client.execute(create_table_query)
 
+    def create_fitness_data_table(self):
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS aihealth.fitness_data (
+            patient_id String,
+            type String,
+            source String,
+            unit String,
+            value Float64,
+            date_from DateTime,
+            date_to DateTime
+        ) ENGINE = MergeTree()
+        ORDER BY (patient_id, date_from);
+        """
+        self.client.execute(create_table_query)
+
     def create_all_tables(self):
         self.create_cgm_data_table()
+        self.create_fitness_data_table()
 
     def write_data(self, table_name, data):
         if not data:
@@ -44,7 +60,7 @@ class ClickHouseStore:
         query = f"INSERT INTO {table_name} ({columns}) VALUES {values}"
         self.client.execute(query)
 
-    def delete_existing_data(
+    def delete_existing_cgm_data(
         self,
         table_name: str,
         patient_id: str,
@@ -56,26 +72,18 @@ class ClickHouseStore:
         """
         self.client.execute(query)
 
-    def get_last_uploaded_timestamp(
-        self, table_name: str, patient_id: str
-    ) -> Optional[datetime]:
+    def delete_existing_fitness_data(
+        self,
+        table_name: str,
+        patient_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        source: str,
+    ):
         query = f"""
-        SELECT max(time) as last_time
-        FROM {table_name}
-        WHERE patient_id = '{patient_id}'
+        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND date_from BETWEEN '{start_time}' AND '{end_time}' AND source = '{source}'
         """
-
-        result = self.client.execute(query)
-        if (
-            result
-            and isinstance(result, list)
-            and len(result) > 0
-            and len(result[0]) > 0
-        ):
-            last_time_str = result[0][0]
-            if last_time_str:
-                return datetime.fromisoformat(last_time_str)
-        return None
+        self.client.execute(query)
 
     def query_data(self, query):
         try:

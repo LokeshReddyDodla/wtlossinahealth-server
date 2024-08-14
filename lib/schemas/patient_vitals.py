@@ -5,6 +5,7 @@ from uuid import UUID
 
 
 class PatientVitalsBase(BaseModel):
+    source: str
     test_time: datetime
     a1c: Optional[float] = None
     creatinine: Optional[float] = None

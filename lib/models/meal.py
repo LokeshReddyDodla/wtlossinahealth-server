@@ -93,7 +93,7 @@ class Meal(Base):
     )
     image_url = Column(Text)
     description = Column(String, nullable=True)
-    source = Column(String, nullable=True, default="app")
+    source = Column(String, nullable=False)
     feedback = Column(String, nullable=True)
     tags = Column(ARRAY(String), nullable=True)
     context_id = Column(String, nullable=True)
