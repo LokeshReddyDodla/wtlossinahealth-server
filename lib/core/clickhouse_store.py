@@ -78,9 +78,10 @@ class ClickHouseStore:
         patient_id: str,
         start_time: datetime,
         end_time: datetime,
+        source: str,
     ):
         query = f"""
-        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND date_from BETWEEN '{start_time}' AND '{end_time}'
+        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND date_from BETWEEN '{start_time}' AND '{end_time}' AND source = '{source}'
         """
         self.client.execute(query)
 
