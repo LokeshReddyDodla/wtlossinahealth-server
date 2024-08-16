@@ -39,64 +39,55 @@ class FitnessDataProcessor:
             self.patient_id, from_date_str, to_date_str
         )
         result = self.clickhouse_store.client.execute(query)
-        if result:
-            total_steps = result[0][0]
-            total_active_energy = result[0][1]
-            total_active_duration = result[0][2]
+        total_steps = result[0][0]
+        total_active_energy = result[0][1]
+        total_active_duration = result[0][2]
 
-            # Calculate average active session duration
-            avg_active_session_query = (
-                generate_average_active_session_duration_query(
-                    self.patient_id, from_date_str, to_date_str
-                )
-            )
-            avg_active_session_result = self.clickhouse_store.client.execute(
-                avg_active_session_query
-            )
-
-            average_active_session_duration = (
-                avg_active_session_result[0][0]
-                if avg_active_session_result
-                and not math.isnan(avg_active_session_result[0][0])
-                else 0
-            )
-
-            # Fetch additional metrics for the overall summary
-            activity_distribution_query = generate_activity_distribution_query(
+        # Calculate average active session duration
+        avg_active_session_query = (
+            generate_average_active_session_duration_query(
                 self.patient_id, from_date_str, to_date_str
             )
-            activity_distribution = self._fetch_activity_distribution(
-                activity_distribution_query
-            )
+        )
+        avg_active_session_result = self.clickhouse_store.client.execute(
+            avg_active_session_query
+        )
 
-            peak_activity_time_query = generate_peak_activity_time_query(
-                self.patient_id, from_date_str, to_date_str
-            )
-            peak_activity_time = self._fetch_peak_activity_time(
-                peak_activity_time_query
-            )
+        average_active_session_duration = (
+            avg_active_session_result[0][0]
+            if avg_active_session_result
+            and not math.isnan(avg_active_session_result[0][0])
+            else 0
+        )
 
-            inactive_periods_query = generate_inactive_periods_query(
-                self.patient_id, from_date_str, to_date_str
-            )
-            inactive_periods = self._fetch_inactive_periods(
-                inactive_periods_query
-            )
+        # Fetch additional metrics for the overall summary
+        activity_distribution_query = generate_activity_distribution_query(
+            self.patient_id, from_date_str, to_date_str
+        )
+        activity_distribution = self._fetch_activity_distribution(
+            activity_distribution_query
+        )
 
-            return FitnessSummaryStats(
-                steps=total_steps,
-                active_energy=total_active_energy,
-                active_duration=total_active_duration,
-                average_active_session_duration=average_active_session_duration,
-                activity_distribution=activity_distribution,
-                peak_activity_time=peak_activity_time,
-                inactive_periods=inactive_periods,
-            )
+        peak_activity_time_query = generate_peak_activity_time_query(
+            self.patient_id, from_date_str, to_date_str
+        )
+        peak_activity_time = self._fetch_peak_activity_time(
+            peak_activity_time_query
+        )
+
+        inactive_periods_query = generate_inactive_periods_query(
+            self.patient_id, from_date_str, to_date_str
+        )
+        inactive_periods = self._fetch_inactive_periods(inactive_periods_query)
+
         return FitnessSummaryStats(
-            steps=0,
-            active_energy=0.0,
-            active_duration=0.0,
-            average_active_session_duration=0.0,
+            steps=total_steps,
+            active_energy=total_active_energy,
+            active_duration=total_active_duration,
+            average_active_session_duration=average_active_session_duration,
+            activity_distribution=activity_distribution,
+            peak_activity_time=peak_activity_time,
+            inactive_periods=inactive_periods,
         )
 
     def fetch_daily_stats(

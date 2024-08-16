@@ -2,6 +2,12 @@ from datetime import datetime, date
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional, Union
 
+from lib.schemas.fitness import (
+    FitnessBaseStats,
+    FitnessDailyStats,
+    FitnessSummaryStats,
+    FitnessWeeklyStats,
+)
 from lib.schemas.meal import MealResponse
 
 
@@ -108,3 +114,18 @@ class GlucoseLevelStats(BaseModel):
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
+
+
+class GlucoseDailyReport(BaseModel):
+    cgm_report: Dict[str, GlucoseLevelStats]
+    fitness_report: Optional[List[FitnessDailyStats]] = None
+
+
+class GlucoseWeeklyReport(BaseModel):
+    cgm_report: Dict[str, GlucoseLevelStats]
+    fitness_report: Optional[List[FitnessWeeklyStats]] = None
+
+
+class GlucoseOverallReport(BaseModel):
+    cgm_report: Dict[str, GlucoseLevelStats]
+    fitness_report: Optional[FitnessSummaryStats] = None
