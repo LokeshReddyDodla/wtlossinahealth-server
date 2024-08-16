@@ -84,18 +84,18 @@ class FitnessDataProcessor:
             )
 
             return FitnessSummaryStats(
-                total_steps=total_steps,
-                total_active_energy=total_active_energy,
-                total_active_duration=total_active_duration,
+                steps=total_steps,
+                active_energy=total_active_energy,
+                active_duration=total_active_duration,
                 average_active_session_duration=average_active_session_duration,
                 activity_distribution=activity_distribution,
                 peak_activity_time=peak_activity_time,
                 inactive_periods=inactive_periods,
             )
         return FitnessSummaryStats(
-            total_steps=0,
-            total_active_energy=0.0,
-            total_active_duration=0.0,
+            steps=0,
+            active_energy=0.0,
+            active_duration=0.0,
             average_active_session_duration=0.0,
         )
 

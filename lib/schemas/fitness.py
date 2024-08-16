@@ -26,44 +26,29 @@ class FitnessWeekOverWeekComparison(BaseModel):
     active_duration_diff: float
 
 
-class FitnessDailyStats(BaseModel):
+class FitnessBaseStats(BaseModel):
+    steps: int
+    active_energy: float
+    active_duration: float
+    average_active_session_duration: float
+    activity_distribution: Optional[Dict[str, FitnessActivityDistribution]] = (
+        None
+    )
+    peak_activity_time: Optional[FitnessPeakActivityTime] = None
+    inactive_periods: Optional[List[FitnessInactivePeriod]] = None
+
+
+class FitnessDailyStats(FitnessBaseStats):
     date: date
-    steps: int
-    active_energy: float
-    active_duration: float
-    average_active_session_duration: float
-    activity_distribution: Optional[Dict[str, FitnessActivityDistribution]] = (
-        None
-    )
-    peak_activity_time: Optional[FitnessPeakActivityTime] = None
-    inactive_periods: Optional[List[FitnessInactivePeriod]] = None
 
 
-class FitnessWeeklyStats(BaseModel):
+class FitnessWeeklyStats(FitnessBaseStats):
     week_number: int
-    steps: int
-    active_energy: float
-    active_duration: float
-    average_active_session_duration: float
-    activity_distribution: Optional[Dict[str, FitnessActivityDistribution]] = (
-        None
-    )
-    peak_activity_time: Optional[FitnessPeakActivityTime] = None
-    inactive_periods: Optional[List[FitnessInactivePeriod]] = None
     week_over_week_comparison: Optional[FitnessWeekOverWeekComparison] = None
 
 
-class FitnessMonthlyStats(BaseModel):
+class FitnessMonthlyStats(FitnessBaseStats):
     month: str
-    steps: int
-    active_energy: float
-    active_duration: float
-    average_active_session_duration: float
-    activity_distribution: Optional[Dict[str, FitnessActivityDistribution]] = (
-        None
-    )
-    peak_activity_time: Optional[FitnessPeakActivityTime] = None
-    inactive_periods: Optional[List[FitnessInactivePeriod]] = None
     week_over_week_comparison: Optional[FitnessWeekOverWeekComparison] = None
 
 
@@ -74,16 +59,8 @@ class FitnessHourlyStats(BaseModel):
     active_duration: float
 
 
-class FitnessSummaryStats(BaseModel):
-    total_steps: int
-    total_active_energy: float
-    total_active_duration: float
-    average_active_session_duration: float
-    activity_distribution: Optional[Dict[str, FitnessActivityDistribution]] = (
-        None
-    )
-    peak_activity_time: Optional[FitnessPeakActivityTime] = None
-    inactive_periods: Optional[List[FitnessInactivePeriod]] = None
+class FitnessSummaryStats(FitnessBaseStats):
+    pass
 
 
 class FitnessStatsResponse(BaseModel):
