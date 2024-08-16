@@ -4,9 +4,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from sqlalchemy import select
 
-from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
@@ -21,7 +19,7 @@ from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 
 from lib.utils.fitness.processor import FitnessDataProcessor
-from lib.utils.glucose.processor import PeriodicStatsProcessor
+from lib.utils.glucose.processor import GlucoseStatsProcessor
 
 
 from rest_server.cgm.api_schema import (
@@ -61,7 +59,7 @@ async def get_detailed_glucose_report(
 
         # Fetch patient details
         async with request.state.context.postgres_store.get_session() as postgres_session:
-            processor = PeriodicStatsProcessor(
+            glucose_processor = GlucoseStatsProcessor(
                 clickhouse_store, postgres_session, patient_id
             )
 
@@ -73,12 +71,14 @@ async def get_detailed_glucose_report(
             to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
             # Fetch patient details
-            patient_detail = await processor.fetch_profile()
+            patient_detail = await glucose_processor.fetch_profile()
 
             # Overall Stats
             overall_period = OverallPeriod(from_date, to_date)
             overall_stats = GlucoseOverallReport(
-                cgm_report=await processor.process(overall_period.periods),
+                cgm_report=await glucose_processor.process(
+                    overall_period.periods
+                ),
                 fitness_report=fitness_processor.fetch_summary_stats(
                     from_date_str, to_date_str
                 ),
@@ -87,7 +87,7 @@ async def get_detailed_glucose_report(
             # Day-wise Stats
             day_periods = DayWisePeriod(from_date, to_date)
             day_wise_stats = GlucoseDailyReport(
-                cgm_report=await processor.process(
+                cgm_report=await glucose_processor.process(
                     day_periods.periods, include_readings=True
                 ),
                 fitness_report=fitness_processor.fetch_daily_stats(
@@ -98,7 +98,7 @@ async def get_detailed_glucose_report(
             # Week-wise Stats
             week_periods = WeekWisePeriod(from_date, to_date)
             week_wise_stats = GlucoseWeeklyReport(
-                cgm_report=await processor.process(
+                cgm_report=await glucose_processor.process(
                     week_periods.periods, include_readings=True
                 ),
                 fitness_report=fitness_processor.fetch_weekly_stats(

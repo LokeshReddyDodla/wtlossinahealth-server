@@ -4,26 +4,16 @@ from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from sqlalchemy import select
 
-from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
 
 from lib.schemas.fitness import FitnessStatsResponse
-from lib.utils.cgm_utils import CGMDataUtils
-from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 
 from lib.utils.fitness.processor import FitnessDataProcessor
-from lib.utils.glucose.processor import PeriodicStatsProcessor
 
-
-from rest_server.cgm.api_schema import (
-    GlucoseReportResponse,
-)
-from rest_server.response_models import ErrorResponse
 
 # Create FastAPI router
 router = APIRouter(prefix="/fitness/report")
@@ -49,7 +39,7 @@ async def get_fitness_data(
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        summary_stats = processor.fetch_summary_stats(
+        overall_stats = processor.fetch_summary_stats(
             from_date_str, to_date_str
         )
         daily_stats = processor.fetch_daily_stats(from_date_str, to_date_str)
@@ -61,7 +51,7 @@ async def get_fitness_data(
 
         return FitnessStatsResponse(
             patient_id=str(current_patient.patient_id),
-            summary=summary_stats,
+            overall=overall_stats,
             daily_stats=daily_stats,
             weekly_stats=weekly_stats,
             monthly_stats=monthly_stats,
