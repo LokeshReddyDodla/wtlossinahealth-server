@@ -21,7 +21,7 @@ from lib.schemas.glucose import (
 )
 
 
-class GlucosePeriodicStatsProcessor:
+class GlucoseStatsProcessor:
     def __init__(self, clickhouse_store, postgres_session, patient_id):
         self.clickhouse_store = clickhouse_store
         self.postgres_session = postgres_session
