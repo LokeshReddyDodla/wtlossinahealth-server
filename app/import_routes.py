@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from rest_server.auth import auth
-from rest_server.cgm import cgm, report, upload as cgm_upload
+from rest_server.cgm import cgm, report as cgm_report, upload as cgm_upload
 from rest_server.meals import analyze_meal, meals
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
@@ -20,7 +20,10 @@ from rest_server.test import test
 from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
-from rest_server.fitness import upload as fitness_upload
+from rest_server.fitness import (
+    upload as fitness_upload,
+    report as fitness_report,
+)
 from rest_server.dump import dump
 
 
@@ -59,6 +62,7 @@ def import_routes(app: FastAPI) -> None:
     # Fitness
     ###########################################################################
     app.include_router(fitness_upload.router)
+    app.include_router(fitness_report.router)
 
     ###########################################################################
     # Report
@@ -81,7 +85,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     app.include_router(cgm.router)
     app.include_router(cgm_upload.router)
-    app.include_router(report.router)
+    app.include_router(cgm_report.router)
 
     ###########################################################################
     # Patient
