@@ -57,3 +57,36 @@ def generate_overall_glucose_stats_query(patient_id, from_date, to_date):
         AND time >= '{from_date}'
         AND time <= '{to_date}'
     """
+
+
+def generate_glucose_readings_by_date_query(patient_id, from_date, to_date):
+    return f"""
+    SELECT
+        time AS Device_Timestamp,
+        glucose_level AS Glucose_Level
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    ORDER BY time
+    """
+
+
+def generate_avg_glucose_readings_by_hour_query(
+    patient_id, from_date, to_date
+):
+    return f"""
+    SELECT
+        formatDateTime(time, '%H:00') AS hour,
+        avg(glucose_level) AS avg_glucose_level
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    GROUP BY hour
+    ORDER BY hour
+    """

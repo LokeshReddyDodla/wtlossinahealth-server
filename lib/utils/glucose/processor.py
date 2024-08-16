@@ -9,6 +9,10 @@ from lib.schemas.patient import PatientDetail
 from sqlalchemy.orm import selectinload
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
+from lib.utils.glucose.queries import (
+    generate_avg_glucose_readings_by_hour_query,
+    generate_glucose_readings_by_date_query,
+)
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.schemas.glucose import (
@@ -26,18 +30,9 @@ class PeriodicStatsProcessor:
     def fetch_glucose_readings_by_date(
         self, from_date_str: str, to_date_str: str
     ) -> List[GlucoseReading]:
-        query = f"""
-        SELECT
-            time AS Device_Timestamp,
-            glucose_level AS Glucose_Level
-        FROM
-            aihealth.cgm_data
-        WHERE
-            patient_id = '{self.patient_id}'
-            AND time >= '{from_date_str}'
-            AND time <= '{to_date_str}'
-        ORDER BY time
-        """
+        query = generate_glucose_readings_by_date_query(
+            self.patient_id, from_date_str, to_date_str
+        )
         data = self.clickhouse_store.client.execute(query)
         if not data:
             return []
@@ -51,19 +46,9 @@ class PeriodicStatsProcessor:
     def fetch_avg_glucose_readings_by_hour(
         self, from_date_str: str, to_date_str: str
     ) -> List[GlucoseReading]:
-        query = f"""
-        SELECT
-            formatDateTime(time, '%H:00') AS hour,
-            avg(glucose_level) AS avg_glucose_level
-        FROM
-            aihealth.cgm_data
-        WHERE
-            patient_id = '{self.patient_id}'
-            AND time >= '{from_date_str}'
-            AND time <= '{to_date_str}'
-        GROUP BY hour
-        ORDER BY hour
-        """
+        query = generate_avg_glucose_readings_by_hour_query(
+            self.patient_id, from_date_str, to_date_str
+        )
         data = self.clickhouse_store.client.execute(query)
         if not data:
             return []
@@ -171,12 +156,14 @@ class PeriodicStatsProcessor:
                         from_date_str, to_date_str
                     )
                     meals = await self.fetch_meals(from_date, to_date)
+
             elif "week_no" in period:
                 period_key = f"Week {period['week_no']}"
                 if include_readings:
                     glucose_readings = self.fetch_avg_glucose_readings_by_hour(
                         from_date_str, to_date_str
                     )
+
             else:
                 period_key = "overall"
 
