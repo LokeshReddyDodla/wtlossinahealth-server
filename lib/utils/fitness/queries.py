@@ -140,19 +140,25 @@ def generate_peak_activity_time_query(
 ) -> str:
     return f"""
     SELECT
-        formatDateTime(date_from, '%Y-%m-%d %H:00:00') AS hour,
-        MAX(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS max_steps,
-        MAX(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS max_active_energy
-    FROM
-        aihealth.fitness_data
-    WHERE
-        patient_id = '{patient_id}'
-        AND date_from >= '{from_date}'
-        AND date_to <= '{to_date}'
-    GROUP BY
-        hour
+        hour,
+        max_steps,
+        max_active_energy
+    FROM (
+        SELECT
+            formatDateTime(date_from, '%Y-%m-%d %H:00:00') AS hour,
+            SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS max_steps,
+            SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS max_active_energy
+        FROM
+            aihealth.fitness_data
+        WHERE
+            patient_id = '{patient_id}'
+            AND date_from >= '{from_date}'
+            AND date_to <= '{to_date}'
+        GROUP BY
+            hour
+    ) AS hourly_data
     ORDER BY
-        hour DESC
+        max_steps DESC, max_active_energy DESC
     LIMIT 1
     """
 
@@ -162,11 +168,14 @@ def generate_inactive_periods_query(
 ) -> str:
     return f"""
     SELECT
+        t1.date_to AS start_time,
+        t2.date_from AS end_time,
         dateDiff('minute', t1.date_to, t2.date_from) AS inactive_duration
     FROM (
         SELECT
             date_from,
             date_to,
+            type AS preceding_activity, -- Capture preceding activity type
             toInt64(row_number() OVER (ORDER BY date_from)) AS rn
         FROM
             aihealth.fitness_data
@@ -179,6 +188,7 @@ def generate_inactive_periods_query(
         SELECT
             date_from,
             date_to,
+            type AS following_activity, -- Capture following activity type
             toInt64(row_number() OVER (ORDER BY date_from)) AS rn
         FROM
             aihealth.fitness_data
@@ -195,40 +205,6 @@ def generate_inactive_periods_query(
     """
 
 
-def generate_week_over_week_comparison_query(
-    patient_id: str, current_week_start: str, previous_week_start: str
-) -> str:
-    return f"""
-    SELECT
-        current_week.steps - previous_week.steps AS steps_diff,
-        current_week.active_energy - previous_week.active_energy AS active_energy_diff,
-        current_week.active_duration - previous_week.active_duration AS active_duration_diff
-    FROM
-        (SELECT
-            SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
-            SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
-            SUM(dateDiff('minute', date_from, date_to)) AS active_duration
-        FROM
-            aihealth.fitness_data
-        WHERE
-            patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{current_week_start}')
-            AND date_to < addWeeks(toDateTime('{current_week_start}'), 1)
-        ) AS current_week,
-        (SELECT
-            SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
-            SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
-            SUM(dateDiff('minute', date_from, date_to)) AS active_duration
-        FROM
-            aihealth.fitness_data
-        WHERE
-            patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{previous_week_start}')
-            AND date_to < addWeeks(toDateTime('{previous_week_start}'), 1)
-        ) AS previous_week
-    """
-
-
 def generate_average_active_session_duration_query(
     patient_id: str, from_date: str, to_date: str
 ) -> str:
@@ -241,5 +217,5 @@ def generate_average_active_session_duration_query(
         patient_id = '{patient_id}'
         AND date_from >= '{from_date}'
         AND date_to <= '{to_date}'
-        AND type = 'ACTIVE'
+        AND type = 'ACTIVE_ENERGY_BURNED'
     """

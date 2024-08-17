@@ -19,7 +19,6 @@ from lib.utils.fitness.queries import (
     generate_peak_activity_time_query,
     generate_daily_stats_query,
     generate_summary_stats_query,
-    generate_week_over_week_comparison_query,
     generate_weekly_stats_query,
     generate_monthly_stats_query,
     generate_hourly_stats_query,
@@ -54,10 +53,7 @@ class FitnessDataProcessor:
         )
 
         average_active_session_duration = (
-            avg_active_session_result[0][0]
-            if avg_active_session_result
-            and not math.isnan(avg_active_session_result[0][0])
-            else 0
+            avg_active_session_result[0][0] if avg_active_session_result else 0
         )
 
         # Fetch additional metrics for the overall summary
@@ -119,7 +115,6 @@ class FitnessDataProcessor:
             average_active_session_duration = (
                 avg_active_session_result[0][0]
                 if avg_active_session_result
-                and not math.isnan(avg_active_session_result[0][0])
                 else 0
             )
 
@@ -179,20 +174,6 @@ class FitnessDataProcessor:
             active_energy = row[2]
             active_duration = row[3]
 
-            # Adjust format to match the input format
-            date_format = "%Y-%m-%dT%H:%M:%S"
-
-            # Parse the date using the correct format
-            current_week_start_date = datetime.strptime(
-                from_date_str, date_format
-            )
-            previous_week_start_date = current_week_start_date - timedelta(
-                weeks=1
-            )
-            previous_week_start_str = previous_week_start_date.strftime(
-                "%Y-%m-%dT%H:%M:%S"
-            )
-
             # Calculate average active session duration
             avg_active_session_query = (
                 generate_average_active_session_duration_query(
@@ -205,7 +186,6 @@ class FitnessDataProcessor:
             average_active_session_duration = (
                 avg_active_session_result[0][0]
                 if avg_active_session_result
-                and not math.isnan(avg_active_session_result[0][0])
                 else 0
             )
 
@@ -230,13 +210,6 @@ class FitnessDataProcessor:
                 inactive_periods_query
             )
 
-            week_over_week_query = generate_week_over_week_comparison_query(
-                self.patient_id, from_date_str, previous_week_start_str
-            )
-            week_over_week_comparison = self._fetch_week_over_week_comparison(
-                week_over_week_query
-            )
-
             weekly_stats.append(
                 FitnessWeeklyStats(
                     week_number=week_number,
@@ -247,7 +220,6 @@ class FitnessDataProcessor:
                     activity_distribution=activity_distribution,
                     peak_activity_time=peak_activity_time,
                     inactive_periods=inactive_periods,
-                    week_over_week_comparison=week_over_week_comparison,
                 )
             )
 
@@ -279,7 +251,6 @@ class FitnessDataProcessor:
             average_active_session_duration = (
                 avg_active_session_result[0][0]
                 if avg_active_session_result
-                and not math.isnan(avg_active_session_result[0][0])
                 else 0
             )
 
@@ -304,13 +275,6 @@ class FitnessDataProcessor:
                 inactive_periods_query
             )
 
-            week_over_week_query = generate_week_over_week_comparison_query(
-                self.patient_id, from_date_str, from_date_str
-            )
-            week_over_week_comparison = self._fetch_week_over_week_comparison(
-                week_over_week_query
-            )
-
             monthly_stats.append(
                 FitnessMonthlyStats(
                     month=month,
@@ -321,7 +285,6 @@ class FitnessDataProcessor:
                     activity_distribution=activity_distribution,
                     peak_activity_time=peak_activity_time,
                     inactive_periods=inactive_periods,
-                    week_over_week_comparison=week_over_week_comparison,
                 )
             )
 
@@ -377,19 +340,9 @@ class FitnessDataProcessor:
         data = self.clickhouse_store.client.execute(query)
         return [
             FitnessInactivePeriod(
-                inactive_duration=row[0],
+                start_time=row[0],
+                end_time=row[1],
+                inactive_duration=row[2],
             )
             for row in data
         ]
-
-    def _fetch_week_over_week_comparison(
-        self, query: str
-    ) -> Optional[FitnessWeekOverWeekComparison]:
-        data = self.clickhouse_store.client.execute(query)
-        if data:
-            return FitnessWeekOverWeekComparison(
-                steps_diff=data[0][0],
-                active_energy_diff=data[0][1],
-                active_duration_diff=data[0][2],
-            )
-        return None
