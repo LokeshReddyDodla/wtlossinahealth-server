@@ -23,6 +23,7 @@ from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.fitness import (
     upload as fitness_upload,
     report as fitness_report,
+    test as fitness_test,
 )
 from rest_server.dump import dump
 
@@ -63,6 +64,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     app.include_router(fitness_upload.router)
     app.include_router(fitness_report.router)
+    app.include_router(fitness_test.router)
 
     ###########################################################################
     # Report
