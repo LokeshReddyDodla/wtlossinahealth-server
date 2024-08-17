@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import math
 from typing import List, Dict, Optional
 from lib.schemas.fitness import (
     FitnessActivityDistribution,
@@ -147,7 +148,10 @@ class FitnessDataProcessor:
             avg_active_session_query
         )
         average_active_session_duration = (
-            avg_active_session_result[0][0] if avg_active_session_result else 0
+            avg_active_session_result[0][0]
+            if avg_active_session_result
+            and not math.isnan(avg_active_session_result[0][0])
+            else 0
         )
 
         # Fetch additional metrics for the overall summary
