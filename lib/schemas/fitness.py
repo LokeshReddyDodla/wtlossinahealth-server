@@ -17,6 +17,8 @@ class FitnessPeakActivityTime(BaseModel):
 
 
 class FitnessInactivePeriod(BaseModel):
+    start_time: datetime  # Start time of the inactivity period
+    end_time: datetime  # End time of the inactivity period
     inactive_duration: int  # Duration in minutes
 
 
@@ -44,12 +46,10 @@ class FitnessDailyStats(FitnessBaseStats):
 
 class FitnessWeeklyStats(FitnessBaseStats):
     week_number: int
-    week_over_week_comparison: Optional[FitnessWeekOverWeekComparison] = None
 
 
 class FitnessMonthlyStats(FitnessBaseStats):
     month: str
-    week_over_week_comparison: Optional[FitnessWeekOverWeekComparison] = None
 
 
 class FitnessHourlyStats(BaseModel):
@@ -65,7 +65,7 @@ class FitnessSummaryStats(FitnessBaseStats):
 
 class FitnessStatsResponse(BaseModel):
     patient_id: str
-    summary: FitnessSummaryStats
+    summary: FitnessBaseStats
     daily_stats: Optional[List[FitnessDailyStats]] = None
     weekly_stats: Optional[List[FitnessWeeklyStats]] = None
     monthly_stats: Optional[List[FitnessMonthlyStats]] = None
