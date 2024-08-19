@@ -85,21 +85,37 @@ def generate_hourly_stats_query(
     patient_id: str, from_date: str, to_date: str
 ) -> str:
     return f"""
+   WITH
+        hours AS (
+            SELECT number AS hour
+            FROM numbers(24)
+        )
     SELECT
-        formatDateTime(date_from, '%Y-%m-%d %H:00:00') AS hour,
-        SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
-        SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
-        SUM(dateDiff('minute', date_from, date_to)) AS active_duration
+        hours.hour,
+        COALESCE(SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END), 0) AS steps,
+        COALESCE(SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END), 0) AS active_energy,
+        COALESCE(SUM(dateDiff('minute', date_from, date_to)), 0) AS active_duration
     FROM
-        aihealth.fitness_data
-    WHERE
-        patient_id = '{patient_id}'
-        AND date_from >= '{from_date}'
-        AND date_to <= '{to_date}'
+        hours
+    LEFT JOIN (
+        SELECT
+            toHour(date_from) AS activity_hour,
+            type,
+            value,
+            date_from,
+            date_to
+        FROM
+            aihealth.fitness_data
+        WHERE
+            patient_id = '{patient_id}'
+            AND date_from >= '{from_date}'
+            AND date_to <= '{to_date}'
+    ) AS activity_data
+    ON hours.hour = activity_data.activity_hour
     GROUP BY
-        hour
+        hours.hour
     ORDER BY
-        hour
+        hours.hour
     """
 
 

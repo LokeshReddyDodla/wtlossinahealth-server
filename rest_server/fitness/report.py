@@ -47,7 +47,6 @@ async def get_fitness_data(
         monthly_stats = processor.fetch_monthly_stats(
             from_date_str, to_date_str
         )
-        hourly_stats = processor.fetch_hourly_stats(from_date_str, to_date_str)
 
         return FitnessStatsResponse(
             patient_id=str(current_patient.patient_id),
@@ -55,7 +54,6 @@ async def get_fitness_data(
             daily_stats=daily_stats,
             weekly_stats=weekly_stats,
             monthly_stats=monthly_stats,
-            hourly_stats=hourly_stats,
         )
     except HTTPException as http_exc:
         raise http_exc

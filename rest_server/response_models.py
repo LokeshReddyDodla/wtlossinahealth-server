@@ -1,12 +1,16 @@
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, Generic, Optional, TypeVar
 
-class SuccessResponse(BaseModel):
-    status: str = 'success'
-    data: Optional[Any] = None
+T = TypeVar("T")
+
+
+class SuccessResponse(Generic[T], BaseModel):
+    status: str = "success"
+    data: Optional[T] = None
     message: Optional[str] = None
-    
-class ErrorResponse(BaseModel):
-    status: str = 'error'
+
+
+class ErrorResponse(Generic[T], BaseModel):
+    status: str = "error"
     message: str
     detail: Optional[str] = None
