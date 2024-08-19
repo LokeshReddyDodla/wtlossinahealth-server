@@ -61,6 +61,7 @@ class FitnessDataProcessor:
                 to_date_str=date.strftime("%Y-%m-%dT23:59:59"),
                 stats_class=FitnessDailyStats,
                 additional_fields={"date": date},
+                include_hourly_stats=True,
             )
             daily_stats.append(stats_instance)
         return daily_stats
@@ -107,24 +108,6 @@ class FitnessDataProcessor:
             monthly_stats.append(stats_instance)
         return monthly_stats
 
-    def fetch_hourly_stats(
-        self, from_date_str: str, to_date_str: str
-    ) -> List[FitnessHourlyStats]:
-        query = generate_hourly_stats_query(
-            self.patient_id, from_date_str, to_date_str
-        )
-        data = self.clickhouse_store.client.execute(query)
-        hourly_stats = [
-            FitnessHourlyStats(
-                hour=row[0],
-                steps=row[1],
-                active_energy=row[2],
-                active_duration=row[3],
-            )
-            for row in data
-        ]
-        return hourly_stats
-
     def _construct_fitness_summary_stats(
         self,
         result,
@@ -133,6 +116,7 @@ class FitnessDataProcessor:
         stats_class,
         index_starts: int = 1,
         additional_fields: Dict = {},
+        include_hourly_stats: bool = False,
     ):
         steps = result[index_starts]
         active_energy = result[index_starts + 1]
@@ -174,6 +158,10 @@ class FitnessDataProcessor:
         )
         inactive_periods = self._fetch_inactive_periods(inactive_periods_query)
 
+        hourly_stats = None
+        if include_hourly_stats:
+            hourly_stats = self._fetch_hourly_stats(from_date_str, to_date_str)
+
         return stats_class(
             steps=steps,
             active_energy=active_energy,
@@ -182,8 +170,27 @@ class FitnessDataProcessor:
             activity_distribution=activity_distribution,
             peak_activity_time=peak_activity_time,
             inactive_periods=inactive_periods,
+            hourly_stats=hourly_stats,
             **additional_fields
         )
+
+    def _fetch_hourly_stats(
+        self, from_date_str: str, to_date_str: str
+    ) -> List[FitnessHourlyStats]:
+        query = generate_hourly_stats_query(
+            self.patient_id, from_date_str, to_date_str
+        )
+        data = self.clickhouse_store.client.execute(query)
+        hourly_stats = [
+            FitnessHourlyStats(
+                hour=row[0],
+                steps=row[1],
+                active_energy=row[2],
+                active_duration=row[3],
+            )
+            for row in data
+        ]
+        return hourly_stats
 
     def _fetch_activity_distribution(
         self, query: str

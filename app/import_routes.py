@@ -21,6 +21,7 @@ from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.fitness import (
+    fitness_stats,
     upload as fitness_upload,
     report as fitness_report,
     test as fitness_test,
@@ -62,6 +63,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Fitness
     ###########################################################################
+    app.include_router(fitness_stats.router)
     app.include_router(fitness_upload.router)
     app.include_router(fitness_report.router)
     app.include_router(fitness_test.router)

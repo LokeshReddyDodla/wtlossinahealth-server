@@ -28,6 +28,13 @@ class FitnessWeekOverWeekComparison(BaseModel):
     active_duration_diff: float
 
 
+class FitnessHourlyStats(BaseModel):
+    hour: str
+    steps: int
+    active_energy: float
+    active_duration: float
+
+
 class FitnessBaseStats(BaseModel):
     steps: int
     active_energy: float
@@ -42,6 +49,7 @@ class FitnessBaseStats(BaseModel):
 
 class FitnessDailyStats(FitnessBaseStats):
     date: date
+    hourly_stats: Optional[List[FitnessHourlyStats]] = None
 
 
 class FitnessWeeklyStats(FitnessBaseStats):
@@ -50,13 +58,6 @@ class FitnessWeeklyStats(FitnessBaseStats):
 
 class FitnessMonthlyStats(FitnessBaseStats):
     month: str
-
-
-class FitnessHourlyStats(BaseModel):
-    hour: str
-    steps: int
-    active_energy: float
-    active_duration: float
 
 
 class FitnessSummaryStats(FitnessBaseStats):
@@ -69,4 +70,3 @@ class FitnessStatsResponse(BaseModel):
     daily_stats: Optional[List[FitnessDailyStats]] = None
     weekly_stats: Optional[List[FitnessWeeklyStats]] = None
     monthly_stats: Optional[List[FitnessMonthlyStats]] = None
-    hourly_stats: Optional[List[FitnessHourlyStats]] = None
