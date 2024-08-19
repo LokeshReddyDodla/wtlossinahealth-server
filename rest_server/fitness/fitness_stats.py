@@ -24,7 +24,7 @@ router = APIRouter(prefix="/fitness/stats")
 
 
 @router.get(
-    "/daily", tags=["Fitness"], response_model=List[FitnessDailyStatsResponse]
+    "/daily", tags=["Fitness"], response_model=FitnessDailyStatsResponse
 )
 async def get_daily_stats(
     request: Request,
@@ -42,6 +42,7 @@ async def get_daily_stats(
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
         daily_stats = processor.fetch_daily_stats(from_date_str, to_date_str)
+
         return FitnessDailyStatsResponse(
             message="Daily stats fetched successfully",
             data=daily_stats,
@@ -53,7 +54,7 @@ async def get_daily_stats(
 @router.get(
     "/weekly",
     tags=["Fitness"],
-    response_model=List[FitnessWeeklyStatsResponse],
+    response_model=FitnessWeeklyStatsResponse,
 )
 async def get_weekly_stats(
     request: Request,
@@ -82,7 +83,7 @@ async def get_weekly_stats(
 @router.get(
     "/monthly",
     tags=["Fitness"],
-    response_model=List[FitnessMonthlyStatsResponse],
+    response_model=FitnessMonthlyStatsResponse,
 )
 async def get_monthly_stats(
     request: Request,
