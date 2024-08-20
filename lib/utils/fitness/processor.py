@@ -12,6 +12,7 @@ from lib.schemas.fitness import (
     FitnessMonthlyStats,
     FitnessHourlyStats,
 )
+from lib.utils.date_utils import get_week_start_end
 from lib.utils.fitness.queries import (
     generate_activity_distribution_query,
     generate_average_active_session_duration_query,
@@ -78,12 +79,24 @@ class FitnessDataProcessor:
         weekly_stats = []
         for row in data:
             week_number = row[0]
+            from_date = row[1]
+
+            start_of_week, end_of_week = get_week_start_end(from_date)
+
+            daily_stats = self.fetch_daily_stats(
+                from_date_str=start_of_week.strftime("%Y-%m-%dT00:00:00"),
+                to_date_str=end_of_week.strftime("%Y-%m-%dT23:59:59"),
+            )
+
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
                 from_date_str=from_date_str,
                 to_date_str=to_date_str,
                 stats_class=FitnessWeeklyStats,
-                additional_fields={"week_number": week_number},
+                additional_fields={
+                    "week_number": week_number,
+                    "daily_stats": daily_stats,
+                },
             )
             weekly_stats.append(stats_instance)
         return weekly_stats
@@ -140,9 +153,11 @@ class FitnessDataProcessor:
         additional_fields: Dict = {},
         include_hourly_stats: bool = False,
     ):
-        steps = result[index_starts]
-        active_energy = result[index_starts + 1]
-        active_duration = result[index_starts + 2]
+        from_date = result[index_starts]
+        to_date = result[index_starts + 1]
+        steps = result[index_starts + 2]
+        active_energy = result[index_starts + 3]
+        active_duration = result[index_starts + 4]
 
         # Calculate average active session duration
         avg_active_session_query = (
@@ -193,6 +208,8 @@ class FitnessDataProcessor:
             peak_activity_time=peak_activity_time,
             inactive_periods=inactive_periods,
             hourly_stats=hourly_stats,
+            from_date=from_date,
+            to_date=to_date,
             **additional_fields,
         )
 
