@@ -1,3 +1,4 @@
+import calendar
 from datetime import datetime, timedelta
 import math
 from typing import List, Dict, Optional
@@ -98,12 +99,33 @@ class FitnessDataProcessor:
         monthly_stats = []
         for row in data:
             month = row[0]
+
+            # Determine the last day of the month
+            year, month_num = map(int, month.split("-"))
+            last_day = calendar.monthrange(year, month_num)[1]
+
+            # Fetch daily stats for the entire month
+            daily_stats = self.fetch_daily_stats(
+                from_date_str=f"{month}-01T00:00:00",
+                to_date_str=f"{month}-{last_day}T23:59:59",
+            )
+
+            # Fetch weekly stats for the entire month
+            weekly_stats = self.fetch_weekly_stats(
+                from_date_str=f"{month}-01T00:00:00",
+                to_date_str=f"{month}-{last_day}T23:59:59",
+            )
+
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
                 from_date_str=from_date_str,
                 to_date_str=to_date_str,
                 stats_class=FitnessMonthlyStats,
-                additional_fields={"month": month},
+                additional_fields={
+                    "month": month,
+                    "daily_stats": daily_stats,
+                    "weekly_stats": weekly_stats,
+                },
             )
             monthly_stats.append(stats_instance)
         return monthly_stats
@@ -171,7 +193,7 @@ class FitnessDataProcessor:
             peak_activity_time=peak_activity_time,
             inactive_periods=inactive_periods,
             hourly_stats=hourly_stats,
-            **additional_fields
+            **additional_fields,
         )
 
     def _fetch_hourly_stats(
