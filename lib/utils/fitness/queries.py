@@ -3,6 +3,8 @@ def generate_summary_stats_query(
 ) -> str:
     return f"""
     SELECT
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date,
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS total_steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS total_active_energy,
         SUM(dateDiff('minute', date_from, date_to)) AS total_active_duration
