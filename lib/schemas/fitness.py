@@ -58,6 +58,8 @@ class FitnessWeeklyStats(FitnessBaseStats):
 
 class FitnessMonthlyStats(FitnessBaseStats):
     month: str
+    daily_stats: Optional[List[FitnessDailyStats]] = None
+    weekly_stats: Optional[List[FitnessWeeklyStats]] = None
 
 
 class FitnessSummaryStats(FitnessBaseStats):
