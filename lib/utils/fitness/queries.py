@@ -21,6 +21,8 @@ def generate_daily_stats_query(
     return f"""
     SELECT
         toDate(date_from) AS date,
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date,
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
         SUM(dateDiff('minute', date_from, date_to)) AS active_duration
@@ -42,7 +44,9 @@ def generate_weekly_stats_query(
 ) -> str:
     return f"""
     SELECT
-        toWeek(date_from) AS week_number,
+        toWeek(date_from, 3) AS week_number,
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date,
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
         SUM(dateDiff('minute', date_from, date_to)) AS active_duration
@@ -65,6 +69,8 @@ def generate_monthly_stats_query(
     return f"""
     SELECT
         formatDateTime(date_from, '%Y-%m') AS month,
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date,
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
         SUM(dateDiff('minute', date_from, date_to)) AS active_duration

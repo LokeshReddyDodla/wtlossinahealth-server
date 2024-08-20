@@ -1,3 +1,4 @@
+import calendar
 from typing import List, Dict
 from datetime import datetime, timedelta
 import pandas as pd
@@ -31,3 +32,16 @@ def split_into_weeks(
         weeks.append({"from_date": current_date, "to_date": week_end_date})
         current_date += timedelta(days=7)
     return weeks
+
+
+def get_week_start_end(date: datetime, firstweekday=calendar.MONDAY):
+    # Set the first weekday (e.g., Monday)
+    calendar.setfirstweekday(firstweekday)
+
+    # Find the start of the week
+    start_of_week = date - timedelta(days=date.weekday())
+
+    # Find the end of the week
+    end_of_week = start_of_week + timedelta(days=6)
+
+    return start_of_week, end_of_week
