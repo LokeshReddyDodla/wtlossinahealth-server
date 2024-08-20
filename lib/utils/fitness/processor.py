@@ -80,12 +80,13 @@ class FitnessDataProcessor:
         for row in data:
             week_number = row[0]
             from_date = row[1]
+            to_date = row[2]
 
             start_of_week, end_of_week = get_week_start_end(from_date)
 
             daily_stats = self.fetch_daily_stats(
-                from_date_str=start_of_week.strftime("%Y-%m-%dT00:00:00"),
-                to_date_str=end_of_week.strftime("%Y-%m-%dT23:59:59"),
+                from_date_str=from_date.strftime("%Y-%m-%dT00:00:00"),
+                to_date_str=to_date.strftime("%Y-%m-%dT23:59:59"),
             )
 
             stats_instance = self._construct_fitness_summary_stats(
