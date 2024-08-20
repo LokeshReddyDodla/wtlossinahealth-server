@@ -40,8 +40,6 @@ class FitnessDataProcessor:
         result = self.clickhouse_store.client.execute(query)
         return self._construct_fitness_summary_stats(
             result[0],
-            from_date_str,
-            to_date_str,
             FitnessSummaryStats,
             index_starts=0,
         )
@@ -57,10 +55,9 @@ class FitnessDataProcessor:
         daily_stats = []
         for row in data:
             date = row[0]
+
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
-                from_date_str=date.strftime("%Y-%m-%dT00:00:00"),
-                to_date_str=date.strftime("%Y-%m-%dT23:59:59"),
                 stats_class=FitnessDailyStats,
                 additional_fields={"date": date},
                 include_hourly_stats=True,
@@ -82,8 +79,6 @@ class FitnessDataProcessor:
             from_date = row[1]
             to_date = row[2]
 
-            start_of_week, end_of_week = get_week_start_end(from_date)
-
             daily_stats = self.fetch_daily_stats(
                 from_date_str=from_date.strftime("%Y-%m-%dT00:00:00"),
                 to_date_str=to_date.strftime("%Y-%m-%dT23:59:59"),
@@ -91,8 +86,6 @@ class FitnessDataProcessor:
 
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
-                from_date_str=from_date_str,
-                to_date_str=to_date_str,
                 stats_class=FitnessWeeklyStats,
                 additional_fields={
                     "week_number": week_number,
@@ -113,6 +106,8 @@ class FitnessDataProcessor:
         monthly_stats = []
         for row in data:
             month = row[0]
+            from_date = row[1]
+            to_date = row[2]
 
             # Determine the last day of the month
             year, month_num = map(int, month.split("-"))
@@ -132,8 +127,6 @@ class FitnessDataProcessor:
 
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
-                from_date_str=from_date_str,
-                to_date_str=to_date_str,
                 stats_class=FitnessMonthlyStats,
                 additional_fields={
                     "month": month,
@@ -147,8 +140,6 @@ class FitnessDataProcessor:
     def _construct_fitness_summary_stats(
         self,
         result,
-        from_date_str: str,
-        to_date_str: str,
         stats_class,
         index_starts: int = 1,
         additional_fields: Dict = {},
@@ -159,6 +150,9 @@ class FitnessDataProcessor:
         steps = result[index_starts + 2]
         active_energy = result[index_starts + 3]
         active_duration = result[index_starts + 4]
+
+        from_date_str = from_date.strftime("%Y-%m-%dT00:00:00")
+        to_date_str = to_date.strftime("%Y-%m-%dT23:59:59")
 
         # Calculate average active session duration
         avg_active_session_query = (
