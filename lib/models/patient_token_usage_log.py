@@ -15,12 +15,14 @@ class PatientTokenUsageLog(Base):
     patient_id = Column(
         UUID(as_uuid=True),
         ForeignKey("patients.patient_id", ondelete="CASCADE"),
+        nullable=False,
     )
     api_type = Column(String, nullable=False)  # e.g., "OpenAI"
     api_endpoint = Column(
         String, nullable=False
     )  # e.g., "/get_nutritional_info"
     tokens_used = Column(Integer, nullable=False)
+    model_used = Column(String, nullable=False)
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
