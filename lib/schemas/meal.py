@@ -7,12 +7,23 @@ from typing import List, Optional
 from uuid import UUID
 
 
-class NutritionalValues(BaseModel):
+class MacroNutritionalValues(BaseModel):
     calories: str
     proteins: str
     carbohydrates: str
     fats: str
     fiber: str
+
+    class Config:
+        orm_mode = True
+
+
+class MicroNutritionalValues(BaseModel):
+    calcium: str
+    iron: str
+    zinc: str
+    magnesium: str
+    cholesterol: str
 
     class Config:
         orm_mode = True
@@ -24,13 +35,14 @@ class FoodItem(BaseModel):
     serving_size: str
     serving_quantity: str
     serving_unit: str
-    nutritional_values: NutritionalValues
+    macro_nutritional_values: MacroNutritionalValues
+    micro_nutritional_values: MicroNutritionalValues
 
     class Config:
         orm_mode = True
 
 
-class TotalNutritionalValue(BaseModel):
+class TotalMacroNutritionalValue(BaseModel):
     calories: str
     proteins: str
     carbohydrates: str
@@ -41,15 +53,28 @@ class TotalNutritionalValue(BaseModel):
         orm_mode = True
 
 
+class TotalMicroNutritionalValue(BaseModel):
+    calcium: str
+    iron: str
+    zinc: str
+    magnesium: str
+    cholesterol: str
+
+    class Config:
+        orm_mode = True
+
+
 class MealResponse(BaseModel):
     id: UUID
     type: str
     time: datetime
     items: Optional[List[FoodItem]] = []
-    total_nutritional_value: Optional[TotalNutritionalValue] = None
+    total_macro_nutritional_value: Optional[TotalMacroNutritionalValue] = None
+    total_micro_nutritional_value: Optional[TotalMicroNutritionalValue] = None
     image_url: Optional[str]
     description: Optional[str]
     source: Optional[str]
+    score: Optional[float]
     feedback: Optional[str] = None
     tags: Optional[List[str]] = []
     context_id: Optional[str]
@@ -62,10 +87,11 @@ class MealResponse(BaseModel):
         orm_mode = True
 
 
-class MealDescription(BaseModel):
+class MealDescription(BaseModel): # TODO: remove this
     type: str
     items: List[FoodItem]
-    total_nutritional_value: TotalNutritionalValue
+    total_macro_nutritional_value: TotalMacroNutritionalValue
+    total_micro_nutritional_value: TotalMicroNutritionalValue
     image_url: str
     description: Optional[str] = None
     feedback: str

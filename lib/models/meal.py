@@ -17,8 +17,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from lib.models import Base
 
 
-class NutritionalValues(Base):
-    __tablename__ = "nutritional_values"
+class MacroNutritionalValues(Base):
+    __tablename__ = "macro_nutritional_values"
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
@@ -31,7 +31,28 @@ class NutritionalValues(Base):
     food_item_id = Column(
         UUID(as_uuid=True), ForeignKey("food_items.id", ondelete="CASCADE")
     )
-    food_item = relationship("FoodItem", back_populates="nutritional_values")
+    food_item = relationship(
+        "FoodItem", back_populates="macro_nutritional_values"
+    )
+
+
+class MicroNutritionalValues(Base):
+    __tablename__ = "micro_nutritional_values"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
+    )
+    calcium = Column(String)
+    iron = Column(String)
+    zinc = Column(String)
+    magnesium = Column(String)
+    cholesterol = Column(String)
+    food_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("food_items.id", ondelete="CASCADE")
+    )
+    food_item = relationship(
+        "FoodItem", back_populates="micro_nutritional_values"
+    )
 
 
 class FoodItem(Base):
@@ -45,8 +66,14 @@ class FoodItem(Base):
     serving_size = Column(String)
     serving_quantity = Column(Float)
     serving_unit = Column(String)
-    nutritional_values = relationship(
-        "NutritionalValues",
+    macro_nutritional_values = relationship(
+        "MacroNutritionalValues",
+        back_populates="food_item",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    micro_nutritional_values = relationship(
+        "MicroNutritionalValues",
         back_populates="food_item",
         uselist=False,
         cascade="all, delete-orphan",
@@ -57,8 +84,8 @@ class FoodItem(Base):
     meal = relationship("Meal", back_populates="items")
 
 
-class TotalNutritionalValue(Base):
-    __tablename__ = "total_nutritional_values"
+class TotalMacroNutritionalValue(Base):
+    __tablename__ = "total_macro_nutritional_values"
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
@@ -71,7 +98,24 @@ class TotalNutritionalValue(Base):
     meal_id = Column(
         UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE")
     )
-    meal = relationship("Meal", back_populates="total_nutritional_value")
+    meal = relationship("Meal", back_populates="total_macro_nutritional_value")
+
+
+class TotalMicroNutritionalValue(Base):
+    __tablename__ = "total_micro_nutritional_values"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
+    )
+    calcium = Column(String)
+    iron = Column(String)
+    zinc = Column(String)
+    magnesium = Column(String)
+    cholesterol = Column(String)
+    meal_id = Column(
+        UUID(as_uuid=True), ForeignKey("meals.id", ondelete="CASCADE")
+    )
+    meal = relationship("Meal", back_populates="total_micro_nutritional_value")
 
 
 class Meal(Base):
@@ -85,8 +129,14 @@ class Meal(Base):
     items = relationship(
         "FoodItem", back_populates="meal", cascade="all, delete-orphan"
     )
-    total_nutritional_value = relationship(
-        "TotalNutritionalValue",
+    total_macro_nutritional_value = relationship(
+        "TotalMacroNutritionalValue",
+        back_populates="meal",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    total_micro_nutritional_value = relationship(
+        "TotalMicroNutritionalValue",
         back_populates="meal",
         uselist=False,
         cascade="all, delete-orphan",
@@ -96,6 +146,7 @@ class Meal(Base):
     source = Column(String, nullable=False)
     feedback = Column(String, nullable=True)
     tags = Column(ARRAY(String), nullable=True)
+    score = Column(Float, nullable=True)
     context_id = Column(String, nullable=True)
     analyzed = Column(Boolean, default=False)
     analyzed_at = Column(DateTime, nullable=True)
