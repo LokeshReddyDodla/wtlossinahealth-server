@@ -2,6 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from lib.schemas.fitness import (
+    FitnessDailyStats,
     FitnessMonthlyStats,
 )
 from rest_server.response_models import SuccessResponse
@@ -25,6 +26,9 @@ class FitnessDataRequest(BaseModel):
     heart_rate: List[FitnessDataPoint]
     sleep_in_bed: List[FitnessDataPoint]
 
+
+class FitnessDailyStatsResponse(SuccessResponse):
+    data: Optional[List[FitnessDailyStats]] = None
 
 class FitnessStatsResponse(SuccessResponse):
     data: Optional[List[FitnessMonthlyStats]] = None
