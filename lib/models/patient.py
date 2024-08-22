@@ -156,7 +156,9 @@ class Patient(Base):
     )
 
     token_usage_logs = relationship(
-        "TokenUsageLog", back_populates="patient", cascade="all, delete-orphan"
+        "PatientTokenUsageLog",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
 
 

@@ -24,3 +24,4 @@ class PatientTokenUsageLog(Base):
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
+    patient = relationship("Patient", back_populates="token_usage_logs")

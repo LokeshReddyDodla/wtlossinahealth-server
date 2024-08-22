@@ -81,6 +81,8 @@ async def get_patient_details(
                         PatientConnectedApp.other_app
                     ),
                     selectinload(Patient.fitness_syncs),
+                    selectinload(Patient.token_usage_logs),
+                    
                 )
             )
 

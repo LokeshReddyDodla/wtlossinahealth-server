@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from uuid import UUID
 
+
 class PatientTokenUsageLogBase(BaseModel):
     patient_id: UUID
     tokens_used: int
@@ -12,13 +13,16 @@ class PatientTokenUsageLogBase(BaseModel):
     class Config:
         orm_mode = True
 
+
 class PatientTokenUsageLogCreate(PatientTokenUsageLogBase):
     pass
+
 
 class PatientTokenUsageLogUpdate(PatientTokenUsageLogBase):
     pass
 
-class PatientTokenUsageLogResponse(PatientTokenUsageLogBase):
+
+class PatientTokenUsageLog(PatientTokenUsageLogBase):
     id: UUID
 
     class Config:
