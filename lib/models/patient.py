@@ -155,6 +155,10 @@ class Patient(Base):
         "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    token_usage_logs = relationship(
+        "TokenUsageLog", back_populates="patient", cascade="all, delete-orphan"
+    )
+
 
 @listens_for(Patient, "after_insert")
 def create_related_records(mapper, connection, target):
