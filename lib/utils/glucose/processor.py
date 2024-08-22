@@ -67,9 +67,13 @@ class GlucoseStatsProcessor:
             .filter(Meal.time <= to_date)
             .options(
                 selectinload(Meal.items).selectinload(
-                    FoodItem.nutritional_values
+                    FoodItem.macro_nutritional_values
                 ),
-                selectinload(Meal.total_nutritional_value),
+                selectinload(Meal.items).selectinload(
+                    FoodItem.micro_nutritional_values
+                ),
+                selectinload(Meal.total_macro_nutritional_value),
+                selectinload(Meal.total_micro_nutritional_value),
             )
         )
         result = await self.postgres_session.execute(query)
