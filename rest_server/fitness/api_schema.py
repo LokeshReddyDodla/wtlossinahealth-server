@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional
 from pydantic import BaseModel
 
@@ -26,9 +27,6 @@ class FitnessDataRequest(BaseModel):
     heart_rate: List[FitnessDataPoint]
     sleep_in_bed: List[FitnessDataPoint]
 
-
-class FitnessDailyStatsResponse(SuccessResponse):
-    data: Optional[List[FitnessDailyStats]] = None
 
 class FitnessStatsResponse(SuccessResponse):
     data: Optional[List[FitnessMonthlyStats]] = None
