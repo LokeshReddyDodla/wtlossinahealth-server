@@ -29,8 +29,112 @@ class MealAnalysisService:
         self, mealtime_ms, image_url, meal_type, food_description=None
     ):
         mealtime = convert_milliseconds_to_datetime(mealtime_ms, self.timezone)
+        prompt_text = self._generate_prompt(mealtime, meal_type)
 
-        prompt_text = f"""
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Act as a dietitian expert."},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ]
+
+        if food_description:
+            messages[0]["content"].append(
+                {
+                    "type": "text",
+                    "text": f"Food description: {food_description}",
+                }
+            )
+
+        messages[0]["content"].append({"type": "text", "text": prompt_text})
+
+        response = retry_request(
+            openai.chat.completions.create,
+            max_retries=3,
+            delay=2,
+            model="gpt-4o",
+            messages=messages,
+            # max_tokens=3000,
+        )
+
+        content = (
+            response.choices[0].message.content if response.choices else None
+        )
+        total_tokens = response.usage.total_tokens if response.usage else None
+
+        cleaned_content = (
+            content.strip("```json\n").strip("```") if content else None
+        )
+
+        return cleaned_content, total_tokens
+
+    async def save_meal_analysis(
+        self, meal: Any, analysis_data: dict
+    ) -> MealResponse:
+
+        # create FoodItem records
+        meal.items = [
+            self._create_food_item(meal, item_data)
+            for item_data in analysis_data["items"]
+        ]
+
+        # Update total macro nutritional values
+        total_macro = analysis_data["total_macro_nutritional_value"]
+        meal.total_macro_nutritional_value = TotalMacroNutritionalValue(
+            meal_id=meal.id, **total_macro
+        )
+
+        # Update total micro nutritional values
+        total_micro = analysis_data["total_micro_nutritional_value"]
+        meal.total_micro_nutritional_value = TotalMicroNutritionalValue(
+            meal_id=meal.id, **total_micro
+        )
+
+        # Update other meal fields
+        meal.feedback = analysis_data["feedback"]
+        meal.tags = analysis_data["tags"]
+        meal.score = float(analysis_data["score"])
+        meal.analyzed = True
+        meal.analyzed_at = datetime.now()
+
+        # Commit changes to the database
+        self.postgres_session.add(meal)
+        await self.postgres_session.commit()
+
+        return MealResponse.from_orm(meal)
+
+    def _create_food_item(self, meal: Meal, item_data: dict) -> FoodItem:
+        food_item = FoodItem(
+            name=item_data["name"],
+            coordinates=item_data["coordinates"],
+            serving_size=item_data["serving_size"],
+            serving_quantity=float(item_data["serving_quantity"]),
+            serving_unit=item_data["serving_unit"],
+            meal=meal,
+        )
+        food_item.macro_nutritional_values = MacroNutritionalValues(
+            food_item_id=food_item.id, **item_data["macro_nutritional_values"]
+        )
+        food_item.micro_nutritional_values = MicroNutritionalValues(
+            food_item_id=food_item.id, **item_data["micro_nutritional_values"]
+        )
+        return food_item
+
+    def _upsert_total_macro_nutritional_value(
+        self, meal: Meal, macro_data: dict
+    ) -> TotalMacroNutritionalValue:
+        return TotalMacroNutritionalValue(meal=meal, **macro_data)
+
+    def _upsert_total_micro_nutritional_value(
+        self, meal: Meal, micro_data: dict
+    ) -> TotalMicroNutritionalValue:
+        return TotalMicroNutritionalValue(meal=meal, **micro_data)
+
+    def _generate_prompt(self, mealtime: datetime, meal_type: str) -> str:
+        return f"""
         You are a dietitian expert. Analyze the provided image considering it was taken at {mealtime}. The meal type is {meal_type}. Identify all visible food items, provide their coordinates, and give the nutritional values in the following JSON structure:
         {{
             "meal_type": "{meal_type}",
@@ -88,109 +192,3 @@ class MealAnalysisService:
 
         Please follow this structure precisely for the response and ensure the data is consistent and accurate.
         """
-
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Act as a dietitian expert."},
-                    {"type": "image_url", "image_url": {"url": image_url}},
-                ],
-            }
-        ]
-
-        if food_description:
-            messages[0]["content"].append(
-                {
-                    "type": "text",
-                    "text": f"Food description: {food_description}",
-                }
-            )
-
-        messages[0]["content"].append({"type": "text", "text": prompt_text})
-
-        response = retry_request(
-            openai.chat.completions.create,
-            max_retries=3,
-            delay=2,
-            model="gpt-4o",
-            messages=messages,
-            max_tokens=3000,
-        )
-
-        # Extract the content and token usage
-        content = (
-            response.choices[0].message.content if response.choices else None
-        )
-        total_tokens = response.usage.total_tokens if response.usage else None
-
-        if content:
-            # Remove the backticks and clean up the content for JSON parsing
-            cleaned_content = content.strip("```json\n").strip("```")
-        else:
-            cleaned_content = None
-
-        return cleaned_content, total_tokens
-
-    async def save_meal_analysis(
-        self, meal: Any, analysis_data: dict
-    ) -> MealResponse:
-
-        # Update or create FoodItem records
-        for item_data in analysis_data["items"]:
-            print("==> item_data: ", item_data)
-            food_item = self._upsert_food_item(meal, item_data)
-            meal.items.append(food_item)
-
-        # Update total macro nutritional values
-        total_macro = analysis_data["total_macro_nutritional_value"]
-        meal.total_macro_nutritional_value = TotalMacroNutritionalValue(
-            meal_id=meal.id, **total_macro
-        )
-
-        # Update total micro nutritional values
-        total_micro = analysis_data["total_micro_nutritional_value"]
-        meal.total_micro_nutritional_value = TotalMicroNutritionalValue(
-            meal_id=meal.id, **total_micro
-        )
-
-        # Update other meal fields
-        meal.feedback = analysis_data["feedback"]
-        meal.tags = analysis_data["tags"]
-        meal.score = float(analysis_data["score"])
-        meal.analyzed = True
-        meal.analyzed_at = datetime.now()
-
-        # Commit changes to the database
-        self.postgres_session.add(meal)
-        await self.postgres_session.commit()
-
-        return MealResponse.from_orm(meal)
-
-    def _upsert_food_item(self, meal: Meal, item_data: dict) -> FoodItem:
-        # This method updates or creates a FoodItem and its related nutritional values
-        food_item = FoodItem(
-            name=item_data["name"],
-            coordinates=item_data["coordinates"],
-            serving_size=item_data["serving_size"],
-            serving_quantity=item_data["serving_quantity"],
-            serving_unit=item_data["serving_unit"],
-            meal=meal,
-        )
-        food_item.macro_nutritional_values = MacroNutritionalValues(
-            food_item_id=food_item.id, **item_data["macro_nutritional_values"]
-        )
-        food_item.micro_nutritional_values = MicroNutritionalValues(
-            food_item_id=food_item.id, **item_data["micro_nutritional_values"]
-        )
-        return food_item
-
-    def _upsert_total_macro_nutritional_value(
-        self, meal: Meal, macro_data: dict
-    ) -> TotalMacroNutritionalValue:
-        return TotalMacroNutritionalValue(meal=meal, **macro_data)
-
-    def _upsert_total_micro_nutritional_value(
-        self, meal: Meal, micro_data: dict
-    ) -> TotalMicroNutritionalValue:
-        return TotalMicroNutritionalValue(meal=meal, **micro_data)
