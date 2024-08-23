@@ -86,8 +86,25 @@ class MealResponse(BaseModel):
     class Config:
         orm_mode = True
 
+    @classmethod
+    def from_orm(cls, obj):
+        kwargs = {}
+        state = (
+            obj._sa_instance_state
+        )  # Access the internal state of the SQLAlchemy instance
 
-class MealDescription(BaseModel): # TODO: remove this
+        for name, field in cls.__fields__.items():
+            if name in state.dict:  # Check if the attribute is already loaded
+                kwargs[name] = getattr(obj, name)
+            elif (
+                name not in state.unloaded
+            ):  # Ensure it's not an unloaded attribute
+                kwargs[name] = getattr(obj, name)
+
+        return cls(**kwargs)
+
+
+class MealDescription(BaseModel):  # TODO: remove this
     type: str
     items: List[FoodItem]
     total_macro_nutritional_value: TotalMacroNutritionalValue

@@ -13,7 +13,7 @@ from lib.models.meal import FoodItem, Meal
 from lib.schemas.meal import (
     MealResponse,
 )
-from rest_server.meals.api_schema import MealUploadRequest
+from rest_server.meals.api_schema import MealUploadRequest, MealsResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,7 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 router = APIRouter(prefix="/meal")
 
 
-@router.get(path="/get", response_model=List[MealResponse], tags=["Meal"])
+@router.get(path="/get", response_model=MealsResponse, tags=["Meal"])
 async def get_meals_api(
     request: Request,
     from_time: Optional[datetime] = Query(None),
@@ -84,7 +84,12 @@ async def get_meals_api(
             result = await session.execute(query)
             meals = result.scalars().all()
 
-            return meals
+            meals = [MealResponse.from_orm(meal) for meal in meals]
+
+            return MealsResponse(
+                message="Meals fetched successfully",
+                data=meals,
+            )
         except Exception as e:
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
@@ -117,6 +122,8 @@ async def meal_upload_api(
             session.add(meal)
             await session.commit()
             await session.refresh(meal)
+
+            meal = MealResponse.from_orm(meal)
 
             return SuccessResponse(
                 data=meal, message="Meal Uploaded Successfully"

@@ -47,7 +47,7 @@ async def analyze_meal_api(
                 .filter(
                     Meal.id == meal_id,
                     Meal.patient_id == current_patient.patient_id,
-                )
+                ) 
                 .options(
                     selectinload(Meal.items).selectinload(
                         FoodItem.macro_nutritional_values

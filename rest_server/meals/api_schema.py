@@ -5,8 +5,12 @@ from typing import List, Optional
 from datetime import datetime
 
 
-class MealAnalysisResponse(SuccessResponse):  # TODO: remove this
-    data: MealResponse
+class MealAnalysisResponse(SuccessResponse):
+    data: Optional[MealResponse] = None
+
+
+class MealsResponse(SuccessResponse):
+    data: Optional[List[MealResponse]] = None
 
 
 class MealUploadRequest(BaseModel):
