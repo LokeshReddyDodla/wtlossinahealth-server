@@ -86,7 +86,6 @@ async def analyze_meal_api(
                 raise HTTPException(status_code=400, detail="")
 
             analysis_data = json.loads(ai_response)
-            print("==> analysis_data: ", analysis_data)
             updated_meal_response = (
                 await meal_analysis_service.save_meal_analysis(
                     meal, analysis_data
@@ -118,6 +117,7 @@ async def analyze_meal_api(
             response = ErrorResponse(message="Invalid JSON", detail=str(e))
             raise HTTPException(status_code=400, detail=response.dict())
         except HTTPException as http_exc:
+            await session.rollback()
             raise http_exc
         except Exception as e:
             await session.rollback()

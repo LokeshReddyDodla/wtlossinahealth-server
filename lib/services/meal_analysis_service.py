@@ -10,6 +10,7 @@ from lib.models.meal import (
     TotalMicroNutritionalValue,
 )
 from lib.schemas.meal import MealResponse
+from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
 import openai
 from decouple import config
@@ -66,7 +67,7 @@ class MealAnalysisService:
         total_tokens = response.usage.total_tokens if response.usage else None
 
         cleaned_content = (
-            content.strip("```json\n").strip("```") if content else None
+            extract_json_from_response(content) if content else None
         )
 
         return cleaned_content, total_tokens
