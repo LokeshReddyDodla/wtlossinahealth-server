@@ -7,6 +7,7 @@ from lib.schemas.fitness_data_sync import FitnessDataSync
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_smbg import PatientSMBG
+from lib.schemas.patient_token_usage_log import PatientTokenUsageLog
 from lib.schemas.patient_vitals import PatientVitals
 from sqlalchemy.orm import attributes
 
@@ -305,6 +306,7 @@ class PatientDetail(PatientBase):
     smbg: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
     fitness_syncs: Optional[FitnessDataSync] = None
+    token_usage_logs: List[PatientTokenUsageLog] = []
 
     class Config:
         orm_mode = True

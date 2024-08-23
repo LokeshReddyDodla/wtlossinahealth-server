@@ -5,9 +5,11 @@ from decouple import config
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 
 
-def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone='Asia/Kolkata'):
-    openai.api_key = config('OPENAI_API_KEY')
-    
+def get_nutritional_info(
+    mealtime_ms, image_url, food_description=None, timezone="Asia/Kolkata"
+):
+    openai.api_key = config("OPENAI_API_KEY")
+
     mealtime = convert_milliseconds_to_datetime(mealtime_ms, timezone)
 
     prompt_text = """
@@ -21,12 +23,19 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
                 "serving_size": "<serving size>",
                 "serving_quantity": "<serving quantity>",
                 "serving_unit": "<serving unit>",
-                "nutritional_values": {{
+                "macro_nutritional_values": {{
                     "calories": "<calories> kcal",
                     "proteins": "<proteins> g",
                     "carbohydrates": "<carbohydrates> g",
                     "fats": "<fats> g",
                     "fiber": "<fiber> g"
+                }},
+                "micro_nutritional_values": {{
+                    "calcium": "<calcium> mg",
+                    "iron": "<iron> mg",
+                    "zinc": "<zinc> mg",
+                    "magnesium": "<magnesium> mg",
+                    "cholesterol": "<cholesterol> mg"
                 }}
             }}
         ],
@@ -35,13 +44,18 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
             "proteins": "<total proteins> g",
             "carbohydrates": "<total carbohydrates> g",
             "fats": "<total fats> g",
-            "fiber": "<total fiber> g"
+            "fiber": "<total fiber> g",
+            "calcium": "<total calcium> mg",
+            "iron": "<total iron> mg",
+            "zinc": "<total zinc> mg",
+            "magnesium": "<total magnesium> mg",
+            "cholesterol": "<total cholesterol> mg"
         }},
         "feedback": "<personalized feedback>",
         "tags": [
-            "<tag1>",
-            "<tag2>"
-        ]
+            "<GI tag>"
+        ],
+        "score": "<overall meal score>"
     }}
 
     For each item:
@@ -49,10 +63,13 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
     2. Provide personalized feedback to help the user meet average macronutrient values for the detected meal type.
     3. Suggest similar foods from the same cuisine or region that can help improve or maintain a balanced diet.
     4. Ensure serving sizes are realistic and provided in common units such as grams, cups, or pieces. If unsure, make a best guess.
-    5. Add appropriate tags such as 'good meal', 'bad meal', 'healthy meal', or 'unhealthy meal' based on the nutritional analysis.
+    5. Add only glycemic index tags like 'high', 'low', 'medium' based on the nutritional analysis.
+    6. Assign a score (as a float) to each item and the overall meal out of 10 based on its nutritional balance.
 
     Please follow this structure precisely for the response.
-    """.format(mealtime=mealtime)
+    """.format(
+        mealtime=mealtime
+    )
 
     messages = [
         {
@@ -65,7 +82,9 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
     ]
 
     if food_description:
-        messages[0]["content"].append({"type": "text", "text": f"Food description: {food_description}"})
+        messages[0]["content"].append(
+            {"type": "text", "text": f"Food description: {food_description}"}
+        )
 
     messages[0]["content"].append({"type": "text", "text": prompt_text})
 
@@ -75,12 +94,11 @@ def get_nutritional_info(mealtime_ms, image_url, food_description=None, timezone
         delay=2,
         model="gpt-4o",
         messages=messages,
-        max_tokens=3000
+        max_tokens=3000,
     )
 
-    return response.choices[0].message.content
+    # Extract the content and token usage
+    content = response.choices[0].message.content
+    total_tokens = response.usage.total_tokens if response.usage else None
 
-
-
-
-    
+    return content, total_tokens

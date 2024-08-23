@@ -44,9 +44,13 @@ async def get_meals_api(
                 .where(Meal.patient_id == current_patient.patient_id)
                 .options(
                     selectinload(Meal.items).selectinload(
-                        FoodItem.nutritional_values
+                        FoodItem.macro_nutritional_values
                     ),
-                    selectinload(Meal.total_nutritional_value),
+                    selectinload(Meal.items).selectinload(
+                        FoodItem.micro_nutritional_values
+                    ),
+                    selectinload(Meal.total_macro_nutritional_value),
+                    selectinload(Meal.total_micro_nutritional_value),
                 )
             )
 

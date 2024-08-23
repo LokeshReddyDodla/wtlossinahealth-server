@@ -11,16 +11,18 @@ from lib.models.patient import Patient
 from lib.models.meal import (
     Meal,
     FoodItem,
-    NutritionalValues,
-    TotalNutritionalValue,
 )
 from lib.schemas.meal import MealResponse
+from lib.services.meal_analysis_service import MealAnalysisService
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
+from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.meals.api_schema import MealAnalysisResponse
 from rest_server.response_models import ErrorResponse
 from lib.managers.context_manager import context_manager
 from sqlalchemy.orm import selectinload
+from uuid import UUID
+from decouple import config
 
 
 # Create FastAPI router
@@ -48,9 +50,13 @@ async def analyze_meal_api(
                 )
                 .options(
                     selectinload(Meal.items).selectinload(
-                        FoodItem.nutritional_values
+                        FoodItem.macro_nutritional_values
                     ),
-                    selectinload(Meal.total_nutritional_value),
+                    selectinload(Meal.items).selectinload(
+                        FoodItem.micro_nutritional_values
+                    ),
+                    selectinload(Meal.total_macro_nutritional_value),
+                    selectinload(Meal.total_micro_nutritional_value),
                 )
             )
             meal = meal_query.scalars().first()
@@ -65,80 +71,53 @@ async def analyze_meal_api(
             if meal.analyzed and not force:
                 return MealResponse.from_orm(meal)
 
-            ai_response = get_nutritional_info(
+            meal_analysis_service = MealAnalysisService(
+                session, api_key=config("OPENAI_API_KEY")
+            )
+            ai_response, tokens_used = meal_analysis_service.analyze_meal(
                 meal.time.timestamp(), meal.image_url, meal.description
             )
-            print("==> ai response: %s" % ai_response)
 
-            parsed_json = parse_json_garbage(ai_response)
-            print("==> parsed json: %s" % parsed_json)
-
-            # Update the meal entry
-            meal.analyzed = True
-            meal.analyzed_at = datetime.now()
-            meal.feedback = parsed_json["feedback"]
-            # meal.tags = parsed_json["tags"]
-
-            # Create total nutritional value entry
-            total_nutritional_value = TotalNutritionalValue(
-                calories=parsed_json["total_nutritional_value"]["calories"],
-                proteins=parsed_json["total_nutritional_value"]["proteins"],
-                carbohydrates=parsed_json["total_nutritional_value"][
-                    "carbohydrates"
-                ],
-                fats=parsed_json["total_nutritional_value"]["fats"],
-                fiber=parsed_json["total_nutritional_value"]["fiber"],
-                meal_id=meal.id,
-            )
-            session.add(total_nutritional_value)
-            meal.total_nutritional_value = total_nutritional_value
-
-            # Create food items and their nutritional values
-            food_items = []
-            for item in parsed_json["items"]:
-                food_item = FoodItem(
-                    name=item["name"],
-                    coordinates=item["coordinates"],
-                    serving_size=item["serving_size"],
-                    serving_quantity=item["serving_quantity"],
-                    serving_unit=item["serving_unit"],
-                    meal_id=meal.id,
+            if not ai_response:
+                response = ErrorResponse(
+                    message="Analysis failed",
+                    detail=f"Meal with ID {meal_id} failed to be analysed",
                 )
-                session.add(food_item)
-                await session.flush()  # Flush to get the food item ID
+                raise HTTPException(status_code=400, detail="")
 
-                nutritional_values = NutritionalValues(
-                    calories=item["nutritional_values"]["calories"],
-                    proteins=item["nutritional_values"]["proteins"],
-                    carbohydrates=item["nutritional_values"]["carbohydrates"],
-                    fats=item["nutritional_values"]["fats"],
-                    fiber=item["nutritional_values"]["fiber"],
-                    food_item_id=food_item.id,
+            analysis_data = json.loads(ai_response)
+            updated_meal_response = (
+                await meal_analysis_service.save_meal_analysis(
+                    meal, analysis_data
                 )
-                session.add(nutritional_values)
-                food_item.nutritional_values = nutritional_values
-
-                food_items.append(food_item)
-
-            meal.items = food_items
-
-            await session.commit()
-
-            context_manager.add_message(
-                meal.context_id,
-                ai_response or "",
-                "assistant",
-                "meal",
-                media_url=meal.image_url,
             )
 
-            meal_response = MealResponse.from_orm(meal)
-            return meal_response
+            # context_manager.add_message(
+            #     meal.context_id,
+            #     ai_response or "",
+            #     "assistant",
+            #     "meal",
+            #     media_url=meal.image_url,
+            # )
+
+            # Log token usage
+            if tokens_used is not None:
+                await PatientTokenUsageLogger.log_usage(
+                    session,
+                    patient_id=UUID(str(current_patient.patient_id)),
+                    tokens_used=tokens_used,
+                    model_used="gpt-4o",
+                    api_type="openai",
+                    api_endpoint=request.url.path,
+                )
+
+            return updated_meal_response
         except json.JSONDecodeError as e:
             await session.rollback()
             response = ErrorResponse(message="Invalid JSON", detail=str(e))
             raise HTTPException(status_code=400, detail=response.dict())
         except HTTPException as http_exc:
+            await session.rollback()
             raise http_exc
         except Exception as e:
             await session.rollback()

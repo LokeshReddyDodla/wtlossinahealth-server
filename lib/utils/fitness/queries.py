@@ -243,3 +243,64 @@ def generate_average_active_session_duration_query(
         AND date_to <= '{to_date}'
         AND type = 'ACTIVE_ENERGY_BURNED'
     """
+
+
+def generate_available_data_range_by_date(
+    patient_id: str,
+) -> str:
+    return f"""
+    SELECT
+        toDate(min(date_from)) AS earliest_date,
+        toDate(max(date_to)) AS latest_date
+    FROM
+        aihealth.fitness_data
+    WHERE
+        patient_id = '{patient_id}'
+    """
+
+
+def generate_all_available_dates(patient_id: str) -> str:
+    return f"""
+    SELECT
+        DISTINCT toDate(date_from) AS date
+    FROM
+        aihealth.fitness_data
+    WHERE
+        patient_id = '{patient_id}'
+    ORDER BY
+        date
+    """
+
+
+def generate_all_available_weeks(patient_id: str) -> str:
+    return f"""
+    SELECT
+        toWeek(date_from, 3) AS week_number,
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date
+    FROM
+        aihealth.fitness_data
+    WHERE
+        patient_id = '{patient_id}'
+    GROUP BY
+        week_number
+    ORDER BY
+        week_number
+    """
+
+
+def generate_all_available_months(patient_id: str) -> str:
+    return f"""
+    SELECT
+        toMonth(date_from) AS month_number,
+        toDate(min(date_from)) AS start_date,
+        toDate(max(date_to)) AS end_date
+    FROM
+        aihealth.fitness_data
+    WHERE
+        patient_id = '{patient_id}'
+    GROUP BY
+        month_number
+    ORDER BY
+        month_number
+    """
