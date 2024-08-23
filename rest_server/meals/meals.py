@@ -25,8 +25,8 @@ router = APIRouter(prefix="/meal")
 @router.get(path="/get", response_model=MealsResponse, tags=["Meal"])
 async def get_meals_api(
     request: Request,
-    from_time: Optional[datetime] = Query(None),
-    to_time: Optional[datetime] = Query(None),
+    from_date: Optional[datetime] = Query(None),
+    to_date: Optional[datetime] = Query(None),
     source: Optional[str] = Query(None),
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     order_by: Optional[str] = Query("time"),
@@ -54,10 +54,10 @@ async def get_meals_api(
                 )
             )
 
-            if from_time:
-                query = query.filter(Meal.time >= from_time)
-            if to_time:
-                query = query.filter(Meal.time <= to_time)
+            if from_date:
+                query = query.filter(Meal.time >= from_date)
+            if to_date:
+                query = query.filter(Meal.time <= to_date)
             if source:
                 query = query.filter(Meal.source == source)
             if analyzed == "true":
