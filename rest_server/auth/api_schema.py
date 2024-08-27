@@ -14,3 +14,6 @@ class OTPVerifyRequest(BaseModel):
 class OtpVerifyResponse(BaseModel):
     token: str
     is_new_user: bool
+
+
+OtpVerifySuccessResponse = SuccessResponse[OtpVerifyResponse]
