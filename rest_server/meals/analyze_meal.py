@@ -26,7 +26,7 @@ from decouple import config
 
 
 # Create FastAPI router
-router = APIRouter(prefix="/meal")
+router = APIRouter(prefix="/patient/meals")
 
 
 @router.post(path="/analyze", response_model=MealResponse, tags=["Meal"])
@@ -47,7 +47,7 @@ async def analyze_meal_api(
                 .filter(
                     Meal.id == meal_id,
                     Meal.patient_id == current_patient.patient_id,
-                ) 
+                )
                 .options(
                     selectinload(Meal.items).selectinload(
                         FoodItem.macro_nutritional_values
