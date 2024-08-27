@@ -11,10 +11,10 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 from datetime import datetime
 
-router = APIRouter(prefix="/patient")
+router = APIRouter(prefix="/patient/smbg")
 
 
-@router.post("/smbg", tags=["SMBG"], response_model=SuccessResponse)
+@router.post("/upload", tags=["SMBG"], response_model=SuccessResponse)
 async def upload_smbg(
     request: Request,
     smbg: PatientSMBGCreate,
@@ -44,7 +44,7 @@ async def upload_smbg(
             raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.get("/smbg", tags=["SMBG"], response_model=SuccessResponse)
+@router.get("", tags=["SMBG"], response_model=SuccessResponse)
 async def get_patient_smbg(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[SuccessResponse, HTTPException]:

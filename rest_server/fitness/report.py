@@ -16,7 +16,7 @@ from lib.utils.fitness.processor import FitnessDataProcessor
 
 
 # Create FastAPI router
-router = APIRouter(prefix="/fitness/report")
+router = APIRouter(prefix="/patient/fitness/report")
 
 
 @router.get(

@@ -13,7 +13,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 # Create FastAPI router
-router = APIRouter(prefix="/meal")
+router = APIRouter(prefix="/patient/meals")
 
 
 @router.post(path="/upload", tags=["Meal"])

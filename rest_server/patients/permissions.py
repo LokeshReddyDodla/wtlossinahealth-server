@@ -12,12 +12,10 @@ from sqlalchemy.future import select
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
 
-router = APIRouter(prefix="/patient")
+router = APIRouter(prefix="/patient/permissions")
 
 
-@router.get(
-    path="/permissions", tags=["Patient"], response_model=SuccessResponse
-)
+@router.get(path="", tags=["Patient"], response_model=SuccessResponse)
 async def get_patient_permissions(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[SuccessResponse, HTTPException]:
@@ -48,9 +46,7 @@ async def get_patient_permissions(
             raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.post(
-    "/sync-permissions", tags=["Patient"], response_model=SuccessResponse
-)
+@router.post("/sync", tags=["Patient"], response_model=SuccessResponse)
 async def sync_permissions(
     request: Request,
     permissions: PatientPermissionUpdate,

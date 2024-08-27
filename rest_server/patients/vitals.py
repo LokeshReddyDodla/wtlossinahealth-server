@@ -11,10 +11,10 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 from datetime import datetime
 
-router = APIRouter(prefix="/patient")
+router = APIRouter(prefix="/patient/vitals")
 
 
-@router.post("/vitals", tags=["Vitals"], response_model=SuccessResponse)
+@router.post("/upload", tags=["Vitals"], response_model=SuccessResponse)
 async def upload_vitals(
     request: Request,
     vitals: PatientVitalsCreate,
@@ -51,7 +51,7 @@ async def upload_vitals(
             raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.get("/vitals", tags=["Vitals"], response_model=SuccessResponse)
+@router.get("", tags=["Vitals"], response_model=SuccessResponse)
 async def get_patient_vitals(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[SuccessResponse, HTTPException]:
@@ -64,7 +64,10 @@ async def get_patient_vitals(
             )
 
             vital_records = result.scalars().all()
-            vitals = [PatientVitalsSchema.from_orm(record) for record in vital_records]
+            vitals = [
+                PatientVitalsSchema.from_orm(record)
+                for record in vital_records
+            ]
             return SuccessResponse(
                 message="Vitals fetched successfully.",
                 data=vitals,

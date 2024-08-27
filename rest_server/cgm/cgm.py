@@ -6,7 +6,7 @@ from fastapi import (
 from typing import Union
 
 # Create FastAPI router
-router = APIRouter(prefix="/cgm")
+router = APIRouter(prefix="/patient/cgm")
 
 
 @router.delete("/clear/{table_name}", tags=["CGM"])

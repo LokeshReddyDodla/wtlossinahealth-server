@@ -24,7 +24,7 @@ from rest_server.fitness.api_schema import (
 )
 
 
-router = APIRouter(prefix="/fitness")
+router = APIRouter(prefix="/patient/fitness")
 
 
 @router.get(

@@ -13,11 +13,11 @@ from typing import Union
 from sqlalchemy.orm import selectinload
 
 
-router = APIRouter(prefix="/patient")
+router = APIRouter(prefix="/patient/connected-apps")
 
 
 @router.post(
-    "/connected-apps/libreview",
+    "/libreview",
     tags=["ConnectedApps"],
     response_model=SuccessResponse,
 )
@@ -61,7 +61,7 @@ async def add_libreview(
 
 
 @router.post(
-    "/connected-apps/other-app",
+    "/other-app",
     tags=["ConnectedApps"],
     response_model=SuccessResponse,
 )
@@ -104,9 +104,7 @@ async def add_other_app(
             raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.get(
-    "/connected-apps", tags=["ConnectedApps"], response_model=SuccessResponse
-)
+@router.get("", tags=["ConnectedApps"], response_model=SuccessResponse)
 async def get_patient_connected_apps(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[SuccessResponse, HTTPException]:
