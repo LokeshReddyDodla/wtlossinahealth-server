@@ -1,6 +1,6 @@
 from lib.schemas.meal import MealDescription, MealResponse
 from rest_server.response_models import SuccessResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, HttpUrl, constr
 from typing import List, Optional
 from datetime import datetime
 
@@ -18,4 +18,4 @@ class MealUploadRequest(BaseModel):
     time: datetime
     source: Optional[str] = "app"
     description: Optional[str] = None
-    image_url: str
+    image_url: HttpUrl

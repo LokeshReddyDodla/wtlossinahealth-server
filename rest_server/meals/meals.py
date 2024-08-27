@@ -97,49 +97,6 @@ async def get_meals_api(
             raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.post(path="/upload", tags=["Meal"])
-async def meal_upload_api(
-    request: Request,
-    meal_data: MealUploadRequest,
-    current_patient: Patient = Depends(get_current_patient),
-):
-    """
-    Meal Upload API
-    """
-    async with request.state.context.postgres_store.get_session() as session:
-        try:
-            context_id = uuid.uuid4().hex
-
-            meal = Meal(
-                type=meal_data.type,
-                time=meal_data.time,
-                source=meal_data.source,
-                description=meal_data.description,
-                context_id=context_id,
-                image_url=meal_data.image_url,
-                patient_id=current_patient.patient_id,
-            )
-            session.add(meal)
-            await session.commit()
-            await session.refresh(meal)
-
-            meal = MealResponse.from_orm(meal)
-
-            return SuccessResponse(
-                data=meal, message="Meal Uploaded Successfully"
-            )
-        except SQLAlchemyError as e:
-            await session.rollback()
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
-        except Exception as e:
-            await session.rollback()
-            response = ErrorResponse(
-                message="Internal Server Error", detail=str(e)
-            )
-            raise HTTPException(status_code=500, detail=response.dict())
-
-
 @router.delete(
     path="/{meal_id}", tags=["Meal"], response_model=SuccessResponse
 )
