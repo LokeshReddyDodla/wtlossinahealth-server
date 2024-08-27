@@ -16,7 +16,7 @@ from lib.models.patient import Patient
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 
-router = APIRouter(prefix="/cgm")
+router = APIRouter(prefix="/patient/cgm")
 
 
 @router.post("/upload", tags=["CGM"])

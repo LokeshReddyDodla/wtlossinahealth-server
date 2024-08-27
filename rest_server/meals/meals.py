@@ -19,10 +19,10 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
 
 # Create FastAPI router
-router = APIRouter(prefix="/meal")
+router = APIRouter(prefix="/patient/meals")
 
 
-@router.get(path="/get", response_model=MealsResponse, tags=["Meal"])
+@router.get(path="", response_model=MealsResponse, tags=["Meal"])
 async def get_meals_api(
     request: Request,
     from_date: Optional[datetime] = Query(None),

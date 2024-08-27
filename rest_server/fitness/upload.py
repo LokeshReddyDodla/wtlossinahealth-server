@@ -13,7 +13,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import List, Union
 
 
-router = APIRouter(prefix="/fitness")
+router = APIRouter(prefix="/patient/fitness")
 
 
 @router.post("/upload", tags=["Fitness"])
