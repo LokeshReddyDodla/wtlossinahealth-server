@@ -11,7 +11,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 from datetime import datetime
 
-router = APIRouter(prefix="/patient/smbg")
+router = APIRouter(prefix="/patient/smbgs")
 
 
 @router.post("/upload", tags=["SMBG"], response_model=SuccessResponse)
