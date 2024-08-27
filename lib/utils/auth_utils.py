@@ -13,14 +13,16 @@ class AuthUtils:
                 select(Patient).where(Patient.phone_number == phone_number)
             )
             user = result.scalars().first()
+            is_new_user = False
             if not user:
                 user = Patient(phone_number=phone_number)
                 self.postgres_session.add(user)
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(user)
+                is_new_user = True
             user_id = str(user.patient_id)
         elif role == "Doctor":
             pass
         else:
             raise HTTPException(status_code=400, detail="Invalid role")
-        return user, user_id
+        return user, user_id, is_new_user
