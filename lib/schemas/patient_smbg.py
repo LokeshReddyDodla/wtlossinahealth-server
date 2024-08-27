@@ -9,7 +9,6 @@ class PatientSMBGBase(BaseModel):
     reading_time: datetime
     source: str
     type: str  # pre_meal, post_meal, etc.
-    meal_type: Optional[str] = None  # breakfast, lunch, dinner, snack, etc.
     notes: Optional[str] = None
 
 

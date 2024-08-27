@@ -28,7 +28,6 @@ async def upload_smbg(
                 reading_time=smbg.reading_time,
                 source=smbg.source,
                 type=smbg.type,
-                meal_type=smbg.meal_type,
                 notes=smbg.notes,
             )
             session.add(new_smbg)

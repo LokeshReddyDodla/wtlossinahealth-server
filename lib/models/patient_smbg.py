@@ -17,9 +17,6 @@ class PatientSMBG(Base):
     reading_time = Column(DateTime, nullable=False)
     source = Column(String, nullable=False)
     type = Column(String, nullable=False)  # pre_meal, post_meal, etc.
-    meal_type = Column(
-        String, nullable=True
-    )  # breakfast, lunch, dinner, snack, etc.
     notes = Column(String, nullable=True)
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
