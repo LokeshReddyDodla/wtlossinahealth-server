@@ -37,7 +37,7 @@ async def analyze_meal_api(
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[MealResponse, HTTPException]:
     """
-    Analyse Meal API
+    Analyze Meal API
     """
     async with request.state.context.postgres_store.get_session() as session:
         try:
@@ -81,7 +81,7 @@ async def analyze_meal_api(
             if not ai_response:
                 response = ErrorResponse(
                     message="Analysis failed",
-                    detail=f"Meal with ID {meal_id} failed to be analysed",
+                    detail=f"Meal with ID {meal_id} failed to be analyzed",
                 )
                 raise HTTPException(status_code=400, detail="")
 

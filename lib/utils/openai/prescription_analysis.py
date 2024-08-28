@@ -4,7 +4,7 @@ from typing import Optional, Union
 from lib.utils.retry_utils import retry_request
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 
-def analyse_prescription(image_url: str):
+def analyze_prescription(image_url: str):
     openai.api_key = config('OPENAI_API_KEY')
 
     prompt_text = """

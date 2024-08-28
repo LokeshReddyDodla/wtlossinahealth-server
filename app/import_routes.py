@@ -5,8 +5,8 @@ from rest_server.cgm import cgm, report as cgm_report, upload as cgm_upload
 from rest_server.meals import analyze_meal, meals, upload as meal_upload
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
-from rest_server.prescriptions import analyse_prescription
-from rest_server.report import analyse_report
+from rest_server.prescriptions import analyze_prescription
+from rest_server.report import analyze_report
 from rest_server.chat import chat, context_chat
 from rest_server.patients import (
     patients,
@@ -59,7 +59,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Prescriptions
     ###########################################################################
-    app.include_router(analyse_prescription.router)
+    app.include_router(analyze_prescription.router)
 
     ###########################################################################
     # Fitness
@@ -72,7 +72,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Report
     ###########################################################################
-    app.include_router(analyse_report.router)
+    app.include_router(analyze_report.router)
 
     ###########################################################################
     # Chat

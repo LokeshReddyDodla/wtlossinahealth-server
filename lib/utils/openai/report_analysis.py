@@ -3,7 +3,7 @@ import openai
 from decouple import config
 from lib.utils.retry_utils import retry_request
 
-def analyse_report(text: str) -> str:
+def analyze_report(text: str) -> str:
     openai.api_key = config('OPENAI_API_KEY')
     
     prompt_text = f"""
