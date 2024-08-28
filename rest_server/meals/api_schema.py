@@ -5,10 +5,6 @@ from typing import List, Optional
 from datetime import datetime
 
 
-class MealAnalysisResponse(SuccessResponse):
-    data: Optional[MealResponse] = None
-
-
 class MealsResponse(SuccessResponse):
     data: Optional[List[MealResponse]] = None
 
@@ -19,3 +15,6 @@ class MealUploadRequest(BaseModel):
     source: Optional[str] = "app"
     description: Optional[str] = None
     image_url: HttpUrl
+
+
+MealAnalysisResponse = SuccessResponse[MealResponse]

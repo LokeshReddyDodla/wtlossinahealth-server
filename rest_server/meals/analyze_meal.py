@@ -29,13 +29,15 @@ from decouple import config
 router = APIRouter(prefix="/patient/meals")
 
 
-@router.post(path="/analyze", response_model=MealResponse, tags=["Meal"])
+@router.post(
+    path="/analyze", response_model=MealAnalysisResponse, tags=["Meal"]
+)
 async def analyze_meal_api(
     request: Request,
     meal_id: str,
     force: Optional[bool] = False,
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[MealResponse, HTTPException]:
+) -> Union[MealAnalysisResponse, HTTPException]:
     """
     Analyze Meal API
     """
@@ -69,7 +71,10 @@ async def analyze_meal_api(
                 raise HTTPException(status_code=404, detail=response.dict())
 
             if meal.analyzed and not force:
-                return MealResponse.from_orm(meal)
+                return MealAnalysisResponse(
+                    message="Meal analyzed successfully.",
+                    data=MealResponse.from_orm(meal),
+                )
 
             meal_analysis_service = MealAnalysisService(
                 session, api_key=config("OPENAI_API_KEY")
@@ -111,7 +116,10 @@ async def analyze_meal_api(
                     api_endpoint=request.url.path,
                 )
 
-            return updated_meal_response
+            return MealAnalysisResponse(
+                message="Meal analyzed successfully.",
+                data=updated_meal_response,
+            )
         except json.JSONDecodeError as e:
             await session.rollback()
             response = ErrorResponse(message="Invalid JSON", detail=str(e))

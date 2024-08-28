@@ -13,7 +13,7 @@ from lib.utils.context_utils import identify_context
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.chat.api_scheme import ChatRequest, ChatResponse
-from rest_server.meals.api_schema import MealDescription, MealAnalysisResponse
+from rest_server.meals.api_schema import MealDescription
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from services.chat_handler import chat_handler
 
