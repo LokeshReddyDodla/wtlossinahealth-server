@@ -35,7 +35,7 @@ router = APIRouter(prefix="/patient/meals")
 async def analyze_meal_api(
     request: Request,
     meal_id: str,
-    force: Optional[bool] = False,
+    re_analyze: Optional[bool] = False,
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[MealAnalysisResponse, HTTPException]:
     """
@@ -70,7 +70,7 @@ async def analyze_meal_api(
                 )
                 raise HTTPException(status_code=404, detail=response.dict())
 
-            if meal.analyzed and not force:
+            if meal.analyzed and not re_analyze:
                 return MealAnalysisResponse(
                     message="Meal analyzed successfully.",
                     data=MealResponse.from_orm(meal),
