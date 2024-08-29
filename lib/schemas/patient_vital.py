@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 
-class PatientVitalsBase(BaseModel):
+class PatientVitalBase(BaseModel):
     source: str
     test_time: datetime
     a1c: Optional[float] = None
@@ -19,15 +19,15 @@ class PatientVitalsBase(BaseModel):
     weight: Optional[float] = None
 
 
-class PatientVitalsCreate(PatientVitalsBase):
+class PatientVitalCreate(PatientVitalBase):
     pass
 
 
-class PatientVitalsUpdate(PatientVitalsBase):
+class PatientVitalUpdate(PatientVitalBase):
     pass
 
 
-class PatientVitals(PatientVitalsBase):
+class PatientVital(PatientVitalBase):
     id: UUID
     uploaded_at: datetime
 

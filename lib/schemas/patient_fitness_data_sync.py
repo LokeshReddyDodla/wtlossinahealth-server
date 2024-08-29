@@ -4,16 +4,16 @@ from datetime import datetime
 from uuid import UUID
 
 
-class FitnessDataSyncBase(BaseModel):
+class PatientFitnessDataSyncBase(BaseModel):
     patient_id: UUID
     last_sync_timestamp: Optional[datetime] = None
 
 
-class FitnessDataSyncCreate(FitnessDataSyncBase):
+class PatientFitnessDataSyncCreate(PatientFitnessDataSyncBase):
     pass
 
 
-class FitnessDataSync(FitnessDataSyncBase):
+class PatientFitnessDataSync(PatientFitnessDataSyncBase):
     id: UUID
 
     class Config:

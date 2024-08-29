@@ -64,7 +64,7 @@ class TotalMicroNutritionalValue(BaseModel):
         orm_mode = True
 
 
-class Meal(BaseModel):
+class PatientMeal(BaseModel):
     id: UUID
     name: Optional[str]
     type: str
@@ -88,7 +88,7 @@ class Meal(BaseModel):
         orm_mode = True
 
 
-class MealResponse(Meal):
+class MealResponse(PatientMeal):
     @classmethod
     def from_orm(cls, obj):
         state = obj._sa_instance_state
