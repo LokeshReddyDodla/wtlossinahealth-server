@@ -90,15 +90,3 @@ class PatientMeal(BaseModel):
 
     class Config:
         orm_mode = True
-
-
-class MealDescription(BaseModel):  # TODO: remove this
-    type: str
-    items: List[FoodItem]
-    total_macro_nutritional_value: PatientTotalMacroNutritionalValue
-    total_micro_nutritional_value: PatientTotalMicroNutritionalValue
-    image_url: str
-    description: Optional[str] = None
-    feedback: str
-    tags: List[str]
-    context_id: str

@@ -9,13 +9,14 @@ from lib.models.patient_meal import (
     PatientTotalMacroNutritionalValue,
     PatientTotalMicroNutritionalValue,
 )
-from lib.schemas.patient_meal import PatientMealResponse
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
 import openai
 from decouple import config
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class MealAnalysisService:

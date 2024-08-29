@@ -1,8 +1,8 @@
 import uuid
 from pydantic import BaseModel
-from sqlalchemy import UUID, Column, ForeignKey, String
 from lib.models import Base
 from sqlalchemy.orm import relationship
+from uuid import UUID
 
 
 class PatientCuisinePreferenceBase(BaseModel):

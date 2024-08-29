@@ -1,6 +1,6 @@
 import uuid
 from pydantic import BaseModel
-from sqlalchemy import UUID, Column, ForeignKey, String
+from uuid import UUID
 from lib.models import Base
 from sqlalchemy.orm import relationship
 

@@ -1,4 +1,4 @@
-from lib.schemas.patient_meal import MealDescription, PatientMeal
+from lib.schemas.patient_meal import PatientMeal
 from rest_server.response_models import SuccessResponse
 from pydantic import BaseModel, Field, HttpUrl, constr
 from typing import List, Optional

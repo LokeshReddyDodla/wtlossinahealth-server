@@ -8,7 +8,7 @@ from lib.schemas.fitness import (
     FitnessSummaryStats,
     FitnessWeeklyStats,
 )
-from lib.schemas.patient_meal import PatientMealResponse
+from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class GlucoseRangeStats(BaseModel):
