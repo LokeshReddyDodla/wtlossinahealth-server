@@ -64,8 +64,9 @@ class TotalMicroNutritionalValue(BaseModel):
         orm_mode = True
 
 
-class MealResponse(BaseModel):
+class Meal(BaseModel):
     id: UUID
+    name: Optional[str]
     type: str
     time: datetime
     items: Optional[List[FoodItem]] = []
@@ -86,20 +87,17 @@ class MealResponse(BaseModel):
     class Config:
         orm_mode = True
 
+
+class MealResponse(Meal):
     @classmethod
     def from_orm(cls, obj):
-        kwargs = {}
-        state = (
-            obj._sa_instance_state
-        )  # Access the internal state of the SQLAlchemy instance
+        state = obj._sa_instance_state
 
-        for name, field in cls.__fields__.items():
-            if name in state.dict:  # Check if the attribute is already loaded
-                kwargs[name] = getattr(obj, name)
-            elif (
-                name not in state.unloaded
-            ):  # Ensure it's not an unloaded attribute
-                kwargs[name] = getattr(obj, name)
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.__fields__
+            if name in state.dict or name not in state.unloaded
+        }
 
         return cls(**kwargs)
 

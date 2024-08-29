@@ -95,6 +95,7 @@ class MealAnalysisService:
         )
 
         # Update other meal fields
+        meal.name = analysis_data["name"]
         meal.feedback = analysis_data["feedback"]
         meal.tags = analysis_data["tags"]
         meal.score = float(analysis_data["score"])
