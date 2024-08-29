@@ -12,4 +12,4 @@ class PatientFamilyDiabeticHistory(Base):
     )
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
     family_member = Column(String(50))
-    patient = relationship("Patient", back_populates="family_diabetic_history")
+    patient = relationship("Patient", back_populates="family_diabetic_histories")

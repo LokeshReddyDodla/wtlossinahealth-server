@@ -22,4 +22,4 @@ class PatientSMBG(Base):
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
 
-    patient = relationship("Patient", back_populates="smbg")
+    patient = relationship("Patient", back_populates="smbgs")

@@ -13,4 +13,4 @@ class PatientFitnessDataSync(Base):
         UUID(as_uuid=True), ForeignKey("patients.patient_id"), nullable=False
     )
     last_sync_timestamp = Column(DateTime, nullable=True)
-    patient = relationship("Patient", back_populates="fitness_syncs")
+    patient = relationship("Patient", back_populates="fitness_sync")

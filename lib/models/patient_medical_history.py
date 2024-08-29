@@ -14,4 +14,4 @@ class PatientMedicalHistory(Base):
     condition = Column(String(100))
     duration_years = Column(Integer)
     details = Column(Text, nullable=True)
-    patient = relationship("Patient", back_populates="medical_history")
+    patient = relationship("Patient", back_populates="medical_histories")

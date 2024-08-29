@@ -107,10 +107,10 @@ async def update_basic_patient(
 )
 async def upsert_patient_lifestyle(
     request: Request,
-    activities: PatientDailyActivityCreate,
+    daily_activity: PatientDailyActivityCreate,
     diet_preferences: List[PatientDietPreferenceCreate],
     alcohol_consumption: PatientAlcoholConsumptionCreate,
-    smoking_habits: PatientSmokingHabitCreate,
+    smoking_habit: PatientSmokingHabitCreate,
     sleep_habit: PatientSleepHabitCreate,
     food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
     meal_timings: Optional[List[PatientMealTimingCreate]] = None,
@@ -142,13 +142,13 @@ async def upsert_patient_lifestyle(
                 )
 
             # Update or create related data
-            if patient.daily_activities:
-                for key, value in activities.dict().items():
-                    setattr(patient.daily_activities[0], key, value)
+            if patient.daily_activity:
+                for key, value in daily_activity.dict().items():
+                    setattr(patient.daily_activity[0], key, value)
             else:
-                patient.daily_activities = [
+                patient.daily_activity = [
                     PatientDailyActivity(
-                        **activities.dict(), patient_id=patient_id
+                        **daily_activity.dict(), patient_id=patient_id
                     )
                 ]
 
@@ -168,11 +168,11 @@ async def upsert_patient_lifestyle(
                 )
 
             if patient.smoking_habit:
-                for key, value in smoking_habits.dict().items():
+                for key, value in smoking_habit.dict().items():
                     setattr(patient.smoking_habit, key, value)
             else:
                 patient.smoking_habit = PatientSmokingHabit(
-                    **smoking_habits.dict(), patient_id=patient_id
+                    **smoking_habit.dict(), patient_id=patient_id
                 )
 
             if patient.sleep_habit:
@@ -231,10 +231,10 @@ async def upsert_patient_medical_history(
     diabetic_history: PatientDiabeticHistoryCreate,
     current_medication: PatientCurrentMedicationCreate,
     drug_allergies: Optional[List[PatientDrugAllergyCreate]] = None,
-    family_diabetic_history: Optional[
+    family_diabetic_histories: Optional[
         List[PatientFamilyDiabeticHistoryCreate]
     ] = None,
-    medical_history: Optional[List[PatientMedicalHistoryCreate]] = None,
+    medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[SuccessResponse, HTTPException]:
     try:
@@ -247,8 +247,8 @@ async def upsert_patient_medical_history(
                     selectinload(Patient.diabetic_history),
                     selectinload(Patient.current_medication),
                     selectinload(Patient.drug_allergies),
-                    selectinload(Patient.family_diabetic_history),
-                    selectinload(Patient.medical_history),
+                    selectinload(Patient.family_diabetic_histories),
+                    selectinload(Patient.medical_histories),
                 ],
             )
 
@@ -279,15 +279,15 @@ async def upsert_patient_medical_history(
                 PatientDrugAllergy(**allergy.dict(), patient_id=patient_id)
                 for allergy in (drug_allergies or [])
             ]
-            patient.family_diabetic_history = [
+            patient.family_diabetic_histories = [
                 PatientFamilyDiabeticHistory(
                     **history.dict(), patient_id=patient_id
                 )
-                for history in (family_diabetic_history or [])
+                for history in (family_diabetic_histories or [])
             ]
-            patient.medical_history = [
+            patient.medical_histories = [
                 PatientMedicalHistory(**history.dict(), patient_id=patient_id)
-                for history in (medical_history or [])
+                for history in (medical_histories or [])
             ]
 
             session.add(patient)

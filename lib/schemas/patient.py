@@ -63,24 +63,24 @@ class Patient(PatientBase):
 
 class CompletePatientProfile(PatientBase):
     patient_id: UUID
-    daily_activities: List[PatientDailyActivity] = []
+    daily_activity: List[PatientDailyActivity] = []
     food_allergies: List[PatientFoodAllergy] = []
     drug_allergies: List[PatientDrugAllergy] = []
     diet_preferences: List[PatientDietPreference] = []
     alcohol_consumption: Optional[PatientAlcoholConsumption] = None
-    smoking_habits: Optional[PatientSmokingHabit] = None
+    smoking_habit: Optional[PatientSmokingHabit] = None
     meal_timings: List[PatientMealTiming] = []
     cuisine_preferences: List[PatientCuisinePreference] = []
     sleep_habit: Optional[PatientSleepHabit] = None
     diabetic_history: Optional[PatientDiabeticHistory] = None
-    family_diabetic_history: List[PatientFamilyDiabeticHistory] = []
-    medical_history: List[PatientMedicalHistory] = []
+    family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
+    medical_histories: List[PatientMedicalHistory] = []
     current_medication: Optional[PatientCurrentMedication] = None
     permissions: Optional[PatientPermission] = None
     vitals: List[PatientVital] = []
-    smbg: List[PatientSMBG] = []
+    smbgs: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
-    fitness_syncs: Optional[PatientFitnessDataSync] = None
+    fitness_sync: Optional[PatientFitnessDataSync] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
 
     class Config:
