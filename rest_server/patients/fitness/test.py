@@ -17,7 +17,7 @@ from dateutil.parser import parse
 from .router import router
 
 
-@router.post("/dummy_upload", tags=["Fitness"])
+@router.post("/dummy_upload", response_model=SuccessResponse)
 async def upload_fitness_data(
     request: Request,
     file: UploadFile = File(...),

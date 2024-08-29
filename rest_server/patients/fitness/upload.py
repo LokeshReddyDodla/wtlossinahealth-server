@@ -14,7 +14,10 @@ from typing import List, Union
 from .router import router
 
 
-@router.post("/upload", response_model=SuccessResponse, tags=["Fitness"])
+@router.post(
+    "/upload",
+    response_model=SuccessResponse,
+)
 async def upload_fitness_data(
     request: Request,
     fitness_data: FitnessDataRequest,

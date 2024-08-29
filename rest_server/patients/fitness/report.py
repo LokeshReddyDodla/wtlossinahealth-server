@@ -21,7 +21,6 @@ from .router import router
 
 @router.get(
     "/report",
-    tags=["Fitness"],
     response_model=FitnessReportResponse,
 )
 async def get_fitness_data(

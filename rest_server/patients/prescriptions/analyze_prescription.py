@@ -20,7 +20,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.post(path="/analyze", tags=["Prescription"])
+@router.post(path="/analyze", response_model=PrescriptionAnalysisResponse)
 async def analyze_prescription_api(
     request: Request,
     image_url: str,

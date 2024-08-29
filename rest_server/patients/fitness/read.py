@@ -25,7 +25,6 @@ from .router import router
 
 @router.get(
     "/stats",
-    tags=["Fitness"],
     response_model=FitnessStatsResponse,
 )
 async def get_fitness_stats(

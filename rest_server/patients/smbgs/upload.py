@@ -17,9 +17,7 @@ from datetime import datetime
 from .router import router
 
 
-@router.post(
-    "/upload", tags=["SMBGs"], response_model=PatientSmbgUploadResponse
-)
+@router.post("/upload", response_model=PatientSmbgUploadResponse)
 async def upload_smbg(
     request: Request,
     smbg: PatientSMBGCreate,

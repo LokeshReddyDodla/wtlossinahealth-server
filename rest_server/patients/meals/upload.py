@@ -9,13 +9,14 @@ from lib.models.patient_meal import PatientMeal
 from rest_server.patients.meals.api_schema import (
     PatientMealResponse,
     PatientMealUploadRequest,
+    PatientMealUploadResponse,
 )
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.exc import SQLAlchemyError
 from .router import router
 
 
-@router.post(path="/upload", tags=["Meals"])
+@router.post(path="/upload", response_model=PatientMealUploadResponse)
 async def meal_upload_api(
     request: Request,
     meal_data: PatientMealUploadRequest,
@@ -43,8 +44,9 @@ async def meal_upload_api(
 
             meal = PatientMealResponse.from_orm(meal)
 
-            return SuccessResponse(
-                data=meal, message="Meal Uploaded Successfully"
+            return PatientMealUploadResponse(
+                message="Meal Uploaded Successfully",
+                data=meal,
             )
         except SQLAlchemyError as e:
             await session.rollback()

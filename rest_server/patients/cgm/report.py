@@ -32,7 +32,6 @@ from .router import router
 
 @router.get(
     "/report",
-    tags=["CGM"],
     response_model=GlucoseReportResponse,
 )
 async def get_detailed_glucose_report(

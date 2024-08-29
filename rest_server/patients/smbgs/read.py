@@ -13,7 +13,7 @@ from datetime import datetime
 from .router import router
 
 
-@router.get("", tags=["SMBGs"], response_model=PatientSmbgsResponse)
+@router.get("", response_model=PatientSmbgsResponse)
 async def get_patient_smbg(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[PatientSmbgsResponse, HTTPException]:

@@ -27,7 +27,8 @@ from .router import router
 
 
 @router.post(
-    path="/analyze", response_model=PatientMealAnalysisResponse, tags=["Meals"]
+    path="/analyze",
+    response_model=PatientMealAnalysisResponse,
 )
 async def analyze_meal_api(
     request: Request,

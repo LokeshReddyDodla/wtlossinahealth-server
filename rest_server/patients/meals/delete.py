@@ -18,9 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .router import router
 
 
-@router.delete(
-    path="/{meal_id}", tags=["Meals"], response_model=SuccessResponse
-)
+@router.delete(path="/{meal_id}", response_model=SuccessResponse)
 async def delete_meal_api(
     request: Request,
     meal_id: uuid.UUID,

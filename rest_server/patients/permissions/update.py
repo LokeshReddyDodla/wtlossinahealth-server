@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from .router import router
 
 
-@router.post("/sync", tags=["Patient"], response_model=SuccessResponse)
+@router.post("/sync", response_model=SuccessResponse)
 async def sync_permissions(
     request: Request,
     permissions: PatientPermissionUpdate,
@@ -50,7 +50,10 @@ async def sync_permissions(
             )
 
             await session.commit()
-            return SuccessResponse(message="Permissions synced successfully.")
+            return SuccessResponse(
+                message="Permissions synced successfully.",
+                data=patient.permissions,
+            )
         except HTTPException as http_exc:
             raise http_exc
         except Exception as e:

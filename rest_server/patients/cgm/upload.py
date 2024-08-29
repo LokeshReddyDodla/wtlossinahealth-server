@@ -17,7 +17,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.post("/upload", tags=["CGM"])
+@router.post("/upload", response_model=SuccessResponse)
 async def upload_cgm_data(
     request: Request,
     file: UploadFile = File(...),

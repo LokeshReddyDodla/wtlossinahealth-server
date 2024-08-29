@@ -11,7 +11,7 @@ from typing import List, Union
 from datetime import datetime
 
 from lib.utils.fitness_upload_utils import FitnessUploadUtils
-from rest_server.fitness.api_schema import FitnessDataRequest
+from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
 class FitnessUploadService:

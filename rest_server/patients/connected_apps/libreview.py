@@ -20,7 +20,6 @@ from .router import router
 
 @router.post(
     "/add-libreview",
-    tags=["ConnectedApps"],
     response_model=AddLibreViewResponse,
 )
 async def add_libreview(

@@ -17,9 +17,7 @@ from sqlalchemy.orm import selectinload
 from .router import router
 
 
-@router.get(
-    "", tags=["ConnectedApps"], response_model=GetPatientConnectedAppsResponse
-)
+@router.get("", response_model=GetPatientConnectedAppsResponse)
 async def get_patient_connected_apps(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[GetPatientConnectedAppsResponse, HTTPException]:

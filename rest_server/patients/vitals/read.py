@@ -12,7 +12,7 @@ from datetime import datetime
 from .router import router
 
 
-@router.get("", tags=["Vitals"], response_model=PatientVitalsResponse)
+@router.get("", response_model=PatientVitalsResponse)
 async def get_patient_vitals(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[PatientVitalsResponse, HTTPException]:

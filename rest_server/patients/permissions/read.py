@@ -16,9 +16,7 @@ from sqlalchemy.orm import selectinload
 from .router import router
 
 
-@router.get(
-    path="", tags=["Permissions"], response_model=PatientPermissionsResponse
-)
+@router.get(path="", response_model=PatientPermissionsResponse)
 async def get_patient_permissions(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[PatientPermissionsResponse, HTTPException]:

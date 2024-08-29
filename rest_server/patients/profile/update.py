@@ -60,7 +60,6 @@ from .router import router
 
 @router.put(
     path="/basic",
-    tags=["Profile"],
     response_model=PatientProfileResponse,
 )
 async def update_basic_patient(
@@ -104,7 +103,6 @@ async def update_basic_patient(
 
 @router.patch(
     path="/lifestyle",
-    tags=["Profile"],
     response_model=SuccessResponse,
 )
 async def upsert_patient_lifestyle(
@@ -226,7 +224,6 @@ async def upsert_patient_lifestyle(
 
 @router.patch(
     path="/medical_history",
-    tags=["Profile"],
     response_model=SuccessResponse,
 )
 async def upsert_patient_medical_history(

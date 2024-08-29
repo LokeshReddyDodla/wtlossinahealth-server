@@ -19,8 +19,7 @@ class PatientMealResponse(PatientMeal):
         return cls(**kwargs)
 
 
-class PatientMealsResponse(SuccessResponse):
-    data: Optional[List[PatientMealResponse]] = None
+PatientMealsResponse = SuccessResponse[List[PatientMealResponse]]
 
 
 class PatientMealUploadRequest(BaseModel):
@@ -32,3 +31,5 @@ class PatientMealUploadRequest(BaseModel):
 
 
 PatientMealAnalysisResponse = SuccessResponse[PatientMealResponse]
+
+PatientMealUploadResponse = SuccessResponse[PatientMealResponse]

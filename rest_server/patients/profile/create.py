@@ -22,9 +22,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
 
-@router.post(
-    path="/basic", tags=["Profile"], response_model=PatientProfileResponse
-)
+@router.post(path="/basic", response_model=PatientProfileResponse)
 async def create_basic_patient(
     request: Request,
     patient_data: PatientCreate,

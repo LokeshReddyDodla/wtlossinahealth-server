@@ -20,9 +20,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
 
-@router.get(
-    path="", tags=["Profile"], response_model=PatientCompleteProfileResponse
-)
+@router.get(path="", response_model=PatientCompleteProfileResponse)
 async def get_patient_details(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[PatientCompleteProfileResponse, HTTPException]:

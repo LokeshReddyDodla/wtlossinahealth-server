@@ -17,9 +17,7 @@ from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
 
-@router.delete(
-    path="/delete", tags=["Profile"], response_model=SuccessResponse
-)
+@router.delete(path="/delete", response_model=SuccessResponse)
 async def delete_patient_api(
     request: Request,
     current_patient: Patient = Depends(get_current_patient),

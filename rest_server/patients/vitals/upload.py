@@ -15,9 +15,7 @@ from datetime import datetime
 from .router import router
 
 
-@router.post(
-    "/upload", tags=["Vitals"], response_model=PatientVitalUploadResponse
-)
+@router.post("/upload", response_model=PatientVitalUploadResponse)
 async def upload_vitals(
     request: Request,
     vitals: PatientVitalCreate,

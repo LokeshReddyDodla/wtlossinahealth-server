@@ -20,7 +20,6 @@ from .router import router
 
 @router.post(
     "/add-other-app",
-    tags=["ConnectedApps"],
     response_model=AddOtherAppResponse,
 )
 async def add_other_app(

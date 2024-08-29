@@ -21,8 +21,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from .router import router
 
 
-
-@router.get(path="", response_model=PatientMealsResponse, tags=["Meals"])
+@router.get(
+    path="",
+    response_model=PatientMealsResponse,
+)
 async def get_meals_api(
     request: Request,
     from_date: Optional[datetime] = Query(None),
