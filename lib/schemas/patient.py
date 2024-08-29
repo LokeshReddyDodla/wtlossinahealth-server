@@ -7,7 +7,7 @@ from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_cuisine_preference import PatientCuisinePreference
 from lib.schemas.patient_current_medication import PatientCurrentMedication
-from lib.schemas.patient_daily_acitivity import PatientDailyActivity
+from lib.schemas.patient_daily_activity import PatientDailyActivity
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
 from lib.schemas.patient_diet_preference import PatientDietPreference
 from lib.schemas.patient_drug_allergy import PatientDrugAllergy

@@ -6,7 +6,7 @@ from lib.models.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_cuisine_preference import PatientCuisinePreference
 from lib.models.patient_current_medication import PatientCurrentMedication
-from lib.models.patient_daily_acitivity import PatientDailyActivity
+from lib.models.patient_daily_activity import PatientDailyActivity
 from lib.models.patient_diabetic_history import PatientDiabeticHistory
 from lib.models.patient_diet_preference import PatientDietPreference
 from lib.models.patient_drug_allergy import PatientDrugAllergy
@@ -41,7 +41,7 @@ from lib.schemas.patient_cuisine_preference import (
 from lib.schemas.patient_current_medication import (
     PatientCurrentMedicationCreate,
 )
-from lib.schemas.patient_daily_acitivity import PatientDailyActivityCreate
+from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
