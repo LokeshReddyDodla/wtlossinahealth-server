@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Any, Dict, List
 from sqlalchemy import select
-from lib.models.meal import FoodItem, Meal
+from lib.models.patient_meal import PatientFoodItem, PatientMeal
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.schemas.patient import PatientDetail
 
 from sqlalchemy.orm import selectinload
+from lib.schemas.patient import CompletePatientProfile
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
@@ -61,42 +61,42 @@ class GlucoseStatsProcessor:
 
     async def fetch_meals(self, from_date, to_date):
         query = (
-            select(Meal)
-            .where(Meal.patient_id == self.patient_id)
-            .filter(Meal.time >= from_date)
-            .filter(Meal.time <= to_date)
+            select(PatientMeal)
+            .where(PatientMeal.patient_id == self.patient_id)
+            .filter(PatientMeal.time >= from_date)
+            .filter(PatientMeal.time <= to_date)
             .options(
-                selectinload(Meal.items).selectinload(
-                    FoodItem.macro_nutritional_values
+                selectinload(PatientMeal.items).selectinload(
+                    PatientFoodItem.macro_nutritional_values
                 ),
-                selectinload(Meal.items).selectinload(
-                    FoodItem.micro_nutritional_values
+                selectinload(PatientMeal.items).selectinload(
+                    PatientFoodItem.micro_nutritional_values
                 ),
-                selectinload(Meal.total_macro_nutritional_value),
-                selectinload(Meal.total_micro_nutritional_value),
+                selectinload(PatientMeal.total_macro_nutritional_value),
+                selectinload(PatientMeal.total_micro_nutritional_value),
             )
         )
         result = await self.postgres_session.execute(query)
         meals = result.scalars().all()
         return meals
 
-    async def fetch_profile(self) -> PatientDetail:
+    async def fetch_profile(self) -> CompletePatientProfile:
         query = (
             select(Patient)
             .where(Patient.patient_id == self.patient_id)
             .options(
-                selectinload(Patient.daily_activities),
+                selectinload(Patient.daily_activity),
                 selectinload(Patient.food_allergies),
                 selectinload(Patient.drug_allergies),
                 selectinload(Patient.diet_preferences),
                 selectinload(Patient.alcohol_consumption),
-                selectinload(Patient.smoking_habits),
+                selectinload(Patient.smoking_habit),
                 selectinload(Patient.meal_timings),
                 selectinload(Patient.cuisine_preferences),
-                selectinload(Patient.sleep_summary),
+                selectinload(Patient.sleep_habit),
                 selectinload(Patient.diabetic_history),
-                selectinload(Patient.family_diabetic_history),
-                selectinload(Patient.medical_history),
+                selectinload(Patient.family_diabetic_histories),
+                selectinload(Patient.medical_histories),
                 selectinload(Patient.current_medication),
                 selectinload(Patient.connected_apps).selectinload(
                     PatientConnectedApp.libreview
@@ -108,7 +108,7 @@ class GlucoseStatsProcessor:
         )
         result = await self.postgres_session.execute(query)
         patient = result.scalars().first()
-        patient_detail = PatientDetail.from_orm(patient)
+        patient_detail = CompletePatientProfile.from_orm(patient)
         return patient_detail
 
     async def process(
