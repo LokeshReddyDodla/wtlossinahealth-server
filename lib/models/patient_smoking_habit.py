@@ -15,4 +15,4 @@ class PatientSmokingHabit(Base):
     years_of_smoking = Column(Integer, nullable=True)
     cigarettes_per_day = Column(Integer, nullable=True)
     quit_years_ago = Column(Integer, nullable=True)
-    patient = relationship("Patient", back_populates="smoking_habits")
+    patient = relationship("Patient", back_populates="smoking_habit")
