@@ -19,7 +19,9 @@ from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_meal_timing import PatientMealTiming
 from lib.schemas.patient_medical_history import PatientMedicalHistory
 from lib.schemas.patient_permission import PatientPermission
-from lib.schemas.patient_sleep_summary import PatientSleepSummary
+from lib.schemas.patient_sleep_habit import (
+    PatientSleepHabit,
+)
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient_token_usage_log import PatientTokenUsageLog
@@ -69,7 +71,7 @@ class CompletePatientProfile(PatientBase):
     smoking_habits: Optional[PatientSmokingHabit] = None
     meal_timings: List[PatientMealTiming] = []
     cuisine_preferences: List[PatientCuisinePreference] = []
-    sleep_summary: Optional[PatientSleepSummary] = None
+    sleep_habit: Optional[PatientSleepHabit] = None
     diabetic_history: Optional[PatientDiabeticHistory] = None
     family_diabetic_history: List[PatientFamilyDiabeticHistory] = []
     medical_history: List[PatientMedicalHistory] = []

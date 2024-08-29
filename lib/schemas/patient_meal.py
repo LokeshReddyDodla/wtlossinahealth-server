@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID
 
 
-class MacroNutritionalValues(BaseModel):
+class PatientMacroNutritionalValue(BaseModel):
     calories: str
     proteins: str
     carbohydrates: str
@@ -18,7 +18,7 @@ class MacroNutritionalValues(BaseModel):
         orm_mode = True
 
 
-class MicroNutritionalValues(BaseModel):
+class PatientMicroNutritionalValue(BaseModel):
     calcium: str
     iron: str
     zinc: str
@@ -35,14 +35,14 @@ class FoodItem(BaseModel):
     serving_size: str
     serving_quantity: str
     serving_unit: str
-    macro_nutritional_values: MacroNutritionalValues
-    micro_nutritional_values: MicroNutritionalValues
+    macro_nutritional_values: PatientMacroNutritionalValue
+    micro_nutritional_values: PatientMicroNutritionalValue
 
     class Config:
         orm_mode = True
 
 
-class TotalMacroNutritionalValue(BaseModel):
+class PatientTotalMacroNutritionalValue(BaseModel):
     calories: str
     proteins: str
     carbohydrates: str
@@ -53,7 +53,7 @@ class TotalMacroNutritionalValue(BaseModel):
         orm_mode = True
 
 
-class TotalMicroNutritionalValue(BaseModel):
+class PatientTotalMicroNutritionalValue(BaseModel):
     calcium: str
     iron: str
     zinc: str
@@ -70,8 +70,12 @@ class PatientMeal(BaseModel):
     type: str
     time: datetime
     items: Optional[List[FoodItem]] = []
-    total_macro_nutritional_value: Optional[TotalMacroNutritionalValue] = None
-    total_micro_nutritional_value: Optional[TotalMicroNutritionalValue] = None
+    total_macro_nutritional_value: Optional[
+        PatientTotalMacroNutritionalValue
+    ] = None
+    total_micro_nutritional_value: Optional[
+        PatientTotalMicroNutritionalValue
+    ] = None
     image_url: Optional[str]
     description: Optional[str]
     source: Optional[str]
@@ -88,7 +92,7 @@ class PatientMeal(BaseModel):
         orm_mode = True
 
 
-class MealResponse(PatientMeal):
+class PatientMealResponse(PatientMeal):
     @classmethod
     def from_orm(cls, obj):
         state = obj._sa_instance_state
@@ -105,8 +109,8 @@ class MealResponse(PatientMeal):
 class MealDescription(BaseModel):  # TODO: remove this
     type: str
     items: List[FoodItem]
-    total_macro_nutritional_value: TotalMacroNutritionalValue
-    total_micro_nutritional_value: TotalMicroNutritionalValue
+    total_macro_nutritional_value: PatientTotalMacroNutritionalValue
+    total_micro_nutritional_value: PatientTotalMicroNutritionalValue
     image_url: str
     description: Optional[str] = None
     feedback: str

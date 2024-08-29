@@ -7,7 +7,7 @@ from lib.models import Base
 from sqlalchemy.orm import relationship
 
 
-class PatientSleepSummaryBase(BaseModel):
+class PatientSleepHabitBase(BaseModel):
     sleep_quality: str
     wake_up_fresh: bool
     drowsy_day: bool
@@ -16,11 +16,11 @@ class PatientSleepSummaryBase(BaseModel):
     bed_time: Optional[datetime] = None
 
 
-class PatientSleepSummaryCreate(PatientSleepSummaryBase):
+class PatientSleepHabitCreate(PatientSleepHabitBase):
     pass
 
 
-class PatientSleepSummary(PatientSleepSummaryBase):
+class PatientSleepHabit(PatientSleepHabitBase):
     patient_id: UUID
 
     class Config:

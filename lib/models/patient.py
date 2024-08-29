@@ -98,8 +98,8 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    sleep_summary = relationship(
-        "PatientSleepSummary",
+    sleep_habit = relationship(
+        "PatientSleepHabit",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",

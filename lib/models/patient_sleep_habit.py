@@ -4,8 +4,8 @@ from lib.models import Base
 from sqlalchemy.orm import relationship
 
 
-class PatientSleepSummary(Base):
-    __tablename__ = "patient_sleep_summary"
+class PatientSleepHabit(Base):
+    __tablename__ = "patient_sleep_habit"
 
     patient_id = Column(
         UUID(as_uuid=True), ForeignKey("patients.patient_id"), primary_key=True
@@ -16,4 +16,4 @@ class PatientSleepSummary(Base):
     average_sleep_duration = Column(Float, nullable=True)
     wake_up_time = Column(Time, nullable=True)
     bed_time = Column(Time, nullable=True)
-    patient = relationship("Patient", back_populates="sleep_summary")
+    patient = relationship("Patient", back_populates="sleep_habit")
