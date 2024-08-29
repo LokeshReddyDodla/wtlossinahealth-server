@@ -16,10 +16,10 @@ class PatientConnectedApp(Base):
 
     patient = relationship("Patient", back_populates="connected_apps")
     libreview = relationship(
-        "LibreView", back_populates="connected_app", uselist=False
+        "PatientLibreView", back_populates="connected_app", uselist=False
     )
     other_app = relationship(
-        "OtherApp", back_populates="connected_app", uselist=False
+        "PatientOtherApp", back_populates="connected_app", uselist=False
     )
 
 
