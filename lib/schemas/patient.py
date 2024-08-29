@@ -63,7 +63,7 @@ class Patient(PatientBase):
 
 class CompletePatientProfile(PatientBase):
     patient_id: UUID
-    daily_activity: List[PatientDailyActivity] = []
+    daily_activity: Optional[PatientDailyActivity] = None
     food_allergies: List[PatientFoodAllergy] = []
     drug_allergies: List[PatientDrugAllergy] = []
     diet_preferences: List[PatientDietPreference] = []
