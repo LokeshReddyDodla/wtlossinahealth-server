@@ -11,6 +11,6 @@ class PatientPrescription(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     medication_id = Column(
-        UUID(as_uuid=True), ForeignKey("current_medication.medication_id")
+        UUID(as_uuid=True), ForeignKey("patient_current_medication.medication_id")
     )
     prescription_file = Column(Text)
