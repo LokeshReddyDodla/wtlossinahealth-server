@@ -5,8 +5,8 @@ from lib.models import Base
 from sqlalchemy.orm import relationship
 
 
-class FitnessDataSync(Base):
-    __tablename__ = "fitness_data_sync"
+class PatientFitnessDataSync(Base):
+    __tablename__ = "patient_fitness_data_syncs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(

@@ -7,7 +7,7 @@ from lib.models import Base
 
 
 class PatientTokenUsageLog(Base):
-    __tablename__ = "patient_token_usage_log"
+    __tablename__ = "patient_token_usage_logs"
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True

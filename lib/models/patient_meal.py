@@ -118,8 +118,8 @@ class TotalMicroNutritionalValue(Base):
     meal = relationship("Meal", back_populates="total_micro_nutritional_value")
 
 
-class Meal(Base):
-    __tablename__ = "meals"
+class PatientMeal(Base):
+    __tablename__ = "patient_meals"
 
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True

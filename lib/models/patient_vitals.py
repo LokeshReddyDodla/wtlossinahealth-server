@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 
-class PatientVitals(Base):
+class PatientVital(Base):
     __tablename__ = "patient_vitals"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
