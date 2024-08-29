@@ -2,6 +2,8 @@ from datetime import datetime, date
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 
+from rest_server.response_models import SuccessResponse
+
 
 class FitnessActivityDistribution(BaseModel):
     time_of_day: str
@@ -70,7 +72,7 @@ class FitnessSummaryStats(FitnessBaseStats):
     pass
 
 
-class FitnessStatsResponse(BaseModel):
+class CompleteFitnessReport(BaseModel):
     patient_id: str
     summary: FitnessBaseStats
     daily_stats: Optional[List[FitnessDailyStats]] = None

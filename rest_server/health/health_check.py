@@ -8,7 +8,7 @@ from rest_server.health.database_health import (
 from rest_server.health.api_health import check_user_api_health
 from rest_server.response_models import SuccessResponse
 
-router = APIRouter(prefix="/health")
+router = APIRouter()
 
 
 @router.get("/postgres", tags=["Health"])

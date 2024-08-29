@@ -1,7 +1,7 @@
 from typing import Any, Dict
 import pandas as pd
-from lib.utils.glucose_events import execute_query
 from lib.schemas.glucose import HypoEvent
+from lib.utils.glucose.events import execute_query
 
 
 def fetch_hypo_stats(clickhouse_store, patient_id, from_date_str, to_date_str):

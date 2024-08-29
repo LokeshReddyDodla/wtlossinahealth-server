@@ -1,7 +1,7 @@
 from typing import Any, Dict
 import pandas as pd
-from lib.utils.glucose_events import execute_query
 from lib.schemas.glucose import HyperEvent
+from lib.utils.glucose.events import execute_query
 
 
 def fetch_hyper_stats(

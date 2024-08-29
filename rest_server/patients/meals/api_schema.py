@@ -1,0 +1,34 @@
+from lib.schemas.patient_meal import MealDescription, PatientMeal
+from rest_server.response_models import SuccessResponse
+from pydantic import BaseModel, Field, HttpUrl, constr
+from typing import List, Optional
+from datetime import datetime
+
+
+class PatientMealResponse(PatientMeal):
+    @classmethod
+    def from_orm(cls, obj):
+        state = obj._sa_instance_state
+
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.__fields__
+            if name in state.dict or name not in state.unloaded
+        }
+
+        return cls(**kwargs)
+
+
+class PatientMealsResponse(SuccessResponse):
+    data: Optional[List[PatientMealResponse]] = None
+
+
+class PatientMealUploadRequest(BaseModel):
+    type: str
+    time: datetime
+    source: Optional[str] = "app"
+    description: Optional[str] = None
+    image_url: HttpUrl
+
+
+PatientMealAnalysisResponse = SuccessResponse[PatientMealResponse]
