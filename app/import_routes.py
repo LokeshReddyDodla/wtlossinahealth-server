@@ -1,31 +1,33 @@
 from fastapi import FastAPI
 
 from rest_server.auth import auth
-from rest_server.cgm import cgm, report as cgm_report, upload as cgm_upload
-from rest_server.meals import analyze_meal, meals, upload as meal_upload
+from rest_server.patients.cgm.router import router as cgm_router
+from rest_server.patients.connected_apps.router import (
+    router as connected_apps_router,
+)
+from rest_server.patients.fitness.router import router as fitness_router
+from rest_server.patients.meals.router import router as meals_router
+from rest_server.patients.permissions.router import (
+    router as permissions_router,
+)
+from rest_server.patients.prescriptions.router import (
+    router as prescriptions_router,
+)
+from rest_server.patients.profile.router import router as profile_router
+from rest_server.patients.smbgs.router import router as smbgs_router
+from rest_server.patients.vitals.router import router as vitals_router
+
+
 from rest_server.system_management import reload_cache
 from rest_server.file_upload import file_upload
-from rest_server.prescriptions import analyze_prescription
-from rest_server.report import analyze_report
 from rest_server.chat import chat, context_chat
-from rest_server.patients import (
-    patients,
-    permissions as patient_permissions,
-    vitals as patient_vitals,
-    smbg as patient_smbg,
-    connected_app as patient_connected_app,
-)
+
 from rest_server.health import health_check
 from rest_server.test import test
 from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
-from rest_server.fitness import (
-    fitness_stats,
-    upload as fitness_upload,
-    report as fitness_report,
-    test as fitness_test,
-)
+
 from rest_server.dump import dump
 
 
@@ -50,29 +52,8 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(file_upload.router)
 
     ###########################################################################
-    # Meals
-    ###########################################################################
-    app.include_router(meal_upload.router)
-    app.include_router(analyze_meal.router)
-    app.include_router(meals.router)
-
-    ###########################################################################
-    # Prescriptions
-    ###########################################################################
-    app.include_router(analyze_prescription.router)
-
-    ###########################################################################
-    # Fitness
-    ###########################################################################
-    app.include_router(fitness_stats.router)
-    app.include_router(fitness_upload.router)
-    app.include_router(fitness_report.router)
-    app.include_router(fitness_test.router)
-
-    ###########################################################################
     # Report
     ###########################################################################
-    app.include_router(analyze_report.router)
 
     ###########################################################################
     # Chat
@@ -86,20 +67,17 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(auth.router)
 
     ###########################################################################
-    # CGM
-    ###########################################################################
-    app.include_router(cgm.router)
-    app.include_router(cgm_upload.router)
-    app.include_router(cgm_report.router)
-
-    ###########################################################################
     # Patient
     ###########################################################################
-    app.include_router(patients.router)
-    app.include_router(patient_permissions.router)
-    app.include_router(patient_vitals.router)
-    app.include_router(patient_smbg.router)
-    app.include_router(patient_connected_app.router)
+    app.include_router(profile_router)
+    app.include_router(permissions_router)
+    app.include_router(vitals_router)
+    app.include_router(smbgs_router)
+    app.include_router(connected_apps_router)
+    app.include_router(cgm_router)
+    app.include_router(fitness_router)
+    app.include_router(prescriptions_router)
+    app.include_router(meals_router)
 
     ###########################################################################
     # Test

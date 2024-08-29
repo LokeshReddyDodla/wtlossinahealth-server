@@ -8,7 +8,7 @@ from lib.schemas.fitness import (
     FitnessSummaryStats,
     FitnessWeeklyStats,
 )
-from lib.schemas.meal import MealResponse
+from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class GlucoseRangeStats(BaseModel):
@@ -109,7 +109,7 @@ class GlucoseLevelStats(BaseModel):
     from_date: datetime
     to_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
-    meals: Optional[List[MealResponse]] = None
+    meals: Optional[List[PatientMealResponse]] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]

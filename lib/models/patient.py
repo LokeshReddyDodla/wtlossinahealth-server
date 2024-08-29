@@ -19,7 +19,7 @@ from datetime import datetime
 from sqlalchemy.event import listens_for
 
 from lib.models import Base
-from lib.models.fitness_data_sync import FitnessDataSync
+from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
 
@@ -55,71 +55,80 @@ class Patient(Base):
     locale = Column(String(50), nullable=True, default="Asia/Kolkata")
 
     # Relationships
-    daily_activities = relationship(
-        "DailyActivity", back_populates="patient", cascade="all, delete-orphan"
+    daily_activity = relationship(
+        "PatientDailyActivity",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
     food_allergies = relationship(
-        "FoodAllergy", back_populates="patient", cascade="all, delete-orphan"
+        "PatientFoodAllergy",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
     drug_allergies = relationship(
-        "DrugAllergy", back_populates="patient", cascade="all, delete-orphan"
+        "PatientDrugAllergy",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
     diet_preferences = relationship(
-        "DietPreference",
+        "PatientDietPreference",
         back_populates="patient",
         cascade="all, delete-orphan",
     )
     alcohol_consumption = relationship(
-        "AlcoholConsumption",
+        "PatientAlcoholConsumption",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    smoking_habits = relationship(
-        "SmokingHabit",
+    smoking_habit = relationship(
+        "PatientSmokingHabit",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
     )
     meal_timings = relationship(
-        "MealTiming", back_populates="patient", cascade="all, delete-orphan"
-    )
-    cuisine_preferences = relationship(
-        "CuisinePreference",
+        "PatientMealTiming",
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    sleep_summary = relationship(
-        "SleepSummary",
+    cuisine_preferences = relationship(
+        "PatientCuisinePreference",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    sleep_habit = relationship(
+        "PatientSleepHabit",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
     )
     diabetic_history = relationship(
-        "DiabeticHistory",
+        "PatientDiabeticHistory",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    family_diabetic_history = relationship(
-        "FamilyDiabeticHistory",
+    family_diabetic_histories = relationship(
+        "PatientFamilyDiabeticHistory",
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    medical_history = relationship(
-        "MedicalHistory",
+    medical_histories = relationship(
+        "PatientMedicalHistory",
         back_populates="patient",
         cascade="all, delete-orphan",
     )
     current_medication = relationship(
-        "CurrentMedication",
+        "PatientCurrentMedication",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
     )
 
     meals = relationship(
-        "Meal", back_populates="patient", cascade="all, delete-orphan"
+        "PatientMeal", back_populates="patient", cascade="all, delete-orphan"
     )
 
     permissions = relationship(
@@ -130,10 +139,10 @@ class Patient(Base):
     )
 
     vitals = relationship(
-        "PatientVitals", back_populates="patient", cascade="all, delete-orphan"
+        "PatientVital", back_populates="patient", cascade="all, delete-orphan"
     )
 
-    smbg = relationship(
+    smbgs = relationship(
         "PatientSMBG", back_populates="patient", cascade="all, delete-orphan"
     )
 
@@ -144,14 +153,14 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    fitness_syncs = relationship(
-        "FitnessDataSync",
+    fitness_sync = relationship(
+        "PatientFitnessDataSync",
         back_populates="patient",
         cascade="all, delete-orphan",
         uselist=False,
     )
 
-    sleep_data = relationship(
+    sleep_entries = relationship(
         "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
     )
 
@@ -184,182 +193,9 @@ def create_related_records(mapper, connection, target):
     )
     # Insert into FitnessDataSync
     connection.execute(
-        FitnessDataSync.__table__.insert(),
+        PatientFitnessDataSync.__table__.insert(),
         {
             "patient_id": target.patient_id,
             "last_sync_timestamp": None,
         },
     )
-
-
-class DailyActivity(Base):
-    __tablename__ = "daily_activity"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    activity_level = Column(String(50))
-    patient = relationship("Patient", back_populates="daily_activities")
-
-
-class FoodAllergy(Base):
-    __tablename__ = "food_allergies"
-
-    allergy_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    allergy_name = Column(String(100))
-    patient = relationship("Patient", back_populates="food_allergies")
-
-
-class DrugAllergy(Base):
-    __tablename__ = "drug_allergies"
-
-    allergy_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    allergy_name = Column(String(100))
-    patient = relationship("Patient", back_populates="drug_allergies")
-
-
-class DietPreference(Base):
-    __tablename__ = "diet_preferences"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    preference = Column(String(50))
-    detail = Column(String(100), nullable=True)
-    patient = relationship("Patient", back_populates="diet_preferences")
-
-
-class AlcoholConsumption(Base):
-    __tablename__ = "alcohol_consumption"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    consume_alcohol = Column(Boolean)
-    frequency = Column(String(50), nullable=True)
-    quantity = Column(String(50), nullable=True)
-    type_of_alcohol = Column(JSON, nullable=True)
-    patient = relationship("Patient", back_populates="alcohol_consumption")
-
-
-class SmokingHabit(Base):
-    __tablename__ = "smoking_habits"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    smoke_status = Column(String(20))
-    years_of_smoking = Column(Integer, nullable=True)
-    cigarettes_per_day = Column(Integer, nullable=True)
-    quit_years_ago = Column(Integer, nullable=True)
-    patient = relationship("Patient", back_populates="smoking_habits")
-
-
-class MealTiming(Base):
-    __tablename__ = "meal_timings"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    meal_type = Column(String(50))
-    time = Column(String(50))
-    patient = relationship("Patient", back_populates="meal_timings")
-
-
-class CuisinePreference(Base):
-    __tablename__ = "cuisine_preferences"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    cuisine = Column(String(50))
-    patient = relationship("Patient", back_populates="cuisine_preferences")
-
-
-class SleepSummary(Base):
-    __tablename__ = "sleep_summary"
-
-    patient_id = Column(
-        UUID(as_uuid=True), ForeignKey("patients.patient_id"), primary_key=True
-    )
-    sleep_quality = Column(String(50))
-    wake_up_fresh = Column(Boolean)
-    drowsy_day = Column(Boolean)
-    average_sleep_duration = Column(Float, nullable=True)
-    wake_up_time = Column(Time, nullable=True)
-    bed_time = Column(Time, nullable=True)
-    patient = relationship("Patient", back_populates="sleep_summary")
-
-
-class DiabeticHistory(Base):
-    __tablename__ = "diabetic_history"
-
-    patient_id = Column(
-        UUID(as_uuid=True), ForeignKey("patients.patient_id"), primary_key=True
-    )
-    type_of_diabetes = Column(String(50), nullable=True)
-    years_with_diabetes = Column(Integer, nullable=True)
-    is_pregnant = Column(Boolean, nullable=True)
-    pregnancy_weeks = Column(Integer, nullable=True)
-    patient = relationship("Patient", back_populates="diabetic_history")
-
-
-class FamilyDiabeticHistory(Base):
-    __tablename__ = "family_diabetic_history"
-
-    history_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    family_member = Column(String(50))
-    patient = relationship("Patient", back_populates="family_diabetic_history")
-
-
-class MedicalHistory(Base):
-    __tablename__ = "medical_history"
-
-    history_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    condition = Column(String(100))
-    duration_years = Column(Integer)
-    details = Column(Text, nullable=True)
-    patient = relationship("Patient", back_populates="medical_history")
-
-
-class CurrentMedication(Base):
-    __tablename__ = "current_medication"
-
-    medication_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
-    has_medication = Column(Boolean)
-    prescription_description = Column(Text, nullable=True)
-    prescription_image_url = Column(Text, nullable=True)
-    patient = relationship("Patient", back_populates="current_medication")
-
-
-class Prescription(Base):
-    __tablename__ = "prescriptions"
-
-    prescription_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    medication_id = Column(
-        UUID(as_uuid=True), ForeignKey("current_medication.medication_id")
-    )
-    prescription_file = Column(Text)

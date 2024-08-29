@@ -1,21 +1,22 @@
 from datetime import datetime
 from typing import Any
 from fastapi import HTTPException
-from lib.models.meal import (
-    FoodItem,
-    MacroNutritionalValues,
-    Meal,
-    MicroNutritionalValues,
-    TotalMacroNutritionalValue,
-    TotalMicroNutritionalValue,
+from lib.models.patient_meal import (
+    PatientFoodItem,
+    PatientMacroNutritionalValue,
+    PatientMeal,
+    PatientMicroNutritionalValue,
+    PatientTotalMacroNutritionalValue,
+    PatientTotalMicroNutritionalValue,
 )
-from lib.schemas.meal import MealResponse
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
 import openai
 from decouple import config
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class MealAnalysisService:
@@ -74,7 +75,7 @@ class MealAnalysisService:
 
     async def save_meal_analysis(
         self, meal: Any, analysis_data: dict
-    ) -> MealResponse:
+    ) -> PatientMealResponse:
 
         # create FoodItem records
         meal.items = [
@@ -84,13 +85,13 @@ class MealAnalysisService:
 
         # Update total macro nutritional values
         total_macro = analysis_data["total_macro_nutritional_value"]
-        meal.total_macro_nutritional_value = TotalMacroNutritionalValue(
+        meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValue(
             meal_id=meal.id, **total_macro
         )
 
         # Update total micro nutritional values
         total_micro = analysis_data["total_micro_nutritional_value"]
-        meal.total_micro_nutritional_value = TotalMicroNutritionalValue(
+        meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValue(
             meal_id=meal.id, **total_micro
         )
 
@@ -106,10 +107,12 @@ class MealAnalysisService:
         self.postgres_session.add(meal)
         await self.postgres_session.commit()
 
-        return MealResponse.from_orm(meal)
+        return PatientMealResponse.from_orm(meal)
 
-    def _create_food_item(self, meal: Meal, item_data: dict) -> FoodItem:
-        food_item = FoodItem(
+    def _create_food_item(
+        self, meal: PatientMeal, item_data: dict
+    ) -> PatientFoodItem:
+        food_item = PatientFoodItem(
             name=item_data["name"],
             coordinates=item_data["coordinates"],
             serving_size=item_data["serving_size"],
@@ -117,23 +120,23 @@ class MealAnalysisService:
             serving_unit=item_data["serving_unit"],
             meal=meal,
         )
-        food_item.macro_nutritional_values = MacroNutritionalValues(
+        food_item.macro_nutritional_values = PatientMacroNutritionalValue(
             food_item_id=food_item.id, **item_data["macro_nutritional_values"]
         )
-        food_item.micro_nutritional_values = MicroNutritionalValues(
+        food_item.micro_nutritional_values = PatientMicroNutritionalValue(
             food_item_id=food_item.id, **item_data["micro_nutritional_values"]
         )
         return food_item
 
     def _upsert_total_macro_nutritional_value(
-        self, meal: Meal, macro_data: dict
-    ) -> TotalMacroNutritionalValue:
-        return TotalMacroNutritionalValue(meal=meal, **macro_data)
+        self, meal: PatientMeal, macro_data: dict
+    ) -> PatientTotalMacroNutritionalValue:
+        return PatientTotalMacroNutritionalValue(meal=meal, **macro_data)
 
     def _upsert_total_micro_nutritional_value(
-        self, meal: Meal, micro_data: dict
-    ) -> TotalMicroNutritionalValue:
-        return TotalMicroNutritionalValue(meal=meal, **micro_data)
+        self, meal: PatientMeal, micro_data: dict
+    ) -> PatientTotalMicroNutritionalValue:
+        return PatientTotalMicroNutritionalValue(meal=meal, **micro_data)
 
     def _generate_prompt(self, mealtime: datetime, meal_type: str) -> str:
         return f"""

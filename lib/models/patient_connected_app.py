@@ -23,8 +23,8 @@ class PatientConnectedApp(Base):
     )
 
 
-class LibreView(Base):
-    __tablename__ = "libreview"
+class PatientLibreView(Base):
+    __tablename__ = "patient_libreview"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connected_app_id = Column(
@@ -41,8 +41,8 @@ class LibreView(Base):
     )
 
 
-class OtherApp(Base):
-    __tablename__ = "other_app"
+class PatientOtherApp(Base):
+    __tablename__ = "patient_other_apps"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connected_app_id = Column(

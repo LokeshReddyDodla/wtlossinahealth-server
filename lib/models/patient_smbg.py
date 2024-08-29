@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 class PatientSMBG(Base):
-    __tablename__ = "patient_smbg"
+    __tablename__ = "patient_smbgs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(

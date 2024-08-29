@@ -1,8 +1,8 @@
 from lib.models.patient import Patient
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
-from lib.models.patient_vitals import PatientVitals
-from lib.models.fitness_data_sync import FitnessDataSync
+from lib.models.patient_vital import PatientVital
+from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 from sqlalchemy import delete
@@ -11,7 +11,7 @@ from typing import List, Union
 from datetime import datetime
 
 from lib.utils.fitness_upload_utils import FitnessUploadUtils
-from rest_server.fitness.api_schema import FitnessDataRequest
+from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
 class FitnessUploadService:
@@ -63,10 +63,10 @@ class FitnessUploadService:
         )
 
         await self.postgres_session.execute(
-            delete(PatientVitals)
-            .where(PatientVitals.patient_id == self.patient_id)
-            .where(PatientVitals.test_time.between(dateFrom, dateTo))
-            .where(PatientVitals.source == source)
+            delete(PatientVital)
+            .where(PatientVital.patient_id == self.patient_id)
+            .where(PatientVital.test_time.between(dateFrom, dateTo))
+            .where(PatientVital.source == source)
         )
 
         await self.postgres_session.execute(
@@ -98,7 +98,7 @@ class FitnessUploadService:
 
         # Insert data into PatientVitals, PatientSMBG, PatientSleep, etc.
         vitals = [
-            PatientVitals(
+            PatientVital(
                 patient_id=self.patient_id,
                 diastolic_bp=diastolic_item.value,
                 systolic_bp=systolic_item.value,
@@ -113,7 +113,7 @@ class FitnessUploadService:
 
         for item in fitness_data.heart_rate:
             vitals.append(
-                PatientVitals(
+                PatientVital(
                     patient_id=self.patient_id,
                     heart_rate=item.value,
                     test_time=parse(item.dateFrom).replace(tzinfo=None),
@@ -147,8 +147,8 @@ class FitnessUploadService:
 
     async def update_last_sync(self, dateTo: datetime):
         fitness_sync_result = await self.postgres_session.execute(
-            select(FitnessDataSync).where(
-                FitnessDataSync.patient_id == self.patient_id
+            select(PatientFitnessDataSync).where(
+                PatientFitnessDataSync.patient_id == self.patient_id
             )
         )
         fitness_sync = fitness_sync_result.scalars().first()
@@ -156,7 +156,7 @@ class FitnessUploadService:
         if fitness_sync:
             fitness_sync.last_sync_timestamp = dateTo
         else:
-            fitness_sync = FitnessDataSync(
+            fitness_sync = PatientFitnessDataSync(
                 patient_id=self.patient_id,
                 last_sync_timestamp=dateTo,
             )

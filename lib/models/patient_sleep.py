@@ -7,7 +7,7 @@ from sqlalchemy.orm import relationship
 
 
 class PatientSleep(Base):
-    __tablename__ = "patient_sleep"
+    __tablename__ = "patient_sleeps"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patient_id = Column(
@@ -23,4 +23,4 @@ class PatientSleep(Base):
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
 
-    patient = relationship("Patient", back_populates="sleep_data")
+    patient = relationship("Patient", back_populates="sleep_entries")
