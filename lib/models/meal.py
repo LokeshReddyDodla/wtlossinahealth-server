@@ -124,6 +124,7 @@ class Meal(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
+    name = Column(String, nullable=True)
     type = Column(String)
     time = Column(DateTime)
     items = relationship(
