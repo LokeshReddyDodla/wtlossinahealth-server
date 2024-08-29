@@ -56,5 +56,4 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP, role: str):
     except HTTPException as e:
         raise e
     except Exception as e:
-        print("==> exception: ", e)
         return ErrorResponse(message="Failed to verify OTP", detail=str(e))
