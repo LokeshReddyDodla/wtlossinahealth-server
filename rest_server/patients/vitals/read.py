@@ -9,8 +9,7 @@ from rest_server.patients.vitals.api_schema import PatientVitalsResponse
 from rest_server.response_models import ErrorResponse
 from typing import Union
 from datetime import datetime
-
-router = APIRouter()
+from .router import router
 
 
 @router.get("", tags=["Vitals"], response_model=PatientVitalsResponse)

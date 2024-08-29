@@ -14,8 +14,7 @@ from typing import List, Optional, Union
 from sqlalchemy.exc import IntegrityError
 
 from rest_server.response_models import SuccessResponse, ErrorResponse
-
-router = APIRouter()
+from .router import router
 
 
 @router.delete(

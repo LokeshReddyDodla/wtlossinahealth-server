@@ -17,8 +17,7 @@ from rest_server.patients.prescriptions.api_schema import (
     PrescriptionData,
 )
 from rest_server.response_models import ErrorResponse, SuccessResponse
-
-router = APIRouter()
+from .router import router
 
 
 @router.post(path="/analyze", tags=["Prescription"])

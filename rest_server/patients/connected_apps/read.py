@@ -14,9 +14,7 @@ from lib.schemas.patient_connected_app import (
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 from sqlalchemy.orm import selectinload
-
-
-router = APIRouter()
+from .router import router
 
 
 @router.get(

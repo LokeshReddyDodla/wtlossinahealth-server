@@ -1,15 +1,15 @@
 from fastapi import FastAPI
 
 from rest_server.auth import auth
-from rest_server.patients.cgm import routes as cgm_routes
-from rest_server.patients.connected_apps import routes as connected_apps_routes
-from rest_server.patients.fitness import routes as fitness_routes
-from rest_server.patients.meals import routes as meals_routes
-from rest_server.patients.permissions import routes as permissions_routes
-from rest_server.patients.prescriptions import routes as prescriptions_routes
-from rest_server.patients.profile import routes as profile_routes
-from rest_server.patients.smbgs import routes as smbgs_routes
-from rest_server.patients.vitals import routes as vitals_routes
+from rest_server.patients.cgm import router as cgm_routes
+from rest_server.patients.connected_apps import router as connected_apps_routes
+from rest_server.patients.fitness import router as fitness_routes
+from rest_server.patients.meals import router as meals_routes
+from rest_server.patients.permissions import router as permissions_routes
+from rest_server.patients.prescriptions import router as prescriptions_routes
+from rest_server.patients.profile import router as profile_routes
+from rest_server.patients.smbgs import router as smbgs_routes
+from rest_server.patients.vitals import router as vitals_routes
 
 
 from rest_server.system_management import reload_cache

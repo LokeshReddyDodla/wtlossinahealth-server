@@ -10,8 +10,7 @@ from rest_server.patients.smbgs.api_schema import PatientSmbgsResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import Union
 from datetime import datetime
-
-router = APIRouter()
+from .router import router
 
 
 @router.get("", tags=["SMBGs"], response_model=PatientSmbgsResponse)

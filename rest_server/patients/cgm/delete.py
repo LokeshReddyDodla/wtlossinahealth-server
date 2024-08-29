@@ -4,8 +4,7 @@ from fastapi import (
     Request,
 )
 from typing import Union
-
-router = APIRouter()
+from .router import router
 
 
 @router.delete("/clear/{table_name}", tags=["CGM"])

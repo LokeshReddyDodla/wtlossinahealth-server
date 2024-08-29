@@ -11,9 +11,7 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import List, Union
-
-
-router = APIRouter()
+from .router import router
 
 
 @router.post("/upload", response_model=SuccessResponse, tags=["Fitness"])

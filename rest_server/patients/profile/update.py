@@ -55,8 +55,7 @@ from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from rest_server.patients.profile.api_schema import PatientProfileResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
-
-router = APIRouter()
+from .router import router
 
 
 @router.put(

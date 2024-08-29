@@ -13,8 +13,7 @@ from rest_server.patients.permissions.api_schema import (
 )
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
-
-router = APIRouter()
+from .router import router
 
 
 @router.get(

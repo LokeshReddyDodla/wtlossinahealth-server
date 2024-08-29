@@ -27,9 +27,7 @@ from rest_server.patients.cgm.api_schema import (
     GlucoseReportResponse,
 )
 from rest_server.response_models import ErrorResponse
-
-# Create FastAPI router
-router = APIRouter()
+from .router import router
 
 
 @router.get(

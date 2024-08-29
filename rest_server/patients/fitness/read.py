@@ -20,9 +20,7 @@ from lib.utils.fitness.queries import (
     generate_available_data_range_by_date,
 )
 from rest_server.patients.fitness.api_schema import FitnessStatsResponse
-
-
-router = APIRouter()
+from .router import router
 
 
 @router.get(

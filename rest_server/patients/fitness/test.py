@@ -11,13 +11,10 @@ from loguru import logger
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from lib.services.fitness_upload_service import FitnessUploadService
-from rest_server.fitness.api_schema import FitnessDataRequest
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from typing import List, Union
 from dateutil.parser import parse
-
-
-router = APIRouter(prefix="/fitness")
+from .router import router
 
 
 @router.post("/dummy_upload", tags=["Fitness"])

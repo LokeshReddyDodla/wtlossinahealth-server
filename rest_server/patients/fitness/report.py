@@ -16,10 +16,7 @@ from lib.schemas.fitness import (
 
 from lib.utils.fitness.processor import FitnessDataProcessor
 from rest_server.patients.fitness.api_schema import FitnessReportResponse
-
-
-# Create FastAPI router
-router = APIRouter()
+from .router import router
 
 
 @router.get(

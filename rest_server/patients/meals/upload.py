@@ -12,9 +12,7 @@ from rest_server.patients.meals.api_schema import (
 )
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.exc import SQLAlchemyError
-
-# Create FastAPI router
-router = APIRouter()
+from .router import router
 
 
 @router.post(path="/upload", tags=["Meals"])

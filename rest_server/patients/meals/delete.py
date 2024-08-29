@@ -15,9 +15,7 @@ from lib.models.patient_meal import PatientFoodItem, PatientMeal
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
-
-# Create FastAPI router
-router = APIRouter()
+from .router import router
 
 
 @router.delete(

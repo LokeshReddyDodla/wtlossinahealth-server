@@ -17,8 +17,7 @@ from rest_server.patients.profile.api_schema import (
     PatientCompleteProfileResponse,
 )
 from rest_server.response_models import SuccessResponse, ErrorResponse
-
-router = APIRouter()
+from .router import router
 
 
 @router.get(

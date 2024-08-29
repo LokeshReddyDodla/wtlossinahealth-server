@@ -11,8 +11,7 @@ from sqlalchemy.future import select
 
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
-
-router = APIRouter()
+from .router import router
 
 
 @router.post("/sync", tags=["Patient"], response_model=SuccessResponse)

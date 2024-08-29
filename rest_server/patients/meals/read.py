@@ -18,9 +18,8 @@ from rest_server.patients.meals.api_schema import (
 from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
+from .router import router
 
-# Create FastAPI router
-router = APIRouter()
 
 
 @router.get(path="", response_model=PatientMealsResponse, tags=["Meals"])

@@ -19,8 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 from rest_server.patients.profile.api_schema import PatientProfileResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
-
-router = APIRouter()
+from .router import router
 
 
 @router.post(

@@ -14,9 +14,7 @@ import pandas as pd
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from rest_server.response_models import ErrorResponse, SuccessResponse
-
-
-router = APIRouter()
+from .router import router
 
 
 @router.post("/upload", tags=["CGM"])

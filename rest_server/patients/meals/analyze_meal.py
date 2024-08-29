@@ -23,10 +23,7 @@ from lib.managers.context_manager import context_manager
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 from decouple import config
-
-
-# Create FastAPI router
-router = APIRouter()
+from .router import router
 
 
 @router.post(
