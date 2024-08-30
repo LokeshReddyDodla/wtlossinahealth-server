@@ -28,9 +28,8 @@ class MealAnalysisService:
         self.timezone = timezone
 
     def analyze_meal(
-        self, mealtime_ms, image_url, meal_type, food_description=None
+        self, mealtime, image_url, meal_type, food_description=None
     ):
-        mealtime = convert_milliseconds_to_datetime(mealtime_ms, self.timezone)
         prompt_text = self._generate_prompt(mealtime, meal_type)
 
         messages = [
@@ -96,7 +95,7 @@ class MealAnalysisService:
         )
 
         # Update other meal fields
-        meal.name = analysis_data["name"]
+        meal.name = analysis_data.get("meal_name", None)
         meal.feedback = analysis_data["feedback"]
         meal.tags = analysis_data["tags"]
         meal.score = float(analysis_data["score"])
@@ -142,6 +141,7 @@ class MealAnalysisService:
         return f"""
         You are a dietitian expert. Analyze the provided image considering it was taken at {mealtime}. The meal type is {meal_type}. Identify all visible food items, provide their coordinates, and give the nutritional values in the following JSON structure:
         {{
+            "meal_name": "<Meal Name>",
             "meal_type": "{meal_type}",
             "items": [
                 {{
