@@ -78,7 +78,10 @@ async def analyze_meal_api(
                 session, api_key=config("OPENAI_API_KEY")
             )
             ai_response, tokens_used = meal_analysis_service.analyze_meal(
-                meal.time.timestamp(), meal.image_url, meal.description
+                meal.time,
+                meal.image_url,
+                meal.type,
+                meal.description,
             )
 
             if not ai_response:
