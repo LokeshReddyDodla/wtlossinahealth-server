@@ -17,17 +17,33 @@ from sqlalchemy.dialects.postgresql import UUID
 from lib.models import Base
 
 
-class PatientMacroNutritionalValue(Base):
-    __tablename__ = "patient_macro_nutritional_values"
-
+class BaseMacroNutritionalValue(Base):
+    __abstract__ = True
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
-    calories = Column(String)
-    proteins = Column(String)
-    carbohydrates = Column(String)
-    fats = Column(String)
-    fiber = Column(String)
+    calories = Column(Float)
+    proteins = Column(Float)
+    carbohydrates = Column(Float)
+    fats = Column(Float)
+    fiber = Column(Float)
+
+
+class BaseMicroNutritionalValue(Base):
+    __abstract__ = True
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
+    )
+    calcium = Column(Float)
+    iron = Column(Float)
+    zinc = Column(Float)
+    magnesium = Column(Float)
+    cholesterol = Column(Float)
+
+
+class PatientMacroNutritionalValue(BaseMacroNutritionalValue):
+    __tablename__ = "patient_macro_nutritional_values"
+
     food_item_id = Column(
         UUID(as_uuid=True),
         ForeignKey("patient_food_items.id", ondelete="CASCADE"),
@@ -37,17 +53,9 @@ class PatientMacroNutritionalValue(Base):
     )
 
 
-class PatientMicroNutritionalValue(Base):
+class PatientMicroNutritionalValue(BaseMicroNutritionalValue):
     __tablename__ = "patient_micro_nutritional_values"
 
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    calcium = Column(String)
-    iron = Column(String)
-    zinc = Column(String)
-    magnesium = Column(String)
-    cholesterol = Column(String)
     food_item_id = Column(
         UUID(as_uuid=True),
         ForeignKey("patient_food_items.id", ondelete="CASCADE"),
@@ -86,17 +94,9 @@ class PatientFoodItem(Base):
     meal = relationship("PatientMeal", back_populates="items")
 
 
-class PatientTotalMacroNutritionalValue(Base):
+class PatientTotalMacroNutritionalValue(BaseMacroNutritionalValue):
     __tablename__ = "patient_total_macro_nutritional_values"
 
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    calories = Column(String)
-    proteins = Column(String)
-    carbohydrates = Column(String)
-    fats = Column(String)
-    fiber = Column(String)
     meal_id = Column(
         UUID(as_uuid=True), ForeignKey("patient_meals.id", ondelete="CASCADE")
     )
@@ -105,17 +105,9 @@ class PatientTotalMacroNutritionalValue(Base):
     )
 
 
-class PatientTotalMicroNutritionalValue(Base):
+class PatientTotalMicroNutritionalValue(BaseMicroNutritionalValue):
     __tablename__ = "patient_total_micro_nutritional_values"
 
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    calcium = Column(String)
-    iron = Column(String)
-    zinc = Column(String)
-    magnesium = Column(String)
-    cholesterol = Column(String)
     meal_id = Column(
         UUID(as_uuid=True), ForeignKey("patient_meals.id", ondelete="CASCADE")
     )

@@ -146,48 +146,48 @@ class MealAnalysisService:
             "items": [
                 {{
                     "name": "<Dish Name>",
-                    "coordinates": [<left>, <top>, <right>, <bottom>],
-                    "serving_size": "<serving size>",
-                    "serving_quantity": "<serving quantity>",
-                    "serving_unit": "<serving unit>",
+                    "coordinates": [left, top, right, bottom],
+                    "serving_size": "serving size",
+                    "serving_quantity": serving quantity,  # float
+                    "serving_unit": "serving unit",
                     "macro_nutritional_values": {{
-                        "calories": "<calories> kcal",
-                        "proteins": "<proteins> g",
-                        "carbohydrates": "<carbohydrates> g",
-                        "fats": "<fats> g",
-                        "fiber": "<fiber> g"
+                        "calories": calories,  # float
+                        "proteins": proteins,  # float
+                        "carbohydrates": carbohydrates,  # float
+                        "fats": fats,  # float
+                        "fiber": fiber  # float
                     }},
                     "micro_nutritional_values": {{
-                        "calcium": "<calcium> mg",
-                        "iron": "<iron> mg",
-                        "zinc": "<zinc> mg",
-                        "magnesium": "<magnesium> mg",
-                        "cholesterol": "<cholesterol> mg"
+                        "calcium": calcium,  # float
+                        "iron": iron,  # float
+                        "zinc": zinc,  # float
+                        "magnesium": magnesium,  # float
+                        "cholesterol": cholesterol  # float
                     }}
                 }}
             ],
             "total_macro_nutritional_value": {{
-                "calories": "<total calories> kcal",
-                "proteins": "<total proteins> g",
-                "carbohydrates": "<total carbohydrates> g",
-                "fats": "<total fats> g",
-                "fiber": "<total fiber> g"
+                "calories": total calories,  # float
+                "proteins": total proteins,  # float
+                "carbohydrates": total carbohydrates,  # float
+                "fats": total fats,  # float
+                "fiber": total fiber  # float
             }},
             "total_macro_nutritional_value": {{
-                "calcium": "<total calcium> mg",
-                "iron": "<total iron> mg",
-                "zinc": "<total zinc> mg",
-                "magnesium": "<total magnesium> mg",
-                "cholesterol": "<total cholesterol> mg"
+                "calcium": total calcium,  # float
+                "iron": total iron,  # float
+                "zinc": total zinc,  # float
+                "magnesium": total magnesium,  # float
+                "cholesterol": total cholesterol  # float
             }},
-            "feedback": "<personalized feedback>",
+            "feedback": "personalized feedback based on the analysis and meal type, helping the user with healthier choices",
             "tags": [
-                "<GI tag>"
+                "GI tag"  # 'high', 'medium', 'low'
             ],
-            "score": "<overall meal score>"
+            "score": overall meal score  # float, out of 10
         }}
         
-        For each item:
+        Focus on identifying Indian foods and typical regional dishes where applicable. For each item:
         1. Ensure that serving_quantity and serving_unit are consistent with serving_size. For example, if serving_size is '1/2 cup', then serving_quantity should be 0.5 and serving_unit should be 'cup'.
         2. Provide personalized feedback to help the user meet average macronutrient values for the detected meal type.
         3. Suggest similar foods from the same cuisine or region that can help improve or maintain a balanced diet.
