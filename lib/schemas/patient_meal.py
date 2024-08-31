@@ -8,22 +8,22 @@ from uuid import UUID
 
 
 class PatientMacroNutritionalValue(BaseModel):
-    calories: str
-    proteins: str
-    carbohydrates: str
-    fats: str
-    fiber: str
+    calories: float
+    proteins: float
+    carbohydrates: float
+    fats: float
+    fiber: float
 
     class Config:
         orm_mode = True
 
 
 class PatientMicroNutritionalValue(BaseModel):
-    calcium: str
-    iron: str
-    zinc: str
-    magnesium: str
-    cholesterol: str
+    calcium: float
+    iron: float
+    zinc: float
+    magnesium: float
+    cholesterol: float
 
     class Config:
         orm_mode = True
@@ -33,32 +33,10 @@ class FoodItem(BaseModel):
     name: str
     coordinates: Optional[List[float]]
     serving_size: str
-    serving_quantity: str
+    serving_quantity: float
     serving_unit: str
     macro_nutritional_values: PatientMacroNutritionalValue
     micro_nutritional_values: PatientMicroNutritionalValue
-
-    class Config:
-        orm_mode = True
-
-
-class PatientTotalMacroNutritionalValue(BaseModel):
-    calories: str
-    proteins: str
-    carbohydrates: str
-    fats: str
-    fiber: str
-
-    class Config:
-        orm_mode = True
-
-
-class PatientTotalMicroNutritionalValue(BaseModel):
-    calcium: str
-    iron: str
-    zinc: str
-    magnesium: str
-    cholesterol: str
 
     class Config:
         orm_mode = True
@@ -70,12 +48,12 @@ class PatientMeal(BaseModel):
     type: str
     time: datetime
     items: Optional[List[FoodItem]] = []
-    total_macro_nutritional_value: Optional[
-        PatientTotalMacroNutritionalValue
-    ] = None
-    total_micro_nutritional_value: Optional[
-        PatientTotalMicroNutritionalValue
-    ] = None
+    total_macro_nutritional_value: Optional[PatientMacroNutritionalValue] = (
+        None
+    )
+    total_micro_nutritional_value: Optional[PatientMicroNutritionalValue] = (
+        None
+    )
     image_url: Optional[str]
     description: Optional[str]
     source: Optional[str]
