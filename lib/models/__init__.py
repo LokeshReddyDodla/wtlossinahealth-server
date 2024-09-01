@@ -37,3 +37,4 @@ from .patient_smoking_habit import PatientSmokingHabit
 from .patient_token_usage_log import PatientTokenUsageLog
 from .patient_vital import PatientVital
 from .patient import Patient
+from .patient_sleep import PatientSleep
