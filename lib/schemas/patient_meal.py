@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 
 from uuid import UUID
@@ -54,7 +54,7 @@ class PatientMeal(BaseModel):
     total_micro_nutritional_value: Optional[PatientMicroNutritionalValue] = (
         None
     )
-    image_url: Optional[str]
+    image_url: Optional[HttpUrl]
     description: Optional[str]
     source: Optional[str]
     score: Optional[float]

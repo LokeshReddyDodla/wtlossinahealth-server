@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 from datetime import date, datetime
 from uuid import UUID
@@ -34,7 +34,7 @@ class PatientBase(BaseModel):
     last_name: str
     dob: date
     gender: str
-    profile_picture: Optional[str] = None
+    profile_picture: Optional[HttpUrl] = None
     height: float
     waist: float
     weight: float

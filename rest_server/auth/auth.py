@@ -15,8 +15,8 @@ from sqlalchemy.future import select
 router = APIRouter()
 
 
-@router.post("/generate-otp", tags=["Auth"], response_model=SuccessResponse)
-async def generate_otp(request: Request, user_phone: UserPhoneNumber):
+@router.post("/send-otp", tags=["Auth"], response_model=SuccessResponse)
+async def send_otp(request: Request, user_phone: UserPhoneNumber):
     try:
         cache_store = request.state.context.otp_store
         await create_and_send_otp(user_phone.phone_number, cache_store)
