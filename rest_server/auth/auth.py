@@ -52,11 +52,10 @@ async def verify_otp_endpoint(request: Request, user_otp: UserOTP, role: str):
                     ),
                 )
         else:
-            response = ErrorResponse(
+            return ErrorResponse(
                 message="Invalid OTP",
                 detail="The OTP provided is incorrect.",
             )
-            raise HTTPException(status_code=400, detail=response.dict())
     except HTTPException as e:
         raise e
     except Exception as e:
