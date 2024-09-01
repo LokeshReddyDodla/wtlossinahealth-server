@@ -11,7 +11,7 @@ def generate_otp(length=6):
 
 
 async def create_and_send_otp(phone_number: str, cache_store: CacheStore):
-    otp = generate_otp()
+    otp = generate_otp(length=4)
     cache_store.set_key(phone_number, otp, OTP_EXPIRY_TIME)
     # Simulate sending OTP via SMS
     logger.info(f"Sending OTP {otp} to {phone_number}")
