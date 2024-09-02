@@ -76,7 +76,7 @@ async def update_basic_patient(
                 )
 
             for key, value in patient_data.dict(exclude_unset=True).items():
-                if key not in ["created_at", "updated_at"]:
+                if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient, key, value)
 
             await session.commit()
