@@ -1,0 +1,58 @@
+from datetime import datetime, date
+from typing import Any, List, Optional
+from pydantic import BaseModel
+
+from lib.schemas.patient_meal import FoodItem, PatientMeal
+
+
+class NutritionStats(BaseModel):
+    calories: float
+    proteins: float
+    carbohydrates: float
+    fats: float
+    fiber: float
+
+    calcium: float
+    iron: float
+    zinc: float
+    magnesium: float
+    cholesterol: float
+
+
+class DailyMealStats(NutritionStats):
+    date: date
+    meal_count: Optional[int] = None
+    meals: Any
+    avg_glucose: float
+
+    class Config:
+        orm_mode = True
+
+
+class WeeklyMealStats(NutritionStats):
+    week_number: int
+    from_date: datetime
+    to_date: datetime
+    daily_stats: List[DailyMealStats]
+
+    class Config:
+        orm_mode = True
+
+
+class MonthlyMealStats(NutritionStats):
+    month: str
+    from_date: datetime
+    to_date: datetime
+    daily_stats: List[DailyMealStats]
+    weekly_stats: List[WeeklyMealStats]
+
+    class Config:
+        orm_mode = True
+
+
+class MealSummaryStats(NutritionStats):
+    from_date: datetime
+    to_date: datetime
+
+    class Config:
+        orm_mode = True

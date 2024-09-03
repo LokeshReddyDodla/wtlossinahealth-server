@@ -1,6 +1,6 @@
 from typing import Any, Dict
 import pandas as pd
-from lib.schemas.glucose import HyperEvent
+from lib.schemas.glucose_stats import HyperEvent
 from lib.utils.glucose.events import execute_query
 
 

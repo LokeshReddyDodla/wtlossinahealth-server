@@ -26,8 +26,6 @@ async def upload_fitness_data(
     try:
         clickhouse_store = request.state.context.clickhouse_store
         postgres_store = request.state.context.postgres_store
-        
-        print("==> fitness_data: ", fitness_data)
 
         async with postgres_store.get_session() as postgres_session:
             fitness_service = FitnessUploadService(
@@ -44,7 +42,6 @@ async def upload_fitness_data(
             data={"last_sync_timestamp": last_sync_time},
         )
     except Exception as e:
-        print("==> exception in fitness upload")
         await postgres_session.rollback()
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)

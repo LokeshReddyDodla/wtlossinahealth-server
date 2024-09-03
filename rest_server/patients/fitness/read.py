@@ -1,12 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 from typing import List, Optional
-from lib.schemas.fitness import (
+from lib.schemas.fitness_stats import (
     FitnessDailyStats,
     FitnessWeeklyStats,
     FitnessMonthlyStats,
 )
-from lib.utils.fitness.processor import FitnessDataProcessor
+from lib.utils.fitness.processor import FitnessStatsProcessor
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
@@ -37,7 +37,7 @@ async def get_fitness_stats(
         clickhouse_store = request.state.context.clickhouse_store
         patient_id = str(current_patient.patient_id)
 
-        processor = FitnessDataProcessor(clickhouse_store, patient_id)
+        processor = FitnessStatsProcessor(clickhouse_store, patient_id)
 
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")

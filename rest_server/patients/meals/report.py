@@ -15,48 +15,35 @@ from lib.schemas.fitness_stats import (
 )
 
 from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.patients.fitness.api_schema import FitnessReportResponse
 from .router import router
 
 
 @router.get(
     "/report",
-    response_model=FitnessReportResponse,
 )
-async def get_fitness_data(
+async def get_meal_report(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[FitnessReportResponse, Exception]:
+):
     try:
         clickhouse_store = request.state.context.clickhouse_store
         patient_id = str(current_patient.patient_id)
 
-        processor = FitnessStatsProcessor(clickhouse_store, patient_id)
+        async with request.state.context.postgres_store.get_session() as session:
 
-        from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
-        to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
+            processor = MealStatsProcessor(
+                session, clickhouse_store, patient_id
+            )
 
-        summary_stats = processor.fetch_summary_stats(
-            from_date_str, to_date_str
-        )
-        daily_stats = processor.fetch_daily_stats(from_date_str, to_date_str)
-        weekly_stats = processor.fetch_weekly_stats(from_date_str, to_date_str)
-        monthly_stats = processor.fetch_monthly_stats(
-            from_date_str, to_date_str
-        )
+            grouped_by_date = await processor.get_meal_stats_by_date(
+                from_date, to_date
+            )
 
-        return FitnessReportResponse(
-            message="Fitness report generated successfully.",
-            data=CompleteFitnessReport(
-                patient_id=str(current_patient.patient_id),
-                summary=summary_stats,
-                daily_stats=daily_stats,
-                weekly_stats=weekly_stats,
-                monthly_stats=monthly_stats,
-            ),
-        )
+        return grouped_by_date
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

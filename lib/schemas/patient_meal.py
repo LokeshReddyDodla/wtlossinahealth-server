@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date as datetime_date, time as datetime_time
 from typing import Optional
 
 from pydantic import BaseModel, HttpUrl
@@ -46,7 +46,8 @@ class PatientMeal(BaseModel):
     id: UUID
     name: Optional[str]
     type: str
-    time: datetime
+    date: datetime_date
+    time: datetime_time
     items: Optional[List[FoodItem]] = []
     total_macro_nutritional_value: Optional[PatientMacroNutritionalValue] = (
         None

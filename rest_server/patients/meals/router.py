@@ -6,3 +6,4 @@ from .read import *
 from .upload import *
 from .analyze_meal import *
 from .delete import *
+from .report import *

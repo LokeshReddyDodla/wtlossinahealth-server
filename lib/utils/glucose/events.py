@@ -1,6 +1,6 @@
 from typing import Any, Dict
 import pandas as pd
-from lib.schemas.glucose import (
+from lib.schemas.glucose_stats import (
     HyperEvent,
     HypoEvent,
     RapidDropStats,

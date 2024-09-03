@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, delete, desc
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,41 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
 from .router import router
+
+
+@router.delete(path="/clear_meals", response_model=SuccessResponse)
+async def clear_all_meals_api(
+    request: Request,
+    current_patient: Patient = Depends(get_current_patient),
+) -> Union[SuccessResponse, HTTPException]:
+    """
+    Clear All Meals API
+    """
+    async with request.state.context.postgres_store.get_session() as session:
+        try:
+            # Delete all meals for the current patient
+            delete_query = delete(PatientMeal).where(
+                PatientMeal.patient_id == current_patient.patient_id
+            )
+
+            result = await session.execute(delete_query)
+            await session.commit()
+
+            # Check if any rows were deleted
+            if result.rowcount == 0:
+                raise HTTPException(
+                    status_code=404, detail="No meals found to delete."
+                )
+
+            return SuccessResponse(message="All meals deleted successfully.")
+        except HTTPException as http_exc:
+            raise http_exc
+        except SQLAlchemyError as e:
+            await session.rollback()
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.delete(path="/{meal_id}", response_model=SuccessResponse)

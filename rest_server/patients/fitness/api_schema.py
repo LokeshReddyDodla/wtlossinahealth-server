@@ -2,7 +2,7 @@ from datetime import date
 from typing import List, Optional
 from pydantic import BaseModel
 
-from lib.schemas.fitness import (
+from lib.schemas.fitness_stats import (
     CompleteFitnessReport,
     FitnessDailyStats,
     FitnessMonthlyStats,

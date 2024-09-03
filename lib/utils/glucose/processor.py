@@ -11,11 +11,12 @@ from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
     generate_avg_glucose_readings_by_hour_query,
+    generate_glucose_readings_around_meal_query,
     generate_glucose_readings_by_date_query,
 )
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
-from lib.schemas.glucose import (
+from lib.schemas.glucose_stats import (
     GlucoseLevelStats,
     GlucoseReading,
 )
@@ -58,6 +59,22 @@ class GlucoseStatsProcessor:
             for row in data
         ]
         return grouped
+
+    def fetch_glucose_around_meal(
+        self, meal_time: datetime, before_minutes=30, after_minutes=30
+    ):
+        """Fetch glucose readings around the meal time."""
+        query = generate_glucose_readings_around_meal_query(
+            self.patient_id,
+            meal_time.strftime("%Y-%m-%d %H:%M:%S"),
+            before_minutes,
+            after_minutes,
+        )
+        results = self.clickhouse_store.client.execute(query)
+
+        glucose_before = [r for r in results if r[0] < meal_time]
+        glucose_after = [r for r in results if r[0] >= meal_time]
+        return glucose_before, glucose_after
 
     async def fetch_meals(self, from_date, to_date):
         query = (
