@@ -11,17 +11,11 @@ from lib.models.patient_meal import (
     PatientTotalMacroNutritionalValue,
     PatientTotalMicroNutritionalValue,
 )
-from lib.schemas.meals import (
+from lib.schemas.meal_stats import (
     MealDailyStats,
-    MealWeeklyStats,
-    MealMonthlyStats,
-    MealSummaryStats,
 )
-from lib.utils.date_utils import (
-    split_into_days,
-    split_into_months,
-    split_into_weeks,
-)
+
+from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from rest_server.patients.meals.api_schema import PatientMealResponse
 
@@ -31,6 +25,9 @@ class MealStatsProcessor:
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
         self.patient_id = patient_id
+        self.glucose_processor = GlucoseStatsProcessor(
+            clickhouse_store, postgres_store, patient_id
+        )
 
     async def fetch_meals_grouped_by_date(
         self, from_date: datetime, to_date: datetime
@@ -41,7 +38,6 @@ class MealStatsProcessor:
                 self.clickhouse_store, self.patient_id, from_date, to_date
             )
         )
-        print("==> avg_glucose_by_date: ", avg_glucose_by_date)
 
         # Aliases for related models
         PatientFoodItemAlias = aliased(PatientFoodItem)
@@ -235,6 +231,18 @@ class MealStatsProcessor:
     def _build_daily_stats(self, row, avg_glucose_by_date):
         """Helper function to build MealDailyStats from a query row."""
 
+        for meal in row.meals:
+            meal_time = datetime.combine(
+                row.date, datetime.strptime(meal["time"], "%H:%M:%S").time()
+            )
+            glucose_before_meal, glucose_after_meal = (
+                self.glucose_processor.fetch_glucose_around_meal(meal_time)
+            )
+
+            # Append glucose readings to each meal
+            meal["glucose_before_meal"] = glucose_before_meal
+            meal["glucose_after_meal"] = glucose_after_meal
+
         return MealDailyStats(
             date=row.date,
             meal_count=row.meal_count,
@@ -250,6 +258,4 @@ class MealStatsProcessor:
             magnesium=row.total_magnesium or 0,
             cholesterol=row.total_cholesterol or 0,
             avg_glucose=avg_glucose_by_date.get(row.date, 0.0),
-            glucose_before_meal=None,
-            glucose_after_meal=None,
         )
