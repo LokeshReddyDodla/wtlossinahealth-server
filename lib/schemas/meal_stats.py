@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from lib.schemas.patient_meal import FoodItem, PatientMeal
 
 
-class TotalNutritionStats(BaseModel):
+class NutritionStats(BaseModel):
     calories: float
     proteins: float
     carbohydrates: float
@@ -19,7 +19,7 @@ class TotalNutritionStats(BaseModel):
     cholesterol: float
 
 
-class MealDailyStats(TotalNutritionStats):
+class DailyMealStats(NutritionStats):
     date: date
     meal_count: Optional[int] = None
     meals: Any
@@ -29,45 +29,30 @@ class MealDailyStats(TotalNutritionStats):
         orm_mode = True
 
 
-class MealWeeklyStats(BaseModel):
+class WeeklyMealStats(NutritionStats):
     week_number: int
     from_date: datetime
     to_date: datetime
-    calories: float
-    proteins: float
-    carbohydrates: float
-    fats: float
-    fiber: float
-    daily_stats: List[MealDailyStats]
+    daily_stats: List[DailyMealStats]
 
     class Config:
         orm_mode = True
 
 
-class MealMonthlyStats(BaseModel):
+class MonthlyMealStats(NutritionStats):
     month: str
     from_date: datetime
     to_date: datetime
-    calories: float
-    proteins: float
-    carbohydrates: float
-    fats: float
-    fiber: float
-    daily_stats: List[MealDailyStats]
-    weekly_stats: List[MealWeeklyStats]
+    daily_stats: List[DailyMealStats]
+    weekly_stats: List[WeeklyMealStats]
 
     class Config:
         orm_mode = True
 
 
-class MealSummaryStats(BaseModel):
+class MealSummaryStats(NutritionStats):
     from_date: datetime
     to_date: datetime
-    calories: float
-    proteins: float
-    carbohydrates: float
-    fats: float
-    fiber: float
 
     class Config:
         orm_mode = True

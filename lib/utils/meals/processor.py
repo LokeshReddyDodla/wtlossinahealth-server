@@ -12,7 +12,7 @@ from lib.models.patient_meal import (
     PatientTotalMicroNutritionalValue,
 )
 from lib.schemas.meal_stats import (
-    MealDailyStats,
+    DailyMealStats,
 )
 
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -29,7 +29,7 @@ class MealStatsProcessor:
             clickhouse_store, postgres_store, patient_id
         )
 
-    async def fetch_meals_grouped_by_date(
+    async def get_meal_stats_by_date(
         self, from_date: datetime, to_date: datetime
     ):
         # Fetch all glucose stats once for the entire date range
@@ -243,7 +243,7 @@ class MealStatsProcessor:
             meal["glucose_before_meal"] = glucose_before_meal
             meal["glucose_after_meal"] = glucose_after_meal
 
-        return MealDailyStats(
+        return DailyMealStats(
             date=row.date,
             meal_count=row.meal_count,
             meals=row.meals,

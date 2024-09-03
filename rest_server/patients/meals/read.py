@@ -1,5 +1,6 @@
+import traceback
 from typing import List, Optional, Union
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
@@ -11,8 +12,10 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
 from lib.models.patient_meal import PatientFoodItem, PatientMeal
+from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.patients.meals.api_schema import (
     PatientMealResponse,
+    PatientMealStatsResponse,
     PatientMealsResponse,
 )
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -97,3 +100,42 @@ async def get_meals_api(
                 message="Internal Server Error", detail=str(e)
             )
             raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.get(
+    path="/stats",
+    response_model=PatientMealStatsResponse,
+)
+async def get_meals_stats_api(
+    request: Request,
+    date: date,
+    current_patient: Patient = Depends(get_current_patient),
+):
+    """
+    Get Meal Stats API
+    """
+    try:
+        clickhouse_store = request.state.context.clickhouse_store
+        from_date = datetime.combine(date, time.min)  # Start of the day
+        to_date = datetime.combine(date, time.max)  # End of the day
+
+        async with request.state.context.postgres_store.get_session() as session:
+            meal_processor = MealStatsProcessor(
+                session, clickhouse_store, str(current_patient.patient_id)
+            )
+            meal_stats = await meal_processor.get_meal_stats_by_date(
+                from_date, to_date
+            )
+
+        return PatientMealStatsResponse(
+            message="Meal stats fetched successfully",
+            data=meal_stats[0] if len(meal_stats) else None,
+        )
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        response = ErrorResponse(
+            message="Internal Server Error", detail=str(e)
+        )
+        raise HTTPException(status_code=500, detail=response.dict())
