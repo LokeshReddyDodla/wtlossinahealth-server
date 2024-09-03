@@ -26,7 +26,7 @@ from lib.utils.fitness.queries import (
 )
 
 
-class FitnessDataProcessor:
+class FitnessStatsProcessor:
     def __init__(self, clickhouse_store, patient_id: str):
         self.clickhouse_store = clickhouse_store
         self.patient_id = patient_id

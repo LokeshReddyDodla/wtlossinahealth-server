@@ -18,7 +18,7 @@ from lib.schemas.glucose import (
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 
-from lib.utils.fitness.processor import FitnessDataProcessor
+from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 
 
@@ -61,7 +61,7 @@ async def get_detailed_glucose_report(
                 clickhouse_store, postgres_session, patient_id
             )
 
-            fitness_processor = FitnessDataProcessor(
+            fitness_processor = FitnessStatsProcessor(
                 clickhouse_store, patient_id
             )
 

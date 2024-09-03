@@ -14,7 +14,7 @@ from lib.schemas.fitness import (
     CompleteFitnessReport,
 )
 
-from lib.utils.fitness.processor import FitnessDataProcessor
+from lib.utils.fitness.processor import FitnessStatsProcessor
 from rest_server.patients.fitness.api_schema import FitnessReportResponse
 from .router import router
 
@@ -33,7 +33,7 @@ async def get_fitness_data(
         clickhouse_store = request.state.context.clickhouse_store
         patient_id = str(current_patient.patient_id)
 
-        processor = FitnessDataProcessor(clickhouse_store, patient_id)
+        processor = FitnessStatsProcessor(clickhouse_store, patient_id)
 
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
