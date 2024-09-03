@@ -61,14 +61,21 @@ async def get_meals_api(
 
             if from_datetime:
                 query = query.filter(
-                    PatientMeal.date >= from_datetime.date(),
-                    PatientMeal.time >= from_datetime.time(),
+                    (PatientMeal.date > from_datetime.date())
+                    | (
+                        (PatientMeal.date == from_datetime.date())
+                        & (PatientMeal.time >= from_datetime.time())
+                    )
                 )
             if to_datetime:
                 query = query.filter(
-                    PatientMeal.date <= to_datetime.date(),
-                    PatientMeal.time >= to_datetime.time(),
+                    (PatientMeal.date < to_datetime.date())
+                    | (
+                        (PatientMeal.date == to_datetime.date())
+                        & (PatientMeal.time <= to_datetime.time())
+                    )
                 )
+
             if source:
                 query = query.filter(PatientMeal.source == source)
             if analyzed == "true":
@@ -102,11 +109,6 @@ async def get_meals_api(
                 data=meals,
             )
         except Exception as e:
-            error_message = f"Exception occurred: {str(e)}"
-            traceback_message = traceback.format_exc()
-            print(error_message)
-            print(traceback_message)
-
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
