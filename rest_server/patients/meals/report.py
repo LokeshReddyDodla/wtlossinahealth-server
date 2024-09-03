@@ -39,7 +39,7 @@ async def get_meal_report(
                 session, clickhouse_store, patient_id
             )
 
-            grouped_by_date = await processor.fetch_meals_grouped_by_date(
+            grouped_by_date = await processor.get_meal_stats_by_date(
                 from_date, to_date
             )
 
