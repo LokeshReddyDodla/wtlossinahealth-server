@@ -24,7 +24,7 @@ PatientMealsResponse = SuccessResponse[List[PatientMealResponse]]
 
 class PatientMealUploadRequest(BaseModel):
     type: str
-    time: datetime
+    datetime: datetime
     source: Optional[str] = "app"
     description: Optional[str] = None
     image_url: HttpUrl

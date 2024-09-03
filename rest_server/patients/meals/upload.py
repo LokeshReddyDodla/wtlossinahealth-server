@@ -31,7 +31,8 @@ async def meal_upload_api(
 
             meal = PatientMeal(
                 type=meal_data.type,
-                time=meal_data.time,
+                time=meal_data.datetime.time(),
+                date=meal_data.datetime.date(),
                 source=meal_data.source,
                 description=meal_data.description,
                 context_id=context_id,
