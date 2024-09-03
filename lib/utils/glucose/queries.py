@@ -15,41 +15,15 @@ def generate_glucose_level_query(
     """
 
 
-def generate_highest_glucose_query(patient_id, from_date, to_date):
-    return f"""
-    SELECT
-            MAX(glucose_level),
-            MAX(time)
-        FROM
-            aihealth.cgm_data
-        WHERE
-            patient_id = '{patient_id}'
-            AND time >= '{from_date}'
-            AND time <= '{to_date}'
-    """
-
-
-def generate_lowest_glucose_query(
-    patient_id: str, from_date: str, to_date: str
-) -> str:
-    return f"""
-    SELECT
-        MIN(glucose_level),
-        MIN(time)
-    FROM
-        aihealth.cgm_data
-    WHERE
-        patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
-    """
-
-
-def generate_overall_glucose_stats_query(patient_id, from_date, to_date):
+def generate_glucose_stats_query(patient_id, from_date, to_date):
     return f"""
     SELECT
         AVG(glucose_level) AS average_glucose,
-        STDDEV_SAMP(glucose_level) AS glucose_stddev
+        STDDEV_SAMP(glucose_level) AS glucose_stddev,
+        MAX(glucose_level) AS highest_glucose,
+        MAX(time) AS highest_glucose_date,
+        MIN(glucose_level) AS lowest_glucose,
+        MIN(time) AS lowest_glucose_date
     FROM
         aihealth.cgm_data
     WHERE
@@ -89,4 +63,22 @@ def generate_avg_glucose_readings_by_hour_query(
         AND time <= '{to_date}'
     GROUP BY hour
     ORDER BY hour
+    """
+
+
+def generate_avg_glucose_reading_by_date_query(
+    patient_id, from_date, to_date
+):
+    return f"""
+    SELECT
+        toDate(time) AS date,
+        AVG(glucose_level) AS average_glucose
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    GROUP BY date
+    ORDER BY date;
     """
