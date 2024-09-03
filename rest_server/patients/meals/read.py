@@ -96,6 +96,11 @@ async def get_meals_api(
                 data=meals,
             )
         except Exception as e:
+            error_message = f"Exception occurred: {str(e)}"
+            traceback_message = traceback.format_exc()
+            print(error_message)
+            print(traceback_message)
+
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
