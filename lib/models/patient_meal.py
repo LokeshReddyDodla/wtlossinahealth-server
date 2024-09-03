@@ -4,12 +4,14 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     Float,
     Integer,
     String,
     ForeignKey,
     DateTime,
     Text,
+    Time,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -124,7 +126,8 @@ class PatientMeal(Base):
     )
     name = Column(String, nullable=True)
     type = Column(String)
-    time = Column(DateTime)
+    date = Column(Date, nullable=False)
+    time = Column(Time, nullable=False)
     items = relationship(
         "PatientFoodItem", back_populates="meal", cascade="all, delete-orphan"
     )
