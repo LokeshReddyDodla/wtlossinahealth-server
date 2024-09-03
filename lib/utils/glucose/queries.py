@@ -66,9 +66,7 @@ def generate_avg_glucose_readings_by_hour_query(
     """
 
 
-def generate_avg_glucose_reading_by_date_query(
-    patient_id, from_date, to_date
-):
+def generate_avg_glucose_reading_by_date_query(patient_id, from_date, to_date):
     return f"""
     SELECT
         toDate(time) AS date,
@@ -81,4 +79,23 @@ def generate_avg_glucose_reading_by_date_query(
         AND time <= '{to_date}'
     GROUP BY date
     ORDER BY date;
+    """
+
+
+def generate_glucose_readings_around_meal_query(
+    patient_id, meal_time, before_minutes=30, after_minutes=30
+):
+    return f"""
+    SELECT
+        time AS reading_time,
+        glucose_level AS glucose_level
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time BETWEEN 
+            toDateTime('{meal_time}') - INTERVAL {before_minutes} MINUTE
+            AND 
+            toDateTime('{meal_time}') + INTERVAL {after_minutes} MINUTE
+    ORDER BY time;
     """
