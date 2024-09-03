@@ -6,7 +6,7 @@ from lib.utils.glucose.queries import (
     generate_avg_glucose_reading_by_date_query,
     generate_glucose_stats_query,
 )
-from lib.schemas.glucose import AGPPoint, GlucoseSummaryStats
+from lib.schemas.glucose_stats import AGPPoint, GlucoseSummaryStats
 
 
 class GlucoseSummaryStatsFetcher:

@@ -2,7 +2,7 @@ import calendar
 from datetime import datetime, timedelta
 import math
 from typing import List, Dict, Optional
-from lib.schemas.fitness import (
+from lib.schemas.fitness_stats import (
     FitnessActivityDistribution,
     FitnessInactivePeriod,
     FitnessPeakActivityTime,

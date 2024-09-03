@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 from typing import List, Optional
-from lib.schemas.fitness import (
+from lib.schemas.fitness_stats import (
     FitnessDailyStats,
     FitnessWeeklyStats,
     FitnessMonthlyStats,

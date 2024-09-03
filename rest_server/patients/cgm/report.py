@@ -10,7 +10,7 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
 
-from lib.schemas.glucose import (
+from lib.schemas.glucose_stats import (
     GlucoseDailyReport,
     GlucoseOverallReport,
     GlucoseWeeklyReport,

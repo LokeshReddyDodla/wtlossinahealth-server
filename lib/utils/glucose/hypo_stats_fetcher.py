@@ -1,4 +1,4 @@
-from lib.schemas.glucose import HypoStats, RapidDropStats
+from lib.schemas.glucose_stats import HypoStats, RapidDropStats
 from lib.utils.glucose.events import GlucoseEventsProcessor, execute_query
 
 

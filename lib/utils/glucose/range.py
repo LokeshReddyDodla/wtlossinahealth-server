@@ -1,5 +1,5 @@
 from lib.utils.glucose.queries import generate_glucose_level_query
-from lib.schemas.glucose import GlucoseRangeStats
+from lib.schemas.glucose_stats import GlucoseRangeStats
 
 
 class GlucoseRangeStatsFetcher:

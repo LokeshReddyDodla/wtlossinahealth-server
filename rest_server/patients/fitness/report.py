@@ -10,7 +10,7 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 
 
-from lib.schemas.fitness import (
+from lib.schemas.fitness_stats import (
     CompleteFitnessReport,
 )
 

@@ -1,4 +1,4 @@
-from lib.schemas.glucose import HyperStats, RapidSpikeStats
+from lib.schemas.glucose_stats import HyperStats, RapidSpikeStats
 from lib.utils.glucose.events import GlucoseEventsProcessor, execute_query
 
 

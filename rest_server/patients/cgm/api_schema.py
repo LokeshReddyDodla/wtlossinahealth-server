@@ -2,7 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 
-from lib.schemas.glucose import (
+from lib.schemas.glucose_stats import (
     GlucoseDailyReport,
     GlucoseOverallReport,
     GlucoseWeeklyReport,
