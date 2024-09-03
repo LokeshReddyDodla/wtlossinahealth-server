@@ -30,8 +30,8 @@ from .router import router
 )
 async def get_meals_api(
     request: Request,
-    from_date: Optional[datetime] = Query(None),
-    to_date: Optional[datetime] = Query(None),
+    from_datetime: Optional[datetime] = Query(None),
+    to_datetime: Optional[datetime] = Query(None),
     source: Optional[str] = Query(None),
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     order_by: Optional[str] = Query("time"),
@@ -59,10 +59,16 @@ async def get_meals_api(
                 )
             )
 
-            if from_date:
-                query = query.filter(PatientMeal.time >= from_date)
-            if to_date:
-                query = query.filter(PatientMeal.time <= to_date)
+            if from_datetime:
+                query = query.filter(
+                    PatientMeal.date >= from_datetime.date(),
+                    PatientMeal.time >= from_datetime.time(),
+                )
+            if to_datetime:
+                query = query.filter(
+                    PatientMeal.date <= to_datetime.date(),
+                    PatientMeal.time >= to_datetime.time(),
+                )
             if source:
                 query = query.filter(PatientMeal.source == source)
             if analyzed == "true":
