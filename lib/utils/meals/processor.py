@@ -144,6 +144,8 @@ class MealStatsProcessor:
                 meal.tags,
                 "score",
                 meal.score,
+                "feedback",
+                meal.feedback,
                 "image_url",
                 meal.image_url,
                 "analyzed",
