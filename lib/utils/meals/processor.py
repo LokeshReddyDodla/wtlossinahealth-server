@@ -75,8 +75,7 @@ class MealStatsProcessor:
                 PatientMeal.date <= to_date,
             )
             .group_by(PatientMeal.date)
-            .order_by(PatientMeal.date)
-            .order_by(asc(PatientMeal.time))
+            .order_by(PatientMeal.date, asc(PatientMeal.time))
         )
 
         result = await self.postgres_store.execute(query)
