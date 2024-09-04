@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Dict, Optional
-from sqlalchemy import case, func, literal_column, text
+from sqlalchemy import asc, case, func, literal_column, text
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload, aliased
 from lib.models.patient_meal import (
@@ -76,6 +76,7 @@ class MealStatsProcessor:
             )
             .group_by(PatientMeal.date)
             .order_by(PatientMeal.date)
+            .order_by(asc(PatientMeal.time))
         )
 
         result = await self.postgres_store.execute(query)
