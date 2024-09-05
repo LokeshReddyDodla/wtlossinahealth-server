@@ -45,7 +45,10 @@ class FitnessStatsProcessor:
         )
 
     def fetch_daily_stats(
-        self, from_date_str: str, to_date_str: str
+        self,
+        from_date_str: str,
+        to_date_str: str,
+        include_hourly_stats: bool = False,
     ) -> List[FitnessDailyStats]:
         query = generate_daily_stats_query(
             self.patient_id, from_date_str, to_date_str
@@ -60,13 +63,16 @@ class FitnessStatsProcessor:
                 result=row,
                 stats_class=FitnessDailyStats,
                 additional_fields={"date": date},
-                include_hourly_stats=True,
+                include_hourly_stats=include_hourly_stats,
             )
             daily_stats.append(stats_instance)
         return daily_stats
 
     def fetch_weekly_stats(
-        self, from_date_str: str, to_date_str: str
+        self,
+        from_date_str: str,
+        to_date_str: str,
+        include_daily_stats: bool = False,
     ) -> List[FitnessWeeklyStats]:
         query = generate_weekly_stats_query(
             self.patient_id, from_date_str, to_date_str
@@ -79,10 +85,13 @@ class FitnessStatsProcessor:
             from_date = row[1]
             to_date = row[2]
 
-            daily_stats = self.fetch_daily_stats(
-                from_date_str=from_date.strftime("%Y-%m-%dT00:00:00"),
-                to_date_str=to_date.strftime("%Y-%m-%dT23:59:59"),
-            )
+            daily_stats = None
+
+            if include_daily_stats:
+                daily_stats = self.fetch_daily_stats(
+                    from_date_str=from_date.strftime("%Y-%m-%dT00:00:00"),
+                    to_date_str=to_date.strftime("%Y-%m-%dT23:59:59"),
+                )
 
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
@@ -96,7 +105,11 @@ class FitnessStatsProcessor:
         return weekly_stats
 
     def fetch_monthly_stats(
-        self, from_date_str: str, to_date_str: str
+        self,
+        from_date_str: str,
+        to_date_str: str,
+        include_daily_stats: bool = False,
+        include_weekly_stats: bool = False,
     ) -> List[FitnessMonthlyStats]:
         query = generate_monthly_stats_query(
             self.patient_id, from_date_str, to_date_str
@@ -113,17 +126,22 @@ class FitnessStatsProcessor:
             year, month_num = map(int, month.split("-"))
             last_day = calendar.monthrange(year, month_num)[1]
 
+            daily_stats = None
+            weekly_stats = None
+
             # Fetch daily stats for the entire month
-            daily_stats = self.fetch_daily_stats(
-                from_date_str=f"{month}-01T00:00:00",
-                to_date_str=f"{month}-{last_day}T23:59:59",
-            )
+            if include_daily_stats:
+                daily_stats = self.fetch_daily_stats(
+                    from_date_str=f"{month}-01T00:00:00",
+                    to_date_str=f"{month}-{last_day}T23:59:59",
+                )
 
             # Fetch weekly stats for the entire month
-            weekly_stats = self.fetch_weekly_stats(
-                from_date_str=f"{month}-01T00:00:00",
-                to_date_str=f"{month}-{last_day}T23:59:59",
-            )
+            if include_weekly_stats:
+                weekly_stats = self.fetch_weekly_stats(
+                    from_date_str=f"{month}-01T00:00:00",
+                    to_date_str=f"{month}-{last_day}T23:59:59",
+                )
 
             stats_instance = self._construct_fitness_summary_stats(
                 result=row,
