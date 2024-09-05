@@ -78,7 +78,7 @@ async def get_fitness_day_stats(
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats,
+            data=stats[0] if len(stats) else None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -108,7 +108,7 @@ async def get_fitness_week_stats(
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats,
+            data=stats[0] if len(stats) else None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -138,7 +138,7 @@ async def get_fitness_month_stats(
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats,
+            data=stats[0] if len(stats) else None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
