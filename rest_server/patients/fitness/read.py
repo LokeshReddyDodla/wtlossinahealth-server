@@ -89,6 +89,7 @@ async def get_fitness_day_stats(
 )
 async def get_fitness_week_stats(
     request: Request,
+    year: int,
     week_no: int,
     current_patient: Patient = Depends(get_current_patient),
 ):
@@ -119,6 +120,7 @@ async def get_fitness_week_stats(
 )
 async def get_fitness_month_stats(
     request: Request,
+    year: int,
     month_no: int,
     current_patient: Patient = Depends(get_current_patient),
 ):
@@ -128,7 +130,7 @@ async def get_fitness_month_stats(
 
         processor = FitnessStatsProcessor(clickhouse_store, patient_id)
 
-        month_start, month_end = get_month_start_end(2024, month_no)
+        month_start, month_end = get_month_start_end(year, month_no)
 
         from_date_str = month_start.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = month_end.strftime("%Y-%m-%dT%H:%M:%S")
