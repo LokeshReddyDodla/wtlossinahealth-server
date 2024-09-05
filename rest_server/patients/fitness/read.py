@@ -99,10 +99,10 @@ async def get_fitness_week_stats(
 
         processor = FitnessStatsProcessor(clickhouse_store, patient_id)
 
-        week_start, week_end = get_week_start_end_by_week_no(2024, week_no)
+        week_start, week_end = get_week_start_end_by_week_no(year, week_no)
 
-        from_date_str = week_start.strftime("%Y-%m-%dT%H:%M:%S")
-        to_date_str = week_end.strftime("%Y-%m-%dT%H:%M:%S")
+        from_date_str = f"{week_start}T00:00:00"
+        to_date_str = f"{week_end}T23:59:59"
 
         stats = processor.fetch_weekly_stats(
             from_date_str, to_date_str, include_daily_stats=True
