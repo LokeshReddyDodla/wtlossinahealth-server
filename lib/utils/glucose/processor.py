@@ -61,7 +61,7 @@ class GlucoseStatsProcessor:
         return grouped
 
     def fetch_glucose_around_meal(
-        self, meal_time: datetime, before_minutes=30, after_minutes=30
+        self, meal_time: datetime, before_minutes=15, after_minutes=90
     ):
         """Fetch glucose readings around the meal time."""
         query = generate_glucose_readings_around_meal_query(
