@@ -139,7 +139,7 @@ class MealAnalysisService:
 
     def _generate_prompt(self, mealtime: datetime, meal_type: str) -> str:
         return f"""
-        You are a dietitian expert. Analyze the provided image considering it was taken at {mealtime}. The meal type is {meal_type}. Identify all visible food items, provide their coordinates, and give the nutritional values in the following JSON structure:
+        You are a dietitian expert with deep knowledge of Indian cuisine and nutritional science. Analyze the provided image considering it was taken at {mealtime}. The meal type is {meal_type}. Identify all visible food items, provide their coordinates, and give the nutritional values in the following JSON structure:
         {{
             "meal_name": "<Meal Name>",
             "meal_type": "{meal_type}",
@@ -188,12 +188,13 @@ class MealAnalysisService:
         }}
         
         Focus on identifying Indian foods and typical regional dishes where applicable. For each item:
-        1. Ensure that serving_quantity and serving_unit are consistent with serving_size. For example, if serving_size is '1/2 cup', then serving_quantity should be 0.5 and serving_unit should be 'cup'.
-        2. Provide personalized feedback to help the user meet average macronutrient values for the detected meal type.
-        3. Suggest similar foods from the same cuisine or region that can help improve or maintain a balanced diet.
-        4. Ensure serving sizes are realistic and provided in common units such as grams, cups, or pieces. If unsure, make a best guess.
-        5. Add only glycemic index tags like 'high', 'low', 'medium' based on the nutritional analysis.
-        6. Assign a score (as a float) to each item and the overall meal out of 10 based on its nutritional balance.
-
-        Please follow this structure precisely for the response and ensure the data is consistent and accurate.
+        1. Avoid recommending foods that might cause significant blood sugar spikes, especially when analyzing meals like breakfast, lunch, or dinner. For example, avoid suggesting fruits with main meals unless they have a low glycemic index.
+        2. Ensure that the feedback helps users balance their meal by aligning with average macronutrient requirements for the detected meal type. Suggest alternatives that are high in fiber without significantly raising the glycemic load, such as vegetables over high-sugar fruits.
+        3. Include realistic serving sizes in familiar units (grams, cups, pieces). If exact measurements are unclear, make an informed guess.
+        4. Assign glycemic index tags ('high', 'medium', 'low') based on the nutritional profile of the identified foods and provide warnings if high-GI foods are found in the context of meals where they're less appropriate.
+        5. Assign a score out of 10 for the overall meal and individual items, taking into account the nutritional balance, including the impact on blood sugar levels.
+        6. Provide personalized feedback that not only suggests improvements but also accounts for the timing and type of meal. For example, avoid high-sugar fruits during main meals if they might lead to a blood sugar spike.
+        7. Suggest regional and culturally relevant alternatives that maintain or improve nutritional balance without compromising on taste or cultural appropriateness.
+        
+        Ensure your response strictly follows this structure and considerations to provide consistent and accurate nutritional analysis.
         """

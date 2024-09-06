@@ -148,7 +148,6 @@ async def get_meals_stats_api(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print("==> e: ", e)
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )

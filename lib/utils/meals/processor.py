@@ -18,6 +18,7 @@ from lib.schemas.meal_stats import (
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from rest_server.patients.meals.api_schema import PatientMealResponse
+from dateutil.parser import parse as parse_date
 
 
 class MealStatsProcessor:
@@ -235,7 +236,7 @@ class MealStatsProcessor:
 
         for meal in row.meals:
             meal_time = datetime.combine(
-                row.date, datetime.strptime(meal["time"], "%H:%M:%S").time()
+                row.date, parse_date(meal["time"]).time()
             )
             glucose_before_meal, glucose_after_meal = (
                 self.glucose_processor.fetch_glucose_around_meal(meal_time)
