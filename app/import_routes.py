@@ -28,6 +28,8 @@ from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 
+from rest_server.health_facility.router import router as health_facility_router
+
 from rest_server.dump import dump
 
 
@@ -95,3 +97,8 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(admin.router)
     app.include_router(admin_patients.router)
     app.include_router(admin_cgm_upload.router)
+
+    ###########################################################################
+    # Health Facility
+    ###########################################################################
+    app.include_router(health_facility_router)
