@@ -16,6 +16,7 @@ from rest_server.patients.prescriptions.router import (
 from rest_server.patients.profile.router import router as profile_router
 from rest_server.patients.smbgs.router import router as smbgs_router
 from rest_server.patients.vitals.router import router as vitals_router
+from rest_server.patients.care_provider.router import router as patient_care_providers_router
 
 
 from rest_server.system_management import reload_cache
@@ -81,6 +82,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(fitness_router)
     app.include_router(prescriptions_router)
     app.include_router(meals_router)
+    app.include_router(patient_care_providers_router)
 
     ###########################################################################
     # Test

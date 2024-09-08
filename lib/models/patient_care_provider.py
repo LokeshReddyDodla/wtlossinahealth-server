@@ -14,7 +14,7 @@ from datetime import datetime
 class PatientCareProvider(Base):
     __tablename__ = "patient_care_providers"
 
-    id = Column(
+    patient_care_provider_id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
@@ -30,4 +30,6 @@ class PatientCareProvider(Base):
 
     # Relationships
     patient = relationship("Patient", back_populates="care_providers")
-    care_provider = relationship("CareProvider", back_populates="patient_relationships")
+    care_provider = relationship(
+        "CareProvider", back_populates="patient_relationships"
+    )

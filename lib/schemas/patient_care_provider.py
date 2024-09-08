@@ -18,7 +18,7 @@ class PatientCareProviderUpdate(PatientCareProviderBase):
 
 
 class PatientCareProvider(PatientCareProviderBase):
-    id: UUID
+    patient_care_provider_id: UUID
 
     class Config:
         orm_mode = True
