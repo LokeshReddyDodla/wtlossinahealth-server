@@ -44,7 +44,7 @@ class CareProvider(Base):
 
     # Relationships
     health_facility_id = Column(
-        UUID(as_uuid=True), ForeignKey("health_facilities.facility_id")
+        UUID(as_uuid=True), ForeignKey("health_facilities.health_facility_id")
     )
     health_facility = relationship(
         "HealthFacility", back_populates="care_providers"

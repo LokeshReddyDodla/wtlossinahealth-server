@@ -3,8 +3,6 @@ from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
 
-# from lib.schemas.health_facility import HealthFacility
-
 
 class CareProviderBase(BaseModel):
     first_name: str
@@ -28,11 +26,12 @@ class CareProviderUpdate(CareProviderBase):
 
 class CareProvider(CareProviderBase):
     care_provider_id: UUID
-    
+
     # Lazy import inside the class definition
     @property
     def health_facility(self):
         from lib.schemas.health_facility import HealthFacility
+
         return HealthFacility
 
     class Config:
