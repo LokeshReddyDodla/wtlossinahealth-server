@@ -38,3 +38,6 @@ from .patient_token_usage_log import PatientTokenUsageLog
 from .patient_vital import PatientVital
 from .patient import Patient
 from .patient_sleep import PatientSleep
+from .health_facility import HealthFacility
+from .care_provider import CareProvider
+from .patient_care_provider import PatientCareProvider

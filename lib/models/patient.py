@@ -170,6 +170,18 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    health_facility_id = Column(
+        UUID(as_uuid=True), ForeignKey("health_facilities.facility_id")
+    )
+
+    health_facility = relationship("HealthFacility", back_populates="patients")
+
+    care_providers = relationship(
+        "PatientCareProvider",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
 
 @listens_for(Patient, "after_insert")
 def create_related_records(mapper, connection, target):
