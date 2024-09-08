@@ -1,3 +1,4 @@
+from lib.models.care_provider import CareProvider
 from lib.models.health_facility import HealthFacility
 from fastapi import HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
@@ -10,6 +11,7 @@ from lib.schemas.health_facility import (
 )
 from rest_server.health_facility.api_schema import HealthFacilityResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
+from sqlalchemy.orm import selectinload
 from .router import router
 
 
@@ -22,7 +24,8 @@ async def get_health_facility(
             result = await session.execute(
                 select(HealthFacility).where(
                     HealthFacility.health_facility_id == health_facility_id
-                )
+                ).options(
+                    selectinload(HealthFacility.care_providers)),
             )
             health_facility = result.scalars().first()
 
