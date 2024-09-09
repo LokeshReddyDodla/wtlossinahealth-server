@@ -1,3 +1,5 @@
+from lib.dependencies.auth.admin_auth import get_current_admin
+from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
 from fastapi import HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
@@ -19,6 +21,7 @@ async def update_health_facility(
     request: Request,
     health_facility_id: str,
     health_facility_update: HealthFacilityUpdate,
+    current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:

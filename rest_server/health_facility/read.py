@@ -1,3 +1,5 @@
+from lib.dependencies.auth.admin_auth import get_current_admin
+from lib.models.admin import Admin
 from lib.models.care_provider import CareProvider
 from lib.models.health_facility import HealthFacility
 from fastapi import HTTPException, Request, Depends
@@ -17,7 +19,9 @@ from .router import router
 
 @router.get("/{health_facility_id}", response_model=HealthFacilityResponse)
 async def get_health_facility(
-    request: Request, health_facility_id: str
+    request: Request,
+    health_facility_id: str,
+    current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:
@@ -30,10 +34,9 @@ async def get_health_facility(
                 ),
             )
             health_facility = result.scalars().first()
-            
+
             print("==> patients: ", health_facility.patients)
             print("==> care_providers: ", health_facility.care_providers)
-            
 
             if not health_facility:
                 raise HTTPException(
