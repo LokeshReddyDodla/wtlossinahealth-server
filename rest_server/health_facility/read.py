@@ -22,12 +22,18 @@ async def get_health_facility(
     async with request.state.context.postgres_store.get_session() as session:
         try:
             result = await session.execute(
-                select(HealthFacility).where(
-                    HealthFacility.health_facility_id == health_facility_id
-                ).options(
-                    selectinload(HealthFacility.care_providers)),
+                select(HealthFacility)
+                .where(HealthFacility.health_facility_id == health_facility_id)
+                .options(
+                    selectinload(HealthFacility.care_providers),
+                    selectinload(HealthFacility.patients),
+                ),
             )
             health_facility = result.scalars().first()
+            
+            print("==> patients: ", health_facility.patients)
+            print("==> care_providers: ", health_facility.care_providers)
+            
 
             if not health_facility:
                 raise HTTPException(

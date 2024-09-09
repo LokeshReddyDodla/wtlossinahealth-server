@@ -1,3 +1,5 @@
+from lib.models.care_provider import CareProvider
+from lib.models.patient import Patient
 from lib.models.patient_care_provider import (
     PatientCareProvider as PatientCareProviderModel,
 )
@@ -29,8 +31,35 @@ async def create_patient_care_provider(
                 **patient_care_provider.dict()
             )
             session.add(new_patient_care_provider)
+
+            # Fetch the patient
+            patient_stmt = select(Patient).filter_by(
+                patient_id=patient_care_provider.patient_id
+            )
+            patient_result = await session.execute(patient_stmt)
+            patient = patient_result.scalars().first()
+            if not patient:
+                raise HTTPException(
+                    status_code=404, detail="Patient not found."
+                )
+
+            # Fetch the care provider
+            care_provider_stmt = select(CareProvider).filter_by(
+                care_provider_id=patient_care_provider.care_provider_id
+            )
+            care_provider_result = await session.execute(care_provider_stmt)
+            care_provider = care_provider_result.scalars().first()
+
+            if not care_provider:
+                raise HTTPException(
+                    status_code=404, detail="Care provider not found."
+                )
+
+            patient.health_facility_id = care_provider.health_facility_id
+
             await session.commit()
             await session.refresh(new_patient_care_provider)
+            await session.refresh(patient)
 
             return PatientCareProviderResponse(
                 message="Patient care provider created successfully",

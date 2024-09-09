@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from typing import List, Optional, Union
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from lib.schemas.care_provider import (
     CareProvider as CareProviderSchema,
     CareProviderCreate,
@@ -22,8 +23,11 @@ async def get_care_provider(
     async with request.state.context.postgres_store.get_session() as session:
         try:
             result = await session.execute(
-                select(CareProviderModel).where(
-                    CareProviderModel.care_provider_id == care_provider_id
+                select(CareProviderModel)
+                .where(CareProviderModel.care_provider_id == care_provider_id)
+                .options(
+                    selectinload(CareProviderModel.health_facility),
+                    selectinload(CareProviderModel.patient_relationships),
                 )
             )
             care_provider = result.scalars().first()

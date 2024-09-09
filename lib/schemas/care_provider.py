@@ -1,7 +1,9 @@
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, List, Dict
+from typing import TYPE_CHECKING, Any, Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
+
+from lib.schemas.health_facility import HealthFacility
 
 
 class CareProviderBase(BaseModel):
@@ -26,13 +28,20 @@ class CareProviderUpdate(CareProviderBase):
 
 class CareProvider(CareProviderBase):
     care_provider_id: UUID
-
-    # Lazy import inside the class definition
-    @property
-    def health_facility(self):
-        from lib.schemas.health_facility import HealthFacility
-
-        return HealthFacility
+    health_facility: Optional[HealthFacility] = None
+    patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
 
     class Config:
         orm_mode = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        state = obj._sa_instance_state
+
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.__fields__
+            if name in state.dict or name not in state.unloaded
+        }
+
+        return cls(**kwargs)

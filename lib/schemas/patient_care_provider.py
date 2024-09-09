@@ -1,6 +1,9 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Dict
 from uuid import UUID
+
+from lib.schemas.care_provider import CareProvider
 
 
 class PatientCareProviderBase(BaseModel):
@@ -19,6 +22,20 @@ class PatientCareProviderUpdate(PatientCareProviderBase):
 
 class PatientCareProvider(PatientCareProviderBase):
     patient_care_provider_id: UUID
+    care_provider: Optional[CareProvider]
+    assigned_at: datetime
 
     class Config:
         orm_mode = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        state = obj._sa_instance_state
+
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.__fields__
+            if name in state.dict or name not in state.unloaded
+        }
+
+        return cls(**kwargs)

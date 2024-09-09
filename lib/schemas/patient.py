@@ -6,6 +6,7 @@ from uuid import UUID
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.health_facility import HealthFacility
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
+from lib.schemas.patient_care_provider import PatientCareProvider
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_cuisine_preference import PatientCuisinePreference
 from lib.schemas.patient_current_medication import PatientCurrentMedication
@@ -84,7 +85,7 @@ class CompletePatientProfile(PatientBase):
     connected_apps: Optional[PatientConnectedApp] = None
     fitness_sync: Optional[PatientFitnessDataSync] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
-    care_providers: List[CareProvider] = []
+    care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None
 
     class Config:

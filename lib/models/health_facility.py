@@ -44,4 +44,5 @@ class HealthFacility(Base):
         "Patient",
         back_populates="health_facility",
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )

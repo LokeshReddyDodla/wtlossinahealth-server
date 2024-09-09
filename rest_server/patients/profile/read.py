@@ -1,6 +1,8 @@
 from sqlalchemy import or_
 
+from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
+from lib.models.patient_care_provider import PatientCareProvider
 from lib.models.patient_connected_app import PatientConnectedApp
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -54,6 +56,10 @@ async def get_patient_details(
                     ),
                     selectinload(Patient.fitness_sync),
                     selectinload(Patient.token_usage_logs),
+                    selectinload(Patient.care_providers)
+                    .selectinload(PatientCareProvider.care_provider)
+                    .selectinload(CareProvider.health_facility),
+                    selectinload(Patient.health_facility),
                 )
             )
 
@@ -64,6 +70,10 @@ async def get_patient_details(
                 )
 
             patient_profile = CompletePatientProfile.from_orm(patient)
+            print(
+                f"Serialized HealthFacility: {patient_profile.health_facility}"
+            )
+
             return PatientCompleteProfileResponse(
                 message="Patient data fetched successfully.",
                 data=patient_profile,
