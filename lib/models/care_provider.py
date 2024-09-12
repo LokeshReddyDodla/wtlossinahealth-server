@@ -28,7 +28,7 @@ class CareProvider(Base):
         String, nullable=False
     )  # e.g., Doctor, Nurse, Dietitian, etc.
     profile_picture = Column(String, nullable=True)
-    contact_number = Column(String, nullable=False)
+    phone_number = Column(String, unique=True, index=True)
     email = Column(String, nullable=False, unique=True)
     permissions = Column(
         JSON, nullable=True

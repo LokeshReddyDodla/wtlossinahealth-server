@@ -1,3 +1,4 @@
+from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.models.care_provider import CareProvider as CareProviderModel
 from fastapi import HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
@@ -11,16 +12,20 @@ from lib.schemas.care_provider import (
     CareProviderUpdate,
 )
 from sqlalchemy.exc import IntegrityError
+from lib.utils.care_provider_permissions import CareProviderFeature
 from rest_server.care_provider.api_schema import CareProviderResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
 
-@router.put("/{care_provider_id}", response_model=CareProviderResponse)
+@router.put("", response_model=CareProviderResponse)
 async def update_care_provider(
     request: Request,
     care_provider_id: str,
     care_provider_update: CareProviderUpdate,
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
+    ),
 ) -> Union[CareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         try:

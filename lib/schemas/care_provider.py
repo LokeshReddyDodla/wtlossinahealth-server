@@ -11,9 +11,9 @@ class CareProviderBase(BaseModel):
     last_name: str
     role: str
     profile_picture: Optional[HttpUrl] = None
-    contact_number: str
+    phone_number: str
     email: str
-    permissions: Optional[Dict[str, bool]] = None
+    permissions: Optional[Dict[str, Dict[str, bool]]] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
