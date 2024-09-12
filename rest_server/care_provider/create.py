@@ -3,9 +3,7 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import (
     get_current_care_provider,
 )
-from lib.dependencies.care_provider.care_provider_permissions import (
-    check_permissions,
-)
+
 from lib.models.care_provider import CareProvider as CareProviderModel
 from fastapi import HTTPException, Request, Depends
 from lib.dependencies.auth.patient_auth import get_current_patient
