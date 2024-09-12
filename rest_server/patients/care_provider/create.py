@@ -55,7 +55,8 @@ async def create_patient_care_provider(
                     status_code=404, detail="Care provider not found."
                 )
 
-            patient.health_facility_id = care_provider.health_facility_id
+            if patient.health_facility_id is None:
+                patient.health_facility_id = care_provider.health_facility_id
 
             await session.commit()
             await session.refresh(new_patient_care_provider)
