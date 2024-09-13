@@ -35,6 +35,20 @@ services:
       - alembic_data:/src/alembic/versions
       # - ./src:/src # for dev use only
 
+  aihealth-celery:
+    container_name: aihealth-celery
+    image: aihealth-api:latest
+    command: celery -A lib.core.celery_app.celery worker --loglevel=info
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+    volumes:
+      - celery_logs:/var/log/celery
+      - celery_data:/var/lib/celery
+    depends_on:
+      - aihealth-redis
+    restart: unless-stopped
+
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
@@ -175,6 +189,8 @@ volumes:
   cloudbeaver_workspace:
   portainer_data:
   pgadmin_data:
+  celery_logs:
+  celery_data:
 
 
 networks:
