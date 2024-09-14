@@ -148,16 +148,19 @@ class PatientProfileService:
 
             old_first_name = patient_profile_schema.first_name
             old_last_name = patient_profile_schema.last_name
+            print(f"==> {old_first_name} {old_last_name}")
 
             for key, value in patient_data.dict(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
+            print(f"==> {patient_data.first_name} {patient_data.last_name}")
             # Update chat participant name if first or last name has changed
             if (
                 old_first_name != patient_data.first_name
                 or old_last_name != patient_data.last_name
             ):
+                print("==> need to update")
                 await self.chat_service.update_participant_name(
                     participant_id=str(patient_profile.patient_id),
                     new_name=f"{patient_profile.first_name} {patient_profile.last_name}",

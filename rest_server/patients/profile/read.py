@@ -15,7 +15,7 @@ from typing import List, Optional, Union
 from sqlalchemy.exc import IntegrityError
 
 from lib.schemas.patient import CompletePatientProfile
-from lib.services.patient_profile_service import PatientService
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.patients.profile.api_schema import (
     PatientCompleteProfileResponse,
 )
@@ -28,9 +28,9 @@ async def get_patient_details(
     request: Request, current_patient: Patient = Depends(get_current_patient)
 ) -> Union[PatientCompleteProfileResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        service = PatientService(session)
+        service = PatientProfileService(session)
         try:
-            result = service.fetch_patient_profile(
+            result = await service.fetch_patient_profile(
                 str(current_patient.patient_id), detailed=True
             )
             return PatientCompleteProfileResponse(

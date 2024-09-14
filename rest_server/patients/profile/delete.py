@@ -14,7 +14,7 @@ from typing import List, Optional, Union
 from sqlalchemy.exc import IntegrityError
 
 from lib.services.chat_service import ChatService
-from lib.services.patient_profile_service import PatientService
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
@@ -29,7 +29,7 @@ async def delete_patient_api(
     Delete Patient API
     """
     async with request.state.context.postgres_store.get_session() as session:
-        service = PatientService(session)
+        service = PatientProfileService(session)
         try:
             await service.delete_patient_profile(
                 patient_id=str(current_patient.patient_id), delete_chats=True

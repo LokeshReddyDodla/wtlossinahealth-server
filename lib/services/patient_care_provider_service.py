@@ -16,7 +16,7 @@ from lib.services.care_provider_service import CareProviderService
 from lib.services.chat_service import ChatService
 from sqlalchemy.orm import selectinload
 
-from lib.services.patient_profile_service import PatientService
+from lib.services.patient_profile_service import PatientProfileService
 
 
 class PatientCareProviderService:
@@ -24,7 +24,7 @@ class PatientCareProviderService:
         self.postgres_session = postgres_session
         self.chat_service = ChatService()
         self.care_provider_service = CareProviderService(postgres_session)
-        self.patient_service = PatientService(postgres_session)
+        self.patient_service = PatientProfileService(postgres_session)
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
