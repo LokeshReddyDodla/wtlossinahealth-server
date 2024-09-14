@@ -7,6 +7,7 @@ from rest_server.auth import auth
 from rest_server.care_provider.profile.router import \
     router as care_providers_profile_router
 from rest_server.chat import chat, context_chat
+from rest_server.chats.router import router as chats_router
 from rest_server.dump import dump
 from rest_server.file_upload import file_upload
 from rest_server.health import health_check
@@ -104,3 +105,8 @@ def import_routes(app: FastAPI) -> None:
     # Care Providers
     ###########################################################################
     app.include_router(care_providers_profile_router)
+
+    ###########################################################################
+    # Chats
+    ###########################################################################
+    app.include_router(chats_router)

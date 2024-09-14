@@ -1,8 +1,11 @@
-from motor.motor_asyncio import AsyncIOMotorClient
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import Literal, Optional
+
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from lib.core.mongo_store import get_mongo_store
+from rest_server.chats.api_schema import ChatMessageCreate, MediaSchema
 
 
 class ChatService:
@@ -109,42 +112,53 @@ class ChatService:
 
     async def add_message(
         self,
-        chat_id,
-        sender_id,
-        sender_type,
-        content,
-        reply_to=None,
-        media_url=None,
+        chat_id: str,
+        message: ChatMessageCreate,
+        chat_type: Literal["individual", "group"] = "individual",
     ):
-        message = {
+        message_data = {
             "message_id": str(uuid.uuid4()),
-            "sender_id": sender_id,
-            "sender_type": sender_type,
-            "content": content,
-            "media_url": media_url,  # Optional field for images or attachments
-            "reply_to": reply_to,  # Optional field for replies
+            "sender": {"id": message.sender.id, "type": message.sender.type},
+            "receiver": {
+                "id": message.receiver.id,
+                "type": message.receiver.type,
+            },
+            "content": message.content,
+            "media": (
+                {
+                    "type": message.media.type if message.media else None,
+                    "url": message.media.url if message.media else None,
+                    "caption": (
+                        message.media.caption if message.media else None
+                    ),
+                }
+                if message.media
+                else None
+            ),
+            "reply_to": message.reply_to,
             "timestamp": datetime.now(),
+            "metadata": {
+                "type": message.metadata.type,
+                "status": message.metadata.status,
+            },
+            "read_receipts": [],
         }
         update = {
-            "$push": {"messages": message},
+            "$push": {"messages": message_data},
             "$set": {"updated_at": datetime.now()},
         }
-        return await self.mongo_store.update_document(
-            "chats", {"_id": chat_id}, update
-        )
+        try:
+            collection_name = (
+                "group_chats" if chat_type == "group" else "chats"
+            )
+            return await self.mongo_store.db[collection_name].update_one(
+                {"_id": chat_id}, update
+            )
+        except Exception as e:
+            raise Exception(f"Failed to add message: {str(e)}")
 
     async def get_chat(self, chat_id):
         return await self.mongo_store.find_document("chats", {"_id": chat_id})
-
-    async def update_context(self, chat_id, context):
-        update = {"context": context, "updated_at": datetime.utcnow()}
-        return await self.mongo_store.update_document(
-            "chats", {"_id": chat_id}, update
-        )
-
-    async def get_context(self, chat_id):
-        chat = await self.mongo_store.find_document("chats", {"_id": chat_id})
-        return chat.get("context") if chat else None
 
     async def delete_related_chats(
         self, patient_id: str, delete_group_chat: bool = True
