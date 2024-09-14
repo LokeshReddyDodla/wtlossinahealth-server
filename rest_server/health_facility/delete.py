@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List, Optional, Union
 from sqlalchemy.future import select
 
+from lib.services.health_facility_service import HealthFacilityService
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
@@ -19,25 +20,15 @@ async def delete_health_facility(
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
+        service = HealthFacilityService(session)
         try:
-            result = await session.execute(
-                select(HealthFacility).where(
-                    HealthFacility.health_facility_id == health_facility_id
-                )
-            )
-            health_facility = result.scalars().first()
-
-            if not health_facility:
-                raise HTTPException(
-                    status_code=404, detail="Health facility not found."
-                )
-
-            await session.delete(health_facility)
-            await session.commit()
+            await service.delete_health_facility(health_facility_id)
 
             return SuccessResponse(
                 message="Health facility deleted successfully."
             )
+        except HTTPException as e:
+            raise e
         except SQLAlchemyError as e:
             response = ErrorResponse(message="Database Error", detail=str(e))
             raise HTTPException(status_code=500, detail=response.dict())

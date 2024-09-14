@@ -11,6 +11,7 @@ from lib.schemas.health_facility import (
     HealthFacility as HealthFacilitySchema,
     HealthFacilityUpdate,
 )
+from lib.services.health_facility_service import HealthFacilityService
 from rest_server.health_facility.api_schema import HealthFacilityResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
@@ -24,36 +25,18 @@ async def update_health_facility(
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
+        service = HealthFacilityService(session)
         try:
-            result = await session.execute(
-                select(HealthFacility).where(
-                    HealthFacility.health_facility_id == health_facility_id
-                )
+            updated_health_facility = await service.update_health_facility(
+                health_facility_id, health_facility_update
             )
-            health_facility = result.scalars().first()
-
-            if not health_facility:
-                raise HTTPException(
-                    status_code=404, detail="Health facility not found."
-                )
-
-            for key, value in health_facility_update.dict(
-                exclude_unset=True
-            ).items():
-                setattr(health_facility, key, value)
-
-            session.add(health_facility)
-            await session.commit()
-            await session.refresh(health_facility)
 
             return HealthFacilityResponse(
-                message="Health facility created successfully",
-                data=HealthFacilitySchema.from_orm(health_facility),
+                message="Health facility updated successfully",
+                data=HealthFacilitySchema.from_orm(updated_health_facility),
             )
-        except IntegrityError:
-            raise HTTPException(
-                status_code=400, detail="Health facility already exists."
-            )
+        except HTTPException as e:
+            raise e
         except SQLAlchemyError as e:
             response = ErrorResponse(message="Database Error", detail=str(e))
             raise HTTPException(status_code=500, detail=response.dict())

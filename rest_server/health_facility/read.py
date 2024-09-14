@@ -11,6 +11,7 @@ from sqlalchemy.future import select
 from lib.schemas.health_facility import (
     HealthFacility as HealthFacilitySchema,
 )
+from lib.services.health_facility_service import HealthFacilityService
 from rest_server.health_facility.api_schema import HealthFacilityResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from sqlalchemy.orm import selectinload
@@ -24,29 +25,11 @@ async def get_health_facility(
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        try:
-            result = await session.execute(
-                select(HealthFacility)
-                .where(HealthFacility.health_facility_id == health_facility_id)
-                .options(
-                    selectinload(HealthFacility.care_providers),
-                    selectinload(HealthFacility.patients),
-                ),
-            )
-            health_facility = result.scalars().first()
-
-            print("==> patients: ", health_facility.patients)
-            print("==> care_providers: ", health_facility.care_providers)
-
-            if not health_facility:
-                raise HTTPException(
-                    status_code=404, detail="Health facility not found."
-                )
-
-            return HealthFacilityResponse(
-                message="Health facility created successfully",
-                data=HealthFacilitySchema.from_orm(health_facility),
-            )
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        service = HealthFacilityService(session)
+        health_facility = await service.fetch_health_facility(
+            health_facility_id, detailed=True
+        )
+        return HealthFacilityResponse(
+            message="Health facility fetched successfully",
+            data=HealthFacilitySchema.from_orm(health_facility),
+        )

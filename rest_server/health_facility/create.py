@@ -14,6 +14,7 @@ from lib.schemas.health_facility import (
 )
 
 
+from lib.services.health_facility_service import HealthFacilityService
 from rest_server.health_facility.api_schema import HealthFacilityResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
@@ -26,20 +27,18 @@ async def create_health_facility(
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
+        service = HealthFacilityService(session)
         try:
-            new_health_facility = HealthFacility(**health_facility.dict())
-            session.add(new_health_facility)
-            await session.commit()
-            await session.refresh(new_health_facility)
+            new_health_facility = await service.create_health_facility(
+                health_facility
+            )
 
             return HealthFacilityResponse(
                 message="Health facility created successfully",
                 data=HealthFacilitySchema.from_orm(new_health_facility),
             )
-        except IntegrityError:
-            raise HTTPException(
-                status_code=400, detail="Health facility already exists."
-            )
+        except HTTPException as e:
+            raise e
         except SQLAlchemyError as e:
             response = ErrorResponse(message="Database Error", detail=str(e))
             raise HTTPException(status_code=500, detail=response.dict())
