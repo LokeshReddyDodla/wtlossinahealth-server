@@ -1,26 +1,24 @@
-from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.models.care_provider import CareProvider as CareProviderModel
-from fastapi import HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.exc import SQLAlchemyError
-
 from typing import List, Optional, Union
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
-from lib.schemas.care_provider import (
-    CareProvider as CareProviderSchema,
-    CareProviderCreate,
-    CareProviderUpdate,
-)
-from sqlalchemy.exc import IntegrityError
+
+from lib.dependencies.auth.care_provider_auth import get_current_care_provider
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.care_provider_service import CareProviderService
 from lib.utils.care_provider_permissions import CareProviderFeature
-from rest_server.care_provider.api_schema import CareProviderResponse
-from rest_server.response_models import SuccessResponse, ErrorResponse
+from rest_server.care_provider.profile.api_schema import CareProviderResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
 @router.put("", response_model=CareProviderResponse)
-async def update_care_provider(
+async def update_care_provider_profile(
     request: Request,
     care_provider_id: str,
     care_provider_update: CareProviderUpdate,
