@@ -12,6 +12,9 @@ from lib.schemas.patient_care_provider import (
     PatientCareProviderCreate,
 )
 from sqlalchemy.exc import IntegrityError
+from lib.services.patient_care_provider_service import (
+    PatientCareProviderService,
+)
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
 
@@ -21,27 +24,8 @@ async def delete_patient_care_provider(
     request: Request, patient_care_provider_id: str
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        try:
-            result = await session.execute(
-                select(PatientCareProviderModel).where(
-                    PatientCareProviderModel.patient_care_provider_id
-                    == patient_care_provider_id
-                )
-            )
-            patient_care_provider = result.scalars().first()
-
-            if not patient_care_provider:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Patient care provider association not found.",
-                )
-
-            await session.delete(patient_care_provider)
-            await session.commit()
-
-            return SuccessResponse(
-                message="Patient care provider association deleted successfully."
-            )
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        service = PatientCareProviderService(session)
+        message = await service.delete_patient_care_provider(
+            patient_care_provider_id
+        )
+        return SuccessResponse(message=message)
