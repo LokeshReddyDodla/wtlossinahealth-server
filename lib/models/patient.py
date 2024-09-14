@@ -1,3 +1,4 @@
+import asyncio
 from sqlalchemy import (
     Column,
     DateTime,
@@ -18,10 +19,13 @@ from datetime import datetime
 
 from sqlalchemy.event import listens_for
 
+from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.models import Base
 from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
+from lib.services.chat_service import ChatService
+from fastapi import BackgroundTasks
 
 
 class Patient(Base):
@@ -216,3 +220,13 @@ def create_related_records(mapper, connection, target):
             "last_sync_timestamp": None,
         },
     )
+
+    # create a group chat for the patient
+    chat_service = ChatService()
+    runner = BackgroundTaskRunner()
+    runner.run(
+        chat_service.create_group_chat_for_patient,
+        str(target.patient_id),
+        f"{target.first_name} {target.last_name}",
+    )
+    runner.shutdown()
