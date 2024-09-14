@@ -16,6 +16,7 @@ from lib.schemas.care_provider import (
     CareProviderCreate,
 )
 from sqlalchemy.exc import IntegrityError
+from lib.services.care_provider_service import CareProviderService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderRole,
@@ -43,24 +44,10 @@ async def create_care_provider(
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        try:
-            role_enum = CareProviderRole(care_provider.role.lower())
-            permissions = get_care_provider_permissions(role_enum)
+        service = CareProviderService(session)
+        new_care_provider = await service.create_care_provider(care_provider)
 
-            care_provider.permissions = permissions
-            new_care_provider = CareProviderModel(**care_provider.dict())
-            session.add(new_care_provider)
-            await session.commit()
-            await session.refresh(new_care_provider)
-
-            return CareProviderResponse(
-                message="Care Provider created successfully",
-                data=CareProviderSchema.from_orm(new_care_provider),
-            )
-        except IntegrityError:
-            raise HTTPException(
-                status_code=400, detail="Care provider already exists."
-            )
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return CareProviderResponse(
+            message="Care Provider created successfully",
+            data=CareProviderSchema.from_orm(new_care_provider),
+        )

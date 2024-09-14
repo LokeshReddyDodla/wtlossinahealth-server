@@ -14,6 +14,7 @@ from lib.schemas.care_provider import (
     CareProviderCreate,
 )
 from sqlalchemy.exc import IntegrityError
+from lib.services.care_provider_service import CareProviderService
 from lib.utils.care_provider_permissions import CareProviderFeature
 from rest_server.care_provider.api_schema import CareProviderResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
@@ -29,26 +30,12 @@ async def get_care_provider(
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        try:
-            result = await session.execute(
-                select(CareProviderModel)
-                .where(CareProviderModel.care_provider_id == care_provider_id)
-                .options(
-                    selectinload(CareProviderModel.health_facility),
-                    selectinload(CareProviderModel.patient_relationships),
-                )
-            )
-            care_provider = result.scalars().first()
+        service = CareProviderService(session)
+        result = await service.fetch_care_provider(
+            care_provider_id, detailed=True
+        )
 
-            if not care_provider:
-                raise HTTPException(
-                    status_code=404, detail="Care provider not found."
-                )
-
-            return CareProviderResponse(
-                message="Care Provider created successfully",
-                data=CareProviderSchema.from_orm(care_provider),
-            )
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return CareProviderResponse(
+            message="Care Provider created successfully",
+            data=CareProviderSchema.from_orm(result),
+        )

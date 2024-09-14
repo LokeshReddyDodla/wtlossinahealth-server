@@ -12,6 +12,7 @@ from lib.schemas.care_provider import (
     CareProviderUpdate,
 )
 from sqlalchemy.exc import IntegrityError
+from lib.services.care_provider_service import CareProviderService
 from lib.utils.care_provider_permissions import CareProviderFeature
 from rest_server.care_provider.api_schema import CareProviderResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
@@ -28,36 +29,12 @@ async def update_care_provider(
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
-        try:
-            result = await session.execute(
-                select(CareProviderModel).where(
-                    CareProviderModel.care_provider_id == care_provider_id
-                )
-            )
-            care_provider = result.scalars().first()
+        service = CareProviderService(session)
+        updated_care_provider = await service.update_care_provider(
+            care_provider_id, care_provider_update
+        )
 
-            if not care_provider:
-                raise HTTPException(
-                    status_code=404, detail="Care provider not found."
-                )
-
-            for key, value in care_provider_update.dict(
-                exclude_unset=True
-            ).items():
-                setattr(care_provider, key, value)
-
-            session.add(care_provider)
-            await session.commit()
-            await session.refresh(care_provider)
-
-            return CareProviderResponse(
-                message="Care Provider created successfully",
-                data=CareProviderSchema.from_orm(care_provider),
-            )
-        except IntegrityError:
-            raise HTTPException(
-                status_code=400, detail="Care provider already exists."
-            )
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return CareProviderResponse(
+            message="Care provider updated successfully.",
+            data=CareProviderSchema.from_orm(updated_care_provider),
+        )
