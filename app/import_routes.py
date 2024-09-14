@@ -1,38 +1,32 @@
 from fastapi import FastAPI
 
-from rest_server.auth import auth
-from rest_server.patients.cgm.router import router as cgm_router
-from rest_server.patients.connected_apps.router import (
-    router as connected_apps_router,
-)
-from rest_server.patients.fitness.router import router as fitness_router
-from rest_server.patients.meals.router import router as meals_router
-from rest_server.patients.permissions.router import (
-    router as permissions_router,
-)
-from rest_server.patients.prescriptions.router import (
-    router as prescriptions_router,
-)
-from rest_server.patients.profile.router import router as profile_router
-from rest_server.patients.smbgs.router import router as smbgs_router
-from rest_server.patients.vitals.router import router as vitals_router
-from rest_server.patients.care_provider.router import router as patient_care_providers_router
-
-
-from rest_server.system_management import reload_cache
-from rest_server.file_upload import file_upload
-from rest_server.chat import chat, context_chat
-
-from rest_server.health import health_check
-from rest_server.test import test
 from rest_server.admin import admin
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
-
-from rest_server.health_facility.router import router as health_facility_router
-from rest_server.care_provider.router import router as care_providers_router
-
+from rest_server.auth import auth
+from rest_server.care_provider.profile.router import \
+    router as care_providers_profile_router
+from rest_server.chat import chat, context_chat
 from rest_server.dump import dump
+from rest_server.file_upload import file_upload
+from rest_server.health import health_check
+from rest_server.health_facility.router import router as health_facility_router
+from rest_server.patients.care_provider.router import \
+    router as patient_care_providers_router
+from rest_server.patients.cgm.router import router as cgm_router
+from rest_server.patients.connected_apps.router import \
+    router as connected_apps_router
+from rest_server.patients.fitness.router import router as fitness_router
+from rest_server.patients.meals.router import router as meals_router
+from rest_server.patients.permissions.router import \
+    router as permissions_router
+from rest_server.patients.prescriptions.router import \
+    router as prescriptions_router
+from rest_server.patients.profile.router import router as profile_router
+from rest_server.patients.smbgs.router import router as smbgs_router
+from rest_server.patients.vitals.router import router as vitals_router
+from rest_server.system_management import reload_cache
+from rest_server.test import test
 
 
 def import_routes(app: FastAPI) -> None:
@@ -109,4 +103,4 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Care Providers
     ###########################################################################
-    app.include_router(care_providers_router)
+    app.include_router(care_providers_profile_router)
