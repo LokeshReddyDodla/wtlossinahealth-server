@@ -21,6 +21,14 @@ async def delete_care_provider(
 ) -> Union[SuccessResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         service = CareProviderService(session)
-        message = await service.delete_care_provider(care_provider_id)
+        try:
+            await service.delete_care_provider(care_provider_id)
 
-        return SuccessResponse(message=message)
+            return SuccessResponse(
+                message="Care provider deleted successfully."
+            )
+        except HTTPException as e:
+            raise e
+        except SQLAlchemyError as e:
+            response = ErrorResponse(message="Database Error", detail=str(e))
+            raise HTTPException(status_code=500, detail=response.dict())

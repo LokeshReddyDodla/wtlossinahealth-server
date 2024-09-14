@@ -127,13 +127,12 @@ class CareProviderService:
                 detail=f"Database error: {str(e)}",
             )
 
-    async def delete_care_provider(self, care_provider_id: str) -> str:
+    async def delete_care_provider(self, care_provider_id: str):
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
+
             await self.postgres_session.delete(care_provider)
             await self.postgres_session.commit()
-
-            return "Care provider deleted successfully."
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()

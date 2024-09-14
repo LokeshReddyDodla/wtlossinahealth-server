@@ -30,11 +30,17 @@ async def update_care_provider(
 ) -> Union[CareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         service = CareProviderService(session)
-        updated_care_provider = await service.update_care_provider(
-            care_provider_id, care_provider_update
-        )
+        try:
+            updated_care_provider = await service.update_care_provider(
+                care_provider_id, care_provider_update
+            )
 
-        return CareProviderResponse(
-            message="Care provider updated successfully.",
-            data=CareProviderSchema.from_orm(updated_care_provider),
-        )
+            return CareProviderResponse(
+                message="Care provider updated successfully.",
+                data=CareProviderSchema.from_orm(updated_care_provider),
+            )
+        except HTTPException as e:
+            raise e
+        except SQLAlchemyError as e:
+            response = ErrorResponse(message="Database Error", detail=str(e))
+            raise HTTPException(status_code=500, detail=response.dict())

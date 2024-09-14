@@ -31,10 +31,16 @@ async def get_patient_care_provider(
 ) -> Union[PatientCareProviderResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
         service = PatientCareProviderService(session)
-        patient_care_provider = await service.fetch_patient_care_provider(
-            patient_care_provider_id
-        )
-        return PatientCareProviderResponse(
-            message="Patient care provider retrieved successfully",
-            data=PatientCareProviderSchema.from_orm(patient_care_provider),
-        )
+        try:
+            patient_care_provider = await service.fetch_patient_care_provider(
+                patient_care_provider_id
+            )
+            return PatientCareProviderResponse(
+                message="Patient care provider retrieved successfully",
+                data=PatientCareProviderSchema.from_orm(patient_care_provider),
+            )
+        except HTTPException as e:
+            raise e
+        except SQLAlchemyError as e:
+            response = ErrorResponse(message="Database Error", detail=str(e))
+            raise HTTPException(status_code=500, detail=response.dict())
