@@ -86,7 +86,7 @@ class CareProviderService:
 
     async def update_care_provider(
         self, care_provider_id: str, updates: CareProviderUpdate
-    ) -> CareProviderSchema:
+    ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
             care_provider_schema = CareProviderSchema.from_orm(care_provider)

@@ -19,6 +19,7 @@ from lib.models.patient_medical_history import PatientMedicalHistory
 from lib.models.patient_sleep_habit import PatientSleepHabit
 from lib.models.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient import (
+    CompletePatientProfile,
     PatientCreate,
     PatientUpdate,
     Patient as PatientSchema,
@@ -53,6 +54,8 @@ from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
+from lib.services.chat_service import ChatService
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.patients.profile.api_schema import PatientProfileResponse
 from rest_server.response_models import SuccessResponse, ErrorResponse
 from .router import router
@@ -68,33 +71,20 @@ async def update_basic_patient(
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientProfileResponse, HTTPException]:
     async with request.state.context.postgres_store.get_session() as session:
+        service = PatientProfileService(session)
         try:
-            patient = await session.get(Patient, current_patient.patient_id)
-            if not patient:
-                raise HTTPException(
-                    status_code=404, detail="Patient not found"
-                )
+            updated_patient = await service.update_basic_patient_profile(
+                patient_id=str(current_patient.patient_id),
+                patient_data=patient_data,
+            )
 
-            for key, value in patient_data.dict(exclude_unset=True).items():
-                if key not in ["created_at", "updated_at", "phone_number"]:
-                    setattr(patient, key, value)
-
-            await session.commit()
-            await session.refresh(patient)
-
-            result = PatientSchema.from_orm(patient)
             return PatientProfileResponse(
                 message="Patient basic data updated successfully.",
-                data=result,
+                data=PatientSchema.from_orm(updated_patient),
             )
-        except HTTPException as http_exc:
-            raise http_exc
-        except IntegrityError as e:
-            await session.rollback()
-            response = ErrorResponse(message="Integrity Error", detail=str(e))
-            raise HTTPException(status_code=400, detail=response.dict())
+        except HTTPException as e:
+            raise e
         except Exception as e:
-            await session.rollback()
             response = ErrorResponse(
                 message="Internal Server Error", detail=str(e)
             )
@@ -103,7 +93,7 @@ async def update_basic_patient(
 
 @router.patch(
     path="/lifestyle",
-    response_model=SuccessResponse,
+    response_model=PatientProfileResponse,
 )
 async def upsert_patient_lifestyle(
     request: Request,
@@ -116,115 +106,38 @@ async def upsert_patient_lifestyle(
     meal_timings: Optional[List[PatientMealTimingCreate]] = None,
     cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = None,
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
-    try:
-        async with request.state.context.postgres_store.get_session() as session:
-            patient_id = current_patient.patient_id
-            patient_result = await session.execute(
-                select(Patient)
-                .where(Patient.patient_id == patient_id)
-                .options(
-                    selectinload(Patient.daily_activity),
-                    selectinload(Patient.food_allergies),
-                    selectinload(Patient.diet_preferences),
-                    selectinload(Patient.alcohol_consumption),
-                    selectinload(Patient.smoking_habit),
-                    selectinload(Patient.meal_timings),
-                    selectinload(Patient.cuisine_preferences),
-                    selectinload(Patient.sleep_habit),
-                )
+) -> Union[PatientProfileResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        service = PatientProfileService(session)
+        try:
+            updated_patient = await service.upsert_patient_lifestyle(
+                patient_id=str(current_patient.patient_id),
+                daily_activity=daily_activity,
+                diet_preferences=diet_preferences,
+                alcohol_consumption=alcohol_consumption,
+                smoking_habit=smoking_habit,
+                sleep_habit=sleep_habit,
+                food_allergies=food_allergies,
+                meal_timings=meal_timings,
+                cuisine_preferences=cuisine_preferences,
             )
-            patient = patient_result.scalars().first()
 
-            if not patient:
-                raise HTTPException(
-                    status_code=404, detail="Patient not found"
-                )
-
-            # Update or create related data
-            if patient.daily_activity:
-                for key, value in daily_activity.dict().items():
-                    setattr(patient.daily_activity[0], key, value)
-            else:
-                patient.daily_activity = [
-                    PatientDailyActivity(
-                        **daily_activity.dict(), patient_id=patient_id
-                    )
-                ]
-
-            patient.diet_preferences = [
-                PatientDietPreference(
-                    **preference.dict(), patient_id=patient_id
-                )
-                for preference in diet_preferences
-            ]
-
-            if patient.alcohol_consumption:
-                for key, value in alcohol_consumption.dict().items():
-                    setattr(patient.alcohol_consumption, key, value)
-            else:
-                patient.alcohol_consumption = PatientAlcoholConsumption(
-                    **alcohol_consumption.dict(), patient_id=patient_id
-                )
-
-            if patient.smoking_habit:
-                for key, value in smoking_habit.dict().items():
-                    setattr(patient.smoking_habit, key, value)
-            else:
-                patient.smoking_habit = PatientSmokingHabit(
-                    **smoking_habit.dict(), patient_id=patient_id
-                )
-
-            if patient.sleep_habit:
-                for key, value in sleep_habit.dict().items():
-                    setattr(patient.sleep_habit, key, value)
-            else:
-                patient.sleep_habit = PatientSleepHabit(
-                    **sleep_habit.dict(), patient_id=patient_id
-                )
-
-            # Handling lists of related objects
-            patient.food_allergies = [
-                PatientFoodAllergy(**allergy.dict(), patient_id=patient_id)
-                for allergy in (food_allergies or [])
-            ]
-            patient.meal_timings = [
-                PatientMealTiming(**timing.dict(), patient_id=patient_id)
-                for timing in (meal_timings or [])
-            ]
-            patient.cuisine_preferences = [
-                PatientCuisinePreference(
-                    **cuisine.dict(), patient_id=patient_id
-                )
-                for cuisine in (cuisine_preferences or [])
-            ]
-
-            session.add(patient)
-            await session.commit()
-            await session.refresh(patient)
-            return SuccessResponse(
-                message="Patient lifestyle data upserted successfully.",
-                data=patient,
+            return PatientProfileResponse(
+                message="Patient lifestyle data updated successfully.",
+                data=PatientSchema.from_orm(updated_patient),
             )
-    except SQLAlchemyError as e:
-        await session.rollback()
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
-        )
-        raise HTTPException(status_code=400, detail=response.dict())
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        await session.rollback()
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
-        )
-        raise HTTPException(status_code=500, detail=response.dict())
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.patch(
     path="/medical_history",
-    response_model=SuccessResponse,
+    response_model=PatientProfileResponse,
 )
 async def upsert_patient_medical_history(
     request: Request,
@@ -236,78 +149,27 @@ async def upsert_patient_medical_history(
     ] = None,
     medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
-    try:
-        async with request.state.context.postgres_store.get_session() as session:
-            patient_id = current_patient.patient_id
-            patient = await session.get(
-                Patient,
-                patient_id,
-                options=[
-                    selectinload(Patient.diabetic_history),
-                    selectinload(Patient.current_medication),
-                    selectinload(Patient.drug_allergies),
-                    selectinload(Patient.family_diabetic_histories),
-                    selectinload(Patient.medical_histories),
-                ],
+) -> Union[PatientProfileResponse, HTTPException]:
+    async with request.state.context.postgres_store.get_session() as session:
+        service = PatientProfileService(session)
+        try:
+            updated_patient = await service.upsert_patient_medical_history(
+                patient_id=str(current_patient.patient_id),
+                diabetic_history=diabetic_history,
+                current_medication=current_medication,
+                drug_allergies=drug_allergies,
+                family_diabetic_histories=family_diabetic_histories,
+                medical_histories=medical_histories,
             )
 
-            if not patient:
-                raise HTTPException(
-                    status_code=404, detail="Patient not found"
-                )
-
-            # Update or create related data
-            if patient.diabetic_history:
-                for key, value in diabetic_history.dict().items():
-                    setattr(patient.diabetic_history, key, value)
-            else:
-                patient.diabetic_history = PatientDiabeticHistory(
-                    **diabetic_history.dict(), patient_id=patient_id
-                )
-
-            if patient.current_medication:
-                for key, value in current_medication.dict().items():
-                    setattr(patient.current_medication, key, value)
-            else:
-                patient.current_medication = PatientCurrentMedication(
-                    **current_medication.dict(), patient_id=patient_id
-                )
-
-            # Handling lists of related objects
-            patient.drug_allergies = [
-                PatientDrugAllergy(**allergy.dict(), patient_id=patient_id)
-                for allergy in (drug_allergies or [])
-            ]
-            patient.family_diabetic_histories = [
-                PatientFamilyDiabeticHistory(
-                    **history.dict(), patient_id=patient_id
-                )
-                for history in (family_diabetic_histories or [])
-            ]
-            patient.medical_histories = [
-                PatientMedicalHistory(**history.dict(), patient_id=patient_id)
-                for history in (medical_histories or [])
-            ]
-
-            session.add(patient)
-            await session.commit()
-            await session.refresh(patient)
-            return SuccessResponse(
-                message="Patient medical history data upserted successfully.",
-                data=patient,
+            return PatientProfileResponse(
+                message="Patient medical history data updated successfully.",
+                data=PatientSchema.from_orm(updated_patient),
             )
-    except SQLAlchemyError as e:
-        await session.rollback()
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
-        )
-        raise HTTPException(status_code=500, detail=response.dict())
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        await session.rollback()
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
-        )
-        raise HTTPException(status_code=500, detail=response.dict())
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            response = ErrorResponse(
+                message="Internal Server Error", detail=str(e)
+            )
+            raise HTTPException(status_code=500, detail=response.dict())

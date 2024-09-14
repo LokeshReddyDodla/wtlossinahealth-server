@@ -16,7 +16,7 @@ from lib.services.care_provider_service import CareProviderService
 from lib.services.chat_service import ChatService
 from sqlalchemy.orm import selectinload
 
-from lib.services.patient_service import PatientService
+from lib.services.patient_profile_service import PatientService
 
 
 class PatientCareProviderService:
@@ -90,7 +90,7 @@ class PatientCareProviderService:
                 )
             )
 
-            patient = await self.patient_service.fetch_patient(
+            patient = await self.patient_service.fetch_patient_profile(
                 patient_care_provider_data.patient_id
             )
 
