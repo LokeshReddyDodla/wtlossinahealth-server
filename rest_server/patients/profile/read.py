@@ -1,25 +1,22 @@
-from sqlalchemy import or_
+from typing import List, Optional, Union
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_care_provider import PatientCareProvider
 from lib.models.patient_connected_app import PatientConnectedApp
-
-from fastapi import APIRouter, HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.future import select
-
-from typing import List, Optional, Union
-from sqlalchemy.exc import IntegrityError
-
 from lib.schemas.patient import CompletePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
-from rest_server.patients.profile.api_schema import (
-    PatientCompleteProfileResponse,
-)
-from rest_server.response_models import SuccessResponse, ErrorResponse
+from rest_server.patients.profile.api_schema import \
+    PatientCompleteProfileResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
