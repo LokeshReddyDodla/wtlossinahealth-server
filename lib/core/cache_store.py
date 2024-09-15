@@ -1,6 +1,7 @@
+from typing import List, Optional, Union
+
 import redis
 from decouple import config
-from typing import Optional, Union
 
 # Read redis host from env
 REDIS_HOST = config("REDIS_HOST", default="127.0.0.1:6379")
@@ -41,3 +42,19 @@ class CacheStore:
     def delete_key(self, key: str) -> Optional[int]:
         key = f"{self.__namespace}_{key.strip()}"
         return self.__client.delete(key)
+
+    def get_keys_with_prefix(self, prefix: str) -> List[str]:
+        """
+        Retrieves all keys that start with the specified prefix.
+        """
+        full_prefix = f"{self.__namespace}_{prefix}*"
+        keys = []
+        cursor = 0
+        while True:
+            cursor, partial_keys = self.__client.scan(
+                cursor, match=full_prefix
+            )
+            keys.extend(partial_keys)
+            if cursor == 0:
+                break
+        return keys
