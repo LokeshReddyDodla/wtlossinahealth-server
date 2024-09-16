@@ -93,7 +93,11 @@ class ChatService:
         )
 
     async def update_participant_name(
-        self, participant_id: str, new_name: str, participant_type: str
+        self,
+        participant_id: str,
+        new_name: str,
+        profile_picture: Optional[str],
+        participant_type: str,
     ):
         # Update group chats
         await self.mongo_store.db["group_chats"].update_many(
@@ -104,6 +108,7 @@ class ChatService:
             {
                 "$set": {
                     "participants.$.name": new_name,
+                    "participants.$.profile_picture": profile_picture,
                     "updated_at": datetime.now(),
                 }
             },
@@ -119,6 +124,7 @@ class ChatService:
             {
                 "$set": {
                     "participants.$.name": new_name,
+                    "participants.$.profile_picture": profile_picture,
                     "updated_at": datetime.now(),
                 }
             },

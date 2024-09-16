@@ -1,22 +1,16 @@
+from fastapi import HTTPException, status
 from sqlalchemy import exists
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status
-from sqlalchemy.exc import SQLAlchemyError
-from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.care_provider import (
-    CareProvider as CareProviderSchema,
-    CareProviderCreate,
-    CareProviderUpdate,
-)
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
-from lib.utils.care_provider_permissions import (
-    CareProviderRole,
-    get_care_provider_permissions,
-)
+from lib.utils.care_provider_permissions import (CareProviderRole,
+                                                 get_care_provider_permissions)
 
 
 class CareProviderService:
@@ -89,25 +83,18 @@ class CareProviderService:
     ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
-            care_provider_schema = CareProviderSchema.from_orm(care_provider)
-
-            old_first_name = care_provider_schema.first_name
-            old_last_name = care_provider_schema.last_name
 
             for key, value in updates.dict(exclude_unset=True).items():
                 setattr(care_provider, key, value)
 
             self.postgres_session.add(care_provider)
 
-            if (
-                old_first_name != updates.first_name
-                or old_last_name != updates.last_name
-            ):
-                await self.chat_service.update_participant_name(
-                    participant_id=str(care_provider.care_provider_id),
-                    new_name=f"{care_provider.first_name} {care_provider.last_name}",
-                    participant_type="care_provider",
-                )
+            await self.chat_service.update_participant_name(
+                participant_id=str(care_provider.care_provider_id),
+                new_name=f"{care_provider.first_name} {care_provider.last_name}",
+                profile_picture=str(care_provider.profile_picture),
+                participant_type="care_provider",
+            )
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)

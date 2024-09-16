@@ -1,74 +1,57 @@
 from typing import List, Optional
+
+from fastapi import HTTPException, status
 from sqlalchemy import exists
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from lib.models.patient import Patient as PatientModel
-from lib.models.patient_alcohol_consumption import (
-    PatientAlcoholConsumption as PatientAlcoholConsumptionModel,
-)
-from lib.models.patient_care_provider import PatientCareProvider
+
 from lib.models.care_provider import CareProvider
+from lib.models.patient import Patient as PatientModel
+from lib.models.patient_alcohol_consumption import \
+    PatientAlcoholConsumption as PatientAlcoholConsumptionModel
+from lib.models.patient_care_provider import PatientCareProvider
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_cuisine_preference import (
-    PatientCuisinePreference as PatientCuisinePreferenceModel,
-)
-from lib.models.patient_current_medication import (
-    PatientCurrentMedication as PatientCurrentMedicationModel,
-)
-from lib.models.patient_daily_activity import (
-    PatientDailyActivity as PatientDailyActivityModel,
-)
-from lib.models.patient_diabetic_history import (
-    PatientDiabeticHistory as PatientDiabeticHistoryModel,
-)
-from lib.models.patient_diet_preference import (
-    PatientDietPreference as PatientDietPreferenceModel,
-)
-from lib.models.patient_drug_allergy import (
-    PatientDrugAllergy as PatientDrugAllergyModel,
-)
-from lib.models.patient_family_diabetic_history import (
-    PatientFamilyDiabeticHistory as PatientFamilyDiabeticHistoryModel,
-)
-from lib.models.patient_food_allergy import (
-    PatientFoodAllergy as PatientFoodAllergyModel,
-)
-from lib.models.patient_meal_timing import (
-    PatientMealTiming as PatientMealTimingModel,
-)
-from lib.models.patient_medical_history import (
-    PatientMedicalHistory as PatientMedicalHistoryModel,
-)
-from lib.models.patient_sleep_habit import (
-    PatientSleepHabit as PatientSleepHabitModel,
-)
-from lib.models.patient_smoking_habit import (
-    PatientSmokingHabit as PatientSmokingHabitModel,
-)
-from lib.schemas.patient import (
-    CompletePatientProfile,
-    PatientUpdate,
-    Patient as PatientSchema,
-)
-from lib.schemas.patient_alcohol_consumption import (
-    PatientAlcoholConsumptionCreate,
-)
-from lib.schemas.patient_cuisine_preference import (
-    PatientCuisinePreferenceCreate,
-)
-from lib.schemas.patient_current_medication import (
-    PatientCurrentMedicationCreate,
-)
+from lib.models.patient_cuisine_preference import \
+    PatientCuisinePreference as PatientCuisinePreferenceModel
+from lib.models.patient_current_medication import \
+    PatientCurrentMedication as PatientCurrentMedicationModel
+from lib.models.patient_daily_activity import \
+    PatientDailyActivity as PatientDailyActivityModel
+from lib.models.patient_diabetic_history import \
+    PatientDiabeticHistory as PatientDiabeticHistoryModel
+from lib.models.patient_diet_preference import \
+    PatientDietPreference as PatientDietPreferenceModel
+from lib.models.patient_drug_allergy import \
+    PatientDrugAllergy as PatientDrugAllergyModel
+from lib.models.patient_family_diabetic_history import \
+    PatientFamilyDiabeticHistory as PatientFamilyDiabeticHistoryModel
+from lib.models.patient_food_allergy import \
+    PatientFoodAllergy as PatientFoodAllergyModel
+from lib.models.patient_meal_timing import \
+    PatientMealTiming as PatientMealTimingModel
+from lib.models.patient_medical_history import \
+    PatientMedicalHistory as PatientMedicalHistoryModel
+from lib.models.patient_sleep_habit import \
+    PatientSleepHabit as PatientSleepHabitModel
+from lib.models.patient_smoking_habit import \
+    PatientSmokingHabit as PatientSmokingHabitModel
+from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient import Patient as PatientSchema
+from lib.schemas.patient import PatientUpdate
+from lib.schemas.patient_alcohol_consumption import \
+    PatientAlcoholConsumptionCreate
+from lib.schemas.patient_cuisine_preference import \
+    PatientCuisinePreferenceCreate
+from lib.schemas.patient_current_medication import \
+    PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
-from lib.schemas.patient_family_diabetic_history import (
-    PatientFamilyDiabeticHistoryCreate,
-)
+from lib.schemas.patient_family_diabetic_history import \
+    PatientFamilyDiabeticHistoryCreate
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
 from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
@@ -144,28 +127,17 @@ class PatientProfileService:
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
-            patient_profile_schema = PatientSchema.from_orm(patient_profile)
-
-            old_first_name = patient_profile_schema.first_name
-            old_last_name = patient_profile_schema.last_name
-            print(f"==> {old_first_name} {old_last_name}")
 
             for key, value in patient_data.dict(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
-            print(f"==> {patient_data.first_name} {patient_data.last_name}")
-            # Update chat participant name if first or last name has changed
-            if (
-                old_first_name != patient_data.first_name
-                or old_last_name != patient_data.last_name
-            ):
-                print("==> need to update")
-                await self.chat_service.update_participant_name(
-                    participant_id=str(patient_profile.patient_id),
-                    new_name=f"{patient_profile.first_name} {patient_profile.last_name}",
-                    participant_type="patient",
-                )
+            await self.chat_service.update_participant_name(
+                participant_id=str(patient_profile.patient_id),
+                new_name=f"{patient_profile.first_name} {patient_profile.last_name}",
+                profile_picture=str(patient_profile.profile_picture),
+                participant_type="patient",
+            )
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
