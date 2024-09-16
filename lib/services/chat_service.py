@@ -21,7 +21,10 @@ class ChatService:
         self.mongo_store = get_mongo_store()
 
     async def create_group_chat_for_patient(
-        self, patient_id: str, patient_name: str
+        self,
+        patient_id: str,
+        patient_name: str,
+        profile_picture: Optional[str] = None,
     ):
         chat_id = str(uuid.uuid4())
         group_chat = {
@@ -32,6 +35,7 @@ class ChatService:
                     "id": patient_id,
                     "type": "patient",
                     "name": patient_name,
+                    "profile_picture": profile_picture,
                 }
             ],
             "messages": [],
@@ -60,6 +64,7 @@ class ChatService:
         care_provider_id: str,
         care_provider_name: str,
         role: str,
+        profile_picture: Optional[str] = None,
     ):
         pipeline = [
             {
@@ -74,6 +79,7 @@ class ChatService:
                                     "type": "care_provider",
                                     "name": care_provider_name,
                                     "role": role,
+                                    "profile_picture": profile_picture,
                                 }
                             ],
                         ]

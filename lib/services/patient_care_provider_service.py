@@ -1,21 +1,20 @@
 from typing import Any
+
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from fastapi import HTTPException, status
-from lib.models.patient import Patient
-from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.models.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderModel,
-)
-from lib.schemas.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderSchema,
-)
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from lib.services.care_provider_service import CareProviderService
-from lib.services.chat_service import ChatService
 from sqlalchemy.orm import selectinload
 
+from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.models.patient import Patient
+from lib.models.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderModel
+from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderSchema
+from lib.services.care_provider_service import CareProviderService
+from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
 
 
@@ -172,12 +171,14 @@ class PatientCareProviderService:
                 "id": str(patient.patient_id),
                 "type": "patient",
                 "name": f"{patient.first_name} {patient.last_name}",
+                "profile_picture": patient.profile_picture,
             },
             {
                 "id": str(care_provider.care_provider_id),
                 "type": "care_provider",
                 "name": f"{care_provider.first_name} {care_provider.last_name}",
                 "role": care_provider.role,
+                "profile_picture": care_provider.profile_picture,
             },
         ]
         await self.chat_service.create_chat_instance(participants=participants)
@@ -191,4 +192,5 @@ class PatientCareProviderService:
                 care_provider_id=str(care_provider.care_provider_id),
                 care_provider_name=f"{care_provider.first_name} {care_provider.last_name}",
                 role=care_provider.role,
+                profile_picture=care_provider.profile_picture,
             )

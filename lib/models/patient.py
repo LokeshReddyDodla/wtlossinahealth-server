@@ -1,31 +1,20 @@
 import asyncio
-from sqlalchemy import (
-    Column,
-    DateTime,
-    Integer,
-    String,
-    Date,
-    Float,
-    Boolean,
-    ForeignKey,
-    Text,
-    JSON,
-    Time,
-)
-from sqlalchemy.orm import relationship, Session, object_session
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from datetime import datetime
 
+from fastapi import BackgroundTasks
+from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Float,
+                        ForeignKey, Integer, String, Text, Time)
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.event import listens_for
+from sqlalchemy.orm import Session, object_session, relationship
 
 from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.models import Base
-from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_permission import PatientPermission
 from lib.services.chat_service import ChatService
-from fastapi import BackgroundTasks
 
 
 class Patient(Base):
@@ -228,5 +217,6 @@ def create_related_records(mapper, connection, target):
         chat_service.create_group_chat_for_patient,
         str(target.patient_id),
         f"{target.first_name} {target.last_name}",
+        target.profile_picture,
     )
     runner.shutdown()
