@@ -3,11 +3,13 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from lib.core.mongo_store import get_mongo_store
 from lib.managers.websocket_manager import WebSocketManager
+from lib.pipelines.chat_pipelines import (get_group_chat_pipeline,
+                                          get_individual_chat_pipeline)
 from lib.services.socketio_service import sio
 from lib.utils.serializers import serialize_message
 from rest_server.chats.api_schema import (ChatMessage, ChatMessageCreate,
@@ -158,8 +160,40 @@ class ChatService:
         except Exception as e:
             raise Exception(f"Failed to add message: {str(e)}")
 
-    async def get_chat(self, chat_id):
-        return await self.mongo_store.find_document("chats", {"_id": chat_id})
+    async def get_user_chats(self, user_id: str):
+        # Pipeline for individual chats
+        individual_pipeline = get_individual_chat_pipeline(user_id)
+        group_pipeline = get_group_chat_pipeline(user_id)
+
+        try:
+            # Fetch individual chats
+            individual_chats = (
+                await self.mongo_store.db["chats"]
+                .aggregate(individual_pipeline)
+                .to_list(length=None)
+            )
+
+            # Fetch group chats
+            group_chats = (
+                await self.mongo_store.db["group_chats"]
+                .aggregate(group_pipeline)
+                .to_list(length=None)
+            )
+
+            # Combine results
+            combined_chats = individual_chats + group_chats
+            combined_chats.sort(
+                key=lambda chat: (
+                    chat["last_message"]["timestamp"]
+                    if chat["last_message"]
+                    else datetime.min
+                ),
+                reverse=True,
+            )
+
+            return combined_chats
+        except Exception as e:
+            raise Exception(f"Failed to fetch chats: {str(e)}")
 
     async def delete_related_chats(
         self, patient_id: str, delete_group_chat: bool = True

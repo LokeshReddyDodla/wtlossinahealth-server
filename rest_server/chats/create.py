@@ -28,7 +28,8 @@ async def send_message(
         )
 
         return SuccessResponse(message="Message sent successfully.")
-
+    except HTTPException as e:
+        raise e
     except Exception as e:
         response = ErrorResponse(
             message="Failed to send message", detail=str(e)
