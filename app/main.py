@@ -1,4 +1,4 @@
-import json
+from typing import List
 
 import structlog
 from fastapi import FastAPI
@@ -9,9 +9,9 @@ from app.import_routes import import_routes
 from app.middlewares import create_context
 from lib.core.cache_store import CacheStore
 from lib.core.clickhouse_store import ClickHouseStore
-from lib.core.postgres_store import PostgresStore, Base, engine
-from lib.core.mongo_store import MongoStore
 from lib.core.logger import initialize_logger
+from lib.core.mongo_store import MongoStore
+from lib.core.postgres_store import Base, PostgresStore, engine
 
 
 # Create all tables
@@ -26,6 +26,7 @@ async def create_db_and_tables():
 
 # Create fastAPI app
 app = FastAPI()
+
 
 # Add middlewares
 origins = ["*"]
