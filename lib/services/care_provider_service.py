@@ -83,6 +83,7 @@ class CareProviderService:
     ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
+            care_provider_schema = CareProviderSchema.from_orm(care_provider)
 
             for key, value in updates.dict(exclude_unset=True).items():
                 setattr(care_provider, key, value)
@@ -90,9 +91,9 @@ class CareProviderService:
             self.postgres_session.add(care_provider)
 
             await self.chat_service.update_participant_name(
-                participant_id=str(care_provider.care_provider_id),
-                new_name=f"{care_provider.first_name} {care_provider.last_name}",
-                profile_picture=str(care_provider.profile_picture),
+                participant_id=str(care_provider_schema.care_provider_id),
+                new_name=f"{care_provider_schema.first_name} {care_provider_schema.last_name}",
+                profile_picture=care_provider_schema.profile_picture,
                 participant_type="care_provider",
             )
 

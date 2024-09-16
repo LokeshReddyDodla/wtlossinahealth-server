@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from fastapi import HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -10,10 +10,11 @@ from lib.core.mongo_store import get_mongo_store
 from lib.managers.websocket_manager import WebSocketManager
 from lib.pipelines.chat_pipelines import (get_group_chat_pipeline,
                                           get_individual_chat_pipeline)
+from lib.schemas.chat import (GroupChatSchema, IndividualChatSchema,
+                              ParticipantSchema)
+from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.socketio_service import sio
 from lib.utils.serializers import serialize_message
-from rest_server.chats.api_schema import (ChatMessage, ChatMessageCreate,
-                                          MediaSchema)
 
 
 class ChatService:
@@ -25,38 +26,37 @@ class ChatService:
         patient_id: str,
         patient_name: str,
         profile_picture: Optional[str] = None,
+        is_read_only: Optional[bool] = False,
+        is_muted: Optional[bool] = False,
+        is_archived: Optional[bool] = False,
     ):
-        chat_id = str(uuid.uuid4())
-        group_chat = {
-            "_id": chat_id,
-            "is_group": True,
-            "participants": [
-                {
-                    "id": patient_id,
-                    "type": "patient",
-                    "name": patient_name,
-                    "profile_picture": profile_picture,
-                }
-            ],
-            "messages": [],
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-        await self.mongo_store.insert_document("group_chats", group_chat)
-        return chat_id
+        participant = ParticipantSchema(
+            id=patient_id,
+            type="patient",
+            name=patient_name,
+            profile_picture=profile_picture,
+            is_read_only=is_read_only,
+            is_muted=is_muted,
+            is_archived=is_archived,
+        )
 
-    async def create_chat_instance(self, participants):
-        chat_id = str(uuid.uuid4())
-        chat_instance = {
-            "_id": chat_id,
-            "is_group": False,
-            "participants": participants,
-            "messages": [],
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-        await self.mongo_store.insert_document("chats", chat_instance)
-        return chat_id
+        group_chat = GroupChatSchema(
+            is_group=True,
+            participants=[participant],
+        )
+        group_chat_dict = group_chat.dict(by_alias=True)
+        await self.mongo_store.insert_document("group_chats", group_chat_dict)
+        return group_chat.id
+
+    async def create_chat_instance(
+        self, participants: List[ParticipantSchema]
+    ):
+        individual_chat = IndividualChatSchema(
+            is_group=False, participants=participants
+        )
+        individual_chat_dict = individual_chat.dict(by_alias=True)
+        await self.mongo_store.insert_document("chats", individual_chat_dict)
+        return individual_chat.id
 
     async def add_care_provider_to_group(
         self,
@@ -137,7 +137,6 @@ class ChatService:
         chat_type: Literal["individual", "group"] = "individual",
     ):
         message_data = ChatMessage(
-            message_id=str(uuid.uuid4()),
             sender=message.sender,
             receiver=message.receiver if chat_type == "individual" else None,
             content=message.content,
@@ -146,6 +145,8 @@ class ChatService:
             timestamp=message.timestamp,
             metadata=message.metadata,
             read_receipts=message.read_receipts,
+            severity=message.severity or "low",
+            is_flagged=message.is_flagged or False,
         )
 
         message_dict = message_data.dict()

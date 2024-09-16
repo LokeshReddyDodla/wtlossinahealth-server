@@ -127,15 +127,16 @@ class PatientProfileService:
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
+            patient_profile_schema = PatientSchema.from_orm(patient_profile)
 
             for key, value in patient_data.dict(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
             await self.chat_service.update_participant_name(
-                participant_id=str(patient_profile.patient_id),
-                new_name=f"{patient_profile.first_name} {patient_profile.last_name}",
-                profile_picture=str(patient_profile.profile_picture),
+                participant_id=str(patient_profile_schema.patient_id),
+                new_name=f"{patient_profile_schema.first_name} {patient_profile_schema.last_name}",
+                profile_picture=str(patient_profile_schema.profile_picture),
                 participant_type="patient",
             )
 
