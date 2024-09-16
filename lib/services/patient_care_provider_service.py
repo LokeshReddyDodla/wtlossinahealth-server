@@ -7,10 +7,12 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.models.patient import Patient
+from lib.models.patient import Patient as PatientModel
 from lib.models.patient_care_provider import \
     PatientCareProvider as PatientCareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.chat import ParticipantSchema
+from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient_care_provider import \
     PatientCareProvider as PatientCareProviderSchema
 from lib.services.care_provider_service import CareProviderService
@@ -164,22 +166,27 @@ class PatientCareProviderService:
             raise HTTPException(status_code=500, detail=str(e))
 
     async def _create_chats(
-        self, patient: Patient, care_provider: CareProviderSchema
+        self, patient: PatientSchema, care_provider: CareProviderSchema
     ):
         participants = [
-            {
-                "id": str(patient.patient_id),
-                "type": "patient",
-                "name": f"{patient.first_name} {patient.last_name}",
-                "profile_picture": patient.profile_picture,
-            },
-            {
-                "id": str(care_provider.care_provider_id),
-                "type": "care_provider",
-                "name": f"{care_provider.first_name} {care_provider.last_name}",
-                "role": care_provider.role,
-                "profile_picture": care_provider.profile_picture,
-            },
+            ParticipantSchema(
+                id=str(patient.patient_id),
+                type="patient",
+                name=f"{patient.first_name} {patient.last_name}",
+                profile_picture=patient.profile_picture,
+                is_read_only=False,
+                is_muted=False,
+                is_archived=False,
+            ),
+            ParticipantSchema(
+                id=str(care_provider.care_provider_id),
+                type="care_provider",
+                name=f"{care_provider.first_name} {care_provider.last_name}",
+                profile_picture=care_provider.profile_picture,
+                is_read_only=False,
+                is_muted=False,
+                is_archived=False,
+            ),
         ]
         await self.chat_service.create_chat_instance(participants=participants)
 
