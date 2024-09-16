@@ -1,11 +1,17 @@
+import json
 import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
+from fastapi import Request
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from lib.core.mongo_store import get_mongo_store
-from rest_server.chats.api_schema import ChatMessageCreate, MediaSchema
+from lib.managers.websocket_manager import WebSocketManager
+from lib.services.socketio_service import sio
+from lib.utils.serializers import serialize_message
+from rest_server.chats.api_schema import (ChatMessage, ChatMessageCreate,
+                                          MediaSchema)
 
 
 class ChatService:
@@ -116,44 +122,41 @@ class ChatService:
         message: ChatMessageCreate,
         chat_type: Literal["individual", "group"] = "individual",
     ):
-        message_data = {
-            "message_id": str(uuid.uuid4()),
-            "sender": {"id": message.sender.id, "type": message.sender.type},
-            "receiver": {
-                "id": message.receiver.id,
-                "type": message.receiver.type,
-            },
-            "content": message.content,
-            "media": (
-                {
-                    "type": message.media.type if message.media else None,
-                    "url": message.media.url if message.media else None,
-                    "caption": (
-                        message.media.caption if message.media else None
-                    ),
-                }
-                if message.media
-                else None
-            ),
-            "reply_to": message.reply_to,
-            "timestamp": datetime.now(),
-            "metadata": {
-                "type": message.metadata.type,
-                "status": message.metadata.status,
-            },
-            "read_receipts": [],
-        }
+
+        message_data = ChatMessage(
+            message_id=str(uuid.uuid4()),
+            sender=message.sender,
+            receiver=message.receiver,
+            content=message.content,
+            media=message.media,
+            reply_to=message.reply_to,
+            timestamp=message.timestamp,
+            metadata=message.metadata,
+            read_receipts=message.read_receipts,
+        )
+
+        message_dict = message_data.dict()
+        print("==> message_dict: ", message_dict)
+
         update = {
-            "$push": {"messages": message_data},
+            "$push": {"messages": message_dict},
             "$set": {"updated_at": datetime.now()},
         }
+
+        collection_name = "group_chats" if chat_type == "group" else "chats"
+
         try:
-            collection_name = (
-                "group_chats" if chat_type == "group" else "chats"
-            )
-            return await self.mongo_store.db[collection_name].update_one(
+            await self.mongo_store.db[collection_name].update_one(
                 {"_id": chat_id}, update
             )
+
+            # Broadcast the message to WebSocket clients in the chat group
+            await sio.emit(
+                "message",
+                {"room": chat_id, "message": serialize_message(message_dict)},
+                room=chat_id,
+            )
+
         except Exception as e:
             raise Exception(f"Failed to add message: {str(e)}")
 
