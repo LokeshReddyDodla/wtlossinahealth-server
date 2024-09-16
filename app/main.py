@@ -3,6 +3,7 @@ from typing import List
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from socketio import ASGIApp
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.import_routes import import_routes
@@ -12,6 +13,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.logger import initialize_logger
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import Base, PostgresStore, engine
+from lib.services.socketio_service import sio
 
 
 # Create all tables
@@ -83,3 +85,6 @@ async def shutdown_event() -> None:
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
     app.state.clickhouse_store.client.close()
+
+
+socket_app = ASGIApp(sio, other_asgi_app=app, socketio_path="/ws")
