@@ -20,8 +20,6 @@ async def send_message(
     """
     Send a message to a chat.
     """
-    print("==> current_user: ", current_user)
-    print("==> message: ", message)
     chat_service = ChatService()
     try:
         await chat_service.add_message(

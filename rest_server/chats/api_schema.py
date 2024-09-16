@@ -95,5 +95,10 @@ class ChatMessageBase(BaseModel):
         }
 
 
+class ChatMessage(ChatMessageBase):
+    message_id: str
+    pass
+
+
 class ChatMessageCreate(ChatMessageBase):
     pass
