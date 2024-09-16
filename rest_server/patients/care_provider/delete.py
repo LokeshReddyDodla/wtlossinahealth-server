@@ -1,21 +1,20 @@
-from lib.models.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderModel,
-)
-from fastapi import HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.exc import SQLAlchemyError
-
+import traceback
 from typing import List, Optional, Union
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
-from lib.schemas.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderSchema,
-    PatientCareProviderCreate,
-)
-from sqlalchemy.exc import IntegrityError
-from lib.services.patient_care_provider_service import (
-    PatientCareProviderService,
-)
-from rest_server.response_models import SuccessResponse, ErrorResponse
+
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderModel
+from lib.schemas.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderSchema
+from lib.schemas.patient_care_provider import PatientCareProviderCreate
+from lib.services.patient_care_provider_service import \
+    PatientCareProviderService
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -26,11 +25,17 @@ async def delete_patient_care_provider(
     async with request.state.context.postgres_store.get_session() as session:
         service = PatientCareProviderService(session)
         try:
-            message = await service.delete_patient_care_provider(
+            await service.delete_patient_care_provider(
                 patient_care_provider_id
             )
-            return SuccessResponse(message=message)
+            return SuccessResponse(
+                message="Patient care provider association deleted successfully."
+            )
         except HTTPException as e:
+            error_message = f"Exception occurred: {str(e)}"
+            traceback_message = traceback.format_exc()
+            print("🚀 ~ error_message:", error_message)
+            print("🚀 ~ traceback_message:", traceback_message)
             raise e
         except SQLAlchemyError as e:
             response = ErrorResponse(message="Database Error", detail=str(e))

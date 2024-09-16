@@ -51,7 +51,7 @@ class CareProviderService:
 
     async def create_care_provider(
         self, care_provider_data: CareProviderCreate
-    ) -> CareProviderSchema:
+    ) -> CareProviderModel:
         try:
             # Convert role to enum and get permissions
             role_enum = CareProviderRole(care_provider_data.role.lower())
@@ -83,13 +83,13 @@ class CareProviderService:
     ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
-            care_provider_schema = CareProviderSchema.from_orm(care_provider)
 
             for key, value in updates.dict(exclude_unset=True).items():
                 setattr(care_provider, key, value)
 
             self.postgres_session.add(care_provider)
 
+            care_provider_schema = CareProviderSchema.from_orm(care_provider)
             await self.chat_service.update_participant_name(
                 participant_id=str(care_provider_schema.care_provider_id),
                 new_name=f"{care_provider_schema.first_name} {care_provider_schema.last_name}",

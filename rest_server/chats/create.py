@@ -3,8 +3,8 @@ from typing import Literal, Union
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lib.dependencies.auth.base import get_current_user
+from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
-from rest_server.chats.api_schema import ChatMessageCreate
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router

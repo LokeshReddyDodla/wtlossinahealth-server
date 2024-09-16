@@ -66,31 +66,45 @@ class ChatService:
         role: str,
         profile_picture: Optional[str] = None,
     ):
-        pipeline = [
-            {
-                "$set": {
-                    "updated_at": datetime.now(),
-                    "participants": {
-                        "$concatArrays": [
-                            "$participants",
-                            [
-                                {
-                                    "id": care_provider_id,
-                                    "type": "care_provider",
-                                    "name": care_provider_name,
-                                    "role": role,
-                                    "profile_picture": profile_picture,
-                                }
-                            ],
-                        ]
-                    },
-                }
-            }
-        ]
-
-        await self.mongo_store.db["group_chats"].update_one(
-            {"_id": group_chat_id}, pipeline
+        participant = ParticipantSchema(
+            id=care_provider_id,
+            type="care_provider",
+            name=care_provider_name,
+            profile_picture=profile_picture,
+            is_read_only=False,
+            is_muted=False,
+            is_archived=False,
         )
+        participant_dict = participant.dict()
+
+        # Check if the participant already exists
+        existing_participant = await self.mongo_store.db[
+            "group_chats"
+        ].find_one(
+            {"_id": group_chat_id, "participants.id": care_provider_id},
+            {"participants.$": 1},  # Fetch only the matching participant
+        )
+
+        if existing_participant:
+            # Update the existing participant
+            await self.mongo_store.db["group_chats"].update_one(
+                {"_id": group_chat_id, "participants.id": care_provider_id},
+                {
+                    "$set": {
+                        "updated_at": datetime.now(),
+                        "participants.$": participant_dict,
+                    }
+                },
+            )
+        else:
+            # Add the participant if they don't exist
+            await self.mongo_store.db["group_chats"].update_one(
+                {"_id": group_chat_id},
+                {
+                    "$set": {"updated_at": datetime.now()},
+                    "$push": {"participants": participant_dict},
+                },
+            )
 
     async def update_participant_name(
         self,
@@ -208,8 +222,10 @@ class ChatService:
         except Exception as e:
             raise Exception(f"Failed to fetch chats: {str(e)}")
 
-    async def delete_related_chats(
-        self, patient_id: str, delete_group_chat: bool = True
+    async def delete_all_related_chats(
+        self,
+        patient_id: str,
+        delete_group_chat: bool = True,
     ):
         if delete_group_chat:
             group_chat = await self.find_group_chat_for_patient(patient_id)
@@ -231,6 +247,50 @@ class ChatService:
         )
 
         for chat in one_on_one_chats:
+            await self.mongo_store.delete_document(
+                "chats", {"_id": chat["_id"]}
+            )
+
+    async def delete_patient_careprovider_chats(
+        self,
+        patient_id: str,
+        care_provider_id: str,
+    ):
+        """
+        Delete all 1v1 chats between a specific patient and care provider.
+        This function excludes group chats and only targets individual chats
+        where participants are the specified patient and care provider.
+        """
+
+        # Find and delete all 1v1 chats involving the specific patient and care provider
+        patient_careprovider_chats = (
+            await self.mongo_store.db["chats"]
+            .find(
+                {
+                    "is_group": False,  # Exclude group chats
+                    "participants": {
+                        "$size": 2,  # Ensure there are exactly two participants
+                        "$all": [
+                            {
+                                "$elemMatch": {
+                                    "id": patient_id,
+                                    "type": "patient",
+                                }
+                            },
+                            {
+                                "$elemMatch": {
+                                    "id": care_provider_id,
+                                    "type": "care_provider",
+                                }
+                            },
+                        ],
+                    },
+                }
+            )
+            .to_list(length=None)
+        )
+
+        for chat in patient_careprovider_chats:
             await self.mongo_store.delete_document(
                 "chats", {"_id": chat["_id"]}
             )

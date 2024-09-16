@@ -29,7 +29,7 @@ class PatientCareProviderService:
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
-    ):
+    ) -> PatientCareProviderModel:
         stmt = select(PatientCareProviderModel).filter_by(
             patient_id=patient_id, care_provider_id=care_provider_id
         )
@@ -38,7 +38,7 @@ class PatientCareProviderService:
 
     async def fetch_patient_care_provider(
         self, patient_care_provider_id: str, detailed: bool = False
-    ) -> PatientCareProviderSchema:
+    ) -> PatientCareProviderModel:
 
         try:
             stmt = select(PatientCareProviderModel).where(
@@ -61,7 +61,7 @@ class PatientCareProviderService:
                     detail="Patient care provider association not found.",
                 )
 
-            return PatientCareProviderSchema.from_orm(patient_care_provider)
+            return patient_care_provider
 
         except SQLAlchemyError as e:
             raise HTTPException(
@@ -71,14 +71,14 @@ class PatientCareProviderService:
 
     async def create_patient_care_provider(
         self, patient_care_provider_data
-    ) -> PatientCareProviderSchema:
+    ) -> PatientCareProviderModel:
         try:
             existing_connection = await self.check_existing_connection(
                 patient_care_provider_data.patient_id,
                 patient_care_provider_data.care_provider_id,
             )
             if existing_connection:
-                return PatientCareProviderSchema.from_orm(existing_connection)
+                return existing_connection
 
             new_patient_care_provider = PatientCareProviderModel(
                 **patient_care_provider_data.dict()
@@ -101,9 +101,7 @@ class PatientCareProviderService:
             # Create chat instance in MongoDB
             await self._create_chats(patient, care_provider)
 
-            return PatientCareProviderSchema.from_orm(
-                new_patient_care_provider
-            )
+            return new_patient_care_provider
         except IntegrityError:
             raise HTTPException(
                 status_code=400,
@@ -116,9 +114,9 @@ class PatientCareProviderService:
 
     async def update_patient_care_provider(
         self, patient_care_provider_id: str, updates: dict
-    ) -> PatientCareProviderSchema:
+    ) -> PatientCareProviderModel:
         try:
-            patient_care_provider = self.fetch_patient_care_provider(
+            patient_care_provider = await self.fetch_patient_care_provider(
                 patient_care_provider_id
             )
 
@@ -129,7 +127,7 @@ class PatientCareProviderService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_care_provider)
 
-            return PatientCareProviderSchema.from_orm(patient_care_provider)
+            return patient_care_provider
 
         except IntegrityError:
             await self.postgres_session.rollback()
@@ -145,21 +143,20 @@ class PatientCareProviderService:
         self, patient_care_provider_id: str
     ):
         try:
-            patient_care_provider: PatientCareProviderSchema = (
+            patient_care_provider: PatientCareProviderModel = (
                 await self.fetch_patient_care_provider(
                     patient_care_provider_id
                 )
             )
 
             # Additional cleanup logic, e.g., delete associated chats
-            await self.chat_service.delete_related_chats(
-                str(patient_care_provider.patient_id)
-            )
+            # await self.chat_service.delete_patient_careprovider_chats(
+            #     str(patient_care_provider.patient_id),
+            #     str(patient_care_provider.care_provider_id),
+            # )
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
-
-            return "Patient care provider association deleted successfully."
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()

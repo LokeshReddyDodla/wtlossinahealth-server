@@ -1,26 +1,23 @@
-from lib.models.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderModel,
-)
-from fastapi import HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.exc import SQLAlchemyError
-
 from typing import List, Optional, Union
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from lib.schemas.patient_care_provider import (
-    PatientCareProvider as PatientCareProviderSchema,
-    PatientCareProviderCreate,
-    PatientCareProviderUpdate,
-)
-from sqlalchemy.exc import IntegrityError
-from lib.services.patient_care_provider_service import (
-    PatientCareProviderService,
-)
-from rest_server.patients.care_provider.api_schema import (
-    PatientCareProviderResponse,
-)
-from rest_server.response_models import SuccessResponse, ErrorResponse
+
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderModel
+from lib.schemas.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderSchema
+from lib.schemas.patient_care_provider import (PatientCareProviderCreate,
+                                               PatientCareProviderUpdate)
+from lib.services.patient_care_provider_service import \
+    PatientCareProviderService
+from rest_server.patients.care_provider.api_schema import \
+    PatientCareProviderResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -41,7 +38,7 @@ async def update_patient_care_provider(
             )
             return PatientCareProviderResponse(
                 message="Patient care provider updated successfully",
-                data=patient_care_provider,
+                data=PatientCareProviderSchema.from_orm(patient_care_provider),
             )
         except HTTPException as e:
             raise e

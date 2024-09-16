@@ -1,7 +1,8 @@
 from datetime import datetime
-from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Dict, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
 
 from lib.schemas.care_provider import CareProvider
 
