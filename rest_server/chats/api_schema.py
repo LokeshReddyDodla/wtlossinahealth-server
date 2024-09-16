@@ -43,7 +43,7 @@ class ChatMessageBase(BaseModel):
     sender: ParticipantSchema = Field(
         ..., description="Information about the sender."
     )
-    receiver: ParticipantSchema = Field(
+    receiver: Optional[ParticipantSchema] = Field(
         ..., description="Information about the receiver."
     )
     content: str = Field(..., description="Text content of the message.")

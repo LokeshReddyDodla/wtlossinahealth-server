@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Literal, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -15,6 +15,7 @@ async def send_message(
     request: Request,
     chat_id: str,
     message: ChatMessageCreate,
+    chat_type: Literal["individual", "group"] = "individual",
     current_user=Depends(get_current_user),
 ) -> Union[SuccessResponse, HTTPException]:
     """
@@ -23,8 +24,7 @@ async def send_message(
     chat_service = ChatService()
     try:
         await chat_service.add_message(
-            chat_id=chat_id,
-            message=message,
+            chat_id=chat_id, message=message, chat_type=chat_type
         )
 
         return SuccessResponse(message="Message sent successfully.")

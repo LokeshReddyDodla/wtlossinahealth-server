@@ -122,11 +122,10 @@ class ChatService:
         message: ChatMessageCreate,
         chat_type: Literal["individual", "group"] = "individual",
     ):
-
         message_data = ChatMessage(
             message_id=str(uuid.uuid4()),
             sender=message.sender,
-            receiver=message.receiver,
+            receiver=message.receiver if chat_type == "individual" else None,
             content=message.content,
             media=message.media,
             reply_to=message.reply_to,
@@ -136,7 +135,6 @@ class ChatService:
         )
 
         message_dict = message_data.dict()
-        print("==> message_dict: ", message_dict)
 
         update = {
             "$push": {"messages": message_dict},
