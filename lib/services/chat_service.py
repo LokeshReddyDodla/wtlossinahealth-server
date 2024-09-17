@@ -8,8 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from lib.core.mongo_store import get_mongo_store
 from lib.managers.websocket_manager import WebSocketManager
-from lib.pipelines.chat_pipelines import (get_group_chat_pipeline,
-                                          get_individual_chat_pipeline)
+from lib.pipelines.chat_pipelines import get_chat_pipeline
 from lib.schemas.chat import (GroupChatSchema, IndividualChatSchema,
                               ParticipantSchema)
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
@@ -187,10 +186,25 @@ class ChatService:
         except Exception as e:
             raise Exception(f"Failed to add message: {str(e)}")
 
-    async def get_user_chats(self, user_id: str):
+    async def get_user_chats(
+        self,
+        user_id: str,
+        fetch_last_message: bool = False,
+        fetch_all_messages: bool = False,
+    ):
         # Pipeline for individual chats
-        individual_pipeline = get_individual_chat_pipeline(user_id)
-        group_pipeline = get_group_chat_pipeline(user_id)
+        individual_pipeline = get_chat_pipeline(
+            user_id,
+            fetch_last_message=fetch_last_message,
+            fetch_all_messages=fetch_all_messages,
+            is_group=False,
+        )
+        group_pipeline = get_chat_pipeline(
+            user_id,
+            fetch_last_message=fetch_last_message,
+            fetch_all_messages=fetch_all_messages,
+            is_group=True,
+        )
 
         try:
             # Fetch individual chats
@@ -209,14 +223,16 @@ class ChatService:
 
             # Combine results
             combined_chats = individual_chats + group_chats
-            combined_chats.sort(
-                key=lambda chat: (
-                    chat["last_message"]["timestamp"]
-                    if chat["last_message"]
-                    else datetime.min
-                ),
-                reverse=True,
-            )
+            
+            if fetch_last_message:
+                combined_chats.sort(
+                    key=lambda chat: (
+                        chat["last_message"]["timestamp"]
+                        if chat["last_message"]
+                        else datetime.min
+                    ),
+                    reverse=True,
+                )
 
             return combined_chats
         except Exception as e:

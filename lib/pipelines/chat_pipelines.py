@@ -1,111 +1,84 @@
-def get_individual_chat_pipeline(user_id: str):
-    return [
+def get_chat_pipeline(
+    user_id: str,
+    fetch_last_message: bool = False,
+    fetch_all_messages: bool = False,
+    is_group: bool = False,
+):
+    pipeline = [
         {"$match": {"participants.id": user_id}},
         {"$unwind": {"path": "$messages", "preserveNullAndEmptyArrays": True}},
         {"$sort": {"messages.timestamp": -1}},
-        {
-            "$group": {
-                "_id": "$_id",
-                "is_group": {"$first": "$is_group"},
-                "participants": {"$first": "$participants"},
-                "last_message": {"$first": "$messages"},
-                "unread_count": {
-                    "$sum": {
-                        "$cond": {
-                            "if": {
-                                "$and": [
-                                    {
-                                        "$ne": ["$messages", []]
-                                    },  # Check if messages exist
-                                    {
-                                        "$ne": ["$messages.read_receipts", []]
-                                    },  # Check if read_receipts exist
-                                    {
-                                        "$not": {
-                                            "$in": [
-                                                user_id,
-                                                {
-                                                    "$ifNull": [
-                                                        "$messages.read_receipts.reader_id",
-                                                        [],
-                                                    ]
-                                                },
+    ]
+
+    group_stage = {
+        "_id": "$_id",
+        "is_group": {"$first": "$is_group"},
+        "participants": {"$first": "$participants"},
+        "updated_at": {"$first": "$updated_at"},
+        "unread_count": {
+            "$sum": {
+                "$cond": {
+                    "if": {
+                        "$and": [
+                            {
+                                "$ne": ["$messages", []]
+                            },  # Check if messages exist
+                            {
+                                "$ne": ["$messages.read_receipts", []]
+                            },  # Check if read_receipts exist
+                            {
+                                "$not": {
+                                    "$in": [
+                                        user_id,
+                                        {
+                                            "$ifNull": [
+                                                "$messages.read_receipts.reader_id",
+                                                [],
                                             ]
-                                        }
-                                    },
-                                ]
+                                        },
+                                    ]
+                                }
                             },
-                            "then": 0,
-                            "else": 1,
-                        }
-                    }
-                },
-            }
-        },
-        {
-            "$addFields": {
-                "chat_name": {
-                    "$arrayElemAt": [
-                        {
-                            "$filter": {
-                                "input": "$participants",
-                                "as": "participant",
-                                "cond": {"$ne": ["$$participant.id", user_id]},
-                            }
-                        },
-                        0,
-                    ]
+                        ]
+                    },
+                    "then": 0,
+                    "else": 1,
                 }
             }
         },
-        # Only consider groups where last_message is not null to prevent incorrect unread counts
-        {"$sort": {"last_message.timestamp": -1}},
-    ]
+    }
 
+    if fetch_last_message:
+        group_stage["last_message"] = {"$first": "$messages"}
 
-def get_group_chat_pipeline(user_id: str):
-    return [
-        {"$match": {"participants.id": user_id}},
-        {"$unwind": {"path": "$messages", "preserveNullAndEmptyArrays": True}},
-        {"$sort": {"messages.timestamp": -1}},
-        {
-            "$group": {
-                "_id": "$_id",
-                "is_group": {"$first": "$is_group"},
-                "participants": {"$first": "$participants"},
-                "last_message": {"$first": "$messages"},
-                "unread_count": {
-                    "$sum": {
-                        "$cond": {
-                            "if": {
-                                "$and": [
-                                    {
-                                        "$ne": ["$messages", []]
-                                    },  # Check if messages exist
-                                    {
-                                        "$ne": ["$messages.read_receipts", []]
-                                    },  # Check if read_receipts exist
-                                    {
-                                        "$not": {
-                                            "$in": [
-                                                user_id,
-                                                {
-                                                    "$ifNull": [
-                                                        "$messages.read_receipts.reader_id",
-                                                        [],
-                                                    ]
-                                                },
-                                            ]
-                                        }
+    if fetch_all_messages:
+        group_stage["messages"] = {"$push": "$messages"}
+
+    pipeline.append({"$group": group_stage})
+
+    if not is_group:
+        pipeline.append(
+            {
+                "$addFields": {
+                    "chat_name": {
+                        "$arrayElemAt": [
+                            {
+                                "$filter": {
+                                    "input": "$participants",
+                                    "as": "participant",
+                                    "cond": {
+                                        "$ne": ["$$participant.id", user_id]
                                     },
-                                ]
+                                }
                             },
-                            "then": 0,
-                            "else": 1,
-                        }
+                            0,
+                        ]
                     }
-                },
+                }
             }
-        },
-        {"$sort": {"last_message.timestamp": -1}},
-    ]
+        )
+
+    # Final sort by updated_at to get most recent chats first
+    pipeline.append({"$sort": {"updated_at": -1}})
+
+    return pipeline

@@ -13,7 +13,9 @@ async def get_user_chats(
     chat_service = ChatService()
     user_id, _ = current_user
     try:
-        chats = await chat_service.get_user_chats(user_id)
+        chats = await chat_service.get_user_chats(
+            user_id, fetch_all_messages=True
+        )
         return chats
 
     except HTTPException as e:

@@ -23,6 +23,7 @@ async def send_message(
     """
     chat_service = ChatService()
     try:
+        #TODO: check if chat_id even exists
         await chat_service.add_message(
             chat_id=chat_id, message=message, chat_type=chat_type
         )
