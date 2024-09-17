@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 
 from rest_server.admin import admin
+from rest_server.admin.care_provider.profile.router import \
+    router as admin_care_provider_router
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.auth import auth
@@ -46,6 +48,34 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(reload_cache.router)
 
     ###########################################################################
+    # Admin
+    ###########################################################################
+    app.include_router(admin.router)
+    app.include_router(admin_patients.router)
+    app.include_router(admin_cgm_upload.router)
+    app.include_router(admin_care_provider_router)
+
+    ###########################################################################
+    # Auth
+    ###########################################################################
+    app.include_router(auth.router)
+
+    ###########################################################################
+    # Health Facility
+    ###########################################################################
+    app.include_router(health_facility_router)
+
+    ###########################################################################
+    # Care Providers
+    ###########################################################################
+    app.include_router(care_providers_profile_router)
+
+    ###########################################################################
+    # Chats
+    ###########################################################################
+    app.include_router(chats_router)
+
+    ###########################################################################
     # File Upload
     ###########################################################################
     app.include_router(file_upload.router)
@@ -53,17 +83,6 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Report
     ###########################################################################
-
-    ###########################################################################
-    # Chat
-    ###########################################################################
-    app.include_router(chat.router)
-    app.include_router(context_chat.router)
-
-    ###########################################################################
-    # Auth
-    ###########################################################################
-    app.include_router(auth.router)
 
     ###########################################################################
     # Patient
@@ -88,25 +107,3 @@ def import_routes(app: FastAPI) -> None:
     # DUMP
     ###########################################################################
     app.include_router(dump.router)
-
-    ###########################################################################
-    # Admin
-    ###########################################################################
-    app.include_router(admin.router)
-    app.include_router(admin_patients.router)
-    app.include_router(admin_cgm_upload.router)
-
-    ###########################################################################
-    # Health Facility
-    ###########################################################################
-    app.include_router(health_facility_router)
-
-    ###########################################################################
-    # Care Providers
-    ###########################################################################
-    app.include_router(care_providers_profile_router)
-
-    ###########################################################################
-    # Chats
-    ###########################################################################
-    app.include_router(chats_router)
