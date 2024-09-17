@@ -1,27 +1,20 @@
-from sqlalchemy import (
-    Column,
-    DateTime,
-    Integer,
-    String,
-    Date,
-    Float,
-    Boolean,
-    ForeignKey,
-    Text,
-    JSON,
-    Time,
-)
-from sqlalchemy.orm import relationship, Session, object_session
-from sqlalchemy.dialects.postgresql import UUID
+import asyncio
 import uuid
 from datetime import datetime
 
+from fastapi import BackgroundTasks
+from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Float,
+                        ForeignKey, Integer, String, Text, Time)
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.event import listens_for
+from sqlalchemy.orm import Session, object_session, relationship
 
+from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.models import Base
-from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_permission import PatientPermission
+from lib.services.chat_service import ChatService
 
 
 class Patient(Base):
@@ -170,6 +163,23 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    health_facility_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "health_facilities.health_facility_id", ondelete="SET NULL"
+        ),
+    )
+
+    health_facility = relationship(
+        "HealthFacility", back_populates="patients", passive_deletes=True
+    )
+
+    care_providers = relationship(
+        "PatientCareProvider",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
 
 @listens_for(Patient, "after_insert")
 def create_related_records(mapper, connection, target):
@@ -199,3 +209,14 @@ def create_related_records(mapper, connection, target):
             "last_sync_timestamp": None,
         },
     )
+
+    # create a group chat for the patient
+    chat_service = ChatService()
+    runner = BackgroundTaskRunner()
+    runner.run(
+        chat_service.create_group_chat_for_patient,
+        str(target.patient_id),
+        f"{target.first_name} {target.last_name}",
+        target.profile_picture,
+    )
+    runner.shutdown()
