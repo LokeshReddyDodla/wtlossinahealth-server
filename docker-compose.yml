@@ -29,6 +29,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - MONGO_REPLICA_SET_NAME=rs0
 
     volumes:
       - api_logs:/src/logs
@@ -81,10 +82,13 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
+      - MONGO_REPLICA_SET_NAME=rs0
     ports:
       - 27017:27017
     volumes:
       - mongo_data:/data/db
+      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile:ro
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse

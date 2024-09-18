@@ -183,40 +183,51 @@ class ChatService:
                 await self.mongo_store.client.start_session()
             ) as session:
                 async with session.start_transaction():
-                    # 1. Find all chats where the user is a participant
-                    chat_documents = await self.mongo_store.find_many(
-                        "chats",
-                        {"participants.id": user_id},
-                        {"id": 1},  # Only retrieve the 'id' field
-                        session=session,
-                    )
-                    chat_ids = [doc["id"] for doc in chat_documents]
-
-                    if not chat_ids:
-                        print(f"No chats found for user {user_id}.")
-
-                    # 2. Delete chats
-                    delete_chats_result = (
-                        await self.mongo_store.delete_many_documents(
-                            "chats", {"id": {"$in": chat_ids}}, session=session
-                        )
-                    )
-                    print(
-                        f"Deleted {delete_chats_result} chats for user {user_id}."
-                    )
-
-                    # 3. Delete associated messages
-                    delete_messages_result = (
-                        await self.mongo_store.delete_many_documents(
-                            "chat_messages",
-                            {"chat_id": {"$in": chat_ids}},
+                    try:
+                        # 1. Find all chats where the user is a participant
+                        chat_documents = await self.mongo_store.find_many(
+                            "chats",
+                            {"participants.id": user_id},
+                            {"id": 1},  # Only retrieve the 'id' field
                             session=session,
                         )
-                    )
-                    print(
-                        f"Deleted {delete_messages_result} messages for chats {chat_ids}."
-                    )
+                        chat_ids = [doc["id"] for doc in chat_documents]
 
+                        if not chat_ids:
+                            print(f"No chats found for user {user_id}.")
+
+                        # 2. Delete chats
+                        delete_chats_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chats",
+                                {"id": {"$in": chat_ids}},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_chats_result} chats for user {user_id}."
+                        )
+
+                        # 3. Delete associated messages
+                        delete_messages_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chat_messages",
+                                {"chat_id": {"$in": chat_ids}},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_messages_result} messages for chats {chat_ids}."
+                        )
+
+                        # Commit transaction if all operations are successful
+                        await session.commit_transaction()
+
+                    except Exception as e:
+                        # Abort transaction in case of any errors
+                        await session.abort_transaction()
+                        print(f"Transaction aborted due to error: {e}")
+                        raise
         except Exception as e:
             print(f"Unexpected Error: {e}")
             raise
@@ -228,52 +239,60 @@ class ChatService:
                 await self.mongo_store.client.start_session()
             ) as session:
                 async with session.start_transaction():
-
-                    # 1. Find the chat where is_group is False and participants include both user_id1 and user_id2
-                    chat_documents = await self.mongo_store.find_many(
-                        "chats",
-                        {
-                            "is_group": False,
-                            "participants.id": {
-                                "$all": [patient_id, care_provider_id]
+                    try:
+                        # 1. Find the chat where is_group is False and participants include both user_id1 and user_id2
+                        chat_documents = await self.mongo_store.find_many(
+                            "chats",
+                            {
+                                "is_group": False,
+                                "participants.id": {
+                                    "$all": [patient_id, care_provider_id]
+                                },
+                                "participants": {"$size": 2},
                             },
-                            "participants": {"$size": 2},
-                        },
-                        {"id": 1},  # Only retrieve the 'id' field
-                        session=session,
-                    )
-                    chat_ids = [doc["id"] for doc in chat_documents]
-
-                    if not chat_ids:
-                        print(
-                            f"No direct chat found between users {patient_id} and {care_provider_id}."
-                        )
-
-                    # Assuming there's only one direct chat between two users
-                    chat_id = chat_ids[0]
-
-                    # 2. Delete the chat document
-                    delete_chats_result = (
-                        await self.mongo_store.delete_many_documents(
-                            "chats", {"id": chat_id}, session=session
-                        )
-                    )
-                    print(
-                        f"Deleted chat {chat_id} between users {patient_id} and {care_provider_id}."
-                    )
-
-                    # 3. Delete associated messages
-                    delete_messages_result = (
-                        await self.mongo_store.delete_many_documents(
-                            "chat_messages",
-                            {"chat_id": chat_id},
+                            {"id": 1},  # Only retrieve the 'id' field
                             session=session,
                         )
-                    )
-                    print(
-                        f"Deleted {delete_messages_result} messages for chat {chat_id}."
-                    )
+                        chat_ids = [doc["id"] for doc in chat_documents]
 
+                        if not chat_ids:
+                            print(
+                                f"No direct chat found between users {patient_id} and {care_provider_id}."
+                            )
+
+                        # Assuming there's only one direct chat between two users
+                        chat_id = chat_ids[0]
+
+                        # 2. Delete the chat document
+                        delete_chats_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chats", {"id": chat_id}, session=session
+                            )
+                        )
+                        print(
+                            f"Deleted chat {chat_id} between users {patient_id} and {care_provider_id}."
+                        )
+
+                        # 3. Delete associated messages
+                        delete_messages_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chat_messages",
+                                {"chat_id": chat_id},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_messages_result} messages for chat {chat_id}."
+                        )
+
+                        # Commit transaction if all operations are successful
+                        await session.commit_transaction()
+
+                    except Exception as e:
+                        # Abort transaction in case of any errors
+                        await session.abort_transaction()
+                        print(f"Transaction aborted due to error: {e}")
+                        raise
         except Exception as e:
             print(f"Unexpected Error: {e}")
             raise

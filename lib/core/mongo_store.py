@@ -7,11 +7,16 @@ from motor.motor_asyncio import AsyncIOMotorClient
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
 MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 
+print("==> MONGO_URL in env: ", MONGO_URL)
+MONGO_URL = str(MONGO_URL) + "?replicaSet=rs0"
+
 
 class MongoStore:
     def __init__(self):
-        self.client = AsyncIOMotorClient(MONGO_URL)
-        self.db = self.client[MONGO_DB_NAME]
+        self.client = AsyncIOMotorClient(
+            str(MONGO_URL),
+        )
+        self.db = self.client[str(MONGO_DB_NAME)]
 
     async def insert_document(self, collection_name: str, document: dict):
         collection = self.db[collection_name]
