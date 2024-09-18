@@ -32,8 +32,14 @@ class ChatService:
             is_archived=is_archived,
         )
 
+        # Initialize unread_counts for each participant
+        unread_counts = {participant.id: 0}
+
         chat = ChatSchema(
-            is_group=is_group, participants=[participant], last_message=None
+            is_group=is_group,
+            participants=[participant],
+            last_message=None,
+            unread_counts=unread_counts,
         )
         chat_dict = chat.dict(by_alias=True)
         try:
@@ -117,6 +123,7 @@ class ChatService:
                     {
                         "$set": {"updated_at": datetime.now()},
                         "$push": {"participants": participant_dict},
+                        "$set": {f"unread_counts.{user_id}": 0},
                     },
                 )
         except PyMongoError as e:
@@ -188,10 +195,10 @@ class ChatService:
                         chat_documents = await self.mongo_store.find_many(
                             "chats",
                             {"participants.id": user_id},
-                            {"id": 1},  # Only retrieve the 'id' field
+                            {"_id": 1},  # Only retrieve the '_id' field
                             session=session,
                         )
-                        chat_ids = [doc["id"] for doc in chat_documents]
+                        chat_ids = [doc["_id"] for doc in chat_documents]
 
                         if not chat_ids:
                             print(f"No chats found for user {user_id}.")
@@ -200,7 +207,7 @@ class ChatService:
                         delete_chats_result = (
                             await self.mongo_store.delete_many_documents(
                                 "chats",
-                                {"id": {"$in": chat_ids}},
+                                {"_id": {"$in": chat_ids}},
                                 session=session,
                             )
                         )
@@ -250,10 +257,10 @@ class ChatService:
                                 },
                                 "participants": {"$size": 2},
                             },
-                            {"id": 1},  # Only retrieve the 'id' field
+                            {"_id": 1},  # Only retrieve the 'id' field
                             session=session,
                         )
-                        chat_ids = [doc["id"] for doc in chat_documents]
+                        chat_ids = [doc["_id"] for doc in chat_documents]
 
                         if not chat_ids:
                             print(
@@ -266,7 +273,7 @@ class ChatService:
                         # 2. Delete the chat document
                         delete_chats_result = (
                             await self.mongo_store.delete_many_documents(
-                                "chats", {"id": chat_id}, session=session
+                                "chats", {"_id": chat_id}, session=session
                             )
                         )
                         print(
