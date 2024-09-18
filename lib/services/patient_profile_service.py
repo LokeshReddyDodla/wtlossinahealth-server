@@ -325,7 +325,7 @@ class PatientProfileService:
             )
 
     async def delete_patient_profile(
-        self, patient_id: str, delete_chats: bool = True
+        self, patient_id: str, delete_chats: bool = False
     ) -> None:
 
         try:
