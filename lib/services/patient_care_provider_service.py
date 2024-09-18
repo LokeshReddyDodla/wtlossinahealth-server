@@ -150,10 +150,10 @@ class PatientCareProviderService:
             )
 
             # Additional cleanup logic, e.g., delete associated chats
-            # await self.chat_service.delete_direct_chat(
-            #     str(patient_care_provider.patient_id),
-            #     str(patient_care_provider.care_provider_id),
-            # )
+            await self.chat_service.delete_direct_chat(
+                str(patient_care_provider.patient_id),
+                str(patient_care_provider.care_provider_id),
+            )
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()

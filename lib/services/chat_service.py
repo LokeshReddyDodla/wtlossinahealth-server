@@ -90,7 +90,7 @@ class ChatService:
             is_muted=is_muted,
             is_archived=is_archived,
         )
-        participant_dict = participant.dict()
+        participant_dict = participant.dict(by_alias=True)
 
         try:
             # Check if the participant already exists
@@ -146,7 +146,7 @@ class ChatService:
             severity=message_data.severity or "low",
             is_flagged=message_data.is_flagged or False,
         )
-        message_dict = message.dict()
+        message_dict = message.dict(by_alias=True)
 
         try:
             await self.mongo_store.insert_document(
@@ -156,7 +156,7 @@ class ChatService:
 
             # Update the chat document's last_message_id and updated_at fields
             await self.mongo_store.db["chats"].update_one(
-                {"id": chat_id},
+                {"_id": chat_id},
                 {
                     "$set": {
                         "last_message": message.id,
@@ -309,6 +309,6 @@ class ChatService:
             "chats",
             {
                 "is_group": True,
-                "participants": {"$elemMatch": {"id": patient_id}},
+                "participants": {"$elemMatch": {"_id": patient_id}},
             },
         )

@@ -14,8 +14,7 @@ from .router import router
 async def send_message(
     request: Request,
     chat_id: str,
-    message: ChatMessageCreate,
-    chat_type: Literal["individual", "group"] = "individual",
+    message_data: ChatMessageCreate,
     current_user=Depends(get_current_user),
 ) -> Union[SuccessResponse, HTTPException]:
     """
@@ -23,9 +22,9 @@ async def send_message(
     """
     chat_service = ChatService()
     try:
-        #TODO: check if chat_id even exists
+        # TODO: check if chat_id even exists
         await chat_service.add_message(
-            chat_id=chat_id, message=message, chat_type=chat_type
+            chat_id=chat_id, message_data=message_data
         )
 
         return SuccessResponse(message="Message sent successfully.")
