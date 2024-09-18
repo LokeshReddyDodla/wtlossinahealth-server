@@ -1,14 +1,9 @@
-import json
-import uuid
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from fastapi import HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import OperationFailure, PyMongoError
 
 from lib.core.mongo_store import get_mongo_store
-from lib.managers.websocket_manager import WebSocketManager
 from lib.pipelines.chat_pipelines import get_chat_pipeline
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
