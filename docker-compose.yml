@@ -29,7 +29,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
-      - MONGO_REPLICA_SET_NAME=rs0
 
     volumes:
       - api_logs:/src/logs
