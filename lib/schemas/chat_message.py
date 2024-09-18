@@ -5,14 +5,6 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, HttpUrl, constr
 
 
-class ChatParticipantSchema(BaseModel):
-    id: str = Field(..., description="UUID of the participant.")
-    type: Literal["patient", "care_provider"] = Field(
-        ...,
-        description="Type of the participant, either 'patient' or 'care_provider'.",
-    )
-
-
 class MediaSchema(BaseModel):
     type: Literal["image", "file", "audio"] = Field(
         ..., description="Type of media attached to the message."
@@ -41,11 +33,16 @@ class ReadReceiptSchema(BaseModel):
 
 
 class ChatMessageBase(BaseModel):
-    sender: ChatParticipantSchema = Field(
-        ..., description="Information about the sender."
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        alias="_id",
+        description="Unique identifier for the message.",
     )
-    receiver: Optional[ChatParticipantSchema] = Field(
-        ..., description="Information about the receiver."
+    chat_id: str = Field(
+        ..., description="UUID of the chat this message belongs to."
+    )
+    sender_id: str = Field(
+        ..., description="UUID of the user who sent the message."
     )
     content: str = Field(..., description="Text content of the message.")
     media: Optional[MediaSchema] = Field(
@@ -55,7 +52,7 @@ class ChatMessageBase(BaseModel):
         None, description="UUID of the message being replied to."
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=datetime.now,
         description="Timestamp of the message creation.",
     )
     metadata: MetadataSchema = Field(
@@ -76,22 +73,9 @@ class ChatMessageBase(BaseModel):
     class Config:
         schema_extra = {
             "example": {
-                "sender": {
-                    "id": "456e7890-e12b-34d5-a678-526315178001",
-                    "type": "patient",
-                    "is_read_only": False,
-                    "is_muted": False,
-                    "is_archived": False,
-                    "joined_at": "2024-09-08T12:00:00Z",
-                },
-                "receiver": {
-                    "id": "789e1234-e56b-78c9-d012-345678901234",
-                    "type": "care_provider",
-                    "is_read_only": True,
-                    "is_muted": True,
-                    "is_archived": False,
-                    "joined_at": "2024-09-08T12:00:00Z",
-                },
+                "_id": "msg_12345",
+                "chat_id": "chat_a7fdfcc9-eff2-4387-8e14-8a057e0de8f9",
+                "sender_id": "456e7890-e12b-34d5-a678-526315178001",
                 "content": "Hello, this is a test message.",
                 "media": {
                     "type": "image",
@@ -114,10 +98,6 @@ class ChatMessageBase(BaseModel):
 
 
 class ChatMessage(ChatMessageBase):
-    message_id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        description="Message ID.",
-    )
     pass
 
 

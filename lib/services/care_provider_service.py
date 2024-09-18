@@ -89,14 +89,6 @@ class CareProviderService:
 
             self.postgres_session.add(care_provider)
 
-            care_provider_schema = CareProviderSchema.from_orm(care_provider)
-            await self.chat_service.update_participant_name(
-                participant_id=str(care_provider_schema.care_provider_id),
-                new_name=f"{care_provider_schema.first_name} {care_provider_schema.last_name}",
-                profile_picture=care_provider_schema.profile_picture,
-                participant_type="care_provider",
-            )
-
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
 

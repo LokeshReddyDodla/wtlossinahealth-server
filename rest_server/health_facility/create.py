@@ -1,22 +1,18 @@
+from typing import List, Optional, Union
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
 from lib.dependencies.auth.admin_auth import get_current_admin
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
-from fastapi import HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.exc import SQLAlchemyError
-
-from typing import List, Optional, Union
-from sqlalchemy.exc import IntegrityError
-
-from lib.schemas.health_facility import (
-    HealthFacilityCreate,
-    HealthFacility as HealthFacilitySchema,
-)
-
-
+from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
+from lib.schemas.health_facility import HealthFacilityCreate
 from lib.services.health_facility_service import HealthFacilityService
 from rest_server.health_facility.api_schema import HealthFacilityResponse
-from rest_server.response_models import SuccessResponse, ErrorResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 

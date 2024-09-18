@@ -150,7 +150,7 @@ class PatientCareProviderService:
             )
 
             # Additional cleanup logic, e.g., delete associated chats
-            # await self.chat_service.delete_patient_careprovider_chats(
+            # await self.chat_service.delete_direct_chat(
             #     str(patient_care_provider.patient_id),
             #     str(patient_care_provider.care_provider_id),
             # )
@@ -169,8 +169,6 @@ class PatientCareProviderService:
             ParticipantSchema(
                 id=str(patient.patient_id),
                 type="patient",
-                name=f"{patient.first_name} {patient.last_name}",
-                profile_picture=patient.profile_picture,
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
@@ -178,23 +176,21 @@ class PatientCareProviderService:
             ParticipantSchema(
                 id=str(care_provider.care_provider_id),
                 type="care_provider",
-                name=f"{care_provider.first_name} {care_provider.last_name}",
-                profile_picture=care_provider.profile_picture,
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
             ),
         ]
-        await self.chat_service.create_chat_instance(participants=participants)
+        await self.chat_service.create_new_chat_with_participants(
+            participants=participants, is_group=False
+        )
 
         group_chat = await self.chat_service.find_group_chat_for_patient(
             patient_id=str(patient.patient_id)
         )
         if group_chat:
-            await self.chat_service.add_care_provider_to_group(
-                group_chat_id=group_chat["_id"],
-                care_provider_id=str(care_provider.care_provider_id),
-                care_provider_name=f"{care_provider.first_name} {care_provider.last_name}",
-                role=care_provider.role,
-                profile_picture=care_provider.profile_picture,
+            await self.chat_service.add_participant_in_chat(
+                chat_id=group_chat["_id"],
+                user_id=str(care_provider.care_provider_id),
+                type="care_provider",
             )

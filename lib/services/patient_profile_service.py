@@ -132,14 +132,6 @@ class PatientProfileService:
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
-            patient_profile_schema = PatientSchema.from_orm(patient_profile)
-            await self.chat_service.update_participant_name(
-                participant_id=str(patient_profile_schema.patient_id),
-                new_name=f"{patient_profile_schema.first_name} {patient_profile_schema.last_name}",
-                profile_picture=patient_profile_schema.profile_picture,
-                participant_type="patient",
-            )
-
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
 
@@ -340,8 +332,8 @@ class PatientProfileService:
             patient = await self.fetch_patient_profile(patient_id)
 
             if delete_chats:
-                await self.chat_service.delete_all_related_chats(
-                    patient_id=str(patient.patient_id), delete_group_chat=True
+                await self.chat_service.delete_all_chats(
+                    user_id=str(patient.patient_id),
                 )
 
             await self.postgres_session.delete(patient)

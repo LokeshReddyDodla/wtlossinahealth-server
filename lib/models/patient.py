@@ -214,9 +214,6 @@ def create_related_records(mapper, connection, target):
     chat_service = ChatService()
     runner = BackgroundTaskRunner()
     runner.run(
-        chat_service.create_group_chat_for_patient,
-        str(target.patient_id),
-        f"{target.first_name} {target.last_name}",
-        target.profile_picture,
+        chat_service.create_new_chat, str(target.patient_id), "patient", True
     )
     runner.shutdown()
