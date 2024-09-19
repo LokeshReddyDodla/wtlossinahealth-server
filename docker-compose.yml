@@ -86,7 +86,7 @@ services:
       - 27017:27017
     volumes:
       - mongo_data:/data/db
-      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile:ro
+      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
     command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
 
   aihealth-clickhouse:
