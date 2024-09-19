@@ -98,3 +98,6 @@ class ChatSchemaBase(BaseModel):
 
 class ChatSchema(ChatSchemaBase):
     pass
+
+    class Config:
+        orm_mode = True
