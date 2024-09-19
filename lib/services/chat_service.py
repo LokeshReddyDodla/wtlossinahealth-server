@@ -2,9 +2,12 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from pymongo.errors import OperationFailure, PyMongoError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
 from lib.core.mongo_store import get_mongo_store
-from lib.pipelines.chat_pipelines import get_chat_pipeline
+from lib.core.types import ProfileType
+from lib.pipelines.chat_pipelines import get_user_chat_pipeline
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.socketio_service import sio
@@ -18,7 +21,7 @@ class ChatService:
     async def create_new_chat(
         self,
         user_id: str,
-        type: Literal["patient", "care_provider"],
+        type: ProfileType,
         is_group: bool,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
@@ -78,7 +81,7 @@ class ChatService:
         self,
         chat_id: str,
         user_id: str,
-        type: Literal["patient", "care_provider"],
+        type: ProfileType,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
@@ -128,6 +131,71 @@ class ChatService:
                 )
         except PyMongoError as e:
             print(f"MongoDB Error: {e}")
+            raise
+
+    async def get_user_chats(
+        self, user_id: str, postgres_session: AsyncSession
+    ):
+        from lib.services.care_provider_service import CareProviderService
+        from lib.services.patient_profile_service import PatientProfileService
+
+        try:
+            pipeline = get_user_chat_pipeline(user_id)
+
+            chat_documents = (
+                await self.mongo_store.db["chats"]
+                .aggregate(pipeline)
+                .to_list(length=None)
+            )
+
+            # Collect participant IDs by type
+            patient_ids = {
+                p["id"]
+                for chat in chat_documents
+                for p in chat["participants"]
+                if p["type"] == PROFILE_TYPE_PATIENT
+            }
+            care_provider_ids = {
+                p["id"]
+                for chat in chat_documents
+                for p in chat["participants"]
+                if p["type"] == PROFILE_TYPE_CARE_PROVIDER
+            }
+
+            # Fetch profiles for patients from PostgreSQL
+            patient_profile_service = PatientProfileService(postgres_session)
+            patient_profiles = (
+                await patient_profile_service.fetch_patient_profiles(
+                    list(patient_ids)
+                )
+            )
+
+            # Fetch profiles for care providers from PostgreSQL
+            care_provider_profile_service = CareProviderService(
+                postgres_session
+            )
+            care_provider_profiles = await care_provider_profile_service.fetch_care_provider_profiles(
+                list(care_provider_ids)
+            )
+
+            # Merge profiles into chat participants
+            for chat in chat_documents:
+                for participant in chat.get("participants"):
+                    if participant.get("type") == PROFILE_TYPE_PATIENT:
+                        participant["profile"] = patient_profiles.get(
+                            participant["id"]
+                        )
+                    elif participant.get("type") == PROFILE_TYPE_CARE_PROVIDER:
+                        participant["profile"] = care_provider_profiles.get(
+                            participant["id"]
+                        )
+
+            return chat_documents
+
+        except PyMongoError as e:
+            print(f"MongoDB Error: {e}")
+            raise
+        except Exception as e:
             raise
 
     async def add_message(

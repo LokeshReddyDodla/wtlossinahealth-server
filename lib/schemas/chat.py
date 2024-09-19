@@ -4,12 +4,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, constr
 
+from lib.core.types import ProfileType
 from lib.schemas.chat_message import ChatMessage
 
 
 class ParticipantSchema(BaseModel):
     id: str = Field(..., description="UUID of the participant.")
-    type: Literal["patient", "care_provider"] = Field(
+    type: ProfileType = Field(
         ...,
         description="Type of the participant, either 'patient' or 'care_provider'.",
     )

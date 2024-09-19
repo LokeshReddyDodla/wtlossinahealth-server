@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_care_provider import \
@@ -168,14 +169,14 @@ class PatientCareProviderService:
         participants = [
             ParticipantSchema(
                 id=str(patient.patient_id),
-                type="patient",
+                type=PROFILE_TYPE_PATIENT,
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
             ),
             ParticipantSchema(
                 id=str(care_provider.care_provider_id),
-                type="care_provider",
+                type=PROFILE_TYPE_CARE_PROVIDER,
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
@@ -192,5 +193,5 @@ class PatientCareProviderService:
             await self.chat_service.add_participant_in_chat(
                 chat_id=group_chat["_id"],
                 user_id=str(care_provider.care_provider_id),
-                type="care_provider",
+                type=PROFILE_TYPE_CARE_PROVIDER,
             )

@@ -1,3 +1,5 @@
+from typing import Dict, List
+
 from fastapi import HTTPException, status
 from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -43,6 +45,25 @@ class CareProviderService:
 
             return care_provider
 
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
+    async def fetch_care_provider_profiles(
+        self, care_provider_ids: List[str]
+    ) -> Dict[str, CareProviderModel]:
+        try:
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.care_provider_id.in_(care_provider_ids)
+            )
+            result = await self.postgres_session.execute(stmt)
+            profiles = result.scalars().all()
+
+            return {
+                str(profile.care_provider_id): profile for profile in profiles
+            }
         except SQLAlchemyError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
