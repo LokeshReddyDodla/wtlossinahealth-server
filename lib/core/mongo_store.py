@@ -7,9 +7,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
 MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 
-print("==> MONGO_URL in env: ", MONGO_URL)
-MONGO_URL = str(MONGO_URL) + "?replicaSet=rs0"
-
 
 class MongoStore:
     def __init__(self):
