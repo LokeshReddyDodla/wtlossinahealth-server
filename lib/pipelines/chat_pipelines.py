@@ -28,6 +28,7 @@ def get_user_chat_pipeline(user_id: str):
                 "participants": 1,
                 "unread_counts": 1,
                 "last_message": 1,
+                "updated_at": 1,
             }
         },
     ]
