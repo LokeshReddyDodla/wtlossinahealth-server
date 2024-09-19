@@ -1,3 +1,38 @@
+def get_user_chat_pipeline(user_id: str):
+    return [
+        {"$match": {"participants.id": user_id}},
+        {"$sort": {"updated_at": -1}},
+        {
+            "$lookup": {
+                "from": "chat_messages",
+                "localField": "last_message",
+                "foreignField": "_id",
+                "as": "last_message",
+            }
+        },
+        {
+            "$addFields": {
+                "last_message": {
+                    "$cond": {
+                        "if": {"$gt": [{"$size": "$last_message"}, 0]},
+                        "then": {"$arrayElemAt": ["$last_message", 0]},
+                        "else": None,
+                    }
+                }
+            }
+        },
+        {
+            "$project": {
+                "_id": 1,
+                "is_group": 1,
+                "participants": 1,
+                "unread_counts": 1,
+                "last_message": 1,
+            }
+        },
+    ]
+
+
 def get_chat_pipeline(
     user_id: str,
     fetch_last_message: bool = False,

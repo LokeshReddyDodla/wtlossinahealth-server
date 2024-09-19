@@ -1,21 +1,18 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, constr
 
+from lib.core.types import ProfileType
 from lib.schemas.chat_message import ChatMessage
 
 
 class ParticipantSchema(BaseModel):
     id: str = Field(..., description="UUID of the participant.")
-    type: Literal["patient", "care_provider"] = Field(
+    type: ProfileType = Field(
         ...,
         description="Type of the participant, either 'patient' or 'care_provider'.",
-    )
-    name: str = Field(..., description="Name of the participant.")
-    profile_picture: Optional[str] = Field(
-        None, description="URL of the participant's profile picture."
     )
     is_read_only: Optional[bool] = Field(
         False,
@@ -40,11 +37,11 @@ class ChatSchemaBase(BaseModel):
         alias="_id",
         description="Chat ID.",
     )
+    is_group: Optional[bool] = Field(
+        True, description="Indicates this is a group chat."
+    )
     participants: List[ParticipantSchema] = Field(
         ..., description="List of participants in the group chat."
-    )
-    messages: List[ChatMessage] = Field(
-        default_factory=list, description="List of messages in the group chat."
     )
     created_at: datetime = Field(
         default_factory=datetime.now,
@@ -53,6 +50,15 @@ class ChatSchemaBase(BaseModel):
     updated_at: datetime = Field(
         default_factory=datetime.now,
         description="Timestamp when the group chat was last updated.",
+    )
+
+    last_message: Optional[str] = Field(
+        None, description="ID of the last message in the chat."
+    )
+
+    unread_counts: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Map of user IDs to their unread message counts in the chat.",
     )
 
     class Config:
@@ -65,26 +71,30 @@ class ChatSchemaBase(BaseModel):
                     {
                         "id": "9b2ce9b7-93f3-4ce7-aee5-e5799a713a28",
                         "type": "patient",
-                        "name": "Dr. Mukhtar Test",
-                        "profile_picture": "https://example.com/path-to-image.jpg",
                         "is_read_only": False,
                         "is_muted": False,
                         "is_archived": False,
                         "joined_at": "2024-09-08T12:00:00Z",
-                    }
+                    },
+                    {
+                        "id": "23cf94a7-0469-4379-b5f2-174376ac8049",
+                        "type": "care_provider",
+                        "is_read_only": False,
+                        "is_muted": True,
+                        "is_archived": False,
+                        "joined_at": "2024-09-08T12:05:00Z",
+                    },
                 ],
-                "messages": [],
                 "created_at": "2024-09-08T12:00:00Z",
                 "updated_at": "2024-09-08T12:00:00Z",
+                "last_message_id": "msg_12345",
+                "unread_counts": {
+                    "9b2ce9b7-93f3-4ce7-aee5-e5799a713a28": 0,
+                    "23cf94a7-0469-4379-b5f2-174376ac8049": 2,
+                },
             }
         }
 
 
-class GroupChatSchema(ChatSchemaBase):
-    is_group: Optional[bool] = Field(True, description="Indicates this is a group chat.")
-
-
-class IndividualChatSchema(ChatSchemaBase):
-    is_group: bool = Field(
-        False, description="Indicates this is an individual chat."
-    )
+class ChatSchema(ChatSchemaBase):
+    pass

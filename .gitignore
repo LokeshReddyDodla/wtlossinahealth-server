@@ -140,3 +140,4 @@ dmypy.json
 # Docker volumes
 deployment/volumes
 /alembic/versions
+mongodb-keyfile

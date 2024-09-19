@@ -1,7 +1,13 @@
+from typing import List, Optional, Union
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_
-from lib.models.patient import (
-    Patient,
-)
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.models.patient import Patient
 from lib.models.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_cuisine_preference import PatientCuisinePreference
@@ -10,54 +16,37 @@ from lib.models.patient_daily_activity import PatientDailyActivity
 from lib.models.patient_diabetic_history import PatientDiabeticHistory
 from lib.models.patient_diet_preference import PatientDietPreference
 from lib.models.patient_drug_allergy import PatientDrugAllergy
-from lib.models.patient_family_diabetic_history import (
-    PatientFamilyDiabeticHistory,
-)
+from lib.models.patient_family_diabetic_history import \
+    PatientFamilyDiabeticHistory
 from lib.models.patient_food_allergy import PatientFoodAllergy
 from lib.models.patient_meal_timing import PatientMealTiming
 from lib.models.patient_medical_history import PatientMedicalHistory
 from lib.models.patient_sleep_habit import PatientSleepHabit
 from lib.models.patient_smoking_habit import PatientSmokingHabit
-from lib.schemas.patient import (
-    CompletePatientProfile,
-    PatientCreate,
-    PatientUpdate,
-    Patient as PatientSchema,
-)
-from fastapi import APIRouter, HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.future import select
-
-from typing import List, Optional, Union
-from sqlalchemy.exc import IntegrityError
-
-from lib.schemas.patient_alcohol_consumption import (
-    PatientAlcoholConsumptionCreate,
-)
-from lib.schemas.patient_cuisine_preference import (
-    PatientCuisinePreferenceCreate,
-)
-from lib.schemas.patient_current_medication import (
-    PatientCurrentMedicationCreate,
-)
+from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient import Patient as PatientSchema
+from lib.schemas.patient import PatientCreate, PatientUpdate
+from lib.schemas.patient_alcohol_consumption import \
+    PatientAlcoholConsumptionCreate
+from lib.schemas.patient_cuisine_preference import \
+    PatientCuisinePreferenceCreate
+from lib.schemas.patient_current_medication import \
+    PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
-from lib.schemas.patient_family_diabetic_history import (
-    PatientFamilyDiabeticHistoryCreate,
-)
+from lib.schemas.patient_family_diabetic_history import \
+    PatientFamilyDiabeticHistoryCreate
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
 from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
-from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
 from rest_server.patients.profile.api_schema import PatientProfileResponse
-from rest_server.response_models import SuccessResponse, ErrorResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 

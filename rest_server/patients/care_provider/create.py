@@ -12,7 +12,6 @@ from lib.models.patient_care_provider import \
 from lib.schemas.patient_care_provider import \
     PatientCareProvider as PatientCareProviderSchema
 from lib.schemas.patient_care_provider import PatientCareProviderCreate
-from lib.services.chat_service import ChatService
 from lib.services.patient_care_provider_service import \
     PatientCareProviderService
 from rest_server.patients.care_provider.api_schema import \

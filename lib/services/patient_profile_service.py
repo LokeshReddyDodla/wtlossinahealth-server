@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import exists
@@ -122,6 +122,23 @@ class PatientProfileService:
                 detail=f"Database error: {str(e)}",
             )
 
+    async def fetch_patient_profiles(
+        self, patient_ids: List[str]
+    ) -> Dict[str, PatientModel]:
+        try:
+            stmt = select(PatientModel).where(
+                PatientModel.patient_id.in_(patient_ids)
+            )
+            result = await self.postgres_session.execute(stmt)
+            profiles = result.scalars().all()
+
+            return {str(profile.patient_id): profile for profile in profiles}
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
     async def update_basic_patient_profile(
         self, patient_id: str, patient_data: PatientUpdate
     ) -> PatientModel:
@@ -131,14 +148,6 @@ class PatientProfileService:
             for key, value in patient_data.dict(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
-
-            patient_profile_schema = PatientSchema.from_orm(patient_profile)
-            await self.chat_service.update_participant_name(
-                participant_id=str(patient_profile_schema.patient_id),
-                new_name=f"{patient_profile_schema.first_name} {patient_profile_schema.last_name}",
-                profile_picture=patient_profile_schema.profile_picture,
-                participant_type="patient",
-            )
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
@@ -333,15 +342,15 @@ class PatientProfileService:
             )
 
     async def delete_patient_profile(
-        self, patient_id: str, delete_chats: bool = True
+        self, patient_id: str, delete_chats: bool = False
     ) -> None:
 
         try:
             patient = await self.fetch_patient_profile(patient_id)
 
             if delete_chats:
-                await self.chat_service.delete_all_related_chats(
-                    patient_id=str(patient.patient_id), delete_group_chat=True
+                await self.chat_service.delete_all_chats(
+                    user_id=str(patient.patient_id),
                 )
 
             await self.postgres_session.delete(patient)

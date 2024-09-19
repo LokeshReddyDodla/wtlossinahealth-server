@@ -1,0 +1,3 @@
+PROFILE_TYPE_PATIENT = "patient"
+PROFILE_TYPE_CARE_PROVIDER = "care_provider"
+PROFILE_TYPE_ADMIN = "admin"

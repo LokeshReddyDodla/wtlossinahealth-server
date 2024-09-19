@@ -1,3 +1,5 @@
+from typing import Dict, List
+
 from fastapi import HTTPException, status
 from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -49,6 +51,25 @@ class CareProviderService:
                 detail=f"Database error: {str(e)}",
             )
 
+    async def fetch_care_provider_profiles(
+        self, care_provider_ids: List[str]
+    ) -> Dict[str, CareProviderModel]:
+        try:
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.care_provider_id.in_(care_provider_ids)
+            )
+            result = await self.postgres_session.execute(stmt)
+            profiles = result.scalars().all()
+
+            return {
+                str(profile.care_provider_id): profile for profile in profiles
+            }
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
     async def create_care_provider(
         self, care_provider_data: CareProviderCreate
     ) -> CareProviderModel:
@@ -88,14 +109,6 @@ class CareProviderService:
                 setattr(care_provider, key, value)
 
             self.postgres_session.add(care_provider)
-
-            care_provider_schema = CareProviderSchema.from_orm(care_provider)
-            await self.chat_service.update_participant_name(
-                participant_id=str(care_provider_schema.care_provider_id),
-                new_name=f"{care_provider_schema.first_name} {care_provider_schema.last_name}",
-                profile_picture=care_provider_schema.profile_picture,
-                participant_type="care_provider",
-            )
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)

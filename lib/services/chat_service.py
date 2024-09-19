@@ -1,16 +1,14 @@
-import json
-import uuid
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from fastapi import HTTPException, Request
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import OperationFailure, PyMongoError
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
 from lib.core.mongo_store import get_mongo_store
-from lib.managers.websocket_manager import WebSocketManager
-from lib.pipelines.chat_pipelines import get_chat_pipeline
-from lib.schemas.chat import (GroupChatSchema, IndividualChatSchema,
-                              ParticipantSchema)
+from lib.core.types import ProfileType
+from lib.pipelines.chat_pipelines import get_user_chat_pipeline
+from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.socketio_service import sio
 from lib.utils.serializers import serialize_message
@@ -20,302 +18,365 @@ class ChatService:
     def __init__(self):
         self.mongo_store = get_mongo_store()
 
-    async def create_group_chat_for_patient(
+    async def create_new_chat(
         self,
-        patient_id: str,
-        patient_name: str,
-        profile_picture: Optional[str] = None,
+        user_id: str,
+        type: ProfileType,
+        is_group: bool,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
     ):
         participant = ParticipantSchema(
-            id=patient_id,
-            type="patient",
-            name=patient_name,
-            profile_picture=profile_picture,
+            id=user_id,
+            type=type,
             is_read_only=is_read_only,
             is_muted=is_muted,
             is_archived=is_archived,
         )
 
-        group_chat = GroupChatSchema(
-            is_group=True,
+        # Initialize unread_counts for each participant
+        unread_counts = {participant.id: 0}
+
+        chat = ChatSchema(
+            is_group=is_group,
             participants=[participant],
+            last_message=None,
+            unread_counts=unread_counts,
         )
-        group_chat_dict = group_chat.dict(by_alias=True)
-        await self.mongo_store.insert_document("group_chats", group_chat_dict)
-        return group_chat.id
+        chat_dict = chat.dict(by_alias=True)
+        try:
+            await self.mongo_store.insert_document("chats", chat_dict)
+            print(f"New chat created with ID: {chat.id}")
+            return chat.id
+        except PyMongoError as e:
+            print(f"Failed to create new chat: {e}")
+            raise
 
-    async def create_chat_instance(
-        self, participants: List[ParticipantSchema]
-    ):
-        individual_chat = IndividualChatSchema(
-            is_group=False, participants=participants
-        )
-        individual_chat_dict = individual_chat.dict(by_alias=True)
-        await self.mongo_store.insert_document("chats", individual_chat_dict)
-        return individual_chat.id
-
-    async def add_care_provider_to_group(
+    async def create_new_chat_with_participants(
         self,
-        group_chat_id: str,
-        care_provider_id: str,
-        care_provider_name: str,
-        role: str,
-        profile_picture: Optional[str] = None,
+        participants: List[ParticipantSchema],
+        is_group: bool,
+    ) -> str:
+
+        # Initialize unread_counts for each participant
+        unread_counts = {participant.id: 0 for participant in participants}
+
+        chat = ChatSchema(
+            is_group=is_group,
+            participants=participants,
+            last_message=None,
+            unread_counts=unread_counts,
+        )
+        chat_dict = chat.dict(by_alias=True)
+        try:
+            await self.mongo_store.insert_document("chats", chat_dict)
+            print(f"New group chat created with ID: {chat.id}")
+            return chat.id
+        except PyMongoError as e:
+            print(f"Failed to create new group chat: {e}")
+            raise
+
+    async def add_participant_in_chat(
+        self,
+        chat_id: str,
+        user_id: str,
+        type: ProfileType,
+        is_read_only: Optional[bool] = False,
+        is_muted: Optional[bool] = False,
+        is_archived: Optional[bool] = False,
     ):
         participant = ParticipantSchema(
-            id=care_provider_id,
-            type="care_provider",
-            name=care_provider_name,
-            profile_picture=profile_picture,
-            is_read_only=False,
-            is_muted=False,
-            is_archived=False,
+            id=user_id,
+            type=type,
+            is_read_only=is_read_only,
+            is_muted=is_muted,
+            is_archived=is_archived,
         )
-        participant_dict = participant.dict()
+        participant_dict = participant.dict(by_alias=True)
 
-        # Check if the participant already exists
-        existing_participant = await self.mongo_store.db[
-            "group_chats"
-        ].find_one(
-            {"_id": group_chat_id, "participants.id": care_provider_id},
-            {"participants.$": 1},  # Fetch only the matching participant
-        )
-
-        if existing_participant:
-            # Update the existing participant
-            await self.mongo_store.db["group_chats"].update_one(
-                {"_id": group_chat_id, "participants.id": care_provider_id},
+        try:
+            # Check if the participant already exists
+            existing_participant = await self.mongo_store.db["chats"].find_one(
                 {
-                    "$set": {
-                        "updated_at": datetime.now(),
-                        "participants.$": participant_dict,
-                    }
+                    "_id": chat_id,
+                    "participants.id": user_id,
                 },
-            )
-        else:
-            # Add the participant if they don't exist
-            await self.mongo_store.db["group_chats"].update_one(
-                {"_id": group_chat_id},
-                {
-                    "$set": {"updated_at": datetime.now()},
-                    "$push": {"participants": participant_dict},
-                },
+                {"participants.$": 1},  # Fetch only the matching participant
             )
 
-    async def update_participant_name(
-        self,
-        participant_id: str,
-        new_name: str,
-        profile_picture: Optional[str],
-        participant_type: str,
+            if existing_participant:
+                # Update the existing participant
+                await self.mongo_store.db["chats"].update_one(
+                    {
+                        "_id": chat_id,
+                        "participants.id": user_id,
+                    },
+                    {
+                        "$set": {
+                            "updated_at": datetime.now(),
+                            "participants.$": participant_dict,
+                        }
+                    },
+                )
+            else:
+                # Add the participant if they don't exist
+                await self.mongo_store.db["chats"].update_one(
+                    {"_id": chat_id},
+                    {
+                        "$set": {"updated_at": datetime.now()},
+                        "$push": {"participants": participant_dict},
+                        "$set": {f"unread_counts.{user_id}": 0},
+                    },
+                )
+        except PyMongoError as e:
+            print(f"MongoDB Error: {e}")
+            raise
+
+    async def get_user_chats(
+        self, user_id: str, postgres_session: AsyncSession
     ):
-        # Update group chats
-        await self.mongo_store.db["group_chats"].update_many(
-            {
-                "participants.id": participant_id,
-                "participants.type": participant_type,
-            },
-            {
-                "$set": {
-                    "participants.$.name": new_name,
-                    "participants.$.profile_picture": profile_picture,
-                    "updated_at": datetime.now(),
-                }
-            },
-        )
+        from lib.services.care_provider_service import CareProviderService
+        from lib.services.patient_profile_service import PatientProfileService
 
-        # Update 1v1 chats
-        await self.mongo_store.db["chats"].update_many(
-            {
-                "is_group": False,
-                "participants.id": participant_id,
-                "participants.type": participant_type,
-            },
-            {
-                "$set": {
-                    "participants.$.name": new_name,
-                    "participants.$.profile_picture": profile_picture,
-                    "updated_at": datetime.now(),
-                }
-            },
-        )
+        try:
+            pipeline = get_user_chat_pipeline(user_id)
+
+            chat_documents = (
+                await self.mongo_store.db["chats"]
+                .aggregate(pipeline)
+                .to_list(length=None)
+            )
+
+            # Collect participant IDs by type
+            patient_ids = {
+                p["id"]
+                for chat in chat_documents
+                for p in chat["participants"]
+                if p["type"] == PROFILE_TYPE_PATIENT
+            }
+            care_provider_ids = {
+                p["id"]
+                for chat in chat_documents
+                for p in chat["participants"]
+                if p["type"] == PROFILE_TYPE_CARE_PROVIDER
+            }
+
+            # Fetch profiles for patients from PostgreSQL
+            patient_profile_service = PatientProfileService(postgres_session)
+            patient_profiles = (
+                await patient_profile_service.fetch_patient_profiles(
+                    list(patient_ids)
+                )
+            )
+
+            # Fetch profiles for care providers from PostgreSQL
+            care_provider_profile_service = CareProviderService(
+                postgres_session
+            )
+            care_provider_profiles = await care_provider_profile_service.fetch_care_provider_profiles(
+                list(care_provider_ids)
+            )
+
+            # Merge profiles into chat participants
+            for chat in chat_documents:
+                for participant in chat.get("participants"):
+                    if participant.get("type") == PROFILE_TYPE_PATIENT:
+                        participant["profile"] = patient_profiles.get(
+                            participant["id"]
+                        )
+                    elif participant.get("type") == PROFILE_TYPE_CARE_PROVIDER:
+                        participant["profile"] = care_provider_profiles.get(
+                            participant["id"]
+                        )
+
+            return chat_documents
+
+        except PyMongoError as e:
+            print(f"MongoDB Error: {e}")
+            raise
+        except Exception as e:
+            raise
 
     async def add_message(
         self,
         chat_id: str,
-        message: ChatMessageCreate,
-        chat_type: Literal["individual", "group"] = "individual",
+        message_data: ChatMessageCreate,
     ):
-        message_data = ChatMessage(
-            sender=message.sender,
-            receiver=message.receiver if chat_type == "individual" else None,
-            content=message.content,
-            media=message.media,
-            reply_to=message.reply_to,
-            timestamp=message.timestamp,
-            metadata=message.metadata,
-            read_receipts=message.read_receipts,
-            severity=message.severity or "low",
-            is_flagged=message.is_flagged or False,
+        message = ChatMessage(
+            chat_id=chat_id,
+            sender_id=message_data.sender_id,
+            content=message_data.content,
+            media=message_data.media,
+            reply_to=message_data.reply_to,
+            timestamp=message_data.timestamp,
+            metadata=message_data.metadata,
+            severity=message_data.severity or "low",
+            is_flagged=message_data.is_flagged or False,
         )
-
-        message_dict = message_data.dict()
-
-        update = {
-            "$push": {"messages": message_dict},
-            "$set": {"updated_at": datetime.now()},
-        }
-
-        collection_name = "group_chats" if chat_type == "group" else "chats"
+        message_dict = message.dict(by_alias=True)
 
         try:
-            await self.mongo_store.db[collection_name].update_one(
-                {"_id": chat_id}, update
+            await self.mongo_store.insert_document(
+                "chat_messages", message_dict
+            )
+            print(f"Message {message.id} added to chat {chat_id}.")
+
+            # Update the chat document's last_message_id and updated_at fields
+            await self.mongo_store.db["chats"].update_one(
+                {"_id": chat_id},
+                {
+                    "$set": {
+                        "last_message": message.id,
+                        "updated_at": datetime.now(),
+                    }
+                },
             )
 
-            # Broadcast the message to WebSocket clients in the chat group
-            await sio.emit(
-                "message",
-                {"room": chat_id, "message": serialize_message(message_dict)},
-                room=chat_id,
-            )
+            try:
+                # Broadcast the message to WebSocket clients in the chat group
+                await sio.emit(
+                    "message",
+                    {
+                        "room": chat_id,
+                        "message": serialize_message(message_dict),
+                    },
+                    room=chat_id,
+                )
+                print(f"Message {message.id} broadcasted to room {chat_id}.")
+            except Exception as e:
+                print(f"Failed to broadcast message {message.id}: {e}")
+                raise Exception(f"Failed to broadcast message: {str(e)}")
 
         except Exception as e:
             raise Exception(f"Failed to add message: {str(e)}")
 
-    async def get_user_chats(
-        self,
-        user_id: str,
-        fetch_last_message: bool = False,
-        fetch_all_messages: bool = False,
-    ):
-        # Pipeline for individual chats
-        individual_pipeline = get_chat_pipeline(
-            user_id,
-            fetch_last_message=fetch_last_message,
-            fetch_all_messages=fetch_all_messages,
-            is_group=False,
-        )
-        group_pipeline = get_chat_pipeline(
-            user_id,
-            fetch_last_message=fetch_last_message,
-            fetch_all_messages=fetch_all_messages,
-            is_group=True,
-        )
-
+    async def delete_all_chats(self, user_id: str):
         try:
-            # Fetch individual chats
-            individual_chats = (
-                await self.mongo_store.db["chats"]
-                .aggregate(individual_pipeline)
-                .to_list(length=None)
-            )
+            # Start a client session for transaction
+            async with (
+                await self.mongo_store.client.start_session()
+            ) as session:
+                async with session.start_transaction():
+                    try:
+                        # 1. Find all chats where the user is a participant
+                        chat_documents = await self.mongo_store.find_many(
+                            "chats",
+                            {"participants.id": user_id},
+                            {"_id": 1},  # Only retrieve the '_id' field
+                            session=session,
+                        )
+                        chat_ids = [doc["_id"] for doc in chat_documents]
 
-            # Fetch group chats
-            group_chats = (
-                await self.mongo_store.db["group_chats"]
-                .aggregate(group_pipeline)
-                .to_list(length=None)
-            )
+                        if not chat_ids:
+                            print(f"No chats found for user {user_id}.")
 
-            # Combine results
-            combined_chats = individual_chats + group_chats
-            
-            if fetch_last_message:
-                combined_chats.sort(
-                    key=lambda chat: (
-                        chat["last_message"]["timestamp"]
-                        if chat["last_message"]
-                        else datetime.min
-                    ),
-                    reverse=True,
-                )
+                        # 2. Delete chats
+                        delete_chats_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chats",
+                                {"_id": {"$in": chat_ids}},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_chats_result} chats for user {user_id}."
+                        )
 
-            return combined_chats
+                        # 3. Delete associated messages
+                        delete_messages_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chat_messages",
+                                {"chat_id": {"$in": chat_ids}},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_messages_result} messages for chats {chat_ids}."
+                        )
+
+                        # Commit transaction if all operations are successful
+                        await session.commit_transaction()
+
+                    except Exception as e:
+                        # Abort transaction in case of any errors
+                        await session.abort_transaction()
+                        print(f"Transaction aborted due to error: {e}")
+                        raise
         except Exception as e:
-            raise Exception(f"Failed to fetch chats: {str(e)}")
+            print(f"Unexpected Error: {e}")
+            raise
 
-    async def delete_all_related_chats(
-        self,
-        patient_id: str,
-        delete_group_chat: bool = True,
-    ):
-        if delete_group_chat:
-            group_chat = await self.find_group_chat_for_patient(patient_id)
-            if group_chat:
-                await self.mongo_store.delete_document(
-                    "group_chats", {"_id": group_chat["_id"]}
-                )
-
-        # Find and delete all 1v1 chats involving the patient
-        one_on_one_chats = (
-            await self.mongo_store.db["chats"]
-            .find(
-                {
-                    "is_group": False,
-                    "participants": {"$elemMatch": {"id": patient_id}},
-                }
-            )
-            .to_list(length=None)
-        )
-
-        for chat in one_on_one_chats:
-            await self.mongo_store.delete_document(
-                "chats", {"_id": chat["_id"]}
-            )
-
-    async def delete_patient_careprovider_chats(
-        self,
-        patient_id: str,
-        care_provider_id: str,
-    ):
-        """
-        Delete all 1v1 chats between a specific patient and care provider.
-        This function excludes group chats and only targets individual chats
-        where participants are the specified patient and care provider.
-        """
-
-        # Find and delete all 1v1 chats involving the specific patient and care provider
-        patient_careprovider_chats = (
-            await self.mongo_store.db["chats"]
-            .find(
-                {
-                    "is_group": False,  # Exclude group chats
-                    "participants": {
-                        "$size": 2,  # Ensure there are exactly two participants
-                        "$all": [
+    async def delete_direct_chat(self, patient_id: str, care_provider_id: str):
+        try:
+            # Start a client session for transaction
+            async with (
+                await self.mongo_store.client.start_session()
+            ) as session:
+                async with session.start_transaction():
+                    try:
+                        # 1. Find the chat where is_group is False and participants include both user_id1 and user_id2
+                        chat_documents = await self.mongo_store.find_many(
+                            "chats",
                             {
-                                "$elemMatch": {
-                                    "id": patient_id,
-                                    "type": "patient",
-                                }
+                                "is_group": False,
+                                "participants.id": {
+                                    "$all": [patient_id, care_provider_id]
+                                },
+                                "participants": {"$size": 2},
                             },
-                            {
-                                "$elemMatch": {
-                                    "id": care_provider_id,
-                                    "type": "care_provider",
-                                }
-                            },
-                        ],
-                    },
-                }
-            )
-            .to_list(length=None)
-        )
+                            {"_id": 1},  # Only retrieve the 'id' field
+                            session=session,
+                        )
+                        chat_ids = [doc["_id"] for doc in chat_documents]
 
-        for chat in patient_careprovider_chats:
-            await self.mongo_store.delete_document(
-                "chats", {"_id": chat["_id"]}
-            )
+                        if not chat_ids:
+                            print(
+                                f"No direct chat found between users {patient_id} and {care_provider_id}."
+                            )
+
+                        # Assuming there's only one direct chat between two users
+                        chat_id = chat_ids[0]
+
+                        # 2. Delete the chat document
+                        delete_chats_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chats", {"_id": chat_id}, session=session
+                            )
+                        )
+                        print(
+                            f"Deleted chat {chat_id} between users {patient_id} and {care_provider_id}."
+                        )
+
+                        # 3. Delete associated messages
+                        delete_messages_result = (
+                            await self.mongo_store.delete_many_documents(
+                                "chat_messages",
+                                {"chat_id": chat_id},
+                                session=session,
+                            )
+                        )
+                        print(
+                            f"Deleted {delete_messages_result} messages for chat {chat_id}."
+                        )
+
+                        # Commit transaction if all operations are successful
+                        await session.commit_transaction()
+
+                    except Exception as e:
+                        # Abort transaction in case of any errors
+                        await session.abort_transaction()
+                        print(f"Transaction aborted due to error: {e}")
+                        raise
+        except Exception as e:
+            print(f"Unexpected Error: {e}")
+            raise
 
     async def find_group_chat_for_patient(self, patient_id: str):
         return await self.mongo_store.find_document(
-            "group_chats",
+            "chats",
             {
                 "is_group": True,
-                "participants": {"$elemMatch": {"id": patient_id}},
+                "participants": {"$elemMatch": {"_id": patient_id}},
             },
         )
