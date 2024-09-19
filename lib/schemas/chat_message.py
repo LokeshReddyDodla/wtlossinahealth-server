@@ -100,21 +100,6 @@ class ChatMessageBase(BaseModel):
 class ChatMessage(ChatMessageBase):
     pass
 
-    class Config:
-        orm_mode = True
-        
-    @classmethod
-    def from_orm(cls, obj):
-        state = obj._sa_instance_state
-
-        kwargs = {
-            name: getattr(obj, name)
-            for name in cls.__fields__
-            if name in state.dict or name not in state.unloaded
-        }
-
-        return cls(**kwargs)
-
 
 class ChatMessageCreate(ChatMessageBase):
     pass
