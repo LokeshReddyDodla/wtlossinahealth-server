@@ -1,13 +1,16 @@
+from typing import Union
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, validator
 from sqlalchemy.future import select
+
+from lib.core.constants import PROFILE_TYPE_ADMIN
 from lib.models.admin import Admin
 from lib.utils.jwt import create_jwt_token
 from lib.utils.security import hash_password, verify_password
 from lib.utils.validators import validate_email
-from rest_server.response_models import SuccessResponse, ErrorResponse
-from typing import Union
+from rest_server.response_models import ErrorResponse, SuccessResponse
 
 router = APIRouter(prefix="/admin")
 
@@ -79,7 +82,9 @@ async def login_admin(
                     status_code=400, detail="Invalid email or password"
                 )
 
-            token = create_jwt_token(user_id=str(admin.id), role="Admin")
+            token = create_jwt_token(
+                user_id=str(admin.id), role=PROFILE_TYPE_ADMIN
+            )
             return SuccessResponse(
                 message="User verified", data={"token": token}
             )
