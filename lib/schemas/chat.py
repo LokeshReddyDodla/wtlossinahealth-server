@@ -25,6 +25,9 @@ class ParticipantSchema(BaseModel):
     is_archived: Optional[bool] = Field(
         False, description="Whether the participant has archived this chat."
     )
+    is_pinned: Optional[bool] = Field(
+        False, description="Whether the participant has pinned this chat."
+    )
     joined_at: datetime = Field(
         default_factory=datetime.now,
         description="Timestamp when the participant joined the chat.",

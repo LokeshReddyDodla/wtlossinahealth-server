@@ -173,6 +173,7 @@ class PatientCareProviderService:
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
+                is_pinned=False,
             ),
             ParticipantSchema(
                 id=str(care_provider.care_provider_id),
@@ -180,6 +181,7 @@ class PatientCareProviderService:
                 is_read_only=False,
                 is_muted=False,
                 is_archived=False,
+                is_pinned=False,
             ),
         ]
         await self.chat_service.create_new_chat_with_participants(

@@ -26,6 +26,7 @@ class ChatService:
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
+        is_pinned: Optional[bool] = False,
     ):
         participant = ParticipantSchema(
             id=user_id,
@@ -33,6 +34,7 @@ class ChatService:
             is_read_only=is_read_only,
             is_muted=is_muted,
             is_archived=is_archived,
+            is_pinned=is_pinned,
         )
 
         # Initialize unread_counts for each participant
@@ -85,6 +87,7 @@ class ChatService:
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
+        is_pinned: Optional[bool] = False,
     ):
         participant = ParticipantSchema(
             id=user_id,
@@ -92,6 +95,7 @@ class ChatService:
             is_read_only=is_read_only,
             is_muted=is_muted,
             is_archived=is_archived,
+            is_pinned=is_pinned,
         )
         participant_dict = participant.dict(by_alias=True)
 
