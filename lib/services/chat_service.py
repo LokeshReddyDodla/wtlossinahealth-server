@@ -204,11 +204,10 @@ class ChatService:
 
     async def add_message(
         self,
-        chat_id: str,
         message_data: ChatMessageCreate,
     ):
         message = ChatMessage(
-            chat_id=chat_id,
+            chat_id=message_data.chat_id,
             sender_id=message_data.sender_id,
             content=message_data.content,
             media=message_data.media,
@@ -224,11 +223,13 @@ class ChatService:
             await self.mongo_store.insert_document(
                 "chat_messages", message_dict
             )
-            print(f"Message {message.id} added to chat {chat_id}.")
+            print(
+                f"Message {message.id} added to chat {message_data.chat_id}."
+            )
 
             # Update the chat document's last_message_id and updated_at fields
             await self.mongo_store.db["chats"].update_one(
-                {"_id": chat_id},
+                {"_id": message_data.chat_id},
                 {
                     "$set": {
                         "last_message": message.id,
@@ -242,12 +243,14 @@ class ChatService:
                 await sio.emit(
                     "message",
                     {
-                        "room": chat_id,
+                        "room": message_data.chat_id,
                         "message": serialize_message(message_dict),
                     },
-                    room=chat_id,
+                    room=message_data.chat_id,
                 )
-                print(f"Message {message.id} broadcasted to room {chat_id}.")
+                print(
+                    f"Message {message.id} broadcasted to room {message_data.chat_id}."
+                )
             except Exception as e:
                 print(f"Failed to broadcast message {message.id}: {e}")
                 raise Exception(f"Failed to broadcast message: {str(e)}")
