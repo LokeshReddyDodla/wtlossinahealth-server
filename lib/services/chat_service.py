@@ -377,6 +377,6 @@ class ChatService:
             "chats",
             {
                 "is_group": True,
-                "participants": {"$elemMatch": {"_id": patient_id}},
+                "participants": {"$elemMatch": {"id": patient_id}},
             },
         )
