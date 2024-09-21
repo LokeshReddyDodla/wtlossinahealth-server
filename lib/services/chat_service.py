@@ -239,10 +239,7 @@ class ChatService:
                 # Broadcast the message to WebSocket clients in the chat group
                 await sio.emit(
                     "newMessage",
-                    {
-                        "type": "new_message",
-                        "data": serialize_message(message_dict),
-                    },
+                    serialize_message(message_dict),
                     room=user_id,
                 )
                 print(
