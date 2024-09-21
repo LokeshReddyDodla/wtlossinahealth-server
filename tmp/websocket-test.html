@@ -1,38 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Socket.IO Client Test</title>
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <h1>Socket.IO Client Test</h1>
     <script>
-        const userId = '96313621-85f2-4653-9b2c-64855692ee33'; 
-        const namespacePath = `/ws/${userId}`;
+      const userId = "96313621-85f2-4653-9b2c-64855692ee33";
+      const namespacePath = `/ws/`;
+      const authToken =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5NjMxMzYyMS04NWYyLTQ2NTMtOWIyYy02NDg1NTY5MmVlMzMiLCJyb2xlIjoicGF0aWVudCIsImF1ZCI6ImFpaGVhbHRoIn0.ynVpxxjVVUHUkHe5gET6oxAmkzOmENuYAlpB--e3dc4";
 
+      // Connect to the Socket.IO server for chat namespace
+      const socketChat = io("ws://localhost:8000", {
+        path: namespacePath,
+        transports: ["websocket"],
+        // query: {
+        //   authToken: authToken,
+        // },
+      });
 
-        // Connect to the Socket.IO server for chat namespace
-        const socketChat = io('ws://localhost:8000', { 
-            path: namespacePath,
-            transports: ["websocket"], 
+      socketChat.on("connect", () => {
+        console.log("Connected to the user namespace");
+        // Emit a message to the chat room
+        socketChat.emit("message", {
+          room: userId,
+          message: "Hello from chat client!",
         });
+      });
 
-        socketChat.on('connect', () => {
-            console.log('Connected to the user namespace');
-            // Emit a message to the chat room
-            socketChat.emit('message', { room: userId, message: 'Hello from chat client!' });
-        });
+      socketChat.on("connect_error", (error) => {
+        console.error("Connection failed:", error.message); // This should trigger on a connection refusal
+      });
+      
+      socketChat.on("message", (data) => {
+        console.log("Received message from chat:", data);
+      });
 
-        socketChat.on('message', (data) => {
-            console.log('Received message from chat:', data);
-        });
-
-        socketChat.on('disconnect', () => {
-            console.log('Disconnected from the chat namespace');
-        });
+      socketChat.on("disconnect", () => {
+        console.log("Disconnected from the chat namespace");
+      });
     </script>
-</body>
+  </body>
 </html>
