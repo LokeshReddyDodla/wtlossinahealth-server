@@ -13,7 +13,6 @@ from .router import router
 @router.post("/send_message", response_model=SuccessResponse)
 async def send_message(
     request: Request,
-    chat_id: str,
     message_data: ChatMessageCreate,
     current_user=Depends(get_current_user),
 ) -> Union[SuccessResponse, HTTPException]:
@@ -22,9 +21,11 @@ async def send_message(
     """
     chat_service = ChatService()
     try:
+        user_id, role = current_user
+
         # TODO: check if chat_id even exists
         await chat_service.add_message(
-            chat_id=chat_id, message_data=message_data
+            message_data=message_data, user_id=str(user_id)
         )
 
         return SuccessResponse(message="Message sent successfully.")

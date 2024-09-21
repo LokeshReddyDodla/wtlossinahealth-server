@@ -202,10 +202,7 @@ class ChatService:
         except Exception as e:
             raise
 
-    async def add_message(
-        self,
-        message_data: ChatMessageCreate,
-    ):
+    async def add_message(self, user_id: str, message_data: ChatMessageCreate):
         message = ChatMessage(
             chat_id=message_data.chat_id,
             sender_id=message_data.sender_id,
@@ -243,10 +240,10 @@ class ChatService:
                 await sio.emit(
                     "message",
                     {
-                        "room": message_data.chat_id,
-                        "message": serialize_message(message_dict),
+                        "type": "new_message",
+                        "data": serialize_message(message_dict),
                     },
-                    room=message_data.chat_id,
+                    room=user_id,
                 )
                 print(
                     f"Message {message.id} broadcasted to room {message_data.chat_id}."
