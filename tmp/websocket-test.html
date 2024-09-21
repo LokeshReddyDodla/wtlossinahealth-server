@@ -12,16 +12,15 @@
     <script>
       const userId = "96313621-85f2-4653-9b2c-64855692ee33";
       const namespacePath = `/ws/`;
-      const authToken =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5NjMxMzYyMS04NWYyLTQ2NTMtOWIyYy02NDg1NTY5MmVlMzMiLCJyb2xlIjoicGF0aWVudCIsImF1ZCI6ImFpaGVhbHRoIn0.ynVpxxjVVUHUkHe5gET6oxAmkzOmENuYAlpB--e3dc4";
+      const authToken = "";
 
       // Connect to the Socket.IO server for chat namespace
       const socketChat = io("ws://localhost:8000", {
         path: namespacePath,
         transports: ["websocket"],
-        // query: {
-        //   authToken: authToken,
-        // },
+        query: {
+          authToken: authToken,
+        },
       });
 
       socketChat.on("connect", () => {
@@ -36,7 +35,7 @@
       socketChat.on("connect_error", (error) => {
         console.error("Connection failed:", error.message); // This should trigger on a connection refusal
       });
-      
+
       socketChat.on("message", (data) => {
         console.log("Received message from chat:", data);
       });
