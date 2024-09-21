@@ -10,10 +10,9 @@
 <body>
     <h1>Socket.IO Client Test</h1>
     <script>
-        const chatId = '1c7a6ff8-953c-444e-b4be-1880ff8f7f1e'; 
-        const namespacePath = `/ws/chat/${chatId}`;
+        const userId = '96313621-85f2-4653-9b2c-64855692ee33'; 
+        const namespacePath = `/ws/${userId}`;
 
-        const groupId = '5678';  // Replace with your desired group_id
 
         // Connect to the Socket.IO server for chat namespace
         const socketChat = io('ws://localhost:8000', { 
@@ -22,9 +21,9 @@
         });
 
         socketChat.on('connect', () => {
-            console.log('Connected to the chat namespace');
+            console.log('Connected to the user namespace');
             // Emit a message to the chat room
-            socketChat.emit('message', { room: chatId, message: 'Hello from chat client!' });
+            socketChat.emit('message', { room: userId, message: 'Hello from chat client!' });
         });
 
         socketChat.on('message', (data) => {
@@ -34,23 +33,6 @@
         socketChat.on('disconnect', () => {
             console.log('Disconnected from the chat namespace');
         });
-
-        // // Connect to the Socket.IO server for group namespace
-        // const socketGroup = io('ws://localhost:8000/ws/group', { path: '/socket.io/' });
-
-        // socketGroup.on('connect', () => {
-        //     console.log('Connected to the group namespace');
-        //     // Emit a message to the group room
-        //     socketGroup.emit('message', { room: groupId, message: 'Hello from group client!' });
-        // });
-
-        // socketGroup.on('message', (data) => {
-        //     console.log('Received message from group:', data);
-        // });
-
-        // socketGroup.on('disconnect', () => {
-        //     console.log('Disconnected from the group namespace');
-        // });
     </script>
 </body>
 </html>

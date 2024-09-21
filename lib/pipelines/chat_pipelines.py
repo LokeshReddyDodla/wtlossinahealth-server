@@ -29,10 +29,6 @@ def get_user_chat_pipeline(user_id: str):
                 "unread_counts": 1,
                 "last_message": 1,
                 "updated_at": 1,
-                "is_read_only": 1,
-                "is_muted": 1,
-                "is_archived": 1,
-                "is_pinned": 1,
             }
         },
     ]
