@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from jose import jwt
-from jose.exceptions import JWTError, ExpiredSignatureError
+
 from decouple import config
+from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 
 JWT_SECRET = config("JWT_SECRET")
 JWT_ALGORITHM = config("JWT_ALGORITHM")
@@ -35,3 +36,18 @@ def decode_jwt_token(token: str):
         return None
     except JWTError:
         return None
+
+
+def verify_jwt_token(token: str) -> bool:
+    try:
+        jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+            audience=JWT_AUDIENCE,
+        )
+        return True
+    except ExpiredSignatureError:
+        return False
+    except JWTError:
+        return False
