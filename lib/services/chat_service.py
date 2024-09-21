@@ -202,6 +202,48 @@ class ChatService:
         except Exception as e:
             raise
 
+    async def toggle_pin_chat(self, chat_id: str, participant_id: str):
+        try:
+            # Find the chat by chat_id and locate the participant by participant_id
+            chat_document = await self.mongo_store.db["chats"].find_one(
+                {"_id": chat_id}
+            )
+
+            if not chat_document:
+                raise Exception("Chat not found")
+
+            # Find the participant in the chat
+            participant = next(
+                (
+                    p
+                    for p in chat_document["participants"]
+                    if p["id"] == participant_id
+                ),
+                None,
+            )
+
+            if not participant:
+                raise Exception("Participant not found in chat")
+
+            # Toggle the is_pinned status
+            new_is_pinned_status = not participant.get("is_pinned", False)
+
+            # Update the participant in the chat document
+            await self.mongo_store.db["chats"].update_one(
+                {"_id": chat_id, "participants.id": participant_id},
+                {"$set": {"participants.$.is_pinned": new_is_pinned_status}},
+            )
+
+            print(
+                f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
+            )
+
+        except Exception as e:
+            print(
+                f"Failed to toggle pin for chat {chat_id} and participant {participant_id}: {str(e)}"
+            )
+            raise
+
     async def add_message(self, user_id: str, message_data: ChatMessageCreate):
         message = ChatMessage(
             chat_id=message_data.chat_id,

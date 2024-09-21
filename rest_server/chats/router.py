@@ -4,3 +4,4 @@ router = APIRouter(prefix="/chats", tags=["Chats"])
 
 from .create import *
 from .read import *
+from .update import *
