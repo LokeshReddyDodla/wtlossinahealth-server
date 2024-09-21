@@ -141,3 +141,4 @@ dmypy.json
 deployment/volumes
 /alembic/versions
 mongodb-keyfile
+/tmp
