@@ -10,7 +10,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.post("/toggle-pin-chat", response_model=SuccessResponse)
+@router.patch("/toggle-pin-chat", response_model=SuccessResponse)
 async def toggle_pin_chat(
     request: Request,
     chat_id: str,
