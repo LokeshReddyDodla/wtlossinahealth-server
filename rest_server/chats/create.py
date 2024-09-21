@@ -25,7 +25,8 @@ async def send_message(
 
         # TODO: check if chat_id even exists
         await chat_service.add_message(
-            message_data=message_data, user_id=str(user_id)
+            user_id=str(user_id),
+            message_data=message_data,
         )
 
         return SuccessResponse(message="Message sent successfully.")
