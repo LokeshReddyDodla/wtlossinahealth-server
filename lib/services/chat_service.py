@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from faker import Faker
 from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,8 @@ from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.socketio_service import sio
 from lib.utils.serializers import serialize_message
+
+fake = Faker()
 
 
 class ChatService:
@@ -39,12 +42,16 @@ class ChatService:
 
         # Initialize unread_counts for each participant
         unread_counts = {participant.id: 0}
+        random_group_name = f"{fake.color_name()} {fake.word()}"
 
         chat = ChatSchema(
             is_group=is_group,
             participants=[participant],
             last_message=None,
             unread_counts=unread_counts,
+            alias_name=random_group_name if is_group else None,
+            alias_profile_picture=None,
+            description=None,
         )
         chat_dict = chat.dict(by_alias=True)
         try:
@@ -63,12 +70,16 @@ class ChatService:
 
         # Initialize unread_counts for each participant
         unread_counts = {participant.id: 0 for participant in participants}
+        random_group_name = f"{fake.color_name()} {fake.word()}"
 
         chat = ChatSchema(
             is_group=is_group,
             participants=participants,
             last_message=None,
             unread_counts=unread_counts,
+            alias_name=random_group_name if is_group else None,
+            alias_profile_picture=None,
+            description=None,
         )
         chat_dict = chat.dict(by_alias=True)
         try:
@@ -184,14 +195,25 @@ class ChatService:
 
             # Merge profiles into chat participants
             for chat in chat_documents:
-                for participant in chat.get("participants"):
-                    if participant.get("type") == PROFILE_TYPE_PATIENT:
-                        participant["profile"] = patient_profiles.get(
-                            participant["id"]
+                sender = chat.get("sender")
+                if sender:
+                    if sender["type"] == PROFILE_TYPE_PATIENT:
+                        sender["profile"] = patient_profiles.get(
+                            sender["id"], {}
                         )
-                    elif participant.get("type") == PROFILE_TYPE_CARE_PROVIDER:
-                        participant["profile"] = care_provider_profiles.get(
-                            participant["id"]
+                    else:
+                        sender["profile"] = care_provider_profiles.get(
+                            sender["id"], {}
+                        )
+
+                for receiver in chat.get("receiver", []):
+                    if receiver["type"] == PROFILE_TYPE_PATIENT:
+                        receiver["profile"] = patient_profiles.get(
+                            receiver["id"], {}
+                        )
+                    else:
+                        receiver["profile"] = care_provider_profiles.get(
+                            receiver["id"], {}
                         )
 
             return chat_documents

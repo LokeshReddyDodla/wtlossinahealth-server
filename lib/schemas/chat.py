@@ -43,6 +43,18 @@ class ChatSchemaBase(BaseModel):
     is_group: Optional[bool] = Field(
         True, description="Indicates this is a group chat."
     )
+    alias_name: Optional[str] = Field(
+        ...,
+        description="Name for the chat, either participant's name or group name",
+    )
+    alias_profile_picture: Optional[str] = Field(
+        None,
+        description="Profile picture URL for the chat, either participant's or group",
+    )
+    description: Optional[str] = Field(
+        None,
+        description="Optional description for the chat. Primarily used for group chats.",
+    )
     participants: List[ParticipantSchema] = Field(
         ..., description="List of participants in the group chat."
     )
@@ -70,6 +82,9 @@ class ChatSchemaBase(BaseModel):
             "example": {
                 "id": "a7fdfcc9-eff2-4387-8e14-8a057e0de8f9",
                 "is_group": True,
+                "alias_name": "Diabetes Care Team",
+                "alias_profile_picture": "https://example.com/group-pic.png",
+                "description": "A group chat for discussing diabetes care management.",
                 "participants": [
                     {
                         "id": "9b2ce9b7-93f3-4ce7-aee5-e5799a713a28",

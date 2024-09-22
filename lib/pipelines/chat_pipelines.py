@@ -18,7 +18,26 @@ def get_user_chat_pipeline(user_id: str):
                         "then": {"$arrayElemAt": ["$last_message", 0]},
                         "else": None,
                     }
-                }
+                },
+                "sender": {
+                    "$arrayElemAt": [
+                        {
+                            "$filter": {
+                                "input": "$participants",
+                                "as": "participant",
+                                "cond": {"$eq": ["$$participant.id", user_id]},
+                            }
+                        },
+                        0,
+                    ]
+                },
+                "receiver": {
+                    "$filter": {
+                        "input": "$participants",
+                        "as": "participant",
+                        "cond": {"$ne": ["$$participant.id", user_id]},
+                    }
+                },
             }
         },
         {
@@ -26,9 +45,14 @@ def get_user_chat_pipeline(user_id: str):
                 "_id": 1,
                 "is_group": 1,
                 "participants": 1,
+                "sender": 1,
+                "receiver": 1,
                 "unread_counts": 1,
                 "last_message": 1,
                 "updated_at": 1,
+                "alias_name": 1,
+                "alias_profile_picture": 1,
+                "description": 1,
             }
         },
     ]
