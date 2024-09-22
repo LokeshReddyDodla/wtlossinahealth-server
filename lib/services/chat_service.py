@@ -238,6 +238,8 @@ class ChatService:
                 f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
             )
 
+            await sio.emit("chatListUpdate", room=participant_id)
+
         except Exception as e:
             print(
                 f"Failed to toggle pin for chat {chat_id} and participant {participant_id}: {str(e)}"

@@ -11,6 +11,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
+from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
 
@@ -112,6 +113,7 @@ class CareProviderService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
+            await sio.emit("chatListUpdate", room=care_provider_id)
 
             return care_provider
 

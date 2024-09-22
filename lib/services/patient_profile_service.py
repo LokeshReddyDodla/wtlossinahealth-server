@@ -58,6 +58,7 @@ from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat_service import ChatService
+from lib.services.socketio_service import sio
 
 
 class PatientProfileService:
@@ -151,6 +152,7 @@ class PatientProfileService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
+            await sio.emit("chatListUpdate", room=patient_id)
 
             return patient_profile
 
