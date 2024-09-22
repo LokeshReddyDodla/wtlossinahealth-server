@@ -19,6 +19,7 @@ from lib.schemas.patient_care_provider import \
 from lib.services.care_provider_service import CareProviderService
 from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.socketio_service import sio
 
 
 class PatientCareProviderService:
@@ -101,6 +102,9 @@ class PatientCareProviderService:
 
             # Create chat instance in MongoDB
             await self._create_chats(patient, care_provider)
+            await sio.emit(
+                "chatListUpdate", room=patient_care_provider_data.patient_id
+            )
 
             return new_patient_care_provider
         except IntegrityError:
@@ -158,6 +162,9 @@ class PatientCareProviderService:
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
+            await sio.emit(
+                "chatListUpdate", room=patient_care_provider.patient_id
+            )
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
