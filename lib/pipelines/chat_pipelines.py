@@ -31,7 +31,7 @@ def get_user_chat_pipeline(user_id: str):
                         0,
                     ]
                 },
-                "receiver": {
+                "receivers": {
                     "$filter": {
                         "input": "$participants",
                         "as": "participant",
@@ -46,7 +46,7 @@ def get_user_chat_pipeline(user_id: str):
                 "is_group": 1,
                 "participants": 1,
                 "sender": 1,
-                "receiver": 1,
+                "receivers": 1,
                 "unread_counts": 1,
                 "last_message": 1,
                 "updated_at": 1,

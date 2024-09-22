@@ -206,7 +206,7 @@ class ChatService:
                             sender["id"], {}
                         )
 
-                for receiver in chat.get("receiver", []):
+                for receiver in chat.get("receivers", []):
                     if receiver["type"] == PROFILE_TYPE_PATIENT:
                         receiver["profile"] = patient_profiles.get(
                             receiver["id"], {}
