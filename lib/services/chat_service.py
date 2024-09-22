@@ -268,6 +268,48 @@ class ChatService:
             )
             raise
 
+    async def get_user_messages(self, user_id: str):
+        """
+        Fetch all messages for a specific user based on user_id.
+        """
+        try:
+            # Pipeline to match messages where the user is either the sender or a participant in the chat
+            pipeline = [
+                {
+                    "$match": {
+                        "$or": [
+                            {"sender_id": user_id},
+                            {"participants.id": user_id},
+                        ]
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "chat_messages",
+                        "localField": "_id",
+                        "foreignField": "chat_id",
+                        "as": "messages",
+                    }
+                },
+                {"$unwind": "$messages"},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "messages": 1,  # Return only the messages field
+                    }
+                },
+            ]
+            messages = (
+                await self.mongo_store.db["chats"]
+                .aggregate(pipeline)
+                .to_list(length=None)
+            )
+            return messages
+
+        except PyMongoError as e:
+            print(f"MongoDB Error: {e}")
+            raise
+
     async def add_message(self, user_id: str, message_data: ChatMessageCreate):
         message = ChatMessage(
             chat_id=message_data.chat_id,
