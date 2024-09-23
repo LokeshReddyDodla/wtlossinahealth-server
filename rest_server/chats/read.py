@@ -1,4 +1,5 @@
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Request
 
@@ -36,6 +37,7 @@ async def get_user_chats(
 @router.get("/user-messages", response_model=SuccessResponse)
 async def get_user_messages(
     request: Request,
+    last_sync_time: Optional[datetime] = None,
     current_user=Depends(get_current_user),
     chat_service: ChatService = Depends(ChatService),
 ):
@@ -44,7 +46,9 @@ async def get_user_messages(
     """
     try:
         user_id, role = current_user
-        messages = await chat_service.get_user_messages(user_id)
+        messages = await chat_service.get_user_messages(
+            user_id, last_sync_time
+        )
         if not messages:
             raise HTTPException(status_code=404, detail="No messages found.")
         return SuccessResponse(
