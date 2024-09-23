@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileType
-from lib.pipelines.chat_pipelines import get_user_chat_pipeline
+from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
+                                          get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.socketio_service import sio
@@ -268,37 +269,14 @@ class ChatService:
             )
             raise
 
-    async def get_user_messages(self, user_id: str):
+    async def get_user_messages(
+        self, user_id: str, last_sync_time: Optional[datetime] = None
+    ):
         """
         Fetch all messages for a specific user based on user_id.
         """
         try:
-            # Pipeline to match messages where the user is either the sender or a participant in the chat
-            pipeline = [
-                {
-                    "$match": {
-                        "$or": [
-                            {"sender_id": user_id},
-                            {"participants.id": user_id},
-                        ]
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "chat_messages",
-                        "localField": "_id",
-                        "foreignField": "chat_id",
-                        "as": "messages",
-                    }
-                },
-                {"$unwind": "$messages"},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "messages": 1,  # Return only the messages field
-                    }
-                },
-            ]
+            pipeline = get_user_messages_pipeline(user_id, last_sync_time)
             messages = (
                 await self.mongo_store.db["chats"]
                 .aggregate(pipeline)

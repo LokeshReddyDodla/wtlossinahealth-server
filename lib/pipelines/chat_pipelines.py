@@ -1,3 +1,7 @@
+from datetime import datetime
+from typing import Any, Optional
+
+
 def get_user_chat_pipeline(user_id: str):
     return [
         {"$match": {"participants.id": user_id}},
@@ -56,6 +60,49 @@ def get_user_chat_pipeline(user_id: str):
             }
         },
     ]
+
+
+def get_user_messages_pipeline(
+    user_id: str, last_sync_time: Optional[datetime] = None
+):
+    match_condition: Any = {
+        "$or": [
+            {"sender_id": user_id},
+            {"participants.id": user_id},
+        ]
+    }
+
+    if last_sync_time:
+        match_condition["messages.timestamp"] = {"$gt": last_sync_time}
+
+    pipeline = [
+        {"$match": match_condition},
+        {
+            "$lookup": {
+                "from": "chat_messages",
+                "localField": "_id",
+                "foreignField": "chat_id",
+                "as": "messages",
+            }
+        },
+        {"$unwind": "$messages"},
+        {
+            "$match": {
+                "messages.timestamp": (
+                    {"$gt": last_sync_time} if last_sync_time else {}
+                )
+            }
+        },
+        {"$sort": {"messages.timestamp": 1}},
+        {
+            "$project": {
+                "_id": 0,
+                "messages": 1,
+            }
+        },
+    ]
+
+    return pipeline
 
 
 def get_chat_pipeline(
