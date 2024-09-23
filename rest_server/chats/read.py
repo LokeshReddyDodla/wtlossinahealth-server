@@ -49,8 +49,7 @@ async def get_user_messages(
         messages = await chat_service.get_user_messages(
             user_id, last_sync_time
         )
-        if not messages:
-            raise HTTPException(status_code=404, detail="No messages found.")
+
         return SuccessResponse(
             message="Messages fetched successfully.", data=messages
         )
