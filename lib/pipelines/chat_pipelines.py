@@ -65,42 +65,43 @@ def get_user_chat_pipeline(user_id: str):
 def get_user_messages_pipeline(
     user_id: str, last_sync_time: Optional[datetime] = None
 ):
-    match_condition: Any = {
+    match_condition = {
         "$or": [
             {"sender_id": user_id},
             {"participants.id": user_id},
         ]
     }
 
-    if last_sync_time:
-        match_condition["messages.timestamp"] = {"$gt": last_sync_time}
-
     pipeline = [
-        {"$match": match_condition},
+        {"$match": match_condition},  # Match the user in chats
         {
             "$lookup": {
-                "from": "chat_messages",
-                "localField": "_id",
+                "from": "chat_messages",  # Join with chat_messages collection
+                "localField": "_id",  # Matching chat _id with chat_id in messages
                 "foreignField": "chat_id",
                 "as": "messages",
             }
         },
-        {"$unwind": "$messages"},
         {
-            "$match": {
-                "messages.timestamp": (
-                    {"$gt": last_sync_time} if last_sync_time else {}
-                )
-            }
-        },
-        {"$sort": {"messages.timestamp": 1}},
+            "$unwind": "$messages"
+        },  # Unwind the messages to filter them individually
+    ]
+
+    if last_sync_time:
+        pipeline.append(
+            {"$match": {"messages.timestamp": {"$gt": last_sync_time}}}
+        )
+
+    pipeline.append({"$sort": {"messages.timestamp": 1}})
+
+    pipeline.append(
         {
             "$project": {
-                "_id": 0,
-                "messages": 1,
+                "_id": 0,  # Exclude chat _id
+                "messages": 1,  # Include only the messages field
             }
-        },
-    ]
+        }
+    )
 
     return pipeline
 
