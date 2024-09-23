@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Query, Request
 
 from lib.dependencies.auth.base import get_current_user
 from lib.services.chat_service import ChatService
@@ -37,7 +37,7 @@ async def get_user_chats(
 @router.get("/user-messages", response_model=SuccessResponse)
 async def get_user_messages(
     request: Request,
-    last_sync_time: Optional[datetime] = None,
+    last_sync_time: Optional[datetime] = Query(None),
     current_user=Depends(get_current_user),
     chat_service: ChatService = Depends(ChatService),
 ):
