@@ -94,14 +94,7 @@ def get_user_messages_pipeline(
 
     pipeline.append({"$sort": {"messages.timestamp": 1}})
 
-    pipeline.append(
-        {
-            "$project": {
-                "_id": 0,  # Exclude chat _id
-                "messages": 1,  # Include only the messages field
-            }
-        }
-    )
+    pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
 
     return pipeline
 
