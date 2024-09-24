@@ -264,7 +264,9 @@ class ChatService:
             #     {"$inc": {"unread_counts.$[elem].count": 1}},
             #     array_filters=[{"elem.id": {"$ne": message_data.sender_id}}],
             # )
-            chat = await self.mongo_store.db["chats"].find_one({"_id": message_data.chat_id})
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": message_data.chat_id}
+            )
             if chat:
                 for participant in chat["participants"]:
                     participant_id = participant["id"]
@@ -272,7 +274,7 @@ class ChatService:
                         # Increment the unread count for this participant
                         await self.mongo_store.db["chats"].update_one(
                             {"_id": message_data.chat_id},
-                            {"$inc": {f"unread_counts.{participant_id}": 1}}
+                            {"$inc": {f"unread_counts.{participant_id}": 1}},
                         )
 
             # After message is added to DB, we use the utility function to emit it to all participants
@@ -470,8 +472,18 @@ class ChatService:
         try:
             # Update all messages in this chat by adding the user to the read_receipts
             await self.mongo_store.db["chat_messages"].update_many(
-                {"chat_id": chat_id, "read_receipts": {"$ne": user_id}},
-                {"$push": {"read_receipts": user_id}},
+                {
+                    "chat_id": chat_id,
+                    "read_receipts.reader_id": {"$ne": user_id},
+                },
+                {
+                    "$addToSet": {
+                        "read_receipts": {
+                            "reader_id": user_id,
+                            "read_at": datetime.now(),
+                        }
+                    }
+                },
             )
 
             # Set unread count for this user to 0 in the chat
@@ -491,9 +503,17 @@ class ChatService:
         """
         try:
             # Update the specific message by adding the user to the read_receipts
+
             await self.mongo_store.db["chat_messages"].update_one(
-                {"_id": message_id, "read_receipts": {"$ne": user_id}},
-                {"$push": {"read_receipts": user_id}},
+                {"_id": message_id, "chat_id": chat_id},
+                {
+                    "$addToSet": {
+                        "read_receipts": {
+                            "reader_id": user_id,
+                            "read_at": datetime.now(),
+                        }
+                    }
+                },
             )
 
             # Check if there are no unread messages left for this user and update the unread count
