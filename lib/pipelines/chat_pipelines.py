@@ -96,15 +96,15 @@ def get_user_messages_pipeline(
     pipeline.append(
         {
             "$lookup": {
-                "from": "chat_messages",  # Same collection
-                "localField": "messages.reply_to",  # The reply_to field in the messages
-                "foreignField": "_id",  # Matching _id in the same collection
-                "as": "reply_to_message",  # Field to store the result
+                "from": "chat_messages",
+                "localField": "messages.reply_to",
+                "foreignField": "_id",
+                "as": "reply_message",
             }
         }
     )
 
-    # Add the reply_to field if it exists, else keep it as None
+    # Replace `reply_to` with the full reply message if it exists, otherwise keep it as null
     pipeline.append(
         {
             "$addFields": {
