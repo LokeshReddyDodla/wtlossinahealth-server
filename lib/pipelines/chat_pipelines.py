@@ -44,31 +44,6 @@ def get_user_chat_pipeline(user_id: str):
                 },
             }
         },
-        # Lookup for reply_to message inside last_message
-        {
-            "$lookup": {
-                "from": "chat_messages",
-                "localField": "last_message.reply_to",
-                "foreignField": "_id",
-                "as": "reply_message",
-            }
-        },
-        {
-            "$addFields": {
-                "last_message.reply_to": {
-                    "$cond": {
-                        "if": {
-                            "$gt": [
-                                {"$size": {"$ifNull": ["$reply_message", []]}},
-                                0,
-                            ]
-                        },
-                        "then": {"$arrayElemAt": ["$reply_message", 0]},
-                        "else": None,
-                    }
-                }
-            }
-        },
         {
             "$project": {
                 "_id": 1,
@@ -116,38 +91,6 @@ def get_user_messages_pipeline(
         pipeline.append(
             {"$match": {"messages.timestamp": {"$gt": last_sync_time}}}
         )
-
-    # Lookup the reply_to message
-    pipeline.append(
-        {
-            "$lookup": {
-                "from": "chat_messages",
-                "localField": "messages.reply_to",
-                "foreignField": "_id",
-                "as": "reply_message",
-            }
-        }
-    )
-
-    # Replace `reply_to` with the full reply message if it exists, otherwise keep it as null
-    pipeline.append(
-        {
-            "$addFields": {
-                "messages.reply_to": {
-                    "$cond": {
-                        "if": {
-                            "$gt": [
-                                {"$size": {"$ifNull": ["$reply_message", []]}},
-                                0,
-                            ]
-                        },
-                        "then": {"$arrayElemAt": ["$reply_message", 0]},
-                        "else": None,
-                    }
-                }
-            }
-        }
-    )
 
     pipeline.append({"$sort": {"messages.timestamp": 1}})
 
