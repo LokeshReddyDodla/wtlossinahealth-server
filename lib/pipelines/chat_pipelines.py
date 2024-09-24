@@ -69,7 +69,7 @@ def get_user_chat_pipeline(user_id: str):
                 }
             }
         },
-        # {"$unset": "last_message.reply_to.reply_to"},
+        {"$unset": "last_message.reply_to.reply_to"},
         {
             "$project": {
                 "_id": 1,
@@ -149,6 +149,9 @@ def get_user_messages_pipeline(
             }
         }
     )
+
+    # Unset the nested `reply_to.reply_to` to avoid deep nesting
+    pipeline.append({"$unset": "messages.reply_to.reply_to"})
 
     pipeline.append({"$sort": {"messages.timestamp": 1}})
 
