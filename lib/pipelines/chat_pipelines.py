@@ -92,6 +92,33 @@ def get_user_messages_pipeline(
             {"$match": {"messages.timestamp": {"$gt": last_sync_time}}}
         )
 
+    # Lookup the reply_to message
+    pipeline.append(
+        {
+            "$lookup": {
+                "from": "chat_messages",  # Same collection
+                "localField": "messages.reply_to",  # The reply_to field in the messages
+                "foreignField": "_id",  # Matching _id in the same collection
+                "as": "reply_to_message",  # Field to store the result
+            }
+        }
+    )
+
+    # If a message has a reply, take the first element from the array, otherwise keep reply_to as None
+    pipeline.append(
+        {
+            "$addFields": {
+                "messages.reply_to": {
+                    "$cond": {
+                        "if": {"$gt": [{"$size": "$reply_message"}, 0]},
+                        "then": {"$arrayElemAt": ["$reply_message", 0]},
+                        "else": None,
+                    }
+                }
+            }
+        }
+    )
+
     pipeline.append({"$sort": {"messages.timestamp": 1}})
 
     pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
