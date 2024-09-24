@@ -113,7 +113,6 @@ class CareProviderService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
-            await sio.emit("chatListUpdate", room=care_provider_id)
 
             return care_provider
 

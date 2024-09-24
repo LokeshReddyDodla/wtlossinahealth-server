@@ -102,9 +102,6 @@ class PatientCareProviderService:
 
             # Create chat instance in MongoDB
             await self._create_chats(patient, care_provider)
-            await sio.emit(
-                "chatListUpdate", room=patient_care_provider_data.patient_id
-            )
 
             return new_patient_care_provider
         except IntegrityError:
@@ -162,9 +159,6 @@ class PatientCareProviderService:
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
-            await sio.emit(
-                "chatListUpdate", room=patient_care_provider.patient_id
-            )
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
@@ -173,26 +167,25 @@ class PatientCareProviderService:
     async def _create_chats(
         self, patient: PatientSchema, care_provider: CareProviderSchema
     ):
-        participants = [
-            ParticipantSchema(
-                id=str(patient.patient_id),
-                type=PROFILE_TYPE_PATIENT,
-                is_read_only=False,
-                is_muted=False,
-                is_archived=False,
-                is_pinned=False,
-            ),
-            ParticipantSchema(
-                id=str(care_provider.care_provider_id),
-                type=PROFILE_TYPE_CARE_PROVIDER,
-                is_read_only=False,
-                is_muted=False,
-                is_archived=False,
-                is_pinned=False,
-            ),
-        ]
-        await self.chat_service.create_new_chat_with_participants(
-            participants=participants, is_group=False
+
+        chat_id = await self.chat_service.create_new_chat(
+            user_id=str(patient.patient_id),
+            type=PROFILE_TYPE_PATIENT,
+            is_group=False,
+            is_read_only=False,
+            is_muted=False,
+            is_archived=False,
+            is_pinned=False,
+        )
+
+        await self.chat_service.add_participant_in_chat(
+            chat_id=chat_id,
+            user_id=str(care_provider.care_provider_id),
+            type=PROFILE_TYPE_CARE_PROVIDER,
+            is_read_only=False,
+            is_muted=False,
+            is_archived=False,
+            is_pinned=False,
         )
 
         group_chat = await self.chat_service.find_group_chat_for_patient(
