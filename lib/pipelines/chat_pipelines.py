@@ -63,24 +63,7 @@ def get_user_chat_pipeline(user_id: str):
                                 0,
                             ]
                         },
-                        "then": {
-                            "$arrayElemAt": [
-                                {
-                                    "$project": {
-                                        "_id": 1,
-                                        "chat_id": 1,
-                                        "sender_id": 1,
-                                        "content": 1,
-                                        "timestamp": 1,
-                                        "metadata": 1,
-                                        "read_receipts": 1,
-                                        "severity": 1,
-                                        "is_flagged": 1,
-                                    }
-                                },
-                                0,
-                            ]
-                        },
+                        "then": {"$arrayElemAt": ["$reply_message", 0]},
                         "else": None,
                     }
                 }
@@ -95,6 +78,7 @@ def get_user_chat_pipeline(user_id: str):
                 "receivers": 1,
                 "unread_counts": 1,
                 "last_message": 1,
+                "last_message.reply_to.reply_to": 0,
                 "updated_at": 1,
                 "alias_name": 1,
                 "alias_profile_picture": 1,
