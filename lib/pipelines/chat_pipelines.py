@@ -69,7 +69,7 @@ def get_user_chat_pipeline(user_id: str):
                 }
             }
         },
-        {"$unset": "last_message.reply_to.reply_to"},
+        # {"$unset": "last_message.reply_to.reply_to"},
         {
             "$project": {
                 "_id": 1,
