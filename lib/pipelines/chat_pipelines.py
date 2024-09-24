@@ -104,7 +104,7 @@ def get_user_messages_pipeline(
         }
     )
 
-    # Add the check to ensure the reply_message array exists before using $size
+    # Add the reply_to field if it exists, else keep it as None
     pipeline.append(
         {
             "$addFields": {
