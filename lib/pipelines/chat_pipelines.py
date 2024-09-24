@@ -44,6 +44,31 @@ def get_user_chat_pipeline(user_id: str):
                 },
             }
         },
+        # Lookup for reply_to message inside last_message
+        {
+            "$lookup": {
+                "from": "chat_messages",
+                "localField": "last_message.reply_to",
+                "foreignField": "_id",
+                "as": "reply_message",
+            }
+        },
+        {
+            "$addFields": {
+                "last_message.reply_to": {
+                    "$cond": {
+                        "if": {
+                            "$gt": [
+                                {"$size": {"$ifNull": ["$reply_message", []]}},
+                                0,
+                            ]
+                        },
+                        "then": {"$arrayElemAt": ["$reply_message", 0]},
+                        "else": None,
+                    }
+                }
+            }
+        },
         {
             "$project": {
                 "_id": 1,
