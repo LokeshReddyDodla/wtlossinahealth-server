@@ -256,14 +256,24 @@ class ChatService:
             )
 
             # Increment unread counts for other participants in the chat
-            await self.mongo_store.db["chats"].update_many(
-                {
-                    "_id": message_data.chat_id,
-                    "participants.id": {"$ne": message_data.sender_id},
-                },
-                {"$inc": {"unread_counts.$[elem].count": 1}},
-                array_filters=[{"elem.id": {"$ne": message_data.sender_id}}],
-            )
+            # await self.mongo_store.db["chats"].update_many(
+            #     {
+            #         "_id": message_data.chat_id,
+            #         "participants.id": {"$ne": message_data.sender_id},
+            #     },
+            #     {"$inc": {"unread_counts.$[elem].count": 1}},
+            #     array_filters=[{"elem.id": {"$ne": message_data.sender_id}}],
+            # )
+            chat = await self.mongo_store.db["chats"].find_one({"_id": message_data.chat_id})
+            if chat:
+                for participant in chat["participants"]:
+                    participant_id = participant["id"]
+                    if participant_id != message_data.sender_id:
+                        # Increment the unread count for this participant
+                        await self.mongo_store.db["chats"].update_one(
+                            {"_id": message_data.chat_id},
+                            {"$inc": {f"unread_counts.{participant_id}": 1}}
+                        )
 
             # After message is added to DB, we use the utility function to emit it to all participants
             await self.emit_to_all_participants(
