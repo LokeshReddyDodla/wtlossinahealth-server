@@ -58,37 +58,10 @@ class ChatService:
         try:
             await self.mongo_store.insert_document("chats", chat_dict)
             print(f"New chat created with ID: {chat.id}")
+
             return chat.id
         except PyMongoError as e:
             print(f"Failed to create new chat: {e}")
-            raise
-
-    async def create_new_chat_with_participants(
-        self,
-        participants: List[ParticipantSchema],
-        is_group: bool,
-    ) -> str:
-
-        # Initialize unread_counts for each participant
-        unread_counts = {participant.id: 0 for participant in participants}
-        random_group_name = f"{fake.color_name()} {fake.word()}"
-
-        chat = ChatSchema(
-            is_group=is_group,
-            participants=participants,
-            last_message=None,
-            unread_counts=unread_counts,
-            alias_name=random_group_name if is_group else None,
-            alias_profile_picture=None,
-            description=None,
-        )
-        chat_dict = chat.dict(by_alias=True)
-        try:
-            await self.mongo_store.insert_document("chats", chat_dict)
-            print(f"New group chat created with ID: {chat.id}")
-            return chat.id
-        except PyMongoError as e:
-            print(f"Failed to create new group chat: {e}")
             raise
 
     async def add_participant_in_chat(
@@ -145,6 +118,7 @@ class ChatService:
                         "$set": {f"unread_counts.{user_id}": 0},
                     },
                 )
+
         except PyMongoError as e:
             print(f"MongoDB Error: {e}")
             raise
@@ -225,50 +199,6 @@ class ChatService:
         except Exception as e:
             raise
 
-    async def toggle_pin_chat(self, chat_id: str, participant_id: str):
-        try:
-            # Find the chat by chat_id and locate the participant by participant_id
-            chat_document = await self.mongo_store.db["chats"].find_one(
-                {"_id": chat_id}
-            )
-
-            if not chat_document:
-                raise Exception("Chat not found")
-
-            # Find the participant in the chat
-            participant = next(
-                (
-                    p
-                    for p in chat_document["participants"]
-                    if p["id"] == participant_id
-                ),
-                None,
-            )
-
-            if not participant:
-                raise Exception("Participant not found in chat")
-
-            # Toggle the is_pinned status
-            new_is_pinned_status = not participant.get("is_pinned", False)
-
-            # Update the participant in the chat document
-            await self.mongo_store.db["chats"].update_one(
-                {"_id": chat_id, "participants.id": participant_id},
-                {"$set": {"participants.$.is_pinned": new_is_pinned_status}},
-            )
-
-            print(
-                f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
-            )
-
-            await sio.emit("chatListUpdate", room=participant_id)
-
-        except Exception as e:
-            print(
-                f"Failed to toggle pin for chat {chat_id} and participant {participant_id}: {str(e)}"
-            )
-            raise
-
     async def get_user_messages(
         self, user_id: str, last_sync_time: Optional[datetime] = None
     ):
@@ -288,7 +218,7 @@ class ChatService:
             print(f"MongoDB Error: {e}")
             raise
 
-    async def add_message(self, user_id: str, message_data: ChatMessageCreate):
+    async def add_message(self, message_data: ChatMessageCreate):
         message = ChatMessage(
             chat_id=message_data.chat_id,
             sender_id=message_data.sender_id,
@@ -299,10 +229,12 @@ class ChatService:
             metadata=message_data.metadata,
             severity=message_data.severity or "low",
             is_flagged=message_data.is_flagged or False,
+            read_receipts=[],
         )
         message_dict = message.dict(by_alias=True)
 
         try:
+            # Insert the message into the chat_messages collection
             await self.mongo_store.insert_document(
                 "chat_messages", message_dict
             )
@@ -310,32 +242,43 @@ class ChatService:
                 f"Message {message.id} added to chat {message_data.chat_id}."
             )
 
-            # Update the chat document's last_message_id and updated_at fields
+            # Update the chat's last_message and updated_at fields
             await self.mongo_store.db["chats"].update_one(
                 {"_id": message_data.chat_id},
                 {
                     "$set": {
                         "last_message": message.id,
                         "updated_at": datetime.now(),
-                    }
+                    },
+                    "$inc": {
+                        f"unread_counts.{message_data.sender_id}": 0
+                    },  # Sender unread count remains 0
                 },
             )
 
-            try:
-                # Broadcast the message to WebSocket clients in the chat group
-                await sio.emit(
-                    "newMessage",
-                    serialize_message(message_dict),
-                    room=user_id,
-                )
-                print(
-                    f"Message {message.id} broadcasted to room {message_data.chat_id}."
-                )
-            except Exception as e:
-                print(f"Failed to broadcast message {message.id}: {e}")
-                raise Exception(f"Failed to broadcast message: {str(e)}")
+            # Increment unread counts for other participants in the chat
+            await self.mongo_store.db["chats"].update_many(
+                {
+                    "_id": message_data.chat_id,
+                    "participants.id": {"$ne": message_data.sender_id},
+                },
+                {"$inc": {"unread_counts.$[elem].count": 1}},
+                array_filters=[{"elem.id": {"$ne": message_data.sender_id}}],
+            )
+
+            # After message is added to DB, we use the utility function to emit it to all participants
+            await self.emit_to_all_participants(
+                message_data.chat_id,
+                "newMessage",
+                serialize_message(message_dict),
+            )
+
+            print(
+                f"Message {message.id} broadcasted to all participants in chat {message_data.chat_id}."
+            )
 
         except Exception as e:
+            print(f"Failed to add message: {str(e)}")
             raise Exception(f"Failed to add message: {str(e)}")
 
     async def delete_all_chats(self, user_id: str):
@@ -467,3 +410,119 @@ class ChatService:
                 "participants": {"$elemMatch": {"id": patient_id}},
             },
         )
+
+    async def toggle_pin_chat(self, chat_id: str, participant_id: str):
+        try:
+            # Find the chat by chat_id and locate the participant by participant_id
+            chat_document = await self.mongo_store.db["chats"].find_one(
+                {"_id": chat_id}
+            )
+
+            if not chat_document:
+                raise Exception("Chat not found")
+
+            # Find the participant in the chat
+            participant = next(
+                (
+                    p
+                    for p in chat_document["participants"]
+                    if p["id"] == participant_id
+                ),
+                None,
+            )
+
+            if not participant:
+                raise Exception("Participant not found in chat")
+
+            # Toggle the is_pinned status
+            new_is_pinned_status = not participant.get("is_pinned", False)
+
+            # Update the participant in the chat document
+            await self.mongo_store.db["chats"].update_one(
+                {"_id": chat_id, "participants.id": participant_id},
+                {"$set": {"participants.$.is_pinned": new_is_pinned_status}},
+            )
+
+            print(
+                f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
+            )
+
+            await sio.emit("chatListUpdate", room=participant_id)
+
+        except Exception as e:
+            print(
+                f"Failed to toggle pin for chat {chat_id} and participant {participant_id}: {str(e)}"
+            )
+            raise
+
+    async def mark_all_messages_as_read(self, chat_id: str, user_id: str):
+        try:
+            # Update all messages in this chat by adding the user to the read_receipts
+            await self.mongo_store.db["chat_messages"].update_many(
+                {"chat_id": chat_id, "read_receipts": {"$ne": user_id}},
+                {"$push": {"read_receipts": user_id}},
+            )
+
+            # Set unread count for this user to 0 in the chat
+            await self.mongo_store.db["chats"].update_one(
+                {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+            )
+
+        except Exception as e:
+            print(f"Failed to mark all messages as read: {str(e)}")
+            raise Exception(f"Failed to mark all messages as read: {str(e)}")
+
+    async def mark_message_as_read(
+        self, chat_id: str, user_id: str, message_id: str
+    ):
+        """
+        Mark a specific message in a chat as read by the user.
+        """
+        try:
+            # Update the specific message by adding the user to the read_receipts
+            await self.mongo_store.db["chat_messages"].update_one(
+                {"_id": message_id, "read_receipts": {"$ne": user_id}},
+                {"$push": {"read_receipts": user_id}},
+            )
+
+            # Check if there are no unread messages left for this user and update the unread count
+            unread_message_count = await self.mongo_store.db[
+                "chat_messages"
+            ].count_documents(
+                {"chat_id": chat_id, "read_receipts": {"$ne": user_id}}
+            )
+
+            # If no more unread messages, set unread count to 0 for this user
+            if unread_message_count == 0:
+                await self.mongo_store.db["chats"].update_one(
+                    {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+                )
+
+        except Exception as e:
+            print(f"Failed to mark message as read: {str(e)}")
+            raise Exception(f"Failed to mark message as read: {str(e)}")
+
+    async def emit_to_all_participants(
+        self, chat_id: str, message_key: str, data: Optional[dict] = None
+    ):
+        try:
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": chat_id}, {"participants": 1}
+            )
+
+            if not chat:
+                raise Exception(f"Chat with ID {chat_id} not found")
+
+            participants = chat.get("participants", [])
+
+            # Emit the message to each participant
+            for participant in participants:
+                user_id = participant["id"]
+                await sio.emit(message_key, data, room=user_id)
+                print(
+                    f"Emitted {message_key} to participant {user_id} in chat {chat_id}"
+                )
+
+        except Exception as e:
+            print(f"Failed to emit {message_key} to participants: {str(e)}")
+            raise

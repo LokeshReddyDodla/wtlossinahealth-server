@@ -152,7 +152,6 @@ class PatientProfileService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
-            await sio.emit("chatListUpdate", room=patient_id)
 
             return patient_profile
 
