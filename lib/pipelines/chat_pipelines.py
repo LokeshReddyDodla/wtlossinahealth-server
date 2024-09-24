@@ -69,6 +69,7 @@ def get_user_chat_pipeline(user_id: str):
                 }
             }
         },
+        {"$unset": "last_message.reply_to.reply_to"},
         {
             "$project": {
                 "_id": 1,
@@ -78,7 +79,6 @@ def get_user_chat_pipeline(user_id: str):
                 "receivers": 1,
                 "unread_counts": 1,
                 "last_message": 1,
-                "last_message.reply_to.reply_to": 0,
                 "updated_at": 1,
                 "alias_name": 1,
                 "alias_profile_picture": 1,
