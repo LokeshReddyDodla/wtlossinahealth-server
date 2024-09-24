@@ -92,41 +92,6 @@ def get_user_messages_pipeline(
             {"$match": {"messages.timestamp": {"$gt": last_sync_time}}}
         )
 
-    # Lookup the reply_to message
-    pipeline.append(
-        {
-            "$lookup": {
-                "from": "chat_messages",
-                "localField": "messages.reply_to",
-                "foreignField": "_id",
-                "as": "reply_message",
-            }
-        }
-    )
-
-    # Replace `reply_to` with the full reply message if it exists, otherwise keep it as null
-    pipeline.append(
-        {
-            "$addFields": {
-                "messages.reply_to": {
-                    "$cond": {
-                        "if": {
-                            "$gt": [
-                                {"$size": {"$ifNull": ["$reply_message", []]}},
-                                0,
-                            ]
-                        },
-                        "then": {"$arrayElemAt": ["$reply_message", 0]},
-                        "else": None,
-                    }
-                }
-            }
-        }
-    )
-
-    # Unset the nested `reply_to.reply_to` to avoid deep nesting
-    # pipeline.append({"$unset": "messages.reply_to.reply_to"})
-
     pipeline.append({"$sort": {"messages.timestamp": 1}})
 
     pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
