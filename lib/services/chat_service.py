@@ -12,7 +12,6 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
-from lib.services.socketio_service import sio
 from lib.utils.serializers import serialize_message
 
 fake = Faker()
@@ -413,6 +412,8 @@ class ChatService:
 
     async def toggle_pin_chat(self, chat_id: str, participant_id: str):
         try:
+            from lib.services.socketio_service import sio
+
             # Find the chat by chat_id and locate the participant by participant_id
             chat_document = await self.mongo_store.db["chats"].find_one(
                 {"_id": chat_id}
@@ -505,6 +506,8 @@ class ChatService:
     async def emit_to_all_participants(
         self, chat_id: str, message_key: str, data: Optional[dict] = None
     ):
+        from lib.services.socketio_service import sio
+
         try:
             chat = await self.mongo_store.db["chats"].find_one(
                 {"_id": chat_id}, {"participants": 1}
