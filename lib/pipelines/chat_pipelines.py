@@ -104,13 +104,22 @@ def get_user_messages_pipeline(
         }
     )
 
-    # If a message has a reply, take the first element from the array, otherwise keep reply_to as None
+    # Add the check to ensure the reply_message array exists before using $size
     pipeline.append(
         {
             "$addFields": {
                 "messages.reply_to": {
                     "$cond": {
-                        "if": {"$gt": [{"$size": "$reply_message"}, 0]},
+                        "if": {
+                            "$and": [
+                                {
+                                    "$ne": ["$reply_message", None]
+                                },  # Check that the field exists
+                                {
+                                    "$gt": [{"$size": "$reply_message"}, 0]
+                                },  # Ensure it's an array with elements
+                            ]
+                        },
                         "then": {"$arrayElemAt": ["$reply_message", 0]},
                         "else": None,
                     }
