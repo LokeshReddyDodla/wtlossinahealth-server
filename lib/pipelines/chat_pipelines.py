@@ -111,13 +111,9 @@ def get_user_messages_pipeline(
                 "messages.reply_to": {
                     "$cond": {
                         "if": {
-                            "$and": [
-                                {
-                                    "$ne": ["$reply_message", None]
-                                },  # Check that the field exists
-                                {
-                                    "$gt": [{"$size": "$reply_message"}, 0]
-                                },  # Ensure it's an array with elements
+                            "$gt": [
+                                {"$size": {"$ifNull": ["$reply_message", []]}},
+                                0,
                             ]
                         },
                         "then": {"$arrayElemAt": ["$reply_message", 0]},
