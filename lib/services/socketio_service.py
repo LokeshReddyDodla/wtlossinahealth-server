@@ -161,7 +161,7 @@ async def toggleReaction(sid, data):
             "messageUpdate",
             {
                 "chat_id": chat_id,
-                "message": serialize_message(updated_message),
+                "message": updated_message,
             },
         )
 
