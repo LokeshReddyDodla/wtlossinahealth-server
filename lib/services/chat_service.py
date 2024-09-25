@@ -229,6 +229,7 @@ class ChatService:
             severity=message_data.severity or "low",
             is_flagged=message_data.is_flagged or False,
             read_receipts=[],
+            reactions=[],
         )
         message_dict = message.dict(by_alias=True)
 
@@ -524,6 +525,75 @@ class ChatService:
         except Exception as e:
             print(f"Failed to mark message as read: {str(e)}")
             raise Exception(f"Failed to mark message as read: {str(e)}")
+
+    async def toggle_reaction(
+        self, chat_id: str, message_id: str, user_id: str, reaction: str
+    ):
+        try:
+            # Fetch the message to check the current reactions
+            message = await self.mongo_store.db["chat_messages"].find_one(
+                {"_id": message_id, "chat_id": chat_id}
+            )
+
+            if not message:
+                raise Exception(
+                    f"Message {message_id} not found in chat {chat_id}"
+                )
+
+            # Check if the user has already reacted to this message
+            user_reaction = next(
+                (
+                    r
+                    for r in message.get("reactions", [])
+                    if r["user_id"] == user_id
+                ),
+                None,
+            )
+
+            if user_reaction:
+                # If the user already reacted with the same reaction, remove the reaction (toggle off)
+                if user_reaction["reaction"] == reaction:
+                    await self.mongo_store.db["chat_messages"].update_one(
+                        {"_id": message_id, "chat_id": chat_id},
+                        {"$pull": {"reactions": {"user_id": user_id}}},
+                    )
+                    print(
+                        f"Removed reaction {reaction} from message {message_id} by user {user_id}"
+                    )
+
+                # If the user reacted with a different reaction, update it
+                else:
+                    await self.mongo_store.db["chat_messages"].update_one(
+                        {
+                            "_id": message_id,
+                            "chat_id": chat_id,
+                            "reactions.user_id": user_id,
+                        },
+                        {"$set": {"reactions.$.reaction": reaction}},
+                    )
+                    print(
+                        f"Updated reaction to {reaction} on message {message_id} by user {user_id}"
+                    )
+            else:
+                # If no reaction exists, add the new reaction
+                await self.mongo_store.db["chat_messages"].update_one(
+                    {"_id": message_id, "chat_id": chat_id},
+                    {
+                        "$addToSet": {
+                            "reactions": {
+                                "user_id": user_id,
+                                "reaction": reaction,
+                            }
+                        }
+                    },
+                )
+                print(
+                    f"Added reaction {reaction} to message {message_id} by user {user_id}"
+                )
+
+        except Exception as e:
+            print(f"Failed to toggle reaction: {str(e)}")
+            raise Exception(f"Failed to toggle reaction: {str(e)}")
 
     async def emit_to_all_participants(
         self, chat_id: str, message_key: str, data: Optional[dict] = None

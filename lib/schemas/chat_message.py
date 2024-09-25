@@ -32,6 +32,11 @@ class ReadReceiptSchema(BaseModel):
     )
 
 
+class ReactionSchema(BaseModel):
+    user_id: str = Field(..., description="UUID of the user reacting.")
+    reaction: str = Field(..., description="Type of reaction (emoji or text).")
+
+
 class ChatMessageBase(BaseModel):
     id: str = Field(
         default_factory=lambda: str(uuid4()),
@@ -62,6 +67,10 @@ class ChatMessageBase(BaseModel):
         default_factory=list,
         description="List of read receipts for the message.",
     )
+    reactions: List[ReactionSchema] = Field(
+        default_factory=list,
+        description="List of reactions to the message.",
+    )
     severity: Literal["low", "medium", "high", "urgent"] = Field(
         "low", description="Severity or priority of the message."
     )
@@ -89,6 +98,12 @@ class ChatMessageBase(BaseModel):
                     {
                         "reader_id": "789e4567-e89b-12d3-a456-426614174003",
                         "read_at": "2024-09-08T12:35:56Z",
+                    }
+                ],
+                "reactions": [
+                    {
+                        "user_id": "789e4567-e89b-12d3-a456-426614174003",
+                        "reaction": "👍",
                     }
                 ],
                 "severity": "low",
