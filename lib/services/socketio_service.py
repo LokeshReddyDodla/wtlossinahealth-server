@@ -4,7 +4,6 @@ from socketio import AsyncRedisManager, AsyncServer
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
 from lib.utils.jwt import decode_jwt_token, verify_jwt_token
-from lib.utils.serializers import serialize_message
 
 # Read redis host from env
 REDIS_HOST = config("REDIS_HOST", default="127.0.0.1:6379")
