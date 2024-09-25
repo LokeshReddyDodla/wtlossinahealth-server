@@ -147,7 +147,14 @@ async def toggleReaction(sid, data):
 
     try:
         # Call toggle reaction in ChatService
-        await chat_service.toggle_reaction(chat_id, message_id, user_id, reaction)
+        await chat_service.toggle_reaction(
+            chat_id, message_id, user_id, reaction
+        )
+
+        # Fetch the updated message with the latest reactions
+        updated_message = await chat_service.get_message_with_reactions(
+            chat_id, message_id
+        )
 
         # Emit the updated reaction event to all participants in the chat
         await chat_service.emit_to_all_participants(
@@ -157,7 +164,7 @@ async def toggleReaction(sid, data):
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "user_id": user_id,
-                "reaction": reaction,
+                "reactions": updated_message["reactions"],
             },
         )
 
