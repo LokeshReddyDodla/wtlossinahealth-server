@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from faker import Faker
+from fastapi.encoders import jsonable_encoder
 from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -274,7 +275,7 @@ class ChatService:
             await self.emit_to_all_participants(
                 message_data.chat_id,
                 "newMessage",
-                serialize_message(message_dict),
+                jsonable_encoder(message_dict),
             )
 
             print(
@@ -614,7 +615,7 @@ class ChatService:
             print("==>  message: ", message)
             if not message:
                 raise Exception(f"Message {message_id} not found in chat ")
-            return serialize_message(message)
+            return jsonable_encoder(message)
         except Exception as e:
             print(f"Failed to fetch message reactions: {str(e)}")
             raise Exception(f"Failed to fetch message reactions: {str(e)}")
