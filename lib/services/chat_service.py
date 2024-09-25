@@ -550,12 +550,17 @@ class ChatService:
                 None,
             )
 
+            current_time = datetime.now()
+
             if user_reaction:
                 # If the user already reacted with the same reaction, remove the reaction (toggle off)
                 if user_reaction["reaction"] == reaction:
                     await self.mongo_store.db["chat_messages"].update_one(
                         {"_id": message_id, "chat_id": chat_id},
-                        {"$pull": {"reactions": {"user_id": user_id}}},
+                        {
+                            "$pull": {"reactions": {"user_id": user_id}},
+                            "$set": {"updated_at": current_time},
+                        },
                     )
                     print(
                         f"Removed reaction {reaction} from message {message_id} by user {user_id}"
@@ -569,7 +574,12 @@ class ChatService:
                             "chat_id": chat_id,
                             "reactions.user_id": user_id,
                         },
-                        {"$set": {"reactions.$.reaction": reaction}},
+                        {
+                            "$set": {
+                                "reactions.$.reaction": reaction,
+                                "updated_at": current_time,
+                            }
+                        },
                     )
                     print(
                         f"Updated reaction to {reaction} on message {message_id} by user {user_id}"
@@ -584,7 +594,8 @@ class ChatService:
                                 "user_id": user_id,
                                 "reaction": reaction,
                             }
-                        }
+                        },
+                        "$set": {"updated_at": current_time},
                     },
                 )
                 print(
