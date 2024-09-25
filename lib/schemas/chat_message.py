@@ -60,6 +60,10 @@ class ChatMessageBase(BaseModel):
         default_factory=datetime.now,
         description="Timestamp of the message creation.",
     )
+    updated_at: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp of the last update (e.g., for reactions or edits).",
+    )
     metadata: MetadataSchema = Field(
         ..., description="Metadata of the message including type and status."
     )
@@ -93,6 +97,7 @@ class ChatMessageBase(BaseModel):
                 },
                 "reply_to": "123e4567-e89b-12d3-a456-426614174002",
                 "timestamp": "2024-09-08T12:34:56Z",
+                "updated_at": "2024-09-08T12:35:56Z",
                 "metadata": {"type": "text", "status": "sent"},
                 "read_receipts": [
                     {
