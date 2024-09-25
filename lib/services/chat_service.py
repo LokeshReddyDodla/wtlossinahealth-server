@@ -606,16 +606,13 @@ class ChatService:
             print(f"Failed to toggle reaction: {str(e)}")
             raise Exception(f"Failed to toggle reaction: {str(e)}")
 
-    async def get_message_with_reactions(self, chat_id: str, message_id: str):
+    async def get_message_by_id(self, message_id: str):
         try:
             message = await self.mongo_store.db["chat_messages"].find_one(
-                {"_id": message_id, "chat_id": chat_id},
-                {"reactions": 1},
+                {"_id": message_id},
             )
             if not message:
-                raise Exception(
-                    f"Message {message_id} not found in chat {chat_id}"
-                )
+                raise Exception(f"Message {message_id} not found in chat ")
             return message
         except Exception as e:
             print(f"Failed to fetch message reactions: {str(e)}")
