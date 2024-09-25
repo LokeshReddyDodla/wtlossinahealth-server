@@ -611,6 +611,7 @@ class ChatService:
             message = await self.mongo_store.db["chat_messages"].find_one(
                 {"_id": message_id},
             )
+            print("==>  message: ", message)
             if not message:
                 raise Exception(f"Message {message_id} not found in chat ")
             return serialize_message(message)
