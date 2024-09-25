@@ -613,7 +613,7 @@ class ChatService:
             )
             if not message:
                 raise Exception(f"Message {message_id} not found in chat ")
-            return message
+            return serialize_message(message)
         except Exception as e:
             print(f"Failed to fetch message reactions: {str(e)}")
             raise Exception(f"Failed to fetch message reactions: {str(e)}")
