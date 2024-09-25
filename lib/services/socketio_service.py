@@ -60,7 +60,6 @@ async def disconnect(sid):
         await sio.leave_room(sid, room)
 
 
-
 @sio.event
 async def sendMessage(sid, data):
     chat_id = data.get("chat_id")
@@ -97,11 +96,14 @@ async def sendMessage(sid, data):
             "error", {"status": "error", "message": str(e)}, room=sid
         )
 
+
 @sio.event
 async def markAsRead(sid, data):
     chat_id = data.get("chat_id")
     user_id = data.get("user_id")
-    message_id = data.get("message_id", None)  # Optional: Mark a specific message or all
+    message_id = data.get(
+        "message_id", None
+    )  # Optional: Mark a specific message or all
 
     # Ensure required fields are present
     if not all([chat_id, user_id]):
@@ -114,16 +116,60 @@ async def markAsRead(sid, data):
             await chat_service.mark_all_messages_as_read(chat_id, user_id)
         else:
             # Mark specific message as read
-            await chat_service.mark_message_as_read(chat_id, user_id, message_id)
+            await chat_service.mark_message_as_read(
+                chat_id, user_id, message_id
+            )
 
         # Notify all participants that the message(s) have been read
-        await chat_service.emit_to_all_participants(chat_id, "messageRead", {"chat_id": chat_id, "user_id": user_id, "message_id": message_id})
+        await chat_service.emit_to_all_participants(
+            chat_id,
+            "messageRead",
+            {"chat_id": chat_id, "user_id": user_id, "message_id": message_id},
+        )
 
         return {"status": "success", "message": "Messages marked as read"}
-    
+
     except Exception as e:
         print(f"Error marking message as read: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+@sio.event
+async def toggleReaction(sid, data):
+    chat_id = data.get("chat_id")
+    message_id = data.get("message_id")
+    user_id = data.get("user_id")
+    reaction = data.get("reaction")
+
+    # Ensure required fields are present
+    if not all([chat_id, message_id, user_id, reaction]):
+        return {"status": "error", "message": "Missing required fields"}
+
+    try:
+        # Call toggle reaction in ChatService
+        await chat_service.toggle_reaction(chat_id, message_id, user_id, reaction)
+
+        # Emit the updated reaction event to all participants in the chat
+        await chat_service.emit_to_all_participants(
+            chat_id,
+            "reactionUpdated",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "user_id": user_id,
+                "reaction": reaction,
+            },
+        )
+
+        return {
+            "status": "success",
+            "message": "Reaction toggled successfully",
+        }
+
+    except Exception as e:
+        print(f"Error toggling reaction: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
 
 @sio.event
 async def list_rooms(sid):
