@@ -472,6 +472,8 @@ class ChatService:
 
     async def mark_all_messages_as_read(self, chat_id: str, user_id: str):
         try:
+            from lib.services.socketio_service import sio
+
             # Update all messages in this chat by adding the user to the read_receipts
             await self.mongo_store.db["chat_messages"].update_many(
                 {
@@ -499,6 +501,13 @@ class ChatService:
                     }
                 },
             )
+            
+            # Emit an acknowledgment to the UI
+            await sio.emit(
+                EmitMessageKey.MARK_ALL_MESSAGES_AS_READ_ACK.value,
+                {"chat_id": chat_id, "user_id": str(user_id)},
+                room=user_id,
+            )
 
         except Exception as e:
             print(f"Failed to mark all messages as read: {str(e)}")
@@ -511,9 +520,7 @@ class ChatService:
         Mark a specific message in a chat as read by the user.
         """
         try:
-            print("==> mark_message_as_read chat_id: ", chat_id)
-            print("==> mark_message_as_read user_id: ", user_id)
-            print("==> mark_message_as_read message_id: ", message_id)
+            from lib.services.socketio_service import sio
 
             # Update the specific message by adding the user to the read_receipts
             await self.mongo_store.db["chat_messages"].update_one(
@@ -541,8 +548,6 @@ class ChatService:
                 }
             )
 
-            print("==> unread_message_count: ", unread_message_count)
-
             # If no more unread messages, set unread count to 0 for this user
             if unread_message_count == 0:
                 await self.mongo_store.db["chats"].update_one(
@@ -554,6 +559,14 @@ class ChatService:
                         }
                     },
                 )
+            
+            
+            # Emit an acknowledgment to the UI
+            await sio.emit(
+                EmitMessageKey.MARK_MESSAGE_AS_READ_ACK.value,
+                {"chat_id": chat_id, "message_id": message_id, "user_id": str(user_id)},
+                room=user_id,
+            )
 
         except Exception as e:
             print(f"Failed to mark message as read: {str(e)}")
