@@ -684,9 +684,8 @@ class ChatService:
         """Emit a message to each participant."""
         from lib.services.socketio_service import sio
 
-        print("==> emit to participants: ", participants)
         for participant in participants:
-            user_id = participant["id"]
+            user_id = str(participant["id"])
             await sio.emit(message_key, data, room=user_id)
             print(f"Emitted {message_key} to participant {user_id}")
 
