@@ -3,11 +3,13 @@ from typing import Callable, List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
@@ -25,11 +27,11 @@ from .router import router
 async def create_care_provider_profile(
     request: Request,
     care_provider: CareProviderCreate,
+    session: AsyncSession = Depends(get_postgres_session),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("create", CareProviderFeature.CARE_PROVIDER)
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
         service = CareProviderService(session)
         try:
             new_care_provider = await service.create_care_provider(

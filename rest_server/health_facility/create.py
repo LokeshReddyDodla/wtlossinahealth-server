@@ -2,9 +2,11 @@ from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
@@ -20,9 +22,9 @@ from .router import router
 async def create_health_facility(
     request: Request,
     health_facility: HealthFacilityCreate,
+    session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
         service = HealthFacilityService(session)
         try:
             new_health_facility = await service.create_health_facility(

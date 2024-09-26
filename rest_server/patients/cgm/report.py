@@ -1,32 +1,25 @@
 import traceback
-from typing import Union
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta
+from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
-
-
-from lib.schemas.glucose_stats import (
-    GlucoseDailyReport,
-    GlucoseOverallReport,
-    GlucoseWeeklyReport,
-)
+from lib.schemas.glucose_stats import (GlucoseDailyReport,
+                                       GlucoseOverallReport,
+                                       GlucoseWeeklyReport)
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
-
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
-
-
-from rest_server.patients.cgm.api_schema import (
-    CompleteGlucoseReport,
-    GlucoseReportResponse,
-)
+from rest_server.patients.cgm.api_schema import (CompleteGlucoseReport,
+                                                 GlucoseReportResponse)
 from rest_server.response_models import ErrorResponse
+
 from .router import router
 
 
@@ -38,6 +31,7 @@ async def get_detailed_glucose_report(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
+    session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
@@ -56,63 +50,62 @@ async def get_detailed_glucose_report(
             raise HTTPException(status_code=400, detail=response.dict())
 
         # Fetch patient details
-        async with request.state.context.postgres_store.get_session() as postgres_session:
-            glucose_processor = GlucoseStatsProcessor(
-                clickhouse_store, postgres_session, patient_id
-            )
+        glucose_processor = GlucoseStatsProcessor(
+            clickhouse_store, session, patient_id
+        )
 
-            fitness_processor = FitnessStatsProcessor(
-                clickhouse_store, patient_id
-            )
+        fitness_processor = FitnessStatsProcessor(
+            clickhouse_store, patient_id
+        )
 
-            from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
-            to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
+        from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
+        to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-            # Fetch patient details
-            patient_detail = await glucose_processor.fetch_profile()
+        # Fetch patient details
+        patient_detail = await glucose_processor.fetch_profile()
 
-            # Overall Stats
-            overall_period = OverallPeriod(from_date, to_date)
-            overall_stats = GlucoseOverallReport(
-                cgm_report=await glucose_processor.process(
-                    overall_period.periods
-                ),
-                fitness_report=fitness_processor.fetch_summary_stats(
-                    from_date_str, to_date_str
-                ),
-            )
+        # Overall Stats
+        overall_period = OverallPeriod(from_date, to_date)
+        overall_stats = GlucoseOverallReport(
+            cgm_report=await glucose_processor.process(
+                overall_period.periods
+            ),
+            fitness_report=fitness_processor.fetch_summary_stats(
+                from_date_str, to_date_str
+            ),
+        )
 
-            # Day-wise Stats
-            day_periods = DayWisePeriod(from_date, to_date)
-            day_wise_stats = GlucoseDailyReport(
-                cgm_report=await glucose_processor.process(
-                    day_periods.periods, include_readings=True
-                ),
-                fitness_report=fitness_processor.fetch_daily_stats(
-                    from_date_str, to_date_str
-                ),
-            )
+        # Day-wise Stats
+        day_periods = DayWisePeriod(from_date, to_date)
+        day_wise_stats = GlucoseDailyReport(
+            cgm_report=await glucose_processor.process(
+                day_periods.periods, include_readings=True
+            ),
+            fitness_report=fitness_processor.fetch_daily_stats(
+                from_date_str, to_date_str
+            ),
+        )
 
-            # Week-wise Stats
-            week_periods = WeekWisePeriod(from_date, to_date)
-            week_wise_stats = GlucoseWeeklyReport(
-                cgm_report=await glucose_processor.process(
-                    week_periods.periods, include_readings=True
-                ),
-                fitness_report=fitness_processor.fetch_weekly_stats(
-                    from_date_str, to_date_str
-                ),
-            )
+        # Week-wise Stats
+        week_periods = WeekWisePeriod(from_date, to_date)
+        week_wise_stats = GlucoseWeeklyReport(
+            cgm_report=await glucose_processor.process(
+                week_periods.periods, include_readings=True
+            ),
+            fitness_report=fitness_processor.fetch_weekly_stats(
+                from_date_str, to_date_str
+            ),
+        )
 
-            return GlucoseReportResponse(
-                message="Report generated successfully",
-                data=CompleteGlucoseReport(
-                    patient_detail=patient_detail,
-                    overall_stats=overall_stats,
-                    day_wise_stats=day_wise_stats,
-                    week_wise_stats=week_wise_stats,
-                ),
-            )
+        return GlucoseReportResponse(
+            message="Report generated successfully",
+            data=CompleteGlucoseReport(
+                patient_detail=patient_detail,
+                overall_stats=overall_stats,
+                day_wise_stats=day_wise_stats,
+                week_wise_stats=week_wise_stats,
+            ),
+        )
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

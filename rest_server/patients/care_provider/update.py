@@ -2,10 +2,12 @@ from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.patient_care_provider import \
     PatientCareProvider as PatientCareProviderModel
 from lib.schemas.patient_care_provider import \
@@ -28,20 +30,20 @@ async def update_patient_care_provider(
     request: Request,
     patient_care_provider_id: str,
     patient_care_provider_update: PatientCareProviderUpdate,
+    session: AsyncSession = Depends(get_postgres_session),
 ) -> Union[PatientCareProviderResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
-        service = PatientCareProviderService(session)
-        try:
-            updates = patient_care_provider_update.dict(exclude_unset=True)
-            patient_care_provider = await service.update_patient_care_provider(
-                patient_care_provider_id, updates
-            )
-            return PatientCareProviderResponse(
-                message="Patient care provider updated successfully",
-                data=PatientCareProviderSchema.from_orm(patient_care_provider),
-            )
-        except HTTPException as e:
-            raise e
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+    service = PatientCareProviderService(session)
+    try:
+        updates = patient_care_provider_update.dict(exclude_unset=True)
+        patient_care_provider = await service.update_patient_care_provider(
+            patient_care_provider_id, updates
+        )
+        return PatientCareProviderResponse(
+            message="Patient care provider updated successfully",
+            data=PatientCareProviderSchema.from_orm(patient_care_provider),
+        )
+    except HTTPException as e:
+        raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())

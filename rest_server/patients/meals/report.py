@@ -1,22 +1,19 @@
 import traceback
-from typing import Union
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta
+from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
-
-
-from lib.schemas.fitness_stats import (
-    CompleteFitnessReport,
-)
-
+from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.patients.fitness.api_schema import FitnessReportResponse
+
 from .router import router
 
 
@@ -27,21 +24,18 @@ async def get_meal_report(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
+    session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         clickhouse_store = request.state.context.clickhouse_store
         patient_id = str(current_patient.patient_id)
 
-        async with request.state.context.postgres_store.get_session() as session:
+        processor = MealStatsProcessor(session, clickhouse_store, patient_id)
 
-            processor = MealStatsProcessor(
-                session, clickhouse_store, patient_id
-            )
-
-            grouped_by_date = await processor.get_meal_stats_by_date(
-                from_date, to_date
-            )
+        grouped_by_date = await processor.get_meal_stats_by_date(
+            from_date, to_date
+        )
 
         return grouped_by_date
     except HTTPException as http_exc:

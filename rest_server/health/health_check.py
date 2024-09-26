@@ -1,18 +1,23 @@
-from fastapi import APIRouter, Request
-from rest_server.health.database_health import (
-    check_clickhouse_health,
-    check_postgres_health,
-    check_redis_health,
-    check_mongodb_health,
-)
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from lib.dependencies.database import get_postgres_session
 from rest_server.health.api_health import check_user_api_health
+from rest_server.health.database_health import (check_clickhouse_health,
+                                                check_mongodb_health,
+                                                check_postgres_health,
+                                                check_redis_health)
 from rest_server.response_models import SuccessResponse
+
 from .router import router
 
 
 @router.get("/postgres", tags=["Health"])
-async def postgres_health_check(request: Request):
-    await check_postgres_health(request)
+async def postgres_health_check(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    await check_postgres_health(request, session)
     return SuccessResponse(message="Postgres is available")
 
 

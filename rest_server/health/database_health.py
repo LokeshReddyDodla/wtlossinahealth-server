@@ -1,15 +1,16 @@
 import asyncpg
-from redis import RedisError
-from pymongo.errors import PyMongoError
-from fastapi import HTTPException
-from sqlalchemy.sql import text
 from clickhouse_driver.errors import Error as ClickHouseError
+from fastapi import Depends, HTTPException
+from pymongo.errors import PyMongoError
+from redis import RedisError
+from sqlalchemy.sql import text
+
+from lib.dependencies.database import get_postgres_session
 
 
-async def check_postgres_health(request):
+async def check_postgres_health(request, session):
     try:
-        async with request.state.context.postgres_store.get_session() as session:
-            await session.execute(text("SELECT 1"))
+        await session.execute(text("SELECT 1"))
         return "available"
     except asyncpg.PostgresError:
         raise HTTPException(status_code=503, detail="Postgres unavailable")

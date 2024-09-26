@@ -1,17 +1,19 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.models.patient import Patient
-
-from sqlalchemy.future import select
-from lib.models.patient_vital import PatientVital
-from lib.schemas.patient_vital import (
-    PatientVitalCreate,
-    PatientVital as PatientVitalSchema,
-)
-from rest_server.patients.vitals.api_schema import PatientVitalUploadResponse
-from rest_server.response_models import SuccessResponse, ErrorResponse
-from typing import Union
 from datetime import datetime
+from typing import Union
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
+from lib.models.patient import Patient
+from lib.models.patient_vital import PatientVital
+from lib.schemas.patient_vital import PatientVital as PatientVitalSchema
+from lib.schemas.patient_vital import PatientVitalCreate
+from rest_server.patients.vitals.api_schema import PatientVitalUploadResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -19,9 +21,9 @@ from .router import router
 async def upload_vitals(
     request: Request,
     vitals: PatientVitalCreate,
+    session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientVitalUploadResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
         try:
             new_vitals = PatientVital(
                 patient_id=current_patient.patient_id,
