@@ -475,13 +475,20 @@ class ChatService:
                             "reader_id": user_id,
                             "read_at": datetime.now(),
                         }
-                    }
+                    },
+                    "$set": {"updated_at": datetime.now()},
                 },
             )
 
             # Set unread count for this user to 0 in the chat
             await self.mongo_store.db["chats"].update_one(
-                {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+                {"_id": chat_id},
+                {
+                    "$set": {
+                        f"unread_counts.{user_id}": 0,
+                        "updated_at": datetime.now(),
+                    }
+                },
             )
 
         except Exception as e:
@@ -505,7 +512,8 @@ class ChatService:
                             "reader_id": user_id,
                             "read_at": datetime.now(),
                         }
-                    }
+                    },
+                    "$set": {"updated_at": datetime.now()},
                 },
             )
 
@@ -519,7 +527,13 @@ class ChatService:
             # If no more unread messages, set unread count to 0 for this user
             if unread_message_count == 0:
                 await self.mongo_store.db["chats"].update_one(
-                    {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+                    {"_id": chat_id},
+                    {
+                        "$set": {
+                            f"unread_counts.{user_id}": 0,
+                            "updated_at": datetime.now(),
+                        }
+                    },
                 )
 
         except Exception as e:
@@ -611,7 +625,6 @@ class ChatService:
             message = await self.mongo_store.db["chat_messages"].find_one(
                 {"_id": message_id},
             )
-            print("==>  message: ", message)
             if not message:
                 raise Exception(f"Message {message_id} not found in chat ")
             return jsonable_encoder(message)
