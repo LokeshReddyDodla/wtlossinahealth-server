@@ -504,7 +504,7 @@ class ChatService:
             
             # Emit an acknowledgment to the UI
             await sio.emit(
-                EmitMessageKey.MARK_ALL_MESSAGES_AS_READ_ACK.value,
+                EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
                 {"chat_id": chat_id, "user_id": str(user_id)},
                 room=user_id,
             )
@@ -563,7 +563,7 @@ class ChatService:
             
             # Emit an acknowledgment to the UI
             await sio.emit(
-                EmitMessageKey.MARK_MESSAGE_AS_READ_ACK.value,
+                EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
                 {"chat_id": chat_id, "message_id": message_id, "user_id": str(user_id)},
                 room=user_id,
             )
