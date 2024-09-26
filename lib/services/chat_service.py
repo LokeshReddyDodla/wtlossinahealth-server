@@ -501,12 +501,12 @@ class ChatService:
                     }
                 },
             )
-            
+
             # Emit an acknowledgment to the UI
-            await sio.emit(
-                EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
-                {"chat_id": chat_id, "user_id": str(user_id)},
-                room=user_id,
+            await self.emit_to_associated_participants(
+                message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
+                data={"chat_id": chat_id, "user_id": str(user_id)},
+                chat_id=chat_id,
             )
 
         except Exception as e:
@@ -559,13 +559,16 @@ class ChatService:
                         }
                     },
                 )
-            
-            
+
             # Emit an acknowledgment to the UI
-            await sio.emit(
-                EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
-                {"chat_id": chat_id, "message_id": message_id, "user_id": str(user_id)},
-                room=user_id,
+            await self.emit_to_associated_participants(
+                message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
+                data={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "user_id": str(user_id),
+                },
+                chat_id=chat_id,
             )
 
         except Exception as e:
