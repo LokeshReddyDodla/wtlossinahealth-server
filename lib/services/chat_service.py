@@ -511,8 +511,11 @@ class ChatService:
         Mark a specific message in a chat as read by the user.
         """
         try:
+            print("==> mark_message_as_read chat_id: ", chat_id)
+            print("==> mark_message_as_read user_id: ", user_id)
+            print("==> mark_message_as_read message_id: ", message_id)
+            
             # Update the specific message by adding the user to the read_receipts
-
             await self.mongo_store.db["chat_messages"].update_one(
                 {"_id": message_id, "chat_id": chat_id},
                 {
@@ -532,6 +535,8 @@ class ChatService:
             ].count_documents(
                 {"chat_id": chat_id, "read_receipts": {"$ne": user_id}}
             )
+            
+            print("==> unread_message_count: ", unread_message_count)
 
             # If no more unread messages, set unread count to 0 for this user
             if unread_message_count == 0:
