@@ -89,10 +89,10 @@ def get_user_messages_pipeline(
 
     if last_sync_time:
         pipeline.append(
-            {"$match": {"messages.timestamp": {"$gt": last_sync_time}}}
+            {"$match": {"messages.updated_at": {"$gt": last_sync_time}}}
         )
 
-    pipeline.append({"$sort": {"messages.timestamp": 1}})
+    pipeline.append({"$sort": {"messages.updated_at": 1}})
 
     pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
 

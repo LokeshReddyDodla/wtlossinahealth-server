@@ -58,6 +58,8 @@ from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat_service import ChatService
+from lib.services.patient_care_provider_service import \
+    PatientCareProviderService
 from lib.services.socketio_service import sio
 
 
@@ -65,6 +67,9 @@ class PatientProfileService:
     def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.chat_service = ChatService()
+        self.patient_care_provider_service = PatientCareProviderService(
+            postgres_session
+        )
 
     async def fetch_patient_profile(
         self, patient_id: str, detailed: bool = False
@@ -152,6 +157,15 @@ class PatientProfileService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
+
+            await self.chat_service.emit_to_associated_participants(
+                message_key="chatListUpdate",
+                data=None,
+                chat_id=None,
+                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                    patient_id=patient_id
+                ),
+            )
 
             return patient_profile
 

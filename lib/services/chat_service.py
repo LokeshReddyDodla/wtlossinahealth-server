@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Awaitable, Callable, List, Literal, Optional
 
 from faker import Faker
 from fastapi.encoders import jsonable_encoder
@@ -13,7 +13,6 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
-from lib.utils.serializers import serialize_message
 
 fake = Faker()
 
@@ -272,10 +271,10 @@ class ChatService:
                         )
 
             # After message is added to DB, we use the utility function to emit it to all participants
-            await self.emit_to_all_participants(
-                message_data.chat_id,
+            await self.emit_to_associated_participants(
                 "newMessage",
                 jsonable_encoder(message_dict),
+                message_data.chat_id,
             )
 
             print(
@@ -476,13 +475,20 @@ class ChatService:
                             "reader_id": user_id,
                             "read_at": datetime.now(),
                         }
-                    }
+                    },
+                    "$set": {"updated_at": datetime.now()},
                 },
             )
 
             # Set unread count for this user to 0 in the chat
             await self.mongo_store.db["chats"].update_one(
-                {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+                {"_id": chat_id},
+                {
+                    "$set": {
+                        f"unread_counts.{user_id}": 0,
+                        "updated_at": datetime.now(),
+                    }
+                },
             )
 
         except Exception as e:
@@ -506,7 +512,8 @@ class ChatService:
                             "reader_id": user_id,
                             "read_at": datetime.now(),
                         }
-                    }
+                    },
+                    "$set": {"updated_at": datetime.now()},
                 },
             )
 
@@ -520,7 +527,13 @@ class ChatService:
             # If no more unread messages, set unread count to 0 for this user
             if unread_message_count == 0:
                 await self.mongo_store.db["chats"].update_one(
-                    {"_id": chat_id}, {"$set": {f"unread_counts.{user_id}": 0}}
+                    {"_id": chat_id},
+                    {
+                        "$set": {
+                            f"unread_counts.{user_id}": 0,
+                            "updated_at": datetime.now(),
+                        }
+                    },
                 )
 
         except Exception as e:
@@ -612,7 +625,6 @@ class ChatService:
             message = await self.mongo_store.db["chat_messages"].find_one(
                 {"_id": message_id},
             )
-            print("==>  message: ", message)
             if not message:
                 raise Exception(f"Message {message_id} not found in chat ")
             return jsonable_encoder(message)
@@ -620,28 +632,47 @@ class ChatService:
             print(f"Failed to fetch message reactions: {str(e)}")
             raise Exception(f"Failed to fetch message reactions: {str(e)}")
 
-    async def emit_to_all_participants(
-        self, chat_id: str, message_key: str, data: Optional[dict] = None
+    async def emit_to_associated_participants(
+        self,
+        message_key: str,
+        data: Optional[dict] = None,
+        chat_id: Optional[str] = None,
+        fetch_func: Optional[Callable[[], Awaitable[List]]] = None,
     ):
         from lib.services.socketio_service import sio
 
         try:
-            chat = await self.mongo_store.db["chats"].find_one(
-                {"_id": chat_id}, {"participants": 1}
-            )
+            participants = []
 
-            if not chat:
-                raise Exception(f"Chat with ID {chat_id} not found")
+            if chat_id:
+                # Fetch participants using chat_id
+                chat = await self.mongo_store.db["chats"].find_one(
+                    {"_id": chat_id}, {"participants": 1}
+                )
+                if not chat:
+                    raise Exception(f"Chat with ID {chat_id} not found")
+                participants = chat.get("participants", [])
 
-            participants = chat.get("participants", [])
+            elif fetch_func:
+                # Call the provided function to fetch associated records
+                associated_records = await fetch_func()
+                participants = [
+                    {"id": record.patient_id} for record in associated_records
+                ] + [
+                    {"id": record.care_provider_id}
+                    for record in associated_records
+                ]
+
+            else:
+                raise ValueError(
+                    "Must provide either chat_id, patient_id, or care_provider_id"
+                )
 
             # Emit the message to each participant
             for participant in participants:
                 user_id = participant["id"]
                 await sio.emit(message_key, data, room=user_id)
-                print(
-                    f"Emitted {message_key} to participant {user_id} in chat {chat_id}"
-                )
+                print(f"Emitted {message_key} to participant {user_id}")
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")

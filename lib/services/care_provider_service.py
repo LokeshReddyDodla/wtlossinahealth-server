@@ -11,6 +11,8 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
+from lib.services.patient_care_provider_service import \
+    PatientCareProviderService
 from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
@@ -20,6 +22,9 @@ class CareProviderService:
     def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.chat_service = ChatService()
+        self.patient_care_provider_service = PatientCareProviderService(
+            postgres_session
+        )
 
     async def fetch_care_provider(
         self, care_provider_id: str, detailed: bool = False
@@ -114,6 +119,14 @@ class CareProviderService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
 
+            await self.chat_service.emit_to_associated_participants(
+                message_key="chatListUpdate",
+                data=None,
+                chat_id=None,
+                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                    care_provider_id=care_provider_id
+                ),
+            )
             return care_provider
 
         except IntegrityError:

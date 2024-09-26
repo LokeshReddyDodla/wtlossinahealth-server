@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -28,6 +28,9 @@ class PatientCareProviderService:
         self.chat_service = ChatService()
         self.care_provider_service = CareProviderService(postgres_session)
         self.patient_service = PatientProfileService(postgres_session)
+        self.patient_care_provider_service = PatientCareProviderService(
+            postgres_session
+        )
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
@@ -71,6 +74,51 @@ class PatientCareProviderService:
                 detail=f"Database error: {str(e)}",
             )
 
+    async def fetch_associated_records(
+        self,
+        patient_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        patient_care_provider_id: Optional[str] = None,
+    ) -> List[PatientCareProviderModel]:
+        try:
+            if not patient_id and not care_provider_id:
+                raise ValueError(
+                    "Either patient_id or care_provider_id must be provided."
+                )
+
+            stmt = select(PatientCareProviderModel)
+
+            if patient_care_provider_id:
+                stmt = stmt.filter(
+                    PatientCareProviderModel.patient_care_provider_id
+                    == patient_care_provider_id
+                )
+
+            elif patient_id:
+                stmt = stmt.filter(
+                    PatientCareProviderModel.patient_id == patient_id
+                )
+            elif care_provider_id:
+                stmt = stmt.filter(
+                    PatientCareProviderModel.care_provider_id
+                    == care_provider_id
+                )
+
+            result = await self.postgres_session.execute(stmt)
+            connected_records = result.scalars().all()
+
+            return list(connected_records)
+
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            )
+
     async def create_patient_care_provider(
         self, patient_care_provider_data
     ) -> PatientCareProviderModel:
@@ -103,6 +151,15 @@ class PatientCareProviderService:
             # Create chat instance in MongoDB
             await self._create_chats(patient, care_provider)
 
+            await self.chat_service.emit_to_associated_participants(
+                message_key="chatListUpdate",
+                data=None,
+                chat_id=None,
+                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                    care_provider_id=patient_care_provider_data.care_provider_id
+                ),
+            )
+
             return new_patient_care_provider
         except IntegrityError:
             raise HTTPException(
@@ -128,6 +185,15 @@ class PatientCareProviderService:
             self.postgres_session.add(patient_care_provider)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_care_provider)
+
+            await self.chat_service.emit_to_associated_participants(
+                message_key="chatListUpdate",
+                data=None,
+                chat_id=None,
+                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                    patient_care_provider_id=patient_care_provider_id
+                ),
+            )
 
             return patient_care_provider
 
@@ -159,6 +225,15 @@ class PatientCareProviderService:
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
+            
+            await self.chat_service.emit_to_associated_participants(
+                message_key="chatListUpdate",
+                data=None,
+                chat_id=None,
+                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                    patient_care_provider_id=patient_care_provider_id
+                ),
+            )
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
