@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.constants import PROFILE_TYPE_PATIENT
+from lib.core.constants import ProfileType
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
@@ -14,7 +14,7 @@ async def get_current_patient(
     user_role: tuple = Depends(get_current_user),
 ):
     user_id, role = user_role
-    if role != PROFILE_TYPE_PATIENT:
+    if role != ProfileType.PATIENT.value:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     result = await session.execute(

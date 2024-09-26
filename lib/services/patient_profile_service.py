@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import \
@@ -156,7 +157,7 @@ class PatientProfileService:
             await self.postgres_session.refresh(patient_profile)
 
             await self.chat_service.emit_to_associated_participants(
-                message_key="chatListUpdate",
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
                 patient_id=patient_id,
             )

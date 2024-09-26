@@ -1,6 +1,7 @@
 from decouple import config
 from socketio import AsyncRedisManager, AsyncServer
 
+from lib.core.constants import EmitMessageKey
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
 from lib.utils.jwt import decode_jwt_token, verify_jwt_token
@@ -122,7 +123,7 @@ async def markAsRead(sid, data):
 
         # Notify all participants that the message(s) have been read
         await chat_service.emit_to_associated_participants(
-            message_key="messageRead",
+            message_key=EmitMessageKey.MESSAGE_READ.value,
             data={
                 "chat_id": chat_id,
                 "user_id": user_id,
@@ -160,7 +161,7 @@ async def toggleReaction(sid, data):
 
         # Emit the updated reaction event to all participants in the chat
         await chat_service.emit_to_associated_participants(
-            message_key="messageUpdate",
+            message_key=EmitMessageKey.MESSAGE_UPDATED.value,
             data={
                 "chat_id": chat_id,
                 "message": updated_message,

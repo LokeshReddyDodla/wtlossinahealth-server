@@ -1,6 +1,6 @@
 from typing import Literal
 
-ProfileType = Literal[
+ProfileTypeLiteral = Literal[
     "patient",
     "care_provider",
 ]
