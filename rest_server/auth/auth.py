@@ -49,7 +49,9 @@ async def verify_otp_endpoint(
             )
             return OtpVerifySuccessResponse(
                 message="OTP verified",
-                data=OtpVerifyResponse(token=token, is_new_user=is_new_user),
+                data=OtpVerifyResponse(
+                    token=token, user_id=user_id, is_new_user=is_new_user
+                ),
             )
         else:
             response = ErrorResponse(
