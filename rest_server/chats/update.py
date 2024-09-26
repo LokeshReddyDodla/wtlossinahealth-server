@@ -3,6 +3,7 @@ from typing import Literal, Union
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lib.dependencies.auth.base import get_current_user
+from lib.dependencies.service_dependencies import get_chat_service
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -14,12 +15,12 @@ from .router import router
 async def toggle_pin_chat(
     request: Request,
     chat_id: str,
+    chat_service: ChatService = Depends(get_chat_service),
     current_user=Depends(get_current_user),
 ) -> Union[SuccessResponse, HTTPException]:
     """
     Send a message to a chat.
     """
-    chat_service = ChatService()
     try:
         user_id, role = current_user
 

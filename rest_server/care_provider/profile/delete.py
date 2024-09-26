@@ -2,9 +2,12 @@ from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_care_provider_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
@@ -16,18 +19,18 @@ from .router import router
 
 @router.delete("/{care_provider_id}", response_model=SuccessResponse)
 async def delete_care_provider_profile(
-    request: Request, care_provider_id: str
+    request: Request,
+    care_provider_id: str,
+    care_provider_service: CareProviderService = Depends(
+        get_care_provider_service
+    ),
 ) -> Union[SuccessResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
-        service = CareProviderService(session)
-        try:
-            await service.delete_care_provider(care_provider_id)
+    try:
+        await care_provider_service.delete_care_provider(care_provider_id)
 
-            return SuccessResponse(
-                message="Care provider deleted successfully."
-            )
-        except HTTPException as e:
-            raise e
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return SuccessResponse(message="Care provider deleted successfully.")
+    except HTTPException as e:
+        raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())

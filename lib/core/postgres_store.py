@@ -1,7 +1,7 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 from decouple import config
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 # Read PostgreSQL URL from env
 SQLALCHEMY_DATABASE_URL = config("POSTGRES_ASYNCPG_URL")
@@ -15,7 +15,7 @@ engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
 
 # Create a configured "Session" class
 AsyncSessionLocal = sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False
+    bind=engine, class_=AsyncSession, expire_on_commit=False, 
 )
 
 # Create a Base class for our models to inherit
@@ -27,12 +27,13 @@ class PostgresStore:
         self.engine = engine
         self.session_local = AsyncSessionLocal
 
+    async def get_session(self):
+        async with self.session_local() as session:
+            yield session
+
     async def __aenter__(self):
         self.session = self.session_local()
         return self.session
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close()
-
-    def get_session(self):
-        return self

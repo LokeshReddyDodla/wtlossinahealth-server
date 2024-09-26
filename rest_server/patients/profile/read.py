@@ -3,10 +3,13 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_care_provider import PatientCareProvider
@@ -22,20 +25,22 @@ from .router import router
 
 @router.get(path="", response_model=PatientCompleteProfileResponse)
 async def get_patient_details(
-    request: Request, current_patient: Patient = Depends(get_current_patient)
+    request: Request,
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientCompleteProfileResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
-        service = PatientProfileService(session)
-        try:
-            result = await service.fetch_patient_profile(
-                str(current_patient.patient_id), detailed=True
-            )
-            return PatientCompleteProfileResponse(
-                message="Patient data fetched successfully.",
-                data=CompletePatientProfile.from_orm(result),
-            )
-        except HTTPException as http_exc:
-            raise http_exc
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+    try:
+        result = await patient_profile_service.fetch_patient_profile(
+            str(current_patient.patient_id), detailed=True
+        )
+        return PatientCompleteProfileResponse(
+            message="Patient data fetched successfully.",
+            data=CompletePatientProfile.from_orm(result),
+        )
+    except HTTPException as http_exc:
+        raise http_exc
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())

@@ -1,19 +1,21 @@
+from typing import List, Optional, Union
+
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
 from lib.dependencies.auth.admin_auth import get_current_admin
+from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.database import get_postgres_session
 from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
-from fastapi import HTTPException, Request, Depends
-from lib.dependencies.auth.patient_auth import get_current_patient
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-
-from typing import List, Optional, Union
-from sqlalchemy.future import select
-from lib.schemas.health_facility import (
-    HealthFacility as HealthFacilitySchema,
-    HealthFacilityUpdate,
-)
+from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
+from lib.schemas.health_facility import HealthFacilityUpdate
 from lib.services.health_facility_service import HealthFacilityService
 from rest_server.health_facility.api_schema import HealthFacilityResponse
-from rest_server.response_models import SuccessResponse, ErrorResponse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -22,9 +24,9 @@ async def update_health_facility(
     request: Request,
     health_facility_id: str,
     health_facility_update: HealthFacilityUpdate,
+    session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
 ) -> Union[HealthFacilityResponse, HTTPException]:
-    async with request.state.context.postgres_store.get_session() as session:
         service = HealthFacilityService(session)
         try:
             updated_health_facility = await service.update_health_facility(

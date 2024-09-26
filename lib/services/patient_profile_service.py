@@ -62,15 +62,11 @@ from lib.services.socketio_service import sio
 
 
 class PatientProfileService:
-    def __init__(self, postgres_session: AsyncSession):
-        from lib.services.patient_care_provider_service import \
-            PatientCareProviderService
-
+    def __init__(
+        self, postgres_session: AsyncSession, chat_service: ChatService
+    ):
         self.postgres_session = postgres_session
-        self.chat_service = ChatService()
-        self.patient_care_provider_service = PatientCareProviderService(
-            postgres_session
-        )
+        self.chat_service = chat_service
 
     async def fetch_patient_profile(
         self, patient_id: str, detailed: bool = False
@@ -161,11 +157,8 @@ class PatientProfileService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key="chatListUpdate",
-                data=None,
-                chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
-                    patient_id=patient_id
-                ),
+                session=self.postgres_session,
+                patient_id=patient_id,
             )
 
             return patient_profile

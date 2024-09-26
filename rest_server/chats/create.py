@@ -3,6 +3,7 @@ from typing import Literal, Union
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lib.dependencies.auth.base import get_current_user
+from lib.dependencies.service_dependencies import get_chat_service
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -15,7 +16,7 @@ async def send_message(
     request: Request,
     message_data: ChatMessageCreate,
     current_user=Depends(get_current_user),
-    chat_service: ChatService = Depends(ChatService),
+    chat_service: ChatService = Depends(get_chat_service),
 ) -> Union[SuccessResponse, HTTPException]:
     """
     Send a message to a chat.
@@ -25,7 +26,6 @@ async def send_message(
 
         # TODO: check if chat_id even exists
         await chat_service.add_message(
-            user_id=str(user_id),
             message_data=message_data,
         )
 

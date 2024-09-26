@@ -23,14 +23,17 @@ from lib.services.socketio_service import sio
 
 
 class PatientCareProviderService:
-    def __init__(self, postgres_session: AsyncSession):
+    def __init__(
+        self,
+        postgres_session: AsyncSession,
+        chat_service: ChatService,
+        care_provider_service: CareProviderService,
+        patient_service: PatientProfileService,
+    ):
         self.postgres_session = postgres_session
-        self.chat_service = ChatService()
-        self.care_provider_service = CareProviderService(postgres_session)
-        self.patient_service = PatientProfileService(postgres_session)
-        self.patient_care_provider_service = PatientCareProviderService(
-            postgres_session
-        )
+        self.chat_service = chat_service
+        self.care_provider_service = care_provider_service
+        self.patient_service = patient_service
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
@@ -74,8 +77,9 @@ class PatientCareProviderService:
                 detail=f"Database error: {str(e)}",
             )
 
+    @staticmethod
     async def fetch_associated_records(
-        self,
+        postgres_session: AsyncSession,
         patient_id: Optional[str] = None,
         care_provider_id: Optional[str] = None,
         patient_care_provider_id: Optional[str] = None,
@@ -104,7 +108,7 @@ class PatientCareProviderService:
                     == care_provider_id
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             connected_records = result.scalars().all()
 
             return list(connected_records)
@@ -153,11 +157,8 @@ class PatientCareProviderService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key="chatListUpdate",
-                data=None,
-                chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
-                    care_provider_id=patient_care_provider_data.care_provider_id
-                ),
+                session=self.postgres_session,
+                care_provider_id=patient_care_provider_data.care_provider_id,
             )
 
             return new_patient_care_provider
@@ -188,11 +189,8 @@ class PatientCareProviderService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key="chatListUpdate",
-                data=None,
-                chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
-                    patient_care_provider_id=patient_care_provider_id
-                ),
+                session=self.postgres_session,
+                patient_care_provider_id=patient_care_provider_id,
             )
 
             return patient_care_provider
@@ -225,14 +223,11 @@ class PatientCareProviderService:
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
-            
+
             await self.chat_service.emit_to_associated_participants(
                 message_key="chatListUpdate",
-                data=None,
-                chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
-                    patient_care_provider_id=patient_care_provider_id
-                ),
+                session=self.postgres_session,
+                patient_care_provider_id=patient_care_provider_id,
             )
 
         except SQLAlchemyError as e:
