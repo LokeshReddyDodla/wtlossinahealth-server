@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from socketio import ASGIApp
 
 from app.import_routes import import_routes
-from lib.core.di_container import get_container
 from lib.initializers.cache_setup import initialize_caches
 from lib.initializers.db_setup import (create_db_and_tables,
                                        initialize_databases)
@@ -15,8 +14,6 @@ app = FastAPI()
 
 # Add middlewares
 setup_middlewares(app)
-
-container = get_container()
 
 
 ###############################################################################

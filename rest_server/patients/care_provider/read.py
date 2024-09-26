@@ -8,6 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import \
+    get_patient_care_provider_service
 from lib.models.patient_care_provider import \
     PatientCareProvider as PatientCareProviderModel
 from lib.schemas.patient_care_provider import \
@@ -28,12 +30,15 @@ from .router import router
 async def get_patient_care_provider(
     request: Request,
     patient_care_provider_id: str,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_care_provider_service: PatientCareProviderService = Depends(
+        get_patient_care_provider_service
+    ),
 ) -> Union[PatientCareProviderResponse, HTTPException]:
-    service = PatientCareProviderService(session)
     try:
-        patient_care_provider = await service.fetch_patient_care_provider(
-            patient_care_provider_id
+        patient_care_provider = (
+            await patient_care_provider_service.fetch_patient_care_provider(
+                patient_care_provider_id
+            )
         )
         return PatientCareProviderResponse(
             message="Patient care provider retrieved successfully",

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_care_provider import PatientCareProvider
@@ -25,12 +26,13 @@ from .router import router
 @router.get(path="", response_model=PatientCompleteProfileResponse)
 async def get_patient_details(
     request: Request,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientCompleteProfileResponse, HTTPException]:
-    service = PatientProfileService(session)
     try:
-        result = await service.fetch_patient_profile(
+        result = await patient_profile_service.fetch_patient_profile(
             str(current_patient.patient_id), detailed=True
         )
         return PatientCompleteProfileResponse(

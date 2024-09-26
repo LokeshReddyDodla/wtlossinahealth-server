@@ -2,13 +2,18 @@ from datetime import datetime
 from typing import Awaitable, Callable, List, Literal, Optional
 
 from faker import Faker
+from fastapi import Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileType
+from lib.dependencies.database import get_postgres_session
+from lib.models.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderModel
 from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
@@ -122,7 +127,7 @@ class ChatService:
             print(f"MongoDB Error: {e}")
             raise
 
-    async def get_user_chats(
+    async def fetch_user_chats(
         self, user_id: str, postgres_session: AsyncSession
     ):
         from lib.services.care_provider_service import CareProviderService
@@ -152,7 +157,9 @@ class ChatService:
             }
 
             # Fetch profiles for patients from PostgreSQL
-            patient_profile_service = PatientProfileService(postgres_session)
+            patient_profile_service = PatientProfileService(
+                postgres_session, self
+            )
             patient_profiles = (
                 await patient_profile_service.fetch_patient_profiles(
                     list(patient_ids)
@@ -161,7 +168,7 @@ class ChatService:
 
             # Fetch profiles for care providers from PostgreSQL
             care_provider_profile_service = CareProviderService(
-                postgres_session
+                postgres_session, self
             )
             care_provider_profiles = await care_provider_profile_service.fetch_care_provider_profiles(
                 list(care_provider_ids)
@@ -198,7 +205,7 @@ class ChatService:
         except Exception as e:
             raise
 
-    async def get_user_messages(
+    async def fetch_user_messages(
         self, user_id: str, last_sync_time: Optional[datetime] = None
     ):
         """
@@ -272,9 +279,9 @@ class ChatService:
 
             # After message is added to DB, we use the utility function to emit it to all participants
             await self.emit_to_associated_participants(
-                "newMessage",
-                jsonable_encoder(message_dict),
-                message_data.chat_id,
+                message_key="newMessage",
+                data=jsonable_encoder(message_dict),
+                chat_id=message_data.chat_id,
             )
 
             print(
@@ -632,47 +639,85 @@ class ChatService:
             print(f"Failed to fetch message reactions: {str(e)}")
             raise Exception(f"Failed to fetch message reactions: {str(e)}")
 
+    async def fetch_chat_participants(self, chat_id: str) -> List[dict]:
+        """Fetch participants using chat_id."""
+        chat = await self.mongo_store.db["chats"].find_one(
+            {"_id": chat_id}, {"participants": 1}
+        )
+        if not chat:
+            raise Exception(f"Chat with ID {chat_id} not found")
+        return chat.get("participants", [])
+
+    async def fetch_associated_participants(
+        self,
+        session: AsyncSession,
+        patient_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        patient_care_provider_id: Optional[str] = None,
+    ) -> List[dict]:
+        """Fetch associated participants using provided identifiers."""
+        from lib.services.patient_care_provider_service import \
+            PatientCareProviderService
+
+        associated_records = (
+            await PatientCareProviderService.fetch_associated_records(
+                postgres_session=session,
+                patient_id=patient_id,
+                care_provider_id=care_provider_id,
+                patient_care_provider_id=patient_care_provider_id,
+            )
+        )
+        # Combine patient_id and care_provider_id from associated records
+        participants = [
+            {"id": record.patient_id} for record in associated_records
+        ] + [{"id": record.care_provider_id} for record in associated_records]
+        return participants
+
+    async def emit_to_participants(
+        self,
+        participants: List[dict],
+        message_key: str,
+        data: Optional[dict] = None,
+    ):
+        """Emit a message to each participant."""
+        from lib.services.socketio_service import sio
+
+        for participant in participants:
+            user_id = participant["id"]
+            await sio.emit(message_key, data, room=user_id)
+            print(f"Emitted {message_key} to participant {user_id}")
+
     async def emit_to_associated_participants(
         self,
         message_key: str,
         data: Optional[dict] = None,
         chat_id: Optional[str] = None,
-        fetch_func: Optional[Callable[[], Awaitable[List]]] = None,
+        patient_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        patient_care_provider_id: Optional[str] = None,
+        session: Optional[AsyncSession] = None,
     ):
-        from lib.services.socketio_service import sio
-
         try:
             participants = []
 
             if chat_id:
-                # Fetch participants using chat_id
-                chat = await self.mongo_store.db["chats"].find_one(
-                    {"_id": chat_id}, {"participants": 1}
+                participants = await self.fetch_chat_participants(chat_id)
+            elif session and (
+                patient_id or care_provider_id or patient_care_provider_id
+            ):
+                participants = await self.fetch_associated_participants(
+                    session,
+                    patient_id=patient_id,
+                    care_provider_id=care_provider_id,
+                    patient_care_provider_id=patient_care_provider_id,
                 )
-                if not chat:
-                    raise Exception(f"Chat with ID {chat_id} not found")
-                participants = chat.get("participants", [])
-
-            elif fetch_func:
-                # Call the provided function to fetch associated records
-                associated_records = await fetch_func()
-                participants = [
-                    {"id": record.patient_id} for record in associated_records
-                ] + [
-                    {"id": record.care_provider_id}
-                    for record in associated_records
-                ]
-
             else:
                 raise ValueError(
                     "Must provide either chat_id, patient_id, or care_provider_id"
                 )
 
-            # Emit the message to each participant
-            for participant in participants:
-                user_id = participant["id"]
-                await sio.emit(message_key, data, room=user_id)
-                print(f"Emitted {message_key} to participant {user_id}")
+            # Emit the message to participants
+            await self.emit_to_participants(participants, message_key, data)
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")

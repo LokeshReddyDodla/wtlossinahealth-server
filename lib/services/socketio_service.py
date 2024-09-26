@@ -122,9 +122,13 @@ async def markAsRead(sid, data):
 
         # Notify all participants that the message(s) have been read
         await chat_service.emit_to_associated_participants(
-            "messageRead",
-            {"chat_id": chat_id, "user_id": user_id, "message_id": message_id},
-            chat_id,
+            message_key="messageRead",
+            data={
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "message_id": message_id,
+            },
+            chat_id=chat_id,
         )
 
         return {"status": "success", "message": "Messages marked as read"}
@@ -156,12 +160,12 @@ async def toggleReaction(sid, data):
 
         # Emit the updated reaction event to all participants in the chat
         await chat_service.emit_to_associated_participants(
-            "messageUpdate",
-            {
+            message_key="messageUpdate",
+            data={
                 "chat_id": chat_id,
                 "message": updated_message,
             },
-            chat_id,
+            chat_id=chat_id,
         )
 
         return {

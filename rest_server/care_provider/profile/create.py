@@ -10,6 +10,7 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_care_provider_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
@@ -27,23 +28,24 @@ from .router import router
 async def create_care_provider_profile(
     request: Request,
     care_provider: CareProviderCreate,
-    session: AsyncSession = Depends(get_postgres_session),
+    care_provider_service: CareProviderService = Depends(
+        get_care_provider_service
+    ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("create", CareProviderFeature.CARE_PROVIDER)
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
-        service = CareProviderService(session)
-        try:
-            new_care_provider = await service.create_care_provider(
-                care_provider
-            )
+    try:
+        new_care_provider = await care_provider_service.create_care_provider(
+            care_provider
+        )
 
-            return CareProviderResponse(
-                message="Care Provider created successfully",
-                data=CareProviderSchema.from_orm(new_care_provider),
-            )
-        except HTTPException as e:
-            raise e
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return CareProviderResponse(
+            message="Care Provider created successfully",
+            data=CareProviderSchema.from_orm(new_care_provider),
+        )
+    except HTTPException as e:
+        raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())

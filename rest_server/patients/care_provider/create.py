@@ -7,6 +7,8 @@ from sqlalchemy.future import select
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import \
+    get_patient_care_provider_service
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_care_provider import \
@@ -27,12 +29,15 @@ from .router import router
 async def create_patient_care_provider(
     request: Request,
     patient_care_provider: PatientCareProviderCreate,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_care_provider_service: PatientCareProviderService = Depends(
+        get_patient_care_provider_service
+    ),
 ) -> Union[PatientCareProviderResponse, HTTPException]:
-    service = PatientCareProviderService(session)
     try:
-        result = await service.create_patient_care_provider(
-            patient_care_provider
+        result = (
+            await patient_care_provider_service.create_patient_care_provider(
+                patient_care_provider
+            )
         )
 
         return PatientCareProviderResponse(

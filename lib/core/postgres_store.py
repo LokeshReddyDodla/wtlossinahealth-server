@@ -28,12 +28,8 @@ class PostgresStore:
         self.session_local = AsyncSessionLocal
 
     async def get_session(self):
-        # Async context manager for session
         async with self.session_local() as session:
-            try:
-                yield session
-            finally:
-                await session.close()
+            yield session
 
     async def __aenter__(self):
         self.session = self.session_local()

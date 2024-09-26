@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_chat_service
 from lib.services.chat_service import ChatService
 from rest_server.response_models import SuccessResponse
 
@@ -17,11 +18,11 @@ async def get_user_chats(
     request: Request,
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_postgres_session),
-    chat_service: ChatService = Depends(ChatService),
+    chat_service: ChatService = Depends(get_chat_service),
 ):
     user_id, _ = current_user
     try:
-        chats = await chat_service.get_user_chats(user_id, session)
+        chats = await chat_service.fetch_user_chats(user_id, session)
 
         return SuccessResponse(
             message="Chats fetched successfully",
@@ -41,14 +42,14 @@ async def get_user_messages(
     request: Request,
     last_sync_time: Optional[datetime] = Query(None),
     current_user=Depends(get_current_user),
-    chat_service: ChatService = Depends(ChatService),
+    chat_service: ChatService = Depends(get_chat_service),
 ):
     """
     Get all messages for a given user_id.
     """
     try:
         user_id, role = current_user
-        messages = await chat_service.get_user_messages(
+        messages = await chat_service.fetch_user_messages(
             user_id, last_sync_time
         )
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.patient import Patient
 from lib.models.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.models.patient_connected_app import PatientConnectedApp
@@ -59,14 +60,17 @@ from .router import router
 async def update_basic_patient(
     request: Request,
     patient_data: PatientUpdate,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientProfileResponse, HTTPException]:
-    service = PatientProfileService(session)
     try:
-        updated_patient = await service.update_basic_patient_profile(
-            patient_id=str(current_patient.patient_id),
-            patient_data=patient_data,
+        updated_patient = (
+            await patient_profile_service.update_basic_patient_profile(
+                patient_id=str(current_patient.patient_id),
+                patient_data=patient_data,
+            )
         )
 
         return PatientProfileResponse(
@@ -96,21 +100,24 @@ async def upsert_patient_lifestyle(
     food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
     meal_timings: Optional[List[PatientMealTimingCreate]] = None,
     cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = None,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientProfileResponse, HTTPException]:
-    service = PatientProfileService(session)
     try:
-        updated_patient = await service.upsert_patient_lifestyle(
-            patient_id=str(current_patient.patient_id),
-            daily_activity=daily_activity,
-            diet_preferences=diet_preferences,
-            alcohol_consumption=alcohol_consumption,
-            smoking_habit=smoking_habit,
-            sleep_habit=sleep_habit,
-            food_allergies=food_allergies,
-            meal_timings=meal_timings,
-            cuisine_preferences=cuisine_preferences,
+        updated_patient = (
+            await patient_profile_service.upsert_patient_lifestyle(
+                patient_id=str(current_patient.patient_id),
+                daily_activity=daily_activity,
+                diet_preferences=diet_preferences,
+                alcohol_consumption=alcohol_consumption,
+                smoking_habit=smoking_habit,
+                sleep_habit=sleep_habit,
+                food_allergies=food_allergies,
+                meal_timings=meal_timings,
+                cuisine_preferences=cuisine_preferences,
+            )
         )
 
         return PatientProfileResponse(
@@ -139,18 +146,21 @@ async def upsert_patient_medical_history(
         List[PatientFamilyDiabeticHistoryCreate]
     ] = None,
     medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ) -> Union[PatientProfileResponse, HTTPException]:
-    service = PatientProfileService(session)
     try:
-        updated_patient = await service.upsert_patient_medical_history(
-            patient_id=str(current_patient.patient_id),
-            diabetic_history=diabetic_history,
-            current_medication=current_medication,
-            drug_allergies=drug_allergies,
-            family_diabetic_histories=family_diabetic_histories,
-            medical_histories=medical_histories,
+        updated_patient = (
+            await patient_profile_service.upsert_patient_medical_history(
+                patient_id=str(current_patient.patient_id),
+                diabetic_history=diabetic_history,
+                current_medication=current_medication,
+                drug_allergies=drug_allergies,
+                family_diabetic_histories=family_diabetic_histories,
+                medical_histories=medical_histories,
+            )
         )
 
         return PatientProfileResponse(

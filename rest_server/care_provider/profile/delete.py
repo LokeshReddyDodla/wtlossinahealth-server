@@ -7,6 +7,7 @@ from sqlalchemy.future import select
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_care_provider_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
@@ -20,11 +21,12 @@ from .router import router
 async def delete_care_provider_profile(
     request: Request,
     care_provider_id: str,
-    session: AsyncSession = Depends(get_postgres_session),
+    care_provider_service: CareProviderService = Depends(
+        get_care_provider_service
+    ),
 ) -> Union[SuccessResponse, HTTPException]:
-    service = CareProviderService(session)
     try:
-        await service.delete_care_provider(care_provider_id)
+        await care_provider_service.delete_care_provider(care_provider_id)
 
         return SuccessResponse(message="Care provider deleted successfully.")
     except HTTPException as e:

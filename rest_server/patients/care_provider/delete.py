@@ -8,6 +8,8 @@ from sqlalchemy.future import select
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import \
+    get_patient_care_provider_service
 from lib.models.patient_care_provider import \
     PatientCareProvider as PatientCareProviderModel
 from lib.schemas.patient_care_provider import \
@@ -24,11 +26,14 @@ from .router import router
 async def delete_patient_care_provider(
     request: Request,
     patient_care_provider_id: str,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_care_provider_service: PatientCareProviderService = Depends(
+        get_patient_care_provider_service
+    ),
 ) -> Union[SuccessResponse, HTTPException]:
-    service = PatientCareProviderService(session)
     try:
-        await service.delete_patient_care_provider(patient_care_provider_id)
+        await patient_care_provider_service.delete_patient_care_provider(
+            patient_care_provider_id
+        )
         return SuccessResponse(
             message="Patient care provider association deleted successfully."
         )
