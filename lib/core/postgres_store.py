@@ -27,13 +27,13 @@ class PostgresStore:
         self.engine = engine
         self.session_local = AsyncSessionLocal
 
-    def get_session(self) -> AsyncSession:
-        # Create an instance of AsyncSession
-        async_session = self.session_local()
-        try:
-            yield async_session
-        finally:
-            await async_session.close()
+    async def get_session(self):
+        # Async context manager for session
+        async with self.session_local() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
 
     async def __aenter__(self):
         self.session = self.session_local()

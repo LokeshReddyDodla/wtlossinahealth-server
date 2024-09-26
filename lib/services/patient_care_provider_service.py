@@ -28,9 +28,6 @@ class PatientCareProviderService:
         self.chat_service = ChatService()
         self.care_provider_service = CareProviderService(postgres_session)
         self.patient_service = PatientProfileService(postgres_session)
-        self.patient_care_provider_service = PatientCareProviderService(
-            postgres_session
-        )
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
@@ -155,7 +152,7 @@ class PatientCareProviderService:
                 message_key="chatListUpdate",
                 data=None,
                 chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                fetch_func=lambda: self.fetch_associated_records(
                     care_provider_id=patient_care_provider_data.care_provider_id
                 ),
             )
@@ -190,7 +187,7 @@ class PatientCareProviderService:
                 message_key="chatListUpdate",
                 data=None,
                 chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                fetch_func=lambda: self.fetch_associated_records(
                     patient_care_provider_id=patient_care_provider_id
                 ),
             )
@@ -225,12 +222,12 @@ class PatientCareProviderService:
 
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
-            
+
             await self.chat_service.emit_to_associated_participants(
                 message_key="chatListUpdate",
                 data=None,
                 chat_id=None,
-                fetch_func=lambda: self.patient_care_provider_service.fetch_associated_records(
+                fetch_func=lambda: self.fetch_associated_records(
                     patient_care_provider_id=patient_care_provider_id
                 ),
             )
