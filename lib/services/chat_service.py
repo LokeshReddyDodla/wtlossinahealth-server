@@ -8,9 +8,9 @@ from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
+from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.mongo_store import get_mongo_store
-from lib.core.types import ProfileType
+from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient_care_provider import \
     PatientCareProvider as PatientCareProviderModel
@@ -29,7 +29,7 @@ class ChatService:
     async def create_new_chat(
         self,
         user_id: str,
-        type: ProfileType,
+        type: ProfileTypeLiteral,
         is_group: bool,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
@@ -72,7 +72,7 @@ class ChatService:
         self,
         chat_id: str,
         user_id: str,
-        type: ProfileType,
+        type: ProfileTypeLiteral,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
@@ -147,13 +147,13 @@ class ChatService:
                 p["id"]
                 for chat in chat_documents
                 for p in chat["participants"]
-                if p["type"] == PROFILE_TYPE_PATIENT
+                if p["type"] == ProfileType.PATIENT.value
             }
             care_provider_ids = {
                 p["id"]
                 for chat in chat_documents
                 for p in chat["participants"]
-                if p["type"] == PROFILE_TYPE_CARE_PROVIDER
+                if p["type"] == ProfileType.CARE_PROVIDER.value
             }
 
             # Fetch profiles for patients from PostgreSQL
@@ -178,7 +178,7 @@ class ChatService:
             for chat in chat_documents:
                 sender = chat.get("sender")
                 if sender:
-                    if sender["type"] == PROFILE_TYPE_PATIENT:
+                    if sender["type"] == ProfileType.PATIENT.value:
                         sender["profile"] = patient_profiles.get(
                             sender["id"], {}
                         )
@@ -188,7 +188,7 @@ class ChatService:
                         )
 
                 for receiver in chat.get("receivers", []):
-                    if receiver["type"] == PROFILE_TYPE_PATIENT:
+                    if receiver["type"] == ProfileType.PATIENT.value:
                         receiver["profile"] = patient_profiles.get(
                             receiver["id"], {}
                         )
@@ -279,7 +279,7 @@ class ChatService:
 
             # After message is added to DB, we use the utility function to emit it to all participants
             await self.emit_to_associated_participants(
-                message_key="newMessage",
+                message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
             )
@@ -460,7 +460,9 @@ class ChatService:
                 f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
             )
 
-            await sio.emit("chatListUpdate", room=participant_id)
+            await sio.emit(
+                EmitMessageKey.CHAT_LIST_UPDATED.value, room=participant_id
+            )
 
         except Exception as e:
             print(
@@ -682,6 +684,7 @@ class ChatService:
         """Emit a message to each participant."""
         from lib.services.socketio_service import sio
 
+        print("==> emit to participants: ", participants)
         for participant in participants:
             user_id = participant["id"]
             await sio.emit(message_key, data, room=user_id)

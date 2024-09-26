@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER, PROFILE_TYPE_PATIENT
+from lib.core.constants import EmitMessageKey, ProfileType
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_care_provider import \
@@ -156,7 +156,7 @@ class PatientCareProviderService:
             await self._create_chats(patient, care_provider)
 
             await self.chat_service.emit_to_associated_participants(
-                message_key="chatListUpdate",
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
                 care_provider_id=patient_care_provider_data.care_provider_id,
             )
@@ -188,7 +188,7 @@ class PatientCareProviderService:
             await self.postgres_session.refresh(patient_care_provider)
 
             await self.chat_service.emit_to_associated_participants(
-                message_key="chatListUpdate",
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
                 patient_care_provider_id=patient_care_provider_id,
             )
@@ -225,7 +225,7 @@ class PatientCareProviderService:
             await self.postgres_session.commit()
 
             await self.chat_service.emit_to_associated_participants(
-                message_key="chatListUpdate",
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
                 patient_care_provider_id=patient_care_provider_id,
             )
@@ -240,7 +240,7 @@ class PatientCareProviderService:
 
         chat_id = await self.chat_service.create_new_chat(
             user_id=str(patient.patient_id),
-            type=PROFILE_TYPE_PATIENT,
+            type=ProfileType.PATIENT.value,
             is_group=False,
             is_read_only=False,
             is_muted=False,
@@ -251,7 +251,7 @@ class PatientCareProviderService:
         await self.chat_service.add_participant_in_chat(
             chat_id=chat_id,
             user_id=str(care_provider.care_provider_id),
-            type=PROFILE_TYPE_CARE_PROVIDER,
+            type=ProfileType.CARE_PROVIDER.value,
             is_read_only=False,
             is_muted=False,
             is_archived=False,
@@ -265,5 +265,5 @@ class PatientCareProviderService:
             await self.chat_service.add_participant_in_chat(
                 chat_id=group_chat["_id"],
                 user_id=str(care_provider.care_provider_id),
-                type=PROFILE_TYPE_CARE_PROVIDER,
+                type=ProfileType.CARE_PROVIDER.value,
             )

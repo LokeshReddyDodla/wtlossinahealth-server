@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.constants import PROFILE_TYPE_CARE_PROVIDER
+from lib.core.constants import ProfileType
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider
@@ -20,7 +20,7 @@ def get_current_care_provider(
     ):
         user_id, role = user_role
 
-        if role != PROFILE_TYPE_CARE_PROVIDER:
+        if role != ProfileType.CARE_PROVIDER.value:
             raise HTTPException(
                 status_code=403, detail="Not authorized as a Care Provider"
             )
