@@ -11,8 +11,6 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
-from lib.services.patient_care_provider_service import \
-    PatientCareProviderService
 from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
@@ -20,6 +18,9 @@ from lib.utils.care_provider_permissions import (CareProviderRole,
 
 class CareProviderService:
     def __init__(self, postgres_session: AsyncSession):
+        from lib.services.patient_care_provider_service import \
+            PatientCareProviderService
+
         self.postgres_session = postgres_session
         self.chat_service = ChatService()
         self.patient_care_provider_service = PatientCareProviderService(

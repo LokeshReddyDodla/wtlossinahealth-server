@@ -58,13 +58,14 @@ from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat_service import ChatService
-from lib.services.patient_care_provider_service import \
-    PatientCareProviderService
 from lib.services.socketio_service import sio
 
 
 class PatientProfileService:
     def __init__(self, postgres_session: AsyncSession):
+        from lib.services.patient_care_provider_service import \
+            PatientCareProviderService
+
         self.postgres_session = postgres_session
         self.chat_service = ChatService()
         self.patient_care_provider_service = PatientCareProviderService(
