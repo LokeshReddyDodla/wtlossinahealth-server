@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+
 from rest_server.response_models import SuccessResponse
 
 
@@ -13,6 +14,7 @@ class OTPVerifyRequest(BaseModel):
 
 class OtpVerifyResponse(BaseModel):
     token: str
+    user_id: str
     is_new_user: bool
 
 
