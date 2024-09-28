@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.core.otp import create_and_send_otp, verify_otp
+from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_user_device_service
 from lib.models.patient import Patient
@@ -37,7 +38,7 @@ async def send_otp(request: Request, user_phone: UserPhoneNumber):
 async def verify_otp_endpoint(
     request: Request,
     otp_data: OtpVerificationData,
-    role: str,
+    role: ProfileTypeLiteral,
     session: AsyncSession = Depends(get_postgres_session),
     user_device_service: UserDeviceService = Depends(get_user_device_service),
 ):
@@ -63,6 +64,7 @@ async def verify_otp_endpoint(
                     fcm_token=otp_data.fcm_token,
                     device_type=otp_data.device_type,
                     profile_type=role,
+                    platform_version=otp_data.platform_version,
                 )
 
             return OtpVerifySuccessResponse(

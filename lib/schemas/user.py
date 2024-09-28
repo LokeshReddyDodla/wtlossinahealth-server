@@ -14,3 +14,6 @@ class OtpVerificationData(BaseModel):
     device_type: str = Field(
         None, description="Type of the user's device (e.g., iOS, Android)"
     )
+    platform_version: str = Field(
+        None, description="Version of the platform (e.g., iOS 14.5, Android 11)"
+    )
