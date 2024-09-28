@@ -1,0 +1,42 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import UUID, Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID as P_UUID
+from sqlalchemy.orm import relationship
+
+from lib.models import Base
+
+
+class UserDevice(Base):
+    __tablename__ = "user_devices"
+
+    device_id = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, unique=True
+    )
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    profile_type = Column(
+        String, nullable=False
+    )  # 'patient' or 'care_provider'
+    fcm_token = Column(String, nullable=False)
+    last_updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        onupdate=lambda: datetime.now().replace(tzinfo=None),
+    )
+    device_type = Column(String, nullable=True)  # e.g., 'iOS', 'Android'
+    platform_version = Column(String, nullable=True)
+
+    patient_id = Column(
+        P_UUID,
+        ForeignKey("patients.patient_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    care_provider_id = Column(
+        P_UUID,
+        ForeignKey("care_providers.care_provider_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    patient = relationship("Patient", back_populates="user_devices")
+    care_provider = relationship("CareProvider", back_populates="user_devices")
