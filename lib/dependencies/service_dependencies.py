@@ -7,6 +7,7 @@ from lib.services.chat_service import ChatService
 from lib.services.patient_care_provider_service import \
     PatientCareProviderService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.user_device_service import UserDeviceService
 
 
 async def get_chat_service(
@@ -49,3 +50,8 @@ async def get_patient_care_provider_service(
         care_provider_service=care_provider_service,
         patient_service=patient_service,
     )
+    
+async def get_user_device_service(
+    session: AsyncSession = Depends(get_postgres_session)
+) -> UserDeviceService:
+    return UserDeviceService(postgres_session=session)

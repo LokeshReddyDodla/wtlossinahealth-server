@@ -1,11 +1,15 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.core.otp import create_and_send_otp, verify_otp
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_user_device_service
 from lib.models.patient import Patient
-from lib.schemas.user import UserOTP, UserPhoneNumber
+from lib.schemas.user import OtpVerificationData, UserPhoneNumber
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.auth_utils import AuthUtils
 from lib.utils.jwt import create_jwt_token
 from rest_server.auth.api_schema import (OtpVerifyResponse,
@@ -32,21 +36,35 @@ async def send_otp(request: Request, user_phone: UserPhoneNumber):
 )
 async def verify_otp_endpoint(
     request: Request,
-    user_otp: UserOTP,
+    otp_data: OtpVerificationData,
     role: str,
     session: AsyncSession = Depends(get_postgres_session),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
 ):
     try:
         cache_store = request.state.context.otp_store
-        if await verify_otp(user_otp.phone_number, user_otp.otp, cache_store):
+        if await verify_otp(otp_data.phone_number, otp_data.otp, cache_store):
+            # Create or get user using AuthUtils
             auth_utils = AuthUtils(session)
             user, user_id, is_new_user = await auth_utils.get_or_create_user(
-                user_otp.phone_number, role
+                otp_data.phone_number, role
             )
+
+            # Create JWT token for the user
             token = create_jwt_token(
                 user_id=user_id,
                 role=role,
             )
+
+            # Store or update user device information if provided
+            if otp_data.fcm_token or otp_data.device_type:
+                await user_device_service.create_or_update_user_device(
+                    user_id=UUID(user_id),
+                    fcm_token=otp_data.fcm_token,
+                    device_type=otp_data.device_type,
+                    profile_type=role,
+                )
+
             return OtpVerifySuccessResponse(
                 message="OTP verified",
                 data=OtpVerifyResponse(
