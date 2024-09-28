@@ -1,15 +1,10 @@
-from sqlalchemy import (
-    Column,
-    String,
-    UUID,
-    DateTime,
-    ForeignKey,
-    JSON,
-)
-from sqlalchemy.orm import relationship
-from lib.models import Base
 import uuid
 from datetime import datetime
+
+from sqlalchemy import JSON, UUID, Column, DateTime, ForeignKey, String
+from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class CareProvider(Base):
@@ -54,6 +49,12 @@ class CareProvider(Base):
     )
     patient_relationships = relationship(
         "PatientCareProvider",
+        back_populates="care_provider",
+        cascade="all, delete-orphan",
+    )
+
+    user_devices = relationship(
+        "UserDevice",
         back_populates="care_provider",
         cascade="all, delete-orphan",
     )

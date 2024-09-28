@@ -1,7 +1,9 @@
-from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
 from datetime import date, datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel, HttpUrl
+from sqlalchemy.orm import attributes
 
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.health_facility import HealthFacility
@@ -14,22 +16,19 @@ from lib.schemas.patient_daily_activity import PatientDailyActivity
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
 from lib.schemas.patient_diet_preference import PatientDietPreference
 from lib.schemas.patient_drug_allergy import PatientDrugAllergy
-from lib.schemas.patient_family_diabetic_history import (
-    PatientFamilyDiabeticHistory,
-)
+from lib.schemas.patient_family_diabetic_history import \
+    PatientFamilyDiabeticHistory
 from lib.schemas.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_meal_timing import PatientMealTiming
 from lib.schemas.patient_medical_history import PatientMedicalHistory
 from lib.schemas.patient_permission import PatientPermission
-from lib.schemas.patient_sleep_habit import (
-    PatientSleepHabit,
-)
+from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient_token_usage_log import PatientTokenUsageLog
 from lib.schemas.patient_vital import PatientVital
-from sqlalchemy.orm import attributes
+from lib.schemas.user_device import UserDevice
 
 
 class PatientBase(BaseModel):
@@ -87,6 +86,7 @@ class CompletePatientProfile(PatientBase):
     token_usage_logs: List[PatientTokenUsageLog] = []
     care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None
+    user_devices: List[UserDevice] = []
 
     class Config:
         orm_mode = True
