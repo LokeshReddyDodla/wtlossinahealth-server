@@ -64,6 +64,7 @@ async def verify_otp_endpoint(
                     fcm_token=otp_data.fcm_token,
                     device_type=otp_data.device_type,
                     profile_type=role,
+                    platform_version=otp_data.platform_version,
                 )
 
             return OtpVerifySuccessResponse(

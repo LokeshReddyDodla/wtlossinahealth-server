@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -93,6 +94,7 @@ class UserDeviceService:
         fcm_token: str,
         profile_type: ProfileTypeLiteral,
         device_type: str,
+        platform_version: Optional[str] = None,
     ) -> UserDevice:
         """Create or update a user device based on FCM token and user ID."""
         try:
@@ -101,6 +103,7 @@ class UserDeviceService:
                 "fcm_token": fcm_token,
                 "profile_type": profile_type,
                 "device_type": device_type,
+                "platform_version": platform_version,
             }
 
             if profile_type == ProfileType.PATIENT.value:
