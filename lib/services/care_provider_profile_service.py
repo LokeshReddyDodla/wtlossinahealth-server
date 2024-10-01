@@ -16,7 +16,7 @@ from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
 
 
-class CareProviderService:
+class CareProviderProfileService:
     def __init__(
         self, postgres_session: AsyncSession, chat_service: ChatService
     ):

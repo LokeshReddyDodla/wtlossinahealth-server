@@ -16,3 +16,11 @@ class EmitMessageKey(Enum):
     MESSAGE_READ = "message_read"
     ALL_MESSAGES_MARKED_AS_READ = "all_messages_marked_as_read"
     MESSAGE_MARKED_AS_READ = "message_marked_as_read"
+
+
+class FCMProject(Enum):
+    PATIENT_APP = "aihealth-patient-app"
+    CARE_PROVIDER_APP = "aihealth-care-provider-app"
+
+    def get_fcm_api_url(self) -> str:
+        return f"https://fcm.googleapis.com/v1/projects/{self.value}/messages:send"

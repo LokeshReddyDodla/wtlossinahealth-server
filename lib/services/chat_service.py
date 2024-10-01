@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Awaitable, Callable, List, Literal, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 
 from faker import Faker
 from fastapi import Depends, HTTPException
@@ -18,6 +18,7 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
+from lib.services.fcm_service import FCMService
 
 fake = Faker()
 
@@ -25,6 +26,7 @@ fake = Faker()
 class ChatService:
     def __init__(self):
         self.mongo_store = get_mongo_store()
+        self.fcm_service = FCMService()
 
     async def create_new_chat(
         self,
@@ -130,74 +132,18 @@ class ChatService:
     async def fetch_user_chats(
         self, user_id: str, postgres_session: AsyncSession
     ):
-        from lib.services.care_provider_service import CareProviderService
+        from lib.services.care_provider_profile_service import \
+            CareProviderProfileService
         from lib.services.patient_profile_service import PatientProfileService
 
         try:
             pipeline = get_user_chat_pipeline(user_id)
 
-            chat_documents = (
+            return (
                 await self.mongo_store.db["chats"]
                 .aggregate(pipeline)
                 .to_list(length=None)
             )
-
-            # Collect participant IDs by type
-            patient_ids = {
-                p["id"]
-                for chat in chat_documents
-                for p in chat["participants"]
-                if p["type"] == ProfileType.PATIENT.value
-            }
-            care_provider_ids = {
-                p["id"]
-                for chat in chat_documents
-                for p in chat["participants"]
-                if p["type"] == ProfileType.CARE_PROVIDER.value
-            }
-
-            # Fetch profiles for patients from PostgreSQL
-            patient_profile_service = PatientProfileService(
-                postgres_session, self
-            )
-            patient_profiles = (
-                await patient_profile_service.fetch_patient_profiles(
-                    list(patient_ids)
-                )
-            )
-
-            # Fetch profiles for care providers from PostgreSQL
-            care_provider_profile_service = CareProviderService(
-                postgres_session, self
-            )
-            care_provider_profiles = await care_provider_profile_service.fetch_care_provider_profiles(
-                list(care_provider_ids)
-            )
-
-            # Merge profiles into chat participants
-            for chat in chat_documents:
-                sender = chat.get("sender")
-                if sender:
-                    if sender["type"] == ProfileType.PATIENT.value:
-                        sender["profile"] = patient_profiles.get(
-                            sender["id"], {}
-                        )
-                    else:
-                        sender["profile"] = care_provider_profiles.get(
-                            sender["id"], {}
-                        )
-
-                for receiver in chat.get("receivers", []):
-                    if receiver["type"] == ProfileType.PATIENT.value:
-                        receiver["profile"] = patient_profiles.get(
-                            receiver["id"], {}
-                        )
-                    else:
-                        receiver["profile"] = care_provider_profiles.get(
-                            receiver["id"], {}
-                        )
-
-            return chat_documents
 
         except PyMongoError as e:
             print(f"MongoDB Error: {e}")
@@ -277,11 +223,18 @@ class ChatService:
                             {"$inc": {f"unread_counts.{participant_id}": 1}},
                         )
 
-            # After message is added to DB, we use the utility function to emit it to all participants
+            notification_info = {
+                "title": "New Message",
+                "body": f"New message from {message_data.sender_id}",
+                "data": jsonable_encoder(message_dict),
+            }
+
+            # Emit message and send notification
             await self.emit_to_associated_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
+                notification_info=notification_info,
             )
 
             print(
@@ -683,7 +636,6 @@ class ChatService:
             {"$unwind": "$participants"},
             {
                 "$group": {
-                    "_id": "$participants.id",
                     "id": {"$first": "$participants.id"},
                     "type": {"$first": "$participants.type"},
                     "is_read_only": {"$first": "$participants.is_read_only"},
@@ -698,7 +650,6 @@ class ChatService:
         participants_cursor = self.mongo_store.db["chats"].aggregate(pipeline)
         participants = []
         async for participant in participants_cursor:
-            print("==> participant: ", participant)
             participants.append(participant)
 
         return participants
@@ -709,32 +660,28 @@ class ChatService:
         data: Optional[dict] = None,
         chat_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        session: Optional[AsyncSession] = None,
+        notification_info: Optional[Dict[str, Any]] = None,
     ):
+        from lib.services.socketio_service import sio
+
         try:
-            participants = []
-
             participants = await self.fetch_chat_participants(chat_id, user_id)
+            print("==> participants: ", participants)
 
-            # Emit the message to participants
-            await self.emit_to_participants(participants, message_key, data)
+            for participant in participants:
+                user_id = str(participant["id"])
+                await sio.emit(message_key, data, room=user_id)
+                print(f"Emitted {message_key} to participant {user_id}")
+
+                # Send FCM notification if notification_info is provided
+                # if notification_info:
+                #     await self.fcm_service.send_notification_to_user_devices(
+                #         user_id=user_id,
+                #         title=notification_info.get("title", ""),
+                #         body=notification_info.get("body", ""),
+                #         data=notification_info.get("data", {}),
+                #     )
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise
-
-    async def emit_to_participants(
-        self,
-        participants: List[dict],
-        message_key: str,
-        data: Optional[dict] = None,
-    ):
-        """Emit a message to each participant."""
-        from lib.services.socketio_service import sio
-
-        print("==> participants: ", participants)
-
-        for participant in participants:
-            user_id = str(participant["id"])
-            await sio.emit(message_key, data, room=user_id)
-            print(f"Emitted {message_key} to participant {user_id}")
