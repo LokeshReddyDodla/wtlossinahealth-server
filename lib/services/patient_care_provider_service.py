@@ -16,7 +16,8 @@ from lib.schemas.chat import ParticipantSchema
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient_care_provider import \
     PatientCareProvider as PatientCareProviderSchema
-from lib.services.care_provider_service import CareProviderService
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
 from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.socketio_service import sio
@@ -27,12 +28,12 @@ class PatientCareProviderService:
         self,
         postgres_session: AsyncSession,
         chat_service: ChatService,
-        care_provider_service: CareProviderService,
+        care_provider_profile_service: CareProviderProfileService,
         patient_service: PatientProfileService,
     ):
         self.postgres_session = postgres_session
         self.chat_service = chat_service
-        self.care_provider_service = care_provider_service
+        self.care_provider_profile_service = care_provider_profile_service
         self.patient_service = patient_service
 
     async def check_existing_connection(
@@ -147,7 +148,7 @@ class PatientCareProviderService:
             self.postgres_session.add(new_patient_care_provider)
 
             care_provider = (
-                await self.care_provider_service.fetch_care_provider(
+                await self.care_provider_profile_service.fetch_care_provider(
                     patient_care_provider_data.care_provider_id
                 )
             )
@@ -164,7 +165,6 @@ class PatientCareProviderService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
-                session=self.postgres_session,
                 user_id=patient_care_provider_data.patient_id,
             )
 
@@ -196,7 +196,6 @@ class PatientCareProviderService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
-                session=self.postgres_session,
                 user_id=str(patient_care_provider.patient_id),
             )
 
@@ -233,7 +232,6 @@ class PatientCareProviderService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
-                session=self.postgres_session,
                 user_id=str(patient_care_provider.patient_id),
             )
 

@@ -8,11 +8,13 @@ from sqlalchemy.future import select
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_care_provider_service
+from lib.dependencies.service_dependencies import \
+    get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
-from lib.services.care_provider_service import CareProviderService
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
 from lib.utils.care_provider_permissions import CareProviderFeature
 from rest_server.care_provider.profile.api_schema import CareProviderResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -25,8 +27,8 @@ async def update_care_provider_profile(
     request: Request,
     care_provider_id: str,
     care_provider_update: CareProviderUpdate,
-    care_provider_service: CareProviderService = Depends(
-        get_care_provider_service
+    care_provider_profile_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
@@ -34,7 +36,7 @@ async def update_care_provider_profile(
 ) -> Union[CareProviderResponse, HTTPException]:
     try:
         updated_care_provider = (
-            await care_provider_service.update_care_provider(
+            await care_provider_profile_service.update_care_provider(
                 care_provider_id, care_provider_update
             )
         )

@@ -11,11 +11,13 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_care_provider_service
+from lib.dependencies.service_dependencies import \
+    get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
-from lib.services.care_provider_service import CareProviderService
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
 from lib.utils.care_provider_permissions import CareProviderFeature
 from rest_server.care_provider.profile.api_schema import CareProviderResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -27,15 +29,15 @@ from .router import router
 async def get_care_provider_profile(
     request: Request,
     care_provider_id: str,
-    care_provider_service: CareProviderService = Depends(
-        get_care_provider_service
+    care_provider_profile_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("read", CareProviderFeature.CARE_PROVIDER)
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
     try:
-        result = await care_provider_service.fetch_care_provider(
+        result = await care_provider_profile_service.fetch_care_provider(
             care_provider_id, detailed=True
         )
 

@@ -158,7 +158,6 @@ class PatientProfileService:
 
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
-                session=self.postgres_session,
                 user_id=patient_id,
             )
 

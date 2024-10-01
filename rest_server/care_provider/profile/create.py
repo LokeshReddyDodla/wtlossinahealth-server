@@ -10,11 +10,13 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_care_provider_service
+from lib.dependencies.service_dependencies import \
+    get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
-from lib.services.care_provider_service import CareProviderService
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderRole,
                                                  get_care_provider_permissions)
@@ -28,15 +30,15 @@ from .router import router
 async def create_care_provider_profile(
     request: Request,
     care_provider: CareProviderCreate,
-    care_provider_service: CareProviderService = Depends(
-        get_care_provider_service
+    care_provider_profile_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("create", CareProviderFeature.CARE_PROVIDER)
     ),
 ) -> Union[CareProviderResponse, HTTPException]:
     try:
-        new_care_provider = await care_provider_service.create_care_provider(
+        new_care_provider = await care_provider_profile_service.create_care_provider(
             care_provider
         )
 
