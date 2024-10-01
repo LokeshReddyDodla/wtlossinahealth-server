@@ -10,7 +10,8 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_care_provider_profile_service, get_chat_service,
     get_patient_profile_service)
-from lib.services.care_provider_service import CareProviderProfileService
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
 from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
 from rest_server.response_models import SuccessResponse

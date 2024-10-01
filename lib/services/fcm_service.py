@@ -6,16 +6,15 @@ from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
 from lib.core.constants import FCMProject
+from lib.core.postgres_store import PostgresStore
 from lib.services.user_device_service import UserDeviceService
 
 
 class FCMService:
     def __init__(
         self,
-        user_device_service: UserDeviceService,
-        project: FCMProject = FCMProject.DEFAULT,
+        project: FCMProject = FCMProject.PATIENT_APP,
     ):
-        self.user_device_service = user_device_service
         self.json_key_path = config("FCM_JSON_KEY_PATH")
         self.credentials = self._load_credentials(str(self.json_key_path))
         self.fcm_url = project.get_fcm_api_url()
@@ -72,16 +71,20 @@ class FCMService:
         self, user_id: str, title: str, body: str, data: dict = {}
     ):
         try:
-            # Fetch all devices associated with the user_id
-            devices = await self.user_device_service.get_user_devices(
-                user_id=UUID(user_id)
-            )
-
-            # Send notification to each device
-            for device in devices:
-                await self.send_fcm_notification(
-                    device.fcm_token, title, body, data
+            async for session in PostgresStore().get_session():
+                user_device_service = UserDeviceService(
+                    postgres_session=session
                 )
+                # Fetch all devices associated with the user_id
+                devices = await user_device_service.get_user_devices(
+                    user_id=UUID(user_id)
+                )
+
+                # Send notification to each device
+                for device in devices:
+                    await self.send_fcm_notification(
+                        device.fcm_token, title, body, data
+                    )
         except Exception as e:
             print(
                 f"Failed to send notification to user devices. Error: {str(e)}"
