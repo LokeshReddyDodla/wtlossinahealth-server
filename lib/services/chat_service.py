@@ -684,8 +684,8 @@ class ChatService:
             participants_set = set()
             async for chat in chats_cursor:
                 for participant in chat.get("participants", []):
-                    participants_set.add(participant["id"])
-            
+                    participants_set.add(participant)
+
             print("==> participants_set: ", participants_set)
             print("==> participants_list: ", list(participants_set))
             return list(participants_set)
