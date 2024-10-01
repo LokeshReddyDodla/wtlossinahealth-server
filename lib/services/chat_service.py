@@ -130,12 +130,9 @@ class ChatService:
             raise
 
     async def fetch_user_chats(
-        self, user_id: str, postgres_session: AsyncSession
+        self,
+        user_id: str,
     ):
-        from lib.services.care_provider_profile_service import \
-            CareProviderProfileService
-        from lib.services.patient_profile_service import PatientProfileService
-
         try:
             pipeline = get_user_chat_pipeline(user_id)
 
