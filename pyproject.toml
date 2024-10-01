@@ -41,6 +41,8 @@ aioredis = "^2.0.1"
 singleton-decorator = "^1.0.0"
 python-socketio = {extras = ["client"], version = "^5.11.4"}
 faker = "^29.0.0"
+google-auth = "^2.35.0"
+google-auth-oauthlib = "^1.2.1"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
