@@ -633,6 +633,7 @@ class ChatService:
             {"$unwind": "$participants"},
             {
                 "$group": {
+                    "_id": "$participants.id",
                     "id": {"$first": "$participants.id"},
                     "type": {"$first": "$participants.type"},
                     "is_read_only": {"$first": "$participants.is_read_only"},
@@ -679,6 +680,9 @@ class ChatService:
                 #         data=notification_info.get("data", {}),
                 #     )
 
+        except Exception as e:
+            print(f"Failed to emit {message_key} to participants: {str(e)}")
+            raise
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise
