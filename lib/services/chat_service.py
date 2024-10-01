@@ -472,8 +472,6 @@ class ChatService:
 
     async def mark_all_messages_as_read(self, chat_id: str, user_id: str):
         try:
-            from lib.services.socketio_service import sio
-
             # Update all messages in this chat by adding the user to the read_receipts
             await self.mongo_store.db["chat_messages"].update_many(
                 {
@@ -520,8 +518,6 @@ class ChatService:
         Mark a specific message in a chat as read by the user.
         """
         try:
-            from lib.services.socketio_service import sio
-
             # Update the specific message by adding the user to the read_receipts
             await self.mongo_store.db["chat_messages"].update_one(
                 {"_id": message_id, "chat_id": chat_id},
@@ -697,8 +693,26 @@ class ChatService:
         )
         # Combine patient_id and care_provider_id from associated records
         participants = [
-            {"id": record.patient_id} for record in associated_records
-        ] + [{"id": record.care_provider_id} for record in associated_records]
+            {
+                "id": record.patient_id,
+                "first_name": record.patient.first_name,
+                "last_name": record.patient.last_name,
+                "profile_picture": record.patient.profile_picture,
+                "profile_type": ProfileType.PATIENT.value,
+            }
+            for record in associated_records
+            if record.patient
+        ] + [
+            {
+                "id": record.care_provider_id,
+                "first_name": record.care_provider.first_name,
+                "last_name": record.care_provider.last_name,
+                "profile_picture": record.care_provider.profile_picture,
+                "profile_type": ProfileType.CARE_PROVIDER.value,
+            }
+            for record in associated_records
+            if record.care_provider
+        ]
         return participants
 
     async def emit_to_participants(
@@ -709,6 +723,8 @@ class ChatService:
     ):
         """Emit a message to each participant."""
         from lib.services.socketio_service import sio
+        
+        print("==> participants: ", participants)
 
         for participant in participants:
             user_id = str(participant["id"])

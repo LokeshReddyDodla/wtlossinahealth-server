@@ -31,14 +31,16 @@ class UserDeviceService:
             raise
 
     async def get_user_devices(
-        self, user_id: UUID, profile_type: str
+        self, user_id: UUID, profile_type: Optional[str] = None
     ) -> list[UserDevice]:
         """Retrieve all devices associated with a user."""
         try:
             stmt = select(UserDeviceModel).where(
-                (UserDeviceModel.user_id == user_id)
-                & (UserDeviceModel.profile_type == profile_type)
+                UserDeviceModel.user_id == user_id
             )
+            if profile_type is not None:
+                stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
+                
             result = await self.postgres_session.execute(stmt)
             devices = result.scalars().all()
             return [UserDevice.from_orm(device) for device in devices]
