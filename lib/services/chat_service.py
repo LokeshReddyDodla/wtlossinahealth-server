@@ -663,14 +663,34 @@ class ChatService:
             print(f"Failed to fetch message reactions: {str(e)}")
             raise Exception(f"Failed to fetch message reactions: {str(e)}")
 
-    async def fetch_chat_participants(self, chat_id: str) -> List[dict]:
-        """Fetch participants using chat_id."""
-        chat = await self.mongo_store.db["chats"].find_one(
-            {"_id": chat_id}, {"participants": 1}
-        )
-        if not chat:
-            raise Exception(f"Chat with ID {chat_id} not found")
-        return chat.get("participants", [])
+    async def fetch_chat_participants(
+        self,
+        chat_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[dict]:
+        """Fetch participants using chat_id or user_id."""
+        if chat_id:
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": chat_id}, {"participants": 1}
+            )
+            if not chat:
+                raise Exception(f"Chat with ID {chat_id} not found")
+            return chat.get("participants", [])
+        elif user_id:
+            # Fetch all chats where the user is a participant
+            chats_cursor = self.mongo_store.db["chats"].find(
+                {"participants.id": user_id}, {"participants": 1}
+            )
+            participants_set = set()
+            async for chat in chats_cursor:
+                for participant in chat.get("participants", []):
+                    participants_set.add(participant["id"])
+            
+            print("==> participants_set: ", participants_set)
+            print("==> participants_list: ", list(participants_set))
+            return list(participants_set)
+        else:
+            raise ValueError("Either chat_id or user_id must be provided.")
 
     async def fetch_associated_participants(
         self,
@@ -723,7 +743,7 @@ class ChatService:
     ):
         """Emit a message to each participant."""
         from lib.services.socketio_service import sio
-        
+
         print("==> participants: ", participants)
 
         for participant in participants:
@@ -736,29 +756,13 @@ class ChatService:
         message_key: str,
         data: Optional[dict] = None,
         chat_id: Optional[str] = None,
-        patient_id: Optional[str] = None,
-        care_provider_id: Optional[str] = None,
-        patient_care_provider_id: Optional[str] = None,
+        user_id: Optional[str] = None,
         session: Optional[AsyncSession] = None,
     ):
         try:
             participants = []
 
-            if chat_id:
-                participants = await self.fetch_chat_participants(chat_id)
-            elif session and (
-                patient_id or care_provider_id or patient_care_provider_id
-            ):
-                participants = await self.fetch_associated_participants(
-                    session,
-                    patient_id=patient_id,
-                    care_provider_id=care_provider_id,
-                    patient_care_provider_id=patient_care_provider_id,
-                )
-            else:
-                raise ValueError(
-                    "Must provide either chat_id, patient_id, or care_provider_id"
-                )
+            participants = await self.fetch_chat_participants(chat_id, user_id)
 
             # Emit the message to participants
             await self.emit_to_participants(participants, message_key, data)

@@ -165,7 +165,7 @@ class PatientCareProviderService:
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
-                care_provider_id=patient_care_provider_data.care_provider_id,
+                user_id=patient_care_provider_data.patient_id,
             )
 
             return new_patient_care_provider
@@ -197,7 +197,7 @@ class PatientCareProviderService:
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
-                patient_care_provider_id=patient_care_provider_id,
+                user_id=str(patient_care_provider.patient_id),
             )
 
             return patient_care_provider
@@ -234,7 +234,7 @@ class PatientCareProviderService:
             await self.chat_service.emit_to_associated_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 session=self.postgres_session,
-                patient_care_provider_id=patient_care_provider_id,
+                user_id=str(patient_care_provider.patient_id),
             )
 
         except SQLAlchemyError as e:
