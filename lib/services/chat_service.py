@@ -683,7 +683,9 @@ class ChatService:
             )
             participants_set = set()
             async for chat in chats_cursor:
+                print("==> chat: ", chat)
                 for participant in chat.get("participants", []):
+                    print("==> participant: ", participant)
                     participants_set.add(participant)
 
             print("==> participants_set: ", participants_set)
@@ -692,64 +694,7 @@ class ChatService:
         else:
             raise ValueError("Either chat_id or user_id must be provided.")
 
-    async def fetch_associated_participants(
-        self,
-        session: AsyncSession,
-        patient_id: Optional[str] = None,
-        care_provider_id: Optional[str] = None,
-        patient_care_provider_id: Optional[str] = None,
-    ) -> List[dict]:
-        """Fetch associated participants using provided identifiers."""
-        from lib.services.patient_care_provider_service import \
-            PatientCareProviderService
-
-        associated_records = (
-            await PatientCareProviderService.fetch_associated_records(
-                postgres_session=session,
-                patient_id=patient_id,
-                care_provider_id=care_provider_id,
-                patient_care_provider_id=patient_care_provider_id,
-            )
-        )
-        # Combine patient_id and care_provider_id from associated records
-        participants = [
-            {
-                "id": record.patient_id,
-                "first_name": record.patient.first_name,
-                "last_name": record.patient.last_name,
-                "profile_picture": record.patient.profile_picture,
-                "profile_type": ProfileType.PATIENT.value,
-            }
-            for record in associated_records
-            if record.patient
-        ] + [
-            {
-                "id": record.care_provider_id,
-                "first_name": record.care_provider.first_name,
-                "last_name": record.care_provider.last_name,
-                "profile_picture": record.care_provider.profile_picture,
-                "profile_type": ProfileType.CARE_PROVIDER.value,
-            }
-            for record in associated_records
-            if record.care_provider
-        ]
-        return participants
-
-    async def emit_to_participants(
-        self,
-        participants: List[dict],
-        message_key: str,
-        data: Optional[dict] = None,
-    ):
-        """Emit a message to each participant."""
-        from lib.services.socketio_service import sio
-
-        print("==> participants: ", participants)
-
-        for participant in participants:
-            user_id = str(participant["id"])
-            await sio.emit(message_key, data, room=user_id)
-            print(f"Emitted {message_key} to participant {user_id}")
+   
 
     async def emit_to_associated_participants(
         self,
@@ -770,3 +715,19 @@ class ChatService:
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise
+    
+    async def emit_to_participants(
+        self,
+        participants: List[dict],
+        message_key: str,
+        data: Optional[dict] = None,
+    ):
+        """Emit a message to each participant."""
+        from lib.services.socketio_service import sio
+
+        print("==> participants: ", participants)
+
+        for participant in participants:
+            user_id = str(participant["id"])
+            await sio.emit(message_key, data, room=user_id)
+            print(f"Emitted {message_key} to participant {user_id}")
