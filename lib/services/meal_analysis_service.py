@@ -1,21 +1,19 @@
 from datetime import datetime
 from typing import Any
-from fastapi import HTTPException
-from lib.models.patient_meal import (
-    PatientFoodItem,
-    PatientMacroNutritionalValue,
-    PatientMeal,
-    PatientMicroNutritionalValue,
-    PatientTotalMacroNutritionalValue,
-    PatientTotalMicroNutritionalValue,
-)
-from lib.utils.openai_utils import extract_json_from_response
-from lib.utils.retry_utils import retry_request
+
 import openai
 from decouple import config
-from lib.utils.datetime_utils import convert_milliseconds_to_datetime
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.models.patient_meal import (PatientFoodItem,
+                                     PatientMacroNutritionalValue, PatientMeal,
+                                     PatientMicroNutritionalValue,
+                                     PatientTotalMacroNutritionalValue,
+                                     PatientTotalMicroNutritionalValue)
+from lib.utils.datetime_utils import convert_milliseconds_to_datetime
+from lib.utils.openai_utils import extract_json_from_response
+from lib.utils.retry_utils import retry_request
 from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
@@ -162,7 +160,6 @@ class MealAnalysisService:
                         "iron": iron,  # float
                         "zinc": zinc,  # float
                         "magnesium": magnesium,  # float
-                        "cholesterol": cholesterol  # float
                     }}
                 }}
             ],
@@ -178,7 +175,6 @@ class MealAnalysisService:
                 "iron": total iron,  # float
                 "zinc": total zinc,  # float
                 "magnesium": total magnesium,  # float
-                "cholesterol": total cholesterol  # float
             }},
             "feedback": "personalized feedback based on the analysis and meal type, helping the user with healthier choices",
             "tags": [

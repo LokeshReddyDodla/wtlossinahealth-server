@@ -1,8 +1,8 @@
-from lib.utils.retry_utils import retry_request
 import openai
 from decouple import config
 
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
+from lib.utils.retry_utils import retry_request
 
 
 def get_nutritional_info(
@@ -35,7 +35,6 @@ def get_nutritional_info(
                     "iron": "<iron> mg",
                     "zinc": "<zinc> mg",
                     "magnesium": "<magnesium> mg",
-                    "cholesterol": "<cholesterol> mg"
                 }}
             }}
         ],
@@ -49,7 +48,6 @@ def get_nutritional_info(
             "iron": "<total iron> mg",
             "zinc": "<total zinc> mg",
             "magnesium": "<total magnesium> mg",
-            "cholesterol": "<total cholesterol> mg"
         }},
         "feedback": "<personalized feedback>",
         "tags": [
