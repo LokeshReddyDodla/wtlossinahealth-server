@@ -1,10 +1,10 @@
-from datetime import datetime, date as datetime_date, time as datetime_time
-from typing import Optional
+from datetime import date as datetime_date
+from datetime import datetime
+from datetime import time as datetime_time
+from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
-
-from uuid import UUID
 
 
 class PatientMacroNutritionalValue(BaseModel):
@@ -23,7 +23,6 @@ class PatientMicroNutritionalValue(BaseModel):
     iron: float
     zinc: float
     magnesium: float
-    cholesterol: float
 
     class Config:
         orm_mode = True

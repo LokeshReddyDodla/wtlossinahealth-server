@@ -1,21 +1,11 @@
 import uuid
-from sqlalchemy import (
-    ARRAY,
-    JSON,
-    Boolean,
-    Column,
-    Date,
-    Float,
-    Integer,
-    String,
-    ForeignKey,
-    DateTime,
-    Text,
-    Time,
-)
-from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
+
+from sqlalchemy import (ARRAY, JSON, Boolean, Column, Date, DateTime, Float,
+                        ForeignKey, Integer, String, Text, Time)
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
 from lib.models import Base
 
 
@@ -40,7 +30,6 @@ class BaseMicroNutritionalValue(Base):
     iron = Column(Float)
     zinc = Column(Float)
     magnesium = Column(Float)
-    cholesterol = Column(Float)
 
 
 class PatientMacroNutritionalValue(BaseMacroNutritionalValue):

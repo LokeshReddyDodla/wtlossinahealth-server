@@ -1,24 +1,20 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+from dateutil.parser import parse as parse_date
 from sqlalchemy import case, func, literal_column, text
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, aliased
-from lib.models.patient_meal import (
-    PatientMacroNutritionalValue,
-    PatientMeal,
-    PatientFoodItem,
-    PatientMicroNutritionalValue,
-    PatientTotalMacroNutritionalValue,
-    PatientTotalMicroNutritionalValue,
-)
-from lib.schemas.meal_stats import (
-    DailyMealStats,
-)
+from sqlalchemy.orm import aliased, selectinload
 
+from lib.models.patient_meal import (PatientFoodItem,
+                                     PatientMacroNutritionalValue, PatientMeal,
+                                     PatientMicroNutritionalValue,
+                                     PatientTotalMacroNutritionalValue,
+                                     PatientTotalMicroNutritionalValue)
+from lib.schemas.meal_stats import DailyMealStats
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from rest_server.patients.meals.api_schema import PatientMealResponse
-from dateutil.parser import parse as parse_date
 
 
 class MealStatsProcessor:
@@ -116,9 +112,6 @@ class MealStatsProcessor:
             func.sum(PatientTotalMicroNutritionalValue.magnesium).label(
                 "total_magnesium"
             ),
-            func.sum(PatientTotalMicroNutritionalValue.cholesterol).label(
-                "total_cholesterol"
-            ),
         ]
 
     def _build_meal_json(
@@ -192,8 +185,6 @@ class MealStatsProcessor:
             micro.zinc,
             "magnesium",
             micro.magnesium,
-            "cholesterol",
-            micro.cholesterol,
         )
 
     def _build_items_json(
@@ -259,6 +250,5 @@ class MealStatsProcessor:
             iron=row.total_iron or 0,
             zinc=row.total_zinc or 0,
             magnesium=row.total_magnesium or 0,
-            cholesterol=row.total_cholesterol or 0,
             avg_glucose=avg_glucose_by_date.get(row.date, 0.0),
         )

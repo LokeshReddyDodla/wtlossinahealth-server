@@ -1,5 +1,6 @@
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Any, List, Optional
+
 from pydantic import BaseModel
 
 from lib.schemas.patient_meal import FoodItem, PatientMeal
@@ -16,7 +17,6 @@ class NutritionStats(BaseModel):
     iron: float
     zinc: float
     magnesium: float
-    cholesterol: float
 
 
 class DailyMealStats(NutritionStats):
