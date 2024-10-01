@@ -85,12 +85,19 @@ class PatientCareProviderService:
         patient_care_provider_id: Optional[str] = None,
     ) -> List[PatientCareProviderModel]:
         try:
-            if not patient_id and not care_provider_id:
+            if (
+                not patient_id
+                and not care_provider_id
+                and not patient_care_provider_id
+            ):
                 raise ValueError(
-                    "Either patient_id or care_provider_id must be provided."
+                    "Either patient_id or care_provider_id or patient_care_provider_id must be provided."
                 )
 
-            stmt = select(PatientCareProviderModel)
+            stmt = select(PatientCareProviderModel).options(
+                selectinload(PatientCareProviderModel.patient),
+                selectinload(PatientCareProviderModel.care_provider),
+            )
 
             if patient_care_provider_id:
                 stmt = stmt.filter(
