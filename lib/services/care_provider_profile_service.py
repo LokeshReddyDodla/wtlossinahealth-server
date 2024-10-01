@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
@@ -116,6 +117,10 @@ class CareProviderProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
 
+            await self.chat_service.emit_to_associated_participants(
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                user_id=care_provider_id,
+            )
             return care_provider
 
         except IntegrityError:

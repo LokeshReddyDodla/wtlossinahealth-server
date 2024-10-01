@@ -683,6 +683,3 @@ class ChatService:
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise
-        except Exception as e:
-            print(f"Failed to emit {message_key} to participants: {str(e)}")
-            raise
