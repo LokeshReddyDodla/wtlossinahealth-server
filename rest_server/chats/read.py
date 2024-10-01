@@ -34,7 +34,7 @@ async def get_user_chats(
 ):
     user_id, _ = current_user
     try:
-        chats = await chat_service.fetch_user_chats(user_id, session)
+        chats = await chat_service.fetch_user_chats(user_id)
 
         # Collect participant IDs by type
         patient_ids = {
