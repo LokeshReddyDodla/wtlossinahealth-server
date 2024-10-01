@@ -669,32 +669,39 @@ class ChatService:
         user_id: Optional[str] = None,
     ) -> List[dict]:
         """Fetch participants using chat_id or user_id."""
-        if chat_id:
-            chat = await self.mongo_store.db["chats"].find_one(
-                {"_id": chat_id}, {"participants": 1}
-            )
-            if not chat:
-                raise Exception(f"Chat with ID {chat_id} not found")
-            return chat.get("participants", [])
-        elif user_id:
-            # Fetch all chats where the user is a participant
-            chats_cursor = self.mongo_store.db["chats"].find(
-                {"participants.id": user_id}, {"participants": 1}
-            )
-            participants_set = set()
-            async for chat in chats_cursor:
-                print("==> chat: ", chat)
-                for participant in chat.get("participants", []):
-                    print("==> participant: ", participant)
-                    participants_set.add(participant)
-
-            print("==> participants_set: ", participants_set)
-            print("==> participants_list: ", list(participants_set))
-            return list(participants_set)
-        else:
+        if not chat_id and not user_id:
             raise ValueError("Either chat_id or user_id must be provided.")
 
-   
+        match_stage = {}
+        if chat_id:
+            match_stage = {"_id": chat_id}
+        elif user_id:
+            match_stage = {"participants.id": user_id}
+
+        pipeline = [
+            {"$match": match_stage},
+            {"$unwind": "$participants"},
+            {
+                "$group": {
+                    "_id": "$participants.id",
+                    "id": {"$first": "$participants.id"},
+                    "type": {"$first": "$participants.type"},
+                    "is_read_only": {"$first": "$participants.is_read_only"},
+                    "is_muted": {"$first": "$participants.is_muted"},
+                    "is_archived": {"$first": "$participants.is_archived"},
+                    "is_pinned": {"$first": "$participants.is_pinned"},
+                    "joined_at": {"$first": "$participants.joined_at"},
+                }
+            },
+        ]
+
+        participants_cursor = self.mongo_store.db["chats"].aggregate(pipeline)
+        participants = []
+        async for participant in participants_cursor:
+            print("==> participant: ", participant)
+            participants.append(participant)
+
+        return participants
 
     async def emit_to_associated_participants(
         self,
@@ -715,7 +722,7 @@ class ChatService:
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise
-    
+
     async def emit_to_participants(
         self,
         participants: List[dict],
