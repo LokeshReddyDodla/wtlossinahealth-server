@@ -68,7 +68,8 @@ class FCMService:
     ) -> messaging.Message:
         """Build a messaging.Message object."""
         notification = messaging.Notification(
-            title=title, body=body, image=profile_picture
+            title=title,
+            body=body,
         )
 
         # Android-specific config
