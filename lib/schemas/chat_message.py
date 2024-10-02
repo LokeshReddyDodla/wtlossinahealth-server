@@ -16,7 +16,7 @@ class MediaSchema(BaseModel):
 
 
 class MetadataSchema(BaseModel):
-    type: Literal["text", "image", "file", "audio"] = Field(
+    type: Literal["text", "image", "file", "audio", "custom"] = Field(
         ..., description="Type of the message content."
     )
     status: Literal["sent", "delivered", "read"] = Field(

@@ -47,7 +47,7 @@ class FCMService:
     ):
         """Send an FCM notification to a single device using firebase-admin."""
         message = self._build_message(
-            fcm_token, title, body, data, profile_picture, channel_id
+            fcm_token, title, body, profile_picture, channel_id, data=data
         )
         try:
             response = messaging.send(message)
@@ -62,9 +62,9 @@ class FCMService:
         fcm_token: str,
         title: str,
         body: str,
-        data: dict,
         profile_picture: Optional[str],
         channel_id: str,
+        data: dict = {},
     ) -> messaging.Message:
         """Build a messaging.Message object."""
         notification = messaging.Notification(
@@ -143,9 +143,9 @@ class FCMService:
                         fcm_token=device.fcm_token,
                         title=notification_title,
                         body=body,
-                        data=data,
                         profile_picture=profile_picture,
                         channel_id=channel_id,
+                        data=data,
                     )
                     messages.append(message)
 
