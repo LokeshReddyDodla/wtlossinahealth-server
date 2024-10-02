@@ -5,7 +5,7 @@ from decouple import config
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
-from lib.core.constants import FCMProject
+from lib.core.constants import FCMProject, ProfileType
 from lib.core.postgres_store import PostgresStore
 from lib.services.user_device_service import UserDeviceService
 
@@ -30,6 +30,7 @@ class FCMService:
     def _get_access_token(self) -> str:
         """Get an access token from the credentials."""
         request = Request()
+        print("==> self.credentials: ", self.credentials)
         self.credentials.refresh(request)
         return self.credentials.token
 
@@ -37,6 +38,7 @@ class FCMService:
         self, fcm_token: str, title: str, body: str, data: dict = {}
     ):
         access_token = self._get_access_token()
+        print("==> access_token: ", access_token)
 
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -68,7 +70,12 @@ class FCMService:
             )
 
     async def send_notification_to_user_devices(
-        self, user_id: str, title: str, body: str, data: dict = {}
+        self,
+        user_id: str,
+        title: str,
+        body: str,
+        data: dict = {},
+        append_name: bool = False,
     ):
         try:
             async for session in PostgresStore().get_session():
@@ -79,12 +86,41 @@ class FCMService:
                 devices = await user_device_service.get_user_devices(
                     user_id=UUID(user_id)
                 )
+                
+                print("==> devices: ", devices)
 
                 # Send notification to each device
                 for device in devices:
-                    await self.send_fcm_notification(
-                        device.fcm_token, title, body, data
-                    )
+                    notification_title = title
+
+                    if append_name:
+                        if (
+                            device.profile_type == ProfileType.PATIENT.value
+                            and device.patient
+                        ):
+                            notification_title += (
+                                f" {device.patient.first_name}"
+                            )
+                        elif (
+                            device.profile_type
+                            == ProfileType.CARE_PROVIDER.value
+                            and device.care_provider
+                        ):
+                            notification_title += (
+                                f" {device.care_provider.first_name}"
+                            )
+
+                print("==> notification_title: ", notification_title)
+                print("==> notification_body: ", body)
+                print("==> notification_payload: ", data)
+
+                # Send the notification using FCM
+                await self.send_fcm_notification(
+                    device.fcm_token,
+                    notification_title,
+                    body,
+                    data,
+                )
         except Exception as e:
             print(
                 f"Failed to send notification to user devices. Error: {str(e)}"
