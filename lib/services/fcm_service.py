@@ -109,13 +109,13 @@ class FCMService:
                     print("==> notification_body: ", body)
                     print("==> notification_data: ", data)
 
-                # Send the notification using FCM
-                await self.send_fcm_notification(
-                    device.fcm_token,
-                    notification_title,
-                    body,
-                    data,
-                )
+                    # Send the notification using FCM
+                    await self.send_fcm_notification(
+                        device.fcm_token,
+                        notification_title,
+                        body,
+                        data,
+                    )
         except Exception as e:
             print(
                 f"Failed to send notification to user devices. Error: {str(e)}"
