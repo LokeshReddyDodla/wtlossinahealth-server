@@ -42,12 +42,11 @@ class FCMService:
         title: str,
         body: str,
         data: dict = {},
-        profile_picture: str = "",
         channel_id: str = "other",
     ):
         """Send an FCM notification to a single device using firebase-admin."""
         message = self._build_message(
-            fcm_token, title, body, profile_picture, channel_id, data=data
+            fcm_token, title, body, channel_id, data=data
         )
         try:
             response = messaging.send(message)
@@ -62,7 +61,6 @@ class FCMService:
         fcm_token: str,
         title: str,
         body: str,
-        profile_picture: Optional[str],
         channel_id: str,
         data: dict = {},
     ) -> messaging.Message:
@@ -87,9 +85,9 @@ class FCMService:
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            data=data,
-            android=android_config,
-            apns=apns_config,
+            # data=data,
+            # android=android_config,
+            # apns=apns_config,
         )
 
     async def send_batch_fcm_notifications(
@@ -116,7 +114,6 @@ class FCMService:
                 messages = []
                 for device in devices:
                     notification_title = title
-                    profile_picture = None
 
                     if append_name:
                         if (
@@ -126,7 +123,6 @@ class FCMService:
                             notification_title += (
                                 f" {device.patient.first_name}"
                             )
-                            profile_picture = device.patient.profile_picture
                         elif (
                             device.profile_type
                             == ProfileType.CARE_PROVIDER.value
@@ -135,21 +131,18 @@ class FCMService:
                             notification_title += (
                                 f" {device.care_provider.first_name}"
                             )
-                            profile_picture = (
-                                device.care_provider.profile_picture
-                            )
 
                     # Build the message
                     message = self._build_message(
                         fcm_token=device.fcm_token,
                         title=notification_title,
                         body=body,
-                        profile_picture=profile_picture,
                         channel_id=channel_id,
                         data=data,
                     )
                     messages.append(message)
 
+                print("==> messages: ", messages)
                 # Send all messages in a batch
                 response = messaging.send_all(messages, dry_run=True)
                 print(f"Batch notification response: {response}")
