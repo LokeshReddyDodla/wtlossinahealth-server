@@ -5,8 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from lib.core.types import ProfileTypeLiteral
-from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.patient import Patient as PatientSchema
 
 
 class UserDeviceBase(BaseModel):
@@ -25,6 +23,9 @@ class UserDeviceCreate(UserDeviceBase):
 
 
 class UserDevice(UserDeviceBase):
+    from lib.schemas.care_provider import CareProvider as CareProviderSchema
+    from lib.schemas.patient import Patient as PatientSchema
+    
     device_id: UUID
     patient: Optional[PatientSchema] = None
     care_provider: Optional[CareProviderSchema] = None
