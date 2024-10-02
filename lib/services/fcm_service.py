@@ -85,9 +85,9 @@ class FCMService:
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            # data=data,
-            # android=android_config,
-            # apns=apns_config,
+            data=data,
+            android=android_config,
+            apns=apns_config,
         )
 
     async def send_batch_fcm_notifications(
@@ -142,9 +142,8 @@ class FCMService:
                     )
                     messages.append(message)
 
-                print("==> messages: ", messages)
                 # Send all messages in a batch
-                response = messaging.send_all(messages, dry_run=True)
+                response = messaging.send_each(messages, dry_run=True)
                 print(f"Batch notification response: {response}")
         except Exception as e:
             print(f"Failed to send batch notifications. Error: {str(e)}")

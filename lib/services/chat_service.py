@@ -8,6 +8,7 @@ from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
@@ -232,12 +233,15 @@ class ChatService:
             }
 
             # Emit message and send notification
-            await self.emit_to_associated_participants(
+            runner = BackgroundTaskRunner()
+            runner.run(
+                self.emit_to_associated_participants,
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
+            runner.shutdown()
 
             print(
                 f"Message {message.id} broadcasted to all participants in chat {message_data.chat_id}."
@@ -676,8 +680,7 @@ class ChatService:
                 print(f"Emitted {message_key} to participant {user_id}")
 
                 # Send FCM notification if notification_info is provided
-                if notification_info:
-                    print(f"==> sending notification for message_key: {message_key}")
+                if notification_info is not None:
                     await self.fcm_service.send_batch_fcm_notifications(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
