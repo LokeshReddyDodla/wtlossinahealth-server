@@ -48,7 +48,7 @@ class FCMService:
                     "title": title,
                     "body": body,
                 },
-                "data": data,
+                # "data": data,
             }
         }
 
@@ -107,7 +107,7 @@ class FCMService:
 
                     print("==> notification_title: ", notification_title)
                     print("==> notification_body: ", body)
-                    print("==> notification_data: ", data)
+                    # print("==> notification_data: ", data)
 
                     # Send the notification using FCM
                     await self.send_fcm_notification(
