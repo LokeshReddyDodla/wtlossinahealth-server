@@ -143,7 +143,7 @@ class FCMService:
                     messages.append(message)
 
                 # Send all messages in a batch
-                response = messaging.send_each(messages, dry_run=True)
+                response = messaging.send_each(messages)
                 print(f"Batch notification response: {response}")
         except Exception as e:
             print(f"Failed to send batch notifications. Error: {str(e)}")
