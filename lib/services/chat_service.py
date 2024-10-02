@@ -669,7 +669,6 @@ class ChatService:
 
         try:
             participants = await self.fetch_chat_participants(chat_id, user_id)
-            print("==> participants: ", participants)
 
             for participant in participants:
                 user_id = str(participant["id"])
