@@ -90,7 +90,7 @@ class FCMService:
             apns=apns_config,
         )
 
-    async def send_batch_fcm_notifications(
+    async def send_fcm_notification_to_user_devices(
         self,
         user_id: str,
         title: str,

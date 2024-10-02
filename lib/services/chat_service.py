@@ -20,6 +20,7 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.services.fcm_service import FCMService
+from lib.tasks.fcm_tasks import send_fcm_notification_task
 
 fake = Faker()
 
@@ -233,16 +234,12 @@ class ChatService:
             }
 
             # Emit message and send notification
-            runner = BackgroundTaskRunner()
-            runner.run(
-                self.emit_to_associated_participants,
+            await self.emit_to_associated_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
-            runner.shutdown()
-
             print(
                 f"Message {message.id} broadcasted to all participants in chat {message_data.chat_id}."
             )
@@ -681,7 +678,7 @@ class ChatService:
 
                 # Send FCM notification if notification_info is provided
                 if notification_info is not None:
-                    await self.fcm_service.send_batch_fcm_notifications(
+                    await send_fcm_notification_task.delay(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
                         body=notification_info.get("body", ""),
