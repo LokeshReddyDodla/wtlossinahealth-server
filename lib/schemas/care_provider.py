@@ -5,7 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel, HttpUrl
 
 from lib.schemas.health_facility import HealthFacility
-from lib.schemas.user_device import UserDevice
 
 
 class CareProviderBase(BaseModel):
@@ -32,8 +31,6 @@ class CareProvider(CareProviderBase):
     care_provider_id: UUID
     health_facility: Optional[HealthFacility] = None
     patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
-    user_devices: List[UserDevice] = []
-    
 
     class Config:
         orm_mode = True
