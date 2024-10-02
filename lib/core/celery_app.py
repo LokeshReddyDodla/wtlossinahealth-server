@@ -18,4 +18,6 @@ celery.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-celery.autodiscover_tasks(['lib.tasks'])
+celery.autodiscover_tasks(["lib.tasks"], force=True)
+
+from lib.tasks.fcm_tasks import send_fcm_notification_task
