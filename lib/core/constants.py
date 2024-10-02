@@ -13,7 +13,6 @@ class EmitMessageKey(Enum):
     NEW_MESSAGE_RECEIVED = "new_message_received"
     MESSAGE_UPDATED = "message_updated"
     TYPING_INDICATOR = "typing_indicator"
-    MESSAGE_READ = "message_read"
     ALL_MESSAGES_MARKED_AS_READ = "all_messages_marked_as_read"
     MESSAGE_MARKED_AS_READ = "message_marked_as_read"
 
