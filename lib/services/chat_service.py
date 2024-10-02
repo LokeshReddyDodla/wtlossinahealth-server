@@ -235,7 +235,6 @@ class ChatService:
             # Emit message and send notification
             await self.emit_to_associated_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
-                data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
