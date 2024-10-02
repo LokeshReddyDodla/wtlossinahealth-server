@@ -121,17 +121,6 @@ async def markAsRead(sid, data):
                 chat_id, user_id, message_id
             )
 
-        # Notify all participants that the message(s) have been read
-        await chat_service.emit_to_associated_participants(
-            message_key=EmitMessageKey.MESSAGE_READ.value,
-            data={
-                "chat_id": chat_id,
-                "user_id": user_id,
-                "message_id": message_id,
-            },
-            chat_id=chat_id,
-        )
-
         return {"status": "success", "message": "Messages marked as read"}
 
     except Exception as e:

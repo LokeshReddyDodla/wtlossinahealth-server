@@ -513,7 +513,7 @@ class ChatService:
 
             # Emit an acknowledgment to the UI
             await self.emit_to_associated_participants(
-                message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
+                message_key=EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
                 data={
                     "chat_id": chat_id,
                     "message_id": message_id,
