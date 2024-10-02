@@ -19,7 +19,6 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
-from lib.services.fcm_service import FCMService
 from lib.tasks.fcm_tasks import send_fcm_notification_task
 
 fake = Faker()
@@ -28,7 +27,6 @@ fake = Faker()
 class ChatService:
     def __init__(self):
         self.mongo_store = get_mongo_store()
-        self.fcm_service = FCMService()
 
     async def create_new_chat(
         self,
