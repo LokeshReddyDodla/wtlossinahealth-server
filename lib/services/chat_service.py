@@ -229,6 +229,7 @@ class ChatService:
                 ),
                 "data": jsonable_encoder(chat),
                 "append_name": True,
+                "channel_key": "chat",
             }
 
             # Emit message and send notification
@@ -677,13 +678,16 @@ class ChatService:
 
                 # Send FCM notification if notification_info is provided
                 if notification_info:
-                    await self.fcm_service.send_notification_to_user_devices(
+                    await self.fcm_service.send_batch_fcm_notifications(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
                         body=notification_info.get("body", ""),
                         data=notification_info.get("data", {}),
                         append_name=notification_info.get(
                             "append_name", False
+                        ),
+                        channel_id=notification_info.get(
+                            "channel_key", "other"
                         ),
                     )
 

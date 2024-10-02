@@ -1,7 +1,10 @@
+from typing import Optional
 from uuid import UUID
 
+import firebase_admin
 import httpx
 from decouple import config
+from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
@@ -16,8 +19,8 @@ class FCMService:
         project: FCMProject = FCMProject.PATIENT_APP,
     ):
         self.json_key_path = config("FCM_JSON_KEY_PATH")
-        self.credentials = self._load_credentials(str(self.json_key_path))
-        self.fcm_url = project.get_fcm_api_url()
+        self.project_id = project.value
+        self._initialize_firebase()
 
     def _load_credentials(self, json_key_path: str):
         """Load Google service account credentials from JSON key."""
@@ -27,53 +30,77 @@ class FCMService:
         )
         return credentials
 
-    def _get_access_token(self) -> str:
-        """Get an access token from the credentials."""
-        request = Request()
-        self.credentials.refresh(request)
-        return self.credentials.token
+    def _initialize_firebase(self):
+        """Initialize the Firebase app using the service account JSON key."""
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(self.json_key_path)
+            firebase_admin.initialize_app(cred)
 
     async def send_fcm_notification(
-        self, fcm_token: str, title: str, body: str, data: dict = {}
+        self,
+        fcm_token: str,
+        title: str,
+        body: str,
+        data: dict = {},
+        profile_picture: str = "",
+        channel_id: str = "other",
     ):
-        access_token = self._get_access_token()
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "message": {
-                "token": fcm_token,
-                "notification": {
-                    "title": title,
-                    "body": body,
-                },
-                # "data": data,
-            }
-        }
-
+        """Send an FCM notification to a single device using firebase-admin."""
+        message = self._build_message(
+            fcm_token, title, body, data, profile_picture, channel_id
+        )
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.fcm_url, headers=headers, json=payload
-                )
-                response.raise_for_status()
-                print(
-                    f"Notification sent to {fcm_token}. Response: {response.json()}"
-                )
+            response = messaging.send(message)
+            print(f"Notification sent to {fcm_token}. Response: {response}")
         except Exception as e:
             print(
                 f"Failed to send notification to {fcm_token}. Error: {str(e)}"
             )
 
-    async def send_notification_to_user_devices(
+    def _build_message(
+        self,
+        fcm_token: str,
+        title: str,
+        body: str,
+        data: dict,
+        profile_picture: Optional[str],
+        channel_id: str,
+    ) -> messaging.Message:
+        """Build a messaging.Message object."""
+        notification = messaging.Notification(
+            title=title, body=body, image=profile_picture
+        )
+
+        # Android-specific config
+        android_config = messaging.AndroidConfig(
+            notification=messaging.AndroidNotification(channel_id=channel_id)
+        )
+
+        # iOS-specific config
+        apns_config = messaging.APNSConfig(
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(sound="default", badge=1)
+            )
+        )
+
+        return messaging.Message(
+            token=fcm_token,
+            notification=notification,
+            data=data,
+            android=android_config,
+            apns=apns_config,
+        )
+
+    async def send_batch_fcm_notifications(
         self,
         user_id: str,
         title: str,
         body: str,
         data: dict = {},
         append_name: bool = False,
+        channel_id: str = "other",
     ):
+        """Send a batch of FCM notifications to all devices of a user."""
         try:
             async for session in PostgresStore().get_session():
                 user_device_service = UserDeviceService(
@@ -83,10 +110,12 @@ class FCMService:
                 devices = await user_device_service.get_user_devices(
                     user_id=UUID(user_id)
                 )
-                
-                # Send notification to each device
+
+                # Create a list to hold all messages
+                messages = []
                 for device in devices:
                     notification_title = title
+                    profile_picture = None
 
                     if append_name:
                         if (
@@ -96,6 +125,7 @@ class FCMService:
                             notification_title += (
                                 f" {device.patient.first_name}"
                             )
+                            profile_picture = device.patient.profile_picture
                         elif (
                             device.profile_type
                             == ProfileType.CARE_PROVIDER.value
@@ -104,19 +134,23 @@ class FCMService:
                             notification_title += (
                                 f" {device.care_provider.first_name}"
                             )
+                            profile_picture = (
+                                device.care_provider.profile_picture
+                            )
 
-                    print("==> notification_title: ", notification_title)
-                    print("==> notification_body: ", body)
-                    # print("==> notification_data: ", data)
-
-                    # Send the notification using FCM
-                    await self.send_fcm_notification(
-                        device.fcm_token,
-                        notification_title,
-                        body,
-                        data,
+                    # Build the message
+                    message = self._build_message(
+                        fcm_token=device.fcm_token,
+                        title=notification_title,
+                        body=body,
+                        data=data,
+                        profile_picture=profile_picture,
+                        channel_id=channel_id,
                     )
+                    messages.append(message)
+
+                # Send all messages in a batch
+                response = messaging.send_all(messages)
+                print(f"Batch notification response: {response}")
         except Exception as e:
-            print(
-                f"Failed to send notification to user devices. Error: {str(e)}"
-            )
+            print(f"Failed to send batch notifications. Error: {str(e)}")
