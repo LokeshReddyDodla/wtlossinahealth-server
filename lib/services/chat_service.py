@@ -677,6 +677,7 @@ class ChatService:
 
                 # Send FCM notification if notification_info is provided
                 if notification_info:
+                    print(f"==> sending notification for message_key: {message_key}")
                     await self.fcm_service.send_batch_fcm_notifications(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
