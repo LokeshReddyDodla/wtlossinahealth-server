@@ -44,6 +44,7 @@ faker = "^29.0.0"
 google-auth = "^2.35.0"
 google-auth-oauthlib = "^1.2.1"
 firebase-admin = "^6.5.0"
+asgiref = "^3.8.1"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
