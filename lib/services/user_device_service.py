@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileType
 from lib.core.types import ProfileTypeLiteral
@@ -35,12 +36,17 @@ class UserDeviceService:
     ) -> list[UserDevice]:
         """Retrieve all devices associated with a user."""
         try:
-            stmt = select(UserDeviceModel).where(
-                UserDeviceModel.user_id == user_id
+            stmt = (
+                select(UserDeviceModel)
+                .where(UserDeviceModel.user_id == user_id)
+                .options(
+                    selectinload(UserDeviceModel.patient),
+                    selectinload(UserDeviceModel.care_provider),
+                )
             )
             if profile_type is not None:
                 stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
-                
+
             result = await self.postgres_session.execute(stmt)
             devices = result.scalars().all()
             return [UserDevice.from_orm(device) for device in devices]

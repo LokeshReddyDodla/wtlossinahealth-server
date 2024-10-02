@@ -221,9 +221,14 @@ class ChatService:
                         )
 
             notification_info = {
-                "title": "New Message",
-                "body": f"New message from {message_data.sender_id}",
-                "data": jsonable_encoder(message_dict),
+                "title": "New message from",
+                "body": (
+                    f"sent you an {message.metadata.type}"  # For image, audio, file
+                    if message.metadata.type in ["image", "audio", "file"]
+                    else message.content
+                ),
+                "data": jsonable_encoder(chat),
+                "append_name": True,
             }
 
             # Emit message and send notification
@@ -672,13 +677,16 @@ class ChatService:
                 print(f"Emitted {message_key} to participant {user_id}")
 
                 # Send FCM notification if notification_info is provided
-                # if notification_info:
-                #     await self.fcm_service.send_notification_to_user_devices(
-                #         user_id=user_id,
-                #         title=notification_info.get("title", ""),
-                #         body=notification_info.get("body", ""),
-                #         data=notification_info.get("data", {}),
-                #     )
+                if notification_info:
+                    await self.fcm_service.send_notification_to_user_devices(
+                        user_id=user_id,
+                        title=notification_info.get("title", ""),
+                        body=notification_info.get("body", ""),
+                        data=notification_info.get("data", {}),
+                        append_name=notification_info.get(
+                            "append_name", False
+                        ),
+                    )
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
