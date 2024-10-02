@@ -227,7 +227,6 @@ class ChatService:
                     if message.metadata.type in ["image", "audio", "file"]
                     else message.content
                 ),
-                "data": jsonable_encoder(chat),
                 "append_name": True,
                 "channel_key": "chat",
             }
@@ -235,6 +234,7 @@ class ChatService:
             # Emit message and send notification
             await self.emit_to_associated_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
+                data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
