@@ -18,4 +18,4 @@ celery.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-# Import tasks
+celery.autodiscover_tasks(['lib.tasks'])
