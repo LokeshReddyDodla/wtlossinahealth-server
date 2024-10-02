@@ -28,7 +28,6 @@ from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient_token_usage_log import PatientTokenUsageLog
 from lib.schemas.patient_vital import PatientVital
-from lib.schemas.user_device import UserDevice
 
 
 class PatientBase(BaseModel):
@@ -63,7 +62,7 @@ class Patient(PatientBase):
         orm_mode = True
 
 
-class CompletePatientProfile(PatientBase):
+class CompletePatientProfile(PatientBase):    
     patient_id: UUID
     daily_activity: Optional[PatientDailyActivity] = None
     food_allergies: List[PatientFoodAllergy] = []
@@ -86,7 +85,6 @@ class CompletePatientProfile(PatientBase):
     token_usage_logs: List[PatientTokenUsageLog] = []
     care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None
-    user_devices: List[UserDevice] = []
 
     class Config:
         orm_mode = True
@@ -102,3 +100,4 @@ class CompletePatientProfile(PatientBase):
         }
 
         return cls(**kwargs)
+
