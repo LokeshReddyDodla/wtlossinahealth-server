@@ -31,15 +31,15 @@ from lib.schemas.patient_vital import PatientVital
 
 
 class PatientBase(BaseModel):
-    first_name: str
-    last_name: str
-    dob: date
-    gender: str
+    first_name: Optional[str]
+    last_name: Optional[str]
+    dob: Optional[date]
+    gender: Optional[str]
     profile_picture: Optional[HttpUrl] = None
-    height: float
-    waist: float
-    weight: float
-    email: str
+    height: Optional[float]
+    waist: Optional[float]
+    weight: Optional[float]
+    email: Optional[str]
     phone_number: str
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
