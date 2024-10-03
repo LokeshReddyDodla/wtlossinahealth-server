@@ -36,7 +36,7 @@ clickhouse-driver = "^0.2.8"
 passlib = "^1.7.4"
 loguru = "^0.7.2"
 python-dateutil = "^2.9.0.post0"
-celery = "^5.4.0"
+celery = {extras = ["asyncio"], version = "^5.4.0"}
 aioredis = "^2.0.1"
 singleton-decorator = "^1.0.0"
 python-socketio = {extras = ["client"], version = "^5.11.4"}
