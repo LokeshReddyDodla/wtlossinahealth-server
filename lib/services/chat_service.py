@@ -679,7 +679,7 @@ class ChatService:
                 # Send FCM notification if notification_info is provided
                 if notification_info is not None:
                     print("==> sending fcm notifications...")
-                    send_fcm_notification_task.delay(
+                    send_fcm_notification_task(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
                         body=notification_info.get("body", ""),
