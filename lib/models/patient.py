@@ -27,15 +27,15 @@ class Patient(Base):
         unique=True,
         index=True,
     )
-    first_name = Column(String, nullable=True, index=True)
-    last_name = Column(String, nullable=True, index=True)
-    dob = Column(Date, nullable=True)
-    gender = Column(String(10), nullable=True)
+    first_name = Column(String, index=True)
+    last_name = Column(String, index=True)
+    dob = Column(Date)
+    gender = Column(String(10))
     profile_picture = Column(Text, nullable=True)
-    height = Column(Float, nullable=True)
-    waist = Column(Float, nullable=True)
-    weight = Column(Float, nullable=True)
-    email = Column(String, nullable=True, unique=True, index=True)
+    height = Column(Float)
+    waist = Column(Float)
+    weight = Column(Float)
+    email = Column(String, unique=True, index=True)
     phone_number = Column(String, unique=True, index=True)
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)

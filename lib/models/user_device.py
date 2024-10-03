@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, DateTime, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID as P_UUID
+from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -28,12 +28,12 @@ class UserDevice(Base):
     platform_version = Column(String, nullable=True)
 
     patient_id = Column(
-        P_UUID,
+        UUID,
         ForeignKey("patients.patient_id", ondelete="CASCADE"),
         nullable=True,
     )
     care_provider_id = Column(
-        P_UUID,
+        UUID,
         ForeignKey("care_providers.care_provider_id", ondelete="CASCADE"),
         nullable=True,
     )
