@@ -8,7 +8,6 @@ from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
@@ -676,6 +675,7 @@ class ChatService:
 
                 # Send FCM notification if notification_info is provided
                 if notification_info is not None:
+                    print("==> sending fcm notifications...")
                     await send_fcm_notification_task.delay(
                         user_id=user_id,
                         title=notification_info.get("title", ""),

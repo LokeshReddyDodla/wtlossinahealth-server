@@ -7,11 +7,14 @@ from celery import shared_task
 def send_fcm_notification_task(
     user_id, title, body, data=None, append_name=False, channel_id="other"
 ):
+    
     from lib.services.fcm_service import FCMService
 
     fcm_service = FCMService()
 
     try:
+        print("==> send fcm notification task...")
+        
         asyncio.run(
             fcm_service.send_fcm_notification_to_user_devices(
                 user_id=user_id,
