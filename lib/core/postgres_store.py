@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 from decouple import config
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -27,9 +30,13 @@ class PostgresStore:
         self.engine = engine
         self.session_local = AsyncSessionLocal
 
-    async def get_session(self):
-        async with self.session_local() as session:
+    @asynccontextmanager
+    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+        session: AsyncSession = self.session_local()
+        try:
             yield session
+        finally:
+            await session.close()
 
     async def __aenter__(self):
         self.session = self.session_local()
