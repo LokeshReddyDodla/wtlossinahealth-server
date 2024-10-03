@@ -47,6 +47,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
     volumes:
       - celery_logs:/var/log/celery
       - celery_data:/var/lib/celery
