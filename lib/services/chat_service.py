@@ -675,11 +675,9 @@ class ChatService:
                 await sio.emit(message_key, data, room=user_id)
                 print(f"Emitted {message_key} to participant {user_id}")
 
-                print("==> participant: ", participant)
                 # Send FCM notification if notification_info is provided
                 if notification_info is not None:
-                    print("==> sending fcm notifications...")
-                    task_result = send_fcm_notification_task.delay(
+                    send_fcm_notification_task.delay(
                         user_id=user_id,
                         title=notification_info.get("title", ""),
                         body=notification_info.get("body", ""),
@@ -692,17 +690,6 @@ class ChatService:
                         ),
                     )
 
-                    # Check the task status
-                    print(f"Task Status: {task_result.status}")
-
-                    # If the task failed, get the exception info
-                    if task_result.failed():
-                        print(f"Task Failed Info: {task_result.result}")
-
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
-            error_message = f"Exception occurred: {str(e)}"
-            traceback_message = traceback.format_exc()
-            print(error_message)
-            print(traceback_message)
             raise
