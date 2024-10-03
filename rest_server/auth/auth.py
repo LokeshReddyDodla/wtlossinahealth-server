@@ -1,3 +1,4 @@
+import traceback
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -57,8 +58,10 @@ async def verify_otp_endpoint(
                 role=role,
             )
 
+            print("==> otp_data: ", otp_data)
+
             # Store or update user device information if provided
-            if otp_data.fcm_token or otp_data.device_type:
+            if otp_data.fcm_token:
                 await user_device_service.create_or_update_user_device(
                     user_id=UUID(user_id),
                     fcm_token=otp_data.fcm_token,
@@ -80,6 +83,14 @@ async def verify_otp_endpoint(
             )
             raise HTTPException(status_code=400, detail=response.dict())
     except HTTPException as e:
+        error_message = f"Exception occurred: {str(e)}"
+        traceback_message = traceback.format_exc()
+        print(error_message)
+        print(traceback_message)
         raise e
     except Exception as e:
+        error_message = f"Exception occurred: {str(e)}"
+        traceback_message = traceback.format_exc()
+        print(error_message)
+        print(traceback_message)
         return ErrorResponse(message="Failed to verify OTP", detail=str(e))
