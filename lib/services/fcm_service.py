@@ -104,7 +104,7 @@ class FCMService:
         
         print(f"==> Entered send_fcm_notification_to_user_devices for user_id: {user_id}")
         try:
-            async for session in PostgresStore().get_session():
+            async with PostgresStore().get_session() as session:
                 print(f"==> Acquired Postgres session for user_id: {user_id}")
                 user_device_service = UserDeviceService(
                     postgres_session=session

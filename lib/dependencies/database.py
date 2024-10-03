@@ -9,5 +9,5 @@ postgres_store = PostgresStore()
 
 
 async def get_postgres_session() -> AsyncGenerator[AsyncSession, None]:
-    async for session in postgres_store.get_session():
+    async with postgres_store.get_session() as session:
         yield session
