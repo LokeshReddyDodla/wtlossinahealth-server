@@ -100,10 +100,12 @@ class FCMService:
         channel_id: str = "other",
     ):
         """Send a batch of FCM notifications to all devices of a user."""
-        print("==> sending fcm notification to user devices...")
+    
         
+        print(f"==> Entered send_fcm_notification_to_user_devices for user_id: {user_id}")
         try:
             async for session in PostgresStore().get_session():
+                print(f"==> Acquired Postgres session for user_id: {user_id}")
                 user_device_service = UserDeviceService(
                     postgres_session=session
                 )
@@ -111,10 +113,12 @@ class FCMService:
                 devices = await user_device_service.get_user_devices(
                     user_id=UUID(user_id)
                 )
+                print(f"==> Retrieved devices: {devices}")
 
                 # Create a list to hold all messages
                 messages = []
                 for device in devices:
+                    print(f"==> Processing device: {device}")
                     notification_title = title
 
                     if append_name:
