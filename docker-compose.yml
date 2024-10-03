@@ -47,6 +47,7 @@ services:
       - celery_data:/var/lib/celery
     depends_on:
       - aihealth-redis
+      - aihealth-api
     restart: unless-stopped
 
   aihealth-redis:

@@ -100,6 +100,8 @@ class FCMService:
         channel_id: str = "other",
     ):
         """Send a batch of FCM notifications to all devices of a user."""
+        print("==> sending fcm notification to user devices...")
+        
         try:
             async for session in PostgresStore().get_session():
                 user_device_service = UserDeviceService(
