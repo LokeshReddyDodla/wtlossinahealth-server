@@ -163,7 +163,7 @@ class PatientCareProviderService:
             # Create chat instance in MongoDB
             await self._create_chats(patient, care_provider)
 
-            await self.chat_service.emit_to_associated_participants(
+            await self.chat_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=patient_care_provider_data.patient_id,
             )
@@ -194,7 +194,7 @@ class PatientCareProviderService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_care_provider)
 
-            await self.chat_service.emit_to_associated_participants(
+            await self.chat_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=str(patient_care_provider.patient_id),
             )
@@ -230,7 +230,7 @@ class PatientCareProviderService:
             await self.postgres_session.delete(patient_care_provider)
             await self.postgres_session.commit()
 
-            await self.chat_service.emit_to_associated_participants(
+            await self.chat_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=str(patient_care_provider.patient_id),
             )

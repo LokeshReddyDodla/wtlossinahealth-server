@@ -4,12 +4,14 @@ from uuid import UUID
 import firebase_admin
 import httpx
 from decouple import config
+from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
 from lib.core.constants import FCMProject, ProfileType
 from lib.core.postgres_store import PostgresStore
+from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.user_device_service import UserDeviceService
 
 
@@ -91,17 +93,10 @@ class FCMService:
         )
 
     async def send_fcm_notification_to_user_devices(
-        self,
-        user_id: str,
-        title: str,
-        body: str,
-        data: dict = {},
-        append_name: bool = False,
-        channel_id: str = "other",
+        self, user_id: str, notification_info: FCMNotificationInfo
     ):
         """Send a batch of FCM notifications to all devices of a user."""
-    
-        
+
         try:
             async with PostgresStore().get_session() as session:
                 user_device_service = UserDeviceService(
@@ -115,9 +110,9 @@ class FCMService:
                 # Create a list to hold all messages
                 messages = []
                 for device in devices:
-                    notification_title = title
+                    notification_title = notification_info.title
 
-                    if append_name:
+                    if notification_info.append_name:
                         if (
                             device.profile_type == ProfileType.PATIENT.value
                             and device.patient
@@ -138,14 +133,24 @@ class FCMService:
                     message = self._build_message(
                         fcm_token=device.fcm_token,
                         title=notification_title,
-                        body=body,
-                        channel_id=channel_id,
-                        data=data,
+                        body=notification_info.body,
+                        channel_id=notification_info.channel_id,
+                        data=jsonable_encoder(notification_info.data) or {},
                     )
                     messages.append(message)
 
                 # Send all messages in a batch
                 response = messaging.send_each(messages)
+                
+                # Handle individual responses
+                for index, resp in enumerate(response.responses):
+                    if not resp.success:
+                        # Log or handle individual message failure
+                        print(f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}")
+                    else:
+                        print(f"Successfully sent message to device {devices[index].fcm_token}")
+
+
                 print(f"Batch notification response: {response}")
         except Exception as e:
             print(f"Failed to send batch notifications. Error: {str(e)}")

@@ -117,7 +117,7 @@ class CareProviderProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider)
 
-            await self.chat_service.emit_to_associated_participants(
+            await self.chat_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=care_provider_id,
             )
