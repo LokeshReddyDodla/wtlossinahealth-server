@@ -5,8 +5,6 @@ from typing import List
 import nest_asyncio
 from celery import shared_task
 
-from lib.schemas.fcm_notification_info import FCMNotificationInfo
-
 
 @shared_task
 def send_fcm_notification_task(participants, notification_info: dict):
@@ -27,7 +25,8 @@ def send_fcm_notification_task(participants, notification_info: dict):
                         user_id=user_id,
                         title=notification_info["title"],
                         body=notification_info["body"],
-                        channel_id=notification_info["channel_id"],
+                        channel_key=notification_info["channel_key"],
+                        group_key=notification_info["group_key"],
                         append_name=notification_info["append_name"],
                         data=notification_info["data"],
                     ),
