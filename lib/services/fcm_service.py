@@ -17,6 +17,7 @@ from lib.core.types import (FCMNotificationChannelKeyLiteral,
                             FCMNotificationGroupKeyLiteral)
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.user_device_service import UserDeviceService
+from lib.utils.json_utils import ensure_string_values
 
 
 class FCMService:
@@ -127,10 +128,11 @@ class FCMService:
         print(
             "==> data after: ", orjson.loads(orjson.dumps(data, default=str))
         )
+        print("==> and after: ", ensure_string_values(data))
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            data=orjson.loads(orjson.dumps(data, default=str)),
+            data=ensure_string_values(data),
             android=android_config,
             apns=apns_config,
         )
