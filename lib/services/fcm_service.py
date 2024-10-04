@@ -3,6 +3,7 @@ from uuid import UUID
 
 import firebase_admin
 import httpx
+from celery import uuid
 from decouple import config
 from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
@@ -86,10 +87,38 @@ class FCMService:
             payload=messaging.APNSPayload(aps=messaging.Aps(sound="default"))
         )
 
+        unique_id = uuid.uuid4().int & (1 << 31) - 1
+
+        # Adding notification content
+        notification_content = {
+            "id": unique_id,
+            "title": title,
+            "body": body,
+            "channelKey": channel_key,
+            "groupKey": group_key,
+            "showWhen": True,
+            "autoDismissible": True,
+        }
+
         data.update(
             {
-                "channelKey": channel_key,
-                "groupKey": group_key,
+                "content": notification_content,
+                "iOS": {
+                    "content": {
+                        "title": title,
+                        "body": body,
+                        "channelKey": channel_key,
+                        "groupKey": group_key,
+                    }
+                },
+                "Android": {
+                    "content": {
+                        "title": title,
+                        "body": body,
+                        "channelKey": channel_key,
+                        "groupKey": group_key,
+                    }
+                },
             }
         )
 
