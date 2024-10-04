@@ -92,11 +92,6 @@ class FCMService:
         data.update(
             {
                 "groupKey": group_key,
-            }
-        )
-
-        data.update(
-            {
                 "channelKey": channel_key,
             }
         )
