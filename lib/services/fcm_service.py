@@ -1,12 +1,10 @@
-import json
-import uuid
 from typing import Optional
 from uuid import UUID
 
 import firebase_admin
 import httpx
-import orjson
 from decouple import config
+from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
@@ -86,49 +84,23 @@ class FCMService:
 
         # iOS-specific config
         apns_config = messaging.APNSConfig(
-            payload=messaging.APNSPayload(aps=messaging.Aps(sound="default"))
+            payload=messaging.APNSPayload(
+                aps=messaging.Aps(sound="default"), mutable_content=True
+            )
         )
-
-        unique_id = uuid.uuid4().int & (1 << 31) - 1
-
-        # Adding notification content
-        notification_content = {
-            "id": unique_id,
-            "title": title,
-            "body": body,
-            "channelKey": channel_key,
-            "groupKey": group_key,
-            "showWhen": True,
-            "autoDismissible": True,
-        }
 
         data.update(
             {
-                "content": notification_content,
-                "iOS": {
-                    "content": {
-                        "title": title,
-                        "body": body,
-                        "channelKey": channel_key,
-                        "groupKey": group_key,
-                    }
-                },
-                "Android": {
-                    "content": {
-                        "title": title,
-                        "body": body,
-                        "channelKey": channel_key,
-                        "groupKey": group_key,
-                    }
-                },
+                "groupKey": group_key,
             }
         )
 
-        print("==> data before: ", data)
-        print(
-            "==> data after: ", orjson.loads(orjson.dumps(data, default=str))
+        data.update(
+            {
+                "channelKey": channel_key,
+            }
         )
-        print("==> and after: ", ensure_string_values(data))
+
         return messaging.Message(
             token=fcm_token,
             notification=notification,
@@ -188,7 +160,7 @@ class FCMService:
                         body=body,
                         channel_key=channel_key,
                         group_key=group_key,
-                        data=data or {},
+                        data=jsonable_encoder(data) or {},
                     )
                     messages.append(message)
 
