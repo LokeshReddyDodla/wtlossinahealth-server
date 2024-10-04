@@ -2,6 +2,9 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
+from lib.core.types import (FCMNotificationChannelKeyLiteral,
+                            FCMNotificationGroupKeyLiteral)
+
 
 class FCMNotificationInfo(BaseModel):
     title: str = Field(..., description="Title of the FCM notification")
@@ -10,8 +13,12 @@ class FCMNotificationInfo(BaseModel):
         False,
         description="Flag to append sender's name to the notification title",
     )
-    channel_id: str = Field(
-        ..., description="Channel id for the FCM notification (e.g., 'chat')"
+    channel_key: FCMNotificationChannelKeyLiteral = Field(
+        ..., description="Channel key for the FCM notification (e.g., 'chat')"
+    )
+    group_key: FCMNotificationGroupKeyLiteral = Field(
+        ...,
+        description="Group key for the FCM notification (e.g., 'chat_group')",
     )
     sender_id: Optional[str] = Field(
         None, description="ID of the message sender"

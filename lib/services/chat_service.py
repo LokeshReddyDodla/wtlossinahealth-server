@@ -230,7 +230,8 @@ class ChatService:
                     else message.content
                 ),
                 append_name=True,
-                channel_id="chat",
+                channel_key="chat_messages",
+                group_key="chat_group",
                 sender_id=message.sender_id,
             )
 
@@ -671,7 +672,6 @@ class ChatService:
 
         try:
             participants = await self.fetch_chat_participants(chat_id, user_id)
-            print("==> participants: ", participants)
 
             for participant in participants:
                 user_id = str(participant["id"])
@@ -685,8 +685,6 @@ class ChatService:
                     for p in participants
                     if str(p["id"]) != notification_info.sender_id
                 ]
-
-                print("==> filtered_participants: ", filtered_participants)
 
                 send_fcm_notification_task.delay(
                     participants=filtered_participants,

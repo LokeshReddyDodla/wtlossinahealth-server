@@ -11,6 +11,8 @@ from google.oauth2 import service_account
 
 from lib.core.constants import FCMProject, ProfileType
 from lib.core.postgres_store import PostgresStore
+from lib.core.types import (FCMNotificationChannelKeyLiteral,
+                            FCMNotificationGroupKeyLiteral)
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.user_device_service import UserDeviceService
 
@@ -44,11 +46,12 @@ class FCMService:
         title: str,
         body: str,
         data: dict = {},
-        channel_id: str = "other",
+        channel_key: FCMNotificationChannelKeyLiteral = "other",
+        group_key: FCMNotificationGroupKeyLiteral = "other_group",
     ):
         """Send an FCM notification to a single device using firebase-admin."""
         message = self._build_message(
-            fcm_token, title, body, channel_id, data=data
+            fcm_token, title, body, channel_key, group_key, data=data
         )
         try:
             response = messaging.send(message)
@@ -63,7 +66,8 @@ class FCMService:
         fcm_token: str,
         title: str,
         body: str,
-        channel_id: str,
+        channel_key: FCMNotificationChannelKeyLiteral,
+        group_key: FCMNotificationGroupKeyLiteral,
         data: dict = {},
     ) -> messaging.Message:
         """Build a messaging.Message object."""
@@ -74,12 +78,19 @@ class FCMService:
 
         # Android-specific config
         android_config = messaging.AndroidConfig(
-            notification=messaging.AndroidNotification(channel_id=channel_id)
+            notification=messaging.AndroidNotification(channel_id=channel_key)
         )
 
         # iOS-specific config
         apns_config = messaging.APNSConfig(
             payload=messaging.APNSPayload(aps=messaging.Aps(sound="default"))
+        )
+
+        data.update(
+            {
+                "channelKey": channel_key,
+                "groupKey": group_key,
+            }
         )
 
         return messaging.Message(
@@ -95,7 +106,8 @@ class FCMService:
         user_id: str,
         title: str,
         body: str,
-        channel_id: str,
+        channel_key: FCMNotificationChannelKeyLiteral,
+        group_key: FCMNotificationGroupKeyLiteral,
         append_name: Optional[bool] = False,
         data: Optional[dict] = {},
     ):
@@ -138,7 +150,8 @@ class FCMService:
                         fcm_token=device.fcm_token,
                         title=notification_title,
                         body=body,
-                        channel_id=channel_id,
+                        channel_key=channel_key,
+                        group_key=group_key,
                         data=jsonable_encoder(data) or {},
                     )
                     messages.append(message)
