@@ -5,6 +5,7 @@ from uuid import UUID
 
 import firebase_admin
 import httpx
+import orjson
 from decouple import config
 from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
@@ -122,10 +123,14 @@ class FCMService:
             }
         )
 
+        print("==> data before: ", data)
+        print(
+            "==> data after: ", orjson.loads(orjson.dumps(data, default=str))
+        )
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            data=json.loads(json.dumps(data, default=str)),
+            data=orjson.loads(orjson.dumps(data, default=str)),
             android=android_config,
             apns=apns_config,
         )
