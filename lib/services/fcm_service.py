@@ -93,7 +93,13 @@ class FCMService:
         )
 
     async def send_fcm_notification_to_user_devices(
-        self, user_id: str, notification_info: FCMNotificationInfo
+        self,
+        user_id: str,
+        title: str,
+        body: str,
+        channel_id: str,
+        append_name: Optional[bool] = False,
+        data: Optional[dict] = {},
     ):
         """Send a batch of FCM notifications to all devices of a user."""
 
@@ -110,9 +116,9 @@ class FCMService:
                 # Create a list to hold all messages
                 messages = []
                 for device in devices:
-                    notification_title = notification_info.title
+                    notification_title = title
 
-                    if notification_info.append_name:
+                    if append_name:
                         if (
                             device.profile_type == ProfileType.PATIENT.value
                             and device.patient
@@ -133,23 +139,26 @@ class FCMService:
                     message = self._build_message(
                         fcm_token=device.fcm_token,
                         title=notification_title,
-                        body=notification_info.body,
-                        channel_id=notification_info.channel_id,
-                        data=jsonable_encoder(notification_info.data) or {},
+                        body=body,
+                        channel_id=channel_id,
+                        data=jsonable_encoder(data) or {},
                     )
                     messages.append(message)
 
                 # Send all messages in a batch
                 response = messaging.send_each(messages)
-                
+
                 # Handle individual responses
                 for index, resp in enumerate(response.responses):
                     if not resp.success:
                         # Log or handle individual message failure
-                        print(f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}")
+                        print(
+                            f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}"
+                        )
                     else:
-                        print(f"Successfully sent message to device {devices[index].fcm_token}")
-
+                        print(
+                            f"Successfully sent message to device {devices[index].fcm_token}"
+                        )
 
                 print(f"Batch notification response: {response}")
         except Exception as e:

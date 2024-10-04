@@ -687,7 +687,7 @@ class ChatService:
 
                 send_fcm_notification_task.delay(
                     user_ids=participants_ids,
-                    notification_info=notification_info,
+                    notification_info=notification_info.dict(),
                 )
 
         except Exception as e:

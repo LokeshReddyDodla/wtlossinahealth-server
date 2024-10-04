@@ -9,9 +9,7 @@ from lib.schemas.fcm_notification_info import FCMNotificationInfo
 
 
 @shared_task
-def send_fcm_notification_task(
-    user_ids: List[str], notification_info: FCMNotificationInfo
-):
+def send_fcm_notification_task(user_ids: List[str], notification_info: dict):
 
     from lib.services.fcm_service import FCMService
 
@@ -22,7 +20,12 @@ def send_fcm_notification_task(
             nest_asyncio.apply()
             asyncio.run(
                 fcm_service.send_fcm_notification_to_user_devices(
-                    user_id=user_id, notification_info=notification_info
+                    user_id=user_id,
+                    title=notification_info["title"],
+                    body=notification_info["body"],
+                    channel_id=notification_info["channel_id"],
+                    append_name=notification_info["append_name"],
+                    data=notification_info["data"],
                 ),
             )
 
