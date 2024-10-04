@@ -79,9 +79,7 @@ class FCMService:
 
         # iOS-specific config
         apns_config = messaging.APNSConfig(
-            payload=messaging.APNSPayload(
-                aps=messaging.Aps(sound="default", badge=1)
-            )
+            payload=messaging.APNSPayload(aps=messaging.Aps(sound="default"))
         )
 
         return messaging.Message(
