@@ -680,10 +680,12 @@ class ChatService:
             # Send FCM notification if notification_info is provided
             if notification_info is not None:
                 participants_ids = [
-                    p
+                    str(p["id"])
                     for p in participants
                     if str(p["id"]) != notification_info.sender_id
                 ]
+
+                print("==> participants_ids: ", participants_ids)
 
                 send_fcm_notification_task.delay(
                     user_ids=participants_ids,
