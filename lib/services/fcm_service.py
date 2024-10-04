@@ -1,3 +1,4 @@
+import json
 import uuid
 from typing import Optional
 from uuid import UUID
@@ -5,7 +6,6 @@ from uuid import UUID
 import firebase_admin
 import httpx
 from decouple import config
-from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
@@ -125,7 +125,7 @@ class FCMService:
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            data=jsonable_encoder(data),
+            data=json.loads(json.dumps(data, default=str)),
             android=android_config,
             apns=apns_config,
         )
