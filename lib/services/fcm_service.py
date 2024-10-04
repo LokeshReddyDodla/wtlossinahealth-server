@@ -125,7 +125,7 @@ class FCMService:
         return messaging.Message(
             token=fcm_token,
             notification=notification,
-            data=data,
+            data=jsonable_encoder(data),
             android=android_config,
             apns=apns_config,
         )
@@ -181,7 +181,7 @@ class FCMService:
                         body=body,
                         channel_key=channel_key,
                         group_key=group_key,
-                        data=jsonable_encoder(data) or {},
+                        data=data or {},
                     )
                     messages.append(message)
 
