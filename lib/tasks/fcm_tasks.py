@@ -9,25 +9,29 @@ from lib.schemas.fcm_notification_info import FCMNotificationInfo
 
 
 @shared_task
-def send_fcm_notification_task(user_ids: List[str], notification_info: dict):
+def send_fcm_notification_task(participants, notification_info: dict):
 
     from lib.services.fcm_service import FCMService
 
     fcm_service = FCMService()
 
     try:
-        for user_id in user_ids:
-            nest_asyncio.apply()
-            asyncio.run(
-                fcm_service.send_fcm_notification_to_user_devices(
-                    user_id=user_id,
-                    title=notification_info["title"],
-                    body=notification_info["body"],
-                    channel_id=notification_info["channel_id"],
-                    append_name=notification_info["append_name"],
-                    data=notification_info["data"],
-                ),
-            )
+        for participant in participants:
+            user_id = str(participant["id"])
+            is_muted = participant["is_muted"]
+
+            if not is_muted:
+                nest_asyncio.apply()
+                asyncio.run(
+                    fcm_service.send_fcm_notification_to_user_devices(
+                        user_id=user_id,
+                        title=notification_info["title"],
+                        body=notification_info["body"],
+                        channel_id=notification_info["channel_id"],
+                        append_name=notification_info["append_name"],
+                        data=notification_info["data"],
+                    ),
+                )
 
         print(f"==> Completed asyncio.run for user_id: {user_id}")
     except Exception as e:

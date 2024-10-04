@@ -671,6 +671,7 @@ class ChatService:
 
         try:
             participants = await self.fetch_chat_participants(chat_id, user_id)
+            print("==> participants: ", participants)
 
             for participant in participants:
                 user_id = str(participant["id"])
@@ -679,16 +680,16 @@ class ChatService:
 
             # Send FCM notification if notification_info is provided
             if notification_info is not None:
-                participants_ids = [
-                    str(p["id"])
+                filtered_participants = [
+                    p
                     for p in participants
                     if str(p["id"]) != notification_info.sender_id
                 ]
 
-                print("==> participants_ids: ", participants_ids)
+                print("==> filtered_participants: ", filtered_participants)
 
                 send_fcm_notification_task.delay(
-                    user_ids=participants_ids,
+                    participants=filtered_participants,
                     notification_info=notification_info.dict(),
                 )
 
