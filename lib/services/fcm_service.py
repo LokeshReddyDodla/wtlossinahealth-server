@@ -1,9 +1,9 @@
+import uuid
 from typing import Optional
 from uuid import UUID
 
 import firebase_admin
 import httpx
-from celery import uuid
 from decouple import config
 from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
