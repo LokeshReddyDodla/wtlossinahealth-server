@@ -20,6 +20,7 @@ from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
+from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.tasks.fcm_tasks import send_fcm_notification_task
 
 fake = Faker()
@@ -221,19 +222,20 @@ class ChatService:
                             {"$inc": {f"unread_counts.{participant_id}": 1}},
                         )
 
-            notification_info = {
-                "title": "New message from",
-                "body": (
+            notification_info = FCMNotificationInfo(
+                title="New message from",
+                body=(
                     f"sent you an {message.metadata.type}"  # For image, audio, file
                     if message.metadata.type in ["image", "audio", "file"]
                     else message.content
                 ),
-                "append_name": True,
-                "channel_key": "chat",
-            }
+                append_name=True,
+                channel_id="chat",
+                sender_id=message.sender_id,
+            )
 
             # Emit message and send notification
-            await self.emit_to_associated_participants(
+            await self.notify_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(message_dict),
                 chat_id=message_data.chat_id,
@@ -456,7 +458,7 @@ class ChatService:
             )
 
             # Emit an acknowledgment to the UI
-            await self.emit_to_associated_participants(
+            await self.notify_participants(
                 message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
                 data={"chat_id": chat_id, "user_id": str(user_id)},
                 chat_id=chat_id,
@@ -512,7 +514,7 @@ class ChatService:
                 )
 
             # Emit an acknowledgment to the UI
-            await self.emit_to_associated_participants(
+            await self.notify_participants(
                 message_key=EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
                 data={
                     "chat_id": chat_id,
@@ -657,13 +659,13 @@ class ChatService:
 
         return participants
 
-    async def emit_to_associated_participants(
+    async def notify_participants(
         self,
         message_key: str,
         data: Optional[dict] = None,
         chat_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        notification_info: Optional[Dict[str, Any]] = None,
+        notification_info: Optional[FCMNotificationInfo] = None,
     ):
         from lib.services.socketio_service import sio
 
@@ -675,34 +677,19 @@ class ChatService:
                 await sio.emit(message_key, data, room=user_id)
                 print(f"Emitted {message_key} to participant {user_id}")
 
-                print("==> participant: ", participant)
-                # Send FCM notification if notification_info is provided
-                if notification_info is not None:
-                    print("==> sending fcm notifications...")
-                    task_result = send_fcm_notification_task.delay(
-                        user_id=user_id,
-                        title=notification_info.get("title", ""),
-                        body=notification_info.get("body", ""),
-                        data=notification_info.get("data", {}),
-                        append_name=notification_info.get(
-                            "append_name", False
-                        ),
-                        channel_id=notification_info.get(
-                            "channel_key", "other"
-                        ),
-                    )
+            # Send FCM notification if notification_info is provided
+            if notification_info is not None:
+                participants_ids = [
+                    p
+                    for p in participants
+                    if str(p["id"]) != notification_info.sender_id
+                ]
 
-                    # Check the task status
-                    print(f"Task Status: {task_result.status}")
-
-                    # If the task failed, get the exception info
-                    if task_result.failed():
-                        print(f"Task Failed Info: {task_result.result}")
+                send_fcm_notification_task.delay(
+                    user_ids=participants_ids,
+                    notification_info=notification_info,
+                )
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
-            error_message = f"Exception occurred: {str(e)}"
-            traceback_message = traceback.format_exc()
-            print(error_message)
-            print(traceback_message)
             raise

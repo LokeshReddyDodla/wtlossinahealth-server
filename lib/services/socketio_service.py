@@ -149,7 +149,7 @@ async def toggleReaction(sid, data):
         updated_message = await chat_service.get_message_by_id(message_id)
 
         # Emit the updated reaction event to all participants in the chat
-        await chat_service.emit_to_associated_participants(
+        await chat_service.notify_participants(
             message_key=EmitMessageKey.MESSAGE_UPDATED.value,
             data={
                 "chat_id": chat_id,
