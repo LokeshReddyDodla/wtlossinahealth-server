@@ -142,3 +142,4 @@ deployment/volumes
 /alembic/versions
 mongodb-keyfile
 /tmp
+fcm-notification-sender-key.json
