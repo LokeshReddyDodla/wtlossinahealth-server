@@ -36,7 +36,7 @@ async def analyze_meal_api(
     re_analyze: Optional[bool] = False,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientMealAnalysisResponse, HTTPException]:
+):
     """
     Analyze Meal API
     """
@@ -92,10 +92,8 @@ async def analyze_meal_api(
             raise HTTPException(status_code=400, detail="")
 
         analysis_data = json.loads(ai_response)
-        updated_meal_response = (
-            await meal_analysis_service.save_meal_analysis(
-                meal, analysis_data
-            )
+        updated_meal_response = await meal_analysis_service.save_meal_analysis(
+            meal, analysis_data
         )
 
         # context_manager.add_message(

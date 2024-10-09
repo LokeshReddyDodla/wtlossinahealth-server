@@ -1,19 +1,14 @@
 from io import StringIO
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Request,
-    File,
-    UploadFile,
-)
 from typing import Union
 
 import pandas as pd
+from fastapi import (APIRouter, Depends, File, HTTPException, Request,
+                     UploadFile)
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -22,7 +17,7 @@ async def upload_cgm_data(
     request: Request,
     file: UploadFile = File(...),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         clickhouse_store = request.state.context.clickhouse_store
 

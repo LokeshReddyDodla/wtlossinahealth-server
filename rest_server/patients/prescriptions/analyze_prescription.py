@@ -10,13 +10,10 @@ from lib.core.auth_bearer import handler
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from lib.utils.openai.prescription_analysis import analyze_prescription
-
 from rest_server.patients.prescriptions.api_schema import (
-    Medicine,
-    PrescriptionAnalysisResponse,
-    PrescriptionData,
-)
+    Medicine, PrescriptionAnalysisResponse, PrescriptionData)
 from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -24,7 +21,7 @@ from .router import router
 async def analyze_prescription_api(
     request: Request,
     image_url: str,
-) -> Union[PrescriptionAnalysisResponse, HTTPException]:
+):
     """
     Analyze Prescription API
     """

@@ -21,7 +21,7 @@ async def get_patient_smbg(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientSmbgsResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(PatientSMBG)

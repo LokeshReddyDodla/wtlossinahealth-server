@@ -35,7 +35,7 @@ async def update_patient_care_provider(
     patient_care_provider_service: PatientCareProviderService = Depends(
         get_patient_care_provider_service
     ),
-) -> Union[PatientCareProviderResponse, HTTPException]:
+):
     try:
         updates = patient_care_provider_update.dict(exclude_unset=True)
         patient_care_provider = (

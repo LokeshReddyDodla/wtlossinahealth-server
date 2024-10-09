@@ -1,19 +1,19 @@
 import json
+import traceback
 from datetime import datetime
 from email import message
-import traceback
 from typing import Dict, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from lib.core.auth_bearer import handler
+from lib.managers.context_manager import context_manager
+from lib.utils.context_utils import identify_context
 from lib.utils.json_parsing import parse_json_garbage
 from lib.utils.openai.meal_analysis import get_nutritional_info
 from rest_server.chat.api_scheme import ChatResponse, ContextChatRequest
 from rest_server.response_models import ErrorResponse, SuccessResponse
-from lib.managers.context_manager import context_manager
-from lib.utils.context_utils import identify_context
 from services.chat_handler import chat_handler
 
 # Create FastAPI router
@@ -25,7 +25,7 @@ async def context_chat(
     request: Request,
     body: ContextChatRequest,
     # user=handler,
-) -> Union[ChatResponse, HTTPException]:
+):
     try:
         print("==> Context chat request")
         # Ensure context exists

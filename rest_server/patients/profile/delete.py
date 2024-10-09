@@ -26,7 +26,7 @@ async def delete_patient_api(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     """
     Delete Patient API
     """

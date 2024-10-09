@@ -1,7 +1,8 @@
 from datetime import datetime
-from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class PatientPermissionBase(BaseModel):
@@ -24,4 +25,4 @@ class PatientPermission(PatientPermissionBase):
     id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

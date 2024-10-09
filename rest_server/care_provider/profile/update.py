@@ -33,7 +33,7 @@ async def update_care_provider_profile(
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
     ),
-) -> Union[CareProviderResponse, HTTPException]:
+):
     try:
         updated_care_provider = (
             await care_provider_profile_service.update_care_provider(

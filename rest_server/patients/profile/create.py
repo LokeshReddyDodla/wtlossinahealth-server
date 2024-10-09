@@ -24,7 +24,7 @@ async def create_basic_patient(
     request: Request,
     patient_data: PatientCreate,
     session: AsyncSession = Depends(get_postgres_session),
-) -> Union[PatientProfileResponse, HTTPException]:
+):
     try:
         # Check if the patient already exists
         existing_patient = await session.execute(

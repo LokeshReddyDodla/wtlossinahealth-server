@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class PatientAlcoholConsumptionBase(BaseModel):
@@ -20,4 +21,4 @@ class PatientAlcoholConsumption(PatientAlcoholConsumptionBase):
     patient_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

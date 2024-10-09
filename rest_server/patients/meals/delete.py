@@ -23,7 +23,7 @@ async def clear_all_meals_api(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     """
     Clear All Meals API
     """
@@ -59,7 +59,7 @@ async def delete_meal_api(
     meal_id: uuid.UUID,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     """
     Delete Meal API
     """

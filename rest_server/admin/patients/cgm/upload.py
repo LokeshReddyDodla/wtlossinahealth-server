@@ -26,7 +26,7 @@ async def admin_upload_cgm_data(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         clickhouse_store = request.state.context.clickhouse_store
 

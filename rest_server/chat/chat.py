@@ -1,8 +1,8 @@
 import json
+import uuid
 from datetime import datetime
 from email import message
 from typing import Dict, Optional, Union
-import uuid
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -25,7 +25,7 @@ async def default_chat(
     request: Request,
     body: ChatRequest,
     # user=handler,
-) -> Union[ChatResponse, HTTPException]:
+):
     try:
         # Identify context and create a new context window if necessary
         document_type = body.document_type or "general"

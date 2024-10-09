@@ -33,7 +33,7 @@ async def get_patient_care_provider(
     patient_care_provider_service: PatientCareProviderService = Depends(
         get_patient_care_provider_service
     ),
-) -> Union[PatientCareProviderResponse, HTTPException]:
+):
     try:
         patient_care_provider = (
             await patient_care_provider_service.fetch_patient_care_provider(

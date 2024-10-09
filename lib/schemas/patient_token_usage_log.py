@@ -1,6 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class PatientTokenUsageLogBase(BaseModel):
@@ -12,7 +13,8 @@ class PatientTokenUsageLogBase(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+        protected_namespaces = ()
 
 
 class PatientTokenUsageLogCreate(PatientTokenUsageLogBase):
@@ -27,4 +29,4 @@ class PatientTokenUsageLog(PatientTokenUsageLogBase):
     id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

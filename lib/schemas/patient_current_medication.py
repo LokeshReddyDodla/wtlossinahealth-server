@@ -1,9 +1,11 @@
-from typing import Optional
 import uuid
-from pydantic import BaseModel
+from typing import Optional
 from uuid import UUID
-from lib.models import Base
+
+from pydantic import BaseModel
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientCurrentMedicationBase(BaseModel):
@@ -21,4 +23,4 @@ class PatientCurrentMedication(PatientCurrentMedicationBase):
     patient_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

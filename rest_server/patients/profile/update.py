@@ -64,7 +64,7 @@ async def update_basic_patient(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientProfileResponse, HTTPException]:
+):
     try:
         updated_patient = (
             await patient_profile_service.update_basic_patient_profile(
@@ -104,7 +104,7 @@ async def upsert_patient_lifestyle(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientProfileResponse, HTTPException]:
+):
     try:
         updated_patient = (
             await patient_profile_service.upsert_patient_lifestyle(
@@ -150,7 +150,7 @@ async def upsert_patient_medical_history(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientProfileResponse, HTTPException]:
+):
     try:
         updated_patient = (
             await patient_profile_service.upsert_patient_medical_history(

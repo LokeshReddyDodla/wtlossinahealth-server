@@ -31,7 +31,7 @@ async def register_admin(
     request: Request,
     admin_data: AdminCreate,
     session: AsyncSession = Depends(get_postgres_session),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         # Check if the admin already exists
         existing_admin = await session.execute(

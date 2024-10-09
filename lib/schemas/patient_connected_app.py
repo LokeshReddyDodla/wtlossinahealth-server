@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class PatientLibreViewBase(BaseModel):
@@ -18,7 +19,7 @@ class PatientLibreView(PatientLibreViewBase):
     id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PatientOtherAppBase(BaseModel):
@@ -35,7 +36,7 @@ class PatientOtherApp(PatientOtherAppBase):
     id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PatientConnectedAppBase(BaseModel):
@@ -48,7 +49,7 @@ class PatientConnectedApp(PatientConnectedAppBase):
     other_app: Optional[PatientOtherApp] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
     
     @classmethod
     def from_orm(cls, obj):
@@ -56,7 +57,7 @@ class PatientConnectedApp(PatientConnectedAppBase):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 

@@ -1,9 +1,11 @@
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, HttpUrl, constr
+
 from lib.schemas.meal_stats import DailyMealStats
 from lib.schemas.patient_meal import PatientMeal
 from rest_server.response_models import SuccessResponse
-from pydantic import BaseModel, Field, HttpUrl, constr
-from typing import List, Optional
-from datetime import datetime
 
 
 class PatientMealResponse(PatientMeal):
@@ -13,7 +15,7 @@ class PatientMealResponse(PatientMeal):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 

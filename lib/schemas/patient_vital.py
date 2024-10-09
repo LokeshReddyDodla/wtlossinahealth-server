@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 class PatientVitalBase(BaseModel):
@@ -32,4 +33,4 @@ class PatientVital(PatientVitalBase):
     uploaded_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True

@@ -26,7 +26,7 @@ async def get_health_facility(
     health_facility_id: str,
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[HealthFacilityResponse, HTTPException]:
+):
     service = HealthFacilityService(session)
     health_facility = await service.fetch_health_facility(
         health_facility_id, detailed=True

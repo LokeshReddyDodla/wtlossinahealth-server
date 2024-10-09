@@ -26,7 +26,7 @@ class DailyMealStats(NutritionStats):
     avg_glucose: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class WeeklyMealStats(NutritionStats):
@@ -36,7 +36,7 @@ class WeeklyMealStats(NutritionStats):
     daily_stats: List[DailyMealStats]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class MonthlyMealStats(NutritionStats):
@@ -47,7 +47,7 @@ class MonthlyMealStats(NutritionStats):
     weekly_stats: List[WeeklyMealStats]
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class MealSummaryStats(NutritionStats):
@@ -55,4 +55,4 @@ class MealSummaryStats(NutritionStats):
     to_date: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True

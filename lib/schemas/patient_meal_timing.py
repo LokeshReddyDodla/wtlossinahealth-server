@@ -1,8 +1,10 @@
 import uuid
-from pydantic import BaseModel
 from uuid import UUID
-from lib.models import Base
+
+from pydantic import BaseModel
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientMealTimingBase(BaseModel):
@@ -17,4 +19,4 @@ class PatientMealTiming(PatientMealTimingBase):
     patient_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

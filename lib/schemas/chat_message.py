@@ -84,7 +84,7 @@ class ChatMessageBase(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "_id": "msg_12345",
                 "chat_id": "chat_a7fdfcc9-eff2-4387-8e14-8a057e0de8f9",

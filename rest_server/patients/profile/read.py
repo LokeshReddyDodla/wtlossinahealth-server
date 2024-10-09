@@ -30,7 +30,7 @@ async def get_patient_details(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientCompleteProfileResponse, HTTPException]:
+):
     try:
         result = await patient_profile_service.fetch_patient_profile(
             str(current_patient.patient_id), detailed=True

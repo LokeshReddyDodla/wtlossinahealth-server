@@ -30,4 +30,4 @@ class UserDevice(UserDeviceBase):
     care_provider: Optional[CareProviderSchema] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True

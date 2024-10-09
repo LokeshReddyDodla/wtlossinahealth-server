@@ -28,7 +28,7 @@ async def add_libreview(
     libreview: PatientLibreViewCreate,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[AddLibreViewResponse, HTTPException]:
+):
     try:
         connected_app = await session.execute(
             select(PatientConnectedApp).where(

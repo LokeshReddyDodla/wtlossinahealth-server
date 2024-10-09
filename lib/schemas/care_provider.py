@@ -33,7 +33,7 @@ class CareProvider(CareProviderBase):
     patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
     @classmethod
     def from_orm(cls, obj):
@@ -41,7 +41,7 @@ class CareProvider(CareProviderBase):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 

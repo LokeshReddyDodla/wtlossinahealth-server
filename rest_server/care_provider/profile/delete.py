@@ -26,9 +26,11 @@ async def delete_care_provider_profile(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
-        await care_provider_profile_service.delete_care_provider(care_provider_id)
+        await care_provider_profile_service.delete_care_provider(
+            care_provider_id
+        )
 
         return SuccessResponse(message="Care provider deleted successfully.")
     except HTTPException as e:

@@ -23,7 +23,7 @@ async def get_patient_permissions(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientPermissionsResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(PatientPermission).where(

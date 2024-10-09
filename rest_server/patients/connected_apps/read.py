@@ -23,7 +23,7 @@ async def get_patient_connected_apps(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[GetPatientConnectedAppsResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(PatientConnectedApp)
