@@ -13,7 +13,10 @@ from sqlalchemy.orm import selectinload
 
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.schemas.conversation_message import \
+    ConversationMessage as ConversationMessageSchema
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
+from lib.services.lang_chain_service import LangChainService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
@@ -24,6 +27,9 @@ class MealService:
     def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.meal_analysis_service = MealAnalysisService(self.postgres_session)
+        self.lang_chain_service = LangChainService(
+            "meal_analysis", model="gpt-4o-mini"
+        )
 
     async def fetch_meals(
         self,
@@ -126,18 +132,14 @@ class MealService:
     async def upload_meal(
         self, meal_data: PatientMealUploadRequest, patient_id: str
     ) -> PatientMealModel:
-
         try:
-            context_id = uuid.uuid4().hex
-
             meal = PatientMealModel(
                 type=meal_data.type,
                 time=meal_data.datetime.time(),
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
                 description=meal_data.description,
-                context_id=context_id,
-                image_url=meal_data.image_url,
+                image_url=str(meal_data.image_url),
                 patient_id=patient_id,
             )
 
@@ -183,6 +185,43 @@ class MealService:
             analysis_data = json.loads(ai_response)
             updated_meal = await self.meal_analysis_service.save_meal_analysis(
                 meal, analysis_data
+            )
+
+            if re_analyze:
+                self.lang_chain_service.delete_conversation_messages(
+                    meal_orm.context_id
+                )
+
+            # Define custom conversation flow for meals
+            message_sequence = [
+                ConversationMessageSchema(
+                    conversation_id=meal_orm.context_id,
+                    role="human",
+                    content=f"I had {meal_orm.type} at {meal_orm.time}. Here's the breakdown of the meal.",
+                ),
+                ConversationMessageSchema(
+                    conversation_id=meal_orm.context_id,
+                    role="human",
+                    content=str(meal_orm.image_url)
+                    or meal_orm.description
+                    or "",
+                ),
+                ConversationMessageSchema(
+                    conversation_id=meal_orm.context_id,
+                    role="ai",
+                    content=ai_response,
+                    exclude_from_frontend=True,
+                ),
+                ConversationMessageSchema(
+                    conversation_id=meal_orm.context_id,
+                    role="system",
+                    content="How can I assist you further regarding this meal?",
+                ),
+            ]
+
+            # Pass the message sequence to LangChainService
+            self.lang_chain_service.add_messages_to_conversation(
+                messages=message_sequence,
             )
 
             # Log token usage if applicable

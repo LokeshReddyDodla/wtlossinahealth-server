@@ -1,6 +1,7 @@
 from typing import Any, List
 
 from decouple import config
+from fastapi import HTTPException
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_community.chat_models import ChatOpenAI
 from pymongo import MongoClient
@@ -75,7 +76,14 @@ class LangChainService:
         self.messages_collection.insert_one(message_data)
 
         # After adding a message, check if summarization is needed
-        self.summarize_conversation_if_large(conversation_id)
+        # self.summarize_conversation_if_large(conversation_id)
+
+    def add_messages_to_conversation(
+        self,
+        messages: List[ConversationMessageSchema],
+    ):
+        message_data = [message.model_dump() for message in messages]
+        self.messages_collection.insert_many(message_data)
 
     def fetch_conversation_messages(self, conversation_id: str) -> List[Any]:
         """Fetch all messages for a given conversation."""
@@ -129,4 +137,17 @@ class LangChainService:
             # Add summary as a system message
             self.add_message_to_conversation(
                 conversation_id, "system", summary.content
+            )
+
+    def delete_conversation_messages(self, conversation_id: str):
+        try:
+            delete_result = self.messages_collection.delete_many(
+                {"conversation_id": conversation_id}
+            )
+            return delete_result
+        except Exception as e:
+            print(f"Failed to delete conversation messages: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete conversation messages",
             )

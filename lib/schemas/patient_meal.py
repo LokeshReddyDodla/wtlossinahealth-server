@@ -60,7 +60,7 @@ class PatientMeal(BaseModel):
     score: Optional[float]
     feedback: Optional[str] = None
     tags: Optional[List[str]] = []
-    context_id: Optional[str]
+    context_id: str
     analyzed: bool
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
