@@ -14,5 +14,5 @@ class ConversationMessage(BaseModel):
     role: ConversationRoleLiteral
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    message_type: ConversationMessageTypeLiteral = "text"
+    message_type: ConversationMessageTypeLiteral
     exclude_from_frontend: bool = False

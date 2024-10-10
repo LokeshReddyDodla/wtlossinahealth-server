@@ -345,6 +345,27 @@ tests = ["cloudpickle", "hypothesis", "mypy (>=1.11.1)", "pympler", "pytest (>=4
 tests-mypy = ["mypy (>=1.11.1)", "pytest-mypy-plugins"]
 
 [[package]]
+name = "beautifulsoup4"
+version = "4.12.3"
+description = "Screen-scraping library"
+optional = false
+python-versions = ">=3.6.0"
+files = [
+    {file = "beautifulsoup4-4.12.3-py3-none-any.whl", hash = "sha256:b80878c9f40111313e55da8ba20bdba06d8fa3969fc68304167741bbf9e082ed"},
+    {file = "beautifulsoup4-4.12.3.tar.gz", hash = "sha256:74e3d1928edc070d21748185c46e3fb33490f22f52a3addee9aee0f4f7781051"},
+]
+
+[package.dependencies]
+soupsieve = ">1.2"
+
+[package.extras]
+cchardet = ["cchardet"]
+chardet = ["chardet"]
+charset-normalizer = ["charset-normalizer"]
+html5lib = ["html5lib"]
+lxml = ["lxml"]
+
+[[package]]
 name = "bidict"
 version = "0.23.1"
 description = "The bidirectional mapping library for Python."
@@ -2024,6 +2045,22 @@ tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<9.0.0"
 typing-extensions = ">=4.7"
 
 [[package]]
+name = "langchain-openai"
+version = "0.2.2"
+description = "An integration package connecting OpenAI and LangChain"
+optional = false
+python-versions = "<4.0,>=3.9"
+files = [
+    {file = "langchain_openai-0.2.2-py3-none-any.whl", hash = "sha256:3a203228cb38e4711ebd8c0a3bd51854e447f1d017e8475b6467b07ce7dd3e88"},
+    {file = "langchain_openai-0.2.2.tar.gz", hash = "sha256:9ae8e2ec7d1ca84fd3bfa82186724528d68e1510a1dc9cdf617a7c669b7a7768"},
+]
+
+[package.dependencies]
+langchain-core = ">=0.3.9,<0.4.0"
+openai = ">=1.40.0,<2.0.0"
+tiktoken = ">=0.7,<1"
+
+[[package]]
 name = "langchain-text-splitters"
 version = "0.3.0"
 description = "LangChain text splitting utilities"
@@ -2140,6 +2177,21 @@ MarkupSafe = ">=0.9.2"
 babel = ["Babel"]
 lingua = ["lingua"]
 testing = ["pytest"]
+
+[[package]]
+name = "markdownify"
+version = "0.13.1"
+description = "Convert HTML to markdown."
+optional = false
+python-versions = "*"
+files = [
+    {file = "markdownify-0.13.1-py3-none-any.whl", hash = "sha256:1d181d43d20902bcc69d7be85b5316ed174d0dda72ff56e14ae4c95a4a407d22"},
+    {file = "markdownify-0.13.1.tar.gz", hash = "sha256:ab257f9e6bd4075118828a28c9d02f8a4bfeb7421f558834aa79b2dfeb32a098"},
+]
+
+[package.dependencies]
+beautifulsoup4 = ">=4.9,<5"
+six = ">=1.15,<2"
 
 [[package]]
 name = "markupsafe"
@@ -4038,6 +4090,17 @@ files = [
 ]
 
 [[package]]
+name = "soupsieve"
+version = "2.6"
+description = "A modern CSS selector implementation for Beautiful Soup."
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "soupsieve-2.6-py3-none-any.whl", hash = "sha256:e72c4ff06e4fb6e4b5a9f0f55fe6e81514581fca1515028625d0f299c602ccc9"},
+    {file = "soupsieve-2.6.tar.gz", hash = "sha256:e2e68417777af359ec65daac1057404a3c8a5455bb8abc36f1a9866ab1a51abb"},
+]
+
+[[package]]
 name = "sqlalchemy"
 version = "2.0.35"
 description = "Database Abstraction Library"
@@ -4884,4 +4947,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "ef12ee8b1c0ff756b8a109abadb6f38e918df3cf499d8b2d2ec96de3bb205d66"
+content-hash = "8d71447d8cc81bcfb59584893090ce5f8cc9f3ade0c4088597dd51a57f33d300"

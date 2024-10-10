@@ -20,7 +20,7 @@ ConversationTypeLiteral = Literal[
 ]
 
 ConversationMessageTypeLiteral = Literal[
-    "text", "image", "file", "audio", "custom"
+    "text", "image", "file", "audio", "custom", "markdown"
 ]
 
 OpenAIModelLiteral = Literal[

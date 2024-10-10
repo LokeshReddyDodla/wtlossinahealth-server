@@ -5,6 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from markdownify import markdownify as md
 from sqlalchemy import asc, delete, desc
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -197,11 +198,15 @@ class MealService:
                 ConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="human",
-                    content=f"I had {meal_orm.type} at {meal_orm.time}. Here's the breakdown of the meal.",
+                    message_type="markdown",
+                    content=md(
+                        f"I had **{meal_orm.type}** at **{meal_orm.time}**."
+                    ),
                 ),
                 ConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="human",
+                    message_type="text",
                     content=str(meal_orm.image_url)
                     or meal_orm.description
                     or "",
@@ -209,12 +214,14 @@ class MealService:
                 ConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="ai",
+                    message_type="text",
                     content=ai_response,
                     exclude_from_frontend=True,
                 ),
                 ConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="system",
+                    message_type="text",
                     content="How can I assist you further regarding this meal?",
                 ),
             ]
