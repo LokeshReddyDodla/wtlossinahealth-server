@@ -42,19 +42,35 @@ class AiConversationService:
         )
 
     def _get_initial_system_message(
-        self, conversation_type: str
+        self, conversation_type: AiConversationTypeLiteral
     ) -> SystemMessage:
         """Returns the initial system message based on conversation type."""
-        system_messages = {
-            "meal_analysis": "You are an AI strictly focused on meal analysis. Respond only with information related to meals, nutrition, and dietary insights in markdown format. Avoid any response that includes your origin, development, or unrelated topics.",
-            "prescription_analysis": "You are an AI strictly focused on prescription analysis. Respond only with information related to prescriptions, medical details, and relevant insights in markdown format. Avoid any response that includes your origin, development, or unrelated topics.",
-            "report_analysis": "You are an AI strictly focused on report analysis. Provide insights only about health reports and their content in markdown format. Avoid any response that includes your origin, development, or unrelated topics.",
-        }
-        return SystemMessage(
-            content=system_messages.get(
-                conversation_type,
-                "You are a knowledgeable assistant. Respond only in the context of the ongoing conversation and provide all responses in markdown format. Avoid mentioning anything beyond the specific task.",
+
+        if conversation_type == "meal_analysis":
+            return SystemMessage(
+                content="""
+                You are an AI strictly focused on meal analysis for diabetic and obese patients. Respond only with information related to meals, nutrition, and dietary insights in markdown format. Your responses should avoid any mention of your origin or development.
+                
+                Follow these guidelines:
+                1. Recommend only low-glycemic index (GI) foods that help control blood sugar.
+                2. Prioritize high-fiber, low-GI alternatives to high-GI foods.
+                3. Suggest regional, culturally relevant, and healthy alternatives.
+                4. Avoid high-sugar, high-fat, and highly processed foods.
+                5. Always respond concisely in markdown, highlighting key nutritional insights and healthy alternatives.
+                """
             )
+
+        elif conversation_type == "prescription_analysis":
+            return SystemMessage(
+                content="You are an AI strictly focused on prescription analysis. Respond only with information related to prescriptions, medical details, and relevant insights in markdown format. Avoid any response that includes your origin, development, or unrelated topics."
+            )
+
+        elif conversation_type == "report_analysis":
+            return SystemMessage(
+                content="You are an AI strictly focused on report analysis. Provide insights only about health reports and their content in markdown format. Avoid any response that includes your origin, development, or unrelated topics."
+            )
+        return SystemMessage(
+            content="You are a knowledgeable assistant. Respond only in the context of the ongoing conversation and provide all responses in markdown format. Avoid mentioning anything beyond the specific task."
         )
 
     def add_message_to_conversation(
