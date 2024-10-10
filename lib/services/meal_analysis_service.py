@@ -11,6 +11,7 @@ from lib.models.patient_meal import (PatientFoodItem,
                                      PatientMicroNutritionalValue,
                                      PatientTotalMacroNutritionalValue,
                                      PatientTotalMicroNutritionalValue)
+from lib.services.lang_chain_service import LangChainService
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
@@ -19,11 +20,14 @@ from rest_server.patients.meals.api_schema import PatientMealResponse
 
 class MealAnalysisService:
     def __init__(
-        self, postgres_session: AsyncSession, api_key, timezone="Asia/Kolkata"
+        self, postgres_session: AsyncSession, timezone="Asia/Kolkata"
     ):
         self.postgres_session = postgres_session
-        openai.api_key = api_key
+        openai.api_key = config("OPENAI_API_KEY")
         self.timezone = timezone
+        self.lang_chain_service = LangChainService(
+            "meal_analysis", model="gpt-4o-mini"
+        )
 
     def analyze_meal(
         self, mealtime, image_url, meal_type, food_description=None
@@ -72,7 +76,7 @@ class MealAnalysisService:
 
     async def save_meal_analysis(
         self, meal: Any, analysis_data: dict
-    ) -> PatientMealResponse:
+    ) -> PatientMeal:
 
         # create FoodItem records
         meal.items = [
@@ -104,7 +108,7 @@ class MealAnalysisService:
         self.postgres_session.add(meal)
         await self.postgres_session.commit()
 
-        return PatientMealResponse.from_orm(meal)
+        return meal
 
     def _create_food_item(
         self, meal: PatientMeal, item_data: dict

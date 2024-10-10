@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_meal_service
 from lib.models.patient import Patient
 from lib.models.patient_meal import PatientFoodItem, PatientMeal
+from lib.services.meal_service import MealService
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -21,32 +23,21 @@ from .router import router
 @router.delete(path="/clear_meals", response_model=SuccessResponse)
 async def clear_all_meals_api(
     request: Request,
-    session: AsyncSession = Depends(get_postgres_session),
+    meal_service: MealService = Depends(get_meal_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     """
     Clear All Meals API
     """
     try:
-        # Delete all meals for the current patient
-        delete_query = delete(PatientMeal).where(
-            PatientMeal.patient_id == current_patient.patient_id
+        await meal_service.delete_all_meals_for_patient(
+            patient_id=str(current_patient.patient_id)
         )
-
-        result = await session.execute(delete_query)
-        await session.commit()
-
-        # Check if any rows were deleted
-        if result.rowcount == 0:
-            raise HTTPException(
-                status_code=404, detail="No meals found to delete."
-            )
 
         return SuccessResponse(message="All meals deleted successfully.")
     except HTTPException as http_exc:
         raise http_exc
-    except SQLAlchemyError as e:
-        await session.rollback()
+    except Exception as e:
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
@@ -57,31 +48,19 @@ async def clear_all_meals_api(
 async def delete_meal_api(
     request: Request,
     meal_id: uuid.UUID,
-    session: AsyncSession = Depends(get_postgres_session),
+    meal_service: MealService = Depends(get_meal_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     """
     Delete Meal API
     """
     try:
-        meal = await session.get(PatientMeal, meal_id)
-        if not meal:
-            raise HTTPException(status_code=404, detail="Meal not found")
-
-        if meal.patient_id != current_patient.patient_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Not authorized to delete this meal",
-            )
-
-        await session.delete(meal)
-        await session.commit()
+        await meal_service.delete_meal(meal_id=meal_id)
 
         return SuccessResponse(message="Meal deleted successfully.")
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        await session.rollback()
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
