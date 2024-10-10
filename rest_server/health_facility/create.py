@@ -24,7 +24,7 @@ async def create_health_facility(
     health_facility: HealthFacilityCreate,
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[HealthFacilityResponse, HTTPException]:
+):
         service = HealthFacilityService(session)
         try:
             new_health_facility = await service.create_health_facility(

@@ -77,8 +77,8 @@ class ChatSchemaBase(BaseModel):
     )
 
     class Config:
-        allow_population_by_field_name = True
-        schema_extra = {
+        populate_by_name = True
+        json_schema_extra = {
             "example": {
                 "id": "a7fdfcc9-eff2-4387-8e14-8a057e0de8f9",
                 "is_group": True,

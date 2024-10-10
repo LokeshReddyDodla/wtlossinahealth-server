@@ -28,11 +28,13 @@ async def create_care_provider_profile(
         get_care_provider_profile_service
     ),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[CareProviderResponse, HTTPException]:
+):
 
     try:
-        new_care_provider = await care_provider_profile_service.create_care_provider(
-            care_provider
+        new_care_provider = (
+            await care_provider_profile_service.create_care_provider(
+                care_provider
+            )
         )
 
         return CareProviderResponse(

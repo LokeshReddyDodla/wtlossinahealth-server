@@ -1,9 +1,6 @@
 import re
-from pydantic import BaseModel, ValidationError
-from pydantic.error_wrappers import (
-    ErrorWrapper,
-    ValidationError as PydanticValidationError,
-)
+
+from pydantic import BaseModel
 
 email_regex = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 

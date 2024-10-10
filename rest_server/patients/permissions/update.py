@@ -22,7 +22,7 @@ async def sync_permissions(
     permissions: PatientPermissionUpdate,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(Patient)

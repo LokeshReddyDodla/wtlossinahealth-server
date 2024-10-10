@@ -15,7 +15,7 @@ class PatientMacroNutritionalValue(BaseModel):
     fiber: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PatientMicroNutritionalValue(BaseModel):
@@ -25,7 +25,7 @@ class PatientMicroNutritionalValue(BaseModel):
     magnesium: float
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class FoodItem(BaseModel):
@@ -38,7 +38,7 @@ class FoodItem(BaseModel):
     micro_nutritional_values: PatientMicroNutritionalValue
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PatientMeal(BaseModel):
@@ -60,11 +60,11 @@ class PatientMeal(BaseModel):
     score: Optional[float]
     feedback: Optional[str] = None
     tags: Optional[List[str]] = []
-    context_id: Optional[str]
+    context_id: str
     analyzed: bool
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
     patient_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

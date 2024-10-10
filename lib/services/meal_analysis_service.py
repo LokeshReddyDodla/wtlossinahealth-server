@@ -19,10 +19,10 @@ from rest_server.patients.meals.api_schema import PatientMealResponse
 
 class MealAnalysisService:
     def __init__(
-        self, postgres_session: AsyncSession, api_key, timezone="Asia/Kolkata"
+        self, postgres_session: AsyncSession, timezone="Asia/Kolkata"
     ):
         self.postgres_session = postgres_session
-        openai.api_key = api_key
+        openai.api_key = config("OPENAI_API_KEY")
         self.timezone = timezone
 
     def analyze_meal(
@@ -72,7 +72,7 @@ class MealAnalysisService:
 
     async def save_meal_analysis(
         self, meal: Any, analysis_data: dict
-    ) -> PatientMealResponse:
+    ) -> PatientMeal:
 
         # create FoodItem records
         meal.items = [
@@ -104,7 +104,7 @@ class MealAnalysisService:
         self.postgres_session.add(meal)
         await self.postgres_session.commit()
 
-        return PatientMealResponse.from_orm(meal)
+        return meal
 
     def _create_food_item(
         self, meal: PatientMeal, item_data: dict

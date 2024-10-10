@@ -2,9 +2,11 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.database import get_postgres_session
+from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.chat_service import ChatService
+from lib.services.meal_service import MealService
 from lib.services.patient_care_provider_service import \
     PatientCareProviderService
 from lib.services.patient_profile_service import PatientProfileService
@@ -21,6 +23,16 @@ async def get_chat_service(
     session: AsyncSession = Depends(get_postgres_session),
 ) -> ChatService:
     return ChatService()
+
+
+async def get_ai_conversation_service() -> AiConversationService:
+    return AiConversationService()
+
+
+async def get_meal_service(
+    session: AsyncSession = Depends(get_postgres_session),
+) -> MealService:
+    return MealService(postgres_session=session)
 
 
 async def get_care_provider_profile_service(

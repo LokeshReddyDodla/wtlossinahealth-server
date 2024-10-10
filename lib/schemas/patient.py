@@ -59,7 +59,7 @@ class Patient(PatientBase):
     patient_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         
     @classmethod
     def from_orm(cls, obj):
@@ -67,7 +67,7 @@ class Patient(PatientBase):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 
@@ -95,11 +95,11 @@ class CompletePatientProfile(PatientBase):
     connected_apps: Optional[PatientConnectedApp] = None
     fitness_sync: Optional[PatientFitnessDataSync] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
-    care_providers: List[PatientCareProvider] = []
+    # care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
     @classmethod
     def from_orm(cls, obj):
@@ -107,7 +107,7 @@ class CompletePatientProfile(PatientBase):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 

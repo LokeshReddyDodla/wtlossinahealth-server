@@ -36,10 +36,12 @@ async def create_care_provider_profile(
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider("create", CareProviderFeature.CARE_PROVIDER)
     ),
-) -> Union[CareProviderResponse, HTTPException]:
+):
     try:
-        new_care_provider = await care_provider_profile_service.create_care_provider(
-            care_provider
+        new_care_provider = (
+            await care_provider_profile_service.create_care_provider(
+                care_provider
+            )
         )
 
         return CareProviderResponse(

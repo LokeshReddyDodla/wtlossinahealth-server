@@ -23,7 +23,7 @@ async def upload_smbg(
     smbg: PatientSMBGCreate,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientSmbgUploadResponse, HTTPException]:
+):
     try:
         new_smbg = PatientSMBG(
             patient_id=current_patient.patient_id,

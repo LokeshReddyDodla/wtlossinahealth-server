@@ -138,7 +138,9 @@ class PatientMeal(Base):
     feedback = Column(String, nullable=True)
     tags = Column(ARRAY(String), nullable=True)
     score = Column(Float, nullable=True)
-    context_id = Column(String, nullable=True)
+    context_id = Column(
+        String, default=lambda: uuid.uuid4().hex, nullable=False
+    )
     analyzed = Column(Boolean, default=False)
     analyzed_at = Column(DateTime, nullable=True)
     uploaded_at = Column(

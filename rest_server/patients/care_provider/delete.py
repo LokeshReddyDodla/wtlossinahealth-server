@@ -29,7 +29,7 @@ async def delete_patient_care_provider(
     patient_care_provider_service: PatientCareProviderService = Depends(
         get_patient_care_provider_service
     ),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         await patient_care_provider_service.delete_patient_care_provider(
             patient_care_provider_id

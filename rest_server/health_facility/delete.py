@@ -22,7 +22,7 @@ async def delete_health_facility(
     health_facility_id: str,
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[SuccessResponse, HTTPException]:
+):
         service = HealthFacilityService(session)
         try:
             await service.delete_health_facility(health_facility_id)

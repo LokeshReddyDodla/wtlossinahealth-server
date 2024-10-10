@@ -23,7 +23,7 @@ async def upload_fitness_data(
     fitness_data: FitnessDataRequest,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         clickhouse_store = request.state.context.clickhouse_store
 

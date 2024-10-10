@@ -17,7 +17,7 @@ async def toggle_pin_chat(
     chat_id: str,
     chat_service: ChatService = Depends(get_chat_service),
     current_user=Depends(get_current_user),
-) -> Union[SuccessResponse, HTTPException]:
+):
     """
     Send a message to a chat.
     """

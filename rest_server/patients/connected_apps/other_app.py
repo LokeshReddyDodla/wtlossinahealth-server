@@ -28,7 +28,7 @@ async def add_other_app(
     other_app: PatientOtherAppCreate,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[AddOtherAppResponse, HTTPException]:
+):
     try:
         connected_app = await session.execute(
             select(PatientConnectedApp).where(

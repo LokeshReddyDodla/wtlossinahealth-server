@@ -17,7 +17,7 @@ async def send_message(
     message_data: ChatMessageCreate,
     current_user=Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
-) -> Union[SuccessResponse, HTTPException]:
+):
     """
     Send a message to a chat.
     """

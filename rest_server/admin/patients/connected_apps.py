@@ -23,7 +23,7 @@ async def get_libreview_connected_patients(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(PatientConnectedApp)

@@ -1,19 +1,16 @@
 import json
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    HTTPException,
-    Request,
-    UploadFile,
-)
+from typing import List, Union
+
+from dateutil.parser import parse
+from fastapi import (APIRouter, Depends, File, HTTPException, Request,
+                     UploadFile)
 from loguru import logger
+
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
 from lib.services.fitness_upload_service import FitnessUploadService
-from rest_server.response_models import SuccessResponse, ErrorResponse
-from typing import List, Union
-from dateutil.parser import parse
+from rest_server.response_models import ErrorResponse, SuccessResponse
+
 from .router import router
 
 
@@ -22,7 +19,7 @@ async def upload_fitness_data(
     request: Request,
     file: UploadFile = File(...),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[SuccessResponse, HTTPException]:
+):
     try:
         # Read and parse the uploaded JSON file
         contents = await file.read()

@@ -27,7 +27,7 @@ class PatientCareProvider(PatientCareProviderBase):
     assigned_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
     @classmethod
     def from_orm(cls, obj):
@@ -35,7 +35,7 @@ class PatientCareProvider(PatientCareProviderBase):
 
         kwargs = {
             name: getattr(obj, name)
-            for name in cls.__fields__
+            for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
 

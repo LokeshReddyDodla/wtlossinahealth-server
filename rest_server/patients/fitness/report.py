@@ -1,21 +1,16 @@
 import traceback
-from typing import Union
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta
+from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
-
-
-from lib.schemas.fitness_stats import (
-    CompleteFitnessReport,
-)
-
+from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from rest_server.patients.fitness.api_schema import FitnessReportResponse
+
 from .router import router
 
 
@@ -28,7 +23,7 @@ async def get_fitness_data(
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[FitnessReportResponse, Exception]:
+):
     try:
         clickhouse_store = request.state.context.clickhouse_store
         patient_id = str(current_patient.patient_id)

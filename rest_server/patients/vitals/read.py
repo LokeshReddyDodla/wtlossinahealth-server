@@ -21,7 +21,7 @@ async def get_patient_vitals(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> Union[PatientVitalsResponse, HTTPException]:
+):
     try:
         result = await session.execute(
             select(PatientVital)
