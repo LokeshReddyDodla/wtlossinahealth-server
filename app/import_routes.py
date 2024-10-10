@@ -8,7 +8,6 @@ from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.auth import auth
 from rest_server.care_provider.profile.router import \
     router as care_providers_profile_router
-from rest_server.chat import chat, context_chat
 from rest_server.chats.router import router as chats_router
 from rest_server.dump import dump
 from rest_server.file_upload import file_upload
