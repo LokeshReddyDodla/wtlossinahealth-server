@@ -28,7 +28,7 @@ async def send_ai_conversation_message(
             conversation_type=conversation_type, model="gpt-4o-mini"
         )
         # Generate response from the AI model
-        ai_response = await ai_conversation_service.generate_response(
+        ai_message_data = await ai_conversation_service.generate_response(
             patient_id=str(current_patient.patient_id),
             conversation_id=conversation_id,
             human_input=human_input,
@@ -36,7 +36,7 @@ async def send_ai_conversation_message(
 
         return SuccessResponse(
             message="AI response generated successfully.",
-            data=ai_response,
+            data=ai_message_data,
         )
     except HTTPException as e:
         raise e

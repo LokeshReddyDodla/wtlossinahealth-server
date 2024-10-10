@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, Dict, List
 from uuid import UUID
 
 from decouple import config
@@ -74,7 +74,9 @@ class AiConversationService:
             exclude_from_frontend=exclude_from_frontend,
         ).model_dump()
 
-        self.messages_collection.insert_one(message_data)
+        result = self.messages_collection.insert_one(message_data)
+        message_data["_id"] = str(result.inserted_id)
+        return message_data
 
     def add_messages_to_conversation(
         self,
@@ -120,7 +122,7 @@ class AiConversationService:
 
     async def generate_response(
         self, patient_id: str, conversation_id: str, human_input: str
-    ) -> str:
+    ) -> Dict:
         self.add_message_to_conversation(conversation_id, "human", human_input)
 
         # Fetch all messages to provide context, inserting the system message at the start
@@ -129,7 +131,7 @@ class AiConversationService:
 
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
-        self.add_message_to_conversation(
+        ai_message_data = self.add_message_to_conversation(
             conversation_id, "ai", ai_response.content, message_type="markdown"
         )
 
@@ -146,7 +148,7 @@ class AiConversationService:
                 api_endpoint="conversation_response",
             )
 
-        return ai_response.content
+        return ai_message_data
 
     def delete_conversation_messages(self, conversation_id: str):
         """Deletes all messages for a given conversation."""
