@@ -11,7 +11,6 @@ from lib.models.patient_meal import (PatientFoodItem,
                                      PatientMicroNutritionalValue,
                                      PatientTotalMacroNutritionalValue,
                                      PatientTotalMicroNutritionalValue)
-from lib.services.lang_chain_service import LangChainService
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
@@ -25,9 +24,6 @@ class MealAnalysisService:
         self.postgres_session = postgres_session
         openai.api_key = config("OPENAI_API_KEY")
         self.timezone = timezone
-        self.lang_chain_service = LangChainService(
-            "meal_analysis", model="gpt-4o-mini"
-        )
 
     def analyze_meal(
         self, mealtime, image_url, meal_type, food_description=None

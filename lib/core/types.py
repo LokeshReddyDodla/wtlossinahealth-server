@@ -13,13 +13,13 @@ FCMNotificationGroupKeyLiteral = Literal[
     "fitness_group", "chat_group", "other_group"
 ]
 
-ConversationRoleLiteral = Literal["system", "human", "ai"]
+AiConversationRoleLiteral = Literal["system", "human", "ai"]
 
-ConversationTypeLiteral = Literal[
+AiConversationTypeLiteral = Literal[
     "meal_analysis", "prescription_analysis", "report_analysis"
 ]
 
-ConversationMessageTypeLiteral = Literal[
+AiConversationMessageTypeLiteral = Literal[
     "text", "image", "file", "audio", "custom", "markdown"
 ]
 

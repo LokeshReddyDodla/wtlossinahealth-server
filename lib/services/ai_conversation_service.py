@@ -8,28 +8,28 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from pymongo import MongoClient
 
-from lib.core.types import (ConversationMessageTypeLiteral,
-                            ConversationRoleLiteral, ConversationTypeLiteral,
-                            OpenAIModelLiteral)
-from lib.schemas.conversation_message import \
-    ConversationMessage as ConversationMessageSchema
+from lib.core.types import (AiConversationMessageTypeLiteral,
+                            AiConversationRoleLiteral,
+                            AiConversationTypeLiteral, OpenAIModelLiteral)
+from lib.schemas.ai_conversation_message import \
+    AiConversationMessage as AiConversationMessageSchema
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
 MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 
 
-class LangChainService:
+class AiConversationService:
     def __init__(
         self,
-        conversation_type: ConversationTypeLiteral,
+        conversation_type: AiConversationTypeLiteral,
         model: OpenAIModelLiteral = "gpt-4o",
     ):
 
         self.current_model = model
         self.mongo_client = MongoClient(str(MONGO_URL))
         self.db = self.mongo_client[str(MONGO_DB_NAME)]
-        self.messages_collection = self.db["conversation_messages"]
+        self.messages_collection = self.db["ai_conversation_messages"]
 
         # Initialize ChatOpenAI with the specified model
         self.chat_model = ChatOpenAI(
@@ -60,13 +60,13 @@ class LangChainService:
     def add_message_to_conversation(
         self,
         conversation_id: str,
-        role: ConversationRoleLiteral,
+        role: AiConversationRoleLiteral,
         content: str,
-        message_type: ConversationMessageTypeLiteral = "text",
+        message_type: AiConversationMessageTypeLiteral = "text",
         exclude_from_frontend: bool = False,
     ):
         """Add a message to the conversation."""
-        message_data = ConversationMessageSchema(
+        message_data = AiConversationMessageSchema(
             conversation_id=conversation_id,
             role=role,
             content=content,
@@ -78,7 +78,7 @@ class LangChainService:
 
     def add_messages_to_conversation(
         self,
-        messages: List[ConversationMessageSchema],
+        messages: List[AiConversationMessageSchema],
     ):
         """Batch inserts multiple messages into a conversation."""
         message_data = [message.model_dump() for message in messages]

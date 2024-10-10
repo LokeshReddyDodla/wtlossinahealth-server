@@ -14,10 +14,10 @@ from sqlalchemy.orm import selectinload
 
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.schemas.conversation_message import \
-    ConversationMessage as ConversationMessageSchema
+from lib.schemas.ai_conversation_message import \
+    AiConversationMessage as AiConversationMessageSchema
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.lang_chain_service import LangChainService
+from lib.services.ai_conversation_service import AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
@@ -28,7 +28,7 @@ class MealService:
     def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.meal_analysis_service = MealAnalysisService(self.postgres_session)
-        self.lang_chain_service = LangChainService(
+        self.ai_conversation_service = AiConversationService(
             "meal_analysis", model="gpt-4o-mini"
         )
 
@@ -189,13 +189,13 @@ class MealService:
             )
 
             if re_analyze:
-                self.lang_chain_service.delete_conversation_messages(
+                self.ai_conversation_service.delete_conversation_messages(
                     meal_orm.context_id
                 )
 
             # Define custom conversation flow for meals
             message_sequence = [
-                ConversationMessageSchema(
+                AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="human",
                     message_type="markdown",
@@ -203,7 +203,7 @@ class MealService:
                         f"I had **{meal_orm.type}** at **{meal_orm.time}**."
                     ),
                 ),
-                ConversationMessageSchema(
+                AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="human",
                     message_type="text",
@@ -211,14 +211,14 @@ class MealService:
                     or meal_orm.description
                     or "",
                 ),
-                ConversationMessageSchema(
+                AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="ai",
                     message_type="text",
                     content=ai_response,
                     exclude_from_frontend=True,
                 ),
-                ConversationMessageSchema(
+                AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="system",
                     message_type="text",
@@ -226,8 +226,8 @@ class MealService:
                 ),
             ]
 
-            # Pass the message sequence to LangChainService
-            self.lang_chain_service.add_messages_to_conversation(
+            # Pass the message sequence to AiConversationService
+            self.ai_conversation_service.add_messages_to_conversation(
                 messages=message_sequence,
             )
 
