@@ -16,7 +16,7 @@ FCMNotificationGroupKeyLiteral = Literal[
 AiConversationRoleLiteral = Literal["system", "human", "ai"]
 
 AiConversationTypeLiteral = Literal[
-    "meal_analysis", "prescription_analysis", "report_analysis"
+    "meal_analysis", "prescription_analysis", "report_analysis", "other"
 ]
 
 AiConversationMessageTypeLiteral = Literal[

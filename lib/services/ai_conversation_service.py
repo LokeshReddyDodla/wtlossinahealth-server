@@ -22,7 +22,7 @@ MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 class AiConversationService:
     def __init__(
         self,
-        conversation_type: AiConversationTypeLiteral,
+        conversation_type: AiConversationTypeLiteral = "other",
         model: OpenAIModelLiteral = "gpt-4o",
     ):
 
@@ -84,11 +84,28 @@ class AiConversationService:
         message_data = [message.model_dump() for message in messages]
         self.messages_collection.insert_many(message_data)
 
-    def fetch_conversation_messages(self, conversation_id: str) -> List[Any]:
+    def fetch_conversation_messages(
+        self,
+        conversation_id: str,
+        return_raw: bool = False,
+        for_frontend: bool = False,
+    ) -> List[Any]:
         """Fetch all messages for a given conversation."""
-        messages_cursor = self.messages_collection.find(
-            {"conversation_id": conversation_id}
-        ).sort("timestamp", 1)
+        filters: Any = {"conversation_id": conversation_id}
+
+        if for_frontend:
+            filters["exclude_from_frontend"] = False
+
+        pipeline = [
+            {"$match": filters},
+            {"$sort": {"timestamp": 1}},
+            {"$addFields": {"_id": {"$toString": "$_id"}}},
+        ]
+
+        messages_cursor = self.messages_collection.aggregate(pipeline)
+
+        if return_raw:
+            return list(messages_cursor)
 
         messages = []
         for message in messages_cursor:
