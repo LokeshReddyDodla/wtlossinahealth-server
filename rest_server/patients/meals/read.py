@@ -55,8 +55,10 @@ async def get_meals_api(
             order=order,
             limit=limit,
         )
-
+        print("==> meals before: ", meals)
         meals = [PatientMealResponse.from_orm(meal) for meal in meals]
+        print("==> meals after: ", meals)
+        
 
         return PatientMealsResponse(
             message="Meals fetched successfully",
