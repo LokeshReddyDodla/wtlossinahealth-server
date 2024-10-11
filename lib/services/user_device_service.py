@@ -49,7 +49,7 @@ class UserDeviceService:
 
             result = await self.postgres_session.execute(stmt)
             devices = result.scalars().all()
-            return [UserDevice.from_orm(device) for device in devices]
+            return [UserDevice.model_validate(device) for device in devices]
         except SQLAlchemyError as e:
             print(f"Failed to retrieve user devices: {str(e)}")
             raise
