@@ -206,10 +206,12 @@ class MealService:
                 AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
                     role="human",
-                    message_type="text",
-                    content=str(meal_orm.image_url)
-                    or meal_orm.description
-                    or "",
+                    message_type="image" if meal_orm.image_url else "text",
+                    content=(
+                        str(meal_orm.image_url)
+                        if meal_orm.image_url
+                        else meal_orm.description or ""
+                    ),
                 ),
                 AiConversationMessageSchema(
                     conversation_id=meal_orm.context_id,
