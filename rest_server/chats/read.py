@@ -34,7 +34,6 @@ async def get_user_chats(
     user_id, _ = current_user
     try:
         chats = await chat_service.fetch_user_chats(user_id)
-        print("==> chats: ", chats)
 
         # Collect participant IDs by type
         patient_ids = {
@@ -49,9 +48,6 @@ async def get_user_chats(
             for p in chat["participants"]
             if p["type"] == ProfileType.CARE_PROVIDER.value
         }
-        
-        print("==> patient_ids: ", patient_ids)
-        print("==> care_provider_ids: ", care_provider_ids)
 
         # Fetch profiles for patients from PostgreSQL
         patient_profiles = (
@@ -59,7 +55,6 @@ async def get_user_chats(
                 list(patient_ids)
             )
         )
-        print("==> patient_profiles: ", patient_profiles)
 
         # Fetch profiles for care providers from PostgreSQL
         care_provider_profiles = (
@@ -67,8 +62,6 @@ async def get_user_chats(
                 list(care_provider_ids)
             )
         )
-        print("==> care_provider_profiles: ", care_provider_profiles)
-        
 
         # Merge profiles into chat participants
         for chat in chats:
@@ -91,7 +84,6 @@ async def get_user_chats(
                         receiver["id"], {}
                     )
 
-        print("==> chats at the end: ", chats)
         return SuccessResponse(
             message="Chats fetched successfully",
             data=chats,
