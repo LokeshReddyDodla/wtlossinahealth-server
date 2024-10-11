@@ -15,6 +15,7 @@ class OTPVerifyRequest(BaseModel):
 class OtpVerifyResponse(BaseModel):
     token: str
     user_id: str
+    device_id: str
     is_new_user: bool
 
 

@@ -59,18 +59,23 @@ async def verify_otp_endpoint(
 
             # Store or update user device information if provided
             if otp_data.fcm_token:
-                await user_device_service.create_or_update_user_device(
-                    user_id=UUID(user_id),
-                    fcm_token=otp_data.fcm_token,
-                    device_type=otp_data.device_type,
-                    profile_type=role,
-                    platform_version=otp_data.platform_version,
+                device = (
+                    await user_device_service.create_or_update_user_device(
+                        user_id=UUID(user_id),
+                        fcm_token=otp_data.fcm_token,
+                        device_type=otp_data.device_type,
+                        profile_type=role,
+                        platform_version=otp_data.platform_version,
+                    )
                 )
 
             return OtpVerifySuccessResponse(
                 message="OTP verified",
                 data=OtpVerifyResponse(
-                    token=token, user_id=user_id, is_new_user=is_new_user
+                    token=token,
+                    user_id=user_id,
+                    device_id=str(device.device_id),
+                    is_new_user=is_new_user,
                 ),
             )
         else:
