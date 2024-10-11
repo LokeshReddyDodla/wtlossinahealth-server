@@ -87,7 +87,8 @@ class UserDeviceService:
             result = await self.postgres_session.execute(stmt)
             device = result.scalars().first()
             if not device:
-                raise ValueError(f"Device with ID {device_id} not found")
+                # raise ValueError(f"Device with ID {device_id} not found")
+                return
 
             await self.postgres_session.delete(device)
             await self.postgres_session.commit()
