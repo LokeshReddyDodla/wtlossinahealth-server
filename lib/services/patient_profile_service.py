@@ -128,7 +128,7 @@ class PatientProfileService:
 
     async def fetch_patient_profiles(
         self, patient_ids: List[str]
-    ) -> Dict[str, PatientModel]:
+    ) -> Dict[str, PatientSchema]:
         try:
             stmt = select(PatientModel).where(
                 PatientModel.patient_id.in_(patient_ids)
@@ -136,7 +136,10 @@ class PatientProfileService:
             result = await self.postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
-            return {str(profile.patient_id): profile for profile in profiles}
+            return {
+                str(profile.patient_id): PatientSchema.from_orm(profile)
+                for profile in profiles
+            }
         except SQLAlchemyError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
