@@ -142,6 +142,8 @@ class MealStatsProcessor:
                 meal.feedback,
                 "image_url",
                 meal.image_url,
+                "context_id",
+                meal.context_id,
                 "analyzed",
                 meal.analyzed,
                 "analyzed_at",
