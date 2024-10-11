@@ -83,3 +83,16 @@ async def verify_otp_endpoint(
         raise e
     except Exception as e:
         return ErrorResponse(message="Failed to verify OTP", detail=str(e))
+
+
+@router.post("/logout", tags=["Auth"], response_model=SuccessResponse)
+async def logout(
+    request: Request,
+    device_id: str,
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
+):
+    try:
+        await user_device_service.delete_user_device(UUID(device_id))
+        return SuccessResponse(message="Logged out successfully")
+    except Exception as e:
+        return ErrorResponse(message="Failed to logout", detail=str(e))

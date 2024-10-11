@@ -125,6 +125,7 @@ class FCMService:
                 devices = await user_device_service.get_user_devices(
                     user_id=UUID(user_id)
                 )
+                print(f"==> user_id -> {user_id} -> devices: {devices}")
 
                 # Create a list to hold all messages
                 messages = []
