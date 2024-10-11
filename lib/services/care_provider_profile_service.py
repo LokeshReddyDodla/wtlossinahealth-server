@@ -57,7 +57,7 @@ class CareProviderProfileService:
 
     async def fetch_care_provider_profiles(
         self, care_provider_ids: List[str]
-    ) -> Dict[str, CareProviderModel]:
+    ) -> Dict[str, CareProviderSchema]:
         try:
             stmt = select(CareProviderModel).where(
                 CareProviderModel.care_provider_id.in_(care_provider_ids)
@@ -66,7 +66,10 @@ class CareProviderProfileService:
             profiles = result.scalars().all()
 
             return {
-                str(profile.care_provider_id): profile for profile in profiles
+                str(profile.care_provider_id): CareProviderSchema.from_orm(
+                    profile
+                )
+                for profile in profiles
             }
         except SQLAlchemyError as e:
             raise HTTPException(
