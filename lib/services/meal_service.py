@@ -200,7 +200,7 @@ class MealService:
                     role="human",
                     message_type="markdown",
                     content=md(
-                        f"I had **{meal_orm.type}** at **{meal_orm.time}**."
+                        f"I had **{meal_orm.type}** at **{meal_orm.time.strftime("%I:%M %p")}**."
                     ),
                 ),
                 AiConversationMessageSchema(
