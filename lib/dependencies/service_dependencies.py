@@ -6,6 +6,7 @@ from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.chat_service import ChatService
+from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_service import MealService
 from lib.services.patient_care_provider_service import \
     PatientCareProviderService
@@ -27,12 +28,6 @@ async def get_chat_service(
 
 async def get_ai_conversation_service() -> AiConversationService:
     return AiConversationService()
-
-
-async def get_meal_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> MealService:
-    return MealService(postgres_session=session)
 
 
 async def get_care_provider_profile_service(
@@ -59,7 +54,7 @@ async def get_patient_care_provider_service(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
-    patient_service: PatientProfileService = Depends(
+    patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
 ) -> PatientCareProviderService:
@@ -67,5 +62,27 @@ async def get_patient_care_provider_service(
         postgres_session=session,
         chat_service=chat_service,
         care_provider_profile_service=care_provider_profile_service,
-        patient_service=patient_service,
+        patient_profile_service=patient_profile_service,
+    )
+
+
+async def get_meal_analysis_service(
+    session: AsyncSession = Depends(get_postgres_session),
+) -> MealAnalysisService:
+    return MealAnalysisService(postgres_session=session)
+
+
+async def get_meal_service(
+    session: AsyncSession = Depends(get_postgres_session),
+    meal_analysis_service: MealAnalysisService = Depends(
+        get_meal_analysis_service
+    ),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+) -> MealService:
+    return MealService(
+        postgres_session=session,
+        meal_analysis_service=meal_analysis_service,
+        patient_profile_service=patient_profile_service,
     )

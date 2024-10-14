@@ -7,12 +7,15 @@ from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from pymongo import MongoClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
 from lib.schemas.ai_conversation_message import \
     AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.patient import CorePatientProfile
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
@@ -49,14 +52,18 @@ class AiConversationService:
         if conversation_type == "meal_analysis":
             return SystemMessage(
                 content="""
-                You are an AI strictly focused on meal analysis for diabetic and obese patients. Respond only with information related to meals, nutrition, and dietary insights in markdown format. Your responses should avoid any mention of your origin or development.
-                
-                Follow these guidelines:
-                1. Recommend only low-glycemic index (GI) foods that help control blood sugar.
+                You are an AI strictly focused on meal analysis for diabetic and obese patients. Respond only with information related to the current meal, its nutrition, and dietary insights in markdown format. Avoid mentioning any unrelated meals or mixing multiple meals from different times of the day.
+
+                **Guidelines:**
+                1. Recommend only low-glycemic index (GI) foods to help control blood sugar.
                 2. Prioritize high-fiber, low-GI alternatives to high-GI foods.
                 3. Suggest regional, culturally relevant, and healthy alternatives.
                 4. Avoid high-sugar, high-fat, and highly processed foods.
                 5. Always respond concisely in markdown, highlighting key nutritional insights and healthy alternatives.
+
+                **Important:** 
+                - If the user refers to a different meal, politely ask them to upload details or images of that meal to start a new conversation.
+                - Stay focused only on the meal currently being discussed without assuming or mixing it with other meals from the same day.
                 """
             )
 
@@ -75,6 +82,7 @@ class AiConversationService:
 
     def add_message_to_conversation(
         self,
+        patient_id: str,
         conversation_id: str,
         role: AiConversationRoleLiteral,
         content: str,
@@ -83,6 +91,7 @@ class AiConversationService:
     ):
         """Add a message to the conversation."""
         message_data = AiConversationMessageSchema(
+            patient_id=patient_id,
             conversation_id=conversation_id,
             role=role,
             content=content,
@@ -136,19 +145,49 @@ class AiConversationService:
 
         return messages
 
+    async def create_patient_context_message(
+        self, patient_profile_service: PatientProfileService, patient_id: str
+    ) -> SystemMessage:
+        """Generate a system message containing the patient's profile."""
+        patient = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, detailed=True
+        )
+        patient_profile_json = CorePatientProfile.from_orm(
+            patient
+        ).model_dump()
+        return SystemMessage(
+            content=f"Patient Profile:\n```json\n{patient_profile_json}\n```"
+        )
+
     async def generate_response(
-        self, patient_id: str, conversation_id: str, human_input: str
+        self,
+        patient_id: str,
+        conversation_id: str,
+        human_input: str,
+        patient_profile_service: PatientProfileService,
     ) -> Dict:
-        self.add_message_to_conversation(conversation_id, "human", human_input)
+        self.add_message_to_conversation(
+            patient_id, conversation_id, "human", human_input
+        )
 
         # Fetch all messages to provide context, inserting the system message at the start
         messages = self.fetch_conversation_messages(conversation_id)
         messages.insert(0, self.system_message)
 
+        # Fetch the patient profile and generate context message
+        patient_context_message = await self.create_patient_context_message(
+            patient_profile_service, patient_id
+        )
+        messages.insert(1, patient_context_message)
+
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
         ai_message_data = self.add_message_to_conversation(
-            conversation_id, "ai", ai_response.content, message_type="markdown"
+            patient_id,
+            conversation_id,
+            "ai",
+            ai_response.content,
+            message_type="markdown",
         )
 
         # Log token usage

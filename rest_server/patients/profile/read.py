@@ -33,7 +33,9 @@ async def get_patient_details(
 ):
     try:
         result = await patient_profile_service.fetch_patient_profile(
-            str(current_patient.patient_id), detailed=True
+            str(current_patient.patient_id),
+            detailed=True,
+            other_related_data=True,
         )
         return PatientCompleteProfileResponse(
             message="Patient data fetched successfully.",

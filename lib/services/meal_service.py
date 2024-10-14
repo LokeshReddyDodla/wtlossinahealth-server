@@ -16,18 +16,27 @@ from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_message import \
     AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.patient import CorePatientProfile
+from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
 from rest_server.response_models import ErrorResponse
 
 
 class MealService:
-    def __init__(self, postgres_session: AsyncSession):
+    def __init__(
+        self,
+        postgres_session: AsyncSession,
+        meal_analysis_service: MealAnalysisService,
+        patient_profile_service: PatientProfileService,
+    ):
         self.postgres_session = postgres_session
-        self.meal_analysis_service = MealAnalysisService(self.postgres_session)
+        self.meal_analysis_service = meal_analysis_service
+        self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
             "meal_analysis", model="gpt-4o-mini"
         )
@@ -169,23 +178,34 @@ class MealService:
             if meal_orm.analyzed and not re_analyze:
                 return meal
 
+            # Fetch patient Profile
+            patient = await self.patient_profile_service.fetch_patient_profile(
+                patient_id=patient_id, detailed=True
+            )
+            patient_profile_json = CorePatientProfile.from_orm(
+                patient
+            ).model_dump()
+
             # Analyze the meal using the MealAnalysisService
-            ai_response, tokens_used = self.meal_analysis_service.analyze_meal(
+            (
+                parsed_ai_response,
+                tokens_used,
+            ) =  self.meal_analysis_service.analyze_meal(
+                patient_profile_json,
                 meal.time,
                 meal.image_url,
                 meal.type,
                 meal.description,
             )
 
-            if not ai_response:
+            if not parsed_ai_response:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Meal with ID {meal_id} failed to be analyzed",
                 )
 
-            analysis_data = json.loads(ai_response)
             updated_meal = await self.meal_analysis_service.save_meal_analysis(
-                meal, analysis_data
+                meal, parsed_ai_response
             )
 
             if re_analyze:
@@ -196,6 +216,7 @@ class MealService:
             # Define custom conversation flow for meals
             message_sequence = [
                 AiConversationMessageSchema(
+                    patient_id=str(meal_orm.patient_id),
                     conversation_id=meal_orm.context_id,
                     role="human",
                     message_type="markdown",
@@ -204,6 +225,7 @@ class MealService:
                     ),
                 ),
                 AiConversationMessageSchema(
+                    patient_id=str(meal_orm.patient_id),
                     conversation_id=meal_orm.context_id,
                     role="human",
                     message_type="image" if meal_orm.image_url else "text",
@@ -214,13 +236,15 @@ class MealService:
                     ),
                 ),
                 AiConversationMessageSchema(
+                    patient_id=str(meal_orm.patient_id),
                     conversation_id=meal_orm.context_id,
                     role="ai",
                     message_type="text",
-                    content=ai_response,
+                    content=parsed_ai_response.model_dump_json(),
                     exclude_from_frontend=True,
                 ),
                 AiConversationMessageSchema(
+                    patient_id=str(meal_orm.patient_id),
                     conversation_id=meal_orm.context_id,
                     role="system",
                     message_type="text",

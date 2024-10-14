@@ -3,9 +3,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_meal_service
+from lib.dependencies.service_dependencies import (get_meal_service,
+                                                   get_patient_profile_service)
 from lib.models.patient import Patient
 from lib.services.meal_service import MealService
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.patients.meals.api_schema import (PatientMealAnalysisResponse,
                                                    PatientMealResponse)
 from rest_server.response_models import ErrorResponse

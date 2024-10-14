@@ -60,7 +60,7 @@ class Patient(PatientBase):
 
     class Config:
         from_attributes = True
-        
+
     @classmethod
     def from_orm(cls, obj):
         state = obj._sa_instance_state
@@ -74,7 +74,39 @@ class Patient(PatientBase):
         return cls(**kwargs)
 
 
-class CompletePatientProfile(PatientBase):    
+class CorePatientProfile(PatientBase):
+    patient_id: UUID
+    daily_activity: Optional[PatientDailyActivity] = None
+    food_allergies: List[PatientFoodAllergy] = []
+    drug_allergies: List[PatientDrugAllergy] = []
+    diet_preferences: List[PatientDietPreference] = []
+    alcohol_consumption: Optional[PatientAlcoholConsumption] = None
+    smoking_habit: Optional[PatientSmokingHabit] = None
+    meal_timings: List[PatientMealTiming] = []
+    cuisine_preferences: List[PatientCuisinePreference] = []
+    sleep_habit: Optional[PatientSleepHabit] = None
+    diabetic_history: Optional[PatientDiabeticHistory] = None
+    family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
+    medical_histories: List[PatientMedicalHistory] = []
+    current_medication: Optional[PatientCurrentMedication] = None
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        state = obj._sa_instance_state
+
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.model_fields
+            if name in state.dict or name not in state.unloaded
+        }
+
+        return cls(**kwargs)
+
+
+class CompletePatientProfile(PatientBase):
     patient_id: UUID
     daily_activity: Optional[PatientDailyActivity] = None
     food_allergies: List[PatientFoodAllergy] = []
@@ -112,4 +144,3 @@ class CompletePatientProfile(PatientBase):
         }
 
         return cls(**kwargs)
-
