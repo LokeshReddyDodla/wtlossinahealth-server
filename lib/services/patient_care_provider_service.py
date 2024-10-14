@@ -29,12 +29,12 @@ class PatientCareProviderService:
         postgres_session: AsyncSession,
         chat_service: ChatService,
         care_provider_profile_service: CareProviderProfileService,
-        patient_service: PatientProfileService,
+        patient_profile_service: PatientProfileService,
     ):
         self.postgres_session = postgres_session
         self.chat_service = chat_service
         self.care_provider_profile_service = care_provider_profile_service
-        self.patient_service = patient_service
+        self.patient_profile_service = patient_profile_service
 
     async def check_existing_connection(
         self, patient_id: str, care_provider_id: str
@@ -153,7 +153,7 @@ class PatientCareProviderService:
                 )
             )
 
-            patient = await self.patient_service.fetch_patient_profile(
+            patient = await self.patient_profile_service.fetch_patient_profile(
                 patient_care_provider_data.patient_id
             )
 
