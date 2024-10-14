@@ -25,6 +25,7 @@ MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
 class AiConversationService:
     def __init__(
         self,
+        patient_profile_service: PatientProfileService,
         conversation_type: AiConversationTypeLiteral = "other",
         model: OpenAIModelLiteral = "gpt-4o",
     ):
@@ -32,6 +33,7 @@ class AiConversationService:
         self.current_model = model
         self.mongo_client = MongoClient(str(MONGO_URL))
         self.db = self.mongo_client[str(MONGO_DB_NAME)]
+        self.patient_profile_service = patient_profile_service
         self.messages_collection = self.db["ai_conversation_messages"]
 
         # Initialize ChatOpenAI with the specified model
@@ -146,10 +148,10 @@ class AiConversationService:
         return messages
 
     async def create_patient_context_message(
-        self, patient_profile_service: PatientProfileService, patient_id: str
+        self, patient_id: str
     ) -> SystemMessage:
         """Generate a system message containing the patient's profile."""
-        patient = await patient_profile_service.fetch_patient_profile(
+        patient = await self.patient_profile_service.fetch_patient_profile(
             patient_id=patient_id, detailed=True
         )
         patient_profile_json = CorePatientProfile.from_orm(
@@ -164,7 +166,6 @@ class AiConversationService:
         patient_id: str,
         conversation_id: str,
         human_input: str,
-        patient_profile_service: PatientProfileService,
     ) -> Dict:
         self.add_message_to_conversation(
             patient_id, conversation_id, "human", human_input
@@ -176,7 +177,7 @@ class AiConversationService:
 
         # Fetch the patient profile and generate context message
         patient_context_message = await self.create_patient_context_message(
-            patient_profile_service, patient_id
+            patient_id
         )
         messages.insert(1, patient_context_message)
 
