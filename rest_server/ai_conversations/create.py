@@ -32,15 +32,14 @@ async def send_ai_conversation_message(
     """
     try:
         ai_conversation_service = AiConversationService(
-            conversation_type=conversation_type,
-            model="gpt-4o-mini",
-            patient_profile_service=patient_profile_service,
+            conversation_type=conversation_type, model="gpt-4o-mini"
         )
         # Generate response from the AI model
         ai_message_data = await ai_conversation_service.generate_response(
             patient_id=str(current_patient.patient_id),
             conversation_id=conversation_id,
             human_input=human_input,
+            patient_profile_service=patient_profile_service,
         )
 
         return SuccessResponse(
