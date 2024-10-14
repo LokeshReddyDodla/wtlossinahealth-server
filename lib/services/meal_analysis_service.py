@@ -20,12 +20,14 @@ from lib.models.patient_meal import \
     PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel
 from lib.models.patient_meal import \
     PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel
+from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
 from lib.schemas.patient_meal import \
     PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema
 from lib.schemas.patient_meal import \
     PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
@@ -49,25 +51,36 @@ class MealAnalysisService:
         )
 
     def analyze_meal(
-        self, meal_time, image_url, meal_type, meal_description=None
+        self,
+        patient_profile_json,
+        meal_time,
+        image_url,
+        meal_type,
+        meal_description=None,
     ):
-        system_message = SystemMessage(
-            content=(
-                "You are an AI strictly focused on meal analysis with deep knowledge "
-                "of Indian cuisine and nutritional science. Respond with precise analysis "
-                "based on the given schema. Avoid unrelated topics and ensure your response "
-                "follows these considerations:\n\n"
-                "1. Identify all visible food items and provide their coordinates.\n"
-                "2. Use realistic serving sizes (grams, cups, pieces). If unclear, predict typical serving sizes "
-                "based on meal type (e.g., breakfast, lunch) and time of day.\n"
-                "3. Avoid suggesting high-GI foods with main meals unless appropriate.\n"
-                "4. Assign a score out of 10 and glycemic index tags ('high', 'medium', 'low').\n"
-                "5. Suggest culturally relevant and healthier alternatives without compromising taste.\n"
-                "6. Offer personalized feedback to align meals with macronutrient goals based on user factors.\n"
-                "7. Avoid recommending foods that may cause blood sugar spikes, "
-                "especially during breakfast, lunch, or dinner."
-            )
-        )
+
+        system_message = [
+            SystemMessage(
+                content=(
+                    "You are an AI strictly focused on meal analysis with deep knowledge "
+                    "of Indian cuisine and nutritional science. Respond with precise analysis "
+                    "based on the given schema. Avoid unrelated topics and ensure your response "
+                    "follows these considerations:\n\n"
+                    "1. Identify all visible food items and provide their coordinates.\n"
+                    "2. Use realistic serving sizes (grams, cups, pieces). If unclear, predict typical serving sizes "
+                    "based on meal type (e.g., breakfast, lunch) and time of day.\n"
+                    "3. Avoid suggesting high-GI foods with main meals unless appropriate.\n"
+                    "4. Assign a score out of 10 and glycemic index tags ('high', 'medium', 'low').\n"
+                    "5. Suggest culturally relevant and healthier alternatives without compromising taste.\n"
+                    "6. Offer personalized feedback to align meals with macronutrient goals based on user factors.\n"
+                    "7. Avoid recommending foods that may cause blood sugar spikes, "
+                    "especially during breakfast, lunch, or dinner."
+                )
+            ),
+            SystemMessage(
+                content=f"Patient Profile:\n```json\n{patient_profile_json}\n```"
+            ),
+        ]
 
         human_messages = [
             HumanMessage(content=f"I had {meal_type} at {meal_time}.")
@@ -90,7 +103,7 @@ class MealAnalysisService:
                 HumanMessage(content=f"Description: {meal_description}")
             )
 
-        messages = [system_message] + human_messages
+        messages = system_message + human_messages
 
         ai_response = self.structured_model.invoke(messages)
         print("==> ai_response: ", ai_response)

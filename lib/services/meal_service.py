@@ -16,19 +16,27 @@ from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_message import \
     AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
 from rest_server.response_models import ErrorResponse
 
 
 class MealService:
-    def __init__(self, postgres_session: AsyncSession):
+    def __init__(
+        self,
+        postgres_session: AsyncSession,
+        meal_analysis_service: MealAnalysisService,
+        patient_profile_service: PatientProfileService,
+    ):
         self.postgres_session = postgres_session
-        self.meal_analysis_service = MealAnalysisService(self.postgres_session)
+        self.meal_analysis_service = meal_analysis_service
+        self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
             "meal_analysis", model="gpt-4o-mini"
         )
@@ -170,14 +178,24 @@ class MealService:
             if meal_orm.analyzed and not re_analyze:
                 return meal
 
+            # Fetch patient Profile
+            patient = await self.patient_profile_service.fetch_patient_profile(
+                patient_id=patient_id, detailed=True
+            )
+            patient_profile_json = CorePatientProfile.from_orm(
+                patient
+            ).model_dump()
+
             # Analyze the meal using the MealAnalysisService
-            parsed_ai_response, tokens_used = (
-                self.meal_analysis_service.analyze_meal(
-                    meal.time,
-                    meal.image_url,
-                    meal.type,
-                    meal.description,
-                )
+            (
+                parsed_ai_response,
+                tokens_used,
+            ) =  self.meal_analysis_service.analyze_meal(
+                patient_profile_json,
+                meal.time,
+                meal.image_url,
+                meal.type,
+                meal.description,
             )
 
             if not parsed_ai_response:
