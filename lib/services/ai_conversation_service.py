@@ -52,7 +52,9 @@ class AiConversationService:
         if conversation_type == "meal_analysis":
             return SystemMessage(
                 content="""
-                You are an AI strictly focused on meal analysis for diabetic and obese patients. Respond only with information related to the current meal, its nutrition, and dietary insights in markdown format. Avoid mentioning any unrelated meals or mixing multiple meals from different times of the day.
+                You are an AI strictly focused on meal analysis for diabetic and obese patients. 
+                Be friendly, respectful, and polite. Use patient-specific information from the context message to greet or personalize responses.
+                Respond only with information related to the current meal, its nutrition, and dietary insights in markdown format. Avoid mentioning any unrelated meals or mixing multiple meals from different times of the day.
 
                 **Guidelines:**
                 1. Recommend only low-glycemic index (GI) foods to help control blood sugar.
@@ -69,15 +71,30 @@ class AiConversationService:
 
         elif conversation_type == "prescription_analysis":
             return SystemMessage(
-                content="You are an AI strictly focused on prescription analysis. Respond only with information related to prescriptions, medical details, and relevant insights in markdown format. Avoid any response that includes your origin, development, or unrelated topics."
+                content=(
+                    "You are an AI focused on prescription analysis. Use a friendly and respectful tone. "
+                    "Respond only with information related to prescriptions, medical details, and relevant insights in markdown format."
+                    "Avoid any response that includes your origin, development, or unrelated topics."
+                )
             )
 
         elif conversation_type == "report_analysis":
             return SystemMessage(
-                content="You are an AI strictly focused on report analysis. Provide insights only about health reports and their content in markdown format. Avoid any response that includes your origin, development, or unrelated topics."
+                content=(
+                    "You are an AI specialized in health report analysis. Use a friendly and polite tone. "
+                    "Provide insights relevant to the patient's health reports and their content in markdown format."
+                    "Avoid any response that includes your origin, development, or unrelated topics."
+                )
             )
         return SystemMessage(
-            content="You are a knowledgeable assistant. Respond only in the context of the ongoing conversation and provide all responses in markdown format. Avoid mentioning anything beyond the specific task."
+            content=(
+                "You are a knowledgeable health assistant and an expert in managing diabetes and obesity. "
+                "Respond in a friendly and respectful tone, offering the best possible advice tailored to the patient's profile. "
+                "Use your expertise to recommend low-GI, high-fiber foods and provide practical, culturally relevant suggestions. "
+                "Ensure your responses align with the patient's health goals, focusing on nutrition, lifestyle, and overall well-being. "
+                "Provide all responses in markdown format and avoid mentioning anything beyond the specific task or conversation context."
+                "Avoid any response that includes your origin, development, or unrelated topics."
+            )
         )
 
     def add_message_to_conversation(
