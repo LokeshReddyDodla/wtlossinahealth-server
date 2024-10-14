@@ -75,6 +75,7 @@ class AiConversationService:
 
     def add_message_to_conversation(
         self,
+        patient_id: str,
         conversation_id: str,
         role: AiConversationRoleLiteral,
         content: str,
@@ -83,6 +84,7 @@ class AiConversationService:
     ):
         """Add a message to the conversation."""
         message_data = AiConversationMessageSchema(
+            patient_id=patient_id,
             conversation_id=conversation_id,
             role=role,
             content=content,
@@ -139,7 +141,9 @@ class AiConversationService:
     async def generate_response(
         self, patient_id: str, conversation_id: str, human_input: str
     ) -> Dict:
-        self.add_message_to_conversation(conversation_id, "human", human_input)
+        self.add_message_to_conversation(
+            patient_id, conversation_id, "human", human_input
+        )
 
         # Fetch all messages to provide context, inserting the system message at the start
         messages = self.fetch_conversation_messages(conversation_id)
@@ -148,7 +152,11 @@ class AiConversationService:
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
         ai_message_data = self.add_message_to_conversation(
-            conversation_id, "ai", ai_response.content, message_type="markdown"
+            patient_id,
+            conversation_id,
+            "ai",
+            ai_response.content,
+            message_type="markdown",
         )
 
         # Log token usage

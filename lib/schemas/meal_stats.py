@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel
 
-from lib.schemas.patient_meal import FoodItem, PatientMeal
+from lib.schemas.patient_meal import PatientFoodItem, PatientMeal
 
 
 class NutritionStats(BaseModel):
