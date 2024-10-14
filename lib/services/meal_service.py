@@ -162,7 +162,7 @@ class MealService:
         meal_id: str,
         patient_id: str,
         re_analyze: Optional[bool] = False,
-    ):  # -> PatientMealModel
+    ) -> PatientMealModel:
         try:
             meal = await self.fetch_meal(meal_id)
             meal_orm = PatientMealSchema.model_validate(meal)
@@ -171,7 +171,6 @@ class MealService:
                 return meal
 
             # Analyze the meal using the MealAnalysisService
-            #
             parsed_ai_response, tokens_used = (
                 self.meal_analysis_service.analyze_meal(
                     meal.time,
