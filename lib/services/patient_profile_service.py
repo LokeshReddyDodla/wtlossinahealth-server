@@ -70,7 +70,7 @@ class PatientProfileService:
         self.chat_service = chat_service
 
     async def fetch_patient_profile(
-        self, patient_id: str, detailed: bool = False
+        self, patient_id: str, detailed: bool = False, other_related_data: bool = False
     ) -> PatientModel:
         try:
             stmt = select(PatientModel).where(
@@ -92,6 +92,10 @@ class PatientProfileService:
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
                     selectinload(PatientModel.current_medication),
+                )
+            
+            if other_related_data:
+                stmt = stmt.options(
                     selectinload(PatientModel.permissions),
                     selectinload(PatientModel.vitals),
                     selectinload(PatientModel.smbgs),

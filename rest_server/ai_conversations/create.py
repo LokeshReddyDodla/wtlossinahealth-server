@@ -1,12 +1,16 @@
 from fastapi import Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import AiConversationTypeLiteral
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_ai_conversation_service
+from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import (get_ai_conversation_service,
+                                                   get_patient_profile_service)
 from lib.models.patient import Patient as PatientModel
 from lib.services.ai_conversation_service import AiConversationService
+from lib.services.patient_profile_service import PatientProfileService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -18,6 +22,9 @@ async def send_ai_conversation_message(
     conversation_type: AiConversationTypeLiteral,
     conversation_id: str,
     human_input: str,
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: PatientModel = Depends(get_current_patient),
 ):
     """
@@ -32,6 +39,7 @@ async def send_ai_conversation_message(
             patient_id=str(current_patient.patient_id),
             conversation_id=conversation_id,
             human_input=human_input,
+            patient_profile_service=patient_profile_service,
         )
 
         return SuccessResponse(

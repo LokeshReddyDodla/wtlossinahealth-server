@@ -7,12 +7,15 @@ from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from pymongo import MongoClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
 from lib.schemas.ai_conversation_message import \
     AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.patient import CorePatientProfile
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
@@ -142,8 +145,26 @@ class AiConversationService:
 
         return messages
 
+    async def create_patient_context_message(
+        self, patient_profile_service: PatientProfileService, patient_id: str
+    ) -> SystemMessage:
+        """Generate a system message containing the patient's profile."""
+        patient = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, detailed=True
+        )
+        patient_profile_json = CorePatientProfile.from_orm(
+            patient
+        ).model_dump()
+        return SystemMessage(
+            content=f"Patient Profile:\n```json\n{patient_profile_json}\n```"
+        )
+
     async def generate_response(
-        self, patient_id: str, conversation_id: str, human_input: str
+        self,
+        patient_id: str,
+        conversation_id: str,
+        human_input: str,
+        patient_profile_service: PatientProfileService,
     ) -> Dict:
         self.add_message_to_conversation(
             patient_id, conversation_id, "human", human_input
@@ -152,6 +173,12 @@ class AiConversationService:
         # Fetch all messages to provide context, inserting the system message at the start
         messages = self.fetch_conversation_messages(conversation_id)
         messages.insert(0, self.system_message)
+
+        # Fetch the patient profile and generate context message
+        patient_context_message = await self.create_patient_context_message(
+            patient_profile_service, patient_id
+        )
+        messages.insert(1, patient_context_message)
 
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
