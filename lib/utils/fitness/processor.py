@@ -227,7 +227,7 @@ class FitnessStatsProcessor:
         data = self.clickhouse_store.client.execute(query)
         hourly_stats = [
             FitnessHourlyStats(
-                hour=str(row[0]),
+                hour=row[0],
                 steps=row[1],
                 active_energy=row[2],
                 active_duration=row[3],
