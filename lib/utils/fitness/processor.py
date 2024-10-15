@@ -1,29 +1,21 @@
 import calendar
-from datetime import datetime, timedelta
 import math
-from typing import List, Dict, Optional
-from lib.schemas.fitness_stats import (
-    FitnessActivityDistribution,
-    FitnessInactivePeriod,
-    FitnessPeakActivityTime,
-    FitnessDailyStats,
-    FitnessSummaryStats,
-    FitnessWeeklyStats,
-    FitnessMonthlyStats,
-    FitnessHourlyStats,
-)
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
+from lib.schemas.fitness_stats import (FitnessActivityDistribution,
+                                       FitnessDailyStats, FitnessHourlyStats,
+                                       FitnessInactivePeriod,
+                                       FitnessMonthlyStats,
+                                       FitnessPeakActivityTime,
+                                       FitnessSummaryStats, FitnessWeeklyStats)
 from lib.utils.date_utils import get_week_start_end
 from lib.utils.fitness.queries import (
     generate_activity_distribution_query,
-    generate_average_active_session_duration_query,
-    generate_inactive_periods_query,
-    generate_peak_activity_time_query,
-    generate_daily_stats_query,
-    generate_summary_stats_query,
-    generate_weekly_stats_query,
-    generate_monthly_stats_query,
-    generate_hourly_stats_query,
-)
+    generate_average_active_session_duration_query, generate_daily_stats_query,
+    generate_hourly_stats_query, generate_inactive_periods_query,
+    generate_monthly_stats_query, generate_peak_activity_time_query,
+    generate_summary_stats_query, generate_weekly_stats_query)
 
 
 class FitnessStatsProcessor:
@@ -235,7 +227,7 @@ class FitnessStatsProcessor:
         data = self.clickhouse_store.client.execute(query)
         hourly_stats = [
             FitnessHourlyStats(
-                hour=row[0],
+                hour=str(row[0]),
                 steps=row[1],
                 active_energy=row[2],
                 active_duration=row[3],

@@ -32,7 +32,7 @@ class FitnessWeekOverWeekComparison(BaseModel):
 
 
 class FitnessHourlyStats(BaseModel):
-    hour: int
+    hour: str
     steps: int
     active_energy: float
     active_duration: float
