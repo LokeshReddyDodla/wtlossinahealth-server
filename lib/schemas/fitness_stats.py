@@ -1,6 +1,7 @@
-from datetime import datetime, date
+from datetime import date, datetime
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel
-from typing import List, Optional, Dict
 
 from rest_server.response_models import SuccessResponse
 
@@ -31,7 +32,7 @@ class FitnessWeekOverWeekComparison(BaseModel):
 
 
 class FitnessHourlyStats(BaseModel):
-    hour: str
+    hour: int
     steps: int
     active_energy: float
     active_duration: float
