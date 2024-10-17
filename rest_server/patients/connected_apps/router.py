@@ -2,6 +2,6 @@ from fastapi import APIRouter
 
 router = APIRouter(prefix="/patient/connected-apps", tags=["ConnectedApps"])
 
-from .read import *
-from .libreview import *
+from .create import *
 from .other_app import *
+from .read import *

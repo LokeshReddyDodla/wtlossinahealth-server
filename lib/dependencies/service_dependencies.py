@@ -10,6 +10,8 @@ from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_service import MealService
 from lib.services.patient_care_provider_service import \
     PatientCareProviderService
+from lib.services.patient_connected_app_service import \
+    PatientConnectedAppService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.user_device_service import UserDeviceService
 
@@ -64,6 +66,12 @@ async def get_patient_care_provider_service(
         care_provider_profile_service=care_provider_profile_service,
         patient_profile_service=patient_profile_service,
     )
+
+
+async def get_patient_connected_app_service(
+    session: AsyncSession = Depends(get_postgres_session),
+) -> PatientConnectedAppService:
+    return PatientConnectedAppService(postgres_session=session)
 
 
 async def get_meal_analysis_service(

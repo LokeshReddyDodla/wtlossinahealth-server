@@ -7,12 +7,16 @@ from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import \
+    get_patient_connected_app_service
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import (PatientConnectedApp,
                                               PatientLibreView)
 from lib.schemas.patient_connected_app import \
     PatientLibreView as PatientLibreViewSchema
 from lib.schemas.patient_connected_app import PatientLibreViewCreate
+from lib.services.patient_connected_app_service import \
+    PatientConnectedAppService
 from rest_server.patients.connected_apps.api_schema import AddLibreViewResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
@@ -26,39 +30,27 @@ from .router import router
 async def add_libreview(
     request: Request,
     libreview: PatientLibreViewCreate,
-    session: AsyncSession = Depends(get_postgres_session),
+    patient_connected_app_service: PatientConnectedAppService = Depends(
+        get_patient_connected_app_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        connected_app = await session.execute(
-            select(PatientConnectedApp).where(
-                PatientConnectedApp.patient_id == current_patient.patient_id
-            )
+        new_libreview = await patient_connected_app_service.add_libreview(
+            libreview_data=libreview,
+            patient_id=str(current_patient.patient_id),
         )
-        connected_app = connected_app.scalars().first()
 
-        if not connected_app:
-            raise HTTPException(
-                status_code=404, detail="ConnectedApp instance not found"
-            )
-
-        new_libreview = PatientLibreView(
-            connected_app_id=connected_app.id,
-            libreview_id=libreview.libreview_id,
-            last_sync_timestamp=libreview.last_sync_timestamp,
-        )
-        session.add(new_libreview)
-        await session.commit()
-        await session.refresh(new_libreview)
-
-        result = PatientLibreViewSchema.from_orm(new_libreview)
+        result = PatientLibreViewSchema.model_validate(new_libreview)
 
         return AddLibreViewResponse(
             message="LibreView data added successfully.",
             data=result,
         )
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
-        raise HTTPException(status_code=500, detail=response.dict())
+        raise HTTPException(status_code=500, detail=response.model_dump())
