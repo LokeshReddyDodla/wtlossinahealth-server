@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 
 class PatientLibreViewBase(BaseModel):
@@ -43,12 +43,24 @@ class PatientConnectedAppBase(BaseModel):
     patient_id: UUID
 
 
+class PatientSchema(BaseModel):
+    patient_id: UUID
+    first_name: Optional[str]
+    last_name: Optional[str]
+    gender: Optional[str]
+    profile_picture: Optional[HttpUrl] = None
+    email: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class PatientConnectedApp(PatientConnectedAppBase):
 
     id: UUID
     libreview: Optional[PatientLibreView] = None
     other_app: Optional[PatientOtherApp] = None
-    patient: Optional[Any] = None  # Patient Model
+    patient: Optional[PatientSchema] = None
 
     class Config:
         from_attributes = True
