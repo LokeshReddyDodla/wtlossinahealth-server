@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -44,13 +44,15 @@ class PatientConnectedAppBase(BaseModel):
 
 
 class PatientConnectedApp(PatientConnectedAppBase):
+
     id: UUID
     libreview: Optional[PatientLibreView] = None
     other_app: Optional[PatientOtherApp] = None
+    patient: Optional[Any] = None  # Patient Model
 
     class Config:
         from_attributes = True
-    
+
     @classmethod
     def from_orm(cls, obj):
         state = obj._sa_instance_state
