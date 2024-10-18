@@ -7,7 +7,7 @@ from lib.dependencies.service_dependencies import (get_fitness_processor,
                                                    get_glucose_processor,
                                                    get_meal_processor)
 from lib.models.patient import Patient
-from lib.schemas.glucose_stats import GlucoseOverallReport
+from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseOverallReport
 from lib.utils.date.periods import OverallPeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -45,16 +45,14 @@ async def get_patient_overview_api(
         )
 
         overall_period = OverallPeriod(from_date, to_date)
-        glucose_stats = GlucoseOverallReport(
-            cgm_report=await glucose_processor.process(overall_period.periods),
-        )
+        glucose_stats = await glucose_processor.process(overall_period.periods)
 
         return PatientOverviewResponse(
             message="Meal stats fetched successfully",
             data=PatientOverview(
                 meal_stats=meal_stats[0] if len(meal_stats) else None,
                 fitness_stats=fitness_stats[0] if len(fitness_stats) else None,
-                glucose_stats=glucose_stats,
+                glucose_stats=glucose_stats["overall"],
             ),
         )
 
