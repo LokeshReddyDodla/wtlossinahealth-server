@@ -1,7 +1,9 @@
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.models.patient import Patient
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
@@ -14,6 +16,9 @@ from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.user_device_service import UserDeviceService
+from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.utils.glucose.processor import GlucoseStatsProcessor
+from lib.utils.meals.processor import MealStatsProcessor
 
 
 async def get_user_device_service(
@@ -94,3 +99,32 @@ async def get_meal_service(
         meal_analysis_service=meal_analysis_service,
         patient_profile_service=patient_profile_service,
     )
+
+
+async def get_meal_processor(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+    current_patient: Patient = Depends(get_current_patient),
+) -> MealStatsProcessor:
+    clickhouse_store = request.state.context.clickhouse_store
+    patient_id = str(current_patient.patient_id)
+    return MealStatsProcessor(session, clickhouse_store, patient_id)
+
+
+async def get_fitness_processor(
+    request: Request,
+    current_patient: Patient = Depends(get_current_patient),
+) -> FitnessStatsProcessor:
+    clickhouse_store = request.state.context.clickhouse_store
+    patient_id = str(current_patient.patient_id)
+    return FitnessStatsProcessor(clickhouse_store, patient_id)
+
+
+async def get_glucose_processor(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+    current_patient: Patient = Depends(get_current_patient),
+) -> GlucoseStatsProcessor:
+    clickhouse_store = request.state.context.clickhouse_store
+    patient_id = str(current_patient.patient_id)
+    return GlucoseStatsProcessor(clickhouse_store, session, patient_id)

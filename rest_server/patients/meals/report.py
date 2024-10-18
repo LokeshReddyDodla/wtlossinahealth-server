@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_meal_processor
 from lib.models.patient import Patient
 from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -24,16 +25,10 @@ async def get_meal_report(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
-    session: AsyncSession = Depends(get_postgres_session),
-    current_patient: Patient = Depends(get_current_patient),
+    meal_processor: MealStatsProcessor = Depends(get_meal_processor),
 ):
     try:
-        clickhouse_store = request.state.context.clickhouse_store
-        patient_id = str(current_patient.patient_id)
-
-        processor = MealStatsProcessor(session, clickhouse_store, patient_id)
-
-        grouped_by_date = await processor.get_meal_stats_by_date(
+        grouped_by_date = await meal_processor.get_meal_stats_by_date(
             from_date, to_date
         )
 

@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import (get_fitness_processor,
+                                                   get_glucose_processor)
 from lib.models.patient import Patient
 from lib.schemas.glucose_stats import (GlucoseDailyReport,
                                        GlucoseOverallReport,
@@ -31,7 +32,8 @@ async def get_detailed_glucose_report(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
-    session: AsyncSession = Depends(get_postgres_session),
+    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    glucose_processor: GlucoseStatsProcessor = Depends(get_glucose_processor),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
@@ -50,14 +52,6 @@ async def get_detailed_glucose_report(
             raise HTTPException(status_code=400, detail=response.dict())
 
         # Fetch patient details
-        glucose_processor = GlucoseStatsProcessor(
-            clickhouse_store, session, patient_id
-        )
-
-        fitness_processor = FitnessStatsProcessor(
-            clickhouse_store, patient_id
-        )
-
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -67,9 +61,7 @@ async def get_detailed_glucose_report(
         # Overall Stats
         overall_period = OverallPeriod(from_date, to_date)
         overall_stats = GlucoseOverallReport(
-            cgm_report=await glucose_processor.process(
-                overall_period.periods
-            ),
+            cgm_report=await glucose_processor.process(overall_period.periods),
             fitness_report=fitness_processor.fetch_summary_stats(
                 from_date_str, to_date_str
             ),
