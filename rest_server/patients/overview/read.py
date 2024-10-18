@@ -1,3 +1,4 @@
+import traceback
 from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -46,9 +47,6 @@ async def get_patient_overview_api(
         overall_period = OverallPeriod(from_date, to_date)
         glucose_stats = GlucoseOverallReport(
             cgm_report=await glucose_processor.process(overall_period.periods),
-            fitness_report=fitness_processor.fetch_summary_stats(
-                from_date_str, to_date_str
-            ),
         )
 
         return PatientOverviewResponse(
@@ -63,6 +61,11 @@ async def get_patient_overview_api(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        error_message = f"Exception occurred: {str(e)}"
+        traceback_message = traceback.format_exc()
+        print("🚀 ~ error_message:", error_message)
+        print("🚀 ~ traceback_message:", traceback_message)
+
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )

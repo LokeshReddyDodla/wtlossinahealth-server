@@ -1,12 +1,13 @@
+import math
 from datetime import datetime
 from typing import List
 
 import pandas as pd
-from lib.utils.glucose.queries import (
-    generate_avg_glucose_reading_by_date_query,
-    generate_glucose_stats_query,
-)
+from numpy import NaN
+
 from lib.schemas.glucose_stats import AGPPoint, GlucoseSummaryStats
+from lib.utils.glucose.queries import (
+    generate_avg_glucose_reading_by_date_query, generate_glucose_stats_query)
 
 
 class GlucoseSummaryStatsFetcher:
@@ -19,7 +20,9 @@ class GlucoseSummaryStatsFetcher:
         )
         result = clickhouse_store.client.execute(query)
 
-        average_glucose = result[0][0] if result else 0.0
+        average_glucose = (
+            result[0][0] if result and not math.isnan(result[0][0]) else 0.0
+        )
         glucose_stddev = result[0][1] if result else 0.0
 
         highest_glucose = result[0][2] if result else 0.0
