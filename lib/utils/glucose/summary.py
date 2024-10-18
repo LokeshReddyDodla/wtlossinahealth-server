@@ -31,8 +31,8 @@ class GlucoseSummaryStatsFetcher:
         lowest_glucose = result[0][4] if result else 0.0
         lowest_glucose_date = result[0][5] if result else datetime.min
 
-        gmi = 3.31 + 0.02392 * average_glucose
-        gmi_mmol = gmi * 10.93
+        gmi = 3.31 + 0.02392 * average_glucose if average_glucose else 0.0
+        gmi_mmol = gmi * 10.93 if gmi else 0.0
         glucose_variability = (
             (glucose_stddev / average_glucose) * 100 if average_glucose else 0
         )
