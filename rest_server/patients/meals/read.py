@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_meal_service
+from lib.dependencies.service_dependencies import (get_meal_processor,
+                                                   get_meal_service)
 from lib.models.patient import Patient
 from lib.services.meal_service import MealService
 from lib.utils.meals.processor import MealStatsProcessor
@@ -76,20 +77,15 @@ async def get_meals_api(
 async def get_meals_stats_api(
     request: Request,
     date: date,
-    session: AsyncSession = Depends(get_postgres_session),
-    current_patient: Patient = Depends(get_current_patient),
+    meal_processor: MealStatsProcessor = Depends(get_meal_processor),
 ):
     """
     Get Meal Stats API
     """
     try:
-        clickhouse_store = request.state.context.clickhouse_store
         from_date = datetime.combine(date, time.min)  # Start of the day
         to_date = datetime.combine(date, time.max)  # End of the day
 
-        meal_processor = MealStatsProcessor(
-            session, clickhouse_store, str(current_patient.patient_id)
-        )
         meal_stats = await meal_processor.get_meal_stats_by_date(
             from_date, to_date
         )
