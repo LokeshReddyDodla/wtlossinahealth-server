@@ -22,6 +22,8 @@ from rest_server.patients.connected_apps.router import \
     router as connected_apps_router
 from rest_server.patients.fitness.router import router as fitness_router
 from rest_server.patients.meals.router import router as meals_router
+from rest_server.patients.overview.router import \
+    router as patient_overview_router
 from rest_server.patients.permissions.router import \
     router as permissions_router
 from rest_server.patients.prescriptions.router import \
@@ -103,6 +105,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(prescriptions_router)
     app.include_router(meals_router)
     app.include_router(patient_care_providers_router)
+    app.include_router(patient_overview_router)
 
     ###########################################################################
     # Test
