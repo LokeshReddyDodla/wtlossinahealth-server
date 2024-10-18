@@ -1,25 +1,22 @@
 from datetime import datetime
 from typing import Any, Dict, List
+
 from sqlalchemy import select
-from lib.models.patient_meal import PatientFoodItem, PatientMeal
+from sqlalchemy.orm import selectinload
+
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
-
-from sqlalchemy.orm import selectinload
+from lib.models.patient_meal import PatientFoodItem, PatientMeal
+from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
 from lib.schemas.patient import CompletePatientProfile
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
     generate_avg_glucose_readings_by_hour_query,
     generate_glucose_readings_around_meal_query,
-    generate_glucose_readings_by_date_query,
-)
+    generate_glucose_readings_by_date_query)
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
-from lib.schemas.glucose_stats import (
-    GlucoseLevelStats,
-    GlucoseReading,
-)
 
 
 class GlucoseStatsProcessor:

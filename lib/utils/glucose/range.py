@@ -1,5 +1,7 @@
-from lib.utils.glucose.queries import generate_glucose_level_query
+import math
+
 from lib.schemas.glucose_stats import GlucoseRangeStats
+from lib.utils.glucose.queries import generate_glucose_level_query
 
 
 class GlucoseRangeStatsFetcher:
@@ -48,7 +50,7 @@ class GlucoseRangeStatsFetcher:
         results = {}
         for key, query in queries.items():
             result = clickhouse_store.client.execute(query)
-            percentage = result[0][2] if result else 0.0
+            percentage = result[0][2] if result and not math.isnan(result[0][2]) else 0.0
             results[key] = percentage
 
         return GlucoseRangeStats(
