@@ -19,7 +19,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.get(path="", response_model=PatientOverviewResponse)
+@router.get(path="/stats", response_model=PatientOverviewResponse)
 async def get_patient_overview_api(
     request: Request,
     date: date,
