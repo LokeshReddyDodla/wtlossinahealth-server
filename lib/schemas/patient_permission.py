@@ -10,7 +10,6 @@ class PatientPermissionBase(BaseModel):
     health_permission: Optional[bool] = False
     camera_permission: Optional[bool] = False
     storage_permission: Optional[bool] = False
-    last_sync_time: Optional[datetime]
 
 
 class PatientPermissionCreate(PatientPermissionBase):
@@ -23,6 +22,7 @@ class PatientPermissionUpdate(PatientPermissionBase):
 
 class PatientPermission(PatientPermissionBase):
     id: UUID
+    last_sync_time: Optional[datetime]
 
     class Config:
         from_attributes = True
