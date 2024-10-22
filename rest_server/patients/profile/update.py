@@ -120,8 +120,6 @@ async def upsert_patient_lifestyle(
             )
         )
 
-        print("==> updated_patient: ", updated_patient)
-
         return PatientProfileResponse(
             message="Patient lifestyle data updated successfully.",
             data=CorePatientProfile.from_orm(updated_patient),
