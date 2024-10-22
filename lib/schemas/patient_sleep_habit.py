@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from datetime import time as datetime_time
 from typing import Optional
 from uuid import UUID
 
@@ -14,8 +15,8 @@ class PatientSleepHabitBase(BaseModel):
     wake_up_fresh: bool
     drowsy_day: bool
     average_sleep_duration: Optional[float] = None
-    wake_up_time: Optional[datetime] = None
-    bed_time: Optional[datetime] = None
+    wake_up_time: Optional[datetime_time] = None
+    bed_time: Optional[datetime_time] = None
 
 
 class PatientSleepHabitCreate(PatientSleepHabitBase):

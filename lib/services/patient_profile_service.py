@@ -70,7 +70,10 @@ class PatientProfileService:
         self.chat_service = chat_service
 
     async def fetch_patient_profile(
-        self, patient_id: str, detailed: bool = False, other_related_data: bool = False
+        self,
+        patient_id: str,
+        detailed: bool = False,
+        other_related_data: bool = False,
     ) -> PatientModel:
         try:
             stmt = select(PatientModel).where(
@@ -93,7 +96,7 @@ class PatientProfileService:
                     selectinload(PatientModel.medical_histories),
                     selectinload(PatientModel.current_medication),
                 )
-            
+
             if other_related_data:
                 stmt = stmt.options(
                     selectinload(PatientModel.permissions),
@@ -203,18 +206,12 @@ class PatientProfileService:
             )
 
             # Upsert operations using helper methods
-            patient.daily_activity = [
-                self._upsert_single_entity(
-                    (
-                        patient.daily_activity[0]
-                        if patient.daily_activity
-                        else None
-                    ),
-                    daily_activity,
-                    PatientDailyActivityModel,
-                    patient_id,
-                )
-            ]
+            patient.daily_activity = self._upsert_single_entity(
+                (patient.daily_activity if patient.daily_activity else None),
+                daily_activity,
+                PatientDailyActivityModel,
+                patient_id,
+            )
 
             patient.alcohol_consumption = self._upsert_single_entity(
                 patient.alcohol_consumption,
@@ -269,7 +266,10 @@ class PatientProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient)
 
-            return patient
+            updated_patient = await self.fetch_patient_profile(
+                patient_id, detailed=True
+            )
+            return updated_patient
 
         except IntegrityError as e:
             await self.postgres_session.rollback()
@@ -342,7 +342,10 @@ class PatientProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient)
 
-            return patient
+            updated_patient = await self.fetch_patient_profile(
+                patient_id, detailed=True
+            )
+            return updated_patient
 
         except IntegrityError as e:
             await self.postgres_session.rollback()

@@ -26,7 +26,7 @@ from lib.models.patient_meal_timing import PatientMealTiming
 from lib.models.patient_medical_history import PatientMedicalHistory
 from lib.models.patient_sleep_habit import PatientSleepHabit
 from lib.models.patient_smoking_habit import PatientSmokingHabit
-from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient import CompletePatientProfile, CorePatientProfile
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientCreate, PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
@@ -75,7 +75,7 @@ async def update_basic_patient(
 
         return PatientProfileResponse(
             message="Patient basic data updated successfully.",
-            data=PatientSchema.from_orm(updated_patient),
+            data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
@@ -120,9 +120,11 @@ async def upsert_patient_lifestyle(
             )
         )
 
+        print("==> updated_patient: ", updated_patient)
+
         return PatientProfileResponse(
             message="Patient lifestyle data updated successfully.",
-            data=PatientSchema.from_orm(updated_patient),
+            data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
@@ -165,7 +167,7 @@ async def upsert_patient_medical_history(
 
         return PatientProfileResponse(
             message="Patient medical history data updated successfully.",
-            data=PatientSchema.from_orm(updated_patient),
+            data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
