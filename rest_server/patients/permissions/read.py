@@ -37,7 +37,7 @@ async def get_patient_permissions(
                 status_code=404, detail="Permissions not found"
             )
 
-        result = PatientPermissionSchema.from_orm(permissions)
+        result = PatientPermissionSchema.model_validate(permissions)
 
         return PatientPermissionsResponse(
             message="Permissions fetched successfully.",
