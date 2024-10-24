@@ -18,7 +18,6 @@ from lib.schemas.patient_diet_preference import PatientDietPreference
 from lib.schemas.patient_drug_allergy import PatientDrugAllergy
 from lib.schemas.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistory
-from lib.schemas.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_meal_timing import PatientMealTiming
 from lib.schemas.patient_medical_history import PatientMedicalHistory
@@ -125,7 +124,6 @@ class CompletePatientProfile(PatientBase):
     vitals: List[PatientVital] = []
     smbgs: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
-    fitness_sync: Optional[PatientFitnessDataSync] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
     # care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None

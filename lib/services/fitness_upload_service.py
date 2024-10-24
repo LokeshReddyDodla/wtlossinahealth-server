@@ -1,23 +1,30 @@
+from datetime import datetime
+from typing import List, Union
+
+from dateutil.parser import parse
+from sqlalchemy import delete
+from sqlalchemy.future import select
+from sqlalchemy.orm import Session
+
 from lib.models.patient import Patient
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
-from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
-from sqlalchemy.future import select
-from sqlalchemy.orm import Session
-from sqlalchemy import delete
-from dateutil.parser import parse
-from typing import List, Union
-from datetime import datetime
-
 from lib.utils.fitness_upload_utils import FitnessUploadUtils
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
 class FitnessUploadService:
 
-    def __init__(self, clickhouse_store, postgres_session, patient_id):
+    def __init__(
+        self,
+        clickhouse_store,
+        fitness_sync_store,
+        postgres_session,
+        patient_id,
+    ):
         self.clickhouse_store = clickhouse_store
+        self.fitness_sync_store = fitness_sync_store
         self.postgres_session = postgres_session
         self.patient_id = patient_id
 
@@ -146,18 +153,10 @@ class FitnessUploadService:
         self.postgres_session.add_all(vitals + smbg_records + sleep_records)
 
     async def update_last_sync(self, dateTo: datetime):
-        fitness_sync_result = await self.postgres_session.execute(
-            select(PatientFitnessDataSync).where(
-                PatientFitnessDataSync.patient_id == self.patient_id
-            )
-        )
-        fitness_sync = fitness_sync_result.scalars().first()
+        fitness_sync_key = f"fitness_sync:{self.patient_id}"
 
-        if fitness_sync:
-            fitness_sync.last_sync_timestamp = dateTo
-        else:
-            fitness_sync = PatientFitnessDataSync(
-                patient_id=self.patient_id,
-                last_sync_timestamp=dateTo,
-            )
-            self.postgres_session.add(fitness_sync)
+        # Set or update the sync timestamp in Redis
+        self.fitness_sync_store.set_key(
+            fitness_sync_key,
+            value=dateTo.isoformat(),
+        )

@@ -8,7 +8,6 @@ from loguru import logger
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
-from lib.services.fitness_upload_service import FitnessUploadService
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
