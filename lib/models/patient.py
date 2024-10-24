@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session, object_session, relationship
 from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.models import Base
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_fitness_data_sync import PatientFitnessDataSync
 from lib.models.patient_permission import PatientPermission
 from lib.services.chat_service import ChatService
 
@@ -146,13 +145,6 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    fitness_sync = relationship(
-        "PatientFitnessDataSync",
-        back_populates="patient",
-        cascade="all, delete-orphan",
-        uselist=False,
-    )
-
     sleep_entries = relationship(
         "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
     )
@@ -205,13 +197,14 @@ def create_related_records(mapper, connection, target):
             "storage_permission": False,
         },
     )
-    # Insert into FitnessDataSync
-    connection.execute(
-        PatientFitnessDataSync.__table__.insert(),
-        {
-            "patient_id": target.patient_id,
-            "last_sync_timestamp": None,
-        },
+
+    # Generate the key for fitness sync
+    fitness_sync_key = f"fitness_sync:{target.patient_id}"
+
+    # Store in Redis using your CacheStore
+    connection.app.state.fitness_sync_store.set_key(
+        fitness_sync_key,
+        value=None,
     )
 
     # create a group chat for the patient

@@ -18,7 +18,6 @@ from .patient_diabetic_history import PatientDiabeticHistory
 from .patient_diet_preference import PatientDietPreference
 from .patient_drug_allergy import PatientDrugAllergy
 from .patient_family_diabetic_history import PatientFamilyDiabeticHistory
-from .patient_fitness_data_sync import PatientFitnessDataSync
 from .patient_food_allergy import PatientFoodAllergy
 from .patient_meal import (PatientFoodItem, PatientMacroNutritionalValue,
                            PatientMeal, PatientMicroNutritionalValue,

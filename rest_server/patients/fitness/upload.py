@@ -26,9 +26,11 @@ async def upload_fitness_data(
 ):
     try:
         clickhouse_store = request.state.context.clickhouse_store
+        fitness_sync_store = request.app.state.fitness_sync_store
 
         fitness_service = FitnessUploadService(
             clickhouse_store,
+            fitness_sync_store,
             session,
             str(current_patient.patient_id),
         )
