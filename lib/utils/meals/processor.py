@@ -16,7 +16,6 @@ from lib.schemas.patient_diet_plan import PatientDietPlanBase
 from lib.utils.date.age_utils import calculate_age
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
-from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class MealStatsProcessor:

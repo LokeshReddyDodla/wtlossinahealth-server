@@ -8,10 +8,10 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_meal_service
 from lib.models.patient import Patient
-from lib.models.patient_meal import PatientMeal
+from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
-from rest_server.patients.meals.api_schema import (PatientMealResponse,
-                                                   PatientMealUploadRequest,
+from rest_server.patients.meals.api_schema import (PatientMealUploadRequest,
                                                    PatientMealUploadResponse)
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
@@ -33,7 +33,7 @@ async def meal_upload_api(
             meal_data=meal_data, patient_id=str(current_patient.patient_id)
         )
 
-        meal = PatientMealResponse.from_orm(new_meal)
+        meal = PatientMealSchema.from_orm(new_meal)
 
         return PatientMealUploadResponse(
             message="Meal Uploaded Successfully",

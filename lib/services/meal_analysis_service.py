@@ -31,7 +31,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.datetime_utils import convert_milliseconds_to_datetime
 from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
-from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class MealAnalysisService:

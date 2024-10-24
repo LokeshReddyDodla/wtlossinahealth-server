@@ -29,7 +29,7 @@ class GlucoseStatsProcessor:
         self,
         clickhouse_store,
         postgres_session,
-        meal_service: MealService,
+        meal_service,
         patient_id,
     ):
         self.clickhouse_store = clickhouse_store
