@@ -36,6 +36,7 @@ from lib.models.patient_meal_timing import \
     PatientMealTiming as PatientMealTimingModel
 from lib.models.patient_medical_history import \
     PatientMedicalHistory as PatientMedicalHistoryModel
+from lib.models.patient_plan import PatientPlan as PatientPlanModel
 from lib.models.patient_sleep_habit import \
     PatientSleepHabit as PatientSleepHabitModel
 from lib.models.patient_smoking_habit import \
@@ -100,10 +101,16 @@ class PatientProfileService:
                     selectinload(PatientModel.eating_habit).selectinload(
                         PatientEatingHabitModel.cuisine_preferences
                     ),
+                    selectinload(PatientModel.patient_plans).selectinload(
+                        PatientPlanModel.diet_plan
+                    ),
+                    selectinload(PatientModel.patient_plans).selectinload(
+                        PatientPlanModel.fitness_plan
+                    ),
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication)
+                    selectinload(PatientModel.current_medication),
                 )
 
             if other_related_data:
