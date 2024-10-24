@@ -18,6 +18,7 @@ from .patient_diabetic_history import PatientDiabeticHistory
 from .patient_diet_plan import PatientDietPlan
 from .patient_diet_preference import PatientDietPreference
 from .patient_drug_allergy import PatientDrugAllergy
+from .patient_eating_habit import PatientEatingHabit
 from .patient_family_diabetic_history import PatientFamilyDiabeticHistory
 from .patient_fitness_plan import PatientFitnessPlan
 from .patient_food_allergy import PatientFoodAllergy

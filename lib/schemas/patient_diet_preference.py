@@ -19,7 +19,7 @@ class PatientDietPreferenceCreate(PatientDietPreferenceBase):
 
 class PatientDietPreference(PatientDietPreferenceBase):
     id: UUID
-    patient_id: UUID
+    eating_habit_id: UUID
 
     class Config:
         from_attributes = True

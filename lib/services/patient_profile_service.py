@@ -51,6 +51,7 @@ from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
+from lib.schemas.patient_eating_habit import PatientEatingHabitCreate
 from lib.schemas.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistoryCreate
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
@@ -85,12 +86,10 @@ class PatientProfileService:
                     selectinload(PatientModel.daily_activity),
                     selectinload(PatientModel.food_allergies),
                     selectinload(PatientModel.drug_allergies),
-                    selectinload(PatientModel.diet_preferences),
                     selectinload(PatientModel.alcohol_consumption),
                     selectinload(PatientModel.smoking_habit),
-                    selectinload(PatientModel.meal_timings),
-                    selectinload(PatientModel.cuisine_preferences),
                     selectinload(PatientModel.sleep_habit),
+                    selectinload(PatientModel.eating_habit),
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
@@ -158,7 +157,9 @@ class PatientProfileService:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
 
-            for key, value in patient_data.model_dump(exclude_unset=True).items():
+            for key, value in patient_data.model_dump(
+                exclude_unset=True
+            ).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
@@ -189,16 +190,12 @@ class PatientProfileService:
         self,
         patient_id: str,
         daily_activity: PatientDailyActivityCreate,
-        diet_preferences: List[PatientDietPreferenceCreate],
         alcohol_consumption: PatientAlcoholConsumptionCreate,
         smoking_habit: PatientSmokingHabitCreate,
+        eating_habit: PatientEatingHabitCreate,
         sleep_habit: PatientSleepHabitCreate,
         food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
-        meal_timings: Optional[List[PatientMealTimingCreate]] = None,
-        cuisine_preferences: Optional[
-            List[PatientCuisinePreferenceCreate]
-        ] = None,
-    ):
+    ):  # TODO: Fix this eating habit
         try:
             patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -233,12 +230,12 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient.diet_preferences = await self._upsert_multiple_entities(
-                patient.diet_preferences,
-                diet_preferences,
-                PatientDietPreferenceModel,
-                patient_id,
-            )
+            # patient.diet_preferences = await self._upsert_multiple_entities(
+            #     patient.diet_preferences,
+            #     diet_preferences,
+            #     PatientDietPreferenceModel,
+            #     patient_id,
+            # )
 
             patient.food_allergies = await self._upsert_multiple_entities(
                 patient.food_allergies,
@@ -247,19 +244,19 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient.meal_timings = await self._upsert_multiple_entities(
-                patient.meal_timings,
-                meal_timings or [],
-                PatientMealTimingModel,
-                patient_id,
-            )
+            # patient.meal_timings = await self._upsert_multiple_entities(
+            #     patient.meal_timings,
+            #     meal_timings or [],
+            #     PatientMealTimingModel,
+            #     patient_id,
+            # )
 
-            patient.cuisine_preferences = await self._upsert_multiple_entities(
-                patient.cuisine_preferences,
-                cuisine_preferences or [],
-                PatientCuisinePreferenceModel,
-                patient_id,
-            )
+            # patient.cuisine_preferences = await self._upsert_multiple_entities(
+            #     patient.cuisine_preferences,
+            #     cuisine_preferences or [],
+            #     PatientCuisinePreferenceModel,
+            #     patient_id,
+            # )
 
             self.postgres_session.add(patient)
             await self.postgres_session.commit()

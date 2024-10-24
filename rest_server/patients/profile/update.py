@@ -11,38 +11,21 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.patient import Patient
-from lib.models.patient_alcohol_consumption import PatientAlcoholConsumption
-from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_cuisine_preference import PatientCuisinePreference
-from lib.models.patient_current_medication import PatientCurrentMedication
-from lib.models.patient_daily_activity import PatientDailyActivity
-from lib.models.patient_diabetic_history import PatientDiabeticHistory
-from lib.models.patient_diet_preference import PatientDietPreference
-from lib.models.patient_drug_allergy import PatientDrugAllergy
-from lib.models.patient_family_diabetic_history import \
-    PatientFamilyDiabeticHistory
-from lib.models.patient_food_allergy import PatientFoodAllergy
-from lib.models.patient_meal_timing import PatientMealTiming
-from lib.models.patient_medical_history import PatientMedicalHistory
-from lib.models.patient_sleep_habit import PatientSleepHabit
-from lib.models.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient import CompletePatientProfile, CorePatientProfile
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientCreate, PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
     PatientAlcoholConsumptionCreate
-from lib.schemas.patient_cuisine_preference import \
-    PatientCuisinePreferenceCreate
 from lib.schemas.patient_current_medication import \
     PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
+from lib.schemas.patient_eating_habit import PatientEatingHabitCreate
 from lib.schemas.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistoryCreate
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
-from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
@@ -93,13 +76,11 @@ async def update_basic_patient(
 async def upsert_patient_lifestyle(
     request: Request,
     daily_activity: PatientDailyActivityCreate,
-    diet_preferences: List[PatientDietPreferenceCreate],
     alcohol_consumption: PatientAlcoholConsumptionCreate,
     smoking_habit: PatientSmokingHabitCreate,
+    eating_habit: PatientEatingHabitCreate,
     sleep_habit: PatientSleepHabitCreate,
     food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
-    meal_timings: Optional[List[PatientMealTimingCreate]] = None,
-    cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = None,
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
@@ -110,13 +91,11 @@ async def upsert_patient_lifestyle(
             await patient_profile_service.upsert_patient_lifestyle(
                 patient_id=str(current_patient.patient_id),
                 daily_activity=daily_activity,
-                diet_preferences=diet_preferences,
                 alcohol_consumption=alcohol_consumption,
                 smoking_habit=smoking_habit,
+                eating_habit=eating_habit,
                 sleep_habit=sleep_habit,
                 food_allergies=food_allergies,
-                meal_timings=meal_timings,
-                cuisine_preferences=cuisine_preferences,
             )
         )
 

@@ -1,7 +1,9 @@
 import uuid
+
 from sqlalchemy import UUID, Column, ForeignKey, String
-from lib.models import Base
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientDietPreference(Base):
@@ -10,7 +12,7 @@ class PatientDietPreference(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
-    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
+    eating_habit_id = Column(UUID(as_uuid=True), ForeignKey("patient_eating_habits.eating_habit_id"))
     preference = Column(String(50))
     detail = Column(String(100), nullable=True)
-    patient = relationship("Patient", back_populates="diet_preferences")
+    eating_habit = relationship("PatientEatingHabit", back_populates="diet_preferences")

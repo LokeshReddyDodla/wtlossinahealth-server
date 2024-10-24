@@ -1,7 +1,9 @@
 import uuid
+
 from sqlalchemy import UUID, Column, ForeignKey, String
-from lib.models import Base
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientFoodAllergy(Base):

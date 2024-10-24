@@ -63,11 +63,6 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    diet_preferences = relationship(
-        "PatientDietPreference",
-        back_populates="patient",
-        cascade="all, delete-orphan",
-    )
     alcohol_consumption = relationship(
         "PatientAlcoholConsumption",
         uselist=False,
@@ -80,14 +75,10 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    meal_timings = relationship(
-        "PatientMealTiming",
+    eating_habit = relationship(
+        "PatientEatingHabit",
         back_populates="patient",
-        cascade="all, delete-orphan",
-    )
-    cuisine_preferences = relationship(
-        "PatientCuisinePreference",
-        back_populates="patient",
+        uselist=False,
         cascade="all, delete-orphan",
     )
     sleep_habit = relationship(

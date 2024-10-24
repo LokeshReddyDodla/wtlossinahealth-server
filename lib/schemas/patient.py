@@ -10,16 +10,14 @@ from lib.schemas.health_facility import HealthFacility
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_care_provider import PatientCareProvider
 from lib.schemas.patient_connected_app import PatientConnectedApp
-from lib.schemas.patient_cuisine_preference import PatientCuisinePreference
 from lib.schemas.patient_current_medication import PatientCurrentMedication
 from lib.schemas.patient_daily_activity import PatientDailyActivity
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
-from lib.schemas.patient_diet_preference import PatientDietPreference
 from lib.schemas.patient_drug_allergy import PatientDrugAllergy
+from lib.schemas.patient_eating_habit import PatientEatingHabit
 from lib.schemas.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistory
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
-from lib.schemas.patient_meal_timing import PatientMealTiming
 from lib.schemas.patient_medical_history import PatientMedicalHistory
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
@@ -78,11 +76,9 @@ class CorePatientProfile(PatientBase):
     daily_activity: Optional[PatientDailyActivity] = None
     food_allergies: List[PatientFoodAllergy] = []
     drug_allergies: List[PatientDrugAllergy] = []
-    diet_preferences: List[PatientDietPreference] = []
     alcohol_consumption: Optional[PatientAlcoholConsumption] = None
     smoking_habit: Optional[PatientSmokingHabit] = None
-    meal_timings: List[PatientMealTiming] = []
-    cuisine_preferences: List[PatientCuisinePreference] = []
+    eating_habit: Optional[PatientEatingHabit] = None
     sleep_habit: Optional[PatientSleepHabit] = None
     diabetic_history: Optional[PatientDiabeticHistory] = None
     family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
@@ -105,21 +101,7 @@ class CorePatientProfile(PatientBase):
         return cls(**kwargs)
 
 
-class CompletePatientProfile(PatientBase):
-    patient_id: UUID
-    daily_activity: Optional[PatientDailyActivity] = None
-    food_allergies: List[PatientFoodAllergy] = []
-    drug_allergies: List[PatientDrugAllergy] = []
-    diet_preferences: List[PatientDietPreference] = []
-    alcohol_consumption: Optional[PatientAlcoholConsumption] = None
-    smoking_habit: Optional[PatientSmokingHabit] = None
-    meal_timings: List[PatientMealTiming] = []
-    cuisine_preferences: List[PatientCuisinePreference] = []
-    sleep_habit: Optional[PatientSleepHabit] = None
-    diabetic_history: Optional[PatientDiabeticHistory] = None
-    family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
-    medical_histories: List[PatientMedicalHistory] = []
-    current_medication: Optional[PatientCurrentMedication] = None
+class CompletePatientProfile(CorePatientProfile):
     permissions: Optional[PatientPermission] = None
     vitals: List[PatientVital] = []
     smbgs: List[PatientSMBG] = []
