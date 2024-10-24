@@ -40,7 +40,6 @@ class FitnessUploadService:
         # Commit the session to save all changes
         await self.postgres_session.commit()
 
-        print("==> dateTo: ", dateTo)
         return dateTo
 
     async def delete_existing_data(
