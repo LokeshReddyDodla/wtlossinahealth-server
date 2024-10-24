@@ -3,18 +3,10 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_fitness_processor
-from lib.models.patient import Patient
-from lib.schemas.fitness_stats import (FitnessDailyStats, FitnessMonthlyStats,
-                                       FitnessWeeklyStats)
+from lib.dependencies.service_dependencies import get_fitness_stats_processor
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_end_by_week_no)
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.fitness.queries import (generate_all_available_dates,
-                                       generate_all_available_months,
-                                       generate_all_available_weeks,
-                                       generate_available_data_range_by_date)
 from rest_server.patients.fitness.api_schema import FitnessStatsResponse
 from rest_server.response_models import SuccessResponse
 
@@ -29,7 +21,9 @@ async def get_fitness_stats(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
-    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    fitness_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
+    ),
 ):
     try:
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -52,7 +46,9 @@ async def get_fitness_stats(
 async def get_fitness_day_stats(
     request: Request,
     date: date = Query(...),
-    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    fitness_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
+    ),
 ):
     try:
         from_date_str = f"{date}T00:00:00"
@@ -76,7 +72,9 @@ async def get_fitness_week_stats(
     request: Request,
     year: int,
     week_no: int,
-    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    fitness_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
+    ),
 ):
     try:
         week_start, week_end = get_week_start_end_by_week_no(year, week_no)
@@ -102,7 +100,9 @@ async def get_fitness_month_stats(
     request: Request,
     year: int,
     month_no: int,
-    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    fitness_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
+    ),
 ):
     try:
         month_start, month_end = get_month_start_end(year, month_no)

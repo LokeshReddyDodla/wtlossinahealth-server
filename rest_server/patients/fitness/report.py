@@ -6,7 +6,7 @@ from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_fitness_processor
+from lib.dependencies.service_dependencies import get_fitness_stats_processor
 from lib.models.patient import Patient
 from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -23,23 +23,25 @@ async def get_fitness_data(
     request: Request,
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
-    fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
+    fitness_stats_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        summary_stats = fitness_processor.fetch_summary_stats(
+        summary_stats = fitness_stats_processor.fetch_summary_stats(
             from_date_str, to_date_str
         )
-        daily_stats = fitness_processor.fetch_daily_stats(
+        daily_stats = fitness_stats_processor.fetch_daily_stats(
             from_date_str, to_date_str
         )
-        weekly_stats = fitness_processor.fetch_weekly_stats(
+        weekly_stats = fitness_stats_processor.fetch_weekly_stats(
             from_date_str, to_date_str
         )
-        monthly_stats = fitness_processor.fetch_monthly_stats(
+        monthly_stats = fitness_stats_processor.fetch_monthly_stats(
             from_date_str, to_date_str
         )
 
