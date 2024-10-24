@@ -26,6 +26,8 @@ from lib.models.patient_diet_preference import \
     PatientDietPreference as PatientDietPreferenceModel
 from lib.models.patient_drug_allergy import \
     PatientDrugAllergy as PatientDrugAllergyModel
+from lib.models.patient_eating_habit import \
+    PatientEatingHabit as PatientEatingHabitModel
 from lib.models.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistory as PatientFamilyDiabeticHistoryModel
 from lib.models.patient_food_allergy import \
@@ -89,7 +91,15 @@ class PatientProfileService:
                     selectinload(PatientModel.alcohol_consumption),
                     selectinload(PatientModel.smoking_habit),
                     selectinload(PatientModel.sleep_habit),
-                    selectinload(PatientModel.eating_habit),
+                    selectinload(PatientModel.eating_habit).selectinload(
+                        PatientEatingHabitModel.meal_timings
+                    ),
+                    selectinload(PatientModel.eating_habit).selectinload(
+                        PatientEatingHabitModel.diet_preferences
+                    ),
+                    selectinload(PatientModel.eating_habit).selectinload(
+                        PatientEatingHabitModel.cuisine_preferences
+                    ),
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
@@ -195,7 +205,7 @@ class PatientProfileService:
         eating_habit: PatientEatingHabitCreate,
         sleep_habit: PatientSleepHabitCreate,
         food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
-    ):  # TODO: Fix this eating habit
+    ):
         try:
             patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -230,33 +240,56 @@ class PatientProfileService:
                 patient_id,
             )
 
-            # patient.diet_preferences = await self._upsert_multiple_entities(
-            #     patient.diet_preferences,
-            #     diet_preferences,
-            #     PatientDietPreferenceModel,
-            #     patient_id,
-            # )
-
             patient.food_allergies = await self._upsert_multiple_entities(
                 patient.food_allergies,
                 food_allergies or [],
                 PatientFoodAllergyModel,
+                "patient_id",
                 patient_id,
             )
 
-            # patient.meal_timings = await self._upsert_multiple_entities(
-            #     patient.meal_timings,
-            #     meal_timings or [],
-            #     PatientMealTimingModel,
-            #     patient_id,
-            # )
+            ignore_fields = [
+                "meal_timings",
+                "diet_preferences",
+                "cuisine_preferences",
+            ]
+            patient.eating_habit = self._upsert_single_entity(
+                patient.eating_habit,
+                eating_habit,
+                PatientEatingHabitModel,
+                patient_id,
+                ignore_fields=ignore_fields,
+            )
 
-            # patient.cuisine_preferences = await self._upsert_multiple_entities(
-            #     patient.cuisine_preferences,
-            #     cuisine_preferences or [],
-            #     PatientCuisinePreferenceModel,
-            #     patient_id,
-            # )
+            patient.eating_habit.meal_timings = (
+                await self._upsert_multiple_entities(
+                    patient.eating_habit.meal_timings,
+                    eating_habit.meal_timings or [],
+                    PatientMealTimingModel,
+                    "eating_habit_id",
+                    patient.eating_habit.eating_habit_id,
+                )
+            )
+
+            patient.eating_habit.diet_preferences = (
+                await self._upsert_multiple_entities(
+                    patient.eating_habit.diet_preferences,
+                    eating_habit.diet_preferences or [],
+                    PatientDietPreferenceModel,
+                    "eating_habit_id",
+                    patient.eating_habit.eating_habit_id,
+                )
+            )
+
+            patient.eating_habit.cuisine_preferences = (
+                await self._upsert_multiple_entities(
+                    patient.eating_habit.cuisine_preferences,
+                    eating_habit.cuisine_preferences or [],
+                    PatientCuisinePreferenceModel,
+                    "eating_habit_id",
+                    patient.eating_habit.eating_habit_id,
+                )
+            )
 
             self.postgres_session.add(patient)
             await self.postgres_session.commit()
@@ -315,6 +348,7 @@ class PatientProfileService:
                 patient.drug_allergies,
                 drug_allergies or [],
                 PatientDrugAllergyModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -323,6 +357,7 @@ class PatientProfileService:
                     patient.family_diabetic_histories,
                     family_diabetic_histories or [],
                     PatientFamilyDiabeticHistoryModel,
+                    "patient_id",
                     patient_id,
                 )
             )
@@ -331,6 +366,7 @@ class PatientProfileService:
                 patient.medical_histories,
                 medical_histories or [],
                 PatientMedicalHistoryModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -341,6 +377,7 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
             )
+
             return updated_patient
 
         except IntegrityError as e:
@@ -399,17 +436,29 @@ class PatientProfileService:
                 detail=f"Database error: {str(e)}",
             )
 
-    def _upsert_single_entity(self, entity, data, model, patient_id):
-        """Helper method to upsert a single entity."""
+    def _upsert_single_entity(
+        self, entity, data, model, patient_id, ignore_fields=None
+    ):
+        """Helper method to upsert a single entity, ignoring nested relationships."""
+        if ignore_fields is None:
+            ignore_fields = []
+
         if entity:
             for key, value in data.dict().items():
-                setattr(entity, key, value)
+                if key not in ignore_fields:
+                    setattr(entity, key, value)
+
         else:
             entity = model(**data.dict(), patient_id=patient_id)
         return entity
 
     async def _upsert_multiple_entities(
-        self, existing_entities, new_data_list, model, patient_id
+        self,
+        existing_entities,
+        new_data_list,
+        model,
+        foreign_key_name,
+        foreign_key_value,
     ):
         """Helper method to delete existing entities and upsert multiple new entities."""
 
@@ -419,7 +468,7 @@ class PatientProfileService:
 
         # Create new entities
         new_entities = [
-            model(**data.dict(), patient_id=patient_id)
+            model(**data.dict(), **{foreign_key_name: foreign_key_value})
             for data in new_data_list
         ]
 

@@ -21,8 +21,8 @@ class PatientEatingHabitBase(BaseModel):
 
 class PatientEatingHabitCreate(PatientEatingHabitBase):
     meal_timings: Optional[List[PatientMealTimingCreate]] = []
-    cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = []
     diet_preferences: Optional[List[PatientDietPreferenceCreate]] = []
+    cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = []
 
 
 class PatientEatingHabit(PatientEatingHabitBase):

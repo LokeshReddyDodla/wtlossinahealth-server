@@ -6,6 +6,8 @@ from sqlalchemy.orm import selectinload
 
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_eating_habit import \
+    PatientEatingHabit as PatientEatingHabitModel
 from lib.models.patient_meal import PatientFoodItem, PatientMeal
 from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
 from lib.schemas.patient import CompletePatientProfile
@@ -105,7 +107,15 @@ class GlucoseStatsProcessor:
                 selectinload(Patient.alcohol_consumption),
                 selectinload(Patient.smoking_habit),
                 selectinload(Patient.sleep_habit),
-                selectinload(Patient.eating_habit),
+                selectinload(Patient.eating_habit).selectinload(
+                    PatientEatingHabitModel.meal_timings
+                ),
+                selectinload(Patient.eating_habit).selectinload(
+                    PatientEatingHabitModel.diet_preferences
+                ),
+                selectinload(Patient.eating_habit).selectinload(
+                    PatientEatingHabitModel.cuisine_preferences
+                ),
                 selectinload(Patient.diabetic_history),
                 selectinload(Patient.family_diabetic_histories),
                 selectinload(Patient.medical_histories),
