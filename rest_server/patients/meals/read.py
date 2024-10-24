@@ -15,10 +15,11 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (get_meal_service,
                                                    get_meal_stats_processor)
 from lib.models.patient import Patient
+from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.meals.api_schema import (PatientMealResponse,
-                                                   PatientMealsResponse,
+from rest_server.patients.meals.api_schema import (PatientMealsResponse,
                                                    PatientMealStatsResponse)
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
@@ -57,7 +58,7 @@ async def get_meals_api(
             limit=limit,
         )
 
-        meals = [PatientMealResponse.from_orm(meal) for meal in meals]
+        meals = [PatientMealSchema.from_orm(meal) for meal in meals]
 
         return PatientMealsResponse(
             message="Meals fetched successfully",

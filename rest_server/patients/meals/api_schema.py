@@ -7,22 +7,7 @@ from lib.schemas.meal_stats import DailyMealStats
 from lib.schemas.patient_meal import PatientMeal
 from rest_server.response_models import SuccessResponse
 
-
-class PatientMealResponse(PatientMeal):
-    @classmethod
-    def from_orm(cls, obj):
-        state = obj._sa_instance_state
-
-        kwargs = {
-            name: getattr(obj, name)
-            for name in cls.model_fields
-            if name in state.dict or name not in state.unloaded
-        }
-
-        return cls(**kwargs)
-
-
-PatientMealsResponse = SuccessResponse[List[PatientMealResponse]]
+PatientMealsResponse = SuccessResponse[List[PatientMeal]]
 
 PatientMealStatsResponse = SuccessResponse[DailyMealStats]
 
@@ -35,6 +20,6 @@ class PatientMealUploadRequest(BaseModel):
     image_url: HttpUrl
 
 
-PatientMealAnalysisResponse = SuccessResponse[PatientMealResponse]
+PatientMealAnalysisResponse = SuccessResponse[PatientMeal]
 
-PatientMealUploadResponse = SuccessResponse[PatientMealResponse]
+PatientMealUploadResponse = SuccessResponse[PatientMeal]

@@ -16,7 +16,7 @@ class PatientMealTimingCreate(PatientMealTimingBase):
 
 class PatientMealTiming(PatientMealTimingBase):
     id: UUID
-    patient_id: UUID
+    eating_habit_id: UUID
 
     class Config:
         from_attributes = True

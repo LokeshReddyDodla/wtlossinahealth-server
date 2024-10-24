@@ -6,10 +6,11 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_meal_service,
                                                    get_patient_profile_service)
 from lib.models.patient import Patient
+from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
 from lib.services.patient_profile_service import PatientProfileService
-from rest_server.patients.meals.api_schema import (PatientMealAnalysisResponse,
-                                                   PatientMealResponse)
+from rest_server.patients.meals.api_schema import PatientMealAnalysisResponse
 from rest_server.response_models import ErrorResponse
 
 from .router import router
@@ -36,7 +37,7 @@ async def analyze_meal_api(
             patient_id=str(current_patient.patient_id),
         )
 
-        meal_response = PatientMealResponse.from_orm(meal)
+        meal_response = PatientMealSchema.from_orm(meal)
 
         return PatientMealAnalysisResponse(
             message="Meal analyzed successfully.",
