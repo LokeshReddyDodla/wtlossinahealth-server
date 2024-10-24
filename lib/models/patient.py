@@ -119,6 +119,10 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    patient_plans = relationship(
+        "PatientPlan", back_populates="patient", cascade="all, delete-orphan"
+    )
+
     meals = relationship(
         "PatientMeal", back_populates="patient", cascade="all, delete-orphan"
     )
