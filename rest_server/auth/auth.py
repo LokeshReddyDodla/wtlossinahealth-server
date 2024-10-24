@@ -47,7 +47,7 @@ async def verify_otp_endpoint(
         if await verify_otp(otp_data.phone_number, otp_data.otp, cache_store):
             # Create or get user using AuthUtils
             auth_utils = AuthUtils(session)
-            user, user_id, is_new_user = await auth_utils.get_or_create_user(
+            user, user_id = await auth_utils.get_or_create_user(
                 otp_data.phone_number, role
             )
 
@@ -75,7 +75,6 @@ async def verify_otp_endpoint(
                     token=token,
                     user_id=user_id,
                     device_id=str(device.device_id),
-                    is_new_user=is_new_user,
                 ),
             )
         else:
