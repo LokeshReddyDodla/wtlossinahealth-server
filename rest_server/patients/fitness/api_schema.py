@@ -1,12 +1,10 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
+
 from pydantic import BaseModel
 
-from lib.schemas.fitness_stats import (
-    CompleteFitnessReport,
-    FitnessDailyStats,
-    FitnessMonthlyStats,
-)
+from lib.schemas.fitness_stats import (CompleteFitnessReport,
+                                       FitnessDailyStats, FitnessMonthlyStats)
 from rest_server.response_models import SuccessResponse
 
 
@@ -20,6 +18,9 @@ class FitnessDataPoint(BaseModel):
 
 
 class FitnessDataRequest(BaseModel):
+    dateFrom: datetime
+    dateTo: datetime
+    source: str
     steps: List[FitnessDataPoint]
     active_energy_burned: List[FitnessDataPoint]
     blood_glucose: List[FitnessDataPoint]

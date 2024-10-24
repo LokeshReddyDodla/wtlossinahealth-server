@@ -29,12 +29,10 @@ class FitnessUploadService:
 
     async def process_fitness_data(self, fitness_data: FitnessDataRequest):
         dateFrom, dateTo, source = (
-            FitnessUploadUtils.flatten_and_extract_dates(fitness_data)
+            fitness_data.dateFrom,
+            fitness_data.dateTo,
+            fitness_data.source,
         )
-
-        if not dateFrom or not dateTo or not source:
-            # No data to process
-            return None
 
         await self.delete_existing_data(dateFrom, dateTo, source)
         await self.insert_new_data(fitness_data)
@@ -43,6 +41,7 @@ class FitnessUploadService:
         # Commit the session to save all changes
         await self.postgres_session.commit()
 
+        print("==> dateTo: ", dateTo)
         return dateTo
 
     async def delete_existing_data(
