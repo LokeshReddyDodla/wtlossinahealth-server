@@ -1,7 +1,9 @@
+from datetime import date as datetime_date
 from datetime import datetime
 from typing import Optional
 
 from fastapi import HTTPException, status
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -108,6 +110,39 @@ class PatientPlanService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Integrity Error: {str(e)}",
+            )
+
+    async def get_active_patient_plan(
+        self, patient_id: str, query_date: datetime_date
+    ) -> Optional[PatientPlanModel]:
+        """Fetch the active patient plan based on the given date."""
+        try:
+            stmt = (
+                select(PatientPlanModel)
+                .options(
+                    selectinload(PatientPlanModel.diet_plan),
+                    selectinload(PatientPlanModel.fitness_plan),
+                )
+                .where(
+                    PatientPlanModel.patient_id == patient_id,
+                    and_(
+                        PatientPlanModel.start_date <= query_date,
+                        or_(
+                            PatientPlanModel.end_date.is_(None),
+                            PatientPlanModel.end_date >= query_date,
+                        ),
+                    ),
+                )
+            )
+
+            result = await self.postgres_session.execute(stmt)
+            active_plan = result.scalars().first()
+
+            return active_plan
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
             )
 
     async def delete_patient_plan(self, plan_id: str):
