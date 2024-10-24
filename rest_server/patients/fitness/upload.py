@@ -37,6 +37,8 @@ async def upload_fitness_data(
         last_sync_time = await fitness_service.process_fitness_data(
             fitness_data
         )
+        
+        print("==> last_sync_time: ", last_sync_time)
 
         return SuccessResponse(
             message="Fitness data uploaded and stored successfully.",
