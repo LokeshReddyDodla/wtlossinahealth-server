@@ -15,7 +15,6 @@ from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
 class FitnessUploadService:
-
     def __init__(
         self,
         clickhouse_store,
