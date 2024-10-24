@@ -108,7 +108,6 @@ class PatientProfileService:
                     selectinload(PatientModel.connected_apps).selectinload(
                         PatientConnectedApp.other_app
                     ),
-                    selectinload(PatientModel.fitness_sync),
                     selectinload(PatientModel.token_usage_logs),
                     selectinload(PatientModel.care_providers)
                     .selectinload(PatientCareProvider.care_provider)
