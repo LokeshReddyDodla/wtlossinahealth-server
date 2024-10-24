@@ -11,7 +11,6 @@ class AuthUtils:
         self.postgres_session = postgres_session
 
     async def get_or_create_user(self, phone_number: str, role: str):
-        is_new_user = False
         if role == ProfileType.PATIENT.value:
             result = await self.postgres_session.execute(
                 select(Patient).where(Patient.phone_number == phone_number)
@@ -23,7 +22,6 @@ class AuthUtils:
                 self.postgres_session.add(user)
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(user)
-                is_new_user = True
 
             user_id = str(user.patient_id)
 
@@ -41,4 +39,4 @@ class AuthUtils:
             user_id = str(user.care_provider_id)
         else:
             raise HTTPException(status_code=400, detail="Invalid role")
-        return user, user_id, is_new_user
+        return user, user_id
