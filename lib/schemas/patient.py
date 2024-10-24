@@ -20,6 +20,7 @@ from lib.schemas.patient_family_diabetic_history import \
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_medical_history import PatientMedicalHistory
 from lib.schemas.patient_permission import PatientPermission
+from lib.schemas.patient_plan import PatientPlan
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
@@ -84,6 +85,7 @@ class CorePatientProfile(PatientBase):
     family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
     medical_histories: List[PatientMedicalHistory] = []
     current_medication: Optional[PatientCurrentMedication] = None
+    patient_plans: List[PatientPlan] = []
 
     class Config:
         from_attributes = True
