@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Union
+from typing import List, Optional, Union
 
 from dateutil.parser import parse
 from sqlalchemy import delete
@@ -28,13 +28,12 @@ class FitnessUploadService:
         self.patient_id = patient_id
 
     async def process_fitness_data(self, fitness_data: FitnessDataRequest):
-        dateFrom, dateTo, source = (
+        dateFrom, dateTo = (
             fitness_data.dateFrom,
             fitness_data.dateTo,
-            fitness_data.source,
         )
 
-        await self.delete_existing_data(dateFrom, dateTo, source)
+        await self.delete_existing_data(dateFrom, dateTo)
         await self.insert_new_data(fitness_data)
         await self.update_last_sync(dateTo)
 
@@ -48,7 +47,7 @@ class FitnessUploadService:
         self,
         dateFrom: datetime,
         dateTo: datetime,
-        source: str,
+        source: Optional[str] = None,
     ):
         # Delete data from ClickHouse
         self.clickhouse_store.delete_existing_fitness_data(
@@ -59,27 +58,34 @@ class FitnessUploadService:
             source,
         )
 
-        # Delete data from PostgreSQL (PatientSMBG, PatientVitals, PatientSleep)
-        await self.postgres_session.execute(
-            delete(PatientSMBG)
-            .where(PatientSMBG.patient_id == self.patient_id)
-            .where(PatientSMBG.reading_time.between(dateFrom, dateTo))
-            .where(PatientSMBG.source == source)
+        smbg_query = delete(PatientSMBG).where(
+            PatientSMBG.patient_id == self.patient_id,
+            PatientSMBG.reading_time.between(dateFrom, dateTo),
+        )
+        vital_query = delete(PatientVital).where(
+            PatientVital.patient_id == self.patient_id,
+            PatientVital.test_time.between(dateFrom, dateTo),
+        )
+        sleep_query = delete(PatientSleep).where(
+            PatientSleep.patient_id == self.patient_id,
+            PatientSleep.sleep_start_time.between(dateFrom, dateTo),
         )
 
-        await self.postgres_session.execute(
-            delete(PatientVital)
-            .where(PatientVital.patient_id == self.patient_id)
-            .where(PatientVital.test_time.between(dateFrom, dateTo))
-            .where(PatientVital.source == source)
-        )
+        # If a specific source is provided, filter by source
+        if source:
+            smbg_query = smbg_query.where(PatientSMBG.source == source)
+            vital_query = vital_query.where(PatientVital.source == source)
+            sleep_query = sleep_query.where(PatientSleep.source == source)
+        else:
+            # Exclude manual sources by default if no specific source is provided
+            smbg_query = smbg_query.where(PatientSMBG.source != "manual")
+            vital_query = vital_query.where(PatientVital.source != "manual")
+            sleep_query = sleep_query.where(PatientSleep.source != "manual")
 
-        await self.postgres_session.execute(
-            delete(PatientSleep)
-            .where(PatientSleep.patient_id == self.patient_id)
-            .where(PatientSleep.sleep_start_time.between(dateFrom, dateTo))
-            .where(PatientSleep.source == source)
-        )
+        # Execute queries
+        await self.postgres_session.execute(smbg_query)
+        await self.postgres_session.execute(vital_query)
+        await self.postgres_session.execute(sleep_query)
 
     async def insert_new_data(self, fitness_data: FitnessDataRequest):
         # Insert data into ClickHouse (steps and active_energy_burned)

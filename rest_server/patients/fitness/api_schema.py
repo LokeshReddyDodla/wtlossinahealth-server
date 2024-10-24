@@ -20,7 +20,6 @@ class FitnessDataPoint(BaseModel):
 class FitnessDataRequest(BaseModel):
     dateFrom: datetime
     dateTo: datetime
-    source: str
     steps: List[FitnessDataPoint]
     active_energy_burned: List[FitnessDataPoint]
     blood_glucose: List[FitnessDataPoint]
