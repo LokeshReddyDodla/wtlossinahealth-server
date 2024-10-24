@@ -103,7 +103,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication),
+                    selectinload(PatientModel.current_medication)
                 )
 
             if other_related_data:

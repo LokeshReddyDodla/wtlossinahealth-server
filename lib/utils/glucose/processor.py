@@ -8,9 +8,12 @@ from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_eating_habit import \
     PatientEatingHabit as PatientEatingHabitModel
-from lib.models.patient_meal import PatientFoodItem, PatientMeal
+from lib.models.patient_meal import PatientFoodItem
+from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
 from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
+from lib.services.meal_service import MealService
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
@@ -22,9 +25,16 @@ from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 
 
 class GlucoseStatsProcessor:
-    def __init__(self, clickhouse_store, postgres_session, patient_id):
+    def __init__(
+        self,
+        clickhouse_store,
+        postgres_session,
+        meal_service: MealService,
+        patient_id,
+    ):
         self.clickhouse_store = clickhouse_store
         self.postgres_session = postgres_session
+        self.meal_service = meal_service
         self.patient_id = patient_id
 
     def fetch_glucose_readings_by_date(
@@ -75,64 +85,6 @@ class GlucoseStatsProcessor:
         glucose_after = [r for r in results if r[0] >= meal_time]
         return glucose_before, glucose_after
 
-    async def fetch_meals(self, from_date, to_date):
-        query = (
-            select(PatientMeal)
-            .where(PatientMeal.patient_id == self.patient_id)
-            .filter(PatientMeal.time >= from_date)
-            .filter(PatientMeal.time <= to_date)
-            .options(
-                selectinload(PatientMeal.items).selectinload(
-                    PatientFoodItem.macro_nutritional_values
-                ),
-                selectinload(PatientMeal.items).selectinload(
-                    PatientFoodItem.micro_nutritional_values
-                ),
-                selectinload(PatientMeal.total_macro_nutritional_value),
-                selectinload(PatientMeal.total_micro_nutritional_value),
-            )
-        )
-        result = await self.postgres_session.execute(query)
-        meals = result.scalars().all()
-        return meals
-
-    async def fetch_profile(self) -> CompletePatientProfile:
-        query = (
-            select(Patient)
-            .where(Patient.patient_id == self.patient_id)
-            .options(
-                selectinload(Patient.daily_activity),
-                selectinload(Patient.food_allergies),
-                selectinload(Patient.drug_allergies),
-                selectinload(Patient.alcohol_consumption),
-                selectinload(Patient.smoking_habit),
-                selectinload(Patient.sleep_habit),
-                selectinload(Patient.eating_habit).selectinload(
-                    PatientEatingHabitModel.meal_timings
-                ),
-                selectinload(Patient.eating_habit).selectinload(
-                    PatientEatingHabitModel.diet_preferences
-                ),
-                selectinload(Patient.eating_habit).selectinload(
-                    PatientEatingHabitModel.cuisine_preferences
-                ),
-                selectinload(Patient.diabetic_history),
-                selectinload(Patient.family_diabetic_histories),
-                selectinload(Patient.medical_histories),
-                selectinload(Patient.current_medication),
-                selectinload(Patient.connected_apps).selectinload(
-                    PatientConnectedApp.libreview
-                ),
-                selectinload(Patient.connected_apps).selectinload(
-                    PatientConnectedApp.other_app
-                ),
-            )
-        )
-        result = await self.postgres_session.execute(query)
-        patient = result.scalars().first()
-        patient_detail = CompletePatientProfile.from_orm(patient)
-        return patient_detail
-
     async def process(
         self, periods: List[Dict[str, datetime]], include_readings=False
     ) -> Dict[str, GlucoseLevelStats]:
@@ -181,7 +133,15 @@ class GlucoseStatsProcessor:
                     glucose_readings = self.fetch_glucose_readings_by_date(
                         from_date_str, to_date_str
                     )
-                    meals = await self.fetch_meals(from_date, to_date)
+                    meals = await self.meal_service.fetch_meals(
+                        from_datetime=from_date,
+                        to_datetime=to_date,
+                        patient_id=self.patient_id,
+                    )
+
+                    meals = [
+                        PatientMealSchema.from_orm(meal) for meal in meals
+                    ]
 
             elif "week_no" in period:
                 period_key = f"Week {period['week_no']}"

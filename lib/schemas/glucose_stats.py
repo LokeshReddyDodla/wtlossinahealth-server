@@ -1,14 +1,11 @@
-from datetime import datetime, date
-from pydantic import BaseModel
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Union
 
-from lib.schemas.fitness_stats import (
-    FitnessBaseStats,
-    FitnessDailyStats,
-    FitnessSummaryStats,
-    FitnessWeeklyStats,
-)
-from rest_server.patients.meals.api_schema import PatientMealResponse
+from pydantic import BaseModel
+
+from lib.schemas.fitness_stats import (FitnessBaseStats, FitnessDailyStats,
+                                       FitnessSummaryStats, FitnessWeeklyStats)
+from lib.schemas.patient_meal import PatientMeal
 
 
 class GlucoseRangeStats(BaseModel):
@@ -109,7 +106,7 @@ class GlucoseLevelStats(BaseModel):
     from_date: datetime
     to_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
-    meals: Optional[List[PatientMealResponse]] = None
+    meals: Optional[List[PatientMeal]] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
