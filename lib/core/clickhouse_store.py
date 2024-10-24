@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+
 from clickhouse_driver import Client
 from decouple import config
 
@@ -78,11 +79,22 @@ class ClickHouseStore:
         patient_id: str,
         start_time: datetime,
         end_time: datetime,
-        source: str,
+        source: Optional[str] = None
     ):
-        query = f"""
-        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND date_from BETWEEN '{start_time}' AND '{end_time}' AND source = '{source}'
-        """
+        if source:
+            query = f"""
+            ALTER TABLE {table_name} DELETE 
+            WHERE patient_id = '{patient_id}' 
+            AND date_from BETWEEN '{start_time}' AND '{end_time}' 
+            AND source = '{source}'
+            """
+        else:
+            query = f"""
+            ALTER TABLE {table_name} DELETE 
+            WHERE patient_id = '{patient_id}' 
+            AND date_from BETWEEN '{start_time}' AND '{end_time}' 
+            AND source != 'manual'
+            """
         self.client.execute(query)
 
     def query_data(self, query):
