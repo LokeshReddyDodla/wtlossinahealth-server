@@ -15,9 +15,11 @@ from .patient_cuisine_preference import PatientCuisinePreference
 from .patient_current_medication import PatientCurrentMedication
 from .patient_daily_activity import PatientDailyActivity
 from .patient_diabetic_history import PatientDiabeticHistory
+from .patient_diet_plan import PatientDietPlan
 from .patient_diet_preference import PatientDietPreference
 from .patient_drug_allergy import PatientDrugAllergy
 from .patient_family_diabetic_history import PatientFamilyDiabeticHistory
+from .patient_fitness_plan import PatientFitnessPlan
 from .patient_food_allergy import PatientFoodAllergy
 from .patient_meal import (PatientFoodItem, PatientMacroNutritionalValue,
                            PatientMeal, PatientMicroNutritionalValue,
@@ -26,6 +28,7 @@ from .patient_meal import (PatientFoodItem, PatientMacroNutritionalValue,
 from .patient_meal_timing import PatientMealTiming
 from .patient_medical_history import PatientMedicalHistory
 from .patient_permission import PatientPermission
+from .patient_plan import PatientPlan
 from .patient_prescription import PatientPrescription
 from .patient_sleep import PatientSleep
 from .patient_sleep_habit import PatientSleepHabit

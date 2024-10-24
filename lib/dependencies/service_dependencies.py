@@ -14,6 +14,7 @@ from lib.services.patient_care_provider_service import \
     PatientCareProviderService
 from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
+from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -101,14 +102,46 @@ async def get_meal_service(
     )
 
 
-async def get_meal_processor(
+async def get_patient_plan_service(
+    session: AsyncSession = Depends(get_postgres_session),
+) -> PatientPlanService:
+    return PatientPlanService(postgres_session=session)
+
+
+async def get_glucose_stats_processor(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
+) -> GlucoseStatsProcessor:
+    clickhouse_store = request.state.context.clickhouse_store
+    patient_id = str(current_patient.patient_id)
+    return GlucoseStatsProcessor(clickhouse_store, session, patient_id)
+
+
+async def get_meal_stats_processor(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+    current_patient: Patient = Depends(get_current_patient),
+    glucose_stats_processor: GlucoseStatsProcessor = Depends(
+        get_glucose_stats_processor
+    ),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    patient_plan_service: PatientPlanService = Depends(
+        get_patient_plan_service
+    ),
 ) -> MealStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
     patient_id = str(current_patient.patient_id)
-    return MealStatsProcessor(session, clickhouse_store, patient_id)
+    return MealStatsProcessor(
+        session,
+        clickhouse_store,
+        glucose_stats_processor,
+        patient_profile_service,
+        patient_plan_service,
+        patient_id,
+    )
 
 
 async def get_fitness_processor(

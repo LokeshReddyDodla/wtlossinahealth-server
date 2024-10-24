@@ -158,7 +158,7 @@ class PatientProfileService:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
 
-            for key, value in patient_data.dict(exclude_unset=True).items():
+            for key, value in patient_data.model_dump(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
