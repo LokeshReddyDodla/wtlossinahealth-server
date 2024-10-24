@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from lib.dependencies.service_dependencies import (get_fitness_processor,
                                                    get_glucose_processor,
-                                                   get_meal_processor)
+                                                   get_meal_stats_processor)
 from lib.models.patient import Patient
 from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseOverallReport
 from lib.utils.date.periods import OverallPeriod
@@ -23,7 +23,7 @@ from .router import router
 async def get_patient_overview_api(
     request: Request,
     date: date,
-    meal_processor: MealStatsProcessor = Depends(get_meal_processor),
+    meal_stats_processor: MealStatsProcessor = Depends(get_meal_stats_processor),
     fitness_processor: FitnessStatsProcessor = Depends(get_fitness_processor),
     glucose_processor: GlucoseStatsProcessor = Depends(get_glucose_processor),
 ):
@@ -36,7 +36,7 @@ async def get_patient_overview_api(
         from_date_str = f"{date}T00:00:00"
         to_date_str = f"{date}T23:59:59"
 
-        meal_stats = await meal_processor.get_meal_stats_by_date(
+        meal_stats = await meal_stats_processor.get_meal_stats_by_date(
             from_date, to_date
         )
 
