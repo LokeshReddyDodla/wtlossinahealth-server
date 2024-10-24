@@ -456,7 +456,9 @@ class PatientProfileService:
                     setattr(entity, key, value)
 
         else:
-            entity = model(**data.dict(), patient_id=patient_id)
+            entity_data = {key: value for key, value in data.dict().items() if key not in ignore_fields}
+            entity = model(**entity_data, patient_id=patient_id)
+            
         return entity
 
     async def _upsert_multiple_entities(
