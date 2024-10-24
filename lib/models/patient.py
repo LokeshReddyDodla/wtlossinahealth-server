@@ -198,15 +198,6 @@ def create_related_records(mapper, connection, target):
         },
     )
 
-    # Generate the key for fitness sync
-    fitness_sync_key = f"fitness_sync:{target.patient_id}"
-
-    # Store in Redis using your CacheStore
-    connection.app.state.fitness_sync_store.set_key(
-        fitness_sync_key,
-        value=None,
-    )
-
     # create a group chat for the patient
     chat_service = ChatService()
     runner = BackgroundTaskRunner()

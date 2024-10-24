@@ -1,3 +1,5 @@
+import traceback
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -58,6 +60,7 @@ async def verify_otp_endpoint(
             )
 
             # Store or update user device information if provided
+            device = None
             if otp_data.fcm_token:
                 device = (
                     await user_device_service.create_or_update_user_device(
@@ -74,7 +77,7 @@ async def verify_otp_endpoint(
                 data=OtpVerifyResponse(
                     token=token,
                     user_id=user_id,
-                    device_id=str(device.device_id),
+                    device_id=str(device.device_id) if device else None,
                 ),
             )
         else:
@@ -86,16 +89,23 @@ async def verify_otp_endpoint(
     except HTTPException as e:
         raise e
     except Exception as e:
+        error_message = f"Exception occurred: {str(e)}"
+        traceback_message = traceback.format_exc()
+        print("🚀 ~ error_message:", error_message)
+        print("🚀 ~ traceback_message:", traceback_message)
         return ErrorResponse(message="Failed to verify OTP", detail=str(e))
 
 
 @router.post("/logout", tags=["Auth"], response_model=SuccessResponse)
 async def logout(
     request: Request,
-    device_id: str,
+    device_id: Optional[str] = None,
     user_device_service: UserDeviceService = Depends(get_user_device_service),
 ):
     try:
+        if not device_id:
+            return SuccessResponse(message="No device ID provided, but logged out successfully.")
+        
         await user_device_service.delete_user_device(UUID(device_id))
         return SuccessResponse(message="Logged out successfully")
     except Exception as e:
