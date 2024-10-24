@@ -12,23 +12,37 @@ from lib.models.patient_meal import (PatientFoodItem,
                                      PatientTotalMacroNutritionalValue,
                                      PatientTotalMicroNutritionalValue)
 from lib.schemas.meal_stats import DailyMealStats
+from lib.schemas.patient_diet_plan import PatientDietPlanBase
+from lib.utils.date.age_utils import calculate_age
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from rest_server.patients.meals.api_schema import PatientMealResponse
 
 
 class MealStatsProcessor:
-    def __init__(self, postgres_store, clickhouse_store, patient_id: str):
+    def __init__(
+        self,
+        postgres_store,
+        clickhouse_store,
+        glucose_stats_processor,
+        patient_profile_service,
+        patient_plan_service,
+        patient_id: str,
+    ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
+        self.patient_profile_service = patient_profile_service
+        self.patient_plan_service = patient_plan_service
         self.patient_id = patient_id
-        self.glucose_processor = GlucoseStatsProcessor(
-            clickhouse_store, postgres_store, patient_id
-        )
+        self.glucose_processor = glucose_stats_processor
 
     async def get_meal_stats_by_date(
         self, from_date: datetime, to_date: datetime
     ):
+
+        # Fetch recommendations
+        diet_recommendations = await self._get_diet_recommendations(from_date)
+
         # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
             GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
@@ -79,7 +93,10 @@ class MealStatsProcessor:
         rows = result.all()
 
         return [
-            self._build_daily_stats(row, avg_glucose_by_date) for row in rows
+            self._build_daily_stats(
+                row, avg_glucose_by_date, diet_recommendations
+            )
+            for row in rows
         ]
 
     def _build_nutritional_aggregates(self, meal):
@@ -224,7 +241,82 @@ class MealStatsProcessor:
             .as_scalar()
         )
 
-    def _build_daily_stats(self, row, avg_glucose_by_date):
+    async def _get_diet_recommendations(
+        self, query_date: datetime
+    ) -> PatientDietPlanBase:
+        """Fetch diet recommendations from an active plan or calculate dynamically."""
+        active_plan = await self.patient_plan_service.get_active_patient_plan(
+            self.patient_id, query_date
+        )
+
+        if active_plan and active_plan.diet_plan:
+            return PatientDietPlanBase(
+                total_calories=active_plan.diet_plan.total_calories,
+                protein=active_plan.diet_plan.protein,
+                carbs=active_plan.diet_plan.carbs,
+                fats=active_plan.diet_plan.fats,
+                fiber=active_plan.diet_plan.fiber,
+            )
+        else:
+            return await self._calculate_recommendations()
+
+    async def _calculate_recommendations(self):
+        """Calculate recommendations dynamically if no active plan exists."""
+        patient = await self.patient_profile_service.fetch_patient_profile(
+            self.patient_id, detailed=True
+        )
+
+        # Extract necessary details
+        weight = patient.weight  # in kg
+        height = patient.height  # in cm
+        gender = patient.gender
+        dob = patient.dob
+        age = calculate_age(dob)
+
+        # Calculate BMR based on gender
+        if gender.lower() == "male":
+            bmr = 10 * weight + 6.25 * height - 5 * age + 5
+        else:
+            bmr = 10 * weight + 6.25 * height - 5 * age - 161
+
+        # Adjust BMR based on activity level
+        activity_level = (
+            patient.daily_activity.activity_level
+            if patient.daily_activity
+            else "sedentary"
+        )
+
+        activity_multiplier = {
+            "sedentary": 1.2,
+            "lightly_active": 1.375,
+            "moderately_active": 1.55,
+            "very_active": 1.725,
+            "super_active": 1.9,
+        }.get(activity_level.lower(), 1.2)
+
+        # Calculate total daily energy expenditure (TDEE)
+        tdee = bmr * activity_multiplier
+
+        # Nutrient distribution
+        protein = weight * 1.8  # Approx 1.8g of protein per kg of body weight
+        fats = (
+            tdee * 0.25 / 9
+        )  # 25% of total calories from fats (9 calories per gram)
+        carbs = (
+            tdee - (protein * 4 + fats * 9)
+        ) / 4  # remaining calories for carbs
+
+        return PatientDietPlanBase(
+            total_calories=tdee,
+            protein=protein,
+            carbs=carbs,
+            fats=fats,
+            fiber=30,  # Example fixed fiber goal
+        )
+
+    def _build_daily_stats(
+        self, row, avg_glucose_by_date, diet_recommendations
+    ):
         """Helper function to build MealDailyStats from a query row."""
 
         for meal in row.meals:
@@ -253,4 +345,5 @@ class MealStatsProcessor:
             zinc=row.total_zinc or 0,
             magnesium=row.total_magnesium or 0,
             avg_glucose=avg_glucose_by_date.get(row.date, 0.0),
+            diet_recommendations=diet_recommendations,
         )
