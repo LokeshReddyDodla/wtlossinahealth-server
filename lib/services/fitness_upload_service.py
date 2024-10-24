@@ -32,6 +32,9 @@ class FitnessUploadService:
             fitness_data.dateFrom,
             fitness_data.dateTo,
         )
+        
+        if dateFrom is None or dateTo is None: 
+            return None
 
         await self.delete_existing_data(dateFrom, dateTo)
         await self.insert_new_data(fitness_data)
