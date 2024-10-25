@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ class OtpVerifyResponse(BaseModel):
     token: str
     user_id: str
     device_id: Optional[str]
+    profile_completion: Optional[Any]
 
 
 OtpVerifySuccessResponse = SuccessResponse[OtpVerifyResponse]
