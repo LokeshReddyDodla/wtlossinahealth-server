@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -110,21 +111,29 @@ class CareProviderProfileService:
         self, care_provider_id: str, updates: CareProviderUpdate
     ) -> CareProviderModel:
         try:
-            care_provider = await self.fetch_care_provider(care_provider_id)
+            care_provider_profile = await self.fetch_care_provider(
+                care_provider_id
+            )
 
-            for key, value in updates.dict(exclude_unset=True).items():
-                setattr(care_provider, key, value)
+            for key, value in updates.model_dump(exclude_unset=True).items():
+                setattr(care_provider_profile, key, value)
 
-            self.postgres_session.add(care_provider)
+            updated = self._mark_profile_section_complete(
+                care_provider_profile.profile_completion, "basic"
+            )
+            if updated:
+                flag_modified(care_provider_profile, "profile_completion")
+
+            self.postgres_session.add(care_provider_profile)
 
             await self.postgres_session.commit()
-            await self.postgres_session.refresh(care_provider)
+            await self.postgres_session.refresh(care_provider_profile)
 
             await self.chat_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=care_provider_id,
             )
-            return care_provider
+            return care_provider_profile
 
         except IntegrityError:
             await self.postgres_session.rollback()
@@ -175,3 +184,11 @@ class CareProviderProfileService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database error: {str(e)}",
             )
+
+    def _mark_profile_section_complete(
+        self, profile_completion, section: str
+    ) -> bool:
+        if not profile_completion[section]["is_complete"]:
+            profile_completion[section]["is_complete"] = True
+            return True
+        return False
