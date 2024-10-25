@@ -181,8 +181,11 @@ class PatientProfileService:
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
-            patient_profile.profile_completion["basic"]["is_complete"] = True  # type: ignore
-            flag_modified(patient_profile, "profile_completion")
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "basic"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
@@ -311,8 +314,11 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.profile_completion["lifestyle"]["is_complete"] = True  # type: ignore
-            flag_modified(patient_profile, "profile_completion")
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "lifestyle"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
 
             self.postgres_session.add(patient_profile)
             await self.postgres_session.commit()
@@ -397,8 +403,11 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.profile_completion["medical_history"]["is_complete"] = True  # type: ignore
-            flag_modified(patient_profile, "profile_completion")
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "medical_history"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
 
             self.postgres_session.add(patient_profile)
             await self.postgres_session.commit()
@@ -512,3 +521,11 @@ class PatientProfileService:
         self.postgres_session.add_all(new_entities)
 
         return new_entities
+
+    def _mark_profile_section_complete(
+        self, profile_completion, section: str
+    ) -> bool:
+        if not profile_completion[section]["is_complete"]:
+            profile_completion[section]["is_complete"] = True
+            return True
+        return False
