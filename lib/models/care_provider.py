@@ -37,6 +37,13 @@ class CareProvider(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
 
+    profile_completion = Column(
+        JSON,
+        default={
+            "basic": {"is_complete": False, "is_mandatory": True},
+        },
+    )
+
     # Relationships
     health_facility_id = Column(
         UUID(as_uuid=True),
