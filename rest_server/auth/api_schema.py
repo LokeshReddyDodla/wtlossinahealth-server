@@ -18,7 +18,6 @@ class OtpVerifyResponse(BaseModel):
     token: str
     user_id: str
     device_id: Optional[str]
-    profile_completion: Optional[Any]
 
 
 OtpVerifySuccessResponse = SuccessResponse[OtpVerifyResponse]
