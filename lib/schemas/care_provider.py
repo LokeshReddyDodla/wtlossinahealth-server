@@ -29,6 +29,7 @@ class CareProviderUpdate(CareProviderBase):
 
 class CareProvider(CareProviderBase):
     care_provider_id: UUID
+    profile_completion: Optional[dict]
     health_facility: Optional[HealthFacility] = None
     patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
 

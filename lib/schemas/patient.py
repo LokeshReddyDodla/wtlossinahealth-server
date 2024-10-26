@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, HttpUrl
@@ -33,14 +33,13 @@ class PatientBase(BaseModel):
     last_name: Optional[str]
     dob: Optional[date]
     gender: Optional[str]
-    profile_picture: Optional[HttpUrl] = None
+    profile_picture: Optional[str] = None
     height: Optional[float]
     waist: Optional[float]
     weight: Optional[float]
     email: Optional[str]
     phone_number: str
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+
     locale: Optional[str] = None
 
 
@@ -49,12 +48,14 @@ class PatientCreate(PatientBase):
 
 
 class PatientUpdate(PatientBase):
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    pass
 
 
 class Patient(PatientBase):
     patient_id: UUID
+    profile_completion: Optional[dict]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -72,8 +73,7 @@ class Patient(PatientBase):
         return cls(**kwargs)
 
 
-class CorePatientProfile(PatientBase):
-    patient_id: UUID
+class CorePatientProfile(Patient):
     daily_activity: Optional[PatientDailyActivity] = None
     food_allergies: List[PatientFoodAllergy] = []
     drug_allergies: List[PatientDrugAllergy] = []

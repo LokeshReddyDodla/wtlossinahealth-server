@@ -49,8 +49,10 @@ async def verify_otp_endpoint(
         if await verify_otp(otp_data.phone_number, otp_data.otp, cache_store):
             # Create or get user using AuthUtils
             auth_utils = AuthUtils(session)
-            user, user_id = await auth_utils.get_or_create_user(
-                otp_data.phone_number, role
+            user, user_id, profile_completion = (
+                await auth_utils.get_or_create_user(
+                    otp_data.phone_number, role
+                )
             )
 
             # Create JWT token for the user
@@ -78,6 +80,7 @@ async def verify_otp_endpoint(
                     token=token,
                     user_id=user_id,
                     device_id=str(device.device_id) if device else None,
+                    profile_completion=profile_completion,
                 ),
             )
         else:
@@ -104,8 +107,10 @@ async def logout(
 ):
     try:
         if not device_id:
-            return SuccessResponse(message="No device ID provided, but logged out successfully.")
-        
+            return SuccessResponse(
+                message="No device ID provided, but logged out successfully."
+            )
+
         await user_device_service.delete_user_device(UUID(device_id))
         return SuccessResponse(message="Logged out successfully")
     except Exception as e:

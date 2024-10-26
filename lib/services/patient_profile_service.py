@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider
@@ -180,6 +181,12 @@ class PatientProfileService:
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "basic"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
+
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
 
@@ -188,7 +195,10 @@ class PatientProfileService:
                 user_id=patient_id,
             )
 
-            return patient_profile
+            updated_patient = await self.fetch_patient_profile(
+                patient_id, detailed=True
+            )
+            return updated_patient
 
         except IntegrityError as e:
             await self.postgres_session.rollback()
@@ -214,45 +224,51 @@ class PatientProfileService:
         food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
     ):
         try:
-            patient = await self.fetch_patient_profile(
+            patient_profile = await self.fetch_patient_profile(
                 patient_id, detailed=True
             )
 
             # Upsert operations using helper methods
-            patient.daily_activity = self._upsert_single_entity(
-                (patient.daily_activity if patient.daily_activity else None),
+            patient_profile.daily_activity = self._upsert_single_entity(
+                (
+                    patient_profile.daily_activity
+                    if patient_profile.daily_activity
+                    else None
+                ),
                 daily_activity,
                 PatientDailyActivityModel,
                 patient_id,
             )
 
-            patient.alcohol_consumption = self._upsert_single_entity(
-                patient.alcohol_consumption,
+            patient_profile.alcohol_consumption = self._upsert_single_entity(
+                patient_profile.alcohol_consumption,
                 alcohol_consumption,
                 PatientAlcoholConsumptionModel,
                 patient_id,
             )
 
-            patient.smoking_habit = self._upsert_single_entity(
-                patient.smoking_habit,
+            patient_profile.smoking_habit = self._upsert_single_entity(
+                patient_profile.smoking_habit,
                 smoking_habit,
                 PatientSmokingHabitModel,
                 patient_id,
             )
 
-            patient.sleep_habit = self._upsert_single_entity(
-                patient.sleep_habit,
+            patient_profile.sleep_habit = self._upsert_single_entity(
+                patient_profile.sleep_habit,
                 sleep_habit,
                 PatientSleepHabitModel,
                 patient_id,
             )
 
-            patient.food_allergies = await self._upsert_multiple_entities(
-                patient.food_allergies,
-                food_allergies or [],
-                PatientFoodAllergyModel,
-                "patient_id",
-                patient_id,
+            patient_profile.food_allergies = (
+                await self._upsert_multiple_entities(
+                    patient_profile.food_allergies,
+                    food_allergies or [],
+                    PatientFoodAllergyModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
             ignore_fields = [
@@ -260,47 +276,53 @@ class PatientProfileService:
                 "diet_preferences",
                 "cuisine_preferences",
             ]
-            patient.eating_habit = self._upsert_single_entity(
-                patient.eating_habit,
+            patient_profile.eating_habit = self._upsert_single_entity(
+                patient_profile.eating_habit,
                 eating_habit,
                 PatientEatingHabitModel,
                 patient_id,
                 ignore_fields=ignore_fields,
             )
 
-            patient.eating_habit.meal_timings = (
+            patient_profile.eating_habit.meal_timings = (
                 await self._upsert_multiple_entities(
-                    patient.eating_habit.meal_timings,
+                    patient_profile.eating_habit.meal_timings,
                     eating_habit.meal_timings or [],
                     PatientMealTimingModel,
                     "eating_habit_id",
-                    patient.eating_habit.eating_habit_id,
+                    patient_profile.eating_habit.eating_habit_id,
                 )
             )
 
-            patient.eating_habit.diet_preferences = (
+            patient_profile.eating_habit.diet_preferences = (
                 await self._upsert_multiple_entities(
-                    patient.eating_habit.diet_preferences,
+                    patient_profile.eating_habit.diet_preferences,
                     eating_habit.diet_preferences or [],
                     PatientDietPreferenceModel,
                     "eating_habit_id",
-                    patient.eating_habit.eating_habit_id,
+                    patient_profile.eating_habit.eating_habit_id,
                 )
             )
 
-            patient.eating_habit.cuisine_preferences = (
+            patient_profile.eating_habit.cuisine_preferences = (
                 await self._upsert_multiple_entities(
-                    patient.eating_habit.cuisine_preferences,
+                    patient_profile.eating_habit.cuisine_preferences,
                     eating_habit.cuisine_preferences or [],
                     PatientCuisinePreferenceModel,
                     "eating_habit_id",
-                    patient.eating_habit.eating_habit_id,
+                    patient_profile.eating_habit.eating_habit_id,
                 )
             )
 
-            self.postgres_session.add(patient)
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "lifestyle"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
+
+            self.postgres_session.add(patient_profile)
             await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient)
+            await self.postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -332,36 +354,38 @@ class PatientProfileService:
         medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
     ) -> PatientModel:
         try:
-            patient = await self.fetch_patient_profile(
+            patient_profile = await self.fetch_patient_profile(
                 patient_id, detailed=True
             )
 
             # Upsert operations using helper methods
-            patient.diabetic_history = self._upsert_single_entity(
-                patient.diabetic_history,
+            patient_profile.diabetic_history = self._upsert_single_entity(
+                patient_profile.diabetic_history,
                 diabetic_history,
                 PatientDiabeticHistoryModel,
                 patient_id,
             )
 
-            patient.current_medication = self._upsert_single_entity(
-                patient.current_medication,
+            patient_profile.current_medication = self._upsert_single_entity(
+                patient_profile.current_medication,
                 current_medication,
                 PatientCurrentMedicationModel,
                 patient_id,
             )
 
-            patient.drug_allergies = await self._upsert_multiple_entities(
-                patient.drug_allergies,
-                drug_allergies or [],
-                PatientDrugAllergyModel,
-                "patient_id",
-                patient_id,
+            patient_profile.drug_allergies = (
+                await self._upsert_multiple_entities(
+                    patient_profile.drug_allergies,
+                    drug_allergies or [],
+                    PatientDrugAllergyModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
-            patient.family_diabetic_histories = (
+            patient_profile.family_diabetic_histories = (
                 await self._upsert_multiple_entities(
-                    patient.family_diabetic_histories,
+                    patient_profile.family_diabetic_histories,
                     family_diabetic_histories or [],
                     PatientFamilyDiabeticHistoryModel,
                     "patient_id",
@@ -369,17 +393,25 @@ class PatientProfileService:
                 )
             )
 
-            patient.medical_histories = await self._upsert_multiple_entities(
-                patient.medical_histories,
-                medical_histories or [],
-                PatientMedicalHistoryModel,
-                "patient_id",
-                patient_id,
+            patient_profile.medical_histories = (
+                await self._upsert_multiple_entities(
+                    patient_profile.medical_histories,
+                    medical_histories or [],
+                    PatientMedicalHistoryModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
-            self.postgres_session.add(patient)
+            updated = self._mark_profile_section_complete(
+                patient_profile.profile_completion, "medical_history"
+            )
+            if updated:
+                flag_modified(patient_profile, "profile_completion")
+
+            self.postgres_session.add(patient_profile)
             await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient)
+            await self.postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -456,9 +488,13 @@ class PatientProfileService:
                     setattr(entity, key, value)
 
         else:
-            entity_data = {key: value for key, value in data.dict().items() if key not in ignore_fields}
+            entity_data = {
+                key: value
+                for key, value in data.dict().items()
+                if key not in ignore_fields
+            }
             entity = model(**entity_data, patient_id=patient_id)
-            
+
         return entity
 
     async def _upsert_multiple_entities(
@@ -485,3 +521,11 @@ class PatientProfileService:
         self.postgres_session.add_all(new_entities)
 
         return new_entities
+
+    def _mark_profile_section_complete(
+        self, profile_completion, section: str
+    ) -> bool:
+        if not profile_completion[section]["is_complete"]:
+            profile_completion[section]["is_complete"] = True
+            return True
+        return False

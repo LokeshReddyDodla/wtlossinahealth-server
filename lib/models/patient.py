@@ -46,6 +46,15 @@ class Patient(Base):
     )
     locale = Column(String(50), nullable=True, default="Asia/Kolkata")
 
+    profile_completion = Column(
+        JSON,
+        default={
+            "basic": {"is_complete": False, "is_mandatory": True},
+            "lifestyle": {"is_complete": False, "is_mandatory": True},
+            "medical_history": {"is_complete": False, "is_mandatory": True},
+        },
+    )
+
     # Relationships
     daily_activity = relationship(
         "PatientDailyActivity",
