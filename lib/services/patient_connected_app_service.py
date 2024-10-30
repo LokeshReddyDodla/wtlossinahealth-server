@@ -74,7 +74,6 @@ class PatientConnectedAppService:
             new_libreview = PatientLibreViewModel(
                 connected_app_id=connected_app.id,
                 libreview_id=libreview_data.libreview_id,
-                last_sync_timestamp=libreview_data.last_sync_timestamp,
             )
             self.postgres_session.add(new_libreview)
             await self.postgres_session.commit()
