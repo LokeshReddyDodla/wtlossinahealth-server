@@ -49,11 +49,18 @@ async def verify_otp_endpoint(
         if await verify_otp(otp_data.phone_number, otp_data.otp, cache_store):
             # Create or get user using AuthUtils
             auth_utils = AuthUtils(session)
-            user, user_id = (
-                await auth_utils.get_or_create_user(
-                    otp_data.phone_number, role
-                )
+            user, user_id = await auth_utils.get_or_create_user(
+                otp_data.phone_number, role
             )
+
+            # Check if user is verified
+            if not user.is_verified:
+                response = ErrorResponse(
+                    message="User account is not verified."
+                )
+                raise HTTPException(
+                    status_code=400, detail=response.model_dump()
+                )
 
             # Create JWT token for the user
             token = create_jwt_token(

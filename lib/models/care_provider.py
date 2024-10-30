@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, UUID, Column, DateTime, ForeignKey, String
+from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, ForeignKey,
+                        String)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -36,6 +37,7 @@ class CareProvider(Base):
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
+    is_verified = Column(Boolean, default=False)
 
     profile_completion = Column(
         JSON,
