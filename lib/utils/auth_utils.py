@@ -24,7 +24,6 @@ class AuthUtils:
                 await self.postgres_session.refresh(user)
 
             user_id = str(user.patient_id)
-            profile_completion = user.profile_completion
 
         elif role == ProfileType.CARE_PROVIDER.value:
             result = await self.postgres_session.execute(
@@ -38,8 +37,7 @@ class AuthUtils:
                     status_code=400, detail="Care Provider not found"
                 )
             user_id = str(user.care_provider_id)
-            profile_completion = user.profile_completion
 
         else:
             raise HTTPException(status_code=400, detail="Invalid role")
-        return user, user_id, profile_completion
+        return user, user_id

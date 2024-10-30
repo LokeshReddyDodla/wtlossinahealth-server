@@ -161,6 +161,40 @@ class AiConversationService:
                 messages.append(AIMessage(content=message["content"]))
 
         return messages
+    
+    def fetch_all_user_conversation_messages(
+        self,
+        patient_id: str,
+        return_raw: bool = False,
+        for_frontend: bool = False,
+    ) -> List[Any]:
+        """Fetch all messages for a given conversation."""
+        filters: Any = {"patient_id": patient_id}
+
+        if for_frontend:
+            filters["exclude_from_frontend"] = False
+
+        pipeline = [
+            {"$match": filters},
+            {"$sort": {"timestamp": 1}},
+            {"$addFields": {"_id": {"$toString": "$_id"}}},
+        ]
+
+        messages_cursor = self.messages_collection.aggregate(pipeline)
+
+        if return_raw:
+            return list(messages_cursor)
+
+        messages = []
+        for message in messages_cursor:
+            if message["role"] == "system":
+                messages.append(SystemMessage(content=message["content"]))
+            elif message["role"] == "human":
+                messages.append(HumanMessage(content=message["content"]))
+            elif message["role"] == "ai":
+                messages.append(AIMessage(content=message["content"]))
+
+        return messages
 
     async def create_patient_context_message(
         self, patient_profile_service: PatientProfileService, patient_id: str
@@ -188,7 +222,10 @@ class AiConversationService:
         )
 
         # Fetch all messages to provide context, inserting the system message at the start
-        messages = self.fetch_conversation_messages(conversation_id)
+        if conversation_id == f"{patient_id}-custom":
+            messages = self.fetch_all_user_conversation_messages(patient_id)
+        else:
+            messages = self.fetch_conversation_messages(conversation_id)
         messages.insert(0, self.system_message)
 
         # Fetch the patient profile and generate context message
