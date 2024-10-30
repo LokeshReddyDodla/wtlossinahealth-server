@@ -45,6 +45,7 @@ class Patient(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
     locale = Column(String(50), nullable=True, default="Asia/Kolkata")
+    is_verified = Column(Boolean, default=False)
 
     profile_completion = Column(
         JSON,
