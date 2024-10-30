@@ -25,10 +25,10 @@ from .router import router
 
 
 @router.post(
-    "/update-libreview",
+    "/libreview",
     response_model=UpdateLibreViewResponse,
 )
-async def update_libreview(
+async def upsert_libreview(
     request: Request,
     libreview_data: PatientLibreViewCreate,
     patient_connected_app_service: PatientConnectedAppService = Depends(
