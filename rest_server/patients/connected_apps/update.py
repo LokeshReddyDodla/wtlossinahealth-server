@@ -17,35 +17,38 @@ from lib.schemas.patient_connected_app import \
 from lib.schemas.patient_connected_app import PatientLibreViewCreate
 from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
-from rest_server.patients.connected_apps.api_schema import AddLibreViewResponse
+from rest_server.patients.connected_apps.api_schema import \
+    UpdateLibreViewResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
 @router.post(
-    "/add-libreview",
-    response_model=AddLibreViewResponse,
+    "/update-libreview",
+    response_model=UpdateLibreViewResponse,
 )
-async def add_libreview(
+async def update_libreview(
     request: Request,
-    libreview: PatientLibreViewCreate,
+    libreview_data: PatientLibreViewCreate,
     patient_connected_app_service: PatientConnectedAppService = Depends(
         get_patient_connected_app_service
     ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        new_libreview = await patient_connected_app_service.add_libreview(
-            libreview_data=libreview,
-            patient_id=str(current_patient.patient_id),
+        libreview = (
+            await patient_connected_app_service.add_or_update_libreview(
+                libreview_data=libreview_data,
+                patient_id=str(current_patient.patient_id),
+            )
         )
 
-        result = PatientLibreViewSchema.model_validate(new_libreview)
+        libreview = PatientLibreViewSchema.model_validate(libreview)
 
-        return AddLibreViewResponse(
-            message="LibreView data added successfully.",
-            data=result,
+        return UpdateLibreViewResponse(
+            message="LibreView data updated successfully.",
+            data=libreview,
         )
     except HTTPException as http_exc:
         raise http_exc

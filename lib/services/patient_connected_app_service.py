@@ -1,4 +1,5 @@
-from typing import List
+from datetime import datetime
+from typing import Any, List
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -61,27 +62,42 @@ class PatientConnectedAppService:
                 detail=f"Database error: {str(e)}",
             )
 
-    async def add_libreview(
+    async def add_or_update_libreview(
         self, patient_id: str, libreview_data: PatientLibreViewCreate
     ) -> PatientLibreViewModel:
         try:
-            # Get connected app
             connected_app = await self.get_connected_apps_for_patient(
                 patient_id
             )
 
-            # Add new LibreView
-            new_libreview = PatientLibreViewModel(
-                connected_app_id=connected_app.id,
-                libreview_id=libreview_data.libreview_id,
+            result = await self.postgres_session.execute(
+                select(PatientLibreViewModel).where(
+                    PatientLibreViewModel.connected_app_id == connected_app.id,
+                    PatientLibreViewModel.libreview_id
+                    == libreview_data.libreview_id,
+                )
             )
-            self.postgres_session.add(new_libreview)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(new_libreview)
+            existing_libreview: Any = result.scalars().first()
 
-            return new_libreview
+            if existing_libreview:
+                # Update existing LibreView record
+                existing_libreview.libreview_id = libreview_data.libreview_id
+                await self.postgres_session.commit()
+                await self.postgres_session.refresh(existing_libreview)
+                return existing_libreview
+            else:
+                # Create new LibreView record
+                new_libreview = PatientLibreViewModel(
+                    connected_app_id=connected_app.id,
+                    libreview_id=libreview_data.libreview_id,
+                )
+                self.postgres_session.add(new_libreview)
+                await self.postgres_session.commit()
+                await self.postgres_session.refresh(new_libreview)
+                return new_libreview
 
         except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database error: {str(e)}",

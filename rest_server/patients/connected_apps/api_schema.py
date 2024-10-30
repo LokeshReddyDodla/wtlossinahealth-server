@@ -5,6 +5,6 @@ from lib.schemas.patient_connected_app import (PatientConnectedApp,
                                                PatientOtherApp)
 from rest_server.response_models import SuccessResponse
 
-AddLibreViewResponse = SuccessResponse[PatientLibreView]
+UpdateLibreViewResponse = SuccessResponse[PatientLibreView]
 AddOtherAppResponse = SuccessResponse[PatientOtherApp]
 GetPatientConnectedAppsResponse = SuccessResponse[PatientConnectedApp]
