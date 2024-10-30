@@ -73,8 +73,6 @@ class PatientConnectedAppService:
             result = await self.postgres_session.execute(
                 select(PatientLibreViewModel).where(
                     PatientLibreViewModel.connected_app_id == connected_app.id,
-                    PatientLibreViewModel.libreview_id
-                    == libreview_data.libreview_id,
                 )
             )
             existing_libreview: Any = result.scalars().first()
@@ -82,6 +80,8 @@ class PatientConnectedAppService:
             if existing_libreview:
                 # Update existing LibreView record
                 existing_libreview.libreview_id = libreview_data.libreview_id
+                existing_libreview.last_sync_timestamp = None
+                
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(existing_libreview)
                 return existing_libreview
@@ -91,6 +91,7 @@ class PatientConnectedAppService:
                     connected_app_id=connected_app.id,
                     libreview_id=libreview_data.libreview_id,
                 )
+                
                 self.postgres_session.add(new_libreview)
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(new_libreview)
