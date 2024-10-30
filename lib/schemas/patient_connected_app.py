@@ -7,8 +7,6 @@ from pydantic import BaseModel, HttpUrl
 
 class PatientLibreViewBase(BaseModel):
     libreview_id: str
-    last_sync_timestamp: Optional[datetime] = None
-    connected_at: Optional[datetime] = None
 
 
 class PatientLibreViewCreate(PatientLibreViewBase):
@@ -17,6 +15,8 @@ class PatientLibreViewCreate(PatientLibreViewBase):
 
 class PatientLibreView(PatientLibreViewBase):
     id: UUID
+    last_sync_timestamp: Optional[datetime] = None
+    connected_at: datetime
 
     class Config:
         from_attributes = True
@@ -25,7 +25,6 @@ class PatientLibreView(PatientLibreViewBase):
 class PatientOtherAppBase(BaseModel):
     other_app_id: str
     additional_field: Optional[str] = None
-    connected_at: Optional[datetime] = None
 
 
 class PatientOtherAppCreate(PatientOtherAppBase):
@@ -34,6 +33,7 @@ class PatientOtherAppCreate(PatientOtherAppBase):
 
 class PatientOtherApp(PatientOtherAppBase):
     id: UUID
+    connected_at: datetime
 
     class Config:
         from_attributes = True
