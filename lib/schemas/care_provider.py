@@ -17,7 +17,8 @@ class CareProviderBase(BaseModel):
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
-    is_verified: bool
+    is_verified: Optional[bool] = False
+
 
 
 
