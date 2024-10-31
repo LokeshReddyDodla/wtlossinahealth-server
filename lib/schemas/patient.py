@@ -39,8 +39,7 @@ class PatientBase(BaseModel):
     weight: Optional[float]
     email: Optional[str]
     phone_number: str
-    is_verified: bool
-
+    is_verified: Optional[bool] = False
     locale: Optional[str] = None
 
 
