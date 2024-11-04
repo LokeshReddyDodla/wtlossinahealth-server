@@ -1,7 +1,7 @@
 import uuid
 
-from sqlalchemy import (UUID, Boolean, Column, Float, ForeignKey, Integer,
-                        String, Time)
+from sqlalchemy import (ARRAY, UUID, Boolean, Column, Float, ForeignKey,
+                        Integer, String, Time)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -24,11 +24,8 @@ class PatientEatingHabit(Base):
     meals_per_day = Column(Integer, nullable=True)
     preferred_meal_type = Column(String, nullable=True)
 
-    cuisine_preferences = relationship(
-        "PatientCuisinePreference",
-        back_populates="eating_habit",
-        cascade="all, delete-orphan",
-    )
+    cuisine_preferences = Column(ARRAY(String), nullable=True)
+
     diet_preferences = relationship(
         "PatientDietPreference",
         back_populates="eating_habit",

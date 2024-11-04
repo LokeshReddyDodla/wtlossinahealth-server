@@ -15,8 +15,6 @@ from lib.models.patient_alcohol_consumption import \
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel
 from lib.models.patient_care_provider import PatientCareProvider
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_cuisine_preference import \
-    PatientCuisinePreference as PatientCuisinePreferenceModel
 from lib.models.patient_current_medication import \
     PatientCurrentMedication as PatientCurrentMedicationModel
 from lib.models.patient_daily_activity import \
@@ -47,8 +45,6 @@ from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
     PatientAlcoholConsumptionCreate
-from lib.schemas.patient_cuisine_preference import \
-    PatientCuisinePreferenceCreate
 from lib.schemas.patient_current_medication import \
     PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
@@ -98,9 +94,6 @@ class PatientProfileService:
                     ),
                     selectinload(PatientModel.eating_habit).selectinload(
                         PatientEatingHabitModel.diet_preferences
-                    ),
-                    selectinload(PatientModel.eating_habit).selectinload(
-                        PatientEatingHabitModel.cuisine_preferences
                     ),
                     selectinload(PatientModel.patient_plans).selectinload(
                         PatientPlanModel.diet_plan
@@ -274,7 +267,6 @@ class PatientProfileService:
             ignore_fields = [
                 "meal_timings",
                 "diet_preferences",
-                "cuisine_preferences",
             ]
             patient_profile.eating_habit = self._upsert_single_entity(
                 patient_profile.eating_habit,
@@ -299,16 +291,6 @@ class PatientProfileService:
                     patient_profile.eating_habit.diet_preferences,
                     eating_habit.diet_preferences or [],
                     PatientDietPreferenceModel,
-                    "eating_habit_id",
-                    patient_profile.eating_habit.eating_habit_id,
-                )
-            )
-
-            patient_profile.eating_habit.cuisine_preferences = (
-                await self._upsert_multiple_entities(
-                    patient_profile.eating_habit.cuisine_preferences,
-                    eating_habit.cuisine_preferences or [],
-                    PatientCuisinePreferenceModel,
                     "eating_habit_id",
                     patient_profile.eating_habit.eating_habit_id,
                 )
