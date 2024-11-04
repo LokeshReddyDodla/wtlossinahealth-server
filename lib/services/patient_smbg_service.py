@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -9,11 +9,21 @@ from sqlalchemy.orm import selectinload
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
 from lib.schemas.patient_smbg import PatientSMBG as PatientSMBGSchema
 from lib.schemas.patient_smbg import PatientSMBGCreate
+from lib.services.ai_conversation_service import AiConversationService
+from lib.services.patient_profile_service import PatientProfileService
 
 
 class PatientSmbgService:
-    def __init__(self, postgres_session: AsyncSession):
+    def __init__(
+        self,
+        patient_profile_service: PatientProfileService,
+        postgres_session: AsyncSession,
+    ):
         self.postgres_session = postgres_session
+        self.patient_profile_service = patient_profile_service
+        self.ai_conversation_service = AiConversationService(
+            "smbg", model="gpt-4o-mini"
+        )
 
     async def get_patient_smbgs(
         self, patient_id: str
@@ -34,7 +44,7 @@ class PatientSmbgService:
 
     async def upload_patient_smbg(
         self, patient_id: str, smbg_data: PatientSMBGCreate
-    ) -> PatientSMBGModel:
+    ) -> Tuple[PatientSMBGModel, bool]:
         try:
             new_smbg = PatientSMBGModel(
                 patient_id=patient_id,
@@ -47,13 +57,43 @@ class PatientSmbgService:
             self.postgres_session.add(new_smbg)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(new_smbg)
-            return new_smbg
+
+            ai_response_generated = await self._generate_ai_response(
+                patient_id,
+                str(new_smbg.id),
+                new_smbg.glucose_level,
+                new_smbg.reading_time,
+            )
+
+            return new_smbg, ai_response_generated
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database Error: {str(e)}",
             )
+
+    async def _generate_ai_response(
+        self, patient_id, conversation_id, glucose_level, reading_time
+    ):
+        try:
+            human_input = (
+                f"I just recorded my blood sugar level, which was {glucose_level} mg/dL. "
+                f"This reading was taken on {reading_time.strftime('%A, %B %d at %I:%M %p')}. "
+                f"Could you provide some feedback or insights on this result?"
+            )
+            await self.ai_conversation_service.generate_response(
+                patient_id=patient_id,
+                conversation_id=conversation_id,
+                human_input=human_input,
+                conversation_type="smbg",
+                patient_profile_service=self.patient_profile_service,
+            )
+            return True
+        except Exception as e:
+            print(f"Failed to generate AI response: {str(e)}")
+            return False
 
     async def delete_smbg(self, smbg_id: str, patient_id: str):
         try:

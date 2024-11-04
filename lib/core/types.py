@@ -15,12 +15,13 @@ FCMNotificationGroupKeyLiteral = Literal[
 
 AiConversationRoleLiteral = Literal["system", "human", "ai"]
 
-AiConversationTypeLiteral = Literal[
-    "meal_analysis", "prescription_analysis", "report_analysis", "other"
-]
 
 AiConversationMessageTypeLiteral = Literal[
     "text", "image", "file", "audio", "custom", "markdown"
+]
+
+AiConversationTypeLiteral = Literal[
+    "smbg", "meal", "prescription", "report", "other"
 ]
 
 OpenAIModelLiteral = Literal[

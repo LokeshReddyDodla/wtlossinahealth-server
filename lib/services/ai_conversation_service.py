@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from decouple import config
@@ -49,7 +49,7 @@ class AiConversationService:
     ) -> SystemMessage:
         """Returns the initial system message based on conversation type."""
 
-        if conversation_type == "meal_analysis":
+        if conversation_type == "meal":
             return SystemMessage(
                 content="""
                 You are an AI strictly focused on meal analysis for diabetic and obese patients. 
@@ -68,8 +68,16 @@ class AiConversationService:
                 - Stay focused only on the meal currently being discussed without assuming or mixing it with other meals from the same day.
                 """
             )
+        elif conversation_type == "smbg":
+            return SystemMessage(
+                content=(
+                    "You are an AI assistant specialized in analyzing Self-Monitoring of Blood Glucose (SMBG) data for diabetic and health management. "
+                    "Be friendly, respectful, and concise. Provide insights on glucose levels, patterns, and health recommendations in markdown format. "
+                    "Remind users to consult their care provider for a professional interpretation and further guidance. Ensure your response is clear, context-specific, and avoids unrelated information."
+                )
+            )
 
-        elif conversation_type == "prescription_analysis":
+        elif conversation_type == "prescription":
             return SystemMessage(
                 content=(
                     "You are an AI focused on prescription analysis. Use a friendly and respectful tone. "
@@ -78,7 +86,7 @@ class AiConversationService:
                 )
             )
 
-        elif conversation_type == "report_analysis":
+        elif conversation_type == "report":
             return SystemMessage(
                 content=(
                     "You are an AI specialized in health report analysis. Use a friendly and polite tone. "
@@ -101,6 +109,7 @@ class AiConversationService:
         self,
         patient_id: str,
         conversation_id: str,
+        conversation_type: AiConversationTypeLiteral,
         role: AiConversationRoleLiteral,
         content: str,
         message_type: AiConversationMessageTypeLiteral = "text",
@@ -110,6 +119,7 @@ class AiConversationService:
         message_data = AiConversationMessageSchema(
             patient_id=patient_id,
             conversation_id=conversation_id,
+            conversation_type=conversation_type,
             role=role,
             content=content,
             message_type=message_type,
@@ -215,10 +225,15 @@ class AiConversationService:
         patient_id: str,
         conversation_id: str,
         human_input: str,
+        conversation_type: AiConversationTypeLiteral,
         patient_profile_service: PatientProfileService,
     ) -> Dict:
         self.add_message_to_conversation(
-            patient_id, conversation_id, "human", human_input
+            patient_id,
+            conversation_id,
+            conversation_type,
+            "human",
+            human_input,
         )
 
         # Fetch all messages to provide context, inserting the system message at the start
@@ -239,6 +254,7 @@ class AiConversationService:
         ai_message_data = self.add_message_to_conversation(
             patient_id,
             conversation_id,
+            conversation_type,
             "ai",
             ai_response.content,
             message_type="markdown",
@@ -259,13 +275,24 @@ class AiConversationService:
 
         return ai_message_data
 
-    def delete_conversation_messages(self, conversation_id: str):
+    def delete_conversation_messages(
+        self,
+        conversation_id: str,
+    ):
         """Deletes all messages for a given conversation."""
         try:
+
             delete_result = self.messages_collection.delete_many(
                 {"conversation_id": conversation_id}
             )
             return delete_result
+
+        except ValueError as ve:
+            print(f"Invalid input: {str(ve)}")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid input: Either conversation_id or reference_id must be provided.",
+            )
         except Exception as e:
             print(f"Failed to delete conversation messages: {str(e)}")
             raise HTTPException(

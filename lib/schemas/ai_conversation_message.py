@@ -5,13 +5,15 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, HttpUrl, constr
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
-                            AiConversationRoleLiteral)
+                            AiConversationRoleLiteral,
+                            AiConversationTypeLiteral)
 
 
 class AiConversationMessage(BaseModel):
     patient_id: str
     message_id: str = Field(default_factory=lambda: str(uuid4()))
     conversation_id: str
+    conversation_type: AiConversationTypeLiteral
     role: AiConversationRoleLiteral
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)

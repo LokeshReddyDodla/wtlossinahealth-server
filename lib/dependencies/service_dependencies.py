@@ -83,14 +83,20 @@ async def get_patient_connected_app_service(
 
 async def get_patient_smbg_service(
     session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
 ) -> PatientSmbgService:
-    return PatientSmbgService(postgres_session=session)
+    return PatientSmbgService(
+        patient_profile_service=patient_profile_service,
+        postgres_session=session,
+    )
 
 
 async def get_meal_analysis_service(
     session: AsyncSession = Depends(get_postgres_session),
-) -> PatientSmbgService:
-    return PatientSmbgService(postgres_session=session)
+) -> MealAnalysisService:
+    return MealAnalysisService(postgres_session=session)
 
 
 async def get_meal_service(
