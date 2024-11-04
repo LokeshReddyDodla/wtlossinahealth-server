@@ -1,7 +1,9 @@
 import uuid
+
 from sqlalchemy import JSON, UUID, Boolean, Column, ForeignKey, String
-from lib.models import Base
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientAlcoholConsumption(Base):

@@ -10,7 +10,7 @@ from lib.models import Base
 
 
 class PatientSmokingHabitBase(BaseModel):
-    smoke_status: str
+    smoke_status: bool
     years_of_smoking: Optional[int] = None
     cigarettes_per_day: Optional[int] = None
     quit_years_ago: Optional[int] = None
