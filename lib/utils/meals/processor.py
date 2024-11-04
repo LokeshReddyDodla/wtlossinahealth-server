@@ -12,8 +12,9 @@ from lib.models.patient_meal import (PatientFoodItem,
                                      PatientTotalMacroNutritionalValue,
                                      PatientTotalMicroNutritionalValue)
 from lib.schemas.meal_stats import DailyMealStats
-from lib.schemas.patient_diet_plan import PatientDietPlanBase
+from lib.schemas.patient_diet_plan import MealDistribution, PatientDietPlanBase
 from lib.utils.date.age_utils import calculate_age
+from lib.utils.diet_plan_calculator import DietPlanCalculator
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 
@@ -255,6 +256,20 @@ class MealStatsProcessor:
                 carbs=active_plan.diet_plan.carbs,
                 fats=active_plan.diet_plan.fats,
                 fiber=active_plan.diet_plan.fiber,
+                calcium=active_plan.calcium,
+                iron=active_plan.iron,
+                zinc=active_plan.zinc,
+                magnesium=active_plan.magnesium,
+                major_meal=(
+                    MealDistribution(**active_plan.diet_plan.major_meal)
+                    if active_plan.diet_plan.major_meal
+                    else None
+                ),
+                snack=(
+                    MealDistribution(**active_plan.diet_plan.snack)
+                    if active_plan.diet_plan.snack
+                    else None
+                ),
             )
         else:
             return await self._calculate_recommendations()
@@ -265,52 +280,62 @@ class MealStatsProcessor:
             self.patient_id, detailed=True
         )
 
-        # Extract necessary details
-        weight = patient.weight  # in kg
-        height = patient.height  # in cm
-        gender = patient.gender
-        dob = patient.dob
-        age = calculate_age(dob)
-
-        # Calculate BMR based on gender
-        if gender.lower() == "male":
-            bmr = 10 * weight + 6.25 * height - 5 * age + 5
-        else:
-            bmr = 10 * weight + 6.25 * height - 5 * age - 161
-
-        # Adjust BMR based on activity level
-        activity_level = (
-            patient.daily_activity.activity_level
-            if patient.daily_activity
-            else "sedentary"
+        age = calculate_age(patient.dob)
+        calculator = DietPlanCalculator(
+            weight=patient.weight,
+            height=patient.height,
+            age=age,
+            gender=patient.gender,
+            activity_level=(
+                patient.daily_activity.activity_level
+                if patient.daily_activity
+                else "sedentary"
+            ),
         )
 
-        activity_multiplier = {
-            "sedentary": 1.2,
-            "lightly_active": 1.375,
-            "moderately_active": 1.55,
-            "very_active": 1.725,
-            "super_active": 1.9,
-        }.get(activity_level.lower(), 1.2)
+        tdee = calculator.calculate_tdee()
+        macronutrients = calculator.calculate_macronutrients(tdee)
+        micronutrients = calculator.get_micronutrient_recommendations()
 
-        # Calculate total daily energy expenditure (TDEE)
-        tdee = bmr * activity_multiplier
+        major_meal_ratio = 0.75
+        snack_ratio = 0.25
 
-        # Nutrient distribution
-        protein = weight * 1.8  # Approx 1.8g of protein per kg of body weight
-        fats = (
-            tdee * 0.25 / 9
-        )  # 25% of total calories from fats (9 calories per gram)
-        carbs = (
-            tdee - (protein * 4 + fats * 9)
-        ) / 4  # remaining calories for carbs
+        major_meal_distribution = MealDistribution(
+            total_calories=tdee * major_meal_ratio,
+            protein=macronutrients["protein"] * major_meal_ratio,
+            carbs=macronutrients["carbs"] * major_meal_ratio,
+            fats=macronutrients["fats"] * major_meal_ratio,
+            fiber=micronutrients["fiber"] * major_meal_ratio,
+            calcium=micronutrients["calcium"] * major_meal_ratio,
+            iron=micronutrients["iron"] * major_meal_ratio,
+            zinc=micronutrients["zinc"] * major_meal_ratio,
+            magnesium=micronutrients["magnesium"] * major_meal_ratio,
+        )
+
+        snack_distribution = MealDistribution(
+            total_calories=tdee * snack_ratio,
+            protein=macronutrients["protein"] * snack_ratio,
+            carbs=macronutrients["carbs"] * snack_ratio,
+            fats=macronutrients["fats"] * snack_ratio,
+            fiber=micronutrients["fiber"] * snack_ratio,
+            calcium=micronutrients["calcium"] * snack_ratio,
+            iron=micronutrients["iron"] * snack_ratio,
+            zinc=micronutrients["zinc"] * snack_ratio,
+            magnesium=micronutrients["magnesium"] * snack_ratio,
+        )
 
         return PatientDietPlanBase(
             total_calories=tdee,
-            protein=protein,
-            carbs=carbs,
-            fats=fats,
-            fiber=30,  # Example fixed fiber goal
+            protein=macronutrients["protein"],
+            carbs=macronutrients["carbs"],
+            fats=macronutrients["fats"],
+            fiber=micronutrients["fiber"],
+            calcium=micronutrients["calcium"],
+            iron=micronutrients["iron"],
+            zinc=micronutrients["zinc"],
+            magnesium=micronutrients["magnesium"],
+            major_meal=major_meal_distribution,
+            snack=snack_distribution,
         )
 
     def _build_daily_stats(

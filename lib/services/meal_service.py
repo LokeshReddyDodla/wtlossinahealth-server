@@ -38,7 +38,7 @@ class MealService:
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            "meal_analysis", model="gpt-4o-mini"
+            "meal", model="gpt-4o-mini"
         )
 
     async def fetch_meals(
@@ -190,7 +190,7 @@ class MealService:
             (
                 parsed_ai_response,
                 tokens_used,
-            ) =  self.meal_analysis_service.analyze_meal(
+            ) = self.meal_analysis_service.analyze_meal(
                 patient_profile_json,
                 meal.time,
                 meal.image_url,
@@ -210,14 +210,15 @@ class MealService:
 
             if re_analyze:
                 self.ai_conversation_service.delete_conversation_messages(
-                    meal_orm.context_id
+                    conversation_id=meal_id
                 )
 
             # Define custom conversation flow for meals
             message_sequence = [
                 AiConversationMessageSchema(
                     patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_orm.context_id,
+                    conversation_id=meal_id,
+                    conversation_type="meal",
                     role="human",
                     message_type="markdown",
                     content=md(
@@ -226,7 +227,8 @@ class MealService:
                 ),
                 AiConversationMessageSchema(
                     patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_orm.context_id,
+                    conversation_id=meal_id,
+                    conversation_type="meal",
                     role="human",
                     message_type="image" if meal_orm.image_url else "text",
                     content=(
@@ -237,7 +239,8 @@ class MealService:
                 ),
                 AiConversationMessageSchema(
                     patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_orm.context_id,
+                    conversation_id=meal_id,
+                    conversation_type="meal",
                     role="ai",
                     message_type="text",
                     content=parsed_ai_response.model_dump_json(),
@@ -245,7 +248,8 @@ class MealService:
                 ),
                 AiConversationMessageSchema(
                     patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_orm.context_id,
+                    conversation_id=meal_id,
+                    conversation_type="meal",
                     role="system",
                     message_type="text",
                     content="How can I assist you further regarding this meal?",

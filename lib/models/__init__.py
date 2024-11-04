@@ -11,7 +11,6 @@ from .patient_alcohol_consumption import PatientAlcoholConsumption
 from .patient_care_provider import PatientCareProvider
 from .patient_connected_app import (PatientConnectedApp, PatientLibreView,
                                     PatientOtherApp)
-from .patient_cuisine_preference import PatientCuisinePreference
 from .patient_current_medication import PatientCurrentMedication
 from .patient_daily_activity import PatientDailyActivity
 from .patient_diabetic_history import PatientDiabeticHistory

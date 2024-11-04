@@ -19,9 +19,9 @@ from .router import router
 @router.post("/respond", response_model=SuccessResponse)
 async def send_ai_conversation_message(
     request: Request,
-    conversation_type: AiConversationTypeLiteral,
     conversation_id: str,
     human_input: str,
+    conversation_type: AiConversationTypeLiteral,
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
@@ -32,12 +32,14 @@ async def send_ai_conversation_message(
     """
     try:
         ai_conversation_service = AiConversationService(
-            conversation_type=conversation_type, model="gpt-4o-mini"
+            conversation_type=conversation_type,
+            model="gpt-4o-mini",
         )
         # Generate response from the AI model
         ai_message_data = await ai_conversation_service.generate_response(
             patient_id=str(current_patient.patient_id),
             conversation_id=conversation_id,
+            conversation_type=conversation_type,
             human_input=human_input,
             patient_profile_service=patient_profile_service,
         )

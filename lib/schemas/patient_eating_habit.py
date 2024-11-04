@@ -5,8 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from lib.models import Base
-from lib.schemas.patient_cuisine_preference import (
-    PatientCuisinePreference, PatientCuisinePreferenceCreate)
 from lib.schemas.patient_diet_preference import (PatientDietPreference,
                                                  PatientDietPreferenceCreate)
 from lib.schemas.patient_meal_timing import (PatientMealTiming,
@@ -16,21 +14,20 @@ from lib.schemas.patient_meal_timing import (PatientMealTiming,
 class PatientEatingHabitBase(BaseModel):
     snacks_count: Optional[int] = None
     meals_per_day: Optional[int] = None
-    preferred_meal_type: Optional[str] = None
 
 
 class PatientEatingHabitCreate(PatientEatingHabitBase):
     meal_timings: Optional[List[PatientMealTimingCreate]] = []
-    diet_preferences: Optional[List[PatientDietPreferenceCreate]] = []
-    cuisine_preferences: Optional[List[PatientCuisinePreferenceCreate]] = []
+    diet_preferences: Optional[PatientDietPreferenceCreate] = None
+    cuisine_preferences: Optional[List[str]] = []
 
 
 class PatientEatingHabit(PatientEatingHabitBase):
     eating_habit_id: UUID
     patient_id: UUID
     meal_timings: Optional[List[PatientMealTiming]] = []
-    cuisine_preferences: Optional[List[PatientCuisinePreference]] = []
-    diet_preferences: Optional[List[PatientDietPreference]] = []
+    cuisine_preferences: Optional[List[str]] = []
+    diet_preferences: Optional[PatientDietPreference] = None
 
     class Config:
         from_attributes = True
