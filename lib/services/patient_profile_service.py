@@ -74,6 +74,7 @@ class PatientProfileService:
         self,
         patient_id: str,
         detailed: bool = False,
+        include_health_data: bool = False,
         other_related_data: bool = False,
     ) -> PatientModel:
         try:
@@ -107,11 +108,15 @@ class PatientProfileService:
                     selectinload(PatientModel.current_medication),
                 )
 
+            if include_health_data:
+                stmt = stmt.options(
+                    selectinload(PatientModel.vitals),
+                    selectinload(PatientModel.smbgs),
+                )
+
             if other_related_data:
                 stmt = stmt.options(
                     selectinload(PatientModel.permissions),
-                    selectinload(PatientModel.vitals),
-                    selectinload(PatientModel.smbgs),
                     selectinload(PatientModel.connected_apps).selectinload(
                         PatientConnectedApp.libreview
                     ),
@@ -230,6 +235,7 @@ class PatientProfileService:
                 ),
                 daily_activity,
                 PatientDailyActivityModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -237,6 +243,7 @@ class PatientProfileService:
                 patient_profile.alcohol_consumption,
                 alcohol_consumption,
                 PatientAlcoholConsumptionModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -244,6 +251,7 @@ class PatientProfileService:
                 patient_profile.smoking_habit,
                 smoking_habit,
                 PatientSmokingHabitModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -251,6 +259,7 @@ class PatientProfileService:
                 patient_profile.sleep_habit,
                 sleep_habit,
                 PatientSleepHabitModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -272,6 +281,7 @@ class PatientProfileService:
                 patient_profile.eating_habit,
                 eating_habit,
                 PatientEatingHabitModel,
+                "patient_id",
                 patient_id,
                 ignore_fields=ignore_fields,
             )
@@ -286,10 +296,12 @@ class PatientProfileService:
                 )
             )
 
+          
+
             patient_profile.eating_habit.diet_preferences = (
-                await self._upsert_multiple_entities(
+                self._upsert_single_entity(
                     patient_profile.eating_habit.diet_preferences,
-                    eating_habit.diet_preferences or [],
+                    eating_habit.diet_preferences,
                     PatientDietPreferenceModel,
                     "eating_habit_id",
                     patient_profile.eating_habit.eating_habit_id,
@@ -345,6 +357,7 @@ class PatientProfileService:
                 patient_profile.diabetic_history,
                 diabetic_history,
                 PatientDiabeticHistoryModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -352,6 +365,7 @@ class PatientProfileService:
                 patient_profile.current_medication,
                 current_medication,
                 PatientCurrentMedicationModel,
+                "patient_id",
                 patient_id,
             )
 
@@ -458,7 +472,13 @@ class PatientProfileService:
             )
 
     def _upsert_single_entity(
-        self, entity, data, model, patient_id, ignore_fields=None
+        self,
+        entity,
+        data,
+        model,
+        foreign_key_name,
+        foreign_key_value,
+        ignore_fields=None,
     ):
         """Helper method to upsert a single entity, ignoring nested relationships."""
         if ignore_fields is None:
@@ -475,7 +495,8 @@ class PatientProfileService:
                 for key, value in data.dict().items()
                 if key not in ignore_fields
             }
-            entity = model(**entity_data, patient_id=patient_id)
+            entity_data[foreign_key_name] = foreign_key_value
+            entity = model(**entity_data)
 
         return entity
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, DateTime, Float, ForeignKey, String
+from sqlalchemy import JSON, UUID, Column, DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -18,6 +18,14 @@ class PatientDietPlan(Base):
     protein = Column(Float)
     fats = Column(Float)
     fiber = Column(Float)
+    calcium = Column(Float)
+    iron = Column(Float)
+    zinc = Column(Float)
+    magnesium = Column(Float)
+
+    major_meal = Column(JSON, nullable=True)
+    snack = Column(JSON, nullable=True)
+
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

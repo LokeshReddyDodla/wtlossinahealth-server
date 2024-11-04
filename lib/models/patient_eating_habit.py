@@ -22,7 +22,6 @@ class PatientEatingHabit(Base):
     )
     snacks_count = Column(Integer, nullable=True)
     meals_per_day = Column(Integer, nullable=True)
-    preferred_meal_type = Column(String, nullable=True)
 
     cuisine_preferences = Column(ARRAY(String), nullable=True)
 
@@ -30,6 +29,7 @@ class PatientEatingHabit(Base):
         "PatientDietPreference",
         back_populates="eating_habit",
         cascade="all, delete-orphan",
+        uselist=False,
     )
 
     patient = relationship("Patient", back_populates="eating_habit")

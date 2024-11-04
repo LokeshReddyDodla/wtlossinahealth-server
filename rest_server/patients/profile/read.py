@@ -27,6 +27,7 @@ from .router import router
 async def get_patient_details(
     request: Request,
     detailed: bool = True,
+    include_health_data: bool = False,
     other_related_data: bool = False,
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
@@ -37,6 +38,7 @@ async def get_patient_details(
         result = await patient_profile_service.fetch_patient_profile(
             str(current_patient.patient_id),
             detailed=detailed,
+            include_health_data=include_health_data,
             other_related_data=other_related_data,
         )
         return PatientCompleteProfileResponse(

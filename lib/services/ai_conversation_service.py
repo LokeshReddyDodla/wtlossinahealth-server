@@ -161,7 +161,7 @@ class AiConversationService:
                 messages.append(AIMessage(content=message["content"]))
 
         return messages
-    
+
     def fetch_all_user_conversation_messages(
         self,
         patient_id: str,
@@ -201,7 +201,7 @@ class AiConversationService:
     ) -> SystemMessage:
         """Generate a system message containing the patient's profile."""
         patient = await patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, detailed=True
+            patient_id=patient_id, detailed=True, include_health_data=True
         )
         patient_profile_json = CorePatientProfile.from_orm(
             patient

@@ -14,12 +14,11 @@ from lib.schemas.patient_meal_timing import (PatientMealTiming,
 class PatientEatingHabitBase(BaseModel):
     snacks_count: Optional[int] = None
     meals_per_day: Optional[int] = None
-    preferred_meal_type: Optional[str] = None
 
 
 class PatientEatingHabitCreate(PatientEatingHabitBase):
     meal_timings: Optional[List[PatientMealTimingCreate]] = []
-    diet_preferences: Optional[List[PatientDietPreferenceCreate]] = []
+    diet_preferences: Optional[PatientDietPreferenceCreate] = None
     cuisine_preferences: Optional[List[str]] = []
 
 
@@ -28,7 +27,7 @@ class PatientEatingHabit(PatientEatingHabitBase):
     patient_id: UUID
     meal_timings: Optional[List[PatientMealTiming]] = []
     cuisine_preferences: Optional[List[str]] = []
-    diet_preferences: Optional[List[PatientDietPreference]] = []
+    diet_preferences: Optional[PatientDietPreference] = None
 
     class Config:
         from_attributes = True
