@@ -1,7 +1,9 @@
 import uuid
+
 from sqlalchemy import UUID, Boolean, Column, ForeignKey, Integer, String, Text
-from lib.models import Base
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientMedicalHistory(Base):

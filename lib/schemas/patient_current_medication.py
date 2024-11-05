@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ from lib.models import Base
 class PatientCurrentMedicationBase(BaseModel):
     has_medication: bool
     prescription_description: Optional[str] = None
-    prescription_image_url: Optional[str] = None
+    prescription_image_urls: Optional[List[str]] = None
 
 
 class PatientCurrentMedicationCreate(PatientCurrentMedicationBase):
