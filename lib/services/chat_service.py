@@ -183,7 +183,9 @@ class ChatService:
             read_receipts=[],
             reactions=[],
         )
-        message_dict = message.dict(by_alias=True)
+        message_dict = message.model_dump(by_alias=True)
+        if message_dict.get("media") and message_dict["media"].get("url"):
+            message_dict["media"]["url"] = str(message_dict["media"]["url"])
 
         try:
             # Insert the message into the chat_messages collection
