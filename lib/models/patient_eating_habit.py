@@ -20,8 +20,8 @@ class PatientEatingHabit(Base):
         back_populates="eating_habit",
         cascade="all, delete-orphan",
     )
-    snacks_count = Column(Integer, nullable=True)
-    meals_per_day = Column(Integer, nullable=True)
+    snacks_count = Column(Integer, default=2, nullable=True)
+    meals_per_day = Column(Integer, default=3, nullable=True)
 
     cuisine_preferences = Column(ARRAY(String), nullable=True)
 
