@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.schemas.ai_conversation_message import \
+from lib.schemas.ai_conversation_schemas import \
     AiConversationMessage as AiConversationMessageSchema
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse

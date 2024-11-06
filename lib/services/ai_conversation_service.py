@@ -12,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
-from lib.schemas.ai_conversation_message import \
+from lib.schemas.ai_conversation_schemas import \
     AiConversationMessage as AiConversationMessageSchema
-from lib.schemas.ai_conversation_message import AiResponseSuggestions
+from lib.schemas.ai_conversation_schemas import AiResponseSuggestions
 from lib.schemas.patient import CorePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
