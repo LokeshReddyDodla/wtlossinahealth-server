@@ -92,6 +92,26 @@ class MealStatsProcessor:
         result = await self.postgres_store.execute(query)
         rows = result.all()
 
+        if not rows:
+            return [
+                DailyMealStats(
+                    date=from_date,
+                    meal_count=0,
+                    meals=[],
+                    calories=0,
+                    proteins=0,
+                    carbohydrates=0,
+                    fats=0,
+                    fiber=0,
+                    calcium=0,
+                    iron=0,
+                    zinc=0,
+                    magnesium=0,
+                    avg_glucose=avg_glucose_by_date.get(from_date, 0.0),
+                    diet_recommendations=diet_recommendations,
+                )
+            ]
+
         return [
             self._build_daily_stats(
                 row, avg_glucose_by_date, diet_recommendations
