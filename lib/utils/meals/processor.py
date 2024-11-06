@@ -295,31 +295,42 @@ class MealStatsProcessor:
         macronutrients = calculator.calculate_macronutrients(tdee)
         micronutrients = calculator.get_micronutrient_recommendations()
 
-        major_meal_ratio = 0.75
-        snack_ratio = 0.25
+        meals_per_day = patient.eating_habit.meals_per_day or 3
+        snacks_count = patient.eating_habit.snacks_count or 2
 
+        # Calculate the ratio for major meals and snacks based on their count
+        total_meal_count = meals_per_day + snacks_count
+        major_meal_ratio = meals_per_day / total_meal_count
+        snack_ratio = snacks_count / total_meal_count
+
+        # Calculate per-meal recommendations for major meals
         major_meal_distribution = MealDistribution(
-            total_calories=tdee * major_meal_ratio,
-            protein=macronutrients["protein"] * major_meal_ratio,
-            carbs=macronutrients["carbs"] * major_meal_ratio,
-            fats=macronutrients["fats"] * major_meal_ratio,
-            fiber=micronutrients["fiber"] * major_meal_ratio,
-            calcium=micronutrients["calcium"] * major_meal_ratio,
-            iron=micronutrients["iron"] * major_meal_ratio,
-            zinc=micronutrients["zinc"] * major_meal_ratio,
-            magnesium=micronutrients["magnesium"] * major_meal_ratio,
+            total_calories=(tdee * major_meal_ratio) / meals_per_day,
+            protein=(macronutrients["protein"] * major_meal_ratio)
+            / meals_per_day,
+            carbs=(macronutrients["carbs"] * major_meal_ratio) / meals_per_day,
+            fats=(macronutrients["fats"] * major_meal_ratio) / meals_per_day,
+            fiber=(micronutrients["fiber"] * major_meal_ratio) / meals_per_day,
+            calcium=(micronutrients["calcium"] * major_meal_ratio)
+            / meals_per_day,
+            iron=(micronutrients["iron"] * major_meal_ratio) / meals_per_day,
+            zinc=(micronutrients["zinc"] * major_meal_ratio) / meals_per_day,
+            magnesium=(micronutrients["magnesium"] * major_meal_ratio)
+            / meals_per_day,
         )
 
+        # Calculate per-snack recommendations for snacks
         snack_distribution = MealDistribution(
-            total_calories=tdee * snack_ratio,
-            protein=macronutrients["protein"] * snack_ratio,
-            carbs=macronutrients["carbs"] * snack_ratio,
-            fats=macronutrients["fats"] * snack_ratio,
-            fiber=micronutrients["fiber"] * snack_ratio,
-            calcium=micronutrients["calcium"] * snack_ratio,
-            iron=micronutrients["iron"] * snack_ratio,
-            zinc=micronutrients["zinc"] * snack_ratio,
-            magnesium=micronutrients["magnesium"] * snack_ratio,
+            total_calories=(tdee * snack_ratio) / snacks_count,
+            protein=(macronutrients["protein"] * snack_ratio) / snacks_count,
+            carbs=(macronutrients["carbs"] * snack_ratio) / snacks_count,
+            fats=(macronutrients["fats"] * snack_ratio) / snacks_count,
+            fiber=(micronutrients["fiber"] * snack_ratio) / snacks_count,
+            calcium=(micronutrients["calcium"] * snack_ratio) / snacks_count,
+            iron=(micronutrients["iron"] * snack_ratio) / snacks_count,
+            zinc=(micronutrients["zinc"] * snack_ratio) / snacks_count,
+            magnesium=(micronutrients["magnesium"] * snack_ratio)
+            / snacks_count,
         )
 
         return PatientDietPlanBase(
