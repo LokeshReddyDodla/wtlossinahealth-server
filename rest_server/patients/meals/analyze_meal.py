@@ -53,21 +53,21 @@ async def analyze_meal_api(
             )
         )
 
-        specific_diet_recommendations = (
+        meal_recommendations = (
             diet_recommendations_data.snack
             if meal_data.type == "snack"
             else diet_recommendations_data.major_meal
         )
 
         validated_recommendations = MealDistribution.model_validate(
-            specific_diet_recommendations
+            meal_recommendations
         )
 
         return PatientMealAnalysisResponse(
             message="Meal analyzed successfully.",
             data=PatientMealAnalysis(
                 meal_data=meal_data,
-                diet_recommendations=validated_recommendations,
+                meal_recommendations=validated_recommendations,
             ),
         )
     except HTTPException as http_exc:

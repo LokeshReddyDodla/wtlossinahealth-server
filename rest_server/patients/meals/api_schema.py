@@ -23,7 +23,7 @@ class PatientMealUploadRequest(BaseModel):
 
 class PatientMealAnalysis(BaseModel):
     meal_data: PatientMeal
-    diet_recommendations: MealDistribution
+    meal_recommendations: MealDistribution
 
 
 PatientMealAnalysisResponse = SuccessResponse[PatientMealAnalysis]
