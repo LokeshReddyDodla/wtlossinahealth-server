@@ -29,7 +29,7 @@ class AiConversationService:
         model: OpenAIModelLiteral = "gpt-4o",
     ):
 
-        self.current_model = model
+        self.current_model: OpenAIModelLiteral = model
         self.mongo_client = MongoClient(str(MONGO_URL))
         self.db = self.mongo_client[str(MONGO_DB_NAME)]
         self.messages_collection = self.db["ai_conversation_messages"]
