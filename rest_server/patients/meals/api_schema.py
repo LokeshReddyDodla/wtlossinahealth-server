@@ -4,6 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, HttpUrl, constr
 
 from lib.schemas.meal_stats import DailyMealStats
+from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal
 from rest_server.response_models import SuccessResponse
 
@@ -20,6 +21,11 @@ class PatientMealUploadRequest(BaseModel):
     image_url: HttpUrl
 
 
-PatientMealAnalysisResponse = SuccessResponse[PatientMeal]
+class PatientMealAnalysis(BaseModel):
+    meal_data: PatientMeal
+    diet_recommendations: MealDistribution
+
+
+PatientMealAnalysisResponse = SuccessResponse[PatientMealAnalysis]
 
 PatientMealUploadResponse = SuccessResponse[PatientMeal]

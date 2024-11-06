@@ -4,13 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_meal_service,
+                                                   get_meal_stats_processor,
                                                    get_patient_profile_service)
 from lib.models.patient import Patient
 from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.schemas.patient_diet_plan import (MealDistribution, PatientDietPlan,
+                                           PatientDietPlanBase)
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
 from lib.services.patient_profile_service import PatientProfileService
-from rest_server.patients.meals.api_schema import PatientMealAnalysisResponse
+from lib.utils.meals.processor import MealStatsProcessor
+from rest_server.patients.meals.api_schema import (PatientMealAnalysis,
+                                                   PatientMealAnalysisResponse)
 from rest_server.response_models import ErrorResponse
 
 from .router import router
@@ -25,23 +30,45 @@ async def analyze_meal_api(
     meal_id: str,
     re_analyze: Optional[bool] = False,
     meal_service: MealService = Depends(get_meal_service),
+    meal_stats_processor: MealStatsProcessor = Depends(
+        get_meal_stats_processor
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     """
     Analyze Meal API
     """
     try:
-        meal = await meal_service.analyze_meal(
+        analyzed_meal = await meal_service.analyze_meal(
             meal_id=meal_id,
             re_analyze=re_analyze,
             patient_id=str(current_patient.patient_id),
         )
 
-        meal_response = PatientMealSchema.from_orm(meal)
+        meal_data = PatientMealSchema.from_orm(analyzed_meal)
+
+        diet_recommendations_data = (
+            await meal_stats_processor.get_diet_recommendations(
+                meal_data.uploaded_at
+            )
+        )
+
+        specific_diet_recommendations = (
+            diet_recommendations_data.snack
+            if meal_data.type == "snack"
+            else diet_recommendations_data.major_meal
+        )
+
+        validated_recommendations = MealDistribution.model_validate(
+            specific_diet_recommendations
+        )
 
         return PatientMealAnalysisResponse(
             message="Meal analyzed successfully.",
-            data=meal_response,
+            data=PatientMealAnalysis(
+                meal_data=meal_data,
+                diet_recommendations=validated_recommendations,
+            ),
         )
     except HTTPException as http_exc:
         raise http_exc
