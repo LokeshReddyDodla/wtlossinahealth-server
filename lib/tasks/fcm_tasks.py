@@ -27,7 +27,6 @@ def send_fcm_notification_task(participants, notification_info: dict):
                         body=notification_info["body"],
                         channel_key=notification_info["channel_key"],
                         group_key=notification_info["group_key"],
-                        append_name=notification_info["append_name"],
                         data=notification_info["data"],
                     ),
                 )

@@ -5,15 +5,16 @@ from decouple import config
 from fastapi import HTTPException
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from pymongo import MongoClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
-from lib.schemas.ai_conversation_message import \
+from lib.schemas.ai_conversation_schemas import \
     AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.ai_conversation_schemas import AiResponseSuggestions
 from lib.schemas.patient import CorePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
@@ -29,7 +30,7 @@ class AiConversationService:
         model: OpenAIModelLiteral = "gpt-4o",
     ):
 
-        self.current_model = model
+        self.current_model: OpenAIModelLiteral = model
         self.mongo_client = MongoClient(str(MONGO_URL))
         self.db = self.mongo_client[str(MONGO_DB_NAME)]
         self.messages_collection = self.db["ai_conversation_messages"]
@@ -114,6 +115,7 @@ class AiConversationService:
         content: str,
         message_type: AiConversationMessageTypeLiteral = "text",
         exclude_from_frontend: bool = False,
+        reply_suggestions: Optional[List[str]] = None,
     ):
         """Add a message to the conversation."""
         message_data = AiConversationMessageSchema(
@@ -124,6 +126,7 @@ class AiConversationService:
             content=content,
             message_type=message_type,
             exclude_from_frontend=exclude_from_frontend,
+            reply_suggestions=reply_suggestions,
         ).model_dump()
 
         result = self.messages_collection.insert_one(message_data)
@@ -227,6 +230,7 @@ class AiConversationService:
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
         patient_profile_service: PatientProfileService,
+        include_reply_suggestions: bool = True,
     ) -> Dict:
         self.add_message_to_conversation(
             patient_id,
@@ -251,6 +255,13 @@ class AiConversationService:
 
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
+
+        reply_suggestions = None
+        if include_reply_suggestions:
+            reply_suggestions = await self._generate_message_suggestions(
+                ai_response.content
+            )
+
         ai_message_data = self.add_message_to_conversation(
             patient_id,
             conversation_id,
@@ -258,6 +269,7 @@ class AiConversationService:
             "ai",
             ai_response.content,
             message_type="markdown",
+            reply_suggestions=reply_suggestions,
         )
 
         # Log token usage
@@ -274,6 +286,30 @@ class AiConversationService:
             )
 
         return ai_message_data
+
+    async def _generate_message_suggestions(self, ai_response_content: str):
+        suggestion_prompt = (
+            f"Based on the response:\n{ai_response_content}\n"
+            "Generate 3 to 5 suggested follow-up questions or replies that the user might want to ask. "
+            "without suggesting any external apps, tools, or resources. "
+            "Keep the suggestions relevant to the ongoing conversation and within the context of this app's capabilities. "
+            "Provide helpful, relevant follow-up questions related to health and wellness, staying within the app's context. "
+            "Avoid general advice or external recommendations; focus on personalized health insights or support."
+        )
+        messages = [SystemMessage(content=suggestion_prompt)]
+
+        suggestion_model = self.chat_model.with_structured_output(
+            AiResponseSuggestions, strict=True
+        )
+
+        try:
+            suggestion_response: Any = suggestion_model.invoke(messages)
+            suggestions = suggestion_response.suggestions
+            print("==> suggestions: ", suggestions)
+            return suggestions
+        except ValidationError as e:
+            print("Error: Response did not match the expected schema", e)
+            return None
 
     def delete_conversation_messages(
         self,
@@ -295,6 +331,10 @@ class AiConversationService:
             )
         except Exception as e:
             print(f"Failed to delete conversation messages: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete conversation messages",
+            )
             raise HTTPException(
                 status_code=500,
                 detail="Failed to delete conversation messages",

@@ -41,7 +41,7 @@ class MealStatsProcessor:
     ):
 
         # Fetch recommendations
-        diet_recommendations = await self._get_diet_recommendations(from_date)
+        diet_recommendations = await self.get_diet_recommendations(from_date)
 
         # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
@@ -239,7 +239,7 @@ class MealStatsProcessor:
             .as_scalar()
         )
 
-    async def _get_diet_recommendations(
+    async def get_diet_recommendations(
         self, query_date: datetime
     ) -> PatientDietPlanBase:
         """Fetch diet recommendations from an active plan or calculate dynamically."""

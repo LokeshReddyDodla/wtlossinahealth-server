@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from lib.core.postgres_store import PostgresStore
+from lib.core.types import OpenAIModelLiteral
 from lib.models.patient_token_usage_log import PatientTokenUsageLog
 
 
@@ -12,7 +13,7 @@ class PatientTokenUsageLogger:
     async def log_usage(
         patient_id: UUID,
         tokens_used: int,
-        model_used: str,
+        model_used: OpenAIModelLiteral,
         api_type: str,
         api_endpoint: str,
     ) -> None:

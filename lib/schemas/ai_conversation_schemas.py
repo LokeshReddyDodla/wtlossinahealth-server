@@ -9,6 +9,10 @@ from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationTypeLiteral)
 
 
+class AiResponseSuggestions(BaseModel):
+    suggestions: List[str]
+
+
 class AiConversationMessage(BaseModel):
     patient_id: str
     message_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -19,3 +23,4 @@ class AiConversationMessage(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     message_type: AiConversationMessageTypeLiteral
     exclude_from_frontend: bool = False
+    reply_suggestions: Optional[List[str]] = None
