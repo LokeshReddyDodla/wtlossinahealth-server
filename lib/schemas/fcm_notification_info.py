@@ -9,10 +9,6 @@ from lib.core.types import (FCMNotificationChannelKeyLiteral,
 class FCMNotificationInfo(BaseModel):
     title: str = Field(..., description="Title of the FCM notification")
     body: str = Field(..., description="Body content of the FCM notification")
-    append_name: bool = Field(
-        False,
-        description="Flag to append sender's name to the notification title",
-    )
     channel_key: FCMNotificationChannelKeyLiteral = Field(
         ..., description="Channel key for the FCM notification (e.g., 'chat')"
     )
