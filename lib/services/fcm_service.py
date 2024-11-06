@@ -111,7 +111,6 @@ class FCMService:
         body: str,
         channel_key: FCMNotificationChannelKeyLiteral,
         group_key: FCMNotificationGroupKeyLiteral,
-        append_name: Optional[bool] = False,
         data: Optional[dict] = {},
     ):
         """Send a batch of FCM notifications to all devices of a user."""
@@ -131,37 +130,6 @@ class FCMService:
                 messages = []
                 for device in devices:
                     notification_title = title
-
-                    if append_name:
-                        if (
-                            device.profile_type == ProfileType.PATIENT.value
-                            and device.patient
-                        ):
-                            if device.patient.first_name:
-                                notification_title += (
-                                    f" {device.patient.first_name}"
-                                )
-                            else:
-                                print(
-                                    f"Patient {device.patient.patient_id} has no first_name"
-                                )
-                        elif (
-                            device.profile_type
-                            == ProfileType.CARE_PROVIDER.value
-                            and device.care_provider
-                        ):
-                            if device.care_provider.first_name:
-                                notification_title += (
-                                    f" {device.care_provider.first_name}"
-                                )
-                            else:
-                                print(
-                                    f"Care provider {device.care_provider.care_provider_id} has no first_name"
-                                )
-
-                    print(
-                        f"Sending notification with title: {notification_title}"
-                    )
 
                     # Build the message
                     message = self._build_message(

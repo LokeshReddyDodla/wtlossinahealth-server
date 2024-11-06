@@ -225,13 +225,10 @@ class ChatService:
                         )
 
             notification_info = FCMNotificationInfo(
-                title="New message from",
-                body=(
-                    f"sent you an {message.metadata.type}"  # For image, audio, file
-                    if message.metadata.type in ["image", "audio", "file"]
-                    else message.content
+                title="New Message",
+                body=self._get_notification_body(
+                    message.metadata.type, message.content
                 ),
-                append_name=True,
                 channel_key="chat_messages",
                 group_key="chat_group",
                 sender_id=message.sender_id,
@@ -251,6 +248,16 @@ class ChatService:
         except Exception as e:
             print(f"Failed to add message: {str(e)}")
             raise Exception(f"Failed to add message: {str(e)}")
+
+    def _get_notification_body(self, message_type: str, content: str) -> str:
+        if message_type == "image":
+            return "You received an image"
+        elif message_type == "file":
+            return "You received a file"
+        elif message_type == "audio":
+            return "You received an audio message"
+        else:
+            return content
 
     async def delete_all_chats(self, user_id: str):
         try:
@@ -676,9 +683,9 @@ class ChatService:
             participants = await self.fetch_chat_participants(chat_id, user_id)
 
             for participant in participants:
-                user_id = str(participant["id"])
-                await sio.emit(message_key, data, room=user_id)
-                print(f"Emitted {message_key} to participant {user_id}")
+                participant_id = str(participant["id"])
+                await sio.emit(message_key, data, room=participant_id)
+                print(f"Emitted {message_key} to participant {participant_id}")
 
             # Send FCM notification if notification_info is provided
             if notification_info is not None:
