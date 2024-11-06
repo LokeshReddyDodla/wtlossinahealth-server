@@ -293,7 +293,8 @@ class AiConversationService:
             "Generate 3 to 5 suggested follow-up questions or replies that the user might want to ask. "
             "without suggesting any external apps, tools, or resources. "
             "Keep the suggestions relevant to the ongoing conversation and within the context of this app's capabilities. "
-            "Avoid recommendations for other apps or platforms."
+            "Provide helpful, relevant follow-up questions related to health and wellness, staying within the app's context. "
+            "Avoid general advice or external recommendations; focus on personalized health insights or support."
         )
         messages = [SystemMessage(content=suggestion_prompt)]
 
