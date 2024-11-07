@@ -10,7 +10,9 @@ from lib.core.types import (AiConversationMessageTypeLiteral,
 
 
 class AiResponseSuggestions(BaseModel):
-    suggestions: List[str]
+    suggestions: List[str] = Field(
+        description="List of suggested follow-up questions or replies for the user."
+    )
 
 
 class AiConversationMessage(BaseModel):

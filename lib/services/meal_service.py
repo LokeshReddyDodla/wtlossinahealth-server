@@ -268,7 +268,7 @@ class MealService:
                     tokens_used=tokens_used,
                     model_used="gpt-4o",
                     api_type="openai",
-                    api_endpoint="meal_analysis",
+                    api_endpoint="/patient/meals/analyze",
                 )
 
             return updated_meal
