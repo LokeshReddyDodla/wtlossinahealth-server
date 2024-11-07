@@ -74,6 +74,7 @@ async def analyze_meal_api(
         raise http_exc
     except Exception as e:
         response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+            message="Meal analysis failed. Please try again later.",
+            detail=str(e),
         )
         raise HTTPException(status_code=500, detail=response.dict())

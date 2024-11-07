@@ -8,6 +8,7 @@ from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.chat_service import ChatService
+from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_service import MealService
 from lib.services.patient_care_provider_service import \
@@ -174,3 +175,19 @@ async def get_fitness_stats_processor(
     clickhouse_store = request.state.context.clickhouse_store
     patient_id = str(current_patient.patient_id)
     return FitnessStatsProcessor(clickhouse_store, patient_id)
+
+
+async def get_fitness_upload_service(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+    current_patient: Patient = Depends(get_current_patient),
+) -> FitnessUploadService:
+    clickhouse_store = request.state.context.clickhouse_store
+    fitness_sync_store = request.state.context.fitness_sync_store
+
+    return FitnessUploadService(
+        clickhouse_store,
+        fitness_sync_store,
+        session,
+        str(current_patient.patient_id),
+    )
