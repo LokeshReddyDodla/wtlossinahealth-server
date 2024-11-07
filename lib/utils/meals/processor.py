@@ -298,7 +298,7 @@ class MealStatsProcessor:
             self.patient_id, detailed=True
         )
 
-        if not (patient.weight or patient.height or patient.dob):
+        if patient.weight is None or patient.height is None or patient.dob is None or patient.gender is None:
             # Return default values if the profile is incomplete
             return PatientDietPlanBase(
                 total_calories=0,
