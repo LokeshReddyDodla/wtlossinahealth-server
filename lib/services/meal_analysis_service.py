@@ -104,7 +104,10 @@ class MealAnalysisService:
 
         messages = system_message + human_messages
 
-        ai_response = self.structured_model.invoke(messages)
+        ai_response = retry_request(
+            self.structured_model.invoke, messages=messages
+        )
+
         print("==> ai_response: ", ai_response)
 
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
