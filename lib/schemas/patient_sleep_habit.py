@@ -12,8 +12,8 @@ from lib.models import Base
 
 class PatientSleepHabitBase(BaseModel):
     sleep_quality: str
-    wake_up_fresh: bool
-    drowsy_day: bool
+    wake_up_fresh: Optional[bool]
+    drowsy_day: Optional[bool]
     average_sleep_duration: Optional[float] = None
     wake_up_time: Optional[datetime_time] = None
     bed_time: Optional[datetime_time] = None
