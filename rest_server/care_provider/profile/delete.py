@@ -19,7 +19,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.delete("/{care_provider_id}", response_model=SuccessResponse)
+@router.delete("", response_model=SuccessResponse)
 async def delete_care_provider_profile(
     request: Request,
     care_provider_id: str,
