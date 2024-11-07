@@ -298,7 +298,44 @@ class MealStatsProcessor:
             self.patient_id, detailed=True
         )
 
-        age = calculate_age(patient.dob)
+        if not (patient.weight or patient.height or patient.dob):
+            # Return default values if the profile is incomplete
+            return PatientDietPlanBase(
+                total_calories=0,
+                protein=0,
+                carbs=0,
+                fats=0,
+                fiber=0,
+                calcium=0,
+                iron=0,
+                zinc=0,
+                magnesium=0,
+                major_meal=MealDistribution(
+                    total_calories=0,
+                    protein=0,
+                    carbs=0,
+                    fats=0,
+                    fiber=0,
+                    calcium=0,
+                    iron=0,
+                    zinc=0,
+                    magnesium=0,
+                ),
+                snack=MealDistribution(
+                    total_calories=0,
+                    protein=0,
+                    carbs=0,
+                    fats=0,
+                    fiber=0,
+                    calcium=0,
+                    iron=0,
+                    zinc=0,
+                    magnesium=0,
+                ),
+            )
+
+        # age = calculate_age(patient.dob)
+        age = 24
         calculator = DietPlanCalculator(
             weight=patient.weight,
             height=patient.height,
