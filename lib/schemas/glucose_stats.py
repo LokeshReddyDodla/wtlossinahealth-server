@@ -111,6 +111,7 @@ class GlucoseLevelStats(BaseModel):
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
+    last_libreview_sync: Optional[datetime]
 
 
 class GlucoseDailyReport(BaseModel):

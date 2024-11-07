@@ -14,6 +14,8 @@ from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
 from lib.schemas.patient import CompletePatientProfile
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
+from lib.services.patient_connected_app_service import \
+    PatientConnectedAppService
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
@@ -30,11 +32,13 @@ class GlucoseStatsProcessor:
         clickhouse_store,
         postgres_session,
         meal_service,
+        patient_connected_app_service: PatientConnectedAppService,
         patient_id,
     ):
         self.clickhouse_store = clickhouse_store
         self.postgres_session = postgres_session
         self.meal_service = meal_service
+        self.patient_connected_app_service = patient_connected_app_service
         self.patient_id = patient_id
 
     def fetch_glucose_readings_by_date(
@@ -89,6 +93,15 @@ class GlucoseStatsProcessor:
         self, periods: List[Dict[str, datetime]], include_readings=False
     ) -> Dict[str, GlucoseLevelStats]:
         stats = {}
+
+        connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
+            self.patient_id
+        )
+        last_libreview_sync = (
+            connected_apps.libreview.last_sync_timestamp
+            if connected_apps.libreview
+            else None
+        )
 
         for period in periods:
             from_date = period["from_date"]
@@ -162,5 +175,6 @@ class GlucoseStatsProcessor:
                 glucose_range_stats=glucose_range_stats,
                 hyper_stats=hyper_stats,
                 hypo_stats=hypo_stats,
+                last_libreview_sync=last_libreview_sync,
             )
         return stats

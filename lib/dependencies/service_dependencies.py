@@ -126,11 +126,18 @@ async def get_glucose_stats_processor(
     session: AsyncSession = Depends(get_postgres_session),
     current_patient: Patient = Depends(get_current_patient),
     meal_service: MealService = Depends(get_meal_service),
+    patient_connected_app_service: PatientConnectedAppService = Depends(
+        get_patient_connected_app_service
+    ),
 ) -> GlucoseStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
     patient_id = str(current_patient.patient_id)
     return GlucoseStatsProcessor(
-        clickhouse_store, session, meal_service, patient_id
+        clickhouse_store,
+        session,
+        meal_service,
+        patient_connected_app_service,
+        patient_id,
     )
 
 
