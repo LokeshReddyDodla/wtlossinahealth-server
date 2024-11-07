@@ -105,7 +105,8 @@ class MealAnalysisService:
         messages = system_message + human_messages
 
         ai_response = retry_request(
-            self.structured_model.invoke, messages=messages
+            self.structured_model.invoke,
+            input=messages,
         )
 
         print("==> ai_response: ", ai_response)
