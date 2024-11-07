@@ -54,3 +54,39 @@ async def send_ai_conversation_message(
         raise HTTPException(
             status_code=500, detail=f"Failed to generate response: {str(e)}"
         )
+
+
+@router.post("/health-tip", response_model=SuccessResponse)
+async def get_daily_health_tip(
+    request: Request,
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    current_patient: PatientModel = Depends(get_current_patient),
+):
+    """
+    Get a personalized health tip of the day for the current patient.
+    """
+    try:
+        ai_conversation_service = AiConversationService(
+            conversation_type="health-tip",
+            model="gpt-4o-mini",
+        )
+        # Generate the health tip of the day
+        health_tip = (
+            await ai_conversation_service.generate_health_tip_of_the_day(
+                patient_id=str(current_patient.patient_id),
+                patient_profile_service=patient_profile_service,
+            )
+        )
+
+        return SuccessResponse(
+            message="Health tip of the day generated successfully.",
+            data=health_tip,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate health tip: {str(e)}"
+        )

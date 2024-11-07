@@ -21,7 +21,12 @@ AiConversationMessageTypeLiteral = Literal[
 ]
 
 AiConversationTypeLiteral = Literal[
-    "smbg", "meal", "prescription", "report", "other"
+    "smbg",
+    "meal",
+    "prescription",
+    "report",
+    "health-tip",
+    "other",
 ]
 
 OpenAIModelLiteral = Literal[

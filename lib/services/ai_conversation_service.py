@@ -95,6 +95,25 @@ class AiConversationService:
                     "Avoid any response that includes your origin, development, or unrelated topics."
                 )
             )
+        elif conversation_type == "health-tip":
+            return SystemMessage(
+                content=(
+                    "You are an AI specialized in health tips for diabetic and obese patients, providing friendly, concise, and actionable advice. "
+                    "Generate a brief health tip in 1-2 sentences that is directly relevant to the patient's health goals, and include a friendly, conversational tone. "
+                    "Use **bold** formatting to highlight important words or phrases (such as food names, actions, or reminders), making the tip visually engaging. "
+                    "Personalize tips by starting with phrases like 'Hi [name],', 'Did you know?', or 'Make sure to...', using the patient's name if available. "
+                    "Focus on dietary advice, light activity suggestions, hydration reminders, and general wellness tips that are easy to follow and suitable for display on a mobile home screen."
+                    "**Guidelines:**\n"
+                    "1. Recommend only low-glycemic index (GI) and high-fiber foods to help manage blood sugar, using **bold** to emphasize specific food items.\n"
+                    "2. Encourage light activities such as **walking**, **stretching**, or **breathing exercises**, tailored to the patient's profile.\n"
+                    "3. Include hydration reminders and stress-relief tips, keeping suggestions friendly and actionable.\n"
+                    "4. Make culturally relevant suggestions and avoid any reference to external apps or tools.\n"
+                    "**Examples:**\n"
+                    "- '**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels!'\n"
+                    "- '**Did you know?** Staying **hydrated** can improve energy levels. Aim to drink water throughout the day.'\n"
+                    "- '**Make sure** to include a **high-fiber vegetable** in your next meal for better blood sugar control.'"
+                )
+            )
         return SystemMessage(
             content=(
                 "You are a knowledgeable health assistant and an expert in managing diabetes and obesity. "
@@ -282,7 +301,7 @@ class AiConversationService:
                 tokens_used=tokens_used,
                 model_used=self.current_model,
                 api_type="openai",
-                api_endpoint="conversation_response",
+                api_endpoint="/ai-conversation/respond",
             )
 
         return ai_message_data
@@ -311,6 +330,31 @@ class AiConversationService:
             print("Error: Response did not match the expected schema", e)
             return None
 
+    async def generate_health_tip_of_the_day(
+        self, patient_id: str, patient_profile_service: PatientProfileService
+    ):
+        patient_context_message = await self.create_patient_context_message(
+            patient_profile_service, patient_id
+        )
+        messages = [self.system_message, patient_context_message]
+
+        ai_tip_response = self.chat_model.invoke(messages)
+        health_tip = ai_tip_response.content
+
+        tokens_used = ai_tip_response.response_metadata.get(
+            "token_usage", {}
+        ).get("total_tokens", 0)
+        if tokens_used:
+            await PatientTokenUsageLogger.log_usage(
+                patient_id=UUID(patient_id),
+                tokens_used=tokens_used,
+                model_used=self.current_model,
+                api_type="openai",
+                api_endpoint="/ai-conversation/health-tip",
+            )
+
+        return health_tip
+
     def delete_conversation_messages(
         self,
         conversation_id: str,
@@ -331,10 +375,6 @@ class AiConversationService:
             )
         except Exception as e:
             print(f"Failed to delete conversation messages: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to delete conversation messages",
-            )
             raise HTTPException(
                 status_code=500,
                 detail="Failed to delete conversation messages",
