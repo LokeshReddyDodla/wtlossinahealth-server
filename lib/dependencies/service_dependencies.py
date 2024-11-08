@@ -183,7 +183,7 @@ async def get_fitness_upload_service(
     current_patient: Patient = Depends(get_current_patient),
 ) -> FitnessUploadService:
     clickhouse_store = request.state.context.clickhouse_store
-    fitness_sync_store = request.state.context.fitness_sync_store
+    fitness_sync_store = request.app.state.fitness_sync_store
 
     return FitnessUploadService(
         clickhouse_store,
