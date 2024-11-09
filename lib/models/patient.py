@@ -209,4 +209,22 @@ def create_related_records(mapper, connection, target):
     runner.run(
         chat_service.create_new_chat, str(target.patient_id), "patient", True
     )
+
+    # Add initial message to the conversation
+    from lib.services.ai_conversation_service import AiConversationService
+    ai_conversation_service = AiConversationService()
+    welcome_message = (
+        "Welcome to AiHealth! We're glad to have you onboard. "
+        "Let us know how we can assist you, or start a conversation with your health assistant."
+    )
+    runner.run(
+        ai_conversation_service.add_message_to_conversation,
+        patient_id=str(target.patient_id),
+        conversation_id=f"{target.patient_id}-custom",
+        conversation_type="other",
+        role="assistant",
+        content=welcome_message,
+        message_type="text",
+    )
+
     runner.shutdown()
