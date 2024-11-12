@@ -1,10 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-import openai
 from decouple import config
-from fastapi import HTTPException
-from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -20,16 +17,12 @@ from lib.models.patient_meal import \
     PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel
 from lib.models.patient_meal import \
     PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel
-from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
 from lib.schemas.patient_meal import \
     PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema
 from lib.schemas.patient_meal import \
     PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema
-from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.datetime_utils import convert_milliseconds_to_datetime
-from lib.utils.openai_utils import extract_json_from_response
 from lib.utils.retry_utils import retry_request
 
 
@@ -165,6 +158,7 @@ class MealAnalysisService:
             serving_size=item_data.serving_size,
             serving_quantity=float(item_data.serving_quantity),
             serving_unit=item_data.serving_unit,
+            category=item_data.category,
             meal=meal,
         )
         food_item.macro_nutritional_values = PatientMacroNutritionalValueModel(
