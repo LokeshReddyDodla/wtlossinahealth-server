@@ -67,6 +67,7 @@ class PatientFoodItem(Base):
     serving_size = Column(String)
     serving_quantity = Column(Float)
     serving_unit = Column(String)
+    category = Column(String)
     macro_nutritional_values = relationship(
         "PatientMacroNutritionalValue",
         back_populates="food_item",
