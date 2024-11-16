@@ -15,7 +15,7 @@ class PatientSleepHabit(Base):
     sleep_quality = Column(String(50))
     wake_up_fresh = Column(Boolean)
     drowsy_day = Column(Boolean)
-    average_sleep_duration = Column(Float, nullable=True)
+    average_sleep_duration = Column(String, nullable=True)
     wake_up_time = Column(Time, nullable=True)
     bed_time = Column(Time, nullable=True)
     patient = relationship("Patient", back_populates="sleep_habit")
