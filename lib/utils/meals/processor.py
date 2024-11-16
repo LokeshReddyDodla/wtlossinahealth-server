@@ -298,7 +298,12 @@ class MealStatsProcessor:
             self.patient_id, detailed=True
         )
 
-        if patient.weight is None or patient.height is None or patient.dob is None or patient.gender is None:
+        if (
+            patient.weight is None
+            or patient.height is None
+            or patient.dob is None
+            or patient.gender is None
+        ):
             # Return default values if the profile is incomplete
             return PatientDietPlanBase(
                 total_calories=0,
@@ -352,8 +357,8 @@ class MealStatsProcessor:
         macronutrients = calculator.calculate_macronutrients(tdee)
         micronutrients = calculator.get_micronutrient_recommendations()
 
-        meals_per_day = patient.eating_habit.meals_per_day or 3
-        snacks_count = patient.eating_habit.snacks_count or 2
+        meals_per_day = getattr(patient.eating_habit, "meals_per_day", 3) or 3
+        snacks_count = getattr(patient.eating_habit, "snacks_count", 2) or 2
 
         # Calculate the ratio for major meals and snacks based on their count
         total_meal_count = meals_per_day + snacks_count
