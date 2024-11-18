@@ -31,11 +31,19 @@ class PatientMicroNutritionalValue(BaseModel):
 class PatientFoodItem(BaseModel):
     name: str = Field(description="Name of the dish")
     coordinates: Optional[List[float]] = Field(
-        description="Coordinates of the dish in the image"
+        description=(
+            "Bounding box coordinates of the food item in the image, specified as "
+            "[x_min, y_min, x_max, y_max]. These coordinates represent the exact region "
+            "of the food item (e.g., the food itself rather than the plate or container)."
+        )
     )
-    serving_size: str = Field(description="Serving size")
+    serving_size: str = Field(
+        description="Serving size description (e.g., 'medium')"
+    )
     serving_quantity: float = Field(description="Quantity of the serving")
-    serving_unit: str = Field(description="Unit of the serving")
+    serving_unit: str = Field(
+        description="Unit of the serving (e.g., 'cup', 'grams')"
+    )
     category: Optional[str] = Field(
         description="Category of the food item (e.g., 'solid', 'drink')"
     )
