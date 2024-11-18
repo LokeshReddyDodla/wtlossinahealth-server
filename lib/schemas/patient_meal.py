@@ -36,6 +36,9 @@ class PatientFoodItem(BaseModel):
     serving_size: str = Field(description="Serving size")
     serving_quantity: float = Field(description="Quantity of the serving")
     serving_unit: str = Field(description="Unit of the serving")
+    category: Optional[str] = Field(
+        description="Category of the food item (e.g., 'solid', 'drink')"
+    )
     macro_nutritional_values: PatientMacroNutritionalValue
     micro_nutritional_values: PatientMicroNutritionalValue
 
