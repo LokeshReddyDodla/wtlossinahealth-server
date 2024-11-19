@@ -29,6 +29,7 @@ async def analyze_meal_api(
     request: Request,
     meal_id: str,
     re_analyze: Optional[bool] = False,
+    update_fields: Optional[dict] = None,
     meal_service: MealService = Depends(get_meal_service),
     meal_stats_processor: MealStatsProcessor = Depends(
         get_meal_stats_processor
@@ -43,6 +44,7 @@ async def analyze_meal_api(
             meal_id=meal_id,
             re_analyze=re_analyze,
             patient_id=str(current_patient.patient_id),
+            update_fields=update_fields,
         )
 
         meal_data = PatientMealSchema.from_orm(analyzed_meal)

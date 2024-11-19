@@ -170,6 +170,7 @@ class MealService:
         meal_id: str,
         patient_id: str,
         re_analyze: Optional[bool] = False,
+        update_fields: Optional[dict] = None,
     ) -> PatientMealModel:
         try:
             meal = await self.fetch_meal(meal_id)
@@ -196,6 +197,7 @@ class MealService:
                 meal.image_url,
                 meal.type,
                 meal.description,
+                update_fields=update_fields,
             )
 
             if not parsed_ai_response:
