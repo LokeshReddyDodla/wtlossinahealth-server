@@ -49,6 +49,7 @@ class MealAnalysisService:
         image_url,
         meal_type,
         meal_description=None,
+        update_fields=None,
     ):
 
         system_message = [
@@ -93,6 +94,13 @@ class MealAnalysisService:
         if meal_description:
             human_messages.append(
                 HumanMessage(content=f"Description: {meal_description}")
+            )
+
+        if update_fields:
+            human_messages.append(
+                HumanMessage(
+                    content=f"Updated Serving Details: {update_fields}"
+                )
             )
 
         messages = system_message + human_messages
