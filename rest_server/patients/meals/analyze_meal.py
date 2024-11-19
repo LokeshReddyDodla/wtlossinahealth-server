@@ -40,11 +40,11 @@ async def analyze_meal_api(
     Analyze Meal API
     """
     try:
-        analyzed_meal = await meal_service.analyze_meal(
+        analyzed_meal = await meal_service.analyze_or_reanalyze_meal(
             meal_id=meal_id,
             re_analyze=re_analyze,
-            patient_id=str(current_patient.patient_id),
             update_fields=update_fields,
+            patient_id=str(current_patient.patient_id),
         )
 
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
