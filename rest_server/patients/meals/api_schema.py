@@ -10,8 +10,6 @@ from rest_server.response_models import SuccessResponse
 
 PatientMealsResponse = SuccessResponse[List[PatientMeal]]
 
-PatientMealStatsResponse = SuccessResponse[DailyMealStats]
-
 
 class PatientMealUploadRequest(BaseModel):
     type: str
