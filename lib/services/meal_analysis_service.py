@@ -117,6 +117,51 @@ class MealAnalysisService:
 
         return parsed_response, total_tokens
 
+    async def reanalyze_meal(
+        self,
+        meal_json: dict,
+        update_fields: dict,
+    ):
+        system_message = [
+            SystemMessage(
+                content=(
+                    "You are an AI focused on reanalyzing meal data. "
+                    "Use the provided meal details and updated serving fields "
+                    "to adjust the nutritional analysis and feedback."
+                )
+            ),
+            SystemMessage(
+                content=f"Original Meal Details:\n```json\n{meal_json}\n```"
+            ),
+        ]
+
+        human_messages = [
+            HumanMessage(
+                content="Reanalyze the meal based on the updated details."
+            )
+        ]
+
+        if update_fields:
+            human_messages.append(
+                HumanMessage(
+                    content=f"Updated Serving Details:\n```json\n{update_fields}\n```"
+                )
+            )
+
+        messages = system_message + human_messages
+
+        ai_response = retry_request(
+            self.structured_model.invoke,
+            input=messages,
+        )
+
+        print("==> ai_response: ", ai_response)
+
+        parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
+        total_tokens = ai_response["raw"].usage_metadata.get("total_tokens", 0)
+
+        return parsed_response, total_tokens
+
     async def save_meal_analysis(
         self, meal: Any, analysis_data: MealAnalysisResponse
     ) -> PatientMealModel:

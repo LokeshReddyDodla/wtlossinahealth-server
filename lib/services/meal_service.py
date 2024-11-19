@@ -165,7 +165,7 @@ class MealService:
                 status_code=500, detail=f"Database Error: {str(e)}"
             )
 
-    async def analyze_meal(
+    async def analyze_or_reanalyze_meal(
         self,
         meal_id: str,
         patient_id: str,
@@ -187,18 +187,24 @@ class MealService:
                 patient
             ).model_dump()
 
-            # Analyze the meal using the MealAnalysisService
-            (
-                parsed_ai_response,
-                tokens_used,
-            ) = self.meal_analysis_service.analyze_meal(
-                patient_profile_json,
-                meal.time,
-                meal.image_url,
-                meal.type,
-                meal.description,
-                update_fields=update_fields,
-            )
+            # Analyze or reanalyze the meal using the MealAnalysisService
+            if update_fields:
+                parsed_ai_response, tokens_used = (
+                    await self.meal_analysis_service.reanalyze_meal(
+                        meal_orm.model_dump(), update_fields
+                    )
+                )
+            else:
+                (
+                    parsed_ai_response,
+                    tokens_used,
+                ) = self.meal_analysis_service.analyze_meal(
+                    patient_profile_json,
+                    meal.time,
+                    meal.image_url,
+                    meal.type,
+                    meal.description,
+                )
 
             if not parsed_ai_response:
                 raise HTTPException(
@@ -216,47 +222,9 @@ class MealService:
                 )
 
             # Define custom conversation flow for meals
-            message_sequence = [
-                AiConversationMessageSchema(
-                    patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_id,
-                    conversation_type="meal",
-                    role="human",
-                    message_type="markdown",
-                    content=md(
-                        f"I had **{meal_orm.type}** at **{meal_orm.time.strftime('%I:%M %p')}**."
-                    ),
-                ),
-                AiConversationMessageSchema(
-                    patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_id,
-                    conversation_type="meal",
-                    role="human",
-                    message_type="image" if meal_orm.image_url else "text",
-                    content=(
-                        str(meal_orm.image_url)
-                        if meal_orm.image_url
-                        else meal_orm.description or ""
-                    ),
-                ),
-                AiConversationMessageSchema(
-                    patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_id,
-                    conversation_type="meal",
-                    role="ai",
-                    message_type="text",
-                    content=parsed_ai_response.model_dump_json(),
-                    exclude_from_frontend=True,
-                ),
-                AiConversationMessageSchema(
-                    patient_id=str(meal_orm.patient_id),
-                    conversation_id=meal_id,
-                    conversation_type="meal",
-                    role="system",
-                    message_type="text",
-                    content="How can I assist you further regarding this meal?",
-                ),
-            ]
+            message_sequence = self._generate_conversation_flow(
+                meal_orm, meal_id, parsed_ai_response
+            )
 
             # Pass the message sequence to AiConversationService
             self.ai_conversation_service.add_messages_to_conversation(
@@ -284,6 +252,51 @@ class MealService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database Error: {str(e)}",
             )
+
+    def _generate_conversation_flow(
+        self, meal_orm, meal_id: str, parsed_ai_response: MealAnalysisResponse
+    ) -> List[AiConversationMessageSchema]:
+        return [
+            AiConversationMessageSchema(
+                patient_id=str(meal_orm.patient_id),
+                conversation_id=meal_id,
+                conversation_type="meal",
+                role="human",
+                message_type="markdown",
+                content=md(
+                    f"I had **{meal_orm.type}** at **{meal_orm.time.strftime('%I:%M %p')}**."
+                ),
+            ),
+            AiConversationMessageSchema(
+                patient_id=str(meal_orm.patient_id),
+                conversation_id=meal_id,
+                conversation_type="meal",
+                role="human",
+                message_type="image" if meal_orm.image_url else "text",
+                content=(
+                    str(meal_orm.image_url)
+                    if meal_orm.image_url
+                    else meal_orm.description or ""
+                ),
+            ),
+            AiConversationMessageSchema(
+                patient_id=str(meal_orm.patient_id),
+                conversation_id=meal_id,
+                conversation_type="meal",
+                role="ai",
+                message_type="text",
+                content=parsed_ai_response.model_dump_json(),
+                exclude_from_frontend=True,
+            ),
+            AiConversationMessageSchema(
+                patient_id=str(meal_orm.patient_id),
+                conversation_id=meal_id,
+                conversation_type="meal",
+                role="system",
+                message_type="text",
+                content="How can I assist you further regarding this meal?",
+            ),
+        ]
 
     async def delete_meal(self, meal_id: UUID):
         try:
