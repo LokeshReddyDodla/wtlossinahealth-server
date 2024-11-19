@@ -19,8 +19,7 @@ from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.meals.api_schema import (PatientMealsResponse,
-                                                   PatientMealStatsResponse)
+from rest_server.patients.meals.api_schema import PatientMealsResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -72,8 +71,7 @@ async def get_meals_api(
 
 
 @router.get(
-    path="/stats",
-    response_model=PatientMealStatsResponse,
+    path="/stats/day",
 )
 async def get_meals_stats_api(
     request: Request,
@@ -93,7 +91,7 @@ async def get_meals_stats_api(
             from_date, to_date
         )
 
-        return PatientMealStatsResponse(
+        return SuccessResponse(
             message="Meal stats fetched successfully",
             data=meal_stats[0] if len(meal_stats) else None,
         )
