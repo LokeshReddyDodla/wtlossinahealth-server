@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, constr
+from pydantic import BaseModel, Field, constr
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,

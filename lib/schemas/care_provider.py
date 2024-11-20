@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 from lib.schemas.health_facility import HealthFacility
 
@@ -11,7 +11,7 @@ class CareProviderBase(BaseModel):
     first_name: str
     last_name: str
     role: str
-    profile_picture: Optional[HttpUrl] = None
+    profile_picture: Optional[str] = None
     phone_number: str
     email: str
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
