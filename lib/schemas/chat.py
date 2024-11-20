@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, constr
+from pydantic import BaseModel, Field
 
 from lib.core.types import ProfileTypeLiteral
 from lib.schemas.chat_message import ChatMessage

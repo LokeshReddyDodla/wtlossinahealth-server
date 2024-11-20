@@ -2,13 +2,22 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 
 class HealthFacilityBase(BaseModel):
     name: str
-    address: str
-    contact_info: str
+    logo_url: Optional[str] = None
+    operating_hours: Optional[str] = None
+    facility_type: Optional[str] = None
+    website_url: Optional[str] = None
+    specialties: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+    parent_organization: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    address: Optional[str] = None
+    contact_info: Optional[str] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
 
