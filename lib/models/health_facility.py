@@ -65,6 +65,18 @@ class HealthFacility(Base):
         nullable=True,
         comment="General contact information such as phone or email",
     )
+
+    subdomain = Column(
+        String,
+        unique=True,
+        comment="Subdomain for the health facility",
+    )
+    custom_domain = Column(
+        String,
+        default="aihealth.clinic",
+        comment="Custom domain for the health facility",
+    )
+
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

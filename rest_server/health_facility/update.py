@@ -19,7 +19,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.put("/{health_facility_id}", response_model=HealthFacilityResponse)
+@router.put("", response_model=HealthFacilityResponse)
 async def update_health_facility(
     request: Request,
     health_facility_id: str,
@@ -27,18 +27,18 @@ async def update_health_facility(
     session: AsyncSession = Depends(get_postgres_session),
     current_admin: Admin = Depends(get_current_admin),
 ):
-        service = HealthFacilityService(session)
-        try:
-            updated_health_facility = await service.update_health_facility(
-                health_facility_id, health_facility_update
-            )
+    service = HealthFacilityService(session)
+    try:
+        updated_health_facility = await service.update_health_facility(
+            health_facility_id, health_facility_update
+        )
 
-            return HealthFacilityResponse(
-                message="Health facility updated successfully",
-                data=HealthFacilitySchema.from_orm(updated_health_facility),
-            )
-        except HTTPException as e:
-            raise e
-        except SQLAlchemyError as e:
-            response = ErrorResponse(message="Database Error", detail=str(e))
-            raise HTTPException(status_code=500, detail=response.dict())
+        return HealthFacilityResponse(
+            message="Health facility updated successfully",
+            data=HealthFacilitySchema.from_orm(updated_health_facility),
+        )
+    except HTTPException as e:
+        raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())

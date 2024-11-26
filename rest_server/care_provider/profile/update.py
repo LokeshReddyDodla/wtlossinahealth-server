@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -47,6 +47,40 @@ async def update_care_provider_profile(
         )
     except HTTPException as e:
         raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.put("/set-password", response_model=SuccessResponse)
+async def set_care_provider_password(
+    raw_password: str,
+    care_provider_profile_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
+    ),
+):
+    try:
+
+        updated_care_provider = (
+            await care_provider_profile_service.set_care_provider_password(
+                care_provider_id=str(current_care_provider.care_provider_id),
+                raw_password=raw_password,
+            )
+        )
+
+        return SuccessResponse(message="Password set successfully.")
+
+    except HTTPException as e:
+        raise e
+    except IntegrityError as e:
+        response = ErrorResponse(
+            message="Failed to set password due to a conflict.",
+            detail=str(e),
+        )
+        raise HTTPException(status_code=400, detail=response.dict())
     except SQLAlchemyError as e:
         response = ErrorResponse(message="Database Error", detail=str(e))
         raise HTTPException(status_code=500, detail=response.dict())

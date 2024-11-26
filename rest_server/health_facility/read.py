@@ -20,7 +20,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.get("/{health_facility_id}", response_model=HealthFacilityResponse)
+@router.get("", response_model=HealthFacilityResponse)
 async def get_health_facility(
     request: Request,
     health_facility_id: str,

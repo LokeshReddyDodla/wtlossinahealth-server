@@ -81,7 +81,7 @@ async def login_admin(
         admin = result.scalars().first()
 
         if not admin or not verify_password(
-            form_data.password, admin.hashed_password
+            form_data.password, admin.hashed_password # type: ignore
         ):
             raise HTTPException(
                 status_code=400, detail="Invalid email or password"

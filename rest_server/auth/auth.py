@@ -54,7 +54,7 @@ async def verify_otp_endpoint(
             )
 
             # Check if user is verified
-            if not user.is_verified:
+            if not user.is_verified: # type: ignore
                 response = ErrorResponse(
                     message="User account is not verified."
                 )

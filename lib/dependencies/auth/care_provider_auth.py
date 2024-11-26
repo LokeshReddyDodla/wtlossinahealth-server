@@ -12,11 +12,11 @@ from lib.utils.care_provider_permissions import CareProviderFeature
 def get_current_care_provider(
     action: str,
     feature: CareProviderFeature,
-    session: AsyncSession = Depends(get_postgres_session),
 ):
     async def dependency(
         request: Request,
         user_role: tuple = Depends(get_current_user),
+        session: AsyncSession = Depends(get_postgres_session),
     ):
         user_id, role = user_role
 
