@@ -38,6 +38,7 @@ class CareProviderProfileService:
                 stmt = stmt.options(
                     selectinload(CareProviderModel.health_facility),
                     selectinload(CareProviderModel.patient_relationships),
+                    selectinload(CareProviderModel.user_devices),
                 )
 
             result = await self.postgres_session.execute(stmt)
@@ -88,7 +89,9 @@ class CareProviderProfileService:
             permissions = get_care_provider_permissions(role_enum)
             care_provider_data.permissions = permissions
 
-            new_care_provider = CareProviderModel(**care_provider_data.dict())
+            new_care_provider = CareProviderModel(
+                **care_provider_data.model_dump()
+            )
             self.postgres_session.add(new_care_provider)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(new_care_provider)
@@ -239,6 +242,12 @@ class CareProviderProfileService:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid email or password.",
+                )
+
+            if not care_provider.hashed_password:  # type: ignore
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Password not set. Please set your password to log in.",
                 )
 
             # Verify the password

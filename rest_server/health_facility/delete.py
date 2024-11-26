@@ -16,7 +16,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.delete("/{health_facility_id}", response_model=SuccessResponse)
+@router.delete("", response_model=SuccessResponse)
 async def delete_health_facility(
     request: Request,
     health_facility_id: str,

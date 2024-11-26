@@ -15,9 +15,6 @@ class CareProviderBase(BaseModel):
     phone_number: str
     email: str
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
-    is_verified: Optional[bool] = False
 
 
 
@@ -32,9 +29,12 @@ class CareProviderUpdate(CareProviderBase):
 
 class CareProvider(CareProviderBase):
     care_provider_id: UUID
+    is_verified: Optional[bool] = False
+    created_at: datetime
+    updated_at: datetime
     profile_completion: Optional[dict]
-    health_facility: Optional[HealthFacility] = None
-    patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
+    # health_facility: Optional[HealthFacility] = None
+    # patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
 
     class Config:
         from_attributes = True
