@@ -16,6 +16,7 @@ from lib.services.chat_service import ChatService
 from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
+from lib.utils.security import hash_password, verify_password
 
 
 class CareProviderProfileService:
@@ -179,6 +180,78 @@ class CareProviderProfileService:
                 )
 
             return True
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
+    async def set_care_provider_password(
+        self, care_provider_id: str, raw_password: str
+    ) -> CareProviderModel:
+
+        try:
+            care_provider_profile = await self.fetch_care_provider(
+                care_provider_id
+            )
+
+            if care_provider_profile.email is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email is required to set a password.",
+                )
+
+            hashed_password = hash_password(raw_password)
+
+            care_provider_profile.hashed_password = hashed_password  # type: ignore
+            self.postgres_session.add(care_provider_profile)
+
+            await self.postgres_session.commit()
+            await self.postgres_session.refresh(care_provider_profile)
+
+            return care_provider_profile
+
+        except IntegrityError:
+            await self.postgres_session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to set password due to a database conflict.",
+            )
+        except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
+    async def authenticate_care_provider(
+        self, email: str, password: str
+    ) -> CareProviderModel:
+        try:
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.email == email
+            )
+            result = await self.postgres_session.execute(stmt)
+            care_provider = result.scalars().first()
+
+            # Check if the care provider exists
+            if not care_provider:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password.",
+                )
+
+            # Verify the password
+            if not verify_password(
+                password, str(care_provider.hashed_password)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password.",
+                )
+
+            return care_provider
+
         except SQLAlchemyError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
