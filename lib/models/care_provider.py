@@ -26,6 +26,7 @@ class CareProvider(Base):
     profile_picture = Column(String, nullable=True)
     phone_number = Column(String, unique=True, index=True)
     email = Column(String, nullable=False, unique=True)
+    hashed_password = Column(String, nullable=True)
     permissions = Column(
         JSON, nullable=True
     )  # Store permissions as JSON or use a separate permissions table

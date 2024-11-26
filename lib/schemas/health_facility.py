@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, constr
 
 
 class HealthFacilityBase(BaseModel):
@@ -18,22 +18,39 @@ class HealthFacilityBase(BaseModel):
     emergency_contact: Optional[str] = None
     address: Optional[str] = None
     contact_info: Optional[str] = None
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
 
 
 class HealthFacilityCreate(HealthFacilityBase):
-    pass
+    subdomain: Optional[str] = Field(
+        None,
+        pattern=r"^[a-z0-9-]+$",
+        max_length=63,
+        description="Generated subdomain (lowercase, alphanumeric, and hyphens only)",
+    )
+    custom_domain: Optional[str] = Field(
+        default="aihealth.clinic",
+        description="Custom domain for the health facility",
+    )
 
 
 class HealthFacilityUpdate(HealthFacilityBase):
-    pass
+    subdomain: Optional[str] = Field(
+        None,
+        pattern=r"^[a-z0-9-]+$",
+        max_length=63,
+        description="Generated subdomain (lowercase, alphanumeric, and hyphens only)",
+    )
+    custom_domain: Optional[str] = None
 
 
 class HealthFacility(HealthFacilityBase):
     health_facility_id: UUID
+    subdomain: Optional[str]
+    custom_domain: Optional[str]
     care_providers: Optional[List[Any]] = None  # CareProvider
     patients: Optional[List[Any]] = None  # Patient
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
