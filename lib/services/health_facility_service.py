@@ -1,14 +1,14 @@
+import re
+
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from fastapi import HTTPException, status
-from lib.models.health_facility import HealthFacility as HealthFacilityModel
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from lib.schemas.health_facility import (
-    HealthFacilityCreate,
-    HealthFacilityUpdate,
-)
+from lib.models.health_facility import HealthFacility as HealthFacilityModel
+from lib.schemas.health_facility import (HealthFacilityCreate,
+                                         HealthFacilityUpdate)
 
 
 class HealthFacilityService:
@@ -46,12 +46,42 @@ class HealthFacilityService:
                 detail=f"Database error: {str(e)}",
             )
 
+    async def fetch_health_facility_by_domain(
+        self, subdomain: str, custom_domain: str
+    ) -> HealthFacilityModel:
+        try:
+            stmt = select(HealthFacilityModel).where(
+                (HealthFacilityModel.subdomain == subdomain)
+                | (HealthFacilityModel.custom_domain == custom_domain)
+            )
+            result = await self.postgres_session.execute(stmt)
+            health_facility = result.scalars().first()
+
+            if not health_facility:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Health facility not found.",
+                )
+
+            return health_facility
+
+        except SQLAlchemyError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error: {str(e)}",
+            )
+
     async def create_health_facility(
         self, health_facility_data: HealthFacilityCreate
     ) -> HealthFacilityModel:
         try:
+            if not health_facility_data.subdomain:
+                health_facility_data.subdomain = self.generate_hf_subdomain(
+                    health_facility_data.name
+                )
+
             new_health_facility = HealthFacilityModel(
-                **health_facility_data.dict()
+                **health_facility_data.model_dump()
             )
             self.postgres_session.add(new_health_facility)
             await self.postgres_session.commit()
@@ -79,7 +109,7 @@ class HealthFacilityService:
                 health_facility_id
             )
 
-            for key, value in updates.dict(exclude_unset=True).items():
+            for key, value in updates.model_dump(exclude_unset=True).items():
                 setattr(health_facility, key, value)
 
             self.postgres_session.add(health_facility)
@@ -116,3 +146,19 @@ class HealthFacilityService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database Error: {str(e)}",
             )
+
+    def generate_hf_subdomain(self, name: str) -> str:
+        """
+        Generate a sanitized subdomain from the given name.
+        Replace all special characters (non-alphanumeric) with a hyphen.
+        """
+        sanitized_name = re.sub(
+            r"[^a-zA-Z0-9]", "-", name
+        )  # Replace all non-alphanumeric chars with hyphens
+        sanitized_name = re.sub(
+            r"-+", "-", sanitized_name
+        )  # Replace multiple consecutive hyphens with a single one
+        sanitized_name = sanitized_name.strip(
+            "-"
+        )  # Remove leading or trailing hyphens
+        return sanitized_name.lower()
