@@ -35,6 +35,7 @@ class ChatService:
         user_id: str,
         type: ProfileTypeLiteral,
         is_group: bool,
+        group_name: Optional[str] = None,
         is_read_only: Optional[bool] = False,
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
@@ -51,7 +52,9 @@ class ChatService:
 
         # Initialize unread_counts for each participant
         unread_counts = {participant.id: 0}
-        random_group_name = f"{fake.color_name()} {fake.word()}"
+        random_group_name = (
+            group_name if group_name else f"{fake.color_name()} {fake.word()}"
+        )
 
         chat = ChatSchema(
             is_group=is_group,
