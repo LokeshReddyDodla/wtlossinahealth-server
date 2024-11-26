@@ -207,11 +207,16 @@ def create_related_records(mapper, connection, target):
     chat_service = ChatService()
     runner = BackgroundTaskRunner()
     runner.run(
-        chat_service.create_new_chat, str(target.patient_id), "patient", True
+        chat_service.create_new_chat,
+        str(target.patient_id),
+        "patient",
+        True,
+        group_name="Care Team Group",
     )
 
     # Add initial message to the conversation
     from lib.services.ai_conversation_service import AiConversationService
+
     ai_conversation_service = AiConversationService()
     welcome_message = (
         "Welcome to AiHealth! We're glad to have you onboard. "
