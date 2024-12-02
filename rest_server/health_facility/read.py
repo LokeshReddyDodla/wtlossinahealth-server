@@ -21,6 +21,35 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
+@router.get("/basic-info", response_model=SuccessResponse)
+async def get_basic_health_facility_info(
+    health_facility_id: str,
+    health_facility_service: HealthFacilityService = Depends(
+        get_health_facility_service
+    ),
+):
+    try:
+        health_facility = await health_facility_service.fetch_health_facility(
+            health_facility_id, detailed=False
+        )
+
+        basic_info = {
+            "name": health_facility.name,
+            "logo_url": health_facility.logo_url,
+            "contact_info": health_facility.contact_info,
+        }
+
+        return SuccessResponse(
+            message="Health facility basic info fetched successfully",
+            data=basic_info,
+        )
+    except HTTPException as http_exc:
+        raise http_exc
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())
+
+
 @router.get("", response_model=HealthFacilityResponse)
 async def get_health_facility(
     request: Request,
@@ -45,7 +74,7 @@ async def get_health_facility(
         raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.get("/validate-health-facility", response_model=HealthFacilityResponse)
+@router.get("/validate-health-facility", response_model=SuccessResponse)
 async def validate_health_facility(
     request: Request,
     domain: str,
@@ -60,9 +89,9 @@ async def validate_health_facility(
                 subdomain=subdomain, custom_domain=domain
             )
         )
-        return HealthFacilityResponse(
+        return SuccessResponse(
             message="Health facility fetched successfully",
-            data=HealthFacilitySchema.from_orm(health_facility),
+            data={"health_facility_id": health_facility.health_facility_id},
         )
     except HTTPException as http_exc:
         raise http_exc
