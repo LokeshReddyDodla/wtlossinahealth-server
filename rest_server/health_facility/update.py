@@ -8,6 +8,7 @@ from sqlalchemy.future import select
 from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import get_health_facility_service
 from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
@@ -24,13 +25,16 @@ async def update_health_facility(
     request: Request,
     health_facility_id: str,
     health_facility_update: HealthFacilityUpdate,
-    session: AsyncSession = Depends(get_postgres_session),
+    health_facility_service: HealthFacilityService = Depends(
+        get_health_facility_service
+    ),
     current_admin: Admin = Depends(get_current_admin),
 ):
-    service = HealthFacilityService(session)
     try:
-        updated_health_facility = await service.update_health_facility(
-            health_facility_id, health_facility_update
+        updated_health_facility = (
+            await health_facility_service.update_health_facility(
+                health_facility_id, health_facility_update
+            )
         )
 
         return HealthFacilityResponse(
