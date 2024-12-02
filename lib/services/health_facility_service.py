@@ -52,7 +52,7 @@ class HealthFacilityService:
         try:
             stmt = select(HealthFacilityModel).where(
                 (HealthFacilityModel.subdomain == subdomain)
-                | (HealthFacilityModel.custom_domain == custom_domain)
+                & (HealthFacilityModel.custom_domain == custom_domain)
             )
             result = await self.postgres_session.execute(stmt)
             health_facility = result.scalars().first()
