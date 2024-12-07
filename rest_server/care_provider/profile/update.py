@@ -16,13 +16,12 @@ from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import CareProviderFeature
-from rest_server.care_provider.profile.api_schema import CareProviderResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.put("", response_model=CareProviderResponse)
+@router.put("", response_model=SuccessResponse)
 async def update_care_provider_profile(
     request: Request,
     care_provider_id: str,
@@ -41,7 +40,7 @@ async def update_care_provider_profile(
             )
         )
 
-        return CareProviderResponse(
+        return SuccessResponse(
             message="Care provider updated successfully.",
             data=CareProviderSchema.from_orm(updated_care_provider),
         )

@@ -22,7 +22,6 @@ from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import CareProviderFeature
 from lib.utils.jwt import create_jwt_token
-from rest_server.care_provider.profile.api_schema import CareProviderResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
