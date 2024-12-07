@@ -44,7 +44,7 @@ async def get_care_provider_profile(
         return SuccessResponse(
             message="Care Provider created successfully",
             data={
-                "care_provider": CareProviderSchema.from_orm(result),
+                "profile": CareProviderSchema.from_orm(result),
                 "health_facility": HealthFacilitySchema.from_orm(
                     result.health_facility
                 ),
