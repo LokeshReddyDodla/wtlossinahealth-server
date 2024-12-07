@@ -16,17 +16,17 @@ from lib.dependencies.service_dependencies import (
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
+from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.utils.care_provider_permissions import CareProviderFeature
-from rest_server.care_provider.profile.api_schema import CareProviderResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.get("", response_model=CareProviderResponse)
+@router.get("", response_model=SuccessResponse)
 async def get_care_provider_profile(
     request: Request,
     care_provider_profile_service: CareProviderProfileService = Depends(
@@ -41,9 +41,14 @@ async def get_care_provider_profile(
             str(current_care_provider.care_provider_id), detailed=True
         )
 
-        return CareProviderResponse(
+        return SuccessResponse(
             message="Care Provider created successfully",
-            data=CareProviderSchema.from_orm(result),
+            data={
+                "care_provider": CareProviderSchema.from_orm(result),
+                "health_facility": HealthFacilitySchema.from_orm(
+                    result.health_facility
+                ),
+            },
         )
     except HTTPException as e:
         raise e
