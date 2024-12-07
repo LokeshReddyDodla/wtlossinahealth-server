@@ -17,8 +17,6 @@ class CareProviderBase(BaseModel):
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
 
 
-
-
 class CareProviderCreate(CareProviderBase):
     health_facility_id: UUID
 
@@ -33,8 +31,6 @@ class CareProvider(CareProviderBase):
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]
-    # health_facility: Optional[HealthFacility] = None
-    # patient_relationships: Optional[List[Any]] = []  # PatientCareProvider
 
     class Config:
         from_attributes = True
