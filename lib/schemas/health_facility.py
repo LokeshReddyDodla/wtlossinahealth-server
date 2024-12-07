@@ -47,8 +47,6 @@ class HealthFacility(HealthFacilityBase):
     health_facility_id: UUID
     subdomain: Optional[str]
     custom_domain: Optional[str]
-    care_providers: Optional[List[Any]] = None  # CareProvider
-    patients: Optional[List[Any]] = None  # Patient
     created_at: datetime
     updated_at: datetime
 

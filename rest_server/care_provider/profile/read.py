@@ -1,7 +1,7 @@
 from functools import partial
 from typing import List, Optional, Union
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -29,6 +29,7 @@ from .router import router
 @router.get("", response_model=SuccessResponse)
 async def get_care_provider_profile(
     request: Request,
+    detailed: Optional[bool] = Query(default=False),
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
@@ -38,17 +39,12 @@ async def get_care_provider_profile(
 ):
     try:
         result = await care_provider_profile_service.fetch_care_provider(
-            str(current_care_provider.care_provider_id), detailed=True
+            str(current_care_provider.care_provider_id), detailed=detailed
         )
 
         return SuccessResponse(
             message="Care Provider created successfully",
-            data={
-                "profile": CareProviderSchema.from_orm(result),
-                "health_facility": HealthFacilitySchema.from_orm(
-                    result.health_facility
-                ),
-            },
+            data=CareProviderSchema.from_orm(result),
         )
     except HTTPException as e:
         raise e
@@ -87,7 +83,7 @@ async def get_care_provider_health_facility(
         )
         return SuccessResponse(
             message="Health facility details fetched successfully",
-            data=health_facility,
+            data=HealthFacilitySchema.from_orm(health_facility),
         )
     except HTTPException as e:
         raise e

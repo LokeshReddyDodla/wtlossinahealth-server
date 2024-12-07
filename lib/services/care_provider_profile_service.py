@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import exists
@@ -27,7 +27,7 @@ class CareProviderProfileService:
         self.chat_service = chat_service
 
     async def fetch_care_provider(
-        self, care_provider_id: str, detailed: bool = False
+        self, care_provider_id: str, detailed: Optional[bool] = False
     ) -> CareProviderModel:
         try:
             stmt = select(CareProviderModel).where(
