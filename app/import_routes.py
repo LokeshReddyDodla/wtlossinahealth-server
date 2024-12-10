@@ -8,8 +8,7 @@ from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.ai_conversations.router import \
     router as ai_conversations_router
 from rest_server.auth import auth
-from rest_server.care_provider.profile.router import \
-    router as care_providers_profile_router
+from rest_server.care_provider.router import router as care_providers_router
 from rest_server.chats.router import router as chats_router
 from rest_server.dump import dump
 from rest_server.file_upload import file_upload
@@ -71,7 +70,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Care Providers
     ###########################################################################
-    app.include_router(care_providers_profile_router)
+    app.include_router(care_providers_router)
 
     ###########################################################################
     # Chats
