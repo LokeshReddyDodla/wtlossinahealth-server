@@ -62,7 +62,7 @@ async def get_care_provider_health_facility(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("read", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider("read", CareProviderFeature.HEALTH_FACILITY)
     ),
 ):
     try:
