@@ -23,7 +23,6 @@ class PatientCareProviderUpdate(PatientCareProviderBase):
 
 class PatientCareProvider(PatientCareProviderBase):
     patient_care_provider_id: UUID
-    care_provider: Optional[CareProvider]
     assigned_at: datetime
 
     class Config:

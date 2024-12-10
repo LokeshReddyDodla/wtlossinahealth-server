@@ -1,6 +1,7 @@
 from typing import Any, List, Optional
 
 from fastapi import HTTPException, status
+from sqlalchemy import UUID
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -37,7 +38,7 @@ class PatientCareProviderService:
         self.patient_profile_service = patient_profile_service
 
     async def check_existing_connection(
-        self, patient_id: str, care_provider_id: str
+        self, patient_id: UUID, care_provider_id: UUID
     ) -> PatientCareProviderModel:
         stmt = select(PatientCareProviderModel).filter_by(
             patient_id=patient_id, care_provider_id=care_provider_id

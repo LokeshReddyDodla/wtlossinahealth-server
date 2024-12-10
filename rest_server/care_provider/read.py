@@ -111,18 +111,14 @@ async def get_care_provider_patients(
                 detail="No patients associated with the care provider.",
             )
 
-        print(
-            "==> patient_relationships: ", care_provider.patient_relationships
-        )
-
-        patient_relationships = [
-            PatientCareProviderSchema.from_orm(relationship)
+        patients = [
+            PatientProfileSchema.from_orm(relationship.patient)
             for relationship in care_provider.patient_relationships
         ]
 
         return SuccessResponse(
-            message="Patients details fetched successfully",
-            data=patient_relationships,
+            message="Patients fetched successfully",
+            data=patients,
         )
     except HTTPException as e:
         raise e

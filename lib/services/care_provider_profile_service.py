@@ -10,6 +10,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.models.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
@@ -37,7 +39,12 @@ class CareProviderProfileService:
             if detailed:
                 stmt = stmt.options(
                     selectinload(CareProviderModel.health_facility),
-                    selectinload(CareProviderModel.patient_relationships),
+                    selectinload(
+                        CareProviderModel.patient_relationships
+                    ).options(
+                        selectinload(PatientCareProviderModel.patient),
+                        selectinload(PatientCareProviderModel.care_provider),
+                    ),
                     selectinload(CareProviderModel.user_devices),
                 )
 
