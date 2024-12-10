@@ -18,6 +18,7 @@ class CareProviderFeature(Enum):
     FITNESS = "fitness"
     CGM = "cgm"
     CARE_PROVIDER = "care_provider"
+    HEALTH_FACILITY = "health_facility"
 
 
 class CareProviderPermission:
@@ -53,6 +54,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
             read=True, create=False, update=True, delete=False
         ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=True, delete=False
+        ),
     },
     CareProviderRole.DIETITIAN: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -68,6 +72,9 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -87,6 +94,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
     },
     CareProviderRole.DIABETIC_EDUCATOR: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -102,6 +112,9 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -121,6 +134,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
     },
     CareProviderRole.RESEARCH_COORDINATOR: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -136,6 +152,9 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -155,6 +174,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
             read=True, create=True, update=True, delete=True
         ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=True, delete=False
+        ),
     },
     CareProviderRole.LAB_TECHNICIAN: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -170,6 +192,9 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
