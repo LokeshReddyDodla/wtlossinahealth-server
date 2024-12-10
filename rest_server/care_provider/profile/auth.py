@@ -27,7 +27,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.post("/email-login", response_model=SuccessResponse)
+@router.post("/auth/email-login", response_model=SuccessResponse)
 async def login_careprovider(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),

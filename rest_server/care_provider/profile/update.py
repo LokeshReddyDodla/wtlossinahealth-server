@@ -21,7 +21,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.put("", response_model=SuccessResponse)
+@router.put("/profile", response_model=SuccessResponse)
 async def update_care_provider_profile(
     request: Request,
     care_provider_id: str,
@@ -51,7 +51,7 @@ async def update_care_provider_profile(
         raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.put("/set-password", response_model=SuccessResponse)
+@router.put("/profile/set-password", response_model=SuccessResponse)
 async def set_care_provider_password(
     raw_password: str,
     care_provider_profile_service: CareProviderProfileService = Depends(

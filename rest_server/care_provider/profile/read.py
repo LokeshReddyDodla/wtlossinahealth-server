@@ -17,6 +17,9 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
+from lib.schemas.patient import Patient as PatientProfileSchema
+from lib.schemas.patient_care_provider import \
+    PatientCareProvider as PatientCareProviderSchema
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.health_facility_service import HealthFacilityService
@@ -26,7 +29,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.get("", response_model=SuccessResponse)
+@router.get("/profile", response_model=SuccessResponse)
 async def get_care_provider_profile(
     request: Request,
     detailed: Optional[bool] = Query(default=False),
@@ -58,17 +61,14 @@ async def get_care_provider_health_facility(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
-    health_facility_service: HealthFacilityService = Depends(
-        get_health_facility_service
-    ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("read", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider("read", CareProviderFeature.HEALTH_FACILITY)
     ),
 ):
     try:
         care_provider = (
             await care_provider_profile_service.fetch_care_provider(
-                str(current_care_provider.care_provider_id)
+                str(current_care_provider.care_provider_id), detailed=True
             )
         )
 
@@ -78,12 +78,44 @@ async def get_care_provider_health_facility(
                 detail="No health facility associated with the care provider.",
             )
 
-        health_facility = await health_facility_service.fetch_health_facility(
-            str(care_provider.health_facility_id),
-        )
         return SuccessResponse(
             message="Health facility details fetched successfully",
-            data=HealthFacilitySchema.from_orm(health_facility),
+            data=HealthFacilitySchema.from_orm(care_provider.health_facility),
+        )
+    except HTTPException as e:
+        raise e
+    except SQLAlchemyError as e:
+        response = ErrorResponse(message="Database Error", detail=str(e))
+        raise HTTPException(status_code=500, detail=response.dict())
+
+
+@router.get("/patients", response_model=SuccessResponse)
+async def get_care_provider_patients(
+    care_provider_profile_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider("read", CareProviderFeature.CARE_PROVIDER)
+    ),
+):
+    try:
+        care_provider = (
+            await care_provider_profile_service.fetch_care_provider(
+                str(current_care_provider.care_provider_id), detailed=True
+            )
+        )
+
+        if not care_provider.patient_relationships:  # type: ignore
+            raise HTTPException(
+                status_code=404,
+                detail="No patients associated with the care provider.",
+            )
+
+        return SuccessResponse(
+            message="Patients details fetched successfully",
+            data=PatientCareProviderSchema.from_orm(
+                care_provider.patient_relationships
+            ),
         )
     except HTTPException as e:
         raise e

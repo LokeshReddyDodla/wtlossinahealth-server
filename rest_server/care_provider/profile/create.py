@@ -25,7 +25,7 @@ from rest_server.response_models import ErrorResponse, SuccessResponse
 from .router import router
 
 
-@router.post("", response_model=SuccessResponse)
+@router.post("/profile", response_model=SuccessResponse)
 async def create_care_provider_profile(
     request: Request,
     care_provider: CareProviderCreate,
