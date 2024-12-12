@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
@@ -17,16 +17,16 @@ from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
-from rest_server.patients.cgm.api_schema import (CompleteGlucoseReport,
-                                                 GlucoseReportResponse)
-from rest_server.response_models import ErrorResponse
+from lib.utils.http_exceptions import raise_http_exception
+from rest_server.patients.cgm.api_schema import CompleteGlucoseReport
+from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
 @router.get(
     "/report",
-    response_model=GlucoseReportResponse,
+    response_model=SuccessResponse,
 )
 async def get_detailed_glucose_report(
     request: Request,
@@ -50,10 +50,10 @@ async def get_detailed_glucose_report(
         if not await cgm_data_utils.is_data_available_and_continuous(
             patient_id, from_date, to_date
         ):
-            response = ErrorResponse(
-                message="No continuous data available for the provided date range."
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="No continuous data available for the provided date range.",
             )
-            raise HTTPException(status_code=400, detail=response.dict())
 
         # Fetch patient details
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -95,7 +95,7 @@ async def get_detailed_glucose_report(
             ),
         )
 
-        return GlucoseReportResponse(
+        return SuccessResponse(
             message="Report generated successfully",
             data=CompleteGlucoseReport(
                 patient_detail=patient_detail,
@@ -111,5 +111,8 @@ async def get_detailed_glucose_report(
         traceback_message = traceback.format_exc()
         print("🚀 ~ error_message:", error_message)
         print("🚀 ~ traceback_message:", traceback_message)
-        response = {"message": "Internal Server Error", "detail": str(e)}
-        raise HTTPException(status_code=500, detail=response)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
