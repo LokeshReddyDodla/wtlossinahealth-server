@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -11,13 +11,13 @@ from lib.models.patient import Patient
 from lib.models.patient_vital import PatientVital
 from lib.schemas.patient_vital import PatientVital as PatientVitalSchema
 from lib.schemas.patient_vital import PatientVitalCreate
-from rest_server.patients.vitals.api_schema import PatientVitalUploadResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.post("/upload", response_model=PatientVitalUploadResponse)
+@router.post("/upload", response_model=SuccessResponse)
 async def upload_vitals(
     request: Request,
     vitals: PatientVitalCreate,
@@ -44,14 +44,15 @@ async def upload_vitals(
         await session.commit()
         await session.refresh(new_vitals)
 
-        vital = PatientVitalSchema.from_orm(new_vitals)
+        vital = PatientVitalSchema.model_validate(new_vitals)
 
-        return PatientVitalUploadResponse(
+        return SuccessResponse(
             message="Vitals uploaded successfully.",
             data=vital,
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
