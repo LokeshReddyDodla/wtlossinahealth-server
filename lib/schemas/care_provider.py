@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from lib.schemas.health_facility import HealthFacility
+from lib.schemas.package import Package
 
 
 class CareProviderBase(BaseModel):
@@ -31,6 +32,7 @@ class CareProvider(CareProviderBase):
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]
+    packages: List[Package] = []
 
     class Config:
         from_attributes = True
