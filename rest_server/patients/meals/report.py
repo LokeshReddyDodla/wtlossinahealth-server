@@ -14,7 +14,6 @@ from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.fitness.api_schema import FitnessReportResponse
 from rest_server.response_models import SuccessResponse
 
 from .router import router
