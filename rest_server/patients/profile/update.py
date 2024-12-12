@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.patient_profile_service import PatientProfileService
-from rest_server.patients.profile.api_schema import PatientProfileResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -38,7 +38,7 @@ from .router import router
 
 @router.put(
     path="/basic",
-    response_model=PatientProfileResponse,
+    response_model=SuccessResponse,
 )
 async def update_basic_patient(
     request: Request,
@@ -56,22 +56,23 @@ async def update_basic_patient(
             )
         )
 
-        return PatientProfileResponse(
+        return SuccessResponse(
             message="Patient basic data updated successfully.",
             data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.patch(
     path="/lifestyle",
-    response_model=PatientProfileResponse,
+    response_model=SuccessResponse,
 )
 async def upsert_patient_lifestyle(
     request: Request,
@@ -99,22 +100,23 @@ async def upsert_patient_lifestyle(
             )
         )
 
-        return PatientProfileResponse(
+        return SuccessResponse(
             message="Patient lifestyle data updated successfully.",
             data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
 
 
 @router.patch(
     path="/medical_history",
-    response_model=PatientProfileResponse,
+    response_model=SuccessResponse,
 )
 async def upsert_patient_medical_history(
     request: Request,
@@ -142,14 +144,15 @@ async def upsert_patient_medical_history(
             )
         )
 
-        return PatientProfileResponse(
+        return SuccessResponse(
             message="Patient medical history data updated successfully.",
             data=CorePatientProfile.from_orm(updated_patient),
         )
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

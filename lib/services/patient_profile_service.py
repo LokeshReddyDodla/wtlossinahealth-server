@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from fastapi import HTTPException, status
 from sqlalchemy import exists
@@ -60,6 +60,7 @@ from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat_service import ChatService
 from lib.services.socketio_service import sio
+from lib.utils.http_exceptions import raise_http_exception
 
 
 class PatientProfileService:
@@ -77,8 +78,14 @@ class PatientProfileService:
         other_related_data: bool = False,
     ) -> PatientModel:
         try:
-            stmt = select(PatientModel).where(
-                PatientModel.patient_id == patient_id
+            stmt = (
+                select(PatientModel)
+                .where(PatientModel.patient_id == patient_id)
+                .options(
+                    selectinload(PatientModel.care_providers),
+                    selectinload(PatientModel.package),
+                    selectinload(PatientModel.health_facility),
+                )
             )
 
             if detailed:
@@ -123,26 +130,24 @@ class PatientProfileService:
                         PatientConnectedApp.other_app
                     ),
                     selectinload(PatientModel.token_usage_logs),
-                    selectinload(PatientModel.care_providers),
-                    selectinload(PatientModel.package),
-                    selectinload(PatientModel.health_facility),
                 )
 
             result = await self.postgres_session.execute(stmt)
             patient = result.scalars().first()
 
             if not patient:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Patient not found.",
+                    message="Patient not found.",
                 )
 
             return patient
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def fetch_patient_profiles(
@@ -160,9 +165,10 @@ class PatientProfileService:
                 for profile in profiles
             }
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def update_basic_patient_profile(
@@ -321,15 +327,17 @@ class PatientProfileService:
 
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Integrity Error",
+                detail=str(e),
             )
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def upsert_patient_medical_history(
@@ -413,15 +421,17 @@ class PatientProfileService:
 
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Integrity Error",
+                detail=str(e),
             )
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def delete_patient_profile(
@@ -441,9 +451,10 @@ class PatientProfileService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def check_patient_profile_exists(self, patient_id: str) -> bool:
@@ -455,16 +466,17 @@ class PatientProfileService:
             (exists_result,) = result.scalars()
 
             if not exists_result:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Patient not found.",
+                    message="Patient not found",
                 )
 
             return True
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     def _upsert_single_entity(
