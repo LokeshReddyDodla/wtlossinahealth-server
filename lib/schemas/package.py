@@ -10,7 +10,7 @@ class PackageBase(BaseModel):
 
 
 class PackageCreate(PackageBase):
-    health_facility_id: UUID
+    pass
 
 
 class PackageUpdate(PackageBase):

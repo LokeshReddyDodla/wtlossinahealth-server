@@ -16,7 +16,7 @@ from .router import router
 
 
 @router.get("", response_model=SuccessResponse)
-async def get_care_provider_patients(
+async def get_patients(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),

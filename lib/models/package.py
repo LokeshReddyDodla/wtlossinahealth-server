@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, DateTime, ForeignKey, String
+from sqlalchemy import (UUID, Column, DateTime, ForeignKey, String,
+                        UniqueConstraint)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -41,4 +42,12 @@ class Package(Base):
     patients = relationship(
         "Patient",
         back_populates="package",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "name",
+            "health_facility_id",
+            name="uq_package_name_per_health_facility",
+        ),
     )

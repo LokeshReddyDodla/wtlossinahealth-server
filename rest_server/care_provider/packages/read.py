@@ -6,6 +6,7 @@ from lib.dependencies.service_dependencies import \
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
+from lib.schemas.package import Package as PackageSchema
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
@@ -17,14 +18,14 @@ from .router import router
 
 
 @router.get("", response_model=SuccessResponse)
-async def get_health_facility(
+async def get_all_packages(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+            CareProviderFeature.PACKAGES,
         )
     ),
 ):
@@ -35,15 +36,14 @@ async def get_health_facility(
             )
         )
 
-        if not care_provider.health_facility_id:  # type: ignore
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="No health facility associated with the care provider.",
-            )
+        packages = [
+            PackageSchema.from_orm(package)
+            for package in care_provider.packages
+        ]
 
         return SuccessResponse(
-            message="Health facility details fetched successfully",
-            data=HealthFacilitySchema.from_orm(care_provider.health_facility),
+            message="Packages fetched successfully",
+            data=packages,
         )
     except HTTPException as e:
         raise e

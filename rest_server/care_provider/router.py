@@ -11,3 +11,5 @@ router.include_router(profile_router)
 router.include_router(health_facility_router)
 router.include_router(packages_router)
 router.include_router(patients_router)
+
+from .auth import *
