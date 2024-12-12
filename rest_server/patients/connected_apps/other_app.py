@@ -1,6 +1,6 @@
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -13,7 +13,7 @@ from lib.models.patient_connected_app import (PatientConnectedApp,
 from lib.schemas.patient_connected_app import \
     PatientOtherApp as PatientOtherAppSchema
 from lib.schemas.patient_connected_app import PatientOtherAppCreate
-from rest_server.patients.connected_apps.api_schema import AddOtherAppResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -21,7 +21,7 @@ from .router import router
 
 @router.post(
     "/add-other-app",
-    response_model=AddOtherAppResponse,
+    response_model=SuccessResponse,
 )
 async def add_other_app(
     request: Request,
@@ -38,8 +38,9 @@ async def add_other_app(
         connected_app = connected_app.scalars().first()
 
         if not connected_app:
-            raise HTTPException(
-                status_code=404, detail="ConnectedApp instance not found"
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="ConnectedApp instance not found",
             )
 
         new_other_app = PatientOtherApp(
@@ -53,12 +54,13 @@ async def add_other_app(
 
         result = PatientOtherAppSchema.from_orm(new_other_app)
 
-        return AddOtherAppResponse(
+        return SuccessResponse(
             message="OtherApp data added successfully.",
             data=result,
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
