@@ -6,11 +6,14 @@ from lib.core.constants import ProfileType
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider
-from lib.utils.care_provider_permissions import CareProviderFeature
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction,
+                                                 CareProviderRole,
+                                                 has_care_provider_permission)
 
 
 def get_current_care_provider(
-    action: str,
+    action: CareProviderPermissionAction,
     feature: CareProviderFeature,
 ):
     async def dependency(
@@ -36,9 +39,11 @@ def get_current_care_provider(
                 status_code=404, detail="Care Provider not found"
             )
 
-        permissions = care_provider.permissions
-        feature_permissions = permissions.get(feature.value, {})
-        if not feature_permissions.get(action, False):
+        if has_care_provider_permission(
+            role=CareProviderRole(care_provider.role),
+            feature=feature,
+            action=action,
+        ):
             raise HTTPException(
                 status_code=403,
                 detail="Forbidden: Insufficient permissions",

@@ -8,21 +8,25 @@ from lib.dependencies.service_dependencies import \
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
-from lib.utils.care_provider_permissions import CareProviderFeature
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.delete("/profile", response_model=SuccessResponse)
+@router.delete("", response_model=SuccessResponse)
 async def delete_care_provider_profile(
     request: Request,
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("delete", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider(
+            CareProviderPermissionAction.DELETE,
+            CareProviderFeature.CARE_PROVIDERS,
+        )
     ),
 ):
     try:

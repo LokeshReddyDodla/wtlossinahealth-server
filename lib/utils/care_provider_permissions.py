@@ -1,6 +1,13 @@
 from enum import Enum
 
 
+class CareProviderPermissionAction(Enum):
+    READ = "read"
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
 class CareProviderRole(Enum):
     DOCTOR = "doctor"
     DIETITIAN = "dietitian"
@@ -16,28 +23,57 @@ class CareProviderFeature(Enum):
     MEALS = "meals"
     REPORTS = "reports"
     FITNESS = "fitness"
-    CGM = "cgm"
-    CARE_PROVIDER = "care_provider"
+    CGMS = "cgms"
+    CARE_PROVIDERS = "care_providers"
     HEALTH_FACILITY = "health_facility"
+    PATIENTS = "patients"
+    PACKAGES = "packages"
 
 
 class CareProviderPermission:
-    def __init__(self, read=False, create=False, update=False, delete=False):
-        self.read = read
-        self.create = create
-        self.update = update
-        self.delete = delete
+    def __init__(self, **kwargs):
+        self.permissions = {
+            action: kwargs.get(action.value, False)
+            for action in CareProviderPermissionAction
+        }
 
     def to_dict(self):
         return {
-            "read": self.read,
-            "create": self.create,
-            "update": self.update,
-            "delete": self.delete,
+            action.value: self.permissions[action]
+            for action in CareProviderPermissionAction
         }
+
+    def has_permission(self, action: CareProviderPermissionAction) -> bool:
+        return self.permissions.get(action, False)
 
 
 CARE_PROVIDER_PERMISSIONS = {
+    CareProviderRole.ADMIN: {
+        CareProviderFeature.MEALS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.REPORTS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.FITNESS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.CGMS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=True, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+    },
     CareProviderRole.DOCTOR: {
         CareProviderFeature.MEALS: CareProviderPermission(
             read=True, create=False, update=True, delete=False
@@ -48,14 +84,20 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=False, update=True, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=True, update=True, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=True, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=True, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
+            read=True, create=True, update=True, delete=True
         ),
     },
     CareProviderRole.DIETITIAN: {
@@ -68,13 +110,19 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -88,13 +136,19 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=True, update=False, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -108,13 +162,19 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=True, update=True, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=True, update=True, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -128,13 +188,19 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=True, update=True, delete=True
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -148,34 +214,20 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=True, update=False, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
-    },
-    CareProviderRole.ADMIN: {
-        CareProviderFeature.MEALS: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
         ),
-        CareProviderFeature.REPORTS: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
-        ),
-        CareProviderFeature.FITNESS: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
-        ),
-        CareProviderFeature.CGM: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
-        ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
-        ),
-        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
-            read=True, create=False, update=True, delete=False
+        CareProviderFeature.PACKAGES: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
         ),
     },
     CareProviderRole.LAB_TECHNICIAN: {
@@ -188,13 +240,19 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.FITNESS: CareProviderPermission(
             read=False, create=False, update=False, delete=False
         ),
-        CareProviderFeature.CGM: CareProviderPermission(
+        CareProviderFeature.CGMS: CareProviderPermission(
             read=True, create=True, update=True, delete=False
         ),
-        CareProviderFeature.CARE_PROVIDER: CareProviderPermission(
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
     },
@@ -207,3 +265,15 @@ def get_care_provider_permissions(role: CareProviderRole):
         feature.value: perm.to_dict()
         for feature, perm in CARE_PROVIDER_PERMISSIONS.get(role, {}).items()
     }
+
+
+# Utility function to check if a specific role has permission for an action
+def has_care_provider_permission(
+    role: CareProviderRole,
+    feature: CareProviderFeature,
+    action: CareProviderPermissionAction,
+) -> bool:
+    feature_permissions = CARE_PROVIDER_PERMISSIONS.get(role, {}).get(feature)
+    if not feature_permissions:
+        return False
+    return feature_permissions.has_permission(action)

@@ -11,14 +11,15 @@ from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
-from lib.utils.care_provider_permissions import CareProviderFeature
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.put("/profile", response_model=SuccessResponse)
+@router.put("", response_model=SuccessResponse)
 async def update_care_provider_profile(
     request: Request,
     care_provider_id: str,
@@ -27,7 +28,10 @@ async def update_care_provider_profile(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE,
+            CareProviderFeature.CARE_PROVIDERS,
+        )
     ),
 ):
     try:
@@ -51,14 +55,17 @@ async def update_care_provider_profile(
         )
 
 
-@router.put("/profile/set-password", response_model=SuccessResponse)
+@router.put("/set-password", response_model=SuccessResponse)
 async def set_care_provider_password(
     raw_password: str,
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("update", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE,
+            CareProviderFeature.CARE_PROVIDERS,
+        )
     ),
 ):
     try:
