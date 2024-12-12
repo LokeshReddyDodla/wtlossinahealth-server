@@ -18,6 +18,7 @@ class PackageUpdate(PackageBase):
 
 
 class Package(PackageBase):
+    code: str
     package_id: UUID
     created_at: datetime
     updated_at: datetime

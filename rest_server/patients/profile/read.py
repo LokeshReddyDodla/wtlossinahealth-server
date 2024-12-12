@@ -39,6 +39,9 @@ async def get_patient_details(
             include_health_data=include_health_data,
             other_related_data=other_related_data,
         )
+        print("==> package: ", result.package)
+        print("==> package_id: ", result.package_id)
+
         return SuccessResponse(
             message="Patient data fetched successfully.",
             data=CompletePatientProfile.from_orm(result),

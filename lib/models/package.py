@@ -1,3 +1,5 @@
+import random
+import string
 import uuid
 from datetime import datetime
 
@@ -20,6 +22,12 @@ class Package(Base):
         index=True,
     )
     name = Column(String, nullable=False, comment="Name of the package")
+    code = Column(
+        String(6),
+        nullable=False,
+        unique=True,
+        comment="Unique 6-digit uppercase code for the package",
+    )
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

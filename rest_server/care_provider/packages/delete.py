@@ -29,10 +29,73 @@ async def delete_package(
     ),
 ):
     try:
-        await package_service.delete_package(package_id=package_id)
+        await package_service.delete_package(
+            package_id=package_id,
+            health_facility_id=str(current_care_provider.health_facility_id),
+        )
 
         return SuccessResponse(
             message="Packages deleted successfully",
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.delete("/remove-care-provider", response_model=SuccessResponse)
+async def remove_care_provider_from_package(
+    package_id: str,
+    care_provider_id: str,
+    package_service: PackageService = Depends(get_package_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE,
+            CareProviderFeature.PACKAGES,
+        )
+    ),
+):
+    try:
+        package = await package_service.remove_care_provider_from_package(
+            care_provider_id=care_provider_id, package_id=package_id
+        )
+        return SuccessResponse(
+            message="Care Provider removed from the package successfully.",
+            data=PackageSchema.from_orm(package),
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.delete("/remove-patient", response_model=SuccessResponse)
+async def remove_patient_from_package(
+    package_id: str,
+    patient_id: str,
+    package_service: PackageService = Depends(get_package_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE,
+            CareProviderFeature.PACKAGES,
+        )
+    ),
+):
+    try:
+        package = await package_service.remove_patient_from_package(
+            patient_id=patient_id, package_id=package_id
+        )
+        return SuccessResponse(
+            message="Patient removed from the package successfully.",
+            data=PackageSchema.from_orm(package),
         )
     except HTTPException as e:
         raise e
