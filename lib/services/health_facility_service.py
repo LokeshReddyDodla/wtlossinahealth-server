@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from lib.models.health_facility import HealthFacility as HealthFacilityModel
 from lib.schemas.health_facility import (HealthFacilityCreate,
                                          HealthFacilityUpdate)
+from lib.utils.http_exceptions import raise_http_exception
 
 
 class HealthFacilityService:
@@ -33,17 +34,18 @@ class HealthFacilityService:
             health_facility = result.scalars().first()
 
             if not health_facility:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Health facility not found.",
+                    message="Health facility not found.",
                 )
 
             return health_facility
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Internal Server Error",
+                detail=str(e),
             )
 
     async def fetch_health_facility_by_domain(
@@ -58,17 +60,18 @@ class HealthFacilityService:
             health_facility = result.scalars().first()
 
             if not health_facility:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Health facility not found.",
+                    message="Health facility not found",
                 )
 
             return health_facility
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def create_health_facility(
@@ -90,15 +93,17 @@ class HealthFacilityService:
             return new_health_facility
         except IntegrityError:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Health facility already exists.",
+                message="Health facility already exists.",
             )
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def update_health_facility(
@@ -120,15 +125,17 @@ class HealthFacilityService:
 
         except IntegrityError:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Health facility already exists.",
+                message="Health facility already exists.",
             )
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Internal Server Error",
+                detail=str(e),
             )
 
     async def delete_health_facility(self, health_facility_id: str) -> None:
@@ -142,9 +149,10 @@ class HealthFacilityService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Internal Server Error",
+                detail=str(e),
             )
 
     def generate_hf_subdomain(self, name: str) -> str:

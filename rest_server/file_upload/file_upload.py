@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.s3_utils import generate_presigned_url
 from rest_server.response_models import SuccessResponse
 
@@ -17,14 +18,9 @@ def generate_presigned_url_endpoint(request: PresignedURLRequest):
         folder_path=request.folder_path,
     )
     if response is None:
-        raise HTTPException(
-            status_code=500, detail="Failed to generate pre-signed URL"
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to generate pre-signed URL",
         )
+
     return SuccessResponse(data=response)
-
-
-@router.post("/upload_completed/", tags=["File Upload"])
-def upload_completed_endpoint(notification: ImageUploadNotification):
-    # Process the uploaded file URL and metadata
-    # For example, store in the database
-    return {"status": "success"}

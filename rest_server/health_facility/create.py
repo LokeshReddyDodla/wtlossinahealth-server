@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,13 +13,13 @@ from lib.models.health_facility import HealthFacility
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.schemas.health_facility import HealthFacilityCreate
 from lib.services.health_facility_service import HealthFacilityService
-from rest_server.health_facility.api_schema import HealthFacilityResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.post("", response_model=HealthFacilityResponse)
+@router.post("", response_model=SuccessResponse)
 async def create_health_facility(
     request: Request,
     health_facility: HealthFacilityCreate,
@@ -35,12 +35,15 @@ async def create_health_facility(
             )
         )
 
-        return HealthFacilityResponse(
+        return SuccessResponse(
             message="Health facility created successfully",
             data=HealthFacilitySchema.from_orm(new_health_facility),
         )
     except HTTPException as e:
         raise e
-    except SQLAlchemyError as e:
-        response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

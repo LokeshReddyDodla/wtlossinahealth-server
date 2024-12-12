@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import Depends, HTTPException, Query, Request
+from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import ProfileType
@@ -14,6 +14,7 @@ from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.chat_service import ChatService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -92,8 +93,10 @@ async def get_user_chats(
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch chats: {str(e)}"
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
 
 
@@ -104,9 +107,6 @@ async def get_user_messages(
     current_user=Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
 ):
-    """
-    Get all messages for a given user_id.
-    """
     try:
         user_id, role = current_user
         messages = await chat_service.fetch_user_messages(
@@ -119,6 +119,8 @@ async def get_user_messages(
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch messages: {str(e)}"
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
