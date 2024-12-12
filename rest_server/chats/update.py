@@ -1,11 +1,12 @@
 from typing import Literal, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.service_dependencies import get_chat_service
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat_service import ChatService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -32,7 +33,8 @@ async def toggle_pin_chat(
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Failed to toggle pin chat.", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to toggle pin chat.",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

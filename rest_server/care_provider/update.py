@@ -2,12 +2,8 @@ from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import \
     get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -16,6 +12,7 @@ from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import CareProviderFeature
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -46,9 +43,12 @@ async def update_care_provider_profile(
         )
     except HTTPException as e:
         raise e
-    except SQLAlchemyError as e:
-        response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 @router.put("/profile/set-password", response_model=SuccessResponse)
@@ -71,15 +71,17 @@ async def set_care_provider_password(
         )
 
         return SuccessResponse(message="Password set successfully.")
-
     except HTTPException as e:
         raise e
     except IntegrityError as e:
-        response = ErrorResponse(
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Failed to set password due to a conflict.",
             detail=str(e),
         )
-        raise HTTPException(status_code=400, detail=response.dict())
-    except SQLAlchemyError as e:
-        response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
