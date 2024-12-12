@@ -2,10 +2,12 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, ForeignKey,
-                        String)
+                        String, Table)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
+from lib.models.associations import (package_care_provider_association,
+                                     patient_care_provider_association)
 
 
 class CareProvider(Base):
@@ -47,7 +49,7 @@ class CareProvider(Base):
         },
     )
 
-    # Relationships
+    # Foreign Keys
     health_facility_id = Column(
         UUID(as_uuid=True),
         ForeignKey(
@@ -57,10 +59,16 @@ class CareProvider(Base):
     health_facility = relationship(
         "HealthFacility", back_populates="care_providers", passive_deletes=True
     )
-    patient_relationships = relationship(
-        "PatientCareProvider",
-        back_populates="care_provider",
-        cascade="all, delete-orphan",
+    patients = relationship(
+        "Patient",
+        secondary=patient_care_provider_association,
+        back_populates="care_providers",
+    )
+
+    packages = relationship(
+        "Package",
+        secondary=package_care_provider_association,
+        back_populates="care_providers",
     )
 
     user_devices = relationship(

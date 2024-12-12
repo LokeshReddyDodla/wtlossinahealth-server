@@ -109,7 +109,6 @@ class CompletePatientProfile(CorePatientProfile):
     smbgs: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
-    # care_providers: List[PatientCareProvider] = []
     health_facility: Optional[HealthFacility] = None
 
     class Config:
