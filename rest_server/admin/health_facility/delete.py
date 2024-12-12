@@ -1,13 +1,6 @@
-from typing import List, Optional, Union
-
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from lib.dependencies.auth.admin_auth import get_current_admin
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_health_facility_service
 from lib.models.admin import Admin
 from lib.models.health_facility import HealthFacility
