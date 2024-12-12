@@ -17,6 +17,7 @@ from lib.services.patient_connected_app_service import \
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_smbg_service import PatientSmbgService
+from lib.services.patient_vital_service import PatientVitalService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -76,6 +77,18 @@ async def get_patient_smbg_service(
     ),
 ) -> PatientSmbgService:
     return PatientSmbgService(
+        patient_profile_service=patient_profile_service,
+        postgres_session=session,
+    )
+
+
+async def get_patient_vital_service(
+    session: AsyncSession = Depends(get_postgres_session),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+) -> PatientVitalService:
+    return PatientVitalService(
         patient_profile_service=patient_profile_service,
         postgres_session=session,
     )
