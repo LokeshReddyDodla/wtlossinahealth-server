@@ -1,13 +1,13 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.service_dependencies import get_fitness_stats_processor
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_end_by_week_no)
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from rest_server.patients.fitness.api_schema import FitnessStatsResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -15,7 +15,7 @@ from .router import router
 
 @router.get(
     "/stats",
-    response_model=FitnessStatsResponse,
+    response_model=SuccessResponse,
 )
 async def get_fitness_stats(
     request: Request,
@@ -32,12 +32,16 @@ async def get_fitness_stats(
         stats = fitness_processor.fetch_monthly_stats(
             from_date_str, to_date_str
         )
-        return FitnessStatsResponse(
+        return SuccessResponse(
             message="Fitness stats fetched successfully",
             data=stats,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 @router.get(
@@ -62,7 +66,11 @@ async def get_fitness_day_stats(
             data=stats[0] if len(stats) else None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 @router.get(
@@ -90,7 +98,11 @@ async def get_fitness_week_stats(
             data=stats[0] if len(stats) else None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 @router.get(
@@ -118,4 +130,8 @@ async def get_fitness_month_stats(
             data=stats[0] if len(stats) else None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

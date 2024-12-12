@@ -1,6 +1,6 @@
 from typing import List, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_fitness_upload_service
 from lib.models.patient import Patient
 from lib.services.fitness_upload_service import FitnessUploadService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
@@ -36,7 +37,8 @@ async def upload_fitness_data(
             data={"last_sync_timestamp": last_sync_time},
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

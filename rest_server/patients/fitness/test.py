@@ -3,11 +3,12 @@ from typing import List, Union
 
 from dateutil.parser import parse
 from fastapi import (APIRouter, Depends, File, HTTPException, Request,
-                     UploadFile)
+                     UploadFile, status)
 from loguru import logger
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.patient import Patient
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -53,7 +54,8 @@ async def upload_fitness_data(
             data={"records_inserted": len(data_points)},
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
