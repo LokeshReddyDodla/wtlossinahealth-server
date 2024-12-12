@@ -41,12 +41,46 @@ async def create_package(
 
         new_package = await package_service.create_package(
             package_data=package,
-            health_facility_id=health_facility_id, # type: ignore
+            health_facility_id=health_facility_id,  # type: ignore
         )
 
         return SuccessResponse(
             message="Packages created  successfully",
             data=PackageSchema.from_orm(new_package),
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.post("/assign-care-provider", response_model=SuccessResponse)
+async def assign_care_provider_to_package(
+    package_id: str,
+    care_provider_id: str,
+    package_service: PackageService = Depends(get_package_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE,
+            CareProviderFeature.PACKAGES,
+        )
+    ),
+):
+    try:
+        updated_package = (
+            await package_service.assign_care_provider_to_package(
+                package_id=package_id,
+                care_provider_id=care_provider_id,
+            )
+        )
+
+        return SuccessResponse(
+            message="Care Provider successfully assigned to the Package.",
+            data=PackageSchema.from_orm(updated_package),
         )
     except HTTPException as e:
         raise e

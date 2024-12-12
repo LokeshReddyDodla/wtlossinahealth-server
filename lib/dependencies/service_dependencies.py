@@ -67,8 +67,12 @@ async def get_health_facility_service(
 
 async def get_package_service(
     session: AsyncSession = Depends(get_postgres_session),
+    care_provider_service=Depends(get_care_provider_profile_service),
 ) -> PackageService:
-    return PackageService(postgres_session=session)
+    return PackageService(
+        postgres_session=session,
+        care_provider_service=care_provider_service,
+    )
 
 
 async def get_patient_connected_app_service(
