@@ -51,7 +51,7 @@ class HealthFacility(HealthFacilityBase):
     custom_domain: Optional[str]
     created_at: datetime
     updated_at: datetime
-    packages: Optional[Package]
+    packages: List[Package] = []
 
     class Config:
         from_attributes = True
