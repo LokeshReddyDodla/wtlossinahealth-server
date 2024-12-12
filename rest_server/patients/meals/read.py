@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, time, timezone
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import asc, desc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +18,8 @@ from lib.models.patient import Patient
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.meals.api_schema import PatientMealsResponse
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -27,7 +27,7 @@ from .router import router
 
 @router.get(
     path="",
-    response_model=PatientMealsResponse,
+    response_model=SuccessResponse,
 )
 async def get_meals_api(
     request: Request,
@@ -59,20 +59,19 @@ async def get_meals_api(
 
         meals = [PatientMealSchema.from_orm(meal) for meal in meals]
 
-        return PatientMealsResponse(
+        return SuccessResponse(
             message="Meals fetched successfully",
             data=meals,
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.get(
-    path="/stats/day",
-)
+@router.get(path="/stats/day", response_model=SuccessResponse)
 async def get_meals_stats_api(
     request: Request,
     date: date,
@@ -99,7 +98,8 @@ async def get_meals_stats_api(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())

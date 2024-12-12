@@ -8,8 +8,6 @@ from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal
 from rest_server.response_models import SuccessResponse
 
-PatientMealsResponse = SuccessResponse[List[PatientMeal]]
-
 
 class PatientMealUploadRequest(BaseModel):
     type: str
@@ -22,8 +20,3 @@ class PatientMealUploadRequest(BaseModel):
 class PatientMealAnalysis(BaseModel):
     meal_data: PatientMeal
     meal_recommendation: MealDistribution
-
-
-PatientMealAnalysisResponse = SuccessResponse[PatientMealAnalysis]
-
-PatientMealUploadResponse = SuccessResponse[PatientMeal]

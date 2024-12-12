@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_meal_service,
@@ -13,17 +13,17 @@ from lib.schemas.patient_diet_plan import (MealDistribution, PatientDietPlan,
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.meals.api_schema import (PatientMealAnalysis,
-                                                   PatientMealAnalysisResponse)
-from rest_server.response_models import ErrorResponse
+from rest_server.patients.meals.api_schema import PatientMealAnalysis
+from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
 @router.post(
     path="/analyze",
-    response_model=PatientMealAnalysisResponse,
+    response_model=SuccessResponse,
 )
 async def analyze_meal_api(
     request: Request,
@@ -65,7 +65,7 @@ async def analyze_meal_api(
             meal_recommendation
         )
 
-        return PatientMealAnalysisResponse(
+        return SuccessResponse(
             message="Meal analyzed successfully.",
             data=PatientMealAnalysis(
                 meal_data=meal_data,
@@ -75,8 +75,8 @@ async def analyze_meal_api(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        response = ErrorResponse(
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Meal analysis failed. Please try again later.",
             detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

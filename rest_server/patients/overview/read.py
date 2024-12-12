@@ -1,7 +1,7 @@
 import traceback
 from datetime import date, datetime, time, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.service_dependencies import (get_fitness_stats_processor,
                                                    get_glucose_stats_processor,
@@ -11,15 +11,14 @@ from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseOverallReport
 from lib.utils.date.periods import OverallPeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.patients.overview.api_schema import (PatientOverview,
-                                                      PatientOverviewResponse)
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.get(path="/stats", response_model=PatientOverviewResponse)
+@router.get(path="/stats", response_model=SuccessResponse)
 async def get_patient_overview_api(
     request: Request,
     date: date,
@@ -33,9 +32,6 @@ async def get_patient_overview_api(
         get_glucose_stats_processor
     ),
 ):
-    """
-    Get Patient Overview API
-    """
     try:
         from_date = datetime.combine(date, time.min)  # Start of the day
         to_date = datetime.combine(date, time.max)  # End of the day
@@ -55,13 +51,15 @@ async def get_patient_overview_api(
             overall_period.periods
         )
 
-        return PatientOverviewResponse(
+        return SuccessResponse(
             message="Meal stats fetched successfully",
-            data=PatientOverview(
-                meal_stats=meal_stats[0] if len(meal_stats) else None,
-                fitness_stats=fitness_stats[0] if len(fitness_stats) else None,
-                glucose_stats=glucose_stats["overall"],
-            ),
+            data={
+                "meal_stats": meal_stats[0] if len(meal_stats) else None,
+                "fitness_stats": (
+                    fitness_stats[0] if len(fitness_stats) else None
+                ),
+                "glucose_stats": glucose_stats["overall"],
+            },
         )
 
     except HTTPException as http_exc:
@@ -72,7 +70,8 @@ async def get_patient_overview_api(
         print("🚀 ~ error_message:", error_message)
         print("🚀 ~ traceback_message:", traceback_message)
 
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())
