@@ -1,6 +1,6 @@
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,7 @@ from lib.schemas.patient_permission import \
     PatientPermission as PatientPermissionSchema
 from lib.schemas.patient_permission import (PatientPermissionCreate,
                                             PatientPermissionUpdate)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -36,7 +37,10 @@ async def sync_permissions(
 
         patient = result.scalars().first()
         if patient is None:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Patient not found",
+            )
 
         patient.permissions.notification_permission = (
             permissions.notification_permission
@@ -47,16 +51,15 @@ async def sync_permissions(
 
         await session.commit()
 
-        result = PatientPermissionSchema.model_validate(patient.permissions)
-
         return SuccessResponse(
             message="Permissions synced successfully.",
-            data=result,
+            data=PatientPermissionSchema.model_validate(patient.permissions),
         )
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())
