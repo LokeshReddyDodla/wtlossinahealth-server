@@ -6,6 +6,7 @@ Base = declarative_base()
 from .admin import Admin
 from .care_provider import CareProvider
 from .health_facility import HealthFacility
+from .package import Package
 from .patient import Patient
 from .patient_alcohol_consumption import PatientAlcoholConsumption
 from .patient_care_provider import PatientCareProvider
