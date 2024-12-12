@@ -13,7 +13,6 @@ from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import \
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel
-from lib.models.patient_care_provider import PatientCareProvider
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_current_medication import \
     PatientCurrentMedication as PatientCurrentMedicationModel
@@ -124,9 +123,8 @@ class PatientProfileService:
                         PatientConnectedApp.other_app
                     ),
                     selectinload(PatientModel.token_usage_logs),
-                    selectinload(PatientModel.care_providers)
-                    .selectinload(PatientCareProvider.care_provider)
-                    .selectinload(CareProvider.health_facility),
+                    selectinload(PatientModel.care_providers),
+                    selectinload(PatientModel.package),
                     selectinload(PatientModel.health_facility),
                 )
 
@@ -295,8 +293,6 @@ class PatientProfileService:
                     patient_profile.eating_habit.eating_habit_id,
                 )
             )
-
-          
 
             patient_profile.eating_habit.diet_preferences = (
                 self._upsert_single_entity(

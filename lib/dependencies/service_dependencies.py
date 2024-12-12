@@ -12,8 +12,6 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_service import MealService
-from lib.services.patient_care_provider_service import \
-    PatientCareProviderService
 from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
 from lib.services.patient_plan_service import PatientPlanService
@@ -63,24 +61,6 @@ async def get_health_facility_service(
     session: AsyncSession = Depends(get_postgres_session),
 ) -> HealthFacilityService:
     return HealthFacilityService(postgres_session=session)
-
-
-async def get_patient_care_provider_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    chat_service: ChatService = Depends(get_chat_service),
-    care_provider_profile_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
-    ),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-) -> PatientCareProviderService:
-    return PatientCareProviderService(
-        postgres_session=session,
-        chat_service=chat_service,
-        care_provider_profile_service=care_provider_profile_service,
-        patient_profile_service=patient_profile_service,
-    )
 
 
 async def get_patient_connected_app_service(

@@ -14,8 +14,6 @@ from rest_server.dump import dump
 from rest_server.file_upload import file_upload
 from rest_server.health import health_check
 from rest_server.health_facility.router import router as health_facility_router
-from rest_server.patients.care_provider.router import \
-    router as patient_care_providers_router
 from rest_server.patients.cgm.router import router as cgm_router
 from rest_server.patients.connected_apps.router import \
     router as connected_apps_router
@@ -103,7 +101,6 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(fitness_router)
     app.include_router(prescriptions_router)
     app.include_router(meals_router)
-    app.include_router(patient_care_providers_router)
     app.include_router(patient_overview_router)
 
     ###########################################################################

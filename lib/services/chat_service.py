@@ -14,8 +14,6 @@ from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
-from lib.models.patient_care_provider import \
-    PatientCareProvider as PatientCareProviderModel
 from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema

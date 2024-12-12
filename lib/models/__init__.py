@@ -9,7 +9,6 @@ from .health_facility import HealthFacility
 from .package import Package
 from .patient import Patient
 from .patient_alcohol_consumption import PatientAlcoholConsumption
-from .patient_care_provider import PatientCareProvider
 from .patient_connected_app import (PatientConnectedApp, PatientLibreView,
                                     PatientOtherApp)
 from .patient_current_medication import PatientCurrentMedication
