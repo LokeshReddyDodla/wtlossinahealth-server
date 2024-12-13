@@ -110,8 +110,6 @@ class MealAnalysisService:
             input=messages,
         )
 
-        print("==> ai_response: ", ai_response)
-
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         total_tokens = ai_response["raw"].usage_metadata.get("total_tokens", 0)
 
@@ -154,8 +152,6 @@ class MealAnalysisService:
             self.structured_model.invoke,
             input=messages,
         )
-
-        print("==> ai_response: ", ai_response)
 
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         total_tokens = ai_response["raw"].usage_metadata.get("total_tokens", 0)

@@ -2,7 +2,7 @@ import traceback
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -14,6 +14,7 @@ from lib.models.patient import Patient
 from lib.schemas.user import OtpVerificationData, UserPhoneNumber
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.auth_utils import AuthUtils
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.jwt import create_jwt_token
 from rest_server.auth.api_schema import (OtpVerifyResponse,
                                          OtpVerifySuccessResponse)
@@ -54,12 +55,10 @@ async def verify_otp_endpoint(
             )
 
             # Check if user is verified
-            if not user.is_verified: # type: ignore
-                response = ErrorResponse(
-                    message="User account is not verified."
-                )
-                raise HTTPException(
-                    status_code=400, detail=response.model_dump()
+            if not user.is_verified:  # type: ignore
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="User account is not verified.",
                 )
 
             # Create JWT token for the user
@@ -90,19 +89,19 @@ async def verify_otp_endpoint(
                 ),
             )
         else:
-            response = ErrorResponse(
-                message="Invalid OTP",
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid OTP.",
                 detail="The OTP provided is incorrect.",
             )
-            raise HTTPException(status_code=400, detail=response.dict())
     except HTTPException as e:
         raise e
     except Exception as e:
-        error_message = f"Exception occurred: {str(e)}"
-        traceback_message = traceback.format_exc()
-        print("🚀 ~ error_message:", error_message)
-        print("🚀 ~ traceback_message:", traceback_message)
-        return ErrorResponse(message="Failed to verify OTP", detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to verify OTP.",
+            detail=str(e),
+        )
 
 
 @router.post("/logout", tags=["Auth"], response_model=SuccessResponse)
@@ -120,4 +119,8 @@ async def logout(
         await user_device_service.delete_user_device(UUID(device_id))
         return SuccessResponse(message="Logged out successfully")
     except Exception as e:
-        return ErrorResponse(message="Failed to logout", detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to log out.",
+            detail=str(e),
+        )

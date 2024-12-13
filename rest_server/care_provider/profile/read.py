@@ -23,6 +23,7 @@ from lib.services.care_provider_profile_service import \
 from lib.services.health_facility_service import HealthFacilityService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -48,11 +49,14 @@ async def get_care_provider_profile(
         )
 
         return SuccessResponse(
-            message="Care Provider created successfully",
+            message="Care Provider profile retrieved successfully.",
             data=CareProviderSchema.from_orm(result),
         )
     except HTTPException as e:
         raise e
-    except SQLAlchemyError as e:
-        response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+    except Exception as e:
+        raise_http_exception(
+            status_code=500,
+            message="An unexpected error occurred while fetching the care provider profile.",
+            detail=str(e),
+        )

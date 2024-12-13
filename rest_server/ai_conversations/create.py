@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,7 @@ from lib.dependencies.service_dependencies import (get_ai_conversation_service,
 from lib.models.patient import Patient as PatientModel
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -51,8 +52,10 @@ async def send_ai_conversation_message(
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate response: {str(e)}"
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to generate AI response.",
+            detail=str(e),
         )
 
 
@@ -87,6 +90,8 @@ async def get_daily_health_tip(
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate health tip: {str(e)}"
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to generate health tip of the day.",
+            detail=str(e),
         )

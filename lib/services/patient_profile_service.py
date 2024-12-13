@@ -204,15 +204,17 @@ class PatientProfileService:
 
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Failed to update basic patient profile due to an integrity error.",
+                detail=str(e),
             )
-        except SQLAlchemyError as e:
+        except Exception as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="An unexpected error occurred while updating basic patient profile.",
+                detail=str(e),
             )
 
     async def upsert_patient_lifestyle(
@@ -457,7 +459,7 @@ class PatientProfileService:
                 detail=str(e),
             )
 
-    async def check_patient_profile_exists(self, patient_id: str) -> bool:
+    async def check_patient_exists(self, patient_id: str) -> bool:
         try:
             stmt = select(
                 exists().where(PatientModel.patient_id == patient_id)

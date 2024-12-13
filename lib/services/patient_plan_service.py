@@ -16,6 +16,7 @@ from lib.models.patient_fitness_plan import \
 from lib.models.patient_plan import PatientPlan as PatientPlanModel
 from lib.schemas.patient_diet_plan import PatientDietPlanCreate
 from lib.schemas.patient_fitness_plan import PatientFitnessPlanCreate
+from lib.utils.http_exceptions import raise_http_exception
 
 
 class PatientPlanService:
@@ -23,34 +24,35 @@ class PatientPlanService:
         self.postgres_session = postgres_session
 
     async def fetch_patient_plans(self, patient_id: str):
-        """Fetch all plans for a given patient."""
         try:
-            stmt = select(PatientPlanModel).where(
-                PatientPlanModel.patient_id == patient_id
+            stmt = (
+                select(PatientPlanModel)
+                .where(PatientPlanModel.patient_id == patient_id)
+                .options(
+                    selectinload(PatientPlanModel.diet_plan),
+                    selectinload(PatientPlanModel.fitness_plan),
+                )
             )
-            stmt = stmt.options(
-                selectinload(PatientPlanModel.diet_plan),
-                selectinload(PatientPlanModel.fitness_plan),
-            )
+
             result = await self.postgres_session.execute(stmt)
             patient_plans = result.scalars().all()
             if not patient_plans:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Patient plans not found.",
+                    message=f"No plans found for patient with ID '{patient_id}'.",
                 )
             return patient_plans
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Failed to fetch patient plans.",
+                detail=str(e),
             )
 
     async def create_diet_plan(
         self, diet_plan_data: PatientDietPlanCreate
     ) -> PatientDietPlanModel:
-        """Create a new diet plan."""
         try:
             diet_plan = PatientDietPlanModel(**diet_plan_data.model_dump())
             self.postgres_session.add(diet_plan)
@@ -59,15 +61,15 @@ class PatientPlanService:
             return diet_plan
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Failed to create diet plan due to an integrity error.",
+                detail=str(e),
             )
 
     async def create_fitness_plan(
         self, fitness_plan_data: PatientFitnessPlanCreate
     ) -> PatientFitnessPlanModel:
-        """Create a new fitness plan."""
         try:
             fitness_plan = PatientFitnessPlanModel(
                 **fitness_plan_data.model_dump()
@@ -79,9 +81,10 @@ class PatientPlanService:
             return fitness_plan
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Failed to create fitness plan due to an integrity error.",
+                detail=str(e),
             )
 
     async def assign_patient_plan(
@@ -91,7 +94,6 @@ class PatientPlanService:
         fitness_plan_id: Optional[str],
         end_date: Optional[datetime] = None,
     ) -> PatientPlanModel:
-        """Assign diet and/or fitness plans to a patient."""
         try:
             patient_plan = PatientPlanModel(
                 patient_id=patient_id,
@@ -107,15 +109,15 @@ class PatientPlanService:
             return patient_plan
         except IntegrityError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Integrity Error: {str(e)}",
+                message="Failed to assign patient plan due to an integrity error.",
+                detail=str(e),
             )
 
     async def get_active_patient_plan(
         self, patient_id: str, query_date: datetime_date
     ) -> Optional[PatientPlanModel]:
-        """Fetch the active patient plan based on the given date."""
         try:
             stmt = (
                 select(PatientPlanModel)
@@ -140,13 +142,13 @@ class PatientPlanService:
 
             return active_plan
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Failed to fetch active patient plan.",
+                detail=str(e),
             )
 
     async def delete_patient_plan(self, plan_id: str):
-        """Delete a specific plan."""
         try:
             stmt = select(PatientPlanModel).where(
                 PatientPlanModel.plan_id == plan_id
@@ -155,9 +157,9 @@ class PatientPlanService:
             patient_plan = result.scalars().first()
 
             if not patient_plan:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Plan not found.",
+                    message=f"Patient plan with ID '{plan_id}' not found.",
                 )
 
             await self.postgres_session.delete(patient_plan)
@@ -165,7 +167,8 @@ class PatientPlanService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message=f"Failed to delete patient plan with ID '{plan_id}'.",
+                detail=str(e),
             )
