@@ -44,6 +44,7 @@ async def create_package(
         new_package = await package_service.create_package(
             package_data=package,
             health_facility_id=health_facility_id,  # type: ignore
+            created_by_id=current_care_provider.care_provider_id,  # type: ignore
         )
 
         return SuccessResponse(

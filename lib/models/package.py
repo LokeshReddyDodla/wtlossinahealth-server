@@ -42,6 +42,18 @@ class Package(Base):
     )
     health_facility = relationship("HealthFacility", back_populates="packages")
 
+    # Link to CareProvider who created this package
+    created_by_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("care_providers.care_provider_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Care Provider who created the package",
+    )
+    created_by = relationship(
+        "CareProvider",
+        back_populates="created_packages",
+    )  # Care Provider who created the package
+
     care_providers = relationship(
         "CareProvider",
         secondary=package_care_provider_association,

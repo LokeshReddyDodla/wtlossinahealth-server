@@ -41,21 +41,24 @@ async def get_ai_conversation_service() -> AiConversationService:
     return AiConversationService()
 
 
-async def get_care_provider_profile_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    chat_service: ChatService = Depends(get_chat_service),
-) -> CareProviderProfileService:
-    return CareProviderProfileService(
-        postgres_session=session, chat_service=chat_service
-    )
-
-
 async def get_patient_profile_service(
     session: AsyncSession = Depends(get_postgres_session),
     chat_service: ChatService = Depends(get_chat_service),
 ) -> PatientProfileService:
     return PatientProfileService(
         postgres_session=session, chat_service=chat_service
+    )
+
+
+async def get_care_provider_profile_service(
+    session: AsyncSession = Depends(get_postgres_session),
+    patient_service=Depends(get_patient_profile_service),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> CareProviderProfileService:
+    return CareProviderProfileService(
+        postgres_session=session,
+        patient_service=patient_service,
+        chat_service=chat_service,
     )
 
 

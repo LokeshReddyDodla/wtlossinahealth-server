@@ -27,12 +27,14 @@ class CareProviderUpdate(CareProviderBase):
 
 
 class CareProvider(CareProviderBase):
+    code: str
     care_provider_id: UUID
     is_verified: Optional[bool] = False
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]
-    packages: List[Package] = []
+    # packages: List[Package] = []
+    # created_packages: List[Package] = []
 
     class Config:
         from_attributes = True

@@ -20,6 +20,12 @@ class CareProvider(Base):
         unique=True,
         index=True,
     )
+    code = Column(
+        String(6),
+        nullable=False,
+        unique=True,
+        comment="Unique 6-digit uppercase code for the package",
+    )
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     role = Column(
@@ -70,6 +76,12 @@ class CareProvider(Base):
         secondary=package_care_provider_association,
         back_populates="care_providers",
     )
+
+    created_packages = relationship(
+        "Package",
+        back_populates="created_by",
+        cascade="all, delete-orphan",
+    )  # Packages created by this care provider
 
     user_devices = relationship(
         "UserDevice",

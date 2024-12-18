@@ -10,6 +10,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider
+from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import \
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel
@@ -65,7 +66,9 @@ from lib.utils.http_exceptions import raise_http_exception
 
 class PatientProfileService:
     def __init__(
-        self, postgres_session: AsyncSession, chat_service: ChatService
+        self,
+        postgres_session: AsyncSession,
+        chat_service: ChatService,
     ):
         self.postgres_session = postgres_session
         self.chat_service = chat_service
@@ -450,6 +453,117 @@ class PatientProfileService:
 
             await self.postgres_session.delete(patient)
             await self.postgres_session.commit()
+
+        except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def assign_care_provider_to_patient(
+        self,
+        current_care_provider: CareProviderModel,
+        patient_id: str,
+        assigned_care_provider_id: str,
+    ) -> PatientModel:
+
+        try:
+            patient = await self.fetch_patient_profile(patient_id)
+
+            # Fetch the assigned Care Provider
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.care_provider_id == assigned_care_provider_id
+            )
+            result = await self.postgres_session.execute(stmt)
+            assigned_care_provider = result.scalars().first()
+
+            if not assigned_care_provider:
+                raise_http_exception(
+                    status_code=404,
+                    message="Assigned Care Provider not found.",
+                )
+
+            # Automatically assign the patient to the care provider's health facility if unassigned
+            if not patient.health_facility_id:  # type: ignore
+                patient.health_facility_id = (
+                    current_care_provider.health_facility_id
+                )
+
+            # Ensure both care providers and the patient belong to the same health facility
+            if (
+                assigned_care_provider.health_facility_id
+                != current_care_provider.health_facility_id
+                or current_care_provider.health_facility_id
+                != patient.health_facility_id  # type: ignore
+            ):  # type: ignore
+                raise_http_exception(
+                    status_code=400,
+                    message="Both care providers and the patient must belong to the same health facility.",
+                )
+
+            # Link the new care provider to the patient
+            if assigned_care_provider not in patient.care_providers:  # type: ignore
+                patient.care_providers.append(assigned_care_provider)  # type: ignore
+            else:
+                raise_http_exception(
+                    status_code=400,
+                    message="Care provider is already assigned to this patient.",
+                )
+
+            # Commit changes
+            self.postgres_session.add(patient)
+            await self.postgres_session.commit()
+            await self.postgres_session.refresh(patient)
+
+            return patient
+
+        except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def add_care_provider_by_code(
+        self, patient_id: str, care_provider_code: str
+    ) -> CareProviderModel:
+        try:
+            # Fetch care provider by code
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.code == care_provider_code
+            )
+            result = await self.postgres_session.execute(stmt)
+            care_provider = result.scalars().first()
+
+            if not care_provider:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Invalid care provider code.",
+                )
+
+            # Fetch the patient
+            patient = await self.fetch_patient_profile(
+                patient_id, detailed=True
+            )
+
+            # Check if the care provider is already linked
+            if care_provider in patient.care_providers:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Care provider is already added.",
+                )
+
+            # Link the care provider to the patient
+            patient.care_providers.append(care_provider)
+            self.postgres_session.add(patient)
+
+            await self.postgres_session.commit()
+            await self.postgres_session.refresh(patient)
+
+            return care_provider
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()

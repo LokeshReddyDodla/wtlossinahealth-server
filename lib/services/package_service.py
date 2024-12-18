@@ -106,15 +106,26 @@ class PackageService:
             )
 
     async def create_package(
-        self, package_data: PackageCreate, health_facility_id: UUID
+        self,
+        package_data: PackageCreate,
+        health_facility_id: UUID,
+        created_by_id: UUID,
     ) -> PackageModel:
         try:
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    str(created_by_id)
+                )
+            )
             code = await self.generate_unique_code()
             new_package = PackageModel(
                 **package_data.model_dump(),
                 code=code,
                 health_facility_id=health_facility_id,
+                created_by=care_provider,
             )
+            new_package.care_providers.append(care_provider)
+
             self.postgres_session.add(new_package)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(new_package)

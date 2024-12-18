@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/patient/cgm", tags=["CGM"])
+router = APIRouter(prefix="/patient/cgm", tags=["Patient - CGM"])
 
 from .delete import *
 from .read import *
