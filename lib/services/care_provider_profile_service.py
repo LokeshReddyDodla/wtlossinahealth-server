@@ -1,3 +1,5 @@
+import random
+import string
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
@@ -10,23 +12,28 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.models.patient_care_provider import \
-    PatientCareProvider as PatientCareProviderModel
+from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat_service import ChatService
+from lib.services.patient_profile_service import PatientProfileService
 from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.security import hash_password, verify_password
 
 
 class CareProviderProfileService:
     def __init__(
-        self, postgres_session: AsyncSession, chat_service: ChatService
+        self,
+        postgres_session: AsyncSession,
+        chat_service: ChatService,
+        patient_service: PatientProfileService,
     ):
         self.postgres_session = postgres_session
         self.chat_service = chat_service
+        self.patient_service = patient_service
 
     async def fetch_care_provider(
         self, care_provider_id: str, detailed: Optional[bool] = False
@@ -39,12 +46,9 @@ class CareProviderProfileService:
             if detailed:
                 stmt = stmt.options(
                     selectinload(CareProviderModel.health_facility),
-                    selectinload(
-                        CareProviderModel.patient_relationships
-                    ).options(
-                        selectinload(PatientCareProviderModel.patient),
-                        selectinload(PatientCareProviderModel.care_provider),
-                    ),
+                    selectinload(CareProviderModel.patients),
+                    selectinload(CareProviderModel.packages),
+                    selectinload(CareProviderModel.created_packages),
                     selectinload(CareProviderModel.user_devices),
                 )
 
@@ -52,17 +56,18 @@ class CareProviderProfileService:
             care_provider = result.scalars().first()
 
             if not care_provider:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Care provider not found.",
+                    message="Care provider not found.",
                 )
 
             return care_provider
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def fetch_care_provider_profiles(
@@ -82,10 +87,54 @@ class CareProviderProfileService:
                 for profile in profiles
             }
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
+
+    async def fetch_care_provider_patients(self, care_provider_id: str):
+        try:
+            stmt = (
+                select(CareProviderModel)
+                .where(CareProviderModel.care_provider_id == care_provider_id)
+                .options(selectinload(CareProviderModel.patients))
+            )
+
+            result = await self.postgres_session.execute(stmt)
+            care_provider = result.scalars().first()
+
+            if not care_provider:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Care provider patients not found.",
+                )
+
+            patients = [
+                relationship.patient
+                for relationship in care_provider.patient_relationships
+            ]
+
+            return patients
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def generate_unique_code(self) -> str:
+        while True:
+            code = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=6)
+            )
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.code == code
+            )
+            result = await self.postgres_session.execute(stmt)
+            if not result.scalars().first():
+                return code
 
     async def create_care_provider(
         self, care_provider_data: CareProviderCreate
@@ -95,9 +144,11 @@ class CareProviderProfileService:
             role_enum = CareProviderRole(care_provider_data.role.lower())
             permissions = get_care_provider_permissions(role_enum)
             care_provider_data.permissions = permissions
+            code = await self.generate_unique_code()
 
             new_care_provider = CareProviderModel(
-                **care_provider_data.model_dump()
+                **care_provider_data.model_dump(),
+                code=code,
             )
             self.postgres_session.add(new_care_provider)
             await self.postgres_session.commit()
@@ -107,15 +158,17 @@ class CareProviderProfileService:
 
         except IntegrityError:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Care provider already exists.",
+                message="Care provider already exists",
             )
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def update_care_provider(
@@ -148,15 +201,17 @@ class CareProviderProfileService:
 
         except IntegrityError:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Care provider already exists.",
+                message="Care provider already exists.",
             )
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def delete_care_provider(self, care_provider_id: str):
@@ -168,9 +223,10 @@ class CareProviderProfileService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def check_care_provider_exists(self, care_provider_id: str) -> bool:
@@ -184,16 +240,17 @@ class CareProviderProfileService:
             (exists_result,) = result.scalars()
 
             if not exists_result:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Care Provider not found.",
+                    message="Care provider not found.",
                 )
 
             return True
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def set_care_provider_password(
@@ -206,9 +263,9 @@ class CareProviderProfileService:
             )
 
             if care_provider_profile.email is None:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email is required to set a password.",
+                    message="Email is required to set a password",
                 )
 
             hashed_password = hash_password(raw_password)
@@ -223,15 +280,17 @@ class CareProviderProfileService:
 
         except IntegrityError:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to set password due to a database conflict.",
+                message="Failed to set password due to a database conflict.",
             )
+
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def authenticate_care_provider(
@@ -244,34 +303,56 @@ class CareProviderProfileService:
             result = await self.postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
-            # Check if the care provider exists
             if not care_provider:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password.",
+                    message="Invalid email or password.",
                 )
 
             if not care_provider.hashed_password:  # type: ignore
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Password not set. Please set your password to log in.",
+                    message="Password not set. Please set your password to log in.",
                 )
 
-            # Verify the password
             if not verify_password(
                 password, str(care_provider.hashed_password)
             ):
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password.",
+                    message="Invalid email or password",
                 )
 
             return care_provider
 
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def remove_patient_from_care_provider(
+        self, care_provider_id: str, patient_id: str
+    ) -> None:
+        try:
+            care_provider = await self.fetch_care_provider(
+                care_provider_id, detailed=True
+            )
+            patient = await self.patient_service.fetch_patient_profile(
+                patient_id
+            )
+
+            if patient in care_provider.patients:
+                care_provider.patients.remove(patient)
+                await self.postgres_session.commit()
+
+        except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
             )
 
     def _mark_profile_section_complete(
