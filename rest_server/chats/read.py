@@ -8,11 +8,12 @@ from lib.core.constants import ProfileType
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service, get_chat_service,
-    get_patient_profile_service)
+    get_care_provider_profile_service, get_chat_management_service,
+    get_chat_messaging_service, get_patient_profile_service)
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
@@ -24,7 +25,9 @@ from .router import router
 async def get_user_chats(
     request: Request,
     current_user=Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_management_service: ChatManagementService = Depends(
+        get_chat_management_service
+    ),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
@@ -34,7 +37,7 @@ async def get_user_chats(
 ):
     user_id, _ = current_user
     try:
-        chats = await chat_service.fetch_user_chats(user_id)
+        chats = await chat_management_service.fetch_user_chats(user_id)
 
         # Collect participant IDs by type
         patient_ids = {
@@ -105,11 +108,13 @@ async def get_user_messages(
     request: Request,
     last_sync_time: Optional[datetime] = Query(None),
     current_user=Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_management_service: ChatManagementService = Depends(
+        get_chat_management_service
+    ),
 ):
     try:
         user_id, role = current_user
-        messages = await chat_service.fetch_user_messages(
+        messages = await chat_management_service.fetch_user_messages(
             user_id, last_sync_time
         )
 

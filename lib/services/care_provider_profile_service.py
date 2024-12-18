@@ -15,7 +15,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
@@ -28,11 +28,11 @@ class CareProviderProfileService:
     def __init__(
         self,
         postgres_session: AsyncSession,
-        chat_service: ChatService,
+        chat_notification_service: ChatNotificationService,
         patient_service: PatientProfileService,
     ):
         self.postgres_session = postgres_session
-        self.chat_service = chat_service
+        self.chat_notification_service = chat_notification_service
         self.patient_service = patient_service
 
     async def fetch_care_provider(
@@ -193,7 +193,7 @@ class CareProviderProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider_profile)
 
-            await self.chat_service.notify_participants(
+            await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=care_provider_id,
             )

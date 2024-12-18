@@ -14,7 +14,7 @@ from lib.models import Base
 from lib.models.associations import patient_care_provider_association
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_management_service import ChatManagementService
 
 
 class Patient(Base):
@@ -214,7 +214,7 @@ def create_related_records(mapper, connection, target):
     )
 
     # create a group chat for the patient
-    chat_service = ChatService()
+    chat_service = ChatManagementService()
     runner = BackgroundTaskRunner()
     runner.run(
         chat_service.create_new_chat,

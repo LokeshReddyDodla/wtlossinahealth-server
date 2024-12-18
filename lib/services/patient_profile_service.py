@@ -59,7 +59,8 @@ from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.socketio_service import sio
 from lib.utils.http_exceptions import raise_http_exception
 
@@ -68,10 +69,12 @@ class PatientProfileService:
     def __init__(
         self,
         postgres_session: AsyncSession,
-        chat_service: ChatService,
+        chat_notification_service: ChatNotificationService,
+        chat_management_service: ChatManagementService,
     ):
         self.postgres_session = postgres_session
-        self.chat_service = chat_service
+        self.chat_notification_service = chat_notification_service
+        self.chat_management_service = chat_management_service
 
     async def fetch_patient_profile(
         self,
@@ -195,7 +198,7 @@ class PatientProfileService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient_profile)
 
-            await self.chat_service.notify_participants(
+            await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
                 user_id=patient_id,
             )
@@ -447,7 +450,7 @@ class PatientProfileService:
             patient = await self.fetch_patient_profile(patient_id)
 
             if delete_chats:
-                await self.chat_service.delete_all_chats(
+                await self.chat_management_service.delete_all_chats(
                     user_id=str(patient.patient_id),
                 )
 

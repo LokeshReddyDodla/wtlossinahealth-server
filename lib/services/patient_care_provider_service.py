@@ -164,10 +164,10 @@
 #             # Create chat instance in MongoDB
 #             await self._create_chats(patient, care_provider)
 
-#             await self.chat_service.notify_participants(
-#                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
-#                 user_id=patient_care_provider_data.patient_id,
-#             )
+            # await self.chat_service.notify_participants(
+            #     message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+            #     user_id=patient_care_provider_data.patient_id,
+            # )
 
 #             return new_patient_care_provider
 #         except IntegrityError:
@@ -240,36 +240,36 @@
 #             await self.postgres_session.rollback()
 #             raise HTTPException(status_code=500, detail=str(e))
 
-#     async def _create_chats(
-#         self, patient: PatientSchema, care_provider: CareProviderSchema
-#     ):
+    # async def _create_chats(
+    #     self, patient: PatientSchema, care_provider: CareProviderSchema
+    # ):
 
-#         chat_id = await self.chat_service.create_new_chat(
-#             user_id=str(patient.patient_id),
-#             type=ProfileType.PATIENT.value,
-#             is_group=False,
-#             is_read_only=False,
-#             is_muted=False,
-#             is_archived=False,
-#             is_pinned=False,
-#         )
+    #     chat_id = await self.chat_service.create_new_chat(
+    #         user_id=str(patient.patient_id),
+    #         type=ProfileType.PATIENT.value,
+    #         is_group=False,
+    #         is_read_only=False,
+    #         is_muted=False,
+    #         is_archived=False,
+    #         is_pinned=False,
+    #     )
 
-#         await self.chat_service.add_participant_in_chat(
-#             chat_id=chat_id,
-#             user_id=str(care_provider.care_provider_id),
-#             type=ProfileType.CARE_PROVIDER.value,
-#             is_read_only=False,
-#             is_muted=False,
-#             is_archived=False,
-#             is_pinned=False,
-#         )
+    #     await self.chat_service.add_participant_in_chat(
+    #         chat_id=chat_id,
+    #         user_id=str(care_provider.care_provider_id),
+    #         type=ProfileType.CARE_PROVIDER.value,
+    #         is_read_only=False,
+    #         is_muted=False,
+    #         is_archived=False,
+    #         is_pinned=False,
+    #     )
 
-#         group_chat = await self.chat_service.find_group_chat_for_patient(
-#             patient_id=str(patient.patient_id)
-#         )
-#         if group_chat:
-#             await self.chat_service.add_participant_in_chat(
-#                 chat_id=group_chat["_id"],
-#                 user_id=str(care_provider.care_provider_id),
-#                 type=ProfileType.CARE_PROVIDER.value,
-#             )
+    #     group_chat = await self.chat_service.find_group_chat_for_patient(
+    #         patient_id=str(patient.patient_id)
+    #     )
+    #     if group_chat:
+    #         await self.chat_service.add_participant_in_chat(
+    #             chat_id=group_chat["_id"],
+    #             user_id=str(care_provider.care_provider_id),
+    #             type=ProfileType.CARE_PROVIDER.value,
+    #         )

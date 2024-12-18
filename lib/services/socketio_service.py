@@ -3,7 +3,8 @@ from socketio import AsyncRedisManager, AsyncServer
 
 from lib.core.constants import EmitMessageKey
 from lib.schemas.chat_message import ChatMessageCreate
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_messaging_service import ChatMessagingService
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.utils.jwt import decode_jwt_token, verify_jwt_token
 
 # Read redis host from env
@@ -11,7 +12,8 @@ REDIS_HOST = config("REDIS_HOST", default="127.0.0.1:6379")
 REDIS_PASSWORD = config("REDIS_PASSWORD", default=None)
 REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}/0"
 
-chat_service = ChatService()
+chat_messaging_service = ChatMessagingService()
+chat_notification_service = ChatNotificationService()
 
 sio = AsyncServer(
     async_mode="asgi",
@@ -90,7 +92,7 @@ async def sendMessage(sid, data):
 
     try:
         # Save message and update unread counts
-        await chat_service.add_message(message_data)
+        await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
         await sio.emit(
@@ -114,10 +116,12 @@ async def markAsRead(sid, data):
         # Fetch all messages in the chat if no message_id is provided (mark all as read)
         if not message_id:
             # Mark all messages as read for this user
-            await chat_service.mark_all_messages_as_read(chat_id, user_id)
+            await chat_messaging_service.mark_all_messages_as_read(
+                chat_id, user_id
+            )
         else:
             # Mark specific message as read
-            await chat_service.mark_message_as_read(
+            await chat_messaging_service.mark_message_as_read(
                 chat_id, user_id, message_id
             )
 
@@ -140,16 +144,18 @@ async def toggleReaction(sid, data):
         return {"status": "error", "message": "Missing required fields"}
 
     try:
-        # Call toggle reaction in ChatService
-        await chat_service.toggle_reaction(
+        # Call toggle reaction in ChatMessagingService
+        await chat_messaging_service.toggle_reaction(
             chat_id, message_id, user_id, reaction
         )
 
         # Fetch the updated message with the latest reactions
-        updated_message = await chat_service.get_message_by_id(message_id)
+        updated_message = await chat_messaging_service.get_message_by_id(
+            message_id
+        )
 
         # Emit the updated reaction event to all participants in the chat
-        await chat_service.notify_participants(
+        await chat_notification_service.notify_participants(
             message_key=EmitMessageKey.MESSAGE_UPDATED.value,
             data={
                 "chat_id": chat_id,

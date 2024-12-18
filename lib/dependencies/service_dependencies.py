@@ -7,7 +7,9 @@ from lib.models.patient import Patient
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.chat_messaging_service import ChatMessagingService
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -31,10 +33,16 @@ async def get_user_device_service(
     return UserDeviceService(postgres_session=session)
 
 
-async def get_chat_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> ChatService:
-    return ChatService()
+async def get_chat_messaging_service() -> ChatMessagingService:
+    return ChatMessagingService()
+
+
+async def get_chat_notification_service() -> ChatNotificationService:
+    return ChatNotificationService()
+
+
+async def get_chat_management_service() -> ChatManagementService:
+    return ChatManagementService()
 
 
 async def get_ai_conversation_service() -> AiConversationService:
@@ -43,22 +51,25 @@ async def get_ai_conversation_service() -> AiConversationService:
 
 async def get_patient_profile_service(
     session: AsyncSession = Depends(get_postgres_session),
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_notification_service=Depends(get_chat_notification_service),
+    chat_management_service=Depends(get_chat_management_service),
 ) -> PatientProfileService:
     return PatientProfileService(
-        postgres_session=session, chat_service=chat_service
+        postgres_session=session,
+        chat_notification_service=chat_notification_service,
+        chat_management_service=chat_management_service,
     )
 
 
 async def get_care_provider_profile_service(
     session: AsyncSession = Depends(get_postgres_session),
     patient_service=Depends(get_patient_profile_service),
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_notification_service=Depends(get_chat_notification_service),
 ) -> CareProviderProfileService:
     return CareProviderProfileService(
         postgres_session=session,
         patient_service=patient_service,
-        chat_service=chat_service,
+        chat_notification_service=chat_notification_service,
     )
 
 
