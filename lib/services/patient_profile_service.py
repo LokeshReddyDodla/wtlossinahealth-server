@@ -494,7 +494,7 @@ class PatientProfileService:
                     current_care_provider.health_facility_id
                 )
 
-            # Ensure both care providers and the patient belong to the same health facility
+            # Ensure the same health facility
             if (
                 assigned_care_provider.health_facility_id
                 != current_care_provider.health_facility_id
@@ -503,22 +503,34 @@ class PatientProfileService:
             ):  # type: ignore
                 raise_http_exception(
                     status_code=400,
-                    message="Both care providers and the patient must belong to the same health facility.",
+                    message="The assigned care provider, current care provider, and the patient must belong to the same health facility.",
                 )
 
-            # Link the new care provider to the patient
-            if assigned_care_provider not in patient.care_providers:  # type: ignore
-                patient.care_providers.append(assigned_care_provider)  # type: ignore
-            else:
+            # Check if care provider is already assigned
+            if assigned_care_provider in patient.care_providers:
                 raise_http_exception(
                     status_code=400,
-                    message="Care provider is already assigned to this patient.",
+                    message="The assigned care provider is already linked to this patient.",
                 )
+
+            # Link the care provider to the patient
+            patient.care_providers.append(assigned_care_provider)
 
             # Commit changes
             self.postgres_session.add(patient)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient)
+
+            # Create direct and group chats
+            await self.chat_management_service.create_direct_and_group_chats(
+                patient, assigned_care_provider
+            )
+
+            # Notify participants
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                user_id=str(patient.patient_id),
+            )
 
             return patient
 
@@ -561,10 +573,21 @@ class PatientProfileService:
 
             # Link the care provider to the patient
             patient.care_providers.append(care_provider)
-            self.postgres_session.add(patient)
 
+            self.postgres_session.add(patient)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(patient)
+
+            # Create direct and group chats
+            await self.chat_management_service.create_direct_and_group_chats(
+                patient, care_provider
+            )
+
+            # Notify participants about chat updates
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                user_id=str(patient.patient_id),
+            )
 
             return care_provider
 

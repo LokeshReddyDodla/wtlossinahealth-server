@@ -83,11 +83,15 @@ async def get_package_service(
     session: AsyncSession = Depends(get_postgres_session),
     patient_service=Depends(get_patient_profile_service),
     care_provider_service=Depends(get_care_provider_profile_service),
+    chat_management_service=Depends(get_chat_management_service),
+    chat_notification_service=Depends(get_chat_notification_service),
 ) -> PackageService:
     return PackageService(
         postgres_session=session,
         patient_service=patient_service,
         care_provider_service=care_provider_service,
+        chat_management_service=chat_management_service,
+        chat_notification_service=chat_notification_service,
     )
 
 

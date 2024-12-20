@@ -11,9 +11,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.models.package import Package as PackageModel
+from lib.models.patient import Patient as PatientModel
 from lib.schemas.package import PackageCreate, PackageUpdate
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
+from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 
@@ -24,10 +27,14 @@ class PackageService:
         postgres_session: AsyncSession,
         patient_service: PatientProfileService,
         care_provider_service: CareProviderProfileService,
+        chat_notification_service: ChatNotificationService,
+        chat_management_service: ChatManagementService,
     ):
         self.postgres_session = postgres_session
         self.patient_service = patient_service
         self.care_provider_service = care_provider_service
+        self.chat_notification_service = chat_notification_service
+        self.chat_management_service = chat_management_service
 
     async def generate_unique_code(self) -> str:
         while True:
@@ -280,6 +287,9 @@ class PackageService:
             await self.postgres_session.refresh(package)
             await self.postgres_session.refresh(patient)
 
+            # Handle care provider chat connections
+            await self._handle_package_care_provider_chats(patient, package)
+
             return package
 
         except SQLAlchemyError as e:
@@ -328,6 +338,9 @@ class PackageService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(package)
             await self.postgres_session.refresh(patient)
+
+            # Handle care provider chat connections
+            await self._handle_package_care_provider_chats(patient, package)
 
             return package
 
@@ -407,4 +420,14 @@ class PackageService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
+            )
+
+    async def _handle_package_care_provider_chats(
+        self, patient: PatientModel, package: PackageModel
+    ):
+        # Loop through all care providers in the package
+        for care_provider in package.care_providers:
+            # Create a direct chat between the patient and care provider
+            await self.chat_management_service.create_direct_and_group_chats(
+                patient=patient, care_provider=care_provider
             )

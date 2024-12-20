@@ -3,15 +3,20 @@ from typing import Optional
 
 from pymongo.errors import PyMongoError
 
-from lib.core.constants import EmitMessageKey
+from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.types import ProfileTypeLiteral
+from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.services.chat.base import BaseChatService
+from lib.services.chat.chat_participant_service import ChatParticipantService
 
 
 class ChatManagementService(BaseChatService):
+    def __init__(self):
+        self.participant_service = ChatParticipantService()
+
     async def create_new_chat(
         self,
         user_id: str,
@@ -23,6 +28,18 @@ class ChatManagementService(BaseChatService):
         is_archived: Optional[bool] = False,
         is_pinned: Optional[bool] = False,
     ):
+
+        if not is_group:
+            # Check for an existing chat
+            existing_chat_id = await self._find_existing_1on1_chat(
+                user_id=user_id
+            )
+            if existing_chat_id:
+                print(f"Chat already exists with ID: {existing_chat_id}")
+                return existing_chat_id
+            else:
+                print("No existing 1-on-1 chat found.")
+
         participant = ParticipantSchema(
             id=user_id,
             type=type,
@@ -82,6 +99,32 @@ class ChatManagementService(BaseChatService):
         except PyMongoError as e:
             print(f"MongoDB Error: {e}")
             raise
+
+    async def create_direct_and_group_chats(
+        self, patient, care_provider: CareProviderModel  # PatientModel,
+    ):
+        # Create a direct chat
+        chat_id = await self.create_new_chat(
+            user_id=str(patient.patient_id),
+            type=ProfileType.PATIENT.value,
+            is_group=False,
+        )
+        await self.participant_service.add_participant_in_chat(
+            chat_id=chat_id,
+            user_id=str(care_provider.care_provider_id),
+            type=ProfileType.CARE_PROVIDER.value,
+        )
+
+        # Find the patient's group chat and add the care provider
+        group_chat = await self.find_group_chat_for_patient(
+            patient_id=str(patient.patient_id)
+        )
+        if group_chat:
+            await self.participant_service.add_participant_in_chat(
+                chat_id=group_chat["_id"],
+                user_id=str(care_provider.care_provider_id),
+                type=ProfileType.CARE_PROVIDER.value,
+            )
 
     async def find_group_chat_for_patient(self, patient_id: str):
         return await self.mongo_store.find_document(
@@ -174,3 +217,21 @@ class ChatManagementService(BaseChatService):
                     await session.abort_transaction()
                     print(f"Transaction aborted: {e}")
                     raise
+
+    async def _find_existing_1on1_chat(
+        self,
+        user_id: str,
+    ) -> Optional[str]:
+        try:
+            existing_chat = await self.mongo_store.find_document(
+                "chats",
+                {
+                    "is_group": False,
+                    "participants.id": user_id,
+                    "participants": {"$size": 2},
+                },
+            )
+            return existing_chat["_id"] if existing_chat else None
+        except PyMongoError as e:
+            print(f"Failed to check for existing chat: {e}")
+            raise
