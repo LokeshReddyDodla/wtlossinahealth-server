@@ -105,7 +105,9 @@ class CareProviderProfileService:
                 .where(CareProviderModel.care_provider_id == care_provider_id)
                 .options(
                     selectinload(CareProviderModel.patients).options(
-                        selectinload(PatientModel.care_providers)
+                        selectinload(PatientModel.health_facility),
+                        selectinload(PatientModel.care_providers),
+                        selectinload(PatientModel.package),
                     )
                 )
             )
@@ -142,7 +144,9 @@ class CareProviderProfileService:
 
     async def create_care_provider(
         self, care_provider_data: CareProviderCreate
-    ) -> CareProviderModel:
+    ) -> (
+        CareProviderModel
+    ):  # TODO: fix validation on invalid health_facility id
         try:
             # Convert role to enum and get permissions
             role_enum = CareProviderRole(care_provider_data.role.lower())

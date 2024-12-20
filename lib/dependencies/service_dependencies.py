@@ -7,6 +7,7 @@ from lib.models.patient import Patient
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
+from lib.services.cgm_service import CGMService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -153,6 +154,16 @@ async def get_patient_plan_service(
     session: AsyncSession = Depends(get_postgres_session),
 ) -> PatientPlanService:
     return PatientPlanService(postgres_session=session)
+
+
+async def get_cgm_service(
+    request: Request,
+    session: AsyncSession = Depends(get_postgres_session),
+) -> CGMService:
+    clickhouse_store = request.state.context.clickhouse_store
+    return CGMService(
+        clickhouse_store=clickhouse_store, postgres_session=session
+    )
 
 
 async def get_glucose_stats_processor(

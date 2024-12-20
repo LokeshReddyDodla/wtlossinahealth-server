@@ -1,14 +1,11 @@
-from io import StringIO
-from typing import Union
-
-import pandas as pd
-from fastapi import (APIRouter, Depends, File, HTTPException, Request,
-                     UploadFile, status)
+from fastapi import Depends, File, Request, UploadFile, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
+from lib.dependencies.service_dependencies import get_cgm_service
 from lib.models.patient import Patient
+from lib.services.cgm_service import CGMService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 
@@ -17,60 +14,15 @@ from .router import router
 async def upload_cgm_data(
     request: Request,
     file: UploadFile = File(...),
+    cgm_service: CGMService = Depends(get_cgm_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        clickhouse_store = request.state.context.clickhouse_store
 
-        # Read and parse the CSV file
-        contents = await file.read()
-        decoded = contents.decode("utf-8")
-
-        # Skip metadata rows and set correct headers
-        df = pd.read_csv(StringIO(decoded), skiprows=2)
-
-        # Convert timestamps to the correct format without changing the timezone
-        df["Device Timestamp"] = pd.to_datetime(
-            df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
+        await cgm_service.parse_and_upload_cgm_data(
+            patient_id=str(current_patient.patient_id),
+            file_contents=await file.read(),
         )
-
-        # Determine the time range of the new data
-        start_time = df["Device Timestamp"].min()
-        end_time = df["Device Timestamp"].max()
-
-        # Delete existing data for the patient in the time range
-        clickhouse_store.delete_existing_cgm_data(
-            "aihealth.cgm_data",
-            current_patient.patient_id,
-            start_time,
-            end_time,
-        )
-
-        # Prepare data for ClickHouseDB
-        data_points = []
-        for _, row in df.iterrows():
-            if pd.notna(row["Scan Glucose mg/dL"]):
-                record_type = "scan"
-                glucose_level = int(row["Scan Glucose mg/dL"])
-            elif pd.notna(row["Historic Glucose mg/dL"]):
-                record_type = "historic"
-                glucose_level = int(row["Historic Glucose mg/dL"])
-            else:
-                continue
-
-            data_points.append(
-                {
-                    "patient_id": str(current_patient.patient_id),
-                    "time": row["Device Timestamp"].strftime(
-                        "%Y-%m-%dT%H:%M:%S"
-                    ),
-                    "glucose_level": glucose_level,
-                    "record_type": record_type,
-                }
-            )
-
-        # Insert data into ClickHouse
-        clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
         return SuccessResponse(
             message="CGM data uploaded and stored successfully."
