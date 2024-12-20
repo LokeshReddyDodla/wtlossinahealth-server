@@ -58,14 +58,8 @@ class CGMService:
                     }
                 )
 
-            print("==> data_points: ", data_points)
-
-            cgm_data_utils = CGMDataUtils(self.clickhouse_store)
-            print(
-                "==> dates: ", cgm_data_utils.generate_all_report_periods(df)
-            )
             # Write data to ClickHouse
-            # self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
         except Exception as e:
             raise_http_exception(
