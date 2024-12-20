@@ -3,12 +3,16 @@ from typing import List, Optional
 
 from pymongo.errors import PyMongoError
 
+from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.schemas.chat import ParticipantSchema
 from lib.services.chat.base import BaseChatService
 
 
 class ChatParticipantService(BaseChatService):
+    def __init__(self):
+        self.mongo_store = get_mongo_store()
+
     async def add_participant_in_chat(
         self,
         chat_id: str,

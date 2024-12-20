@@ -15,6 +15,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
+from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.socketio_service import sio
@@ -29,9 +30,11 @@ class CareProviderProfileService:
         self,
         postgres_session: AsyncSession,
         chat_notification_service: ChatNotificationService,
+        chat_management_service: ChatManagementService,
         patient_service: PatientProfileService,
     ):
         self.postgres_session = postgres_session
+        self.chat_management_service = chat_management_service
         self.chat_notification_service = chat_notification_service
         self.patient_service = patient_service
 
@@ -340,12 +343,41 @@ class CareProviderProfileService:
                 care_provider_id, detailed=True
             )
             patient = await self.patient_service.fetch_patient_profile(
-                patient_id
+                patient_id, detailed=True
             )
 
+            if not patient in care_provider.patients:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Patient is not linked to the specified care provider.",
+                )
+
+            # Remove the patient from the care provider's list
             if patient in care_provider.patients:
                 care_provider.patients.remove(patient)
-                await self.postgres_session.commit()
+                self.postgres_session.add(care_provider)
+
+            # Remove the care provider from the patient's list
+            if care_provider in patient.care_providers:
+                patient.care_providers.remove(care_provider)
+                self.postgres_session.add(patient)
+
+            # Commit the changes
+            await self.postgres_session.commit()
+
+            #  Notify participants about changes in their chat list
+            await self.chat_management_service.delete_direct_chat(
+                patient_id=str(patient_id),
+                care_provider_id=str(care_provider_id),
+            )
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                user_id=str(patient_id),
+            )
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                user_id=str(care_provider_id),
+            )
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()

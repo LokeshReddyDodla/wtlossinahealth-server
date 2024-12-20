@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi.encoders import jsonable_encoder
 
 from lib.core.constants import EmitMessageKey
+from lib.core.mongo_store import get_mongo_store
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
@@ -11,6 +12,7 @@ from lib.services.chat.chat_notification_service import ChatNotificationService
 
 class ChatMessagingService(BaseChatService):
     def __init__(self):
+        self.mongo_store = get_mongo_store()
         self.notification_service = ChatNotificationService()
 
     async def add_message(self, message_data: ChatMessageCreate):

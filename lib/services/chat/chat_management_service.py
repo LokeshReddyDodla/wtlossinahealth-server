@@ -4,6 +4,7 @@ from typing import Optional
 from pymongo.errors import PyMongoError
 
 from lib.core.constants import EmitMessageKey, ProfileType
+from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
@@ -15,6 +16,7 @@ from lib.services.chat.chat_participant_service import ChatParticipantService
 
 class ChatManagementService(BaseChatService):
     def __init__(self):
+        self.mongo_store = get_mongo_store()
         self.participant_service = ChatParticipantService()
 
     async def create_new_chat(
