@@ -189,11 +189,14 @@ class ChatManagementService(BaseChatService):
             )
             raise
 
-    async def _delete_chat_with_condition(self, condition: dict):
+    async def _delete_chat_with_condition(
+        self, condition: dict, delete_messages: bool = False
+    ):
         """Deletes chats and associated messages based on a condition."""
         async with await self.mongo_store.client.start_session() as session:
             async with session.start_transaction():
                 try:
+                    # Find chat documents matching the condition
                     chat_documents = await self.mongo_store.find_many(
                         "chats", condition, {"_id": 1}, session=session
                     )
@@ -202,16 +205,21 @@ class ChatManagementService(BaseChatService):
                         print("No chats found for the given condition.")
                         return
 
+                    # Delete the chats
                     await self.mongo_store.delete_many_documents(
                         "chats", {"_id": {"$in": chat_ids}}, session=session
                     )
-                    await self.mongo_store.delete_many_documents(
-                        "chat_messages",
-                        {"chat_id": {"$in": chat_ids}},
-                        session=session,
-                    )
-
                     print(f"Deleted chats: {chat_ids}")
+
+                    # Optionally delete associated messages
+                    if delete_messages:
+                        await self.mongo_store.delete_many_documents(
+                            "chat_messages",
+                            {"chat_id": {"$in": chat_ids}},
+                            session=session,
+                        )
+                        print(f"Deleted messages for chats: {chat_ids}")
+
                     await session.commit_transaction()
                 except Exception as e:
                     await session.abort_transaction()
