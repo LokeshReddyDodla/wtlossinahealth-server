@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/patient/meals", tags=["Meals"])
+router = APIRouter(prefix="/patient/meals", tags=["Patient - Meals"])
 
-from .read import *
-from .upload import *
 from .analyze_meal import *
 from .delete import *
+from .read import *
 from .report import *
+from .upload import *

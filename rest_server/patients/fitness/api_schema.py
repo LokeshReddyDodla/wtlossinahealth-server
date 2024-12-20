@@ -27,8 +27,3 @@ class FitnessDataRequest(BaseModel):
     blood_pressure_systolic: List[FitnessDataPoint]
     heart_rate: List[FitnessDataPoint]
     sleep_in_bed: List[FitnessDataPoint]
-
-
-FitnessStatsResponse = SuccessResponse[Optional[List[FitnessMonthlyStats]]]
-
-FitnessReportResponse = SuccessResponse[CompleteFitnessReport]

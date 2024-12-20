@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, constr
 
+from lib.schemas.package import Package
+
 
 class HealthFacilityBase(BaseModel):
     name: str
@@ -49,6 +51,7 @@ class HealthFacility(HealthFacilityBase):
     custom_domain: Optional[str]
     created_at: datetime
     updated_at: datetime
+    packages: List[Package] = []
 
     class Config:
         from_attributes = True

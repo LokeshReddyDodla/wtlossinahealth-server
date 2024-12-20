@@ -1,11 +1,12 @@
 from typing import Literal, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.base import get_current_user
-from lib.dependencies.service_dependencies import get_chat_service
+from lib.dependencies.service_dependencies import get_chat_messaging_service
 from lib.schemas.chat_message import ChatMessageCreate
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_messaging_service import ChatMessagingService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -16,16 +17,13 @@ async def send_message(
     request: Request,
     message_data: ChatMessageCreate,
     current_user=Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_messaging_service: ChatMessagingService = Depends(get_chat_messaging_service),
 ):
-    """
-    Send a message to a chat.
-    """
     try:
         user_id, role = current_user
 
         # TODO: check if chat_id even exists
-        await chat_service.add_message(
+        await chat_messaging_service.add_message(
             message_data=message_data,
         )
 
@@ -33,7 +31,8 @@ async def send_message(
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Failed to send message", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to send message.",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

@@ -1,0 +1,73 @@
+import random
+import string
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (UUID, Column, DateTime, ForeignKey, String,
+                        UniqueConstraint)
+from sqlalchemy.orm import relationship
+
+from lib.models import Base
+from lib.models.associations import package_care_provider_association
+
+
+class Package(Base):
+    __tablename__ = "packages"
+
+    package_id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        unique=True,
+        index=True,
+    )
+    name = Column(String, nullable=False, comment="Name of the package")
+    code = Column(
+        String(6),
+        nullable=False,
+        unique=True,
+        comment="Unique 6-digit uppercase code for the package",
+    )
+    created_at = Column(
+        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        onupdate=lambda: datetime.now().replace(tzinfo=None),
+    )
+
+    health_facility_id = Column(
+        UUID(as_uuid=True), ForeignKey("health_facilities.health_facility_id")
+    )
+    health_facility = relationship("HealthFacility", back_populates="packages")
+
+    # Link to CareProvider who created this package
+    created_by_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("care_providers.care_provider_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Care Provider who created the package",
+    )
+    created_by = relationship(
+        "CareProvider",
+        back_populates="created_packages",
+    )  # Care Provider who created the package
+
+    care_providers = relationship(
+        "CareProvider",
+        secondary=package_care_provider_association,
+        back_populates="packages",
+    )
+    patients = relationship(
+        "Patient",
+        back_populates="package",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "name",
+            "health_facility_id",
+            name="uq_package_name_per_health_facility",
+        ),
+    )

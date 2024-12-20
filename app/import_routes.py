@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from rest_server.admin import admin
 from rest_server.admin.care_provider.profile.router import \
     router as admin_care_provider_router
+from rest_server.admin.health_facility.router import \
+    router as admin_health_facility_router
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
 from rest_server.ai_conversations.router import \
@@ -14,7 +16,7 @@ from rest_server.dump import dump
 from rest_server.file_upload import file_upload
 from rest_server.health import health_check
 from rest_server.health_facility.router import router as health_facility_router
-from rest_server.patients.care_provider.router import \
+from rest_server.patients.care_providers.router import \
     router as patient_care_providers_router
 from rest_server.patients.cgm.router import router as cgm_router
 from rest_server.patients.connected_apps.router import \
@@ -66,6 +68,7 @@ def import_routes(app: FastAPI) -> None:
     # Health Facility
     ###########################################################################
     app.include_router(health_facility_router)
+    app.include_router(admin_health_facility_router)
 
     ###########################################################################
     # Care Providers
@@ -103,8 +106,8 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(fitness_router)
     app.include_router(prescriptions_router)
     app.include_router(meals_router)
-    app.include_router(patient_care_providers_router)
     app.include_router(patient_overview_router)
+    app.include_router(patient_care_providers_router)
 
     ###########################################################################
     # Test

@@ -11,6 +11,7 @@ from lib.schemas.patient_smbg import PatientSMBG as PatientSMBGSchema
 from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 
 
 class PatientSmbgService:
@@ -37,9 +38,10 @@ class PatientSmbgService:
             smbg_records = result.scalars().all()
             return list(smbg_records)
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Database error",
+                detail=str(e),
             )
 
     async def upload_patient_smbg(
@@ -69,9 +71,10 @@ class PatientSmbgService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def _generate_ai_response(
@@ -99,23 +102,24 @@ class PatientSmbgService:
         try:
             result = await self.postgres_session.execute(
                 select(PatientSMBGModel).where(
-                    PatientSMBGModel.smbg_id == smbg_id,
+                    PatientSMBGModel.id == smbg_id,
                     PatientSMBGModel.patient_id == patient_id,
                 )
             )
             smbg_record = result.scalars().first()
 
             if not smbg_record:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="SMBG record not found.",
+                    message="SMBG record not found",
                 )
 
             await self.postgres_session.delete(smbg_record)
             await self.postgres_session.commit()
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )

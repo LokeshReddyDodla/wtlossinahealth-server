@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from decouple import config
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr, ValidationError
@@ -17,6 +17,7 @@ from lib.schemas.ai_conversation_schemas import \
 from lib.schemas.ai_conversation_schemas import AiResponseSuggestions
 from lib.schemas.patient import CorePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
 MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
@@ -368,14 +369,14 @@ class AiConversationService:
             return delete_result
 
         except ValueError as ve:
-            print(f"Invalid input: {str(ve)}")
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid input: Either conversation_id or reference_id must be provided.",
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid input for deleting conversation messages.",
+                detail=str(ve),
             )
         except Exception as e:
-            print(f"Failed to delete conversation messages: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to delete conversation messages",
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="An unexpected error occurred while deleting conversation messages.",
+                detail=str(e),
             )

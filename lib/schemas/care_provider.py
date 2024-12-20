@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from lib.schemas.health_facility import HealthFacility
+from lib.schemas.package import Package
 
 
 class CareProviderBase(BaseModel):
@@ -26,6 +27,7 @@ class CareProviderUpdate(CareProviderBase):
 
 
 class CareProvider(CareProviderBase):
+    code: str
     care_provider_id: UUID
     is_verified: Optional[bool] = False
     created_at: datetime

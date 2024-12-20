@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/patient/profile", tags=["Profile"])
+router = APIRouter(prefix="/patient/profile", tags=["Patient - Profile"])
 
-from .read import *
 from .create import *
-from .update import *
 from .delete import *
+from .read import *
+from .update import *

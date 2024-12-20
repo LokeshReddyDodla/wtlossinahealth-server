@@ -120,6 +120,7 @@ class FCMService:
                 user_device_service = UserDeviceService(
                     postgres_session=session
                 )
+                
                 # Fetch all devices associated with the user_id
                 devices = await user_device_service.get_user_devices(
                     user_id=UUID(user_id)

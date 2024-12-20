@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -16,14 +16,13 @@ from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_smbg_service import PatientSmbgService
-from rest_server.patients.smbgs.api_schema import (PatientSmbgUpload,
-                                                   PatientSmbgUploadResponse)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.post("/upload", response_model=PatientSmbgUploadResponse)
+@router.post("/upload", response_model=SuccessResponse)
 async def upload_smbg(
     request: Request,
     smbg_data: PatientSMBGCreate,
@@ -41,14 +40,16 @@ async def upload_smbg(
 
         smbg = PatientSMBGSchema.model_validate(new_smbg)
 
-        return PatientSmbgUploadResponse(
+        return SuccessResponse(
             message="SMBG data uploaded successfully.",
-            data=PatientSmbgUpload(
-                smbg_data=smbg, ai_response_generated=ai_response_generated
-            ),
+            data={
+                "smbg_data": smbg,
+                "ai_response_generated": ai_response_generated,
+            },
         )
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

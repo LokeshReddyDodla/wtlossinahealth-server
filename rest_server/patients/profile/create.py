@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,13 +13,13 @@ from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientCreate, PatientUpdate
-from rest_server.patients.profile.api_schema import PatientProfileResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.post(path="/basic", response_model=PatientProfileResponse)
+@router.post(path="/basic", response_model=SuccessResponse)
 async def create_basic_patient(
     request: Request,
     patient_data: PatientCreate,
@@ -38,8 +38,10 @@ async def create_basic_patient(
         existing_patient = existing_patient.scalar_one_or_none()
 
         if existing_patient:
-            response = ErrorResponse(message="Patient already exists")
-            raise HTTPException(status_code=400, detail=response.dict())
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Patient already exists",
+            )
 
         # Create a new patient
         new_patient = Patient(**patient_data.dict())
@@ -49,7 +51,7 @@ async def create_basic_patient(
 
         result = PatientSchema.from_orm(new_patient)
 
-        return PatientProfileResponse(
+        return SuccessResponse(
             message="Patient basic data created successfully.",
             data=result,
         )
@@ -57,11 +59,15 @@ async def create_basic_patient(
         raise http_exc
     except IntegrityError as e:
         await session.rollback()
-        response = ErrorResponse(message="Integrity Error", detail=str(e))
-        raise HTTPException(status_code=400, detail=response.dict())
+        raise_http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="Integrity Error",
+            detail=str(e),
+        )
     except Exception as e:
         await session.rollback()
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

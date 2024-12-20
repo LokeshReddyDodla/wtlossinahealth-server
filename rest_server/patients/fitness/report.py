@@ -3,21 +3,22 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_fitness_stats_processor
 from lib.models.patient import Patient
 from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from rest_server.patients.fitness.api_schema import FitnessReportResponse
+from lib.utils.http_exceptions import raise_http_exception
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 
 
 @router.get(
     "/report",
-    response_model=FitnessReportResponse,
+    response_model=SuccessResponse,
 )
 async def get_fitness_data(
     request: Request,
@@ -45,7 +46,7 @@ async def get_fitness_data(
             from_date_str, to_date_str
         )
 
-        return FitnessReportResponse(
+        return SuccessResponse(
             message="Fitness report generated successfully.",
             data=CompleteFitnessReport(
                 patient_id=str(current_patient.patient_id),
@@ -62,5 +63,8 @@ async def get_fitness_data(
         traceback_message = traceback.format_exc()
         print("🚀 ~ error_message:", error_message)
         print("🚀 ~ traceback_message:", traceback_message)
-        response = {"message": "Internal Server Error", "detail": str(e)}
-        raise HTTPException(status_code=500, detail=response)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

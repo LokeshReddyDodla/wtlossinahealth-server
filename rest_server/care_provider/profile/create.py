@@ -1,15 +1,6 @@
-from functools import partial, wraps
-from typing import Callable, List, Optional, Union
+from fastapi import Depends, HTTPException, Request, status
 
-from fastapi import Depends, HTTPException, Request
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-
-from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import \
     get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -18,14 +9,14 @@ from lib.schemas.care_provider import CareProviderCreate
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderRole,
-                                                 get_care_provider_permissions)
+                                                 CareProviderPermissionAction)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.post("/profile", response_model=SuccessResponse)
+@router.post("", response_model=SuccessResponse)
 async def create_care_provider_profile(
     request: Request,
     care_provider: CareProviderCreate,
@@ -33,7 +24,10 @@ async def create_care_provider_profile(
         get_care_provider_profile_service
     ),
     current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider("create", CareProviderFeature.CARE_PROVIDER)
+        get_current_care_provider(
+            CareProviderPermissionAction.CREATE,
+            CareProviderFeature.CARE_PROVIDERS,
+        )
     ),
 ):
     try:
@@ -49,6 +43,9 @@ async def create_care_provider_profile(
         )
     except HTTPException as e:
         raise e
-    except SQLAlchemyError as e:
-        response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

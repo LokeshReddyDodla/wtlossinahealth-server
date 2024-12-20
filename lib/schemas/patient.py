@@ -7,8 +7,8 @@ from sqlalchemy.orm import attributes
 
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.health_facility import HealthFacility
+from lib.schemas.package import Package
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
-from lib.schemas.patient_care_provider import PatientCareProvider
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_current_medication import PatientCurrentMedication
 from lib.schemas.patient_daily_activity import PatientDailyActivity
@@ -109,8 +109,9 @@ class CompletePatientProfile(CorePatientProfile):
     smbgs: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
     token_usage_logs: List[PatientTokenUsageLog] = []
-    # care_providers: List[PatientCareProvider] = []
-    health_facility: Optional[HealthFacility] = None
+    # health_facility: Optional[HealthFacility] = None
+    care_providers: List[CareProvider] = []
+    package: Optional[Package] = None
 
     class Config:
         from_attributes = True

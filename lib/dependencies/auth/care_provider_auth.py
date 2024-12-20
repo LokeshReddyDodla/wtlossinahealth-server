@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -6,11 +6,15 @@ from lib.core.constants import ProfileType
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider
-from lib.utils.care_provider_permissions import CareProviderFeature
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction,
+                                                 CareProviderRole,
+                                                 has_care_provider_permission)
+from lib.utils.http_exceptions import raise_http_exception
 
 
 def get_current_care_provider(
-    action: str,
+    action: CareProviderPermissionAction,
     feature: CareProviderFeature,
 ):
     async def dependency(
@@ -21,8 +25,9 @@ def get_current_care_provider(
         user_id, role = user_role
 
         if role != ProfileType.CARE_PROVIDER.value:
-            raise HTTPException(
-                status_code=403, detail="Not authorized as a Care Provider"
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Not authorized as a Care Provider",
             )
 
         result = await session.execute(
@@ -32,16 +37,19 @@ def get_current_care_provider(
         )
         care_provider = result.scalars().first()
         if not care_provider:
-            raise HTTPException(
-                status_code=404, detail="Care Provider not found"
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Care Provider not found",
             )
 
-        permissions = care_provider.permissions
-        feature_permissions = permissions.get(feature.value, {})
-        if not feature_permissions.get(action, False):
-            raise HTTPException(
-                status_code=403,
-                detail="Forbidden: Insufficient permissions",
+        if not has_care_provider_permission(
+            role=CareProviderRole(care_provider.role),
+            feature=feature,
+            action=action,
+        ):
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Forbidden: Insufficient permissions",
             )
 
         return care_provider

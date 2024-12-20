@@ -1,6 +1,6 @@
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import \
@@ -10,14 +10,13 @@ from lib.schemas.patient_connected_app import \
     PatientConnectedApp as PatientConnectedAppSchema
 from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
-from rest_server.patients.connected_apps.api_schema import \
-    GetPatientConnectedAppsResponse
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
 
 
-@router.get("", response_model=GetPatientConnectedAppsResponse)
+@router.get("", response_model=SuccessResponse)
 async def get_patient_connected_apps(
     request: Request,
     patient_connected_app_service: PatientConnectedAppService = Depends(
@@ -34,14 +33,15 @@ async def get_patient_connected_apps(
             )
         )
 
-        return GetPatientConnectedAppsResponse(
+        return SuccessResponse(
             message="Connected apps fetched successfully.",
             data=PatientConnectedAppSchema.from_orm(connected_app),
         )
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())

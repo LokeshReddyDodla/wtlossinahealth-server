@@ -22,6 +22,7 @@ from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
 from rest_server.response_models import ErrorResponse
@@ -52,65 +53,76 @@ class MealService:
         order: Optional[str] = "asc",
         limit: Optional[int] = None,
     ):
-        query = (
-            select(PatientMealModel)
-            .where(PatientMealModel.patient_id == patient_id)
-            .options(
-                selectinload(PatientMealModel.items).selectinload(
-                    PatientFoodItemModel.macro_nutritional_values
-                ),
-                selectinload(PatientMealModel.items).selectinload(
-                    PatientFoodItemModel.micro_nutritional_values
-                ),
-                selectinload(PatientMealModel.total_macro_nutritional_value),
-                selectinload(PatientMealModel.total_micro_nutritional_value),
-            )
-        )
-
-        if from_datetime:
-            query = query.filter(
-                (PatientMealModel.date > from_datetime.date())
-                | (
-                    (PatientMealModel.date == from_datetime.date())
-                    & (PatientMealModel.time >= from_datetime.time())
-                )
-            )
-        if to_datetime:
-            query = query.filter(
-                (PatientMealModel.date < to_datetime.date())
-                | (
-                    (PatientMealModel.date == to_datetime.date())
-                    & (PatientMealModel.time <= to_datetime.time())
+        try:
+            query = (
+                select(PatientMealModel)
+                .where(PatientMealModel.patient_id == patient_id)
+                .options(
+                    selectinload(PatientMealModel.items).selectinload(
+                        PatientFoodItemModel.macro_nutritional_values
+                    ),
+                    selectinload(PatientMealModel.items).selectinload(
+                        PatientFoodItemModel.micro_nutritional_values
+                    ),
+                    selectinload(
+                        PatientMealModel.total_macro_nutritional_value
+                    ),
+                    selectinload(
+                        PatientMealModel.total_micro_nutritional_value
+                    ),
                 )
             )
 
-        if source:
-            query = query.filter(PatientMealModel.source == source)
-        if analyzed == "true":
-            query = query.filter(PatientMealModel.analyzed == True)
-        elif analyzed == "false":
-            query = query.filter(PatientMealModel.analyzed == False)
+            if from_datetime:
+                query = query.filter(
+                    (PatientMealModel.date > from_datetime.date())
+                    | (
+                        (PatientMealModel.date == from_datetime.date())
+                        & (PatientMealModel.time >= from_datetime.time())
+                    )
+                )
+            if to_datetime:
+                query = query.filter(
+                    (PatientMealModel.date < to_datetime.date())
+                    | (
+                        (PatientMealModel.date == to_datetime.date())
+                        & (PatientMealModel.time <= to_datetime.time())
+                    )
+                )
 
-        # Add ordering
-        if order_by == "time":
-            if order == "asc":
-                query = query.order_by(asc(PatientMealModel.time))
-            else:
-                query = query.order_by(desc(PatientMealModel.time))
-        elif order_by == "created_at":
-            if order == "asc":
-                query = query.order_by(asc(PatientMealModel.uploaded_at))
-            else:
-                query = query.order_by(desc(PatientMealModel.uploaded_at))
+            if source:
+                query = query.filter(PatientMealModel.source == source)
+            if analyzed == "true":
+                query = query.filter(PatientMealModel.analyzed == True)
+            elif analyzed == "false":
+                query = query.filter(PatientMealModel.analyzed == False)
 
-        # Apply limit if provided
-        if limit:
-            query = query.limit(limit)
+            # Add ordering
+            if order_by == "time":
+                if order == "asc":
+                    query = query.order_by(asc(PatientMealModel.time))
+                else:
+                    query = query.order_by(desc(PatientMealModel.time))
+            elif order_by == "created_at":
+                if order == "asc":
+                    query = query.order_by(asc(PatientMealModel.uploaded_at))
+                else:
+                    query = query.order_by(desc(PatientMealModel.uploaded_at))
 
-        result = await self.postgres_session.execute(query)
-        meals = result.scalars().all()
+            # Apply limit if provided
+            if limit:
+                query = query.limit(limit)
 
-        return meals
+            result = await self.postgres_session.execute(query)
+            meals = result.scalars().all()
+
+            return meals
+        except Exception as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Internal Server Error",
+                detail=str(e),
+            )
 
     async def fetch_meal(self, meal_id: str) -> PatientMealModel:
         query = (
@@ -132,9 +144,9 @@ class MealService:
         meal = result.scalars().first()
 
         if not meal:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Patient not found.",
+                message="Meal not found",
             )
 
         return meal
@@ -161,8 +173,10 @@ class MealService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
-                status_code=500, detail=f"Database Error: {str(e)}"
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
             )
 
     async def analyze_or_reanalyze_meal(
@@ -207,9 +221,9 @@ class MealService:
                 )
 
             if not parsed_ai_response:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Meal with ID {meal_id} failed to be analyzed",
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=f"Meal with ID {meal_id} failed to be analyzed",
                 )
 
             updated_meal = await self.meal_analysis_service.save_meal_analysis(
@@ -244,13 +258,17 @@ class MealService:
             return updated_meal
         except json.JSONDecodeError as e:
             await self.postgres_session.rollback()
-            response = ErrorResponse(message="Invalid JSON", detail=str(e))
-            raise HTTPException(status_code=400, detail=response.model_dump())
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid JSON",
+                detail=str(e),
+            )
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     def _generate_conversation_flow(
@@ -300,22 +318,25 @@ class MealService:
 
     async def delete_meal(self, meal_id: UUID):
         try:
-
             result = await self.postgres_session.execute(
                 select(PatientMealModel).where(PatientMealModel.id == meal_id)
             )
             meal = result.scalars().first()
 
             if not meal:
-                raise HTTPException(status_code=404, detail="Meal not found")
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Meal not found.",
+                )
 
             await self.postgres_session.delete(meal)
             await self.postgres_session.commit()
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )
 
     async def delete_all_meals_for_patient(self, patient_id: str):
@@ -329,7 +350,8 @@ class MealService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database Error: {str(e)}",
+                message="Database Error",
+                detail=str(e),
             )

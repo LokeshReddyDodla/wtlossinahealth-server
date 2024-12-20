@@ -12,6 +12,7 @@ from lib.models.patient_connected_app import \
 from lib.models.patient_connected_app import \
     PatientLibreView as PatientLibreViewModel
 from lib.schemas.patient_connected_app import PatientLibreViewCreate
+from lib.utils.http_exceptions import raise_http_exception
 
 
 class PatientConnectedAppService:
@@ -30,15 +31,16 @@ class PatientConnectedAppService:
 
             connected_app = result.scalars().first()
             if not connected_app:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="ConnectedApp instance not found",
+                    message=f"Connected apps for patient ID '{patient_id}' not found.",
                 )
             return connected_app
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message=f"Failed to retrieve connected apps for patient ID '{patient_id}'.",
+                detail=str(e),
             )
 
     async def get_all_connected_apps_with_libreview(
@@ -57,9 +59,10 @@ class PatientConnectedAppService:
             connected_apps = list(result.scalars().all())
             return connected_apps
         except SQLAlchemyError as e:
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message="Failed to retrieve all connected apps with LibreView data.",
+                detail=str(e),
             )
 
     async def add_or_update_libreview(
@@ -81,7 +84,7 @@ class PatientConnectedAppService:
                 # Update existing LibreView record
                 existing_libreview.libreview_id = libreview_data.libreview_id
                 existing_libreview.last_sync_timestamp = None
-                
+
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(existing_libreview)
                 return existing_libreview
@@ -91,7 +94,7 @@ class PatientConnectedAppService:
                     connected_app_id=connected_app.id,
                     libreview_id=libreview_data.libreview_id,
                 )
-                
+
                 self.postgres_session.add(new_libreview)
                 await self.postgres_session.commit()
                 await self.postgres_session.refresh(new_libreview)
@@ -99,7 +102,8 @@ class PatientConnectedAppService:
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
-            raise HTTPException(
+            raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Database error: {str(e)}",
+                message=f"Failed to add or update LibreView data for patient ID '{patient_id}'.",
+                detail=str(e),
             )

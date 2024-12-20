@@ -1,11 +1,14 @@
 from typing import Literal, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.base import get_current_user
-from lib.dependencies.service_dependencies import get_chat_service
+from lib.dependencies.service_dependencies import (get_chat_management_service,
+                                                   get_chat_messaging_service)
 from lib.schemas.chat_message import ChatMessageCreate
-from lib.services.chat_service import ChatService
+from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.chat_messaging_service import ChatMessagingService
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -15,7 +18,9 @@ from .router import router
 async def toggle_pin_chat(
     request: Request,
     chat_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    chat_management_service: ChatManagementService = Depends(
+        get_chat_management_service
+    ),
     current_user=Depends(get_current_user),
 ):
     """
@@ -24,7 +29,7 @@ async def toggle_pin_chat(
     try:
         user_id, role = current_user
 
-        await chat_service.toggle_pin_chat(
+        await chat_management_service.toggle_pin_chat(
             chat_id=chat_id, participant_id=user_id
         )
 
@@ -32,7 +37,8 @@ async def toggle_pin_chat(
     except HTTPException as e:
         raise e
     except Exception as e:
-        response = ErrorResponse(
-            message="Failed to toggle pin chat.", detail=str(e)
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to toggle pin chat.",
+            detail=str(e),
         )
-        raise HTTPException(status_code=500, detail=response.dict())

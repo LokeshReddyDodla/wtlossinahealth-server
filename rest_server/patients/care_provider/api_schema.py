@@ -1,4 +1,0 @@
-from lib.schemas.patient_care_provider import PatientCareProvider
-from rest_server.response_models import SuccessResponse
-
-PatientCareProviderResponse = SuccessResponse[PatientCareProvider]

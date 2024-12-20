@@ -87,14 +87,18 @@ class HealthFacility(Base):
     )
 
     # Relationships
+    patients = relationship(
+        "Patient",
+        back_populates="health_facility",
+        cascade="all, delete-orphan",
+    )
     care_providers = relationship(
         "CareProvider",
         back_populates="health_facility",
         cascade="all, delete-orphan",
     )
-    patients = relationship(
-        "Patient",
+    packages = relationship(
+        "Package",
         back_populates="health_facility",
         cascade="all, delete-orphan",
-        passive_deletes=True,
     )
