@@ -96,12 +96,18 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
-    async def fetch_care_provider_patients(self, care_provider_id: str):
+    async def fetch_care_provider_patients(
+        self, care_provider_id: str
+    ) -> List[PatientModel]:
         try:
             stmt = (
                 select(CareProviderModel)
                 .where(CareProviderModel.care_provider_id == care_provider_id)
-                .options(selectinload(CareProviderModel.patients))
+                .options(
+                    selectinload(CareProviderModel.patients).options(
+                        selectinload(PatientModel.care_providers)
+                    )
+                )
             )
 
             result = await self.postgres_session.execute(stmt)
@@ -113,12 +119,7 @@ class CareProviderProfileService:
                     message="Care provider patients not found.",
                 )
 
-            patients = [
-                relationship.patient
-                for relationship in care_provider.patient_relationships
-            ]
-
-            return patients
+            return care_provider.patients
 
         except SQLAlchemyError as e:
             raise_http_exception(

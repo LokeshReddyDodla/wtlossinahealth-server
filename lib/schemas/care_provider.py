@@ -33,8 +33,6 @@ class CareProvider(CareProviderBase):
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]
-    # packages: List[Package] = []
-    # created_packages: List[Package] = []
 
     class Config:
         from_attributes = True
