@@ -8,11 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_fitness_stats_processor,
-                                                   get_glucose_stats_processor)
+                                                   get_glucose_stats_processor,
+                                                   get_patient_profile_service)
 from lib.models.patient import Patient
 from lib.schemas.glucose_stats import (GlucoseDailyReport,
                                        GlucoseOverallReport,
                                        GlucoseWeeklyReport)
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.date.periods import DayWisePeriod, OverallPeriod, WeekWisePeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -38,6 +40,9 @@ async def get_detailed_glucose_report(
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
@@ -60,7 +65,9 @@ async def get_detailed_glucose_report(
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
         # Fetch patient details
-        patient_detail = await glucose_stats_processor.fetch_profile()
+        patient_detail = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id
+        )
 
         # Overall Stats
         overall_period = OverallPeriod(from_date, to_date)

@@ -28,6 +28,7 @@ class HealthFacilityService:
                 stmt = stmt.options(
                     selectinload(HealthFacilityModel.care_providers),
                     selectinload(HealthFacilityModel.patients),
+                    selectinload(HealthFacilityModel.packages),
                 )
 
             result = await self.postgres_session.execute(stmt)

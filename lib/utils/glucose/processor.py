@@ -30,16 +30,14 @@ class GlucoseStatsProcessor:
     def __init__(
         self,
         clickhouse_store,
-        postgres_session,
+        patient_id,
         meal_service,
         patient_connected_app_service: PatientConnectedAppService,
-        patient_id,
     ):
         self.clickhouse_store = clickhouse_store
-        self.postgres_session = postgres_session
+        self.patient_id = patient_id
         self.meal_service = meal_service
         self.patient_connected_app_service = patient_connected_app_service
-        self.patient_id = patient_id
 
     def fetch_glucose_readings_by_date(
         self, from_date_str: str, to_date_str: str
