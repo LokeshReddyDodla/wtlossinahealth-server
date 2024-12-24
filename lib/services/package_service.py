@@ -1,6 +1,6 @@
 import random
 import string
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import UUID
@@ -104,6 +104,31 @@ class PackageService:
                 )
 
             return package
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def fetch_packages_in_health_facility(
+        self, health_facility_id: str
+    ) -> List[PackageModel]:
+        try:
+            stmt = (
+                select(PackageModel)
+                .where(PackageModel.health_facility_id == health_facility_id)
+                .options(
+                    selectinload(PackageModel.care_providers),
+                    selectinload(PackageModel.patients),
+                )
+            )
+
+            result = await self.postgres_session.execute(stmt)
+            packages = result.scalars().all()
+
+            return list(packages)
 
         except SQLAlchemyError as e:
             raise_http_exception(

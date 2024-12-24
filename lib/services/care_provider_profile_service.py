@@ -130,6 +130,33 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    async def fetch_care_providers_in_health_facility(
+        self, health_facility_id: str
+    ) -> List[CareProviderModel]:
+        try:
+            stmt = (
+                select(CareProviderModel)
+                .where(
+                    CareProviderModel.health_facility_id == health_facility_id
+                )
+                .options(
+                    selectinload(CareProviderModel.patients),
+                    selectinload(CareProviderModel.packages),
+                )
+            )
+
+            result = await self.postgres_session.execute(stmt)
+            care_providers = result.scalars().all()
+
+            return list(care_providers)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
     async def generate_unique_code(self) -> str:
         while True:
             code = "".join(
