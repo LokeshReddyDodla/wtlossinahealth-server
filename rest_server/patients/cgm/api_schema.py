@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from lib.schemas.glucose_stats import (GlucoseDailyReport,
                                        GlucoseOverallReport,
                                        GlucoseWeeklyReport)
-from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient import Patient
 from rest_server.response_models import SuccessResponse
 
 
@@ -18,7 +18,7 @@ class CGMDataUpload(BaseModel):
 
 
 class CompleteGlucoseReport(BaseModel):
-    patient_detail: CompletePatientProfile
+    patient_detail: Patient
     overall_stats: GlucoseOverallReport
     day_wise_stats: GlucoseDailyReport
     week_wise_stats: GlucoseWeeklyReport
