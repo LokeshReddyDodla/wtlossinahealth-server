@@ -9,7 +9,8 @@ from lib.services.care_provider_profile_service import \
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.care_provider.patients.api_schema import CareProviderPatients
+from rest_server.care_provider.patients.profile.api_schema import \
+    CareProviderPatients
 from rest_server.response_models import SuccessResponse
 
 from .router import router
