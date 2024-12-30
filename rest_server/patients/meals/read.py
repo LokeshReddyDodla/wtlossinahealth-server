@@ -78,6 +78,7 @@ async def get_meals_stats_api(
     meal_stats_processor: MealStatsProcessor = Depends(
         get_meal_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     """
     Get Meal Stats API
@@ -87,7 +88,7 @@ async def get_meals_stats_api(
         to_date = datetime.combine(date, time.max)  # End of the day
 
         meal_stats = await meal_stats_processor.get_meal_stats_by_date(
-            from_date, to_date
+            str(current_patient.patient_id), from_date, to_date
         )
 
         return SuccessResponse(

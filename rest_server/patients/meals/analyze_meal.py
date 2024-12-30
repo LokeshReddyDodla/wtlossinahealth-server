@@ -51,7 +51,7 @@ async def analyze_meal_api(
 
         diet_recommendations_data = (
             await meal_stats_processor.get_diet_recommendations(
-                meal_data.uploaded_at
+                str(current_patient.patient_id), meal_data.uploaded_at
             )
         )
 

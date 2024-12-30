@@ -5,7 +5,9 @@ from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_glucose_stats_processor
+from lib.models.patient import Patient
 from lib.utils.date.periods import OverallPeriod
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
@@ -21,6 +23,7 @@ async def get_fitness_day_stats(
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         from_date = datetime.combine(date, time.min)  # Start of the day
@@ -28,7 +31,7 @@ async def get_fitness_day_stats(
 
         overall_period = OverallPeriod(from_date, to_date)
         glucose_stats = await glucose_stats_processor.process(
-            overall_period.periods
+            str(current_patient.patient_id), overall_period.periods
         )
 
         return SuccessResponse(

@@ -32,18 +32,19 @@ async def get_fitness_data(
     try:
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
+        patient_id = str(current_patient.patient_id)
 
         summary_stats = fitness_stats_processor.fetch_summary_stats(
-            from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
         daily_stats = fitness_stats_processor.fetch_daily_stats(
-            from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
         weekly_stats = fitness_stats_processor.fetch_weekly_stats(
-            from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
         monthly_stats = fitness_stats_processor.fetch_monthly_stats(
-            from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
 
         return SuccessResponse(

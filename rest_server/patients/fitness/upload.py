@@ -26,10 +26,11 @@ async def upload_fitness_data(
     fitness_upload_service: FitnessUploadService = Depends(
         get_fitness_upload_service
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         last_sync_time = await fitness_upload_service.process_fitness_data(
-            fitness_data
+            str(current_patient.patient_id), fitness_data
         )
 
         return SuccessResponse(

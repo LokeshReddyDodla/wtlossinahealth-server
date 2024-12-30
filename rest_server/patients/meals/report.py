@@ -27,10 +27,11 @@ async def get_meal_report(
     meal_stats_processor: MealStatsProcessor = Depends(
         get_meal_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         grouped_by_date = await meal_stats_processor.get_meal_stats_by_date(
-            from_date, to_date
+            str(current_patient.patient_id), from_date, to_date
         )
 
         return grouped_by_date
