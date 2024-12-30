@@ -27,26 +27,26 @@ class MealStatsProcessor:
         glucose_stats_processor,
         patient_profile_service,
         patient_plan_service,
-        patient_id: str,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
-        self.patient_id = patient_id
         self.glucose_processor = glucose_stats_processor
 
     async def get_meal_stats_by_date(
-        self, from_date: datetime, to_date: datetime
+        self, patient_id: str, from_date: datetime, to_date: datetime
     ):
 
         # Fetch recommendations
-        diet_recommendations = await self.get_diet_recommendations(from_date)
+        diet_recommendations = await self.get_diet_recommendations(
+            patient_id, from_date
+        )
 
         # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
             GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
-                self.clickhouse_store, self.patient_id, from_date, to_date
+                self.clickhouse_store, patient_id, from_date, to_date
             )
         )
 
@@ -81,7 +81,7 @@ class MealStatsProcessor:
                 PatientMeal.total_micro_nutritional_value,
             )
             .where(
-                PatientMeal.patient_id == self.patient_id,
+                PatientMeal.patient_id == patient_id,
                 PatientMeal.date >= from_date,
                 PatientMeal.date <= to_date,
             )
@@ -260,11 +260,11 @@ class MealStatsProcessor:
         )
 
     async def get_diet_recommendations(
-        self, query_date: datetime
+        self, patient_id: str, query_date: datetime
     ) -> PatientDietPlanBase:
         """Fetch diet recommendations from an active plan or calculate dynamically."""
         active_plan = await self.patient_plan_service.get_active_patient_plan(
-            self.patient_id, query_date
+            patient_id, query_date
         )
 
         if active_plan and active_plan.diet_plan:
@@ -290,12 +290,15 @@ class MealStatsProcessor:
                 ),
             )
         else:
-            return await self._calculate_recommendations()
+            return await self._calculate_recommendations(patient_id)
 
-    async def _calculate_recommendations(self):
+    async def _calculate_recommendations(
+        self,
+        patient_id: str,
+    ):
         """Calculate recommendations dynamically if no active plan exists."""
         patient = await self.patient_profile_service.fetch_patient_profile(
-            self.patient_id, detailed=True
+            patient_id, detailed=True
         )
 
         if (

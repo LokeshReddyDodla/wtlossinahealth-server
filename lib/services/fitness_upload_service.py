@@ -20,22 +20,22 @@ class FitnessUploadService:
         clickhouse_store,
         fitness_sync_store,
         postgres_session,
-        patient_id,
     ):
         self.clickhouse_store = clickhouse_store
         self.fitness_sync_store = fitness_sync_store
         self.postgres_session = postgres_session
-        self.patient_id = patient_id
 
-    async def process_fitness_data(self, fitness_data: FitnessDataRequest):
+    async def process_fitness_data(
+        self, patient_id: str, fitness_data: FitnessDataRequest
+    ):
         dateFrom, dateTo = (
             fitness_data.dateFrom,
             fitness_data.dateTo,
         )
 
-        await self.delete_existing_data(dateFrom, dateTo)
-        await self.insert_new_data(fitness_data)
-        await self.update_last_sync(dateTo)
+        await self.delete_existing_data(patient_id, dateFrom, dateTo)
+        await self.insert_new_data(patient_id, fitness_data)
+        await self.update_last_sync(patient_id, dateTo)
 
         # Commit the session to save all changes
         await self.postgres_session.commit()
@@ -44,6 +44,7 @@ class FitnessUploadService:
 
     async def delete_existing_data(
         self,
+        patient_id: str,
         dateFrom: datetime,
         dateTo: datetime,
         source: Optional[str] = None,
@@ -51,22 +52,22 @@ class FitnessUploadService:
         # Delete data from ClickHouse
         self.clickhouse_store.delete_existing_fitness_data(
             "aihealth.fitness_data",
-            self.patient_id,
+            patient_id,
             dateFrom.strftime("%Y-%m-%d %H:%M:%S"),
             dateTo.strftime("%Y-%m-%d %H:%M:%S"),
             source,
         )
 
         smbg_query = delete(PatientSMBG).where(
-            PatientSMBG.patient_id == self.patient_id,
+            PatientSMBG.patient_id == patient_id,
             PatientSMBG.reading_time.between(dateFrom, dateTo),
         )
         vital_query = delete(PatientVital).where(
-            PatientVital.patient_id == self.patient_id,
+            PatientVital.patient_id == patient_id,
             PatientVital.test_time.between(dateFrom, dateTo),
         )
         sleep_query = delete(PatientSleep).where(
-            PatientSleep.patient_id == self.patient_id,
+            PatientSleep.patient_id == patient_id,
             PatientSleep.sleep_start_time.between(dateFrom, dateTo),
         )
 
@@ -86,11 +87,13 @@ class FitnessUploadService:
         await self.postgres_session.execute(vital_query)
         await self.postgres_session.execute(sleep_query)
 
-    async def insert_new_data(self, fitness_data: FitnessDataRequest):
+    async def insert_new_data(
+        self, patient_id: str, fitness_data: FitnessDataRequest
+    ):
         # Insert data into ClickHouse (steps and active_energy_burned)
         data_points = [
             {
-                "patient_id": self.patient_id,
+                "patient_id": patient_id,
                 "type": item.type,
                 "source": item.source,
                 "unit": item.unit,
@@ -109,7 +112,7 @@ class FitnessUploadService:
         # Insert data into PatientVitals, PatientSMBG, PatientSleep, etc.
         vitals = [
             PatientVital(
-                patient_id=self.patient_id,
+                patient_id=patient_id,
                 diastolic_bp=diastolic_item.value,
                 systolic_bp=systolic_item.value,
                 test_time=parse(diastolic_item.dateFrom).replace(tzinfo=None),
@@ -124,7 +127,7 @@ class FitnessUploadService:
         for item in fitness_data.heart_rate:
             vitals.append(
                 PatientVital(
-                    patient_id=self.patient_id,
+                    patient_id=patient_id,
                     heart_rate=item.value,
                     test_time=parse(item.dateFrom).replace(tzinfo=None),
                     source=item.source,
@@ -133,7 +136,7 @@ class FitnessUploadService:
 
         smbg_records = [
             PatientSMBG(
-                patient_id=self.patient_id,
+                patient_id=patient_id,
                 glucose_level=item.value,
                 reading_time=parse(item.dateFrom).replace(tzinfo=None),
                 source=item.source,
@@ -144,7 +147,7 @@ class FitnessUploadService:
 
         sleep_records = [
             PatientSleep(
-                patient_id=self.patient_id,
+                patient_id=patient_id,
                 source=item.source,
                 sleep_start_time=parse(item.dateFrom).replace(tzinfo=None),
                 sleep_end_time=parse(item.dateTo).replace(tzinfo=None),
@@ -155,8 +158,8 @@ class FitnessUploadService:
 
         self.postgres_session.add_all(vitals + smbg_records + sleep_records)
 
-    async def update_last_sync(self, dateTo: datetime):
-        fitness_sync_key = f"fitness_sync:{self.patient_id}"
+    async def update_last_sync(self, patient_id: str, dateTo: datetime):
+        fitness_sync_key = f"fitness_sync:{patient_id}"
 
         # Set or update the sync timestamp in Redis
         self.fitness_sync_store.set_key(

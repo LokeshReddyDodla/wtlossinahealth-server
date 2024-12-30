@@ -3,7 +3,9 @@ from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_fitness_stats_processor
+from lib.models.patient import Patient
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_end_by_week_no)
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -24,13 +26,14 @@ async def get_fitness_stats(
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
 
         stats = fitness_processor.fetch_monthly_stats(
-            from_date_str, to_date_str
+            str(current_patient.patient_id), from_date_str, to_date_str
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
@@ -53,13 +56,17 @@ async def get_fitness_day_stats(
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         from_date_str = f"{date}T00:00:00"
         to_date_str = f"{date}T23:59:59"
 
         stats = fitness_processor.fetch_daily_stats(
-            from_date_str, to_date_str, include_hourly_stats=True
+            str(current_patient.patient_id),
+            from_date_str,
+            to_date_str,
+            include_hourly_stats=True,
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
@@ -83,6 +90,7 @@ async def get_fitness_week_stats(
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         week_start, week_end = get_week_start_end_by_week_no(year, week_no)
@@ -91,7 +99,10 @@ async def get_fitness_week_stats(
         to_date_str = f"{week_end}T23:59:59"
 
         stats = fitness_processor.fetch_weekly_stats(
-            from_date_str, to_date_str, include_daily_stats=True
+            str(current_patient.patient_id),
+            from_date_str,
+            to_date_str,
+            include_daily_stats=True,
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
@@ -115,6 +126,7 @@ async def get_fitness_month_stats(
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         month_start, month_end = get_month_start_end(year, month_no)
@@ -123,7 +135,10 @@ async def get_fitness_month_stats(
         to_date_str = month_end.strftime("%Y-%m-%dT%H:%M:%S")
 
         stats = fitness_processor.fetch_monthly_stats(
-            from_date_str, to_date_str, include_daily_stats=True
+            str(current_patient.patient_id),
+            from_date_str,
+            to_date_str,
+            include_daily_stats=True,
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",

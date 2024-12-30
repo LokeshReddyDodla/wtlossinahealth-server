@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_fitness_stats_processor,
                                                    get_glucose_stats_processor,
                                                    get_meal_stats_processor)
@@ -21,7 +22,7 @@ from .router import router
 @router.get(path="/stats", response_model=SuccessResponse)
 async def get_patient_overview_api(
     request: Request,
-    date: date,
+    date: date = Query(...),
     meal_stats_processor: MealStatsProcessor = Depends(
         get_meal_stats_processor
     ),
@@ -31,24 +32,26 @@ async def get_patient_overview_api(
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         from_date = datetime.combine(date, time.min)  # Start of the day
         to_date = datetime.combine(date, time.max)  # End of the day
         from_date_str = f"{date}T00:00:00"
         to_date_str = f"{date}T23:59:59"
+        patient_id = str(current_patient.patient_id)
 
         meal_stats = await meal_stats_processor.get_meal_stats_by_date(
-            from_date, to_date
+            patient_id, from_date, to_date
         )
 
         fitness_stats = fitness_stats_processor.fetch_daily_stats(
-            from_date_str, to_date_str, include_hourly_stats=True
+            patient_id, from_date_str, to_date_str, include_hourly_stats=True
         )
 
         overall_period = OverallPeriod(from_date, to_date)
         glucose_stats = await glucose_stats_processor.process(
-            overall_period.periods
+            patient_id, overall_period.periods
         )
 
         return SuccessResponse(

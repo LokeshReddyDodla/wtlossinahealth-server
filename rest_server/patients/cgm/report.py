@@ -30,8 +30,9 @@ from .router import router
     "/report",
     response_model=SuccessResponse,
 )
-async def get_detailed_glucose_report(
+async def get_patient_cgm_report(
     request: Request,
+    patient_id: str = Query(...),
     from_date: datetime = Query(...),
     to_date: datetime = Query(...),
     fitness_stats_processor: FitnessStatsProcessor = Depends(
@@ -73,10 +74,10 @@ async def get_detailed_glucose_report(
         overall_period = OverallPeriod(from_date, to_date)
         overall_stats = GlucoseOverallReport(
             cgm_report=await glucose_stats_processor.process(
-                overall_period.periods
+                patient_id, overall_period.periods
             ),
             fitness_report=fitness_stats_processor.fetch_summary_stats(
-                from_date_str, to_date_str
+                patient_id, from_date_str, to_date_str
             ),
         )
 
@@ -84,10 +85,10 @@ async def get_detailed_glucose_report(
         day_periods = DayWisePeriod(from_date, to_date)
         day_wise_stats = GlucoseDailyReport(
             cgm_report=await glucose_stats_processor.process(
-                day_periods.periods, include_readings=True
+                patient_id, day_periods.periods, include_readings=True
             ),
             fitness_report=fitness_stats_processor.fetch_daily_stats(
-                from_date_str, to_date_str
+                str(current_patient.patient_id), from_date_str, to_date_str
             ),
         )
 
@@ -95,10 +96,10 @@ async def get_detailed_glucose_report(
         week_periods = WeekWisePeriod(from_date, to_date)
         week_wise_stats = GlucoseWeeklyReport(
             cgm_report=await glucose_stats_processor.process(
-                week_periods.periods, include_readings=True
+                patient_id, week_periods.periods, include_readings=True
             ),
             fitness_report=fitness_stats_processor.fetch_weekly_stats(
-                from_date_str, to_date_str
+                patient_id, from_date_str, to_date_str
             ),
         )
 

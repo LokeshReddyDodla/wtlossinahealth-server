@@ -30,20 +30,21 @@ class GlucoseStatsProcessor:
     def __init__(
         self,
         clickhouse_store,
-        patient_id,
         meal_service,
         patient_connected_app_service: PatientConnectedAppService,
     ):
         self.clickhouse_store = clickhouse_store
-        self.patient_id = patient_id
         self.meal_service = meal_service
         self.patient_connected_app_service = patient_connected_app_service
 
     def fetch_glucose_readings_by_date(
-        self, from_date_str: str, to_date_str: str
+        self,
+        patient_id: str,
+        from_date_str: str,
+        to_date_str: str,
     ) -> List[GlucoseReading]:
         query = generate_glucose_readings_by_date_query(
-            self.patient_id, from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
         data = self.clickhouse_store.client.execute(query)
         if not data:
@@ -56,10 +57,10 @@ class GlucoseStatsProcessor:
         return readings
 
     def fetch_avg_glucose_readings_by_hour(
-        self, from_date_str: str, to_date_str: str
+        self, patient_id: str, from_date_str: str, to_date_str: str
     ) -> List[GlucoseReading]:
         query = generate_avg_glucose_readings_by_hour_query(
-            self.patient_id, from_date_str, to_date_str
+            patient_id, from_date_str, to_date_str
         )
         data = self.clickhouse_store.client.execute(query)
         if not data:
@@ -72,11 +73,15 @@ class GlucoseStatsProcessor:
         return grouped
 
     def fetch_glucose_around_meal(
-        self, meal_time: datetime, before_minutes=15, after_minutes=90
+        self,
+        patient_id: str,
+        meal_time: datetime,
+        before_minutes=15,
+        after_minutes=90,
     ):
         """Fetch glucose readings around the meal time."""
         query = generate_glucose_readings_around_meal_query(
-            self.patient_id,
+            patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),
             before_minutes,
             after_minutes,
@@ -88,12 +93,15 @@ class GlucoseStatsProcessor:
         return glucose_before, glucose_after
 
     async def process(
-        self, periods: List[Dict[str, datetime]], include_readings=False
+        self,
+        patient_id: str,
+        periods: List[Dict[str, datetime]],
+        include_readings=False,
     ) -> Dict[str, GlucoseLevelStats]:
         stats = {}
 
         connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
-            self.patient_id
+            patient_id
         )
         last_libreview_sync = (
             connected_apps.libreview.last_sync_timestamp
@@ -109,28 +117,28 @@ class GlucoseStatsProcessor:
 
             glucose_summary_stats = GlucoseSummaryStatsFetcher.fetch(
                 self.clickhouse_store,
-                self.patient_id,
+                patient_id,
                 from_date_str,
                 to_date_str,
             )
 
             glucose_range_stats = GlucoseRangeStatsFetcher.fetch(
                 self.clickhouse_store,
-                self.patient_id,
+                patient_id,
                 from_date_str,
                 to_date_str,
             )
 
             hyper_stats = HyperStatsFetcher().fetch(
                 self.clickhouse_store,
-                self.patient_id,
+                patient_id,
                 from_date_str,
                 to_date_str,
             )
 
             hypo_stats = HypoStatsFetcher().fetch(
                 self.clickhouse_store,
-                self.patient_id,
+                patient_id,
                 from_date_str,
                 to_date_str,
             )
@@ -142,12 +150,12 @@ class GlucoseStatsProcessor:
                 period_key = period["date"]
                 if include_readings:
                     glucose_readings = self.fetch_glucose_readings_by_date(
-                        from_date_str, to_date_str
+                        patient_id, from_date_str, to_date_str
                     )
                     meals = await self.meal_service.fetch_meals(
+                        patient_id=patient_id,
                         from_datetime=from_date,
                         to_datetime=to_date,
-                        patient_id=self.patient_id,
                     )
 
                     meals = [
@@ -158,7 +166,7 @@ class GlucoseStatsProcessor:
                 period_key = f"Week {period['week_no']}"
                 if include_readings:
                     glucose_readings = self.fetch_avg_glucose_readings_by_hour(
-                        from_date_str, to_date_str
+                        patient_id, from_date_str, to_date_str
                     )
 
             else:

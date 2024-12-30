@@ -1,7 +1,6 @@
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
 from lib.services.ai_conversation_service import AiConversationService
@@ -168,17 +167,14 @@ async def get_cgm_service(
 
 async def get_glucose_stats_processor(
     request: Request,
-    current_patient: Patient = Depends(get_current_patient),
     meal_service: MealService = Depends(get_meal_service),
     patient_connected_app_service: PatientConnectedAppService = Depends(
         get_patient_connected_app_service
     ),
 ) -> GlucoseStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
-    patient_id = str(current_patient.patient_id)
     return GlucoseStatsProcessor(
         clickhouse_store=clickhouse_store,
-        patient_id=patient_id,
         meal_service=meal_service,
         patient_connected_app_service=patient_connected_app_service,
     )
@@ -187,7 +183,6 @@ async def get_glucose_stats_processor(
 async def get_meal_stats_processor(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
-    current_patient: Patient = Depends(get_current_patient),
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
@@ -199,30 +194,25 @@ async def get_meal_stats_processor(
     ),
 ) -> MealStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
-    patient_id = str(current_patient.patient_id)
     return MealStatsProcessor(
         session,
         clickhouse_store,
         glucose_stats_processor,
         patient_profile_service,
         patient_plan_service,
-        patient_id,
     )
 
 
 async def get_fitness_stats_processor(
     request: Request,
-    current_patient: Patient = Depends(get_current_patient),
 ) -> FitnessStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
-    patient_id = str(current_patient.patient_id)
-    return FitnessStatsProcessor(clickhouse_store, patient_id)
+    return FitnessStatsProcessor(clickhouse_store)
 
 
 async def get_fitness_upload_service(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
-    current_patient: Patient = Depends(get_current_patient),
 ) -> FitnessUploadService:
     clickhouse_store = request.state.context.clickhouse_store
     fitness_sync_store = request.app.state.fitness_sync_store
@@ -231,5 +221,4 @@ async def get_fitness_upload_service(
         clickhouse_store,
         fitness_sync_store,
         session,
-        str(current_patient.patient_id),
     )
