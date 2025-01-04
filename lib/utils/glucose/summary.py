@@ -9,6 +9,7 @@ from lib.schemas.glucose_stats import AGPPoint, GlucoseSummaryStats
 from lib.utils.glucose.queries import (
     generate_agp_points_query, generate_avg_glucose_reading_by_date_query,
     generate_glucose_stats_query)
+from lib.utils.validation_utils import validate_float
 
 
 class GlucoseSummaryStatsFetcher:
@@ -21,37 +22,36 @@ class GlucoseSummaryStatsFetcher:
         )
         result = clickhouse_store.client.execute(query)
 
-        average_glucose = (
-            result[0][0] if result and not math.isnan(result[0][0]) else 0.0
-        )
-        glucose_stddev = result[0][1] if result else 0.0
+        average_glucose = validate_float(result[0][0] if result else 0.0)
+        glucose_stddev = validate_float(result[0][1] if result else 0.0)
 
-        highest_glucose = result[0][2] if result else 0.0
+        highest_glucose = validate_float(result[0][2] if result else 0.0)
         highest_glucose_date = result[0][3] if result else datetime.min
 
-        lowest_glucose = result[0][4] if result else 0.0
+        lowest_glucose = validate_float(result[0][4] if result else 0.0)
         lowest_glucose_date = result[0][5] if result else datetime.min
 
-        gmi = 3.31 + 0.02392 * average_glucose if average_glucose else 0.0
-        gmi_mmol = gmi * 10.93 if gmi else 0.0
-        glucose_variability = (
-            (glucose_stddev / average_glucose) * 100 if average_glucose else 0
-        )
-
-        glycemic_estimate = (
-            (average_glucose - lowest_glucose)
-            / (highest_glucose - lowest_glucose)
-            if highest_glucose != lowest_glucose
-            else 0.0
-        )
-
-        coefficient_of_variation = (
+        gmi = validate_float(3.31 + 0.02392 * average_glucose)
+        gmi_mmol = validate_float(gmi * 10.93)
+        glucose_variability = validate_float(
             (glucose_stddev / average_glucose) * 100
             if average_glucose
             else 0.0
         )
 
-        standard_deviation = glucose_stddev
+        glycemic_estimate = validate_float(
+            (average_glucose - lowest_glucose)
+            / (highest_glucose - lowest_glucose)
+            if highest_glucose != lowest_glucose
+            else 0.0
+        )
+        coefficient_of_variation = validate_float(
+            (glucose_stddev / average_glucose) * 100
+            if average_glucose
+            else 0.0
+        )
+
+        standard_deviation = validate_float(glucose_stddev)
 
         agp_points = GlucoseSummaryStatsFetcher.fetch_agp_points(
             clickhouse_store, patient_id, from_date_str, to_date_str

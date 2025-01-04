@@ -14,33 +14,3 @@ from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-
-
-@router.get("/stats/day", response_model=SuccessResponse)
-async def get_fitness_day_stats(
-    request: Request,
-    date: date = Query(...),
-    glucose_stats_processor: GlucoseStatsProcessor = Depends(
-        get_glucose_stats_processor
-    ),
-    current_patient: Patient = Depends(get_current_patient),
-):
-    try:
-        from_date = datetime.combine(date, time.min)  # Start of the day
-        to_date = datetime.combine(date, time.max)  # End of the day
-
-        overall_period = OverallPeriod(from_date, to_date)
-        glucose_stats = await glucose_stats_processor.process(
-            str(current_patient.patient_id), overall_period.periods
-        )
-
-        return SuccessResponse(
-            message="Fitness stats fetched successfully",
-            data=glucose_stats["overall"],
-        )
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
-            detail=str(e),
-        )
