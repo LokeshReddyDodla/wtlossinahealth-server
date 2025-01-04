@@ -1,6 +1,6 @@
 import calendar
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
 from lib.schemas.fitness_stats import (FitnessActivityDistribution,
@@ -23,7 +23,10 @@ class FitnessStatsProcessor:
         self.clickhouse_store = clickhouse_store
 
     def fetch_summary_stats(
-        self, patient_id: str, from_date_str: str, to_date_str: str
+        self,
+        patient_id: str,
+        from_date_str: str,
+        to_date_str: str,
     ) -> FitnessSummaryStats:
         query = generate_summary_stats_query(
             patient_id, from_date_str, to_date_str
@@ -34,6 +37,8 @@ class FitnessStatsProcessor:
             stats_class=FitnessSummaryStats,
             patient_id=patient_id,
             index_starts=0,
+            fallback_from_date=from_date_str,
+            fallback_to_date=to_date_str,
         )
 
     def fetch_daily_stats(
@@ -41,7 +46,6 @@ class FitnessStatsProcessor:
         patient_id: str,
         from_date_str: str,
         to_date_str: str,
-        include_hourly_stats: bool = False,
     ) -> List[FitnessDailyStats]:
         query = generate_daily_stats_query(
             patient_id, from_date_str, to_date_str
@@ -57,7 +61,6 @@ class FitnessStatsProcessor:
                 stats_class=FitnessDailyStats,
                 patient_id=patient_id,
                 additional_fields={"date": date},
-                include_hourly_stats=include_hourly_stats,
             )
             daily_stats.append(stats_instance)
         return daily_stats
@@ -163,13 +166,26 @@ class FitnessStatsProcessor:
         patient_id: str,
         index_starts: int = 1,
         additional_fields: Dict = {},
-        include_hourly_stats: bool = False,
+        fallback_from_date: Optional[str] = None,
+        fallback_to_date: Optional[str] = None,
     ):
         from_date = result[index_starts]
         to_date = result[index_starts + 1]
         steps = result[index_starts + 2]
         active_energy = result[index_starts + 3]
         active_duration = result[index_starts + 4]
+
+        from_date = (
+            datetime.strptime(fallback_from_date, "%Y-%m-%dT%H:%M:%S").date()
+            if (from_date == date(1970, 1, 1) and fallback_from_date)
+            else from_date
+        )
+
+        to_date = (
+            datetime.strptime(fallback_to_date, "%Y-%m-%dT%H:%M:%S").date()
+            if (to_date == date(1970, 1, 1) and fallback_to_date)
+            else to_date
+        )
 
         from_date_str = from_date.strftime("%Y-%m-%dT00:00:00")
         to_date_str = to_date.strftime("%Y-%m-%dT23:59:59")
@@ -210,11 +226,9 @@ class FitnessStatsProcessor:
         )
         inactive_periods = self._fetch_inactive_periods(inactive_periods_query)
 
-        hourly_stats = None
-        if include_hourly_stats:
-            hourly_stats = self._fetch_hourly_stats(
-                patient_id, from_date_str, to_date_str
-            )
+        hourly_stats = self._fetch_hourly_stats(
+            patient_id, from_date_str, to_date_str
+        )
 
         return stats_class(
             steps=steps,
