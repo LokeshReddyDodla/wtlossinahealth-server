@@ -1,3 +1,23 @@
+def generate_agp_points_query(patient_id, from_date, to_date) -> str:
+    return f"""
+    SELECT
+        formatDateTime(time, '%H:00') AS hour,
+        quantile(0.10)(glucose_level) AS tenth_percentile,
+        quantile(0.25)(glucose_level) AS twenty_fifth_percentile,
+        quantile(0.50)(glucose_level) AS median,
+        quantile(0.75)(glucose_level) AS seventy_fifth_percentile,
+        quantile(0.90)(glucose_level) AS ninetieth_percentile
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    GROUP BY hour
+    ORDER BY hour
+    """
+
+
 def generate_glucose_level_query(
     patient_id, from_date, to_date, range_condition, alias
 ):

@@ -44,6 +44,9 @@ class GlucoseSummaryStats(BaseModel):
     gmi: float
     gmi_mmol: float
     glucose_variability: float
+    glycemic_estimate: float
+    coefficient_of_variation: float
+    standard_deviation: float
     highest_glucose: float
     highest_glucose_date: datetime
     lowest_glucose: float
@@ -107,11 +110,12 @@ class GlucoseLevelStats(BaseModel):
     to_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
     meals: Optional[List[PatientMeal]] = None
+    fitness_stats: Optional[Any] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
-    last_libreview_sync: Optional[datetime]
+    # last_libreview_sync: Optional[datetime]
 
 
 class GlucoseDailyReport(BaseModel):

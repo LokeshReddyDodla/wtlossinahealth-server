@@ -15,10 +15,3 @@ class CGMDataUpload(BaseModel):
     patient_id: str
     device: str
     serial_number: str
-
-
-class CompleteGlucoseReport(BaseModel):
-    patient_detail: Patient
-    overall_stats: GlucoseOverallReport
-    day_wise_stats: GlucoseDailyReport
-    week_wise_stats: GlucoseWeeklyReport

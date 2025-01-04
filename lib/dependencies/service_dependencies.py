@@ -165,18 +165,25 @@ async def get_cgm_service(
     )
 
 
+async def get_fitness_stats_processor(
+    request: Request,
+) -> FitnessStatsProcessor:
+    clickhouse_store = request.state.context.clickhouse_store
+    return FitnessStatsProcessor(clickhouse_store)
+
+
 async def get_glucose_stats_processor(
     request: Request,
     meal_service: MealService = Depends(get_meal_service),
-    patient_connected_app_service: PatientConnectedAppService = Depends(
-        get_patient_connected_app_service
+    fitness_stats_processor: FitnessStatsProcessor = Depends(
+        get_fitness_stats_processor
     ),
 ) -> GlucoseStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
     return GlucoseStatsProcessor(
         clickhouse_store=clickhouse_store,
         meal_service=meal_service,
-        patient_connected_app_service=patient_connected_app_service,
+        fitness_stats_processor=fitness_stats_processor,
     )
 
 
@@ -201,13 +208,6 @@ async def get_meal_stats_processor(
         patient_profile_service,
         patient_plan_service,
     )
-
-
-async def get_fitness_stats_processor(
-    request: Request,
-) -> FitnessStatsProcessor:
-    clickhouse_store = request.state.context.clickhouse_store
-    return FitnessStatsProcessor(clickhouse_store)
 
 
 async def get_fitness_upload_service(

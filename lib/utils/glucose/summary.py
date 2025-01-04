@@ -7,7 +7,8 @@ from numpy import NaN
 
 from lib.schemas.glucose_stats import AGPPoint, GlucoseSummaryStats
 from lib.utils.glucose.queries import (
-    generate_avg_glucose_reading_by_date_query, generate_glucose_stats_query)
+    generate_agp_points_query, generate_avg_glucose_reading_by_date_query,
+    generate_glucose_stats_query)
 
 
 class GlucoseSummaryStatsFetcher:
@@ -37,6 +38,21 @@ class GlucoseSummaryStatsFetcher:
             (glucose_stddev / average_glucose) * 100 if average_glucose else 0
         )
 
+        glycemic_estimate = (
+            (average_glucose - lowest_glucose)
+            / (highest_glucose - lowest_glucose)
+            if highest_glucose != lowest_glucose
+            else 0.0
+        )
+
+        coefficient_of_variation = (
+            (glucose_stddev / average_glucose) * 100
+            if average_glucose
+            else 0.0
+        )
+
+        standard_deviation = glucose_stddev
+
         agp_points = GlucoseSummaryStatsFetcher.fetch_agp_points(
             clickhouse_store, patient_id, from_date_str, to_date_str
         )
@@ -46,6 +62,9 @@ class GlucoseSummaryStatsFetcher:
             gmi=gmi,
             gmi_mmol=gmi_mmol,
             glucose_variability=glucose_variability,
+            glycemic_estimate=glycemic_estimate,
+            coefficient_of_variation=coefficient_of_variation,
+            standard_deviation=standard_deviation,
             highest_glucose=highest_glucose,
             highest_glucose_date=highest_glucose_date,
             lowest_glucose=lowest_glucose,
@@ -70,23 +89,9 @@ class GlucoseSummaryStatsFetcher:
     def fetch_agp_points(
         clickhouse_store, patient_id, from_date_str, to_date_str
     ) -> List[AGPPoint]:
-        query = f"""
-        SELECT
-            formatDateTime(time, '%H:00') AS hour,
-            quantile(0.10)(glucose_level) AS tenth_percentile,
-            quantile(0.25)(glucose_level) AS twenty_fifth_percentile,
-            quantile(0.50)(glucose_level) AS median,
-            quantile(0.75)(glucose_level) AS seventy_fifth_percentile,
-            quantile(0.90)(glucose_level) AS ninetieth_percentile
-        FROM
-            aihealth.cgm_data
-        WHERE
-            patient_id = '{patient_id}'
-            AND time >= '{from_date_str}'
-            AND time <= '{to_date_str}'
-        GROUP BY hour
-        ORDER BY hour
-        """
+        query = generate_agp_points_query(
+            patient_id, from_date_str, to_date_str
+        )
         agp_result = clickhouse_store.client.execute(query)
         agp_points = [
             AGPPoint(
