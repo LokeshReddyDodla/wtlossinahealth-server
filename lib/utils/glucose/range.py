@@ -2,6 +2,7 @@ import math
 
 from lib.schemas.glucose_stats import GlucoseRangeStats
 from lib.utils.glucose.queries import generate_glucose_level_query
+from lib.utils.validation_utils import validate_float
 
 
 class GlucoseRangeStatsFetcher:
@@ -50,7 +51,7 @@ class GlucoseRangeStatsFetcher:
         results = {}
         for key, query in queries.items():
             result = clickhouse_store.client.execute(query)
-            percentage = result[0][2] if result and not math.isnan(result[0][2]) else 0.0
+            percentage = validate_float(result[0][2] if result else 0.0)
             results[key] = percentage
 
         return GlucoseRangeStats(
