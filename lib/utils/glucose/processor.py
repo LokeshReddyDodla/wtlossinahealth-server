@@ -168,6 +168,7 @@ class GlucoseStatsProcessor:
             hypo_stats=hypo_stats,
             time_period_stats=time_period_stats,
             fitness_report=fitness_report,
+            meals=meals,
         )
 
     async def _process_multiple_periods(
