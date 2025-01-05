@@ -13,6 +13,7 @@ from lib.utils.glucose.queries import (
     generate_glucose_readings_by_date_query)
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
+from lib.utils.glucose.time_period import GlucoseTimePeriodStatsFetcher
 
 
 class GlucoseStatsProcessor:
@@ -134,6 +135,9 @@ class GlucoseStatsProcessor:
         hypo_stats = HypoStatsFetcher().fetch(
             self.clickhouse_store, patient_id, from_date_str, to_date_str
         )
+        time_period_stats = GlucoseTimePeriodStatsFetcher.fetch(
+            self.clickhouse_store, patient_id, from_date_str, to_date_str
+        )
 
         fitness_report = self.fitness_stats_processor.fetch_summary_stats(
             patient_id, from_date_str, to_date_str
@@ -162,7 +166,8 @@ class GlucoseStatsProcessor:
             glucose_range_stats=glucose_range_stats,
             hyper_stats=hyper_stats,
             hypo_stats=hypo_stats,
-            fitness_stats=fitness_report,
+            time_period_stats=time_period_stats,
+            fitness_report=fitness_report,
         )
 
     async def _process_multiple_periods(
