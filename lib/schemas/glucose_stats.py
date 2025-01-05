@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from datetime import time as datetime_time
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
@@ -105,29 +106,23 @@ class GlucoseReading(BaseModel):
     Glucose_Level: float
 
 
+class TimePeriodStats(BaseModel):
+    average_glucose: float
+    highest_glucose: float
+    lowest_glucose: float
+    out_of_range_percentage: float
+    from_time: str
+    to_time: str
+
+
 class GlucoseLevelStats(BaseModel):
     from_date: datetime
     to_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
     meals: Optional[List[PatientMeal]] = None
-    fitness_stats: Optional[Any] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
-    # last_libreview_sync: Optional[datetime]
-
-
-class GlucoseDailyReport(BaseModel):
-    cgm_report: Dict[str, GlucoseLevelStats]
-    fitness_report: Optional[List[FitnessDailyStats]] = None
-
-
-class GlucoseWeeklyReport(BaseModel):
-    cgm_report: Dict[str, GlucoseLevelStats]
-    fitness_report: Optional[List[FitnessWeeklyStats]] = None
-
-
-class GlucoseOverallReport(BaseModel):
-    cgm_report: Dict[str, GlucoseLevelStats]
-    fitness_report: Optional[FitnessSummaryStats] = None
+    time_period_stats: Optional[Dict[str, TimePeriodStats]]
+    fitness_report: Optional[Any] = None

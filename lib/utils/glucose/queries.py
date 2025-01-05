@@ -53,6 +53,46 @@ def generate_glucose_stats_query(patient_id, from_date, to_date):
     """
 
 
+def generate_time_period_stats_query(patient_id, from_date, to_date):
+    return f"""
+    SELECT
+        CASE
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN 'overnight'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN 'breakfast'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN 'lunch'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN 'dinner'
+            ELSE 'unknown'
+        END AS time_period,
+        CASE
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN '00:00:00'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN '06:00:00'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN '12:00:00'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN '18:00:00'
+            ELSE NULL
+        END AS from_time,
+        CASE
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '00:00' AND '05:59' THEN '05:59:59'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '06:00' AND '11:59' THEN '11:59:59'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '12:00' AND '17:59' THEN '17:59:59'
+            WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN '23:59:59'
+            ELSE NULL
+        END AS to_time,
+        AVG(glucose_level) AS avg_sugar,
+        MAX(glucose_level) AS highest_sugar,
+        MIN(glucose_level) AS lowest_sugar,
+        SUM(CASE WHEN glucose_level < 70 OR glucose_level > 180 THEN 1 ELSE 0 END) / COUNT(*) * 100 AS out_of_range_percentage
+    FROM
+        aihealth.cgm_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND time IS NOT NULL
+        AND time >= '{from_date}'
+        AND time <= '{to_date}'
+    GROUP BY time_period, from_time, to_time
+    ORDER BY time_period
+    """
+
+
 def generate_glucose_readings_by_date_query(patient_id, from_date, to_date):
     return f"""
     SELECT

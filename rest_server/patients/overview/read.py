@@ -8,7 +8,7 @@ from lib.dependencies.service_dependencies import (get_fitness_stats_processor,
                                                    get_glucose_stats_processor,
                                                    get_meal_stats_processor)
 from lib.models.patient import Patient
-from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseOverallReport
+from lib.schemas.glucose_stats import GlucoseLevelStats
 from lib.utils.date.periods import OverallPeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -46,7 +46,7 @@ async def get_patient_overview_api(
         )
 
         fitness_stats = fitness_stats_processor.fetch_daily_stats(
-            patient_id, from_date_str, to_date_str, include_hourly_stats=True
+            patient_id, from_date_str, to_date_str
         )
 
         overall_period = OverallPeriod(from_date, to_date)
