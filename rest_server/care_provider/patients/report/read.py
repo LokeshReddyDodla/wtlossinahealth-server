@@ -114,7 +114,12 @@ async def fetch_patient_fitness_report(
         )
 
         report = fitness_stats_processor.generate_report(
-            patient_id, from_date, to_date
+            patient_id,
+            from_date,
+            to_date,
+            include_overall=True,
+            include_week_wise=True,
+            include_day_wise=True,
         )
 
         return SuccessResponse(
