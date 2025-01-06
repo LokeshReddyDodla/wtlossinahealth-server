@@ -24,9 +24,9 @@ class FitnessStatsProcessor:
         patient_id: str,
         from_date: datetime,
         to_date: datetime,
-        include_overall: bool = True,
-        include_day_wise: bool = True,
-        include_week_wise: bool = True,
+        include_overall: bool = False,
+        include_day_wise: bool = False,
+        include_week_wise: bool = False,
     ) -> Dict[str, Any]:
         stats = {}
 
