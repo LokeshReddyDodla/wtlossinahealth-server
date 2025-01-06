@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import Dict, List
 
 
 class DayWisePeriod:
@@ -17,7 +17,9 @@ class DayWisePeriod:
                 {
                     "date": current_date.strftime("%Y-%m-%d"),
                     "from_date": current_date,
-                    "to_date": current_date + timedelta(days=1),
+                    "to_date": current_date.replace(
+                        hour=23, minute=59, second=59, microsecond=0
+                    ),
                 }
             )
             current_date += timedelta(days=1)
@@ -33,12 +35,14 @@ class WeekWisePeriod:
         start_date: datetime, end_date: datetime
     ) -> List[Dict[str, datetime]]:
         weeks = []
-        current_date = start_date
+        current_date = start_date - timedelta(days=start_date.weekday())
         week_no = 1
+
         while current_date <= end_date:
             week_end_date = current_date + timedelta(days=6)
             if week_end_date > end_date:
                 week_end_date = end_date
+
             weeks.append(
                 {
                     "week_no": week_no,
@@ -46,8 +50,10 @@ class WeekWisePeriod:
                     "to_date": week_end_date,
                 }
             )
+
             current_date += timedelta(days=7)
             week_no += 1
+
         return weeks
 
 

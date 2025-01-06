@@ -139,9 +139,9 @@ class GlucoseStatsProcessor:
             self.clickhouse_store, patient_id, from_date_str, to_date_str
         )
 
-        fitness_report = self.fitness_stats_processor.fetch_summary_stats(
-            patient_id, from_date_str, to_date_str
-        )
+        fitness_report = self.fitness_stats_processor.generate_report(
+            patient_id, from_date, to_date, include_overall=True
+        )["overall"]
 
         glucose_readings = None
         if include_readings:

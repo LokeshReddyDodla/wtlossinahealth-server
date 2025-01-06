@@ -3,8 +3,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from lib.schemas.fitness_stats import (CompleteFitnessReport,
-                                       FitnessDailyStats, FitnessMonthlyStats)
 from rest_server.response_models import SuccessResponse
 
 

@@ -10,7 +10,6 @@ from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_meal_stats_processor
 from lib.models.patient import Patient
-from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.processor import MealStatsProcessor

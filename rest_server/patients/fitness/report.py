@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_fitness_stats_processor
 from lib.models.patient import Patient
-from lib.schemas.fitness_stats import CompleteFitnessReport
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
@@ -34,28 +33,28 @@ async def get_fitness_data(
         to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
         patient_id = str(current_patient.patient_id)
 
-        summary_stats = fitness_stats_processor.fetch_summary_stats(
-            patient_id, from_date_str, to_date_str
-        )
-        daily_stats = fitness_stats_processor.fetch_daily_stats(
-            patient_id, from_date_str, to_date_str
-        )
-        weekly_stats = fitness_stats_processor.fetch_weekly_stats(
-            patient_id, from_date_str, to_date_str
-        )
-        monthly_stats = fitness_stats_processor.fetch_monthly_stats(
-            patient_id, from_date_str, to_date_str
-        )
+        # summary_stats = fitness_stats_processor.fetch_summary_stats(
+        #     patient_id, from_date_str, to_date_str
+        # )
+        # daily_stats = fitness_stats_processor.fetch_daily_stats(
+        #     patient_id, from_date_str, to_date_str
+        # )
+        # weekly_stats = fitness_stats_processor.fetch_weekly_stats(
+        #     patient_id, from_date_str, to_date_str
+        # )
+        # monthly_stats = fitness_stats_processor.fetch_monthly_stats(
+        #     patient_id, from_date_str, to_date_str
+        # )
 
         return SuccessResponse(
             message="Fitness report generated successfully.",
-            data=CompleteFitnessReport(
-                patient_id=str(current_patient.patient_id),
-                summary=summary_stats,
-                daily_stats=daily_stats,
-                weekly_stats=weekly_stats,
-                monthly_stats=monthly_stats,
-            ),
+            # data=CompleteFitnessReport(
+            #     patient_id=str(current_patient.patient_id),
+            #     summary=summary_stats,
+            #     daily_stats=daily_stats,
+            #     weekly_stats=weekly_stats,
+            #     monthly_stats=monthly_stats,
+            # ),
         )
     except HTTPException as http_exc:
         raise http_exc
