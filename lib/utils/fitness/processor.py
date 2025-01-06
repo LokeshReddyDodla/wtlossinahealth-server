@@ -1,194 +1,75 @@
 import calendar
 import math
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from lib.schemas.fitness_stats import (FitnessActivityDistribution,
-                                       FitnessDailyStats, FitnessHourlyStats,
+                                       FitnessHourlyStats,
                                        FitnessInactivePeriod,
-                                       FitnessMonthlyStats,
-                                       FitnessPeakActivityTime,
-                                       FitnessSummaryStats, FitnessWeeklyStats)
-from lib.utils.date_utils import get_week_start_end
+                                       FitnessPeakActivityTime, FitnessStats)
+from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.fitness.queries import (
     generate_activity_distribution_query,
-    generate_average_active_session_duration_query, generate_daily_stats_query,
+    generate_average_active_session_duration_query,
     generate_hourly_stats_query, generate_inactive_periods_query,
-    generate_monthly_stats_query, generate_peak_activity_time_query,
-    generate_summary_stats_query, generate_weekly_stats_query)
+    generate_peak_activity_time_query, generate_summary_stats_query)
 
 
 class FitnessStatsProcessor:
     def __init__(self, clickhouse_store):
         self.clickhouse_store = clickhouse_store
 
-    def fetch_summary_stats(
+    def generate_report(
         self,
         patient_id: str,
-        from_date_str: str,
-        to_date_str: str,
-    ) -> FitnessSummaryStats:
-        query = generate_summary_stats_query(
-            patient_id, from_date_str, to_date_str
-        )
-        result = self.clickhouse_store.client.execute(query)
-        return self._construct_fitness_summary_stats(
-            result=result[0],
-            stats_class=FitnessSummaryStats,
-            patient_id=patient_id,
-            index_starts=0,
-            fallback_from_date=from_date_str,
-            fallback_to_date=to_date_str,
-        )
+        from_date: datetime,
+        to_date: datetime,
+        include_overall: bool = True,
+        include_day_wise: bool = True,
+        include_week_wise: bool = True,
+    ) -> Dict[str, Any]:
+        stats = {}
 
-    def fetch_daily_stats(
-        self,
-        patient_id: str,
-        from_date_str: str,
-        to_date_str: str,
-    ) -> List[FitnessDailyStats]:
-        query = generate_daily_stats_query(
-            patient_id, from_date_str, to_date_str
-        )
-        data = self.clickhouse_store.client.execute(query)
-
-        daily_stats = []
-        for row in data:
-            date = row[0]
-
-            stats_instance = self._construct_fitness_summary_stats(
-                result=row,
-                stats_class=FitnessDailyStats,
-                patient_id=patient_id,
-                additional_fields={"date": date},
+        # Overall Stats
+        if include_overall:
+            stats["overall"] = self._process_period(
+                patient_id,
+                from_date,
+                to_date,
             )
-            daily_stats.append(stats_instance)
-        return daily_stats
 
-    def fetch_weekly_stats(
+        # Day-wise Stats
+        if include_day_wise:
+            day_periods = DayWisePeriod(from_date, to_date).periods
+            stats["day_wise"] = self._process_multiple_periods(
+                patient_id,
+                day_periods,
+            )
+
+        # Week-wise Stats
+        if include_week_wise:
+            week_periods = WeekWisePeriod(from_date, to_date).periods
+            stats["week_wise"] = self._process_multiple_periods(
+                patient_id,
+                week_periods,
+            )
+
+        return stats
+
+    def _process_period(
         self,
         patient_id: str,
-        from_date_str: str,
-        to_date_str: str,
-        include_daily_stats: bool = False,
-    ) -> List[FitnessWeeklyStats]:
-        query = generate_weekly_stats_query(
+        from_date: datetime,
+        to_date: datetime,
+    ) -> FitnessStats:
+
+        from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
+        to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
+
+        summary_query = generate_summary_stats_query(
             patient_id, from_date_str, to_date_str
         )
-        data = self.clickhouse_store.client.execute(query)
-
-        weekly_stats = []
-        for row in data:
-            week_number = row[0]
-            from_date = row[1]
-            to_date = row[2]
-
-            daily_stats = None
-
-            if include_daily_stats:
-                daily_stats = self.fetch_daily_stats(
-                    patient_id=patient_id,
-                    from_date_str=from_date.strftime("%Y-%m-%dT00:00:00"),
-                    to_date_str=to_date.strftime("%Y-%m-%dT23:59:59"),
-                )
-
-            stats_instance = self._construct_fitness_summary_stats(
-                result=row,
-                stats_class=FitnessWeeklyStats,
-                patient_id=patient_id,
-                additional_fields={
-                    "week_number": week_number,
-                    "daily_stats": daily_stats,
-                },
-            )
-            weekly_stats.append(stats_instance)
-        return weekly_stats
-
-    def fetch_monthly_stats(
-        self,
-        patient_id: str,
-        from_date_str: str,
-        to_date_str: str,
-        include_daily_stats: bool = False,
-        include_weekly_stats: bool = False,
-    ) -> List[FitnessMonthlyStats]:
-        query = generate_monthly_stats_query(
-            patient_id, from_date_str, to_date_str
-        )
-        data = self.clickhouse_store.client.execute(query)
-
-        monthly_stats = []
-        for row in data:
-            month = row[0]
-            from_date = row[1]
-            to_date = row[2]
-
-            # Determine the last day of the month
-            year, month_num = map(int, month.split("-"))
-            last_day = calendar.monthrange(year, month_num)[1]
-
-            daily_stats = None
-            weekly_stats = None
-
-            # Fetch daily stats for the entire month
-            if include_daily_stats:
-                daily_stats = self.fetch_daily_stats(
-                    patient_id=patient_id,
-                    from_date_str=f"{month}-01T00:00:00",
-                    to_date_str=f"{month}-{last_day}T23:59:59",
-                )
-
-            # Fetch weekly stats for the entire month
-            if include_weekly_stats:
-                weekly_stats = self.fetch_weekly_stats(
-                    patient_id=patient_id,
-                    from_date_str=f"{month}-01T00:00:00",
-                    to_date_str=f"{month}-{last_day}T23:59:59",
-                )
-
-            stats_instance = self._construct_fitness_summary_stats(
-                result=row,
-                stats_class=FitnessMonthlyStats,
-                patient_id=patient_id,
-                additional_fields={
-                    "month": month,
-                    "daily_stats": daily_stats,
-                    "weekly_stats": weekly_stats,
-                },
-            )
-            monthly_stats.append(stats_instance)
-        return monthly_stats
-
-    def _construct_fitness_summary_stats(
-        self,
-        result,
-        stats_class,
-        patient_id: str,
-        index_starts: int = 1,
-        additional_fields: Dict = {},
-        fallback_from_date: Optional[str] = None,
-        fallback_to_date: Optional[str] = None,
-    ):
-        from_date = result[index_starts]
-        to_date = result[index_starts + 1]
-        steps = result[index_starts + 2]
-        active_energy = result[index_starts + 3]
-        active_duration = result[index_starts + 4]
-
-        from_date = (
-            datetime.strptime(fallback_from_date, "%Y-%m-%dT%H:%M:%S").date()
-            if (from_date == date(1970, 1, 1) and fallback_from_date)
-            else from_date
-        )
-
-        to_date = (
-            datetime.strptime(fallback_to_date, "%Y-%m-%dT%H:%M:%S").date()
-            if (to_date == date(1970, 1, 1) and fallback_to_date)
-            else to_date
-        )
-
-        from_date_str = from_date.strftime("%Y-%m-%dT00:00:00")
-        to_date_str = to_date.strftime("%Y-%m-%dT23:59:59")
+        summary_stats = self.clickhouse_store.client.execute(summary_query)
 
         # Calculate average active session duration
         avg_active_session_query = (
@@ -230,19 +111,34 @@ class FitnessStatsProcessor:
             patient_id, from_date_str, to_date_str
         )
 
-        return stats_class(
-            steps=steps,
-            active_energy=active_energy,
-            active_duration=active_duration,
+        return FitnessStats(
+            from_date=from_date,
+            to_date=to_date,
+            steps=summary_stats[0][0],
+            active_energy=summary_stats[0][1],
+            active_duration=summary_stats[0][2],
             average_active_session_duration=average_active_session_duration,
             activity_distribution=activity_distribution,
             peak_activity_time=peak_activity_time,
             inactive_periods=inactive_periods,
             hourly_stats=hourly_stats,
-            from_date=from_date,
-            to_date=to_date,
-            **additional_fields,
         )
+
+    def _process_multiple_periods(
+        self,
+        patient_id: str,
+        periods: List[Dict[str, datetime]],
+    ) -> List[FitnessStats]:
+        stats = []
+        for period in periods:
+            stats.append(
+                self._process_period(
+                    patient_id,
+                    period["from_date"],
+                    period["to_date"],
+                )
+            )
+        return stats
 
     def _fetch_hourly_stats(
         self, patient_id: str, from_date_str: str, to_date_str: str
@@ -251,7 +147,7 @@ class FitnessStatsProcessor:
             patient_id, from_date_str, to_date_str
         )
         data = self.clickhouse_store.client.execute(query)
-        hourly_stats = [
+        return [
             FitnessHourlyStats(
                 hour=row[0],
                 steps=row[1],
@@ -260,7 +156,6 @@ class FitnessStatsProcessor:
             )
             for row in data
         ]
-        return hourly_stats
 
     def _fetch_activity_distribution(
         self, query: str

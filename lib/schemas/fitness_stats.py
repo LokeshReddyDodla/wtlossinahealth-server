@@ -38,7 +38,7 @@ class FitnessHourlyStats(BaseModel):
     active_duration: float
 
 
-class FitnessBaseStats(BaseModel):
+class FitnessStats(BaseModel):
     steps: int
     active_energy: float
     active_duration: float
@@ -49,33 +49,5 @@ class FitnessBaseStats(BaseModel):
     peak_activity_time: Optional[FitnessPeakActivityTime] = None
     inactive_periods: Optional[List[FitnessInactivePeriod]] = None
     hourly_stats: Optional[List[FitnessHourlyStats]] = None
-    from_date: date
-    to_date: date
-
-
-class FitnessDailyStats(FitnessBaseStats):
-    date: date
-
-
-class FitnessWeeklyStats(FitnessBaseStats):
-    week_number: int
-    daily_stats: Optional[List[FitnessDailyStats]] = None
-
-
-class FitnessMonthlyStats(FitnessBaseStats):
-    month: str
-
-    daily_stats: Optional[List[FitnessDailyStats]] = None
-    weekly_stats: Optional[List[FitnessWeeklyStats]] = None
-
-
-class FitnessSummaryStats(FitnessBaseStats):
-    pass
-
-
-class CompleteFitnessReport(BaseModel):
-    patient_id: str
-    summary: FitnessBaseStats
-    daily_stats: Optional[List[FitnessDailyStats]] = None
-    weekly_stats: Optional[List[FitnessWeeklyStats]] = None
-    monthly_stats: Optional[List[FitnessMonthlyStats]] = None
+    from_date: datetime
+    to_date: datetime

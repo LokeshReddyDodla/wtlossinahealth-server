@@ -1,6 +1,7 @@
 import calendar
-from typing import List, Dict
 from datetime import datetime, timedelta
+from typing import Dict, List
+
 import pandas as pd
 
 
@@ -68,44 +69,32 @@ def split_into_months(
     return months
 
 
-def get_week_start_end(date: datetime, firstweekday=calendar.MONDAY):
-    # Set the first weekday (e.g., Monday)
-    calendar.setfirstweekday(firstweekday)
+def get_week_start_and_end_from_week_no(
+    year: int, week_no: int, firstweekday=calendar.MONDAY
+):
+    # Get the first day of the year
+    first_day_of_year = datetime(year, 1, 1)
 
-    # Find the start of the week
-    start_of_week = date - timedelta(days=date.weekday())
+    # Calculate the start of the week (Monday)
+    start_of_week = first_day_of_year + timedelta(weeks=week_no - 1)
+    
+    # Align to the first Monday of the week (ISO standard)
+    start_of_week = start_of_week - timedelta(days=start_of_week.weekday())
+    start_of_week = start_of_week.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
-    # Find the end of the week
+    # Calculate the end of the week (Sunday)
     end_of_week = start_of_week + timedelta(days=6)
+    end_of_week = end_of_week.replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
 
     return start_of_week, end_of_week
 
 
-def get_week_start_end_by_week_no(
-    year: int, week_no: int, firstweekday=calendar.MONDAY
-):
-    # Calculate the first day of the given year
-    first_day_of_year = datetime(year, 1, 1)
-
-    # Adjust to the first weekday of the year based on the specified first weekday
-    first_day_of_week = first_day_of_year - timedelta(
-        days=(first_day_of_year.weekday() - firstweekday) % 7
-    )
-
-    # Calculate the start of the given week number
-    week_start = first_day_of_week + timedelta(weeks=week_no - 1)
-
-    # Calculate the end of the week
-    week_end = week_start + timedelta(days=6)
-
-    return week_start.date(), week_end.date()
-
-
 def get_month_start_end(year: int, month_no: int):
-    # Get the first day of the month
     start_of_month = datetime(year, month_no, 1)
-
-    # Calculate the last day of the month
     _, last_day = calendar.monthrange(year, month_no)
     end_of_month = datetime(year, month_no, last_day)
 

@@ -4,8 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
-from lib.schemas.fitness_stats import (FitnessBaseStats, FitnessDailyStats,
-                                       FitnessSummaryStats, FitnessWeeklyStats)
+from lib.schemas.fitness_stats import FitnessStats
 from lib.schemas.patient_meal import PatientMeal
 
 
@@ -125,4 +124,4 @@ class GlucoseLevelStats(BaseModel):
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
     time_period_stats: Optional[Dict[str, TimePeriodStats]]
-    fitness_report: Optional[Any] = None
+    fitness_report: Optional[FitnessStats] = None
