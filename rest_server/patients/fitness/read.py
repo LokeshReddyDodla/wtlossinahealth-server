@@ -104,6 +104,7 @@ async def get_fitness_week_stats(
             week_start,
             week_end,
             include_week_wise=True,
+            include_day_wise=True,
         )
 
         return SuccessResponse(
