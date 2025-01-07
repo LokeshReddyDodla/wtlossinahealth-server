@@ -68,11 +68,11 @@ async def get_fitness_day_stats(
             str(current_patient.patient_id),
             from_date,
             to_date,
-            include_day_wise=True,
+            include_overall=True,
         )
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats["day_wise"],
+            data=stats["overall"],
         )
     except Exception as e:
         raise_http_exception(
@@ -103,13 +103,13 @@ async def get_fitness_week_stats(
             str(current_patient.patient_id),
             week_start,
             week_end,
-            include_week_wise=True,
+            include_overall=True,
             include_day_wise=True,
         )
 
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats["week_wise"],
+            data=stats,
         )
     except Exception as e:
         raise_http_exception(
