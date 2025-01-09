@@ -55,11 +55,11 @@ async def verify_otp_endpoint(
             )
 
             # Check if user is verified
-            if not user.is_verified:  # type: ignore
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="User account is not verified.",
-                )
+            # if not user.is_verified:  # type: ignore
+            #     raise_http_exception(
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #         message="User account is not verified.",
+            #     )
 
             # Create JWT token for the user
             token = create_jwt_token(
