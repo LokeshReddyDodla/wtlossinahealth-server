@@ -114,7 +114,7 @@ class MealStatsProcessor:
 
         return [
             self._build_daily_stats(
-                row, avg_glucose_by_date, diet_recommendations
+                row, avg_glucose_by_date, diet_recommendations, patient_id
             )
             for row in rows
         ]
@@ -413,7 +413,7 @@ class MealStatsProcessor:
         )
 
     def _build_daily_stats(
-        self, row, avg_glucose_by_date, diet_recommendations
+        self, row, avg_glucose_by_date, diet_recommendations, patient_id: str
     ):
         """Helper function to build MealDailyStats from a query row."""
 
@@ -422,7 +422,9 @@ class MealStatsProcessor:
                 row.date, parse_date(meal["time"]).time()
             )
             glucose_before_meal, glucose_after_meal = (
-                self.glucose_processor.fetch_glucose_around_meal(meal_time)
+                self.glucose_processor.fetch_glucose_around_meal(
+                    patient_id, meal_time
+                )
             )
 
             # Append glucose readings to each meal
