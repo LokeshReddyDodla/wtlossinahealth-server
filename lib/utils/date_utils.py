@@ -77,7 +77,7 @@ def get_week_start_and_end_from_week_no(
 
     # Calculate the start of the week (Monday)
     start_of_week = first_day_of_year + timedelta(weeks=week_no - 1)
-    
+
     # Align to the first Monday of the week (ISO standard)
     start_of_week = start_of_week - timedelta(days=start_of_week.weekday())
     start_of_week = start_of_week.replace(
@@ -96,6 +96,29 @@ def get_week_start_and_end_from_week_no(
 def get_month_start_end(year: int, month_no: int):
     start_of_month = datetime(year, month_no, 1)
     _, last_day = calendar.monthrange(year, month_no)
-    end_of_month = datetime(year, month_no, last_day)
+    end_of_month = datetime(year, month_no, last_day, 23, 59, 59)
 
     return start_of_month, end_of_month
+
+
+def get_months_between_dates(
+    from_date: datetime, to_date: datetime
+) -> List[tuple]:
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+
+    # Start from the month and year of from_date
+    start_year, start_month = from_date.year, from_date.month
+    end_year, end_month = to_date.year, to_date.month
+
+    months = []
+    for year in range(start_year, end_year + 1):
+        # Determine the start and end months for the current year
+        month_start = start_month if year == start_year else 1
+        month_end = end_month if year == end_year else 12
+
+        # Add all (year, month) tuples for the current year
+        for month in range(month_start, month_end + 1):
+            months.append((year, month))  # Store as (year, month)
+
+    return months

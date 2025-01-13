@@ -1,0 +1,142 @@
+from datetime import datetime
+
+from celery import shared_task
+
+from lib.core.clickhouse_store import ClickHouseStore
+from lib.core.types import FitnessReportTypeLiteral
+from lib.services.fitness_report_service import FitnessReportService
+from lib.utils.date_utils import get_month_start_end, get_months_between_dates
+from lib.utils.fitness.processor import FitnessStatsProcessor
+
+
+@shared_task
+def generate_fitness_reports_for_patient(
+    patient_id: str, from_date: datetime, to_date: datetime
+):
+    try:
+        months_between = get_months_between_dates(from_date, to_date)
+
+        for year, month in reversed(months_between):
+            start_date, end_date = get_month_start_end(year, month)
+
+            generate_fitness_report_for_month.delay(
+                patient_id, start_date, end_date
+            )
+
+        print(f"Generated fitness report for patient: {patient_id}")
+    except Exception as e:
+        print(
+            f"Failed to generate fitness report for {patient_id}. Error: {e}"
+        )
+
+
+@shared_task
+def generate_fitness_report_for_month(
+    patient_id: str, start_date: datetime, end_date: datetime
+):
+    try:
+        fitness_stats_service = FitnessStatsProcessor(ClickHouseStore())
+        fitness_report_service = FitnessReportService()
+
+        # Generate report for the specific month
+        report = fitness_stats_service.generate_report(
+            patient_id,
+            start_date,
+            end_date,
+            include_overall=True,
+            include_week_wise=True,
+            include_day_wise=True,
+        )
+
+        # Prepare reports for bulk saving
+        bulk_reports = []
+        bulk_reports.append(
+            {
+                "patient_id": patient_id,
+                "report_type": "monthly",
+                **report["overall"].model_dump(),
+            }
+        )
+        bulk_reports.extend(
+            [
+                {
+                    "patient_id": patient_id,
+                    "report_type": "weekly",
+                    **week_stat.model_dump(),
+                }
+                for week_stat in report["week_wise"]
+            ]
+        )
+        bulk_reports.extend(
+            [
+                {
+                    "patient_id": patient_id,
+                    "report_type": "daily",
+                    **day_stat.model_dump(),
+                }
+                for day_stat in report["day_wise"]
+            ]
+        )
+
+        # Save reports
+        fitness_report_service.save_reports_bulk(bulk_reports)
+
+        print(
+            f"Generated fitness report for {patient_id} from {start_date}-{end_date}"
+        )
+    except Exception as e:
+        print(
+            f"Failed to generate fitness report for {patient_id} from {start_date}-{end_date}. Error: {e}"
+        )
+
+
+@shared_task
+def generate_fitness_report(
+    patient_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    report_type: FitnessReportTypeLiteral,
+):
+    try:
+        fitness_stats_service = FitnessStatsProcessor(ClickHouseStore())
+        fitness_report_service = FitnessReportService()
+
+        report = fitness_stats_service.generate_report(
+            patient_id,
+            start_date,
+            end_date,
+            include_overall=True,
+            include_day_wise=report_type in ["weekly", "monthly"],
+        )
+
+        bulk_reports = []
+        bulk_reports.append(
+            {
+                "patient_id": patient_id,
+                "report_type": report_type,
+                **report["overall"].model_dump(),
+            }
+        )
+
+        if report_type in ["weekly", "monthly"]:
+            bulk_reports.extend(
+                [
+                    {
+                        "patient_id": patient_id,
+                        "report_type": "daily",
+                        **day_stat.model_dump(),
+                    }
+                    for day_stat in report["day_wise"]
+                ]
+            )
+
+        fitness_report_service.save_reports_bulk(bulk_reports)
+
+        print(
+            f"Generated {report_type} fitness report for {patient_id} from {start_date} to {end_date}"
+        )
+
+    except Exception as e:
+        print(
+            f"Failed to generate {report_type} report for {patient_id} from {start_date} to {end_date}. Error: {e}"
+        )

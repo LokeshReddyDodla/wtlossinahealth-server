@@ -20,3 +20,4 @@ celery.conf.update(
 
 
 from lib.tasks.fcm_tasks import send_fcm_notification_task
+from lib.tasks.fitness_tasks import *

@@ -1,11 +1,15 @@
+import json
 from datetime import date, datetime, time
 from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_fitness_stats_processor
+from lib.dependencies.service_dependencies import (get_fitness_report_service,
+                                                   get_fitness_stats_processor)
 from lib.models.patient import Patient
+from lib.services.fitness_report_service import FitnessReportService
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_and_end_from_week_no)
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -55,24 +59,20 @@ async def get_fitness_stats(
 async def get_fitness_day_stats(
     request: Request,
     date: date = Query(...),
-    fitness_processor: FitnessStatsProcessor = Depends(
-        get_fitness_stats_processor
+    fitness_report_service: FitnessReportService = Depends(
+        get_fitness_report_service
     ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        from_date = datetime.combine(date, time.min)
-        to_date = datetime.combine(date, time.max)
 
-        stats = fitness_processor.generate_report(
-            str(current_patient.patient_id),
-            from_date,
-            to_date,
-            include_overall=True,
+        stats = fitness_report_service.fetch_daily_report(
+            str(current_patient.patient_id), date
         )
+
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats["overall"],
+            data=jsonable_encoder(stats),
         )
     except Exception as e:
         raise_http_exception(
@@ -89,27 +89,26 @@ async def get_fitness_week_stats(
     request: Request,
     year: int,
     week_no: int,
-    fitness_processor: FitnessStatsProcessor = Depends(
-        get_fitness_stats_processor
+    fitness_report_service: FitnessReportService = Depends(
+        get_fitness_report_service
     ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        week_start, week_end = get_week_start_and_end_from_week_no(
+        start_date, end_date = get_week_start_and_end_from_week_no(
             year, week_no
         )
+        weekly_stats = fitness_report_service.fetch_weekly_report(
+            str(current_patient.patient_id), year, week_no
+        )
 
-        stats = fitness_processor.generate_report(
-            str(current_patient.patient_id),
-            week_start,
-            week_end,
-            include_overall=True,
-            include_day_wise=True,
+        daily_stats = fitness_report_service.fetch_daily_reports_in_range(
+            str(current_patient.patient_id), start_date, end_date
         )
 
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats,
+            data={"overall": weekly_stats, "day_wise": daily_stats},
         )
     except Exception as e:
         raise_http_exception(
@@ -126,24 +125,25 @@ async def get_fitness_month_stats(
     request: Request,
     year: int,
     month_no: int,
-    fitness_processor: FitnessStatsProcessor = Depends(
-        get_fitness_stats_processor
+    fitness_report_service: FitnessReportService = Depends(
+        get_fitness_report_service
     ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        month_start, month_end = get_month_start_end(year, month_no)
+        start_date, end_date = get_month_start_end(year, month_no)
 
-        stats = fitness_processor.generate_report(
-            str(current_patient.patient_id),
-            month_start,
-            month_end,
-            include_overall=True,
-            include_day_wise=True,
+        monthly_stats = fitness_report_service.fetch_monthly_report(
+            str(current_patient.patient_id), year, month_no
         )
+
+        daily_stats = fitness_report_service.fetch_daily_reports_in_range(
+            str(current_patient.patient_id), start_date, end_date
+        )
+
         return SuccessResponse(
             message="Fitness stats fetched successfully",
-            data=stats,
+            data={"overall": monthly_stats, "day_wise": daily_stats},
         )
     except Exception as e:
         raise_http_exception(
