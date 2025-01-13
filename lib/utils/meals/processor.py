@@ -31,7 +31,7 @@ class MealStatsProcessor:
         self.patient_plan_service = patient_plan_service
         self.glucose_processor = glucose_stats_processor
 
-    async def get_meal_stats_by_date(self, patient_id: str, date: date):
+    async def get_meal_report_by_date(self, patient_id: str, date: date):
         diet_recommendations = await self.get_diet_recommendations(
             patient_id, date
         )
@@ -54,7 +54,7 @@ class MealStatsProcessor:
             row, {date: avg_glucose}, diet_recommendations, patient_id
         )
 
-    async def get_meal_stats_by_date_range(
+    async def get_meal_report_by_date_range(
         self, patient_id: str, from_date: datetime, to_date: datetime
     ):
         diet_recommendations = await self.get_diet_recommendations(

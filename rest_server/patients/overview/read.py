@@ -41,7 +41,7 @@ async def get_patient_overview_api(
         to_date = datetime.combine(date, time.max)  # End of the day
         patient_id = str(current_patient.patient_id)
 
-        meal_stats = await meal_stats_processor.get_meal_stats_by_date(
+        meal_stats = await meal_stats_processor.get_meal_report_by_date(
             patient_id, date
         )
 

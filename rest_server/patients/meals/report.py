@@ -30,7 +30,7 @@ async def get_meal_report(
 ):
     try:
         grouped_by_date = (
-            await meal_stats_processor.get_meal_stats_by_date_range(
+            await meal_stats_processor.get_meal_report_by_date_range(
                 str(current_patient.patient_id), from_date, to_date
             )
         )

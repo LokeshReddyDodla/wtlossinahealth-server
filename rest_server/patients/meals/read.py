@@ -85,7 +85,7 @@ async def get_meals_stats_api(
     """
     try:
 
-        meal_stats = await meal_stats_processor.get_meal_stats_by_date(
+        meal_stats = await meal_stats_processor.get_meal_report_by_date(
             str(current_patient.patient_id), date
         )
 
