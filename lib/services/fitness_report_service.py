@@ -1,3 +1,4 @@
+import hashlib
 import os
 from datetime import date, datetime, time
 
@@ -114,19 +115,19 @@ class FitnessReportService:
 
     def save_reports_bulk(self, reports: list):
         try:
-            operations = [
-                ReplaceOne(
-                    {
-                        "patient_id": report["patient_id"],
-                        "report_type": report["report_type"],
-                        "from_date": report["from_date"],
-                        "to_date": report["to_date"],
-                    },
-                    report,
-                    upsert=True,
+            operations = []
+
+            for report in reports:
+                unique_string = f"{report['patient_id']}_{report['report_type']}_{report['from_date']}_{report['to_date']}"
+                consistent_id = hashlib.sha256(
+                    unique_string.encode()
+                ).hexdigest()
+
+                report["_id"] = consistent_id
+
+                operations.append(
+                    ReplaceOne({"_id": consistent_id}, report, upsert=True)
                 )
-                for report in reports
-            ]
 
             # Perform bulk upsert
             self.fitness_report_collection.bulk_write(
