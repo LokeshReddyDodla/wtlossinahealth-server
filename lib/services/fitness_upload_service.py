@@ -10,6 +10,7 @@ from lib.models.patient import Patient
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
+from lib.tasks.fitness_tasks import generate_fitness_reports_for_patient
 from lib.utils.fitness_upload_utils import FitnessUploadUtils
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
@@ -27,20 +28,25 @@ class FitnessUploadService:
 
     async def process_fitness_data(
         self, patient_id: str, fitness_data: FitnessDataRequest
-    ):
-        dateFrom, dateTo = (
+    ) -> datetime:
+        date_from, date_to = (
             fitness_data.dateFrom,
             fitness_data.dateTo,
         )
 
-        await self.delete_existing_data(patient_id, dateFrom, dateTo)
+        await self.delete_existing_data(patient_id, date_from, date_to)
         await self.insert_new_data(patient_id, fitness_data)
-        await self.update_last_sync(patient_id, dateTo)
+        await self.update_last_sync(patient_id, date_to)
 
         # Commit the session to save all changes
         await self.postgres_session.commit()
 
-        return dateTo
+        # Trigger report generation asynchronously
+        generate_fitness_reports_for_patient.delay(
+            patient_id, date_from, date_to
+        )
+
+        return date_to
 
     async def delete_existing_data(
         self,

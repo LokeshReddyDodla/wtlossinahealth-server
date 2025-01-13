@@ -40,8 +40,12 @@ class WeekWisePeriod:
 
         while current_date <= end_date:
             week_end_date = current_date + timedelta(days=6)
+            week_end_date = week_end_date.replace(
+                hour=23, minute=59, second=59
+            )
+
             if week_end_date > end_date:
-                week_end_date = end_date
+                week_end_date = end_date.replace(hour=23, minute=59, second=59)
 
             weeks.append(
                 {

@@ -10,6 +10,7 @@ from lib.services.cgm_service import CGMService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -170,6 +171,10 @@ async def get_fitness_stats_processor(
 ) -> FitnessStatsProcessor:
     clickhouse_store = request.state.context.clickhouse_store
     return FitnessStatsProcessor(clickhouse_store)
+
+
+async def get_fitness_report_service(request: Request) -> FitnessReportService:
+    return FitnessReportService()
 
 
 async def get_glucose_stats_processor(

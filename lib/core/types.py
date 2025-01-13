@@ -5,6 +5,9 @@ ProfileTypeLiteral = Literal[
     "care_provider",
 ]
 
+FitnessReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
+
+
 FCMNotificationChannelKeyLiteral = Literal[
     "fitness_sync", "chat_messages", "other"
 ]
