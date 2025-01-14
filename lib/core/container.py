@@ -3,6 +3,7 @@ from typing import cast
 from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.cache_store import CacheStore
 from lib.core.clickhouse_store import ClickHouseStore
 # Services
 from lib.core.postgres_store import PostgresStore
@@ -45,6 +46,23 @@ container.register(
         PostgresStore, container.resolve(PostgresStore)
     ).session_local(),
     scope=Scope.singleton,
+)
+
+# CacheStores
+container.register(
+    CacheStore,
+    lambda: CacheStore(namespace="fitness_sync"),
+    name="fitness_sync",
+)
+
+container.register(
+    CacheStore, lambda: CacheStore(namespace="user_otp"), name="user_otp"
+)
+
+container.register(
+    CacheStore,
+    lambda: CacheStore(namespace="user_sessions"),
+    name="user_sessions",
 )
 
 # 🔹 Basic Services
@@ -195,7 +213,7 @@ container.register(
     lambda: FitnessUploadService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
         clickhouse_store=container.resolve(ClickHouseStore),
-        fitness_sync_store=None,  # Provide this if necessary
+        fitness_sync_store=container.resolve(CacheStore, name="fitness_sync"),
     ),
 )
 
