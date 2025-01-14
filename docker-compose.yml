@@ -146,7 +146,7 @@ services:
   flower:
     image: mher/flower
     container_name: flower
-    command: [ "flower", "--broker=${CELERY_BROKER_URL}", "--port=5555" ]
+    command: celery --broker=${CELERY_BROKER_URL} flower --port=5555
     ports:
       - "5555:5555"
     environment:
