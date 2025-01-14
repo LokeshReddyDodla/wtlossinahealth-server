@@ -2,6 +2,7 @@ import asyncio
 from datetime import date, datetime, time
 from typing import cast
 
+from asgiref.sync import async_to_sync
 from celery import shared_task
 
 from lib.services.meal_report_service import MealReportService
@@ -23,8 +24,8 @@ def generate_daily_meal_report(
             MealReportService, container.resolve(MealReportService)
         )
 
-        report = asyncio.run(
-            meal_stats_service.get_meal_report_by_date(patient_id, report_date)
+        report = async_to_sync(meal_stats_service.get_meal_report_by_date)(
+            patient_id, report_date
         )
 
         meal_report_service.save_report(
