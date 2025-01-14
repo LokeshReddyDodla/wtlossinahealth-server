@@ -293,6 +293,7 @@ class MealStatsProcessor:
         active_plan = await self.patient_plan_service.get_active_patient_plan(
             patient_id, query_date
         )
+        print("==> active_plan: ", active_plan)
 
         if active_plan and active_plan.diet_plan:
             return PatientDietPlanBase(
