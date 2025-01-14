@@ -45,7 +45,7 @@ container.register(
     factory=lambda: cast(
         PostgresStore, container.resolve(PostgresStore)
     ).session_local(),
-    scope=Scope.singleton,
+    scope=Scope.transient,
 )
 
 # CacheStores
