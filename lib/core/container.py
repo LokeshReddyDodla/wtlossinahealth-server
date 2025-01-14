@@ -49,21 +49,13 @@ container.register(
 )
 
 # CacheStores
-container.register(
-    CacheStore,
-    lambda: CacheStore(namespace="fitness_sync"),
-    name="fitness_sync",
-)
+for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
+    container.register(
+        CacheStore,
+        lambda ns=namespace: CacheStore(namespace=ns),
+        key=namespace,
+    )
 
-container.register(
-    CacheStore, lambda: CacheStore(namespace="user_otp"), name="user_otp"
-)
-
-container.register(
-    CacheStore,
-    lambda: CacheStore(namespace="user_sessions"),
-    name="user_sessions",
-)
 
 # 🔹 Basic Services
 container.register(ChatMessagingService, ChatMessagingService)
@@ -213,7 +205,7 @@ container.register(
     lambda: FitnessUploadService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
         clickhouse_store=container.resolve(ClickHouseStore),
-        fitness_sync_store=container.resolve(CacheStore, name="fitness_sync"),
+        fitness_sync_store=container.resolve("fitness_sync"),
     ),
 )
 
