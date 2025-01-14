@@ -46,7 +46,7 @@ async def get_patient_overview_api(
         )
 
         return SuccessResponse(
-            message="Meal stats fetched successfully",
+            message="Patient stats fetched successfully",
             data={
                 "meal_report": meal_report,
                 "fitness_report": fitness_report,

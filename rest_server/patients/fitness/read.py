@@ -20,7 +20,7 @@ from .router import router
 
 
 @router.get(
-    "/stats",
+    "/report",
     response_model=SuccessResponse,
 )
 async def get_fitness_stats(
@@ -33,7 +33,7 @@ async def get_fitness_stats(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        stats = fitness_processor.generate_report(
+        report = fitness_processor.generate_report(
             str(current_patient.patient_id),
             from_date,
             to_date,
@@ -42,8 +42,8 @@ async def get_fitness_stats(
             include_week_wise=True,
         )
         return SuccessResponse(
-            message="Fitness stats fetched successfully",
-            data=stats,
+            message="Fitness report fetched successfully",
+            data=report,
         )
     except Exception as e:
         raise_http_exception(
@@ -54,9 +54,9 @@ async def get_fitness_stats(
 
 
 @router.get(
-    "/stats/day",
+    "/report/day",
 )
-async def get_fitness_day_stats(
+async def get_fitness_day_report(
     request: Request,
     date: date = Query(...),
     fitness_report_service: FitnessReportService = Depends(
@@ -66,13 +66,13 @@ async def get_fitness_day_stats(
 ):
     try:
 
-        stats = fitness_report_service.fetch_daily_report(
+        report = fitness_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
 
         return SuccessResponse(
-            message="Fitness stats fetched successfully",
-            data=jsonable_encoder(stats),
+            message="Fitness report fetched successfully",
+            data=jsonable_encoder(report),
         )
     except Exception as e:
         raise_http_exception(
@@ -83,9 +83,9 @@ async def get_fitness_day_stats(
 
 
 @router.get(
-    "/stats/week",
+    "/report/week",
 )
-async def get_fitness_week_stats(
+async def get_fitness_week_report(
     request: Request,
     year: int,
     week_no: int,
@@ -98,17 +98,17 @@ async def get_fitness_week_stats(
         start_date, end_date = get_week_start_and_end_from_week_no(
             year, week_no
         )
-        weekly_stats = fitness_report_service.fetch_weekly_report(
+        weekly_report = fitness_report_service.fetch_weekly_report(
             str(current_patient.patient_id), year, week_no
         )
 
-        daily_stats = fitness_report_service.fetch_daily_reports_in_range(
+        daily_report = fitness_report_service.fetch_daily_reports_in_range(
             str(current_patient.patient_id), start_date, end_date
         )
 
         return SuccessResponse(
-            message="Fitness stats fetched successfully",
-            data={"overall": weekly_stats, "day_wise": daily_stats},
+            message="Fitness report fetched successfully",
+            data={"overall": weekly_report, "day_wise": daily_report},
         )
     except Exception as e:
         raise_http_exception(
@@ -119,9 +119,9 @@ async def get_fitness_week_stats(
 
 
 @router.get(
-    "/stats/month",
+    "/report/month",
 )
-async def get_fitness_month_stats(
+async def get_fitness_month_report(
     request: Request,
     year: int,
     month_no: int,
@@ -133,17 +133,17 @@ async def get_fitness_month_stats(
     try:
         start_date, end_date = get_month_start_end(year, month_no)
 
-        monthly_stats = fitness_report_service.fetch_monthly_report(
+        monthly_report = fitness_report_service.fetch_monthly_report(
             str(current_patient.patient_id), year, month_no
         )
 
-        daily_stats = fitness_report_service.fetch_daily_reports_in_range(
+        daily_report = fitness_report_service.fetch_daily_reports_in_range(
             str(current_patient.patient_id), start_date, end_date
         )
 
         return SuccessResponse(
-            message="Fitness stats fetched successfully",
-            data={"overall": monthly_stats, "day_wise": daily_stats},
+            message="Fitness report fetched successfully",
+            data={"overall": monthly_report, "day_wise": daily_report},
         )
     except Exception as e:
         raise_http_exception(

@@ -62,7 +62,7 @@ async def get_meals_api(
         )
 
 
-@router.get(path="/stats/day", response_model=SuccessResponse)
+@router.get(path="/report/day", response_model=SuccessResponse)
 async def get_meal_report_api(
     request: Request,
     date: date,

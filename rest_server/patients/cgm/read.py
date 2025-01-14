@@ -16,8 +16,8 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("/stats/day", response_model=SuccessResponse)
-async def get_fitness_day_stats(
+@router.get("/report/day", response_model=SuccessResponse)
+async def get_cgm_day_report(
     request: Request,
     date: date = Query(...),
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
@@ -34,7 +34,7 @@ async def get_fitness_day_stats(
         )
 
         return SuccessResponse(
-            message="Fitness stats fetched successfully",
+            message="Glucose report fetched successfully",
             data=glucose_stats["overall"],
         )
     except Exception as e:
