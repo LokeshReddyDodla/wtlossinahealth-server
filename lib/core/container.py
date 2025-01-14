@@ -51,9 +51,8 @@ container.register(
 # CacheStores
 for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
     container.register(
-        CacheStore,
+        namespace,
         lambda ns=namespace: CacheStore(namespace=ns),
-        key=namespace,
     )
 
 
