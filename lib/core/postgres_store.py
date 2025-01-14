@@ -14,11 +14,19 @@ if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
     raise ValueError("POSTGRES_URL must start with 'postgresql+asyncpg://'")
 
 # Create the SQLAlchemy engine
-engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=True)
+engine = create_async_engine(
+    SQLALCHEMY_DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    echo=False,
+)
 
 # Create a configured "Session" class
 AsyncSessionLocal = sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False, 
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
 )
 
 # Create a Base class for our models to inherit
