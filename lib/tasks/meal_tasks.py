@@ -24,8 +24,12 @@ def generate_daily_meal_report(
             MealReportService, container.resolve(MealReportService)
         )
 
-        report = async_to_sync(meal_stats_service.get_meal_report_by_date)(
-            patient_id, report_date
+        # ✅ Get the current running event loop
+        loop = asyncio.get_event_loop()
+
+        # Run the coroutine properly in the event loop
+        report = loop.run_until_complete(
+            meal_stats_service.get_meal_report_by_date(patient_id, report_date)
         )
 
         meal_report_service.save_report(
