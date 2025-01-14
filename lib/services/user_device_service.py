@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from lib.core.constants import ProfileType
 from lib.core.types import ProfileTypeLiteral
 from lib.models.user_device import UserDevice as UserDeviceModel
-from lib.schemas.user_device import UserDevice, UserDeviceCreate
+from lib.schemas.user_device import UserDeviceCreate
 
 
 class UserDeviceService:
@@ -18,14 +18,14 @@ class UserDeviceService:
 
     async def create_user_device(
         self, user_device_data: UserDeviceCreate
-    ) -> UserDevice:
+    ) -> UserDeviceModel:
         """Create a new user device record in the database."""
         try:
             new_device = UserDeviceModel(**user_device_data.dict())
             self.postgres_session.add(new_device)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(new_device)
-            return UserDevice.from_orm(new_device)
+            return new_device
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
             print(f"Failed to create user device: {str(e)}")
@@ -33,7 +33,7 @@ class UserDeviceService:
 
     async def get_user_devices(
         self, user_id: UUID, profile_type: Optional[str] = None
-    ) -> list[UserDevice]:
+    ) -> list[UserDeviceModel]:
         """Retrieve all devices associated with a user."""
         try:
             stmt = (
@@ -49,14 +49,14 @@ class UserDeviceService:
 
             result = await self.postgres_session.execute(stmt)
             devices = result.scalars().all()
-            return [UserDevice.model_validate(device) for device in devices]
+            return list(devices)
         except SQLAlchemyError as e:
             print(f"Failed to retrieve user devices: {str(e)}")
             raise
 
     async def update_user_device(
         self, device_id: UUID, user_device_data: dict
-    ) -> UserDevice:
+    ) -> UserDeviceModel:
         """Update an existing user device."""
         try:
             stmt = select(UserDeviceModel).where(
@@ -72,8 +72,7 @@ class UserDeviceService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(device)
-            print("==> device: ", device)
-            return UserDevice.model_validate(device)
+            return device
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
             print(f"Failed to update user device: {str(e)}")
@@ -105,7 +104,7 @@ class UserDeviceService:
         profile_type: ProfileTypeLiteral,
         device_type: str,
         platform_version: Optional[str] = None,
-    ) -> UserDevice:
+    ) -> UserDeviceModel:
         """Create or update a user device based on FCM token and user ID."""
         try:
             user_device_data = {
@@ -129,10 +128,10 @@ class UserDeviceService:
             )
 
             for device in existing_devices:
-                if device.fcm_token == fcm_token:
+                if device.fcm_token == fcm_token: # type: ignore
                     # Update the existing device if the FCM token matches
                     return await self.update_user_device(
-                        device_id=device.device_id,
+                        device_id=device.device_id, # type: ignore
                         user_device_data=user_device_data,
                     )
 
