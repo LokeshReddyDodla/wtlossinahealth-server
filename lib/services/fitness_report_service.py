@@ -18,7 +18,7 @@ class FitnessReportService:
     def __init__(self):
         self.mongo_client = MongoClient(str(MONGO_URL))
         self.db = self.mongo_client[str(MONGO_DB_NAME)]
-        self.fitness_report_collection = self.db["fitness_report"]
+        self.fitness_report_collection = self.db["fitness_reports"]
 
     def fetch_daily_reports_in_range(
         self, patient_id: str, from_date: date, to_date: date
@@ -119,14 +119,12 @@ class FitnessReportService:
 
             for report in reports:
                 unique_string = f"{report['patient_id']}_{report['report_type']}_{report['from_date']}_{report['to_date']}"
-                consistent_id = hashlib.sha256(
-                    unique_string.encode()
-                ).hexdigest()
+                report_id = hashlib.sha256(unique_string.encode()).hexdigest()
 
-                report["_id"] = consistent_id
+                report["_id"] = report_id
 
                 operations.append(
-                    ReplaceOne({"_id": consistent_id}, report, upsert=True)
+                    ReplaceOne({"_id": report_id}, report, upsert=True)
                 )
 
             # Perform bulk upsert
