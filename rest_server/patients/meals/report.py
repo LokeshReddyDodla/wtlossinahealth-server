@@ -1,39 +1,34 @@
-import traceback
-import uuid
-from datetime import datetime, timedelta
-from typing import Union
+from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_meal_stats_processor
+from lib.dependencies.service_dependencies import get_meal_report_service
 from lib.models.patient import Patient
-from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.services.meal_report_service import MealReportService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.response_models import SuccessResponse
 
 from .router import router
 
 
 @router.get("/report")
-async def get_meal_report(
+async def get_meal_reports(
     request: Request,
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
-    meal_stats_processor: MealStatsProcessor = Depends(
-        get_meal_stats_processor
-    ),
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        grouped_by_date = await meal_stats_processor.get_meal_stats_by_date(
+        meal_reports = meal_report_service.fetch_daily_reports_in_range(
             str(current_patient.patient_id), from_date, to_date
         )
 
-        return grouped_by_date
+        return SuccessResponse(
+            message="Meal reports fetched successfully",
+            data=meal_reports,
+        )
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:

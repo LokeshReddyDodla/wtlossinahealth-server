@@ -1,10 +1,9 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
 
 from dateutil.parser import parse as parse_date
-from sqlalchemy import case, func, literal_column, text
+from sqlalchemy import func
 from sqlalchemy.future import select
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import aliased
 
 from lib.models.patient_meal import (PatientFoodItem,
                                      PatientMacroNutritionalValue, PatientMeal,
@@ -13,32 +12,51 @@ from lib.models.patient_meal import (PatientFoodItem,
                                      PatientTotalMicroNutritionalValue)
 from lib.schemas.meal_stats import DailyMealStats
 from lib.schemas.patient_diet_plan import MealDistribution, PatientDietPlanBase
-from lib.utils.date.age_utils import calculate_age
 from lib.utils.diet_plan_calculator import DietPlanCalculator
-from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 
 
 class MealStatsProcessor:
     def __init__(
         self,
-        postgres_store,
+        postgres_session,
         clickhouse_store,
         glucose_stats_processor,
         patient_profile_service,
         patient_plan_service,
     ):
-        self.postgres_store = postgres_store
+        self.postgres_session = postgres_session
         self.clickhouse_store = clickhouse_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
         self.glucose_processor = glucose_stats_processor
 
-    async def get_meal_stats_by_date(
+    async def get_meal_report_by_date(self, patient_id: str, date: date):
+        diet_recommendations = await self.get_diet_recommendations(
+            patient_id, date
+        )
+
+        # Fetch average glucose for the single date
+        avg_glucose = GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
+            self.clickhouse_store, patient_id, date, date
+        ).get(date, 0.0)
+
+        query = self._build_meal_query(patient_id, date, date)
+        result = await self.postgres_session.execute(query)
+        row = result.first()
+
+        if not row:
+            return self._empty_daily_stats(
+                date, {date: avg_glucose}, diet_recommendations
+            )
+
+        return self._build_daily_stats(
+            row, {date: avg_glucose}, diet_recommendations, patient_id
+        )
+
+    async def get_meal_report_by_date_range(
         self, patient_id: str, from_date: datetime, to_date: datetime
     ):
-
-        # Fetch recommendations
         diet_recommendations = await self.get_diet_recommendations(
             patient_id, from_date
         )
@@ -50,7 +68,27 @@ class MealStatsProcessor:
             )
         )
 
-        # Aliases for related models
+        query = self._build_meal_query(patient_id, from_date, to_date)
+        result = await self.postgres_session.execute(query)
+        rows = result.all()
+
+        if not rows:
+            return [
+                self._empty_daily_stats(
+                    from_date, avg_glucose_by_date, diet_recommendations
+                )
+            ]
+
+        return [
+            self._build_daily_stats(
+                row, avg_glucose_by_date, diet_recommendations, patient_id
+            )
+            for row in rows
+        ]
+
+    def _build_meal_query(
+        self, patient_id: str, from_date: date, to_date: date
+    ):
         PatientFoodItemAlias = aliased(PatientFoodItem)
         PatientMacroNutritionalValueAlias = aliased(
             PatientMacroNutritionalValue
@@ -59,8 +97,7 @@ class MealStatsProcessor:
             PatientMicroNutritionalValue
         )
 
-        # Define the main query with helper functions
-        query = (
+        return (
             select(
                 PatientMeal.date,
                 func.count(PatientMeal.id).label("meal_count"),
@@ -89,35 +126,25 @@ class MealStatsProcessor:
             .order_by(PatientMeal.date)
         )
 
-        result = await self.postgres_store.execute(query)
-        rows = result.all()
-
-        if not rows:
-            return [
-                DailyMealStats(
-                    date=from_date,
-                    meal_count=0,
-                    meals=[],
-                    calories=0,
-                    proteins=0,
-                    carbohydrates=0,
-                    fats=0,
-                    fiber=0,
-                    calcium=0,
-                    iron=0,
-                    zinc=0,
-                    magnesium=0,
-                    avg_glucose=avg_glucose_by_date.get(from_date, 0.0),
-                    diet_recommendations=diet_recommendations,
-                )
-            ]
-
-        return [
-            self._build_daily_stats(
-                row, avg_glucose_by_date, diet_recommendations, patient_id
-            )
-            for row in rows
-        ]
+    def _empty_daily_stats(
+        self, date, avg_glucose_by_date, diet_recommendations
+    ):
+        return DailyMealStats(
+            date=date,
+            meal_count=0,
+            meals=[],
+            calories=0,
+            proteins=0,
+            carbohydrates=0,
+            fats=0,
+            fiber=0,
+            calcium=0,
+            iron=0,
+            zinc=0,
+            magnesium=0,
+            avg_glucose=avg_glucose_by_date.get(date, 0.0),
+            diet_recommendations=diet_recommendations,
+        )
 
     def _build_nutritional_aggregates(self, meal):
         """Helper function to build aggregate functions for nutritional values."""
@@ -260,7 +287,7 @@ class MealStatsProcessor:
         )
 
     async def get_diet_recommendations(
-        self, patient_id: str, query_date: datetime
+        self, patient_id: str, query_date: date
     ) -> PatientDietPlanBase:
         """Fetch diet recommendations from an active plan or calculate dynamically."""
         active_plan = await self.patient_plan_service.get_active_patient_plan(

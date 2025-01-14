@@ -1,8 +1,6 @@
-from fastapi import Depends, Query, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import cast
 
-from lib.dependencies.database import get_postgres_session
-from lib.models.patient import Patient
+from lib.core.container import container
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
@@ -14,6 +12,7 @@ from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import \
@@ -28,202 +27,132 @@ from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 
 
-async def get_user_device_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> UserDeviceService:
-    return UserDeviceService(postgres_session=session)
+async def get_user_device_service() -> UserDeviceService:
+    return cast(UserDeviceService, container.resolve(UserDeviceService))
 
 
 async def get_chat_messaging_service() -> ChatMessagingService:
-    return ChatMessagingService()
+    return cast(ChatMessagingService, container.resolve(ChatMessagingService))
 
 
 async def get_chat_notification_service() -> ChatNotificationService:
-    return ChatNotificationService()
+    return cast(
+        ChatNotificationService, container.resolve(ChatNotificationService)
+    )
 
 
 async def get_chat_management_service() -> ChatManagementService:
-    return ChatManagementService()
+    return cast(
+        ChatManagementService, container.resolve(ChatManagementService)
+    )
 
 
 async def get_ai_conversation_service() -> AiConversationService:
-    return AiConversationService()
-
-
-async def get_patient_profile_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    chat_notification_service=Depends(get_chat_notification_service),
-    chat_management_service=Depends(get_chat_management_service),
-) -> PatientProfileService:
-    return PatientProfileService(
-        postgres_session=session,
-        chat_notification_service=chat_notification_service,
-        chat_management_service=chat_management_service,
+    return cast(
+        AiConversationService, container.resolve(AiConversationService)
     )
 
 
-async def get_care_provider_profile_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    patient_service=Depends(get_patient_profile_service),
-    chat_management_service=Depends(get_chat_management_service),
-    chat_notification_service=Depends(get_chat_notification_service),
-) -> CareProviderProfileService:
-    return CareProviderProfileService(
-        postgres_session=session,
-        patient_service=patient_service,
-        chat_management_service=chat_management_service,
-        chat_notification_service=chat_notification_service,
+async def get_patient_profile_service() -> PatientProfileService:
+    return cast(
+        PatientProfileService, container.resolve(PatientProfileService)
     )
 
 
-async def get_health_facility_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> HealthFacilityService:
-    return HealthFacilityService(postgres_session=session)
-
-
-async def get_package_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    patient_service=Depends(get_patient_profile_service),
-    care_provider_service=Depends(get_care_provider_profile_service),
-    chat_management_service=Depends(get_chat_management_service),
-    chat_notification_service=Depends(get_chat_notification_service),
-) -> PackageService:
-    return PackageService(
-        postgres_session=session,
-        patient_service=patient_service,
-        care_provider_service=care_provider_service,
-        chat_management_service=chat_management_service,
-        chat_notification_service=chat_notification_service,
+async def get_care_provider_profile_service() -> CareProviderProfileService:
+    return cast(
+        CareProviderProfileService,
+        container.resolve(CareProviderProfileService),
     )
 
 
-async def get_patient_connected_app_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> PatientConnectedAppService:
-    return PatientConnectedAppService(postgres_session=session)
-
-
-async def get_patient_smbg_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-) -> PatientSmbgService:
-    return PatientSmbgService(
-        patient_profile_service=patient_profile_service,
-        postgres_session=session,
+async def get_health_facility_service() -> HealthFacilityService:
+    return cast(
+        HealthFacilityService,
+        container.resolve(HealthFacilityService),
     )
 
 
-async def get_patient_vital_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-) -> PatientVitalService:
-    return PatientVitalService(
-        patient_profile_service=patient_profile_service,
-        postgres_session=session,
+async def get_package_service() -> PackageService:
+    return cast(
+        PackageService,
+        container.resolve(PackageService),
     )
 
 
-async def get_meal_analysis_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> MealAnalysisService:
-    return MealAnalysisService(postgres_session=session)
-
-
-async def get_meal_service(
-    session: AsyncSession = Depends(get_postgres_session),
-    meal_analysis_service: MealAnalysisService = Depends(
-        get_meal_analysis_service
-    ),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-) -> MealService:
-    return MealService(
-        postgres_session=session,
-        meal_analysis_service=meal_analysis_service,
-        patient_profile_service=patient_profile_service,
+async def get_patient_connected_app_service() -> PatientConnectedAppService:
+    return cast(
+        PatientConnectedAppService,
+        container.resolve(PatientConnectedAppService),
     )
 
 
-async def get_patient_plan_service(
-    session: AsyncSession = Depends(get_postgres_session),
-) -> PatientPlanService:
-    return PatientPlanService(postgres_session=session)
-
-
-async def get_cgm_service(
-    request: Request,
-    session: AsyncSession = Depends(get_postgres_session),
-) -> CGMService:
-    clickhouse_store = request.state.context.clickhouse_store
-    return CGMService(
-        clickhouse_store=clickhouse_store, postgres_session=session
+async def get_patient_smbg_service() -> PatientSmbgService:
+    return cast(
+        PatientSmbgService,
+        container.resolve(PatientSmbgService),
     )
 
 
-async def get_fitness_stats_processor(
-    request: Request,
-) -> FitnessStatsProcessor:
-    clickhouse_store = request.state.context.clickhouse_store
-    return FitnessStatsProcessor(clickhouse_store)
-
-
-async def get_fitness_report_service(request: Request) -> FitnessReportService:
-    return FitnessReportService()
-
-
-async def get_glucose_stats_processor(
-    request: Request,
-    meal_service: MealService = Depends(get_meal_service),
-    fitness_stats_processor: FitnessStatsProcessor = Depends(
-        get_fitness_stats_processor
-    ),
-) -> GlucoseStatsProcessor:
-    clickhouse_store = request.state.context.clickhouse_store
-    return GlucoseStatsProcessor(
-        clickhouse_store=clickhouse_store,
-        meal_service=meal_service,
-        fitness_stats_processor=fitness_stats_processor,
+async def get_patient_vital_service() -> PatientVitalService:
+    return cast(
+        PatientVitalService,
+        container.resolve(PatientVitalService),
     )
 
 
-async def get_meal_stats_processor(
-    request: Request,
-    session: AsyncSession = Depends(get_postgres_session),
-    glucose_stats_processor: GlucoseStatsProcessor = Depends(
-        get_glucose_stats_processor
-    ),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-    patient_plan_service: PatientPlanService = Depends(
-        get_patient_plan_service
-    ),
-) -> MealStatsProcessor:
-    clickhouse_store = request.state.context.clickhouse_store
-    return MealStatsProcessor(
-        session,
-        clickhouse_store,
-        glucose_stats_processor,
-        patient_profile_service,
-        patient_plan_service,
+async def get_meal_analysis_service() -> MealAnalysisService:
+    return cast(
+        MealAnalysisService,
+        container.resolve(MealAnalysisService),
     )
 
 
-async def get_fitness_upload_service(
-    request: Request,
-    session: AsyncSession = Depends(get_postgres_session),
-) -> FitnessUploadService:
-    clickhouse_store = request.state.context.clickhouse_store
-    fitness_sync_store = request.app.state.fitness_sync_store
-
-    return FitnessUploadService(
-        clickhouse_store,
-        fitness_sync_store,
-        session,
+async def get_meal_service() -> MealService:
+    return cast(
+        MealService,
+        container.resolve(MealService),
     )
+
+
+async def get_patient_plan_service() -> PatientPlanService:
+    return cast(
+        PatientPlanService,
+        container.resolve(PatientPlanService),
+    )
+
+
+async def get_cgm_service() -> CGMService:
+    return cast(
+        CGMService,
+        container.resolve(CGMService),
+    )
+
+
+async def get_fitness_stats_processor() -> FitnessStatsProcessor:
+    return cast(
+        FitnessStatsProcessor,
+        container.resolve(FitnessStatsProcessor),
+    )
+
+
+async def get_fitness_report_service() -> FitnessReportService:
+    return cast(FitnessReportService, container.resolve(FitnessReportService))
+
+
+async def get_glucose_stats_processor() -> GlucoseStatsProcessor:
+    return cast(
+        GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
+    )
+
+
+async def get_meal_stats_processor() -> MealStatsProcessor:
+    return cast(MealStatsProcessor, container.resolve(MealStatsProcessor))
+
+
+async def get_meal_report_service() -> MealReportService:
+    return cast(MealReportService, container.resolve(MealReportService))
+
+
+async def get_fitness_upload_service() -> FitnessUploadService:
+    return cast(FitnessUploadService, container.resolve(FitnessUploadService))
