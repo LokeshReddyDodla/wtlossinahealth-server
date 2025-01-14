@@ -143,6 +143,15 @@ services:
     volumes:
       - redisinsight_data:/data
 
+  aihealth-flower:
+    container_name: aihealth-flower
+    image: mher/flower
+    command: flower --broker=${CELERY_BROKER_URL}
+    ports:
+      - "5555:5555"
+    depends_on:
+      - aihealth-redis
+
   mongo-express:
     image: mongo-express:latest
     container_name: mongo-express
