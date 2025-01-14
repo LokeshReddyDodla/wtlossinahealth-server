@@ -119,9 +119,6 @@ class PatientPlanService:
         self, patient_id: str, query_date: datetime_date
     ) -> Optional[PatientPlanModel]:
         try:
-            print("==> patient_id: ", patient_id)
-            print("==> query_date: ", query_date)
-
             stmt = (
                 select(PatientPlanModel)
                 .options(
