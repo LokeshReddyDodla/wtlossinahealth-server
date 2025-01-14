@@ -193,7 +193,7 @@ class MealAnalysisService:
         meal.analyzed_at = datetime.now()
 
         # Commit changes to the database
-        self.postgres_session.add(meal)
+        await self.postgres_session.merge(meal)
         await self.postgres_session.commit()
 
         return meal
