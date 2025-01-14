@@ -19,13 +19,13 @@ from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 class MealStatsProcessor:
     def __init__(
         self,
-        postgres_store,
+        postgres_session,
         clickhouse_store,
         glucose_stats_processor,
         patient_profile_service,
         patient_plan_service,
     ):
-        self.postgres_store = postgres_store
+        self.postgres_session = postgres_session
         self.clickhouse_store = clickhouse_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
@@ -42,7 +42,7 @@ class MealStatsProcessor:
         ).get(date, 0.0)
 
         query = self._build_meal_query(patient_id, date, date)
-        result = await self.postgres_store.execute(query)
+        result = await self.postgres_session.execute(query)
         row = result.first()
 
         if not row:
@@ -69,7 +69,7 @@ class MealStatsProcessor:
         )
 
         query = self._build_meal_query(patient_id, from_date, to_date)
-        result = await self.postgres_store.execute(query)
+        result = await self.postgres_session.execute(query)
         rows = result.all()
 
         if not rows:

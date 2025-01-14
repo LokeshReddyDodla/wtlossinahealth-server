@@ -1,13 +1,12 @@
 import json
-import uuid
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import status
 from markdownify import markdownify as md
 from sqlalchemy import asc, delete, desc
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -22,10 +21,10 @@ from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.tasks.meal_tasks import generate_daily_meal_report
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
-from rest_server.response_models import ErrorResponse
 
 
 class MealService:
@@ -169,6 +168,9 @@ class MealService:
             await self.postgres_session.commit()
             await self.postgres_session.refresh(meal)
 
+            # 🚀 Trigger Meal Report Generation after Upload
+            generate_daily_meal_report.delay(str(patient_id), meal.date)
+
             return meal
 
         except SQLAlchemyError as e:
@@ -254,6 +256,9 @@ class MealService:
                     api_type="openai",
                     api_endpoint="/patient/meals/analyze",
                 )
+
+            # 🚀 Trigger Meal Report Generation after Analysis
+            generate_daily_meal_report.delay(str(patient_id), meal.date)
 
             return updated_meal
         except json.JSONDecodeError as e:

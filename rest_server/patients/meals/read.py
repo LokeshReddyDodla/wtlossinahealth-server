@@ -1,26 +1,17 @@
-import traceback
-import uuid
-from datetime import date, datetime, time, timezone
-from typing import List, Optional, Union
+from datetime import date, datetime
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import asc, desc
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import Session, selectinload
+from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import (get_meal_service,
-                                                   get_meal_stats_processor)
+from lib.dependencies.service_dependencies import (get_meal_report_service,
+                                                   get_meal_service)
 from lib.models.patient import Patient
-from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
+from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.meals.processor import MealStatsProcessor
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 
@@ -72,26 +63,20 @@ async def get_meals_api(
 
 
 @router.get(path="/stats/day", response_model=SuccessResponse)
-async def get_meals_stats_api(
+async def get_meal_report_api(
     request: Request,
     date: date,
-    meal_stats_processor: MealStatsProcessor = Depends(
-        get_meal_stats_processor
-    ),
+    meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
-    """
-    Get Meal Stats API
-    """
     try:
-
-        meal_stats = await meal_stats_processor.get_meal_report_by_date(
+        meal_report = meal_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
 
         return SuccessResponse(
-            message="Meal stats fetched successfully",
-            data=meal_stats,
+            message="Meal report fetched successfully",
+            data=meal_report,
         )
 
     except HTTPException as http_exc:
