@@ -38,8 +38,8 @@ from lib.utils.meals.processor import MealStatsProcessor
 container = Container()
 
 # 🔹 Core Dependencies
-container.register(PostgresStore, PostgresStore)
-container.register(ClickHouseStore, ClickHouseStore)
+container.register(PostgresStore, PostgresStore, scope=Scope.singleton)
+container.register(ClickHouseStore, ClickHouseStore, scope=Scope.singleton)
 container.register(
     AsyncSession,
     factory=lambda: cast(
