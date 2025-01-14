@@ -45,15 +45,14 @@ container.register(
     factory=lambda: cast(
         PostgresStore, container.resolve(PostgresStore)
     ).session_local(),
-    scope=Scope.singleton,
+    scope=Scope.transient,
 )
 
 # CacheStores
 for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
     container.register(
-        CacheStore,
+        namespace,
         lambda ns=namespace: CacheStore(namespace=ns),
-        key=namespace,
     )
 
 
