@@ -72,7 +72,8 @@ class UserDeviceService:
 
             await self.postgres_session.commit()
             await self.postgres_session.refresh(device)
-            return UserDevice.from_orm(device)
+            print("==> device: ", device)
+            return UserDevice.model_validate(device)
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
             print(f"Failed to update user device: {str(e)}")
