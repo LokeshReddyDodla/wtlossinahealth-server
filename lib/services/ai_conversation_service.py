@@ -122,7 +122,7 @@ class AiConversationService:
             )
         )
 
-    def add_message_to_conversation(
+    async def add_message_to_conversation(
         self,
         patient_id: str,
         conversation_id: str,
@@ -145,19 +145,19 @@ class AiConversationService:
             reply_suggestions=reply_suggestions,
         ).model_dump()
 
-        result = self.ai_messages_collection.insert_one(message_data)
+        result = await self.ai_messages_collection.insert_one(message_data)
         message_data["_id"] = str(result.inserted_id)
         return message_data
 
-    def add_messages_to_conversation(
+    async def add_messages_to_conversation(
         self,
         messages: List[AiConversationMessageSchema],
     ):
         """Batch inserts multiple messages into a conversation."""
         message_data = [message.model_dump() for message in messages]
-        self.ai_messages_collection.insert_many(message_data)
+        await self.ai_messages_collection.insert_many(message_data)
 
-    def fetch_conversation_messages(
+    async def fetch_conversation_messages(
         self,
         conversation_id: str,
         return_raw: bool = False,
@@ -175,7 +175,7 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = self.ai_messages_collection.aggregate(pipeline)
+        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
             return list(messages_cursor)
@@ -191,7 +191,7 @@ class AiConversationService:
 
         return messages
 
-    def fetch_all_user_conversation_messages(
+    async def fetch_all_user_conversation_messages(
         self,
         patient_id: str,
         return_raw: bool = False,
@@ -209,7 +209,7 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = self.ai_messages_collection.aggregate(pipeline)
+        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
             return list(messages_cursor)
@@ -248,7 +248,7 @@ class AiConversationService:
         patient_profile_service: PatientProfileService,
         include_reply_suggestions: bool = True,
     ) -> Dict:
-        self.add_message_to_conversation(
+        await self.add_message_to_conversation(
             patient_id,
             conversation_id,
             conversation_type,
@@ -258,9 +258,11 @@ class AiConversationService:
 
         # Fetch all messages to provide context, inserting the system message at the start
         if conversation_id == f"{patient_id}-custom":
-            messages = self.fetch_all_user_conversation_messages(patient_id)
+            messages = await self.fetch_all_user_conversation_messages(
+                patient_id
+            )
         else:
-            messages = self.fetch_conversation_messages(conversation_id)
+            messages = await self.fetch_conversation_messages(conversation_id)
         messages.insert(0, self.system_message)
 
         # Fetch the patient profile and generate context message
@@ -278,7 +280,7 @@ class AiConversationService:
                 ai_response.content
             )
 
-        ai_message_data = self.add_message_to_conversation(
+        ai_message_data = await self.add_message_to_conversation(
             patient_id,
             conversation_id,
             conversation_type,
@@ -352,13 +354,13 @@ class AiConversationService:
 
         return health_tip
 
-    def delete_conversation_messages(
+    async def delete_conversation_messages(
         self,
         conversation_id: str,
     ):
         """Deletes all messages for a given conversation."""
         try:
-            delete_result = self.ai_messages_collection.delete_many(
+            delete_result = await self.ai_messages_collection.delete_many(
                 {"conversation_id": conversation_id}
             )
             return delete_result

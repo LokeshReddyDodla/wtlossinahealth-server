@@ -1,10 +1,9 @@
+import asyncio
 from datetime import datetime
 from typing import cast
 
 from celery import shared_task
 
-from lib.core.clickhouse_store import ClickHouseStore
-from lib.core.container import container
 from lib.core.types import FitnessReportTypeLiteral
 from lib.services.fitness_report_service import FitnessReportService
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
@@ -37,6 +36,8 @@ def generate_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
+        from lib.core.container import container
+
         fitness_stats_service = cast(
             FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
         )
@@ -84,8 +85,12 @@ def generate_fitness_report_for_month(
             ]
         )
 
+        async def save_fitness_report():
+            await fitness_report_service.save_reports_bulk(bulk_reports)
+
         # Save reports
-        fitness_report_service.save_reports_bulk(bulk_reports)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(save_fitness_report())
 
         print(
             f"Generated fitness report for {patient_id} from {start_date}-{end_date}"
@@ -104,6 +109,8 @@ def generate_fitness_report(
     report_type: FitnessReportTypeLiteral,
 ):
     try:
+        from lib.core.container import container
+
         fitness_stats_service = cast(
             FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
         )
@@ -140,7 +147,12 @@ def generate_fitness_report(
                 ]
             )
 
-        fitness_report_service.save_reports_bulk(bulk_reports)
+        async def save_fitness_report():
+            await fitness_report_service.save_reports_bulk(bulk_reports)
+
+        # Save reports
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(save_fitness_report())
 
         print(
             f"Generated {report_type} fitness report for {patient_id} from {start_date} to {end_date}"

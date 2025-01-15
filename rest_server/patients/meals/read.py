@@ -70,7 +70,7 @@ async def get_meal_report_api(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        meal_report = meal_report_service.fetch_daily_report(
+        meal_report = await meal_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
 

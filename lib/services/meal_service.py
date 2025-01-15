@@ -233,7 +233,7 @@ class MealService:
             )
 
             if re_analyze:
-                self.ai_conversation_service.delete_conversation_messages(
+                await self.ai_conversation_service.delete_conversation_messages(
                     conversation_id=meal_id
                 )
 
@@ -243,7 +243,7 @@ class MealService:
             )
 
             # Pass the message sequence to AiConversationService
-            self.ai_conversation_service.add_messages_to_conversation(
+            await self.ai_conversation_service.add_messages_to_conversation(
                 messages=message_sequence,
             )
 

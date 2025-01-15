@@ -12,11 +12,11 @@ class FitnessReportService:
     def __init__(self, fitness_report_collection):
         self.fitness_report_collection = fitness_report_collection
 
-    def fetch_daily_reports_in_range(
+    async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
         reports = list(
-            self.fitness_report_collection.find(
+            await self.fitness_report_collection.find(
                 {
                     "patient_id": patient_id,
                     "report_type": "daily",
@@ -29,11 +29,11 @@ class FitnessReportService:
 
         return reports
 
-    def fetch_daily_report(self, patient_id: str, date: date):
+    async def fetch_daily_report(self, patient_id: str, date: date):
         start_date = datetime.combine(date, time.min)
         end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
-        report = self.fitness_report_collection.find_one(
+        report = await self.fitness_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "daily",
@@ -49,12 +49,14 @@ class FitnessReportService:
 
         return report
 
-    def fetch_weekly_report(self, patient_id: str, year: int, week_no: int):
+    async def fetch_weekly_report(
+        self, patient_id: str, year: int, week_no: int
+    ):
         start_date, end_date = get_week_start_and_end_from_week_no(
             year, week_no
         )
 
-        report = self.fitness_report_collection.find_one(
+        report = await self.fitness_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "weekly",
@@ -70,10 +72,12 @@ class FitnessReportService:
 
         return report
 
-    def fetch_monthly_report(self, patient_id: str, year: int, month_no: int):
+    async def fetch_monthly_report(
+        self, patient_id: str, year: int, month_no: int
+    ):
         start_date, end_date = get_month_start_end(year, month_no)
 
-        report = self.fitness_report_collection.find_one(
+        report = await self.fitness_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "monthly",
@@ -105,7 +109,7 @@ class FitnessReportService:
             f"🚀 Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}"
         )
 
-    def save_reports_bulk(self, reports: list):
+    async def save_reports_bulk(self, reports: list):
         try:
             operations = []
 
@@ -120,7 +124,7 @@ class FitnessReportService:
                 )
 
             # Perform bulk upsert
-            self.fitness_report_collection.bulk_write(
+            await self.fitness_report_collection.bulk_write(
                 operations, ordered=False
             )
             print(f"Saved/Updated {len(reports)} reports successfully")

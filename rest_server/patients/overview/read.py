@@ -35,9 +35,11 @@ async def get_patient_overview_api(
         end_date = datetime.combine(date, time.max)  # End of the day
         patient_id = str(current_patient.patient_id)
 
-        meal_report = meal_report_service.fetch_daily_report(patient_id, date)
+        meal_report = await meal_report_service.fetch_daily_report(
+            patient_id, date
+        )
 
-        fitness_report = fitness_report_service.fetch_daily_report(
+        fitness_report = await fitness_report_service.fetch_daily_report(
             patient_id, date
         )
 

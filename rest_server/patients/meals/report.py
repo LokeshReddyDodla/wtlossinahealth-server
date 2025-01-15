@@ -21,7 +21,7 @@ async def get_meal_reports(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        meal_reports = meal_report_service.fetch_daily_reports_in_range(
+        meal_reports = await meal_report_service.fetch_daily_reports_in_range(
             str(current_patient.patient_id), start_date, end_date
         )
 
