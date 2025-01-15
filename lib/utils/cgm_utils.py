@@ -8,24 +8,20 @@ class CGMDataUtils:
         self.clickhouse_store = clickhouse_store
 
     async def is_data_available_and_continuous(
-        self, patient_id: str, start_date: datetime, end_date: datetime
+        self, patient_id: str, start_datetime: datetime, end_datetime: datetime
     ) -> bool:
-        from_date_date = start_date.date()
-        to_date_date = end_date.date()
+        start_date = start_datetime.date()
+        end_date = end_datetime.date()
 
         query = f"""
         SELECT count() as cnt, min(toDate(time)) as min_date, max(toDate(time)) as max_date
         FROM aihealth.cgm_data
-        WHERE patient_id = '{patient_id}' AND toDate(time) BETWEEN toDate('{from_date_date}') AND toDate('{to_date_date}')
+        WHERE patient_id = '{patient_id}' AND toDate(time) BETWEEN toDate('{start_date}') AND toDate('{end_date}')
         """
         result = self.clickhouse_store.query_data(query)
         if result and len(result) > 0:
             cnt, min_date, max_date = result[0]
-            if (
-                cnt > 0
-                and min_date <= from_date_date
-                and max_date >= to_date_date
-            ):
+            if cnt > 0 and min_date <= start_date and max_date >= end_date:
                 return True
         return False
 
