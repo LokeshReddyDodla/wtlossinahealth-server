@@ -20,7 +20,7 @@ async def get_ai_conversation_messages(
     current_user=Depends(get_current_user),
 ):
     try:
-        messages = ai_conversation_service.fetch_conversation_messages(
+        messages = await ai_conversation_service.fetch_conversation_messages(
             conversation_id, return_raw=True, for_frontend=True
         )
         encoded_messages = [jsonable_encoder(message) for message in messages]

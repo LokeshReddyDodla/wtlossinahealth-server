@@ -28,8 +28,8 @@ from .router import router
 async def get_patient_cgm_report(
     request: Request,
     patient_id: str = Query(...),
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
@@ -46,7 +46,7 @@ async def get_patient_cgm_report(
 
         # Check if data exists and is continuous within the provided date range
         if not await cgm_data_utils.is_data_available_and_continuous(
-            patient_id, from_date, to_date
+            patient_id, start_date, end_date
         ):
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -59,7 +59,7 @@ async def get_patient_cgm_report(
         )
 
         report = await glucose_stats_processor.generate_report(
-            patient_id, from_date, to_date
+            patient_id, start_date, end_date
         )
 
         return SuccessResponse(

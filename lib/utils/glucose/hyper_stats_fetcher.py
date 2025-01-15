@@ -7,7 +7,7 @@ class HyperStatsFetcher(GlucoseEventsProcessor):
         super().__init__(threshold=180)
 
     def fetch(
-        self, clickhouse_store, patient_id, from_date_str, to_date_str
+        self, clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> HyperStats:
         query = f"""
         SELECT
@@ -17,8 +17,8 @@ class HyperStatsFetcher(GlucoseEventsProcessor):
             aihealth.cgm_data
         WHERE
             patient_id = '{patient_id}'
-            AND time >= '{from_date_str}'
-            AND time <= '{to_date_str}'
+            AND time >= '{start_date_str}'
+            AND time <= '{end_date_str}'
         ORDER BY time
         """
         df = execute_query(clickhouse_store, query)

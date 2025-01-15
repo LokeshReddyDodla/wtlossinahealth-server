@@ -23,7 +23,7 @@ class PatientSmbgService:
         self.postgres_session = postgres_session
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            "smbg", model="gpt-4o-mini"
+            conversation_type="smbg", model="gpt-4o-mini"
         )
 
     async def get_patient_smbgs(

@@ -38,14 +38,14 @@ class MealService:
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            "meal", model="gpt-4o-mini"
+            conversation_type="meal", model="gpt-4o-mini"
         )
 
     async def fetch_meals(
         self,
         patient_id: str,
-        from_datetime: Optional[datetime] = None,
-        to_datetime: Optional[datetime] = None,
+        start_datetime: Optional[datetime] = None,
+        end_datetime: Optional[datetime] = None,
         source: Optional[str] = None,
         analyzed: Optional[str] = None,
         order_by: Optional[str] = "time",
@@ -72,20 +72,20 @@ class MealService:
                 )
             )
 
-            if from_datetime:
+            if start_datetime:
                 query = query.filter(
-                    (PatientMealModel.date > from_datetime.date())
+                    (PatientMealModel.date > start_datetime.date())
                     | (
-                        (PatientMealModel.date == from_datetime.date())
-                        & (PatientMealModel.time >= from_datetime.time())
+                        (PatientMealModel.date == start_datetime.date())
+                        & (PatientMealModel.time >= start_datetime.time())
                     )
                 )
-            if to_datetime:
+            if end_datetime:
                 query = query.filter(
-                    (PatientMealModel.date < to_datetime.date())
+                    (PatientMealModel.date < end_datetime.date())
                     | (
-                        (PatientMealModel.date == to_datetime.date())
-                        & (PatientMealModel.time <= to_datetime.time())
+                        (PatientMealModel.date == end_datetime.date())
+                        & (PatientMealModel.time <= end_datetime.time())
                     )
                 )
 
@@ -233,7 +233,7 @@ class MealService:
             )
 
             if re_analyze:
-                self.ai_conversation_service.delete_conversation_messages(
+                await self.ai_conversation_service.delete_conversation_messages(
                     conversation_id=meal_id
                 )
 
@@ -243,7 +243,7 @@ class MealService:
             )
 
             # Pass the message sequence to AiConversationService
-            self.ai_conversation_service.add_messages_to_conversation(
+            await self.ai_conversation_service.add_messages_to_conversation(
                 messages=message_sequence,
             )
 

@@ -25,8 +25,8 @@ from .router import router
 )
 async def get_fitness_stats(
     request: Request,
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
@@ -35,8 +35,8 @@ async def get_fitness_stats(
     try:
         report = fitness_processor.generate_report(
             str(current_patient.patient_id),
-            from_date,
-            to_date,
+            start_date,
+            end_date,
             include_overall=True,
             include_day_wise=True,
             include_week_wise=True,
@@ -65,11 +65,9 @@ async def get_fitness_day_report(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-
-        report = fitness_report_service.fetch_daily_report(
+        report = await fitness_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
-
         return SuccessResponse(
             message="Fitness report fetched successfully",
             data=jsonable_encoder(report),
@@ -98,12 +96,14 @@ async def get_fitness_week_report(
         start_date, end_date = get_week_start_and_end_from_week_no(
             year, week_no
         )
-        weekly_report = fitness_report_service.fetch_weekly_report(
+        weekly_report = await fitness_report_service.fetch_weekly_report(
             str(current_patient.patient_id), year, week_no
         )
 
-        daily_report = fitness_report_service.fetch_daily_reports_in_range(
-            str(current_patient.patient_id), start_date, end_date
+        daily_report = (
+            await fitness_report_service.fetch_daily_reports_in_range(
+                str(current_patient.patient_id), start_date, end_date
+            )
         )
 
         return SuccessResponse(
@@ -133,12 +133,14 @@ async def get_fitness_month_report(
     try:
         start_date, end_date = get_month_start_end(year, month_no)
 
-        monthly_report = fitness_report_service.fetch_monthly_report(
+        monthly_report = await fitness_report_service.fetch_monthly_report(
             str(current_patient.patient_id), year, month_no
         )
 
-        daily_report = fitness_report_service.fetch_daily_reports_in_range(
-            str(current_patient.patient_id), start_date, end_date
+        daily_report = (
+            await fitness_report_service.fetch_daily_reports_in_range(
+                str(current_patient.patient_id), start_date, end_date
+            )
         )
 
         return SuccessResponse(

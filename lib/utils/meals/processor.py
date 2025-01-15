@@ -55,27 +55,27 @@ class MealStatsProcessor:
         )
 
     async def get_meal_report_by_date_range(
-        self, patient_id: str, from_date: datetime, to_date: datetime
+        self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         diet_recommendations = await self.get_diet_recommendations(
-            patient_id, from_date
+            patient_id, start_date
         )
 
         # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
             GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
-                self.clickhouse_store, patient_id, from_date, to_date
+                self.clickhouse_store, patient_id, start_date, end_date
             )
         )
 
-        query = self._build_meal_query(patient_id, from_date, to_date)
+        query = self._build_meal_query(patient_id, start_date, end_date)
         result = await self.postgres_session.execute(query)
         rows = result.all()
 
         if not rows:
             return [
                 self._empty_daily_stats(
-                    from_date, avg_glucose_by_date, diet_recommendations
+                    start_date, avg_glucose_by_date, diet_recommendations
                 )
             ]
 
@@ -87,7 +87,7 @@ class MealStatsProcessor:
         ]
 
     def _build_meal_query(
-        self, patient_id: str, from_date: date, to_date: date
+        self, patient_id: str, start_date: date, end_date: date
     ):
         PatientFoodItemAlias = aliased(PatientFoodItem)
         PatientMacroNutritionalValueAlias = aliased(
@@ -119,8 +119,8 @@ class MealStatsProcessor:
             )
             .where(
                 PatientMeal.patient_id == patient_id,
-                PatientMeal.date >= from_date,
-                PatientMeal.date <= to_date,
+                PatientMeal.date >= start_date,
+                PatientMeal.date <= end_date,
             )
             .group_by(PatientMeal.date)
             .order_by(PatientMeal.date)

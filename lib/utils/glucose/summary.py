@@ -15,10 +15,10 @@ from lib.utils.validation_utils import validate_float
 class GlucoseSummaryStatsFetcher:
     @staticmethod
     def fetch(
-        clickhouse_store, patient_id, from_date_str, to_date_str
+        clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> GlucoseSummaryStats:
         query = generate_glucose_stats_query(
-            patient_id, from_date_str, to_date_str
+            patient_id, start_date_str, end_date_str
         )
         result = clickhouse_store.client.execute(query)
 
@@ -54,7 +54,7 @@ class GlucoseSummaryStatsFetcher:
         standard_deviation = validate_float(glucose_stddev)
 
         agp_points = GlucoseSummaryStatsFetcher.fetch_agp_points(
-            clickhouse_store, patient_id, from_date_str, to_date_str
+            clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
         return GlucoseSummaryStats(
@@ -74,12 +74,12 @@ class GlucoseSummaryStatsFetcher:
 
     @staticmethod
     def fetch_daily_average_glucose(
-        clickhouse_store, patient_id, from_date, to_date
+        clickhouse_store, patient_id, start_date, end_date
     ):
         query = generate_avg_glucose_reading_by_date_query(
             patient_id,
-            from_date.strftime("%Y-%m-%dT00:00:00"),
-            to_date.strftime("%Y-%m-%dT23:59:59"),
+            start_date.strftime("%Y-%m-%dT00:00:00"),
+            end_date.strftime("%Y-%m-%dT23:59:59"),
         )
         results = clickhouse_store.client.execute(query)
         # Convert results into a dictionary mapping date to average glucose
@@ -87,10 +87,10 @@ class GlucoseSummaryStatsFetcher:
 
     @staticmethod
     def fetch_agp_points(
-        clickhouse_store, patient_id, from_date_str, to_date_str
+        clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> List[AGPPoint]:
         query = generate_agp_points_query(
-            patient_id, from_date_str, to_date_str
+            patient_id, start_date_str, end_date_str
         )
         agp_result = clickhouse_store.client.execute(query)
         agp_points = [

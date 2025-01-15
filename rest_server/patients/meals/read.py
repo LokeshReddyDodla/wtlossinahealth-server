@@ -22,8 +22,8 @@ from .router import router
 )
 async def get_meals_api(
     request: Request,
-    from_datetime: Optional[datetime] = Query(None),
-    to_datetime: Optional[datetime] = Query(None),
+    start_datetime: Optional[datetime] = Query(None),
+    end_datetime: Optional[datetime] = Query(None),
     source: Optional[str] = Query(None),
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     order_by: Optional[str] = Query("time"),
@@ -39,8 +39,8 @@ async def get_meals_api(
 
         meals = await meal_service.fetch_meals(
             patient_id=str(current_patient.patient_id),
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
             source=source,
             analyzed=analyzed,
             order_by=order_by,
@@ -70,7 +70,7 @@ async def get_meal_report_api(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        meal_report = meal_report_service.fetch_daily_report(
+        meal_report = await meal_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
 

@@ -8,10 +8,10 @@ class CGMDataUtils:
         self.clickhouse_store = clickhouse_store
 
     async def is_data_available_and_continuous(
-        self, patient_id: str, from_date: datetime, to_date: datetime
+        self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> bool:
-        from_date_date = from_date.date()
-        to_date_date = to_date.date()
+        from_date_date = start_date.date()
+        to_date_date = end_date.date()
 
         query = f"""
         SELECT count() as cnt, min(toDate(time)) as min_date, max(toDate(time)) as max_date

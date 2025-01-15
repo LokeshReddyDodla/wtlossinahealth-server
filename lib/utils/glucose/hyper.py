@@ -1,11 +1,13 @@
 from typing import Any, Dict
+
 import pandas as pd
+
 from lib.schemas.glucose_stats import HyperEvent
 from lib.utils.glucose.events import execute_query
 
 
 def fetch_hyper_stats(
-    clickhouse_store, patient_id, from_date_str, to_date_str
+    clickhouse_store, patient_id, start_date_str, end_date_str
 ):
     query = f"""
     SELECT
@@ -15,8 +17,8 @@ def fetch_hyper_stats(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date_str}'
-        AND time <= '{to_date_str}'
+        AND time >= '{start_date_str}'
+        AND time <= '{end_date_str}'
     ORDER BY time
     """
 

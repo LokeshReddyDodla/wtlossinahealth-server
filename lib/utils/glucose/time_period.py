@@ -10,10 +10,10 @@ from lib.utils.glucose.queries import (generate_glucose_readings_by_date_query,
 class GlucoseTimePeriodStatsFetcher:
     @staticmethod
     def fetch(
-        clickhouse_store, patient_id, from_date_str, to_date_str
+        clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> Dict[str, TimePeriodStats]:
         query = generate_time_period_stats_query(
-            patient_id, from_date_str, to_date_str
+            patient_id, start_date_str, end_date_str
         )
         results = clickhouse_store.client.execute(query)
 

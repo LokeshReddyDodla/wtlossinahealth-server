@@ -1,15 +1,20 @@
+import os
 from typing import cast
 
+from dotenv import load_dotenv
 from punq import Container, Scope
+from pymongo import MongoClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.cache_store import CacheStore
 from lib.core.clickhouse_store import ClickHouseStore
 # Services
+from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
+from lib.services.cgm_report_service import CGMReportService
 from lib.services.cgm_service import CGMService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -47,6 +52,50 @@ container.register(
     ).session_local(),
     scope=Scope.transient,
 )
+container.register(MongoStore, MongoStore, scope=Scope.singleton)
+container.register(
+    "cgm_report_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("cgm_reports"),
+    scope=Scope.singleton,
+)
+container.register(
+    "fitness_report_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("fitness_reports"),
+    scope=Scope.singleton,
+)
+container.register(
+    "meal_report_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("meal_reports"),
+    scope=Scope.singleton,
+)
+container.register(
+    "ai_conversation_messages_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("ai_conversation_messages"),
+    scope=Scope.singleton,
+)
+container.register(
+    "chat_messages_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("chat_messages"),
+    scope=Scope.singleton,
+)
+container.register(
+    "chats_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("chats"),
+    scope=Scope.singleton,
+)
+
 
 # CacheStores
 for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
@@ -56,13 +105,12 @@ for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
     )
 
 
-# 🔹 Basic Services
+# 🔹 Chat Services
 container.register(ChatMessagingService, ChatMessagingService)
 container.register(ChatNotificationService, ChatNotificationService)
 container.register(ChatParticipantService, ChatParticipantService)
 container.register(ChatManagementService, ChatManagementService)
-container.register(AiConversationService, AiConversationService)
-container.register(MealReportService, MealReportService)
+
 
 # 🔹 Patient Profile Service
 container.register(
@@ -196,7 +244,30 @@ container.register(
 )
 
 # 🔹 Fitness Report Service
-container.register(FitnessReportService, FitnessReportService)
+container.register(
+    FitnessReportService,
+    lambda: FitnessReportService(
+        fitness_report_collection=container.resolve(
+            "fitness_report_collection"
+        )
+    ),
+)
+
+# 🔹 Meal Report Service
+container.register(
+    MealReportService,
+    lambda: MealReportService(
+        meal_report_collection=container.resolve("meal_report_collection")
+    ),
+)
+
+# 🔹 CGM Report Service
+container.register(
+    CGMReportService,
+    lambda: CGMReportService(
+        cgm_report_collection=container.resolve("cgm_report_collection")
+    ),
+)
 
 # 🔹 Fitness Upload Service
 container.register(
@@ -245,3 +316,6 @@ container.register(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
     ),
 )
+
+# 🔹 Ai Conversation Service
+container.register(AiConversationService, AiConversationService)

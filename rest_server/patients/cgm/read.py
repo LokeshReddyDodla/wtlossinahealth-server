@@ -26,11 +26,11 @@ async def get_cgm_day_report(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        from_date = datetime.combine(date, time.min)  # Start of the day
-        to_date = datetime.combine(date, time.max)  # End of the day
+        start_date = datetime.combine(date, time.min)  # Start of the day
+        end_date = datetime.combine(date, time.max)  # End of the day
 
         glucose_stats = await glucose_stats_processor.generate_report(
-            str(current_patient.patient_id), from_date, to_date
+            str(current_patient.patient_id), start_date, end_date
         )
 
         return SuccessResponse(

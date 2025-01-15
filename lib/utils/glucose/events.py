@@ -1,11 +1,9 @@
 from typing import Any, Dict
+
 import pandas as pd
-from lib.schemas.glucose_stats import (
-    HyperEvent,
-    HypoEvent,
-    RapidDropStats,
-    RapidSpikeStats,
-)
+
+from lib.schemas.glucose_stats import (HyperEvent, HypoEvent, RapidDropStats,
+                                       RapidSpikeStats)
 
 
 def execute_query(clickhouse_store, query: str) -> pd.DataFrame:

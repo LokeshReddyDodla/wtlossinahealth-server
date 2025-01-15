@@ -1,4 +1,4 @@
-def generate_agp_points_query(patient_id, from_date, to_date) -> str:
+def generate_agp_points_query(patient_id, start_date, end_date) -> str:
     return f"""
     SELECT
         formatDateTime(time, '%H:00') AS hour,
@@ -11,15 +11,15 @@ def generate_agp_points_query(patient_id, from_date, to_date) -> str:
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     GROUP BY hour
     ORDER BY hour
     """
 
 
 def generate_glucose_level_query(
-    patient_id, from_date, to_date, range_condition, alias
+    patient_id, start_date, end_date, range_condition, alias
 ):
     return f"""
     SELECT
@@ -30,12 +30,12 @@ def generate_glucose_level_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     """
 
 
-def generate_glucose_stats_query(patient_id, from_date, to_date):
+def generate_glucose_stats_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         AVG(glucose_level) AS average_glucose,
@@ -48,12 +48,12 @@ def generate_glucose_stats_query(patient_id, from_date, to_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     """
 
 
-def generate_time_period_stats_query(patient_id, from_date, to_date):
+def generate_time_period_stats_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         CASE
@@ -86,14 +86,14 @@ def generate_time_period_stats_query(patient_id, from_date, to_date):
     WHERE
         patient_id = '{patient_id}'
         AND time IS NOT NULL
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     GROUP BY time_period, from_time, to_time
     ORDER BY time_period
     """
 
 
-def generate_glucose_readings_by_date_query(patient_id, from_date, to_date):
+def generate_glucose_readings_by_date_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         time AS Device_Timestamp,
@@ -102,14 +102,14 @@ def generate_glucose_readings_by_date_query(patient_id, from_date, to_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     ORDER BY time
     """
 
 
 def generate_avg_glucose_readings_by_hour_query(
-    patient_id, from_date, to_date
+    patient_id, start_date, end_date
 ):
     return f"""
     SELECT
@@ -119,14 +119,14 @@ def generate_avg_glucose_readings_by_hour_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     GROUP BY hour
     ORDER BY hour
     """
 
 
-def generate_avg_glucose_reading_by_date_query(patient_id, from_date, to_date):
+def generate_avg_glucose_reading_by_date_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         toDate(time) AS date,
@@ -135,8 +135,8 @@ def generate_avg_glucose_reading_by_date_query(patient_id, from_date, to_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
-        AND time >= '{from_date}'
-        AND time <= '{to_date}'
+        AND time >= '{start_date}'
+        AND time <= '{end_date}'
     GROUP BY date
     ORDER BY date;
     """

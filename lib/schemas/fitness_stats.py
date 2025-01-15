@@ -49,5 +49,5 @@ class FitnessStats(BaseModel):
     peak_activity_time: Optional[FitnessPeakActivityTime] = None
     inactive_periods: Optional[List[FitnessInactivePeriod]] = None
     hourly_stats: Optional[List[FitnessHourlyStats]] = None
-    from_date: datetime
-    to_date: datetime
+    start_date: datetime
+    end_date: datetime

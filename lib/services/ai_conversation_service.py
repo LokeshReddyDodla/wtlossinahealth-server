@@ -2,12 +2,10 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from decouple import config
-from fastapi import HTTPException, status
+from fastapi import status
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr, ValidationError
-from pymongo import MongoClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
@@ -20,9 +18,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
-MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
-MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
-
 
 class AiConversationService:
     def __init__(
@@ -30,11 +25,12 @@ class AiConversationService:
         conversation_type: AiConversationTypeLiteral = "other",
         model: OpenAIModelLiteral = "gpt-4o",
     ):
+        from lib.core.container import container
 
+        self.ai_messages_collection: Any = container.resolve(
+            "ai_conversation_messages_collection"
+        )
         self.current_model: OpenAIModelLiteral = model
-        self.mongo_client = MongoClient(str(MONGO_URL))
-        self.db = self.mongo_client[str(MONGO_DB_NAME)]
-        self.messages_collection = self.db["ai_conversation_messages"]
 
         # Initialize ChatOpenAI with the specified model
         self.chat_model = ChatOpenAI(
@@ -126,7 +122,7 @@ class AiConversationService:
             )
         )
 
-    def add_message_to_conversation(
+    async def add_message_to_conversation(
         self,
         patient_id: str,
         conversation_id: str,
@@ -149,19 +145,19 @@ class AiConversationService:
             reply_suggestions=reply_suggestions,
         ).model_dump()
 
-        result = self.messages_collection.insert_one(message_data)
+        result = await self.ai_messages_collection.insert_one(message_data)
         message_data["_id"] = str(result.inserted_id)
         return message_data
 
-    def add_messages_to_conversation(
+    async def add_messages_to_conversation(
         self,
         messages: List[AiConversationMessageSchema],
     ):
         """Batch inserts multiple messages into a conversation."""
         message_data = [message.model_dump() for message in messages]
-        self.messages_collection.insert_many(message_data)
+        await self.ai_messages_collection.insert_many(message_data)
 
-    def fetch_conversation_messages(
+    async def fetch_conversation_messages(
         self,
         conversation_id: str,
         return_raw: bool = False,
@@ -179,7 +175,7 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = self.messages_collection.aggregate(pipeline)
+        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
             return list(messages_cursor)
@@ -195,7 +191,7 @@ class AiConversationService:
 
         return messages
 
-    def fetch_all_user_conversation_messages(
+    async def fetch_all_user_conversation_messages(
         self,
         patient_id: str,
         return_raw: bool = False,
@@ -213,7 +209,7 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = self.messages_collection.aggregate(pipeline)
+        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
             return list(messages_cursor)
@@ -252,7 +248,7 @@ class AiConversationService:
         patient_profile_service: PatientProfileService,
         include_reply_suggestions: bool = True,
     ) -> Dict:
-        self.add_message_to_conversation(
+        await self.add_message_to_conversation(
             patient_id,
             conversation_id,
             conversation_type,
@@ -262,9 +258,11 @@ class AiConversationService:
 
         # Fetch all messages to provide context, inserting the system message at the start
         if conversation_id == f"{patient_id}-custom":
-            messages = self.fetch_all_user_conversation_messages(patient_id)
+            messages = await self.fetch_all_user_conversation_messages(
+                patient_id
+            )
         else:
-            messages = self.fetch_conversation_messages(conversation_id)
+            messages = await self.fetch_conversation_messages(conversation_id)
         messages.insert(0, self.system_message)
 
         # Fetch the patient profile and generate context message
@@ -282,7 +280,7 @@ class AiConversationService:
                 ai_response.content
             )
 
-        ai_message_data = self.add_message_to_conversation(
+        ai_message_data = await self.add_message_to_conversation(
             patient_id,
             conversation_id,
             conversation_type,
@@ -356,14 +354,13 @@ class AiConversationService:
 
         return health_tip
 
-    def delete_conversation_messages(
+    async def delete_conversation_messages(
         self,
         conversation_id: str,
     ):
         """Deletes all messages for a given conversation."""
         try:
-
-            delete_result = self.messages_collection.delete_many(
+            delete_result = await self.ai_messages_collection.delete_many(
                 {"conversation_id": conversation_id}
             )
             return delete_result

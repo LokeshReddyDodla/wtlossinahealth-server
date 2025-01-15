@@ -115,8 +115,8 @@ class TimePeriodStats(BaseModel):
 
 
 class GlucoseLevelStats(BaseModel):
-    from_date: datetime
-    to_date: datetime
+    start_date: datetime
+    end_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
     meals: Optional[List[PatientMeal]] = None
     glucose_summary_stats: GlucoseSummaryStats

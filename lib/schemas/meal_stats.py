@@ -33,8 +33,8 @@ class DailyMealStats(NutritionStats):
 
 class WeeklyMealStats(NutritionStats):
     week_number: int
-    from_date: datetime
-    to_date: datetime
+    start_date: datetime
+    end_date: datetime
     daily_stats: List[DailyMealStats]
 
     class Config:
@@ -43,8 +43,8 @@ class WeeklyMealStats(NutritionStats):
 
 class MonthlyMealStats(NutritionStats):
     month: str
-    from_date: datetime
-    to_date: datetime
+    start_date: datetime
+    end_date: datetime
     daily_stats: List[DailyMealStats]
     weekly_stats: List[WeeklyMealStats]
 
@@ -53,8 +53,8 @@ class MonthlyMealStats(NutritionStats):
 
 
 class MealSummaryStats(NutritionStats):
-    from_date: datetime
-    to_date: datetime
+    start_date: datetime
+    end_date: datetime
 
     class Config:
         from_attributes = True
