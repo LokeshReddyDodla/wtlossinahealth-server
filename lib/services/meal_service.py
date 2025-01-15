@@ -44,8 +44,8 @@ class MealService:
     async def fetch_meals(
         self,
         patient_id: str,
-        from_datetime: Optional[datetime] = None,
-        to_datetime: Optional[datetime] = None,
+        start_datetime: Optional[datetime] = None,
+        end_datetime: Optional[datetime] = None,
         source: Optional[str] = None,
         analyzed: Optional[str] = None,
         order_by: Optional[str] = "time",
@@ -72,20 +72,20 @@ class MealService:
                 )
             )
 
-            if from_datetime:
+            if start_datetime:
                 query = query.filter(
-                    (PatientMealModel.date > from_datetime.date())
+                    (PatientMealModel.date > start_datetime.date())
                     | (
-                        (PatientMealModel.date == from_datetime.date())
-                        & (PatientMealModel.time >= from_datetime.time())
+                        (PatientMealModel.date == start_datetime.date())
+                        & (PatientMealModel.time >= start_datetime.time())
                     )
                 )
-            if to_datetime:
+            if end_datetime:
                 query = query.filter(
-                    (PatientMealModel.date < to_datetime.date())
+                    (PatientMealModel.date < end_datetime.date())
                     | (
-                        (PatientMealModel.date == to_datetime.date())
-                        & (PatientMealModel.time <= to_datetime.time())
+                        (PatientMealModel.date == end_datetime.date())
+                        & (PatientMealModel.time <= end_datetime.time())
                     )
                 )
 

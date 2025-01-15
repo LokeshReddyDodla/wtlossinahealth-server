@@ -1,8 +1,10 @@
 from datetime import datetime
+from typing import cast
 
 from celery import shared_task
 
 from lib.core.clickhouse_store import ClickHouseStore
+from lib.core.container import container
 from lib.core.types import FitnessReportTypeLiteral
 from lib.services.fitness_report_service import FitnessReportService
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
@@ -11,10 +13,10 @@ from lib.utils.fitness.processor import FitnessStatsProcessor
 
 @shared_task
 def generate_fitness_reports_for_patient(
-    patient_id: str, from_date: datetime, to_date: datetime
+    patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
-        months_between = get_months_between_dates(from_date, to_date)
+        months_between = get_months_between_dates(start_date, end_date)
 
         for year, month in reversed(months_between):
             start_date, end_date = get_month_start_end(year, month)
@@ -35,8 +37,12 @@ def generate_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
-        fitness_stats_service = FitnessStatsProcessor(ClickHouseStore())
-        fitness_report_service = FitnessReportService()
+        fitness_stats_service = cast(
+            FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
+        )
+        fitness_report_service = cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        )
 
         # Generate report for the specific month
         report = fitness_stats_service.generate_report(
@@ -98,8 +104,12 @@ def generate_fitness_report(
     report_type: FitnessReportTypeLiteral,
 ):
     try:
-        fitness_stats_service = FitnessStatsProcessor(ClickHouseStore())
-        fitness_report_service = FitnessReportService()
+        fitness_stats_service = cast(
+            FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
+        )
+        fitness_report_service = cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        )
 
         report = fitness_stats_service.generate_report(
             patient_id,

@@ -16,8 +16,8 @@ class DayWisePeriod:
             days.append(
                 {
                     "date": current_date.strftime("%Y-%m-%d"),
-                    "from_date": current_date,
-                    "to_date": current_date.replace(
+                    "start_date": current_date,
+                    "end_date": current_date.replace(
                         hour=23, minute=59, second=59, microsecond=0
                     ),
                 }
@@ -50,8 +50,8 @@ class WeekWisePeriod:
             weeks.append(
                 {
                     "week_no": week_no,
-                    "from_date": current_date,
-                    "to_date": week_end_date,
+                    "start_date": current_date,
+                    "end_date": week_end_date,
                 }
             )
 
@@ -63,4 +63,4 @@ class WeekWisePeriod:
 
 class OverallPeriod:
     def __init__(self, start_date: datetime, end_date: datetime):
-        self.periods = [{"from_date": start_date, "to_date": end_date}]
+        self.periods = [{"start_date": start_date, "end_date": end_date}]

@@ -8,41 +8,41 @@ from lib.utils.validation_utils import validate_float
 class GlucoseRangeStatsFetcher:
     @staticmethod
     def fetch(
-        clickhouse_store, patient_id, from_date_str, to_date_str
+        clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> GlucoseRangeStats:
         queries = {
             "below_54": generate_glucose_level_query(
                 patient_id,
-                from_date_str,
-                to_date_str,
+                start_date_str,
+                end_date_str,
                 "glucose_level < 54",
                 "below_54",
             ),
             "below_70_above_54": generate_glucose_level_query(
                 patient_id,
-                from_date_str,
-                to_date_str,
+                start_date_str,
+                end_date_str,
                 "glucose_level < 70 AND glucose_level >= 54",
                 "below_70_above_54",
             ),
             "in_target_70_180": generate_glucose_level_query(
                 patient_id,
-                from_date_str,
-                to_date_str,
+                start_date_str,
+                end_date_str,
                 "glucose_level >= 70 AND glucose_level <= 180",
                 "in_target_70_180",
             ),
             "above_180_below_250": generate_glucose_level_query(
                 patient_id,
-                from_date_str,
-                to_date_str,
+                start_date_str,
+                end_date_str,
                 "glucose_level > 180 AND glucose_level < 250",
                 "above_180_below_250",
             ),
             "above_250": generate_glucose_level_query(
                 patient_id,
-                from_date_str,
-                to_date_str,
+                start_date_str,
+                end_date_str,
                 "glucose_level >= 250",
                 "above_250",
             ),

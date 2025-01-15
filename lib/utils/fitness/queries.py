@@ -1,5 +1,5 @@
 def generate_summary_stats_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
     SELECT
@@ -10,13 +10,13 @@ def generate_summary_stats_query(
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{from_date}'
-        AND date_to <= '{to_date}'
+        AND date_from >= '{start_date}'
+        AND date_to <= '{end_date}'
     """
 
 
 def generate_hourly_stats_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
    WITH
@@ -42,8 +42,8 @@ def generate_hourly_stats_query(
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= '{from_date}'
-            AND date_to <= '{to_date}'
+            AND date_from >= '{start_date}'
+            AND date_to <= '{end_date}'
     ) AS activity_data
     ON hours.hour = activity_data.activity_hour
     GROUP BY
@@ -54,7 +54,7 @@ def generate_hourly_stats_query(
 
 
 def generate_activity_distribution_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
     SELECT
@@ -71,8 +71,8 @@ def generate_activity_distribution_query(
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{from_date}'
-        AND date_to <= '{to_date}'
+        AND date_from >= '{start_date}'
+        AND date_to <= '{end_date}'
     GROUP BY
         time_of_day
     ORDER BY
@@ -86,7 +86,7 @@ def generate_activity_distribution_query(
 
 
 def generate_peak_activity_time_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
     SELECT
@@ -102,8 +102,8 @@ def generate_peak_activity_time_query(
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= '{from_date}'
-            AND date_to <= '{to_date}'
+            AND date_from >= '{start_date}'
+            AND date_to <= '{end_date}'
         GROUP BY
             hour
     ) AS hourly_data
@@ -114,7 +114,7 @@ def generate_peak_activity_time_query(
 
 
 def generate_inactive_periods_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
     SELECT
@@ -131,8 +131,8 @@ def generate_inactive_periods_query(
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{from_date}')
-            AND date_to <= toDateTime('{to_date}')
+            AND date_from >= toDateTime('{start_date}')
+            AND date_to <= toDateTime('{end_date}')
     ) AS t1
     JOIN (
         SELECT
@@ -144,8 +144,8 @@ def generate_inactive_periods_query(
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{from_date}')
-            AND date_to <= toDateTime('{to_date}')
+            AND date_from >= toDateTime('{start_date}')
+            AND date_to <= toDateTime('{end_date}')
     ) AS t2
     ON t1.rn = t2.rn - 1
     WHERE
@@ -156,7 +156,7 @@ def generate_inactive_periods_query(
 
 
 def generate_average_active_session_duration_query(
-    patient_id: str, from_date: str, to_date: str
+    patient_id: str, start_date: str, end_date: str
 ) -> str:
     return f"""
     SELECT
@@ -165,8 +165,8 @@ def generate_average_active_session_duration_query(
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{from_date}'
-        AND date_to <= '{to_date}'
+        AND date_from >= '{start_date}'
+        AND date_to <= '{end_date}'
         AND type = 'ACTIVE_ENERGY_BURNED'
     """
 

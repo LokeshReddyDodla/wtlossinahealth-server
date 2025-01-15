@@ -31,8 +31,8 @@ async def get_patient_overview_api(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        from_date = datetime.combine(date, time.min)  # Start of the day
-        to_date = datetime.combine(date, time.max)  # End of the day
+        start_date = datetime.combine(date, time.min)  # Start of the day
+        end_date = datetime.combine(date, time.max)  # End of the day
         patient_id = str(current_patient.patient_id)
 
         meal_report = meal_report_service.fetch_daily_report(patient_id, date)
@@ -42,7 +42,7 @@ async def get_patient_overview_api(
         )
 
         glucose_report = await glucose_stats_processor.generate_report(
-            patient_id, from_date, to_date
+            patient_id, start_date, end_date
         )
 
         return SuccessResponse(

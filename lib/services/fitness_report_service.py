@@ -13,15 +13,15 @@ class FitnessReportService:
         self.fitness_report_collection = fitness_report_collection
 
     def fetch_daily_reports_in_range(
-        self, patient_id: str, from_date: date, to_date: date
+        self, patient_id: str, start_date: date, end_date: date
     ):
         reports = list(
             self.fitness_report_collection.find(
                 {
                     "patient_id": patient_id,
                     "report_type": "daily",
-                    "from_date": {"$gte": from_date},
-                    "to_date": {"$lte": to_date},
+                    "start_date": {"$gte": start_date},
+                    "end_date": {"$lte": end_date},
                 },
                 {"_id": 0},
             )
@@ -30,21 +30,21 @@ class FitnessReportService:
         return reports
 
     def fetch_daily_report(self, patient_id: str, date: date):
-        from_date = datetime.combine(date, time.min)
-        to_date = datetime.combine(date, time.max).replace(microsecond=0)
+        start_date = datetime.combine(date, time.min)
+        end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
         report = self.fitness_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "daily",
-                "from_date": from_date,
-                "to_date": to_date,
+                "start_date": start_date,
+                "end_date": end_date,
             },
             {"_id": 0},
         )
         if not report:
             self._trigger_report_generation(
-                patient_id, from_date, to_date, "daily"
+                patient_id, start_date, end_date, "daily"
             )
 
         return report
@@ -58,8 +58,8 @@ class FitnessReportService:
             {
                 "patient_id": patient_id,
                 "report_type": "weekly",
-                "from_date": start_date,
-                "to_date": end_date,
+                "start_date": start_date,
+                "end_date": end_date,
             },
             {"_id": 0},
         )
@@ -77,8 +77,8 @@ class FitnessReportService:
             {
                 "patient_id": patient_id,
                 "report_type": "monthly",
-                "from_date": start_date,
-                "to_date": end_date,
+                "start_date": start_date,
+                "end_date": end_date,
             },
             {"_id": 0},
         )
@@ -110,7 +110,7 @@ class FitnessReportService:
             operations = []
 
             for report in reports:
-                unique_string = f"{report['patient_id']}_{report['report_type']}_{report['from_date']}_{report['to_date']}"
+                unique_string = f"{report['patient_id']}_{report['report_type']}_{report['start_date']}_{report['end_date']}"
                 report_id = hashlib.sha256(unique_string.encode()).hexdigest()
 
                 report["_id"] = report_id

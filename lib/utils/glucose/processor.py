@@ -30,11 +30,11 @@ class GlucoseStatsProcessor:
     def fetch_glucose_readings_by_date(
         self,
         patient_id: str,
-        from_date_str: str,
-        to_date_str: str,
+        start_date_str: str,
+        end_date_str: str,
     ) -> List[GlucoseReading]:
         query = generate_glucose_readings_by_date_query(
-            patient_id, from_date_str, to_date_str
+            patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
         if not data:
@@ -47,10 +47,10 @@ class GlucoseStatsProcessor:
         return readings
 
     def fetch_avg_glucose_readings_by_hour(
-        self, patient_id: str, from_date_str: str, to_date_str: str
+        self, patient_id: str, start_date_str: str, end_date_str: str
     ) -> List[GlucoseReading]:
         query = generate_avg_glucose_readings_by_hour_query(
-            patient_id, from_date_str, to_date_str
+            patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
         if not data:
@@ -85,26 +85,26 @@ class GlucoseStatsProcessor:
     async def generate_report(
         self,
         patient_id: str,
-        from_date: datetime,
-        to_date: datetime,
+        start_date: datetime,
+        end_date: datetime,
     ) -> Dict[str, Any]:
         stats = {}
 
         # Overall Stats
         stats["overall"] = await self._process_period(
             patient_id,
-            from_date,
-            to_date,
+            start_date,
+            end_date,
         )
 
         # Day-wise Stats
-        day_periods = DayWisePeriod(from_date, to_date).periods
+        day_periods = DayWisePeriod(start_date, end_date).periods
         stats["day_wise"] = await self._process_multiple_periods(
             patient_id, day_periods, include_readings=True, include_meals=True
         )
 
         # # Week-wise Stats
-        week_periods = WeekWisePeriod(from_date, to_date).periods
+        week_periods = WeekWisePeriod(start_date, end_date).periods
         stats["week_wise"] = await self._process_multiple_periods(
             patient_id,
             week_periods,
@@ -115,52 +115,52 @@ class GlucoseStatsProcessor:
     async def _process_period(
         self,
         patient_id: str,
-        from_date: datetime,
-        to_date: datetime,
+        start_date: datetime,
+        end_date: datetime,
         include_readings: bool = False,
         include_meals: bool = False,
     ) -> GlucoseLevelStats:
-        from_date_str = from_date.strftime("%Y-%m-%dT%H:%M:%S")
-        to_date_str = to_date.strftime("%Y-%m-%dT%H:%M:%S")
+        start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
+        end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
         glucose_summary_stats = GlucoseSummaryStatsFetcher.fetch(
-            self.clickhouse_store, patient_id, from_date_str, to_date_str
+            self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         glucose_range_stats = GlucoseRangeStatsFetcher.fetch(
-            self.clickhouse_store, patient_id, from_date_str, to_date_str
+            self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         hyper_stats = HyperStatsFetcher().fetch(
-            self.clickhouse_store, patient_id, from_date_str, to_date_str
+            self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         hypo_stats = HypoStatsFetcher().fetch(
-            self.clickhouse_store, patient_id, from_date_str, to_date_str
+            self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         time_period_stats = GlucoseTimePeriodStatsFetcher.fetch(
-            self.clickhouse_store, patient_id, from_date_str, to_date_str
+            self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
         fitness_report = self.fitness_stats_processor.generate_report(
-            patient_id, from_date, to_date, include_overall=True
+            patient_id, start_date, end_date, include_overall=True
         )["overall"]
 
         glucose_readings = None
         if include_readings:
             glucose_readings = self.fetch_glucose_readings_by_date(
-                patient_id, from_date_str, to_date_str
+                patient_id, start_date_str, end_date_str
             )
 
         meals = None
         if include_meals:
             meals = await self.meal_service.fetch_meals(
                 patient_id=patient_id,
-                from_datetime=from_date,
-                to_datetime=to_date,
+                start_datetime=start_date,
+                end_datetime=end_date,
             )
             meals = [PatientMealSchema.from_orm(meal) for meal in meals]
 
         return GlucoseLevelStats(
-            from_date=from_date,
-            to_date=to_date,
+            start_date=start_date,
+            end_date=end_date,
             glucose_readings=glucose_readings,
             glucose_summary_stats=glucose_summary_stats,
             glucose_range_stats=glucose_range_stats,
@@ -183,8 +183,8 @@ class GlucoseStatsProcessor:
             stats.append(
                 await self._process_period(
                     patient_id,
-                    period["from_date"],
-                    period["to_date"],
+                    period["start_date"],
+                    period["end_date"],
                     include_readings=include_readings,
                     include_meals=include_meals,
                 )

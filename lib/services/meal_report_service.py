@@ -7,15 +7,15 @@ class MealReportService:
         self.meal_report_collection = meal_report_collection
 
     def fetch_daily_reports_in_range(
-        self, patient_id: str, from_date: date, to_date: date
+        self, patient_id: str, start_date: date, end_date: date
     ):
         reports = list(
             self.meal_report_collection.find(
                 {
                     "patient_id": patient_id,
                     "report_type": "daily",
-                    "date": {"$gte": from_date.isoformat()},
-                    "date": {"$lte": to_date.isoformat()},
+                    "date": {"$gte": start_date.isoformat()},
+                    "date": {"$lte": end_date.isoformat()},
                 },
                 {"_id": 0},
             )

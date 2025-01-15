@@ -13,8 +13,8 @@ def split_into_days(
     while current_date <= end_date:
         days.append(
             {
-                "from_date": current_date,
-                "to_date": current_date + timedelta(days=1),
+                "start_date": current_date,
+                "end_date": current_date + timedelta(days=1),
             }
         )
         current_date += timedelta(days=1)
@@ -30,7 +30,7 @@ def split_into_weeks(
         week_end_date = current_date + timedelta(days=6)
         if week_end_date > end_date:
             week_end_date = end_date
-        weeks.append({"from_date": current_date, "to_date": week_end_date})
+        weeks.append({"start_date": current_date, "end_date": week_end_date})
         current_date += timedelta(days=7)
     return weeks
 
@@ -53,7 +53,7 @@ def split_into_months(
         if month_end_date > end_date:
             month_end_date = end_date
 
-        months.append({"from_date": current_date, "to_date": month_end_date})
+        months.append({"start_date": current_date, "end_date": month_end_date})
 
         # Move to the first day of the next month
         next_month = current_date.month + 1 if current_date.month < 12 else 1
@@ -102,14 +102,14 @@ def get_month_start_end(year: int, month_no: int):
 
 
 def get_months_between_dates(
-    from_date: datetime, to_date: datetime
+    start_date: datetime, end_date: datetime
 ) -> List[tuple]:
-    if from_date > to_date:
-        from_date, to_date = to_date, from_date
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
 
-    # Start from the month and year of from_date
-    start_year, start_month = from_date.year, from_date.month
-    end_year, end_month = to_date.year, to_date.month
+    # Start from the month and year of start_date
+    start_year, start_month = start_date.year, start_date.month
+    end_year, end_month = end_date.year, end_date.month
 
     months = []
     for year in range(start_year, end_year + 1):

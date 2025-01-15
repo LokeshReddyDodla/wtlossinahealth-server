@@ -25,8 +25,8 @@ from .router import router
 )
 async def get_fitness_stats(
     request: Request,
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
     fitness_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
@@ -35,8 +35,8 @@ async def get_fitness_stats(
     try:
         report = fitness_processor.generate_report(
             str(current_patient.patient_id),
-            from_date,
-            to_date,
+            start_date,
+            end_date,
             include_overall=True,
             include_day_wise=True,
             include_week_wise=True,

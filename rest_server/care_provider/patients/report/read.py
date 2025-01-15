@@ -29,8 +29,8 @@ from .router import router
 async def fetch_patient_cgm_report(
     request: Request,
     patient_id: str = Query(...),
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
         get_glucose_stats_processor
     ),
@@ -49,7 +49,7 @@ async def fetch_patient_cgm_report(
 
         # Check if data exists and is continuous within the provided date range
         if not await cgm_data_utils.is_data_available_and_continuous(
-            patient_id, from_date, to_date
+            patient_id, start_date, end_date
         ):
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -62,7 +62,7 @@ async def fetch_patient_cgm_report(
         )
 
         report = await glucose_stats_processor.generate_report(
-            patient_id, from_date, to_date
+            patient_id, start_date, end_date
         )
 
         return SuccessResponse(
@@ -93,8 +93,8 @@ async def fetch_patient_cgm_report(
 async def fetch_patient_fitness_report(
     request: Request,
     patient_id: str = Query(...),
-    from_date: datetime = Query(...),
-    to_date: datetime = Query(...),
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
     fitness_stats_processor: FitnessStatsProcessor = Depends(
         get_fitness_stats_processor
     ),
@@ -115,8 +115,8 @@ async def fetch_patient_fitness_report(
 
         report = fitness_stats_processor.generate_report(
             patient_id,
-            from_date,
-            to_date,
+            start_date,
+            end_date,
             include_overall=True,
             include_week_wise=True,
             include_day_wise=True,

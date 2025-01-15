@@ -15,14 +15,14 @@ from .router import router
 @router.get("/report")
 async def get_meal_reports(
     request: Request,
-    from_date: date = Query(...),
-    to_date: date = Query(...),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         meal_reports = meal_report_service.fetch_daily_reports_in_range(
-            str(current_patient.patient_id), from_date, to_date
+            str(current_patient.patient_id), start_date, end_date
         )
 
         return SuccessResponse(
