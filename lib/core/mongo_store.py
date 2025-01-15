@@ -1,11 +1,14 @@
+import os
 from typing import List, Optional
 
 from decouple import config
+from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # Read MongoDB URL and credentials from env
-MONGO_URL = config("MONGO_URL", default="mongodb://localhost:27017")
-MONGO_DB_NAME = config("MONGO_DB_NAME", default="aihealth")
+load_dotenv()
+MONGO_URL = os.getenv("MONGO_URL", default="mongodb://localhost:27017")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", default="aihealth")
 
 
 class MongoStore:
@@ -14,6 +17,9 @@ class MongoStore:
             str(MONGO_URL),
         )
         self.db = self.client[str(MONGO_DB_NAME)]
+
+    def get_collection(self, collection_name: str):
+        return self.db[collection_name]
 
     async def insert_document(self, collection_name: str, document: dict):
         collection = self.db[collection_name]

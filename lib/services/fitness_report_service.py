@@ -1,24 +1,16 @@
 import hashlib
-import os
 from datetime import date, datetime, time
 
-from dotenv import load_dotenv
-from pymongo import MongoClient, ReplaceOne
+from pymongo import ReplaceOne
 
 from lib.core.types import FitnessReportTypeLiteral
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_and_end_from_week_no)
 
-load_dotenv()
-MONGO_URL = os.getenv("MONGO_URL")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
-
 
 class FitnessReportService:
-    def __init__(self):
-        self.mongo_client = MongoClient(str(MONGO_URL))
-        self.db = self.mongo_client[str(MONGO_DB_NAME)]
-        self.fitness_report_collection = self.db["fitness_reports"]
+    def __init__(self, fitness_report_collection):
+        self.fitness_report_collection = fitness_report_collection
 
     def fetch_daily_reports_in_range(
         self, patient_id: str, from_date: date, to_date: date

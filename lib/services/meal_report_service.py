@@ -1,20 +1,10 @@
 import hashlib
-import os
-from datetime import date, datetime, time
-
-from dotenv import load_dotenv
-from pymongo import MongoClient, ReplaceOne
-
-load_dotenv()
-MONGO_URL = os.getenv("MONGO_URL")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
+from datetime import date
 
 
 class MealReportService:
-    def __init__(self):
-        self.mongo_client = MongoClient(str(MONGO_URL))
-        self.db = self.mongo_client[str(MONGO_DB_NAME)]
-        self.meal_report_collection = self.db["meal_reports"]
+    def __init__(self, meal_report_collection):
+        self.meal_report_collection = meal_report_collection
 
     def fetch_daily_reports_in_range(
         self, patient_id: str, from_date: date, to_date: date

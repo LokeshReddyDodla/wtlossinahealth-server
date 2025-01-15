@@ -38,7 +38,7 @@ class MealService:
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            "meal", model="gpt-4o-mini"
+            conversation_type="meal", model="gpt-4o-mini"
         )
 
     async def fetch_meals(
