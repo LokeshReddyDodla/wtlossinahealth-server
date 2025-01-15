@@ -175,13 +175,13 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
+        messages_cursor = self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
-            return list(messages_cursor)
+            return await messages_cursor.to_list(length=None)
 
         messages = []
-        for message in messages_cursor:
+        async for message in messages_cursor:
             if message["role"] == "system":
                 messages.append(SystemMessage(content=message["content"]))
             elif message["role"] == "human":
@@ -209,13 +209,13 @@ class AiConversationService:
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 
-        messages_cursor = await self.ai_messages_collection.aggregate(pipeline)
+        messages_cursor = self.ai_messages_collection.aggregate(pipeline)
 
         if return_raw:
-            return list(messages_cursor)
+            return await messages_cursor.to_list(length=None)
 
         messages = []
-        for message in messages_cursor:
+        async for message in messages_cursor:
             if message["role"] == "system":
                 messages.append(SystemMessage(content=message["content"]))
             elif message["role"] == "human":
