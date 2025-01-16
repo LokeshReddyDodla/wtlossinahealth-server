@@ -41,10 +41,10 @@ class ClickHouseStore:
             source_platform String,
             unit String,
             value Float64,
-            date_from DateTime,
-            date_to DateTime
+            start_datetime DateTime,
+            end_datetime DateTime
         ) ENGINE = MergeTree()
-        ORDER BY (patient_id, date_from);
+        ORDER BY (patient_id, start_datetime);
         """
         self.client.execute(create_table_query)
 
@@ -86,14 +86,14 @@ class ClickHouseStore:
             query = f"""
             ALTER TABLE {table_name} DELETE 
             WHERE patient_id = '{patient_id}' 
-            AND date_from BETWEEN '{start_time}' AND '{end_time}' 
+            AND start_datetime BETWEEN '{start_time}' AND '{end_time}' 
             AND source_name = '{source_name}'
             """
         else:
             query = f"""
             ALTER TABLE {table_name} DELETE 
             WHERE patient_id = '{patient_id}' 
-            AND date_from BETWEEN '{start_time}' AND '{end_time}' 
+            AND start_datetime BETWEEN '{start_time}' AND '{end_time}' 
             AND source_name != 'manual'
             """
         self.client.execute(query)

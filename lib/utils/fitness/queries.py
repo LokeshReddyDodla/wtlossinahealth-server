@@ -1,22 +1,22 @@
 def generate_summary_stats_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
     SELECT
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS total_steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS total_active_energy,
-        SUM(dateDiff('minute', date_from, date_to)) AS total_active_duration
+        SUM(dateDiff('minute', start_datetime, end_datetime)) AS total_active_duration
     FROM
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{start_date}'
-        AND date_to <= '{end_date}'
+        AND start_datetime >= '{start_datetime}'
+        AND end_datetime <= '{end_datetime}'
     """
 
 
 def generate_hourly_stats_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
    WITH
@@ -28,22 +28,22 @@ def generate_hourly_stats_query(
         hours.hour,
         COALESCE(SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END), 0) AS steps,
         COALESCE(SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END), 0) AS active_energy,
-        COALESCE(SUM(dateDiff('minute', date_from, date_to)), 0) AS active_duration
+        COALESCE(SUM(dateDiff('minute', start_datetime, end_datetime)), 0) AS active_duration
     FROM
         hours
     LEFT JOIN (
         SELECT
-            toHour(date_from) AS activity_hour,
+            toHour(start_datetime) AS activity_hour,
             type,
             value,
-            date_from,
-            date_to
+            start_datetime,
+            end_datetime
         FROM
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= '{start_date}'
-            AND date_to <= '{end_date}'
+            AND start_datetime >= '{start_datetime}'
+            AND end_datetime <= '{end_datetime}'
     ) AS activity_data
     ON hours.hour = activity_data.activity_hour
     GROUP BY
@@ -54,25 +54,25 @@ def generate_hourly_stats_query(
 
 
 def generate_activity_distribution_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
     SELECT
         CASE
-            WHEN hour(date_from) BETWEEN 6 AND 12 THEN 'Morning'
-            WHEN hour(date_from) BETWEEN 12 AND 18 THEN 'Afternoon'
-            WHEN hour(date_from) BETWEEN 18 AND 24 THEN 'Evening'
+            WHEN hour(start_datetime) BETWEEN 6 AND 12 THEN 'Morning'
+            WHEN hour(start_datetime) BETWEEN 12 AND 18 THEN 'Afternoon'
+            WHEN hour(start_datetime) BETWEEN 18 AND 24 THEN 'Evening'
             ELSE 'Night'
         END AS time_of_day,
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS steps,
         SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS active_energy,
-        SUM(dateDiff('minute', date_from, date_to)) AS active_duration
+        SUM(dateDiff('minute', start_datetime, end_datetime)) AS active_duration
     FROM
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{start_date}'
-        AND date_to <= '{end_date}'
+        AND start_datetime >= '{start_datetime}'
+        AND end_datetime <= '{end_datetime}'
     GROUP BY
         time_of_day
     ORDER BY
@@ -86,7 +86,7 @@ def generate_activity_distribution_query(
 
 
 def generate_peak_activity_time_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
     SELECT
@@ -95,15 +95,15 @@ def generate_peak_activity_time_query(
         max_active_energy
     FROM (
         SELECT
-            formatDateTime(date_from, '%Y-%m-%d %H:00:00') AS hour,
+            formatDateTime(start_datetime, '%Y-%m-%d %H:00:00') AS hour,
             SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS max_steps,
             SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS max_active_energy
         FROM
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= '{start_date}'
-            AND date_to <= '{end_date}'
+            AND start_datetime >= '{start_datetime}'
+            AND end_datetime <= '{end_datetime}'
         GROUP BY
             hour
     ) AS hourly_data
@@ -114,59 +114,59 @@ def generate_peak_activity_time_query(
 
 
 def generate_inactive_periods_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
     SELECT
-        t1.date_to AS start_time,
-        t2.date_from AS end_time,
-        dateDiff('minute', t1.date_to, t2.date_from) AS inactive_duration
+        t1.end_datetime AS start_time,
+        t2.start_datetime AS end_time,
+        dateDiff('minute', t1.end_datetime, t2.start_datetime) AS inactive_duration
     FROM (
         SELECT
-            date_from,
-            date_to,
+            start_datetime,
+            end_datetime,
             type AS preceding_activity, -- Capture preceding activity type
-            toInt64(row_number() OVER (ORDER BY date_from)) AS rn
+            toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{start_date}')
-            AND date_to <= toDateTime('{end_date}')
+            AND start_datetime >= toDateTime('{start_datetime}')
+            AND end_datetime <= toDateTime('{end_datetime}')
     ) AS t1
     JOIN (
         SELECT
-            date_from,
-            date_to,
+            start_datetime,
+            end_datetime,
             type AS following_activity, -- Capture following activity type
-            toInt64(row_number() OVER (ORDER BY date_from)) AS rn
+            toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
             aihealth.fitness_data
         WHERE
             patient_id = '{patient_id}'
-            AND date_from >= toDateTime('{start_date}')
-            AND date_to <= toDateTime('{end_date}')
+            AND start_datetime >= toDateTime('{start_datetime}')
+            AND end_datetime <= toDateTime('{end_datetime}')
     ) AS t2
     ON t1.rn = t2.rn - 1
     WHERE
-        dateDiff('minute', t1.date_to, t2.date_from) > 60
+        dateDiff('minute', t1.end_datetime, t2.start_datetime) > 60
     ORDER BY
         inactive_duration DESC
     """
 
 
 def generate_average_active_session_duration_query(
-    patient_id: str, start_date: str, end_date: str
+    patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
     return f"""
     SELECT
-        AVG(COALESCE(dateDiff('minute', date_from, date_to), 0)) AS average_active_session_duration
+        AVG(COALESCE(dateDiff('minute', start_datetime, end_datetime), 0)) AS average_active_session_duration
     FROM
         aihealth.fitness_data
     WHERE
         patient_id = '{patient_id}'
-        AND date_from >= '{start_date}'
-        AND date_to <= '{end_date}'
+        AND start_datetime >= '{start_datetime}'
+        AND end_datetime <= '{end_datetime}'
         AND type = 'ACTIVE_ENERGY_BURNED'
     """
 
@@ -176,8 +176,8 @@ def generate_average_active_session_duration_query(
 # ) -> str:
 #     return f"""
 #     SELECT
-#         toDate(min(date_from)) AS earliest_date,
-#         toDate(max(date_to)) AS latest_date
+#         toDate(min(start_datetime)) AS earliest_date,
+#         toDate(max(end_datetime)) AS latest_date
 #     FROM
 #         aihealth.fitness_data
 #     WHERE
@@ -188,7 +188,7 @@ def generate_average_active_session_duration_query(
 # def generate_all_available_dates(patient_id: str) -> str:
 #     return f"""
 #     SELECT
-#         DISTINCT toDate(date_from) AS date
+#         DISTINCT toDate(start_datetime) AS date
 #     FROM
 #         aihealth.fitness_data
 #     WHERE
@@ -201,9 +201,9 @@ def generate_average_active_session_duration_query(
 # def generate_all_available_weeks(patient_id: str) -> str:
 #     return f"""
 #     SELECT
-#         toWeek(date_from, 3) AS week_number,
-#         toDate(min(date_from)) AS start_date,
-#         toDate(max(date_to)) AS end_date
+#         toWeek(start_datetime, 3) AS week_number,
+#         toDate(min(start_datetime)) AS start_datetime,
+#         toDate(max(end_datetime)) AS end_datetime
 #     FROM
 #         aihealth.fitness_data
 #     WHERE
@@ -218,9 +218,9 @@ def generate_average_active_session_duration_query(
 # def generate_all_available_months(patient_id: str) -> str:
 #     return f"""
 #     SELECT
-#         toMonth(date_from) AS month_number,
-#         toDate(min(date_from)) AS start_date,
-#         toDate(max(date_to)) AS end_date
+#         toMonth(start_datetime) AS month_number,
+#         toDate(min(start_datetime)) AS start_datetime,
+#         toDate(max(end_datetime)) AS end_datetime
 #     FROM
 #         aihealth.fitness_data
 #     WHERE
