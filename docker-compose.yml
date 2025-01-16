@@ -70,7 +70,7 @@ services:
 
   aihealth-postgres:
     container_name: aihealth-postgres
-    image: postgres:alpine
+    image: postgres:16.4-alpine
     restart: no
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
