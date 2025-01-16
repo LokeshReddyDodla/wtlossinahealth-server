@@ -8,17 +8,17 @@ from rest_server.response_models import SuccessResponse
 
 class FitnessDataPoint(BaseModel):
     type: str
-    sourceName: str
-    sourcePlatform: str
+    source_name: str
+    source_platform: str
     unit: str
     value: float
-    dateFrom: str
-    dateTo: str
+    start_datetime: str
+    end_datetime: str
 
 
 class FitnessDataRequest(BaseModel):
-    dateFrom: datetime
-    dateTo: datetime
+    start_datetime: datetime
+    end_datetime: datetime
     steps: List[FitnessDataPoint]
     active_energy_burned: List[FitnessDataPoint]
     blood_glucose: List[FitnessDataPoint]

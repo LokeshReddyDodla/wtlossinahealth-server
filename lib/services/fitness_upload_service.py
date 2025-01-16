@@ -28,52 +28,56 @@ class FitnessUploadService:
     async def process_fitness_data(
         self, patient_id: str, fitness_data: FitnessDataRequest
     ) -> datetime:
-        date_from, date_to = (
-            fitness_data.dateFrom,
-            fitness_data.dateTo,
+        start_datetime, end_datetime = (
+            fitness_data.start_datetime,
+            fitness_data.end_datetime,
         )
 
-        await self.delete_existing_data(patient_id, date_from, date_to)
+        await self.delete_existing_data(
+            patient_id, start_datetime, end_datetime
+        )
         await self.insert_new_data(patient_id, fitness_data)
-        await self.update_last_sync(patient_id, date_to)
+        await self.update_last_sync(patient_id, end_datetime)
 
         # Commit the session to save all changes
         await self.postgres_session.commit()
 
         # Trigger report generation asynchronously
         generate_fitness_reports_for_patient.delay(
-            patient_id, date_from, date_to
+            patient_id, start_datetime, end_datetime
         )
 
-        return date_to
+        return end_datetime
 
     async def delete_existing_data(
         self,
         patient_id: str,
-        date_from: datetime,
-        date_to: datetime,
+        start_datetime: datetime,
+        end_datetime: datetime,
         source_name: Optional[str] = None,
     ):
         # Delete data from ClickHouse
         self.clickhouse_store.delete_existing_fitness_data(
             "aihealth.fitness_data",
             patient_id,
-            date_from.strftime("%Y-%m-%d %H:%M:%S"),
-            date_to.strftime("%Y-%m-%d %H:%M:%S"),
+            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
             source_name,
         )
 
         smbg_query = delete(PatientSMBG).where(
             PatientSMBG.patient_id == patient_id,
-            PatientSMBG.reading_time.between(date_from, date_to),
+            PatientSMBG.reading_time.between(start_datetime, end_datetime),
         )
         vital_query = delete(PatientVital).where(
             PatientVital.patient_id == patient_id,
-            PatientVital.test_time.between(date_from, date_to),
+            PatientVital.test_time.between(start_datetime, end_datetime),
         )
         sleep_query = delete(PatientSleep).where(
             PatientSleep.patient_id == patient_id,
-            PatientSleep.sleep_start_time.between(date_from, date_to),
+            PatientSleep.sleep_start_time.between(
+                start_datetime, end_datetime
+            ),
         )
 
         # If a specific source_name is provided, filter by source_name
@@ -110,14 +114,14 @@ class FitnessUploadService:
             {
                 "patient_id": patient_id,
                 "type": item.type,
-                "source_name": item.sourceName,
-                "source_platform": item.sourcePlatform,
+                "source_name": item.source_name,
+                "source_platform": item.source_platform,
                 "unit": item.unit,
                 "value": float(item.value),
-                "date_from": parse(item.dateFrom)
+                "start_datetime": parse(item.start_datetime)
                 .replace(tzinfo=None)
                 .strftime("%Y-%m-%dT%H:%M:%S"),
-                "date_to": parse(item.dateTo)
+                "end_datetime": parse(item.end_datetime)
                 .replace(tzinfo=None)
                 .strftime("%Y-%m-%dT%H:%M:%S"),
             }
@@ -131,9 +135,11 @@ class FitnessUploadService:
                 patient_id=patient_id,
                 diastolic_bp=diastolic_item.value,
                 systolic_bp=systolic_item.value,
-                test_time=parse(diastolic_item.dateFrom).replace(tzinfo=None),
-                source_name=diastolic_item.sourceName,
-                source_platform=diastolic_item.sourcePlatform,
+                test_time=parse(diastolic_item.start_datetime).replace(
+                    tzinfo=None
+                ),
+                source_name=diastolic_item.source_name,
+                source_platform=diastolic_item.source_platform,
             )
             for diastolic_item, systolic_item in zip(
                 fitness_data.blood_pressure_diastolic,
@@ -146,9 +152,9 @@ class FitnessUploadService:
                 PatientVital(
                     patient_id=patient_id,
                     heart_rate=item.value,
-                    test_time=parse(item.dateFrom).replace(tzinfo=None),
-                    source_name=item.sourceName,
-                    source_platform=item.sourcePlatform,
+                    test_time=parse(item.start_datetime).replace(tzinfo=None),
+                    source_name=item.source_name,
+                    source_platform=item.source_platform,
                 )
             )
 
@@ -156,9 +162,9 @@ class FitnessUploadService:
             PatientSMBG(
                 patient_id=patient_id,
                 glucose_level=item.value,
-                reading_time=parse(item.dateFrom).replace(tzinfo=None),
-                source_name=item.sourceName,
-                source_platform=item.sourcePlatform,
+                reading_time=parse(item.start_datetime).replace(tzinfo=None),
+                source_name=item.source_name,
+                source_platform=item.source_platform,
                 type="Unspecified",
             )
             for item in fitness_data.blood_glucose
@@ -167,10 +173,12 @@ class FitnessUploadService:
         sleep_records = [
             PatientSleep(
                 patient_id=patient_id,
-                source_name=item.sourceName,
-                source_platform=item.sourcePlatform,
-                sleep_start_time=parse(item.dateFrom).replace(tzinfo=None),
-                sleep_end_time=parse(item.dateTo).replace(tzinfo=None),
+                source_name=item.source_name,
+                source_platform=item.source_platform,
+                sleep_start_time=parse(item.start_datetime).replace(
+                    tzinfo=None
+                ),
+                sleep_end_time=parse(item.end_datetime).replace(tzinfo=None),
                 sleep_duration=item.value,
                 type=sleep_type,
             )
