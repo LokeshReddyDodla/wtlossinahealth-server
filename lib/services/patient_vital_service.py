@@ -57,7 +57,8 @@ class PatientVitalService:
                 systolic_bp=vital_data.systolic_bp,
                 temperature=vital_data.temperature,
                 weight=vital_data.weight,
-                source=vital_data.source,
+                source_name=vital_data.source_name,
+                source_platform=vital_data.source_platform,
             )
 
             self.postgres_session.add(new_vital)

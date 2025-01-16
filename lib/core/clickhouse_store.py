@@ -37,7 +37,8 @@ class ClickHouseStore:
         CREATE TABLE IF NOT EXISTS aihealth.fitness_data (
             patient_id String,
             type String,
-            source String,
+            source_name String,
+            source_platform String,
             unit String,
             value Float64,
             date_from DateTime,
@@ -79,21 +80,21 @@ class ClickHouseStore:
         patient_id: str,
         start_time: datetime,
         end_time: datetime,
-        source: Optional[str] = None
+        source_name: Optional[str] = None,
     ):
-        if source:
+        if source_name:
             query = f"""
             ALTER TABLE {table_name} DELETE 
             WHERE patient_id = '{patient_id}' 
             AND date_from BETWEEN '{start_time}' AND '{end_time}' 
-            AND source = '{source}'
+            AND source_name = '{source_name}'
             """
         else:
             query = f"""
             ALTER TABLE {table_name} DELETE 
             WHERE patient_id = '{patient_id}' 
             AND date_from BETWEEN '{start_time}' AND '{end_time}' 
-            AND source != 'manual'
+            AND source_name != 'manual'
             """
         self.client.execute(query)
 

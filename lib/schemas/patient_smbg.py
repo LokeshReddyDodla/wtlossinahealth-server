@@ -8,7 +8,8 @@ from pydantic import BaseModel
 class PatientSMBGBase(BaseModel):
     glucose_level: float
     reading_time: datetime
-    source: str
+    source_name: str
+    source_platform: str
     type: str  # pre_meal, post_meal, etc.
     notes: Optional[str] = None
 

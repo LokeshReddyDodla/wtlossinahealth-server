@@ -11,7 +11,6 @@ from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
 from lib.tasks.fitness_tasks import generate_fitness_reports_for_patient
-from lib.utils.fitness_upload_utils import FitnessUploadUtils
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
@@ -51,42 +50,52 @@ class FitnessUploadService:
     async def delete_existing_data(
         self,
         patient_id: str,
-        dateFrom: datetime,
-        dateTo: datetime,
-        source: Optional[str] = None,
+        date_from: datetime,
+        date_to: datetime,
+        source_name: Optional[str] = None,
     ):
         # Delete data from ClickHouse
         self.clickhouse_store.delete_existing_fitness_data(
             "aihealth.fitness_data",
             patient_id,
-            dateFrom.strftime("%Y-%m-%d %H:%M:%S"),
-            dateTo.strftime("%Y-%m-%d %H:%M:%S"),
-            source,
+            date_from.strftime("%Y-%m-%d %H:%M:%S"),
+            date_to.strftime("%Y-%m-%d %H:%M:%S"),
+            source_name,
         )
 
         smbg_query = delete(PatientSMBG).where(
             PatientSMBG.patient_id == patient_id,
-            PatientSMBG.reading_time.between(dateFrom, dateTo),
+            PatientSMBG.reading_time.between(date_from, date_to),
         )
         vital_query = delete(PatientVital).where(
             PatientVital.patient_id == patient_id,
-            PatientVital.test_time.between(dateFrom, dateTo),
+            PatientVital.test_time.between(date_from, date_to),
         )
         sleep_query = delete(PatientSleep).where(
             PatientSleep.patient_id == patient_id,
-            PatientSleep.sleep_start_time.between(dateFrom, dateTo),
+            PatientSleep.sleep_start_time.between(date_from, date_to),
         )
 
-        # If a specific source is provided, filter by source
-        if source:
-            smbg_query = smbg_query.where(PatientSMBG.source == source)
-            vital_query = vital_query.where(PatientVital.source == source)
-            sleep_query = sleep_query.where(PatientSleep.source == source)
+        # If a specific source_name is provided, filter by source_name
+        if source_name:
+            smbg_query = smbg_query.where(
+                PatientSMBG.source_name == source_name
+            )
+            vital_query = vital_query.where(
+                PatientVital.source_name == source_name
+            )
+            sleep_query = sleep_query.where(
+                PatientSleep.source_name == source_name
+            )
         else:
-            # Exclude manual sources by default if no specific source is provided
-            smbg_query = smbg_query.where(PatientSMBG.source != "manual")
-            vital_query = vital_query.where(PatientVital.source != "manual")
-            sleep_query = sleep_query.where(PatientSleep.source != "manual")
+            # Exclude manual sources by default if no specific source_name is provided
+            smbg_query = smbg_query.where(PatientSMBG.source_name != "manual")
+            vital_query = vital_query.where(
+                PatientVital.source_name != "manual"
+            )
+            sleep_query = sleep_query.where(
+                PatientSleep.source_name != "manual"
+            )
 
         # Execute queries
         await self.postgres_session.execute(smbg_query)
@@ -101,7 +110,8 @@ class FitnessUploadService:
             {
                 "patient_id": patient_id,
                 "type": item.type,
-                "source": item.source,
+                "source_name": item.sourceName,
+                "source_platform": item.sourcePlatform,
                 "unit": item.unit,
                 "value": float(item.value),
                 "date_from": parse(item.dateFrom)
@@ -122,7 +132,8 @@ class FitnessUploadService:
                 diastolic_bp=diastolic_item.value,
                 systolic_bp=systolic_item.value,
                 test_time=parse(diastolic_item.dateFrom).replace(tzinfo=None),
-                source=diastolic_item.source,
+                source_name=diastolic_item.sourceName,
+                source_platform=diastolic_item.sourcePlatform,
             )
             for diastolic_item, systolic_item in zip(
                 fitness_data.blood_pressure_diastolic,
@@ -136,7 +147,8 @@ class FitnessUploadService:
                     patient_id=patient_id,
                     heart_rate=item.value,
                     test_time=parse(item.dateFrom).replace(tzinfo=None),
-                    source=item.source,
+                    source_name=item.sourceName,
+                    source_platform=item.sourcePlatform,
                 )
             )
 
@@ -145,7 +157,8 @@ class FitnessUploadService:
                 patient_id=patient_id,
                 glucose_level=item.value,
                 reading_time=parse(item.dateFrom).replace(tzinfo=None),
-                source=item.source,
+                source_name=item.sourceName,
+                source_platform=item.sourcePlatform,
                 type="Unspecified",
             )
             for item in fitness_data.blood_glucose
@@ -154,12 +167,18 @@ class FitnessUploadService:
         sleep_records = [
             PatientSleep(
                 patient_id=patient_id,
-                source=item.source,
+                source_name=item.sourceName,
+                source_platform=item.sourcePlatform,
                 sleep_start_time=parse(item.dateFrom).replace(tzinfo=None),
                 sleep_end_time=parse(item.dateTo).replace(tzinfo=None),
                 sleep_duration=item.value,
+                type=sleep_type,
             )
-            for item in fitness_data.sleep_in_bed
+            for sleep_type, sleep_data in [
+                ("sleep_in_bed", fitness_data.sleep_in_bed),
+                ("sleep_deep", fitness_data.sleep_deep),
+            ]
+            for item in sleep_data
         ]
 
         self.postgres_session.add_all(vitals + smbg_records + sleep_records)

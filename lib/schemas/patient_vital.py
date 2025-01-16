@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 
 class PatientVitalBase(BaseModel):
-    source: str
+    source_name: str
+    source_platform: str
     test_time: datetime
     a1c: Optional[float] = None
     creatinine: Optional[float] = None
