@@ -52,7 +52,8 @@ class PatientSmbgService:
                 patient_id=patient_id,
                 glucose_level=smbg_data.glucose_level,
                 reading_time=smbg_data.reading_time,
-                source=smbg_data.source,
+                source_name=smbg_data.source_name,
+                source_platform=smbg_data.source_platform,
                 type=smbg_data.type,
                 notes=smbg_data.notes,
             )

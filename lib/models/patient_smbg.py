@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Float, DateTime, String, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
-from lib.models import Base
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientSMBG(Base):
@@ -15,7 +17,8 @@ class PatientSMBG(Base):
     )
     glucose_level = Column(Float, nullable=False)
     reading_time = Column(DateTime, nullable=False)
-    source = Column(String, nullable=False)
+    source_name = Column(String, nullable=False)
+    source_platform = Column(String, nullable=False)
     type = Column(String, nullable=False)  # pre_meal, post_meal, etc.
     notes = Column(String, nullable=True)
     uploaded_at = Column(

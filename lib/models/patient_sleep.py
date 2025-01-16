@@ -1,9 +1,10 @@
-from datetime import datetime
 import uuid
+from datetime import datetime
 
 from sqlalchemy import UUID, Column, DateTime, Float, ForeignKey, String
-from lib.models import Base
 from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientSleep(Base):
@@ -13,7 +14,9 @@ class PatientSleep(Base):
     patient_id = Column(
         UUID(as_uuid=True), ForeignKey("patients.patient_id"), nullable=False
     )
-    source = Column(String, nullable=False)
+    source_name = Column(String, nullable=False)
+    source_platform = Column(String, nullable=False)
+    type = Column(String, nullable=False)
     sleep_duration = Column(
         Float, nullable=False
     )  # Duration in minutes or hours

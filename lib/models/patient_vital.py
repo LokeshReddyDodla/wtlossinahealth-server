@@ -1,9 +1,11 @@
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
-from lib.models import Base
 import uuid
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from lib.models import Base
 
 
 class PatientVital(Base):
@@ -27,6 +29,7 @@ class PatientVital(Base):
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
-    source = Column(String, nullable=False)
+    source_name = Column(String, nullable=False)
+    source_platform = Column(String, nullable=False)
 
     patient = relationship("Patient", back_populates="vitals")

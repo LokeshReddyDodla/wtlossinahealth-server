@@ -8,7 +8,8 @@ from rest_server.response_models import SuccessResponse
 
 class FitnessDataPoint(BaseModel):
     type: str
-    source: str
+    sourceName: str
+    sourcePlatform: str
     unit: str
     value: float
     dateFrom: str
@@ -25,3 +26,4 @@ class FitnessDataRequest(BaseModel):
     blood_pressure_systolic: List[FitnessDataPoint]
     heart_rate: List[FitnessDataPoint]
     sleep_in_bed: List[FitnessDataPoint]
+    sleep_deep: List[FitnessDataPoint]

@@ -7,7 +7,9 @@ from pydantic import BaseModel
 
 class PatientSleepSchema(BaseModel):
     id: UUID
-    source: str
+    source_name: str
+    source_platform: str
+    type: str
     sleep_duration: float  # Duration in minutes or hours
     sleep_start_time: datetime
     sleep_end_time: datetime
