@@ -54,9 +54,9 @@ async def get_fitness_stats(
 
 
 @router.get(
-    "/report/day",
+    "/report/daily",
 )
-async def get_fitness_day_report(
+async def get_daily_fitness_report(
     request: Request,
     date: date = Query(...),
     fitness_report_service: FitnessReportService = Depends(
@@ -81,9 +81,9 @@ async def get_fitness_day_report(
 
 
 @router.get(
-    "/report/week",
+    "/report/weekly",
 )
-async def get_fitness_week_report(
+async def get_weekly_fitness_report(
     request: Request,
     year: int,
     week_no: int,
@@ -119,9 +119,9 @@ async def get_fitness_week_report(
 
 
 @router.get(
-    "/report/month",
+    "/report/monthly",
 )
-async def get_fitness_month_report(
+async def get_monthly_fitness_report(
     request: Request,
     year: int,
     month_no: int,
