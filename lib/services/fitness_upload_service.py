@@ -185,6 +185,9 @@ class FitnessUploadService:
             for sleep_type, sleep_data in [
                 ("sleep_in_bed", fitness_data.sleep_in_bed),
                 ("sleep_deep", fitness_data.sleep_deep),
+                ("sleep_light", fitness_data.sleep_light),
+                ("sleep_rem", fitness_data.sleep_rem),
+                ("sleep_awake", fitness_data.sleep_awake),
             ]
             for item in sleep_data
         ]
