@@ -27,3 +27,7 @@ class FitnessDataRequest(BaseModel):
     heart_rate: List[FitnessDataPoint]
     sleep_in_bed: List[FitnessDataPoint]
     sleep_deep: List[FitnessDataPoint]
+    sleep_light: List[FitnessDataPoint]
+    sleep_rem: List[FitnessDataPoint]
+    sleep_awake: List[FitnessDataPoint]
+    
