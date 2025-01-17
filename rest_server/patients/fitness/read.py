@@ -69,7 +69,7 @@ async def get_daily_fitness_report(
             str(current_patient.patient_id), date
         )
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Daily fitness report fetched successfully",
             data=jsonable_encoder(report),
         )
     except Exception as e:
@@ -107,7 +107,7 @@ async def get_weekly_fitness_report(
         )
 
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Weekly fitness report fetched successfully",
             data={"overall": weekly_report, "day_wise": daily_report},
         )
     except Exception as e:
@@ -144,7 +144,7 @@ async def get_monthly_fitness_report(
         )
 
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Monthly fitness report fetched successfully",
             data={"overall": monthly_report, "day_wise": daily_report},
         )
     except Exception as e:
