@@ -30,6 +30,7 @@ from rest_server.patients.permissions.router import \
 from rest_server.patients.prescriptions.router import \
     router as prescriptions_router
 from rest_server.patients.profile.router import router as profile_router
+from rest_server.patients.sleep.router import router as sleep_router
 from rest_server.patients.smbgs.router import router as smbgs_router
 from rest_server.patients.vitals.router import router as vitals_router
 from rest_server.system_management import reload_cache
@@ -101,6 +102,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(permissions_router)
     app.include_router(vitals_router)
     app.include_router(smbgs_router)
+    app.include_router(sleep_router)
     app.include_router(connected_apps_router)
     app.include_router(cgm_router)
     app.include_router(fitness_router)

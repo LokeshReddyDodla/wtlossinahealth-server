@@ -54,9 +54,9 @@ async def get_fitness_stats(
 
 
 @router.get(
-    "/report/day",
+    "/report/daily",
 )
-async def get_fitness_day_report(
+async def get_daily_fitness_report(
     request: Request,
     date: date = Query(...),
     fitness_report_service: FitnessReportService = Depends(
@@ -69,7 +69,7 @@ async def get_fitness_day_report(
             str(current_patient.patient_id), date
         )
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Daily fitness report fetched successfully",
             data=jsonable_encoder(report),
         )
     except Exception as e:
@@ -81,9 +81,9 @@ async def get_fitness_day_report(
 
 
 @router.get(
-    "/report/week",
+    "/report/weekly",
 )
-async def get_fitness_week_report(
+async def get_weekly_fitness_report(
     request: Request,
     year: int,
     week_no: int,
@@ -107,7 +107,7 @@ async def get_fitness_week_report(
         )
 
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Weekly fitness report fetched successfully",
             data={"overall": weekly_report, "day_wise": daily_report},
         )
     except Exception as e:
@@ -119,9 +119,9 @@ async def get_fitness_week_report(
 
 
 @router.get(
-    "/report/month",
+    "/report/monthly",
 )
-async def get_fitness_month_report(
+async def get_monthly_fitness_report(
     request: Request,
     year: int,
     month_no: int,
@@ -144,7 +144,7 @@ async def get_fitness_month_report(
         )
 
         return SuccessResponse(
-            message="Fitness report fetched successfully",
+            message="Monthly fitness report fetched successfully",
             data={"overall": monthly_report, "day_wise": daily_report},
         )
     except Exception as e:

@@ -19,6 +19,7 @@ from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.user_device_service import UserDeviceService
@@ -98,6 +99,13 @@ async def get_patient_vital_service() -> PatientVitalService:
     return cast(
         PatientVitalService,
         container.resolve(PatientVitalService),
+    )
+
+
+async def get_patient_sleep_service() -> PatientSleepService:
+    return cast(
+        PatientSleepService,
+        container.resolve(PatientSleepService),
     )
 
 

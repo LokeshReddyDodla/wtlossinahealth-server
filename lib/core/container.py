@@ -31,6 +31,7 @@ from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 # Processors
@@ -174,6 +175,17 @@ container.register(
 container.register(
     PatientVitalService,
     lambda: PatientVitalService(
+        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+    ),
+)
+
+# 🔹 Patient Sleep Service
+container.register(
+    PatientSleepService,
+    lambda: PatientSleepService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
