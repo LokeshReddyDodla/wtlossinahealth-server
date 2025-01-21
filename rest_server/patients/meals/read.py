@@ -75,7 +75,7 @@ async def get_day_meal_report(
         )
 
         return SuccessResponse(
-            message="Meal report fetched successfully",
+            message="Day Meal report fetched successfully",
             data=meal_report,
         )
 
