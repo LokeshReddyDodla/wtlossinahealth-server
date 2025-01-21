@@ -62,8 +62,8 @@ async def get_meals_api(
         )
 
 
-@router.get(path="/report/daily", response_model=SuccessResponse)
-async def get_daily_meal_report(
+@router.get(path="/report/day", response_model=SuccessResponse)
+async def get_day_meal_report(
     request: Request,
     date: date,
     meal_report_service: MealReportService = Depends(get_meal_report_service),

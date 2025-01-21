@@ -17,8 +17,8 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("/daily", response_model=SuccessResponse)
-async def get_daily_sleep_data(
+@router.get("/day", response_model=SuccessResponse)
+async def get_day_sleep_data(
     request: Request,
     date: date = Query(...),
     patient_sleep_service: PatientSleepService = Depends(
@@ -32,7 +32,7 @@ async def get_daily_sleep_data(
         )
 
         return SuccessResponse(
-            message="Daily sleep data fetched successfully", data=sleep_records
+            message="Day sleep data fetched successfully", data=sleep_records
         )
     except HTTPException as http_exc:
         raise http_exc
@@ -45,9 +45,9 @@ async def get_daily_sleep_data(
 
 
 @router.get(
-    "/weekly",
+    "/week",
 )
-async def get_weekly_sleep_data(
+async def get_week_sleep_data(
     request: Request,
     year: int,
     week_no: int,
@@ -66,7 +66,7 @@ async def get_weekly_sleep_data(
         )
 
         return SuccessResponse(
-            message="Weekly sleep data fetched successfully",
+            message="Week sleep data fetched successfully",
             data=sleep_records,
         )
     except HTTPException as http_exc:
@@ -80,9 +80,9 @@ async def get_weekly_sleep_data(
 
 
 @router.get(
-    "/monthly",
+    "/month",
 )
-async def get_monthly_sleep_data(
+async def get_month_sleep_data(
     request: Request,
     year: int,
     month_no: int,
@@ -99,7 +99,7 @@ async def get_monthly_sleep_data(
         )
 
         return SuccessResponse(
-            message="Monthly sleep data fetched successfully",
+            message="Month sleep data fetched successfully",
             data=sleep_records,
         )
     except HTTPException as http_exc:
