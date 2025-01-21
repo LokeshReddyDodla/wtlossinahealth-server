@@ -54,9 +54,9 @@ async def get_fitness_stats(
 
 
 @router.get(
-    "/report/daily",
+    "/report/day",
 )
-async def get_daily_fitness_report(
+async def get_day_fitness_report(
     request: Request,
     date: date = Query(...),
     fitness_report_service: FitnessReportService = Depends(
@@ -69,7 +69,7 @@ async def get_daily_fitness_report(
             str(current_patient.patient_id), date
         )
         return SuccessResponse(
-            message="Daily fitness report fetched successfully",
+            message="Day fitness report fetched successfully",
             data=jsonable_encoder(report),
         )
     except Exception as e:
@@ -81,12 +81,12 @@ async def get_daily_fitness_report(
 
 
 @router.get(
-    "/report/weekly",
+    "/report/week",
 )
-async def get_weekly_fitness_report(
+async def get_week_fitness_report(
     request: Request,
-    year: int,
-    week_no: int,
+    year: int = Query(...),
+    week_no: int = Query(...),
     fitness_report_service: FitnessReportService = Depends(
         get_fitness_report_service
     ),
@@ -99,7 +99,6 @@ async def get_weekly_fitness_report(
         weekly_report = await fitness_report_service.fetch_weekly_report(
             str(current_patient.patient_id), year, week_no
         )
-
         daily_report = (
             await fitness_report_service.fetch_daily_reports_in_range(
                 str(current_patient.patient_id), start_date, end_date
@@ -107,7 +106,7 @@ async def get_weekly_fitness_report(
         )
 
         return SuccessResponse(
-            message="Weekly fitness report fetched successfully",
+            message="Week fitness report fetched successfully",
             data={"overall": weekly_report, "day_wise": daily_report},
         )
     except Exception as e:
@@ -119,12 +118,12 @@ async def get_weekly_fitness_report(
 
 
 @router.get(
-    "/report/monthly",
+    "/report/month",
 )
-async def get_monthly_fitness_report(
+async def get_month_fitness_report(
     request: Request,
-    year: int,
-    month_no: int,
+    year: int = Query(...),
+    month_no: int = Query(...),
     fitness_report_service: FitnessReportService = Depends(
         get_fitness_report_service
     ),
@@ -132,11 +131,9 @@ async def get_monthly_fitness_report(
 ):
     try:
         start_date, end_date = get_month_start_end(year, month_no)
-
         monthly_report = await fitness_report_service.fetch_monthly_report(
             str(current_patient.patient_id), year, month_no
         )
-
         daily_report = (
             await fitness_report_service.fetch_daily_reports_in_range(
                 str(current_patient.patient_id), start_date, end_date
@@ -144,7 +141,7 @@ async def get_monthly_fitness_report(
         )
 
         return SuccessResponse(
-            message="Monthly fitness report fetched successfully",
+            message="Month fitness report fetched successfully",
             data={"overall": monthly_report, "day_wise": daily_report},
         )
     except Exception as e:
