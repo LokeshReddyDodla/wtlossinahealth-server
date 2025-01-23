@@ -36,11 +36,14 @@ class MealReportService:
         patient_id: str,
         report_date: date,
     ):
-        from lib.core.celery_app import celery
+        from lib.dependencies.service_dependencies import \
+            get_celery_task_manager
 
-        celery.send_task(
+        task_manager = get_celery_task_manager()
+        task_manager.trigger_task_once(
             "lib.tasks.meal_tasks.generate_daily_meal_report",
-            args=[str(patient_id), report_date],
+            args=[patient_id, report_date],
+            task_id=f"{patient_id}_{report_date}",
         )
         print(
             f"🚀 Triggered daily report generation for {patient_id} on {report_date}"

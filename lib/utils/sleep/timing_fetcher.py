@@ -19,8 +19,8 @@ class SleepTimingFetcher:
         SELECT 
             MIN(sleep_start_time::time) AS earliest_start,
             MAX(sleep_end_time::time) AS latest_end,
-            AVG(sleep_start_time::time) AS avg_start,
-            AVG(sleep_end_time::time) AS avg_end
+            (DATE_TRUNC('second', TO_TIMESTAMP(AVG(EXTRACT(EPOCH FROM sleep_start_time::time))))::time) AS avg_start,
+            (DATE_TRUNC('second', TO_TIMESTAMP(AVG(EXTRACT(EPOCH FROM sleep_end_time::time))))::time) AS avg_end
         FROM 
             patient_sleeps
         WHERE 
@@ -48,9 +48,15 @@ class SleepTimingFetcher:
         # Return results as ISO 8601 formatted strings
         return {
             "earliest_start_time": (
-                row.earliest_start if row.earliest_start else None
+                row.earliest_start.isoformat() if row.earliest_start else None
             ),
-            "latest_end_time": (row.latest_end if row.latest_end else None),
-            "average_start_time": (row.avg_start if row.avg_start else None),
-            "average_end_time": (row.avg_end if row.avg_end else None),
+            "latest_end_time": (
+                row.latest_end.isoformat() if row.latest_end else None
+            ),
+            "average_start_time": (
+                row.avg_start.isoformat() if row.avg_start else None
+            ),
+            "average_end_time": (
+                row.avg_end.isoformat() if row.avg_end else None
+            ),
         }

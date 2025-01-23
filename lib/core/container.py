@@ -4,10 +4,12 @@ from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.cache_store import CacheStore
+from lib.core.celery_app import celery
 from lib.core.clickhouse_store import ClickHouseStore
 # Services
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
+from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
@@ -32,6 +34,7 @@ from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 # Processors
+from lib.services.sleep_report_service import SleepReportService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -67,6 +70,13 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "sleep_report_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("sleep_reports"),
+    scope=Scope.singleton,
+)
+container.register(
     "meal_report_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
@@ -92,6 +102,13 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("chats"),
+    scope=Scope.singleton,
+)
+
+
+container.register(
+    CeleryTaskManager,
+    lambda: CeleryTaskManager(app=celery),
     scope=Scope.singleton,
 )
 
@@ -258,6 +275,14 @@ container.register(
     SleepStatsProcessor,
     lambda: SleepStatsProcessor(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+    ),
+)
+
+# 🔹 Sleep Report Service
+container.register(
+    SleepReportService,
+    lambda: SleepReportService(
+        sleep_report_collection=container.resolve("sleep_report_collection")
     ),
 )
 

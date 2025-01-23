@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.models.patient_sleep import PatientSleep
 from lib.services.ai_conversation_service import AiConversationService
@@ -14,7 +15,7 @@ from lib.utils.sleep.type_distribution_fetcher import \
 
 
 class SleepStatsProcessor:
-    def __init__(self, postgres_session):
+    def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.ai_conversation_service = AiConversationService(
             conversation_type="sleep", model="gpt-4o-mini"
@@ -59,8 +60,8 @@ class SleepStatsProcessor:
     ) -> Dict[str, Any]:
 
         report = {
-            "start_datetime": start_datetime,
-            "end_datetime": end_datetime,
+            "start_date": start_datetime,
+            "end_date": end_datetime,
             "duration_analysis": await SleepDurationFetcher.fetch(
                 self.postgres_session, patient_id, start_datetime, end_datetime
             ),
