@@ -83,15 +83,17 @@ class SleepStatsProcessor:
             quality_analysis=quality_analysis,
         )
 
-        # Generate feedback message based on the sleep report
-        feedback_message = (
-            await self.ai_conversation_service.generate_report_response(
-                patient_id, report.model_dump(), "sleep"
+        if (
+            report.duration_analysis["total_duration"] is not None
+            and report.duration_analysis["total_duration"] != 0
+        ):
+            # Generate feedback message based on the sleep report
+            feedback_message = (
+                await self.ai_conversation_service.generate_report_response(
+                    patient_id, report.model_dump(), "sleep"
+                )
             )
-        )
-
-        # Add feedback to the report
-        report.feedback = feedback_message
+            report.feedback = feedback_message
 
         return report
 
