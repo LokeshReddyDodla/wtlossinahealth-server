@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.models.patient_sleep import PatientSleep
+from lib.schemas.sleep_stats import SleepStats
 from lib.services.ai_conversation_service import AiConversationService
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.sleep.duration_fetcher import SleepDurationFetcher
@@ -57,34 +58,42 @@ class SleepStatsProcessor:
 
     async def _process_overall(
         self, patient_id: str, start_datetime: datetime, end_datetime: datetime
-    ) -> Dict[str, Any]:
+    ) -> SleepStats:
 
-        report = {
-            "start_date": start_datetime,
-            "end_date": end_datetime,
-            "duration_analysis": await SleepDurationFetcher.fetch(
-                self.postgres_session, patient_id, start_datetime, end_datetime
-            ),
-            "type_distribution": await SleepTypeDistributionFetcher.fetch(
-                self.postgres_session, patient_id, start_datetime, end_datetime
-            ),
-            "timing_analysis": await SleepTimingFetcher.fetch(
-                self.postgres_session, patient_id, start_datetime, end_datetime
-            ),  # not accurate!
-            "quality_analysis": await SleepQualityFetcher.fetch(
-                self.postgres_session, patient_id, start_datetime, end_datetime
-            ),
-        }
+        duration_analysis = await SleepDurationFetcher.fetch(
+            self.postgres_session, patient_id, start_datetime, end_datetime
+        )
+        type_distribution = await SleepTypeDistributionFetcher.fetch(
+            self.postgres_session, patient_id, start_datetime, end_datetime
+        )
+        timing_analysis = await SleepTimingFetcher.fetch(
+            self.postgres_session, patient_id, start_datetime, end_datetime
+        )  # Inaccurate
+        quality_analysis = await SleepQualityFetcher.fetch(
+            self.postgres_session, patient_id, start_datetime, end_datetime
+        )
 
-        # Generate feedback based on the sleep report
+        # Construct the sleep stats report
+        report = SleepStats(
+            start_date=start_datetime,
+            end_date=end_datetime,
+            duration_analysis=duration_analysis,
+            type_distribution=type_distribution,
+            timing_analysis=timing_analysis,
+            quality_analysis=quality_analysis,
+        )
+
+        # Generate feedback message based on the sleep report
         feedback_message = (
             await self.ai_conversation_service.generate_report_response(
-                patient_id, report, "sleep"
+                patient_id, report.model_dump(), "sleep"
             )
         )
 
-        # Add the feedback to the report
-        report["feedback"] = feedback_message
+        # Add feedback to the report
+        report.feedback = feedback_message
+
+        return report
 
         # message_content = f"""
         #     ### Sleep Feedback Report
@@ -105,11 +114,9 @@ class SleepStatsProcessor:
         #     exclude_from_frontend=True,
         # )
 
-        return report
-
     async def _process_multiple_periods(
         self, patient_id: str, periods: List[Dict[str, datetime]]
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Dict[str, SleepStats]]:
         stats = []
         for period in periods:
             stats.append(

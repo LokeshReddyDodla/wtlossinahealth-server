@@ -54,7 +54,7 @@ def generate_sleep_report_for_month(
                 {
                     "patient_id": patient_id,
                     "report_type": "monthly",
-                    **report["overall"],
+                    **report["overall"].model_dump(),
                 }
             )
             bulk_reports.extend(
@@ -62,7 +62,7 @@ def generate_sleep_report_for_month(
                     {
                         "patient_id": patient_id,
                         "report_type": "weekly",
-                        **week_stat,
+                        **week_stat.model_dump(),
                     }
                     for week_stat in report["week_wise"]
                 ]
@@ -72,7 +72,7 @@ def generate_sleep_report_for_month(
                     {
                         "patient_id": patient_id,
                         "report_type": "daily",
-                        **day_stat,
+                        **day_stat.model_dump(),
                     }
                     for day_stat in report["day_wise"]
                 ]
@@ -120,7 +120,7 @@ def generate_sleep_report(
                 {
                     "patient_id": patient_id,
                     "report_type": report_type,
-                    **report["overall"],
+                    **report["overall"].model_dump(),
                 }
             )
             if report_type in ["weekly", "monthly"]:
@@ -129,7 +129,7 @@ def generate_sleep_report(
                         {
                             "patient_id": patient_id,
                             "report_type": "daily",
-                            **day_stat,
+                            **day_stat.model_dump(),
                         }
                         for day_stat in report["day_wise"]
                     ]
