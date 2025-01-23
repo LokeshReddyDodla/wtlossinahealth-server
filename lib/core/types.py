@@ -7,6 +7,8 @@ ProfileTypeLiteral = Literal[
 
 FitnessReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 
+SleepReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
+
 
 FCMNotificationChannelKeyLiteral = Literal[
     "fitness_sync", "chat_messages", "other"
@@ -28,6 +30,7 @@ AiConversationTypeLiteral = Literal[
     "meal",
     "prescription",
     "report",
+    "sleep",
     "health-tip",
     "other",
 ]

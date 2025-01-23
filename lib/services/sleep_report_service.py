@@ -3,19 +3,19 @@ from datetime import date, datetime, time
 
 from pymongo import ReplaceOne
 
-from lib.core.types import FitnessReportTypeLiteral
+from lib.core.types import SleepReportTypeLiteral
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_and_end_from_week_no)
 
 
-class FitnessReportService:
-    def __init__(self, fitness_report_collection):
-        self.fitness_report_collection = fitness_report_collection
+class SleepReportService:
+    def __init__(self, sleep_report_collection):
+        self.sleep_report_collection = sleep_report_collection
 
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
-        reports = await self.fitness_report_collection.find(
+        reports = await self.sleep_report_collection.find(
             {
                 "patient_id": patient_id,
                 "report_type": "daily",
@@ -31,7 +31,7 @@ class FitnessReportService:
         start_date = datetime.combine(date, time.min)
         end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
-        report = await self.fitness_report_collection.find_one(
+        report = await self.sleep_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "daily",
@@ -54,7 +54,7 @@ class FitnessReportService:
             year, week_no
         )
 
-        report = await self.fitness_report_collection.find_one(
+        report = await self.sleep_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "weekly",
@@ -75,7 +75,7 @@ class FitnessReportService:
     ):
         start_date, end_date = get_month_start_end(year, month_no)
 
-        report = await self.fitness_report_collection.find_one(
+        report = await self.sleep_report_collection.find_one(
             {
                 "patient_id": patient_id,
                 "report_type": "monthly",
@@ -95,14 +95,14 @@ class FitnessReportService:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        report_type: FitnessReportTypeLiteral,
+        report_type: SleepReportTypeLiteral,
     ):
         from lib.dependencies.service_dependencies import \
             get_celery_task_manager
 
         task_manager = get_celery_task_manager()
         task_manager.trigger_task_once(
-            "lib.tasks.fitness_tasks.generate_fitness_report",
+            "lib.tasks.sleep_tasks.generate_sleep_report",
             args=[patient_id, start_date, end_date, report_type],
             task_id=f"{patient_id}_{start_date}_{end_date}_{report_type}",
         )
@@ -126,7 +126,7 @@ class FitnessReportService:
                 )
 
             # Perform bulk upsert
-            await self.fitness_report_collection.bulk_write(
+            await self.sleep_report_collection.bulk_write(
                 operations, ordered=False
             )
             print(f"Saved/Updated {len(reports)} reports successfully")

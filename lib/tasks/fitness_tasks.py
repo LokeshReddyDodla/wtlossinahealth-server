@@ -5,7 +5,6 @@ from typing import cast
 from celery import shared_task
 
 from lib.core.types import FitnessReportTypeLiteral
-from lib.services.fitness_report_service import FitnessReportService
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.fitness.processor import FitnessStatsProcessor
 
@@ -36,14 +35,11 @@ def generate_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
-        from lib.core.container import container
+        from lib.dependencies.service_dependencies import (
+            get_fitness_report_service, get_fitness_stats_processor)
 
-        fitness_stats_service = cast(
-            FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
-        )
-        fitness_report_service = cast(
-            FitnessReportService, container.resolve(FitnessReportService)
-        )
+        fitness_stats_service = get_fitness_stats_processor()
+        fitness_report_service = get_fitness_report_service()
 
         # Generate report for the specific month
         report = fitness_stats_service.generate_report(
@@ -109,14 +105,11 @@ def generate_fitness_report(
     report_type: FitnessReportTypeLiteral,
 ):
     try:
-        from lib.core.container import container
+        from lib.dependencies.service_dependencies import (
+            get_fitness_report_service, get_fitness_stats_processor)
 
-        fitness_stats_service = cast(
-            FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
-        )
-        fitness_report_service = cast(
-            FitnessReportService, container.resolve(FitnessReportService)
-        )
+        fitness_stats_service = get_fitness_stats_processor()
+        fitness_report_service = get_fitness_report_service()
 
         report = fitness_stats_service.generate_report(
             patient_id,

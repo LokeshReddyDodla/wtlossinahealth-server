@@ -243,7 +243,7 @@ class MealService:
             )
 
             # Pass the message sequence to AiConversationService
-            await self.ai_conversation_service.add_messages_to_conversation(
+            await self.ai_conversation_service.add_multiple_messages_to_conversation(
                 messages=message_sequence,
             )
 

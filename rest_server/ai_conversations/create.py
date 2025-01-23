@@ -23,9 +23,6 @@ async def send_ai_conversation_message(
     conversation_id: str,
     human_input: str,
     conversation_type: AiConversationTypeLiteral,
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
     current_patient: PatientModel = Depends(get_current_patient),
 ):
     """
@@ -42,7 +39,6 @@ async def send_ai_conversation_message(
             conversation_id=conversation_id,
             conversation_type=conversation_type,
             human_input=human_input,
-            patient_profile_service=patient_profile_service,
         )
 
         return SuccessResponse(
@@ -62,9 +58,6 @@ async def send_ai_conversation_message(
 @router.post("/health-tip", response_model=SuccessResponse)
 async def get_daily_health_tip(
     request: Request,
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
     current_patient: PatientModel = Depends(get_current_patient),
 ):
     """
@@ -79,7 +72,6 @@ async def get_daily_health_tip(
         health_tip = (
             await ai_conversation_service.generate_health_tip_of_the_day(
                 patient_id=str(current_patient.patient_id),
-                patient_profile_service=patient_profile_service,
             )
         )
 

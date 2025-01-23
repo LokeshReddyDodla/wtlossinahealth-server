@@ -92,7 +92,6 @@ class PatientSmbgService:
                 conversation_id=conversation_id,
                 human_input=human_input,
                 conversation_type="smbg",
-                patient_profile_service=self.patient_profile_service,
             )
             return True
         except Exception as e:

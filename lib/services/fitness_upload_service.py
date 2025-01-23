@@ -11,6 +11,7 @@ from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
 from lib.tasks.fitness_tasks import generate_fitness_reports_for_patient
+from lib.tasks.sleep_tasks import generate_sleep_reports_for_patient
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 
 
@@ -44,6 +45,10 @@ class FitnessUploadService:
 
         # Trigger report generation asynchronously
         generate_fitness_reports_for_patient.delay(
+            patient_id, start_datetime, end_datetime
+        )
+
+        generate_sleep_reports_for_patient.delay(
             patient_id, start_datetime, end_datetime
         )
 
