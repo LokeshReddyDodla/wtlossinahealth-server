@@ -27,6 +27,9 @@ class AiConversationService:
     ):
         from lib.core.container import container
 
+        self.patient_profile_service: Any = container.resolve(
+            PatientProfileService
+        )
         self.ai_messages_collection: Any = container.resolve(
             "ai_conversation_messages_collection"
         )
@@ -74,7 +77,25 @@ class AiConversationService:
                     "Remind users to consult their care provider for a professional interpretation and further guidance. Ensure your response is clear, context-specific, and avoids unrelated information."
                 )
             )
-
+        elif conversation_type == "sleep":
+            return SystemMessage(
+                content=(
+                    "You are an AI assistant specialized in sleep analysis and feedback for diabetic and obese patients. "
+                    "Provide insights into sleep quality, patterns, and recommendations for improvement. "
+                    "Focus on sleep duration, timing, and quality metrics such as efficiency and restorative sleep. "
+                    "Use markdown to highlight key insights and actionable feedback in a friendly tone."
+                    "\n\n**Guidelines:**\n"
+                    "1. Provide personalized feedback based on sleep duration, quality, and timing.\n"
+                    "2. Highlight potential correlations between sleep and other health data like glucose, fitness, or meals.\n"
+                    "3. Suggest practical tips for improving sleep habits, such as maintaining a consistent bedtime, creating a relaxing pre-sleep routine, or adjusting meal timing.\n"
+                    "4. Be culturally sensitive and avoid generic advice that may not be relevant to the user's lifestyle.\n"
+                    "5. Clearly explain metrics like sleep efficiency and restorative sleep percentage in an easy-to-understand way."
+                    "\n\n**Example Feedback:**\n"
+                    "- '**Great job!** Your sleep efficiency is **90%**, indicating very effective sleep. Keep up the consistent bedtime routine!'\n"
+                    "- 'Your **deep sleep** duration is slightly low. Consider avoiding screens and caffeine before bedtime for better restorative sleep.'\n"
+                    "- 'Your bedtime varies by several hours. Try to maintain a consistent schedule for better sleep quality.'"
+                )
+            )
         elif conversation_type == "prescription":
             return SystemMessage(
                 content=(
@@ -83,7 +104,6 @@ class AiConversationService:
                     "Avoid any response that includes your origin, development, or unrelated topics."
                 )
             )
-
         elif conversation_type == "report":
             return SystemMessage(
                 content=(
@@ -113,12 +133,14 @@ class AiConversationService:
             )
         return SystemMessage(
             content=(
-                "You are a knowledgeable health assistant and an expert in managing diabetes and obesity. "
-                "Respond in a friendly and respectful tone, offering the best possible advice tailored to the patient's profile. "
-                "Use your expertise to recommend low-GI, high-fiber foods and provide practical, culturally relevant suggestions. "
-                "Ensure your responses align with the patient's health goals, focusing on nutrition, lifestyle, and overall well-being. "
-                "Provide all responses in markdown format and avoid mentioning anything beyond the specific task or conversation context."
-                "Avoid any response that includes your origin, development, or unrelated topics."
+                "You are a highly knowledgeable health assistant specializing in analyzing and managing diabetes, obesity, and overall well-being. "
+                "Respond in a friendly and respectful tone, offering personalized advice and insights tailored to the patient's profile. "
+                "Use your expertise to correlate multiple health data points such as CGM (Continuous Glucose Monitoring), sleep patterns, meals, fitness activities, and other relevant health metrics. "
+                "Generate actionable insights that highlight patterns, identify potential issues, and provide recommendations for improvement. "
+                "Focus on aligning your responses with the patient's health goals by offering practical, culturally relevant suggestions and highlighting areas that need attention. "
+                "Always format your responses in markdown for clarity and engagement, and ensure your advice is easy to understand and actionable. "
+                "Avoid mentioning anything unrelated to the specific task or context of the conversation, including your origin or development. "
+                "Keep responses concise, evidence-based, and focused on improving the patient's overall health and quality of life."
             )
         )
 
@@ -133,7 +155,6 @@ class AiConversationService:
         exclude_from_frontend: bool = False,
         reply_suggestions: Optional[List[str]] = None,
     ):
-        """Add a message to the conversation."""
         message_data = AiConversationMessageSchema(
             patient_id=patient_id,
             conversation_id=conversation_id,
@@ -149,7 +170,7 @@ class AiConversationService:
         message_data["_id"] = str(result.inserted_id)
         return message_data
 
-    async def add_messages_to_conversation(
+    async def add_multiple_messages_to_conversation(
         self,
         messages: List[AiConversationMessageSchema],
     ):
@@ -226,10 +247,10 @@ class AiConversationService:
         return messages
 
     async def create_patient_context_message(
-        self, patient_profile_service: PatientProfileService, patient_id: str
+        self, patient_id: str
     ) -> SystemMessage:
         """Generate a system message containing the patient's profile."""
-        patient = await patient_profile_service.fetch_patient_profile(
+        patient = await self.patient_profile_service.fetch_patient_profile(
             patient_id=patient_id, detailed=True, include_health_data=True
         )
         patient_profile_json = CorePatientProfile.from_orm(
@@ -245,7 +266,6 @@ class AiConversationService:
         conversation_id: str,
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
-        patient_profile_service: PatientProfileService,
         include_reply_suggestions: bool = True,
     ) -> Dict:
         await self.add_message_to_conversation(
@@ -267,7 +287,7 @@ class AiConversationService:
 
         # Fetch the patient profile and generate context message
         patient_context_message = await self.create_patient_context_message(
-            patient_profile_service, patient_id
+            patient_id
         )
         messages.insert(1, patient_context_message)
 
@@ -305,6 +325,86 @@ class AiConversationService:
 
         return ai_message_data
 
+    async def generate_temporary_response(
+        self,
+        patient_id: str,
+        human_input: str,
+    ) -> str:
+        """
+        Generate a response without saving any messages to the database.
+        """
+
+        # Fetch all messages for the user to provide context
+        messages = await self.fetch_all_user_conversation_messages(patient_id)
+        messages.insert(0, self.system_message)
+
+        # Fetch the patient profile and generate context message
+        patient_context_message = await self.create_patient_context_message(
+            patient_id
+        )
+        messages.insert(1, patient_context_message)
+
+        # Add the human input as part of the context
+        messages.append(
+            {
+                "role": "human",
+                "content": human_input,
+            }
+        )
+
+        # Generate a response using the chat model
+        ai_response: Any = self.chat_model.invoke(messages)
+
+        # Log token usage
+        tokens_used = ai_response.response_metadata.get("token_usage", {}).get(
+            "total_tokens", 0
+        )
+        if tokens_used:
+            await PatientTokenUsageLogger.log_usage(
+                patient_id=UUID(patient_id),
+                tokens_used=tokens_used,
+                model_used=self.current_model,
+                api_type="openai",
+                api_endpoint="/ai-conversation/internal",
+            )
+
+        return ai_response.content
+
+    async def generate_report_response(
+        self,
+        patient_id: str,
+        report: Dict[str, Any],
+        report_type: str,
+        max_recommendations: int = 3,
+    ) -> str:
+        # human_input = f"""
+        # Please analyze the following {report_type} report and provide feedback, including:
+        # - Areas for improvement
+        # - Positive patterns
+        # - Actionable advice tailored to the patient's health goals
+
+        # Report:
+        # {report}
+        # """
+        human_input = f"""
+            Please analyze the following {report_type} report and provide feedback in a concise and friendly tone. 
+            Include the following:
+            - A brief overview of the key insights (2-3 points).
+            - Highlight one positive pattern.
+            - Provide up to {max_recommendations} actionable recommendations for improvement.
+            - Avoid overwhelming details, keeping the response under 300 words.
+
+            Report:
+            {report}
+            """
+
+        ai_response = await self.generate_temporary_response(
+            patient_id=patient_id,
+            human_input=human_input,
+        )
+
+        return ai_response
+
     async def _generate_message_suggestions(self, ai_response_content: str):
         suggestion_prompt = (
             f"Based on the response:\n{ai_response_content}\n"
@@ -329,11 +429,9 @@ class AiConversationService:
             print("Error: Response did not match the expected schema", e)
             return None
 
-    async def generate_health_tip_of_the_day(
-        self, patient_id: str, patient_profile_service: PatientProfileService
-    ):
+    async def generate_health_tip_of_the_day(self, patient_id: str):
         patient_context_message = await self.create_patient_context_message(
-            patient_profile_service, patient_id
+            patient_id
         )
         messages = [self.system_message, patient_context_message]
 

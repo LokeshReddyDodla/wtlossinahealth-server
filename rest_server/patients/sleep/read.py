@@ -1,17 +1,19 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (get_patient_sleep_service,
-                                                   get_patient_vital_service)
+                                                   get_patient_vital_service,
+                                                   get_sleep_stats_processor)
 from lib.models.patient import Patient
 from lib.schemas.patient_sleep import PatientSleepSchema
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.utils.date_utils import (get_month_start_end,
                                   get_week_start_and_end_from_week_no)
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -24,15 +26,27 @@ async def get_day_sleep_data(
     patient_sleep_service: PatientSleepService = Depends(
         get_patient_sleep_service
     ),
+    sleep_stats_processor: SleepStatsProcessor = Depends(
+        get_sleep_stats_processor
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        sleep_records = await patient_sleep_service.get_daily_sleep_data(
-            str(current_patient.patient_id), date
+        # sleep_records = await patient_sleep_service.get_daily_sleep_data(
+        #     str(current_patient.patient_id), date
+        # )
+        start_datetime = datetime.combine(date, time.min)
+        end_datetime = datetime.combine(date, time.max).replace(microsecond=0)
+
+        reports = await sleep_stats_processor.generate_report(
+            str(current_patient.patient_id),
+            start_datetime,
+            end_datetime,
         )
 
+        print("==> reports: ", reports)
         return SuccessResponse(
-            message="Day sleep data fetched successfully", data=sleep_records
+            message="Day sleep data fetched successfully", data=reports
         )
     except HTTPException as http_exc:
         raise http_exc
@@ -54,6 +68,9 @@ async def get_week_sleep_data(
     patient_sleep_service: PatientSleepService = Depends(
         get_patient_sleep_service
     ),
+    sleep_stats_processor: SleepStatsProcessor = Depends(
+        get_sleep_stats_processor
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
@@ -61,13 +78,18 @@ async def get_week_sleep_data(
             year, week_no
         )
 
-        sleep_records = await patient_sleep_service.get_daily_report_in_range(
-            str(current_patient.patient_id), start_datetime, end_datetime
+        # sleep_records = await patient_sleep_service.get_daily_report_in_range(
+        #     str(current_patient.patient_id), start_datetime, end_datetime
+        # )
+        reports = await sleep_stats_processor.generate_report(
+            str(current_patient.patient_id),
+            start_datetime,
+            end_datetime,
         )
 
         return SuccessResponse(
             message="Week sleep data fetched successfully",
-            data=sleep_records,
+            data=reports,
         )
     except HTTPException as http_exc:
         raise http_exc

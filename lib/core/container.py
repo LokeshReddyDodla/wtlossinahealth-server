@@ -1,9 +1,6 @@
-import os
 from typing import cast
 
-from dotenv import load_dotenv
 from punq import Container, Scope
-from pymongo import MongoClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.cache_store import CacheStore
@@ -39,6 +36,7 @@ from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
+from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 
 # Initialize Container
 container = Container()
@@ -252,6 +250,14 @@ container.register(
         glucose_stats_processor=container.resolve(GlucoseStatsProcessor),
         patient_profile_service=container.resolve(PatientProfileService),
         patient_plan_service=container.resolve(PatientPlanService),
+    ),
+)
+
+# 🔹 Sleep Stats Processor
+container.register(
+    SleepStatsProcessor,
+    lambda: SleepStatsProcessor(
+        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
     ),
 )
 

@@ -16,7 +16,7 @@ class PatientSleep(Base):
     )
     source_name = Column(String, nullable=False)
     source_platform = Column(String, nullable=False)
-    type = Column(String, nullable=False)
+    type = Column(String, nullable=False) # sleep_deep, sleep_light, sleep_awake, sleep_in_bed, sleep_rem
     sleep_duration = Column(
         Float, nullable=False
     )  # Duration in minutes or hours

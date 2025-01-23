@@ -26,6 +26,7 @@ from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
+from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 
 
 async def get_user_device_service() -> UserDeviceService:
@@ -151,6 +152,13 @@ async def get_fitness_report_service() -> FitnessReportService:
 async def get_glucose_stats_processor() -> GlucoseStatsProcessor:
     return cast(
         GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
+    )
+
+
+async def get_sleep_stats_processor() -> SleepStatsProcessor:
+    return cast(
+        SleepStatsProcessor,
+        container.resolve(SleepStatsProcessor),
     )
 
 
