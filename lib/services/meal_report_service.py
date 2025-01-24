@@ -9,15 +9,19 @@ class MealReportService:
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
-        reports = await self.meal_report_collection.find(
-            {
-                "patient_id": patient_id,
-                "report_type": "daily",
-                "date": {"$gte": start_date.isoformat()},
-                "date": {"$lte": end_date.isoformat()},
-            },
-            {"_id": 0},
-        ).to_list(length=None)
+        reports = (
+            await self.meal_report_collection.find(
+                {
+                    "patient_id": patient_id,
+                    "report_type": "daily",
+                    "date": {"$gte": start_date.isoformat()},
+                    "date": {"$lte": end_date.isoformat()},
+                },
+                {"_id": 0},
+            )
+            .sort("date", 1)
+            .to_list(length=None)
+        )
 
         return reports
 

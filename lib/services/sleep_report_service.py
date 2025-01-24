@@ -15,15 +15,19 @@ class SleepReportService:
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
-        reports = await self.sleep_report_collection.find(
-            {
-                "patient_id": patient_id,
-                "report_type": "daily",
-                "start_date": {"$gte": start_date},
-                "end_date": {"$lte": end_date},
-            },
-            {"_id": 0},
-        ).to_list(length=None)
+        reports = (
+            await self.sleep_report_collection.find(
+                {
+                    "patient_id": patient_id,
+                    "report_type": "daily",
+                    "start_date": {"$gte": start_date},
+                    "end_date": {"$lte": end_date},
+                },
+                {"_id": 0},
+            )
+            .sort("start_date", 1)
+            .to_list(length=None)
+        )
 
         return reports
 
