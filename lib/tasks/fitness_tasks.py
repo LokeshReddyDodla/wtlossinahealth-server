@@ -13,14 +13,24 @@ from lib.utils.fitness.processor import FitnessStatsProcessor
 def generate_fitness_reports_for_patient(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
+    from lib.dependencies.service_dependencies import get_celery_task_manager
+
     try:
+        task_manager = get_celery_task_manager()
         months_between = get_months_between_dates(start_date, end_date)
+        report_type: FitnessReportTypeLiteral = "monthly"
 
         for year, month in reversed(months_between):
-            start_date, end_date = get_month_start_end(year, month)
+            month_start_date, month_end_date = get_month_start_end(year, month)
 
-            generate_fitness_report_for_month.delay(
-                patient_id, start_date, end_date
+            task_manager.trigger_task_once(
+                "lib.tasks.fitness_tasks.generate_fitness_report_for_month",
+                args=[
+                    patient_id,
+                    month_start_date,
+                    month_end_date,
+                ],
+                task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{report_type}",
             )
 
         print(f"Generated fitness report for patient: {patient_id}")
