@@ -105,7 +105,7 @@ class ChatManagementService(BaseChatService):
 
     async def fetch_chat_messages(self, chat_id: str, user_id: str):
         try:
-            pipeline = get_chat_messages_pipeline(chat_id, user_id)
+            pipeline = get_chat_messages_pipeline(chat_id)
             return (
                 await self.mongo_store.db["chat_messages"]
                 .aggregate(pipeline)

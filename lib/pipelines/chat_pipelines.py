@@ -99,37 +99,16 @@ def get_user_messages_pipeline(
     return pipeline
 
 
-def get_chat_messages_pipeline(chat_id: str, user_id: str):
-    match_condition = {
-        "$and": [
-            {"chat_id": chat_id},
-            {
-                "$or": [
-                    {"sender_id": user_id},
-                    {"participants.id": user_id},
-                ]
-            },
-        ]
-    }
+def get_chat_messages_pipeline(chat_id: str):
+    # Match condition only by chat_id
+    match_condition = {"chat_id": chat_id}
 
     pipeline = [
-        {"$match": match_condition},  # Match the user in chats
+        {"$match": match_condition},  # Match the specific chat_id
         {
-            "$lookup": {
-                "from": "chat_messages",  # Join with chat_messages collection
-                "localField": "_id",  # Matching chat _id with chat_id in messages
-                "foreignField": "chat_id",
-                "as": "messages",
-            }
-        },
-        {
-            "$unwind": "$messages"
-        },  # Unwind the messages to filter them individually
+            "$sort": {"timestamp": 1}
+        },  # Sort messages by timestamp in ascending order
     ]
-
-    pipeline.append({"$sort": {"messages.updated_at": 1}})
-
-    pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
 
     return pipeline
 
