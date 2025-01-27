@@ -113,9 +113,23 @@ def get_chat_messages_pipeline(chat_id: str, user_id: str):
     }
 
     pipeline = [
-        {"$match": match_condition},
-        {"$sort": {"timestamp": 1}},
+        {"$match": match_condition},  # Match the user in chats
+        {
+            "$lookup": {
+                "from": "chat_messages",  # Join with chat_messages collection
+                "localField": "_id",  # Matching chat _id with chat_id in messages
+                "foreignField": "chat_id",
+                "as": "messages",
+            }
+        },
+        {
+            "$unwind": "$messages"
+        },  # Unwind the messages to filter them individually
     ]
+
+    pipeline.append({"$sort": {"messages.updated_at": 1}})
+
+    pipeline.append({"$replaceRoot": {"newRoot": "$messages"}})
 
     return pipeline
 
