@@ -131,10 +131,10 @@ async def get_user_messages(
         )
 
 
-@router.get("/chat-messages/{chat_id}", response_model=SuccessResponse)
+@router.get("/messages", response_model=SuccessResponse)
 async def get_chat_messages(
-    chat_id: str,
     request: Request,
+    chat_id: str,
     current_user=Depends(get_current_user),
     chat_management_service: ChatManagementService = Depends(
         get_chat_management_service
