@@ -7,7 +7,8 @@ from lib.core.constants import EmitMessageKey, ProfileType
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.pipelines.chat_pipelines import (get_user_chat_pipeline,
+from lib.pipelines.chat_pipelines import (get_chat_messages_pipeline,
+                                          get_user_chat_pipeline,
                                           get_user_messages_pipeline)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.services.chat.base import BaseChatService
@@ -98,6 +99,18 @@ class ChatManagementService(BaseChatService):
                 .to_list(length=None)
             )
 
+        except PyMongoError as e:
+            print(f"MongoDB Error: {e}")
+            raise
+
+    async def fetch_chat_messages(self, chat_id: str, user_id: str):
+        try:
+            pipeline = get_chat_messages_pipeline(chat_id, user_id)
+            return (
+                await self.mongo_store.db["chat_messages"]
+                .aggregate(pipeline)
+                .to_list(length=None)
+            )
         except PyMongoError as e:
             print(f"MongoDB Error: {e}")
             raise
