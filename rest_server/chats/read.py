@@ -129,3 +129,31 @@ async def get_user_messages(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.get("/chat-messages/{chat_id}", response_model=SuccessResponse)
+async def get_chat_messages(
+    chat_id: str,
+    request: Request,
+    current_user=Depends(get_current_user),
+    chat_management_service: ChatManagementService = Depends(
+        get_chat_management_service
+    ),
+):
+    try:
+        user_id, role = current_user
+        messages = await chat_management_service.fetch_chat_messages(
+            chat_id, user_id
+        )
+
+        return SuccessResponse(
+            message="Chat messages fetched successfully.", data=messages
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

@@ -99,6 +99,27 @@ def get_user_messages_pipeline(
     return pipeline
 
 
+def get_chat_messages_pipeline(chat_id: str, user_id: str):
+    match_condition = {
+        "$and": [
+            {"chat_id": chat_id},
+            {
+                "$or": [
+                    {"sender_id": user_id},
+                    {"participants.id": user_id},
+                ]
+            },
+        ]
+    }
+
+    pipeline = [
+        {"$match": match_condition},
+        {"$sort": {"timestamp": 1}},
+    ]
+
+    return pipeline
+
+
 def get_chat_pipeline(
     user_id: str,
     fetch_last_message: bool = False,
