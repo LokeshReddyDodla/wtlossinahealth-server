@@ -65,6 +65,7 @@ async def disconnect(sid):
 
 @sio.event
 async def sendMessage(sid, data):
+    print('==> sendMessage: ', sid, data)
     chat_id = data.get("chat_id")
     sender_id = data.get("sender_id")
     content = data.get("content")
@@ -77,6 +78,7 @@ async def sendMessage(sid, data):
     if not all([chat_id, sender_id, content]):
         return {"status": "error", "message": "Missing required fields"}
 
+    print("==> create message obj")
     # Create a message object
     message_data = ChatMessageCreate(
         chat_id=chat_id,
