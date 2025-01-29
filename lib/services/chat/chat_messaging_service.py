@@ -18,8 +18,11 @@ class ChatMessagingService(BaseChatService):
     async def add_message(self, message_data: ChatMessageCreate):
         """Add a new message to the chat."""
         try:
+            print("==> calling _create_message_instance...")
             message = self._create_message_instance(message_data)
+            print("==> calling _save_message_to_db...")
             await self._save_message_to_db(message)
+            print("==> calling _update_chat_on_new_message...")
             await self._update_chat_on_new_message(
                 message, message_data.sender_id
             )
@@ -112,20 +115,24 @@ class ChatMessagingService(BaseChatService):
     def _create_message_instance(
         self, message_data: ChatMessageCreate
     ) -> ChatMessage:
-        """Create a ChatMessage instance from input data."""
-        return ChatMessage(
-            chat_id=message_data.chat_id,
-            sender_id=message_data.sender_id,
-            content=message_data.content,
-            media=message_data.media,
-            reply_to=message_data.reply_to,
-            timestamp=message_data.timestamp,
-            metadata=message_data.metadata,
-            severity=message_data.severity or "low",
-            is_flagged=message_data.is_flagged or False,
-            read_receipts=[],
-            reactions=[],
-        )
+        try:
+            """Create a ChatMessage instance from input data."""
+            return ChatMessage(
+                chat_id=message_data.chat_id,
+                sender_id=message_data.sender_id,
+                content=message_data.content,
+                media=message_data.media,
+                reply_to=message_data.reply_to,
+                timestamp=message_data.timestamp,
+                metadata=message_data.metadata,
+                severity=message_data.severity or "low",
+                is_flagged=message_data.is_flagged or False,
+                read_receipts=[],
+                reactions=[],
+            )
+        except Exception as e:
+            print("==> exception: ", e)
+            raise
 
     async def _save_message_to_db(self, message: ChatMessage):
         """Save the message to the database."""
