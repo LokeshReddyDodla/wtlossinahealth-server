@@ -91,12 +91,14 @@ async def sendMessage(sid, data):
         severity="low",
         is_flagged=False,
     )
+    print("==> message_data: ", message_data)
 
     try:
         # Save message and update unread counts
         await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
+        print("==> sendMessage exception: ", e)
         await sio.emit(
             "error", {"status": "error", "message": str(e)}, room=sid
         )
