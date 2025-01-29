@@ -18,7 +18,7 @@ chat_notification_service = ChatNotificationService()
 sio = AsyncServer(
     async_mode="asgi",
     client_manager=AsyncRedisManager(REDIS_URL),
-    cors_allowed_origins=["http://127.0.0.1:5500"],
+    cors_allowed_origins="*",  # "http://127.0.0.1:5500"
     logger=True,
 )
 
