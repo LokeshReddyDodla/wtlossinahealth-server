@@ -118,10 +118,23 @@ class SleepReportService:
     async def save_reports_bulk(self, reports: list):
         try:
             operations = []
+            now = datetime.now()
 
             for report in reports:
                 unique_string = f"{report['patient_id']}_{report['report_type']}_{report['start_date']}_{report['end_date']}"
                 report_id = hashlib.sha256(unique_string.encode()).hexdigest()
+
+                existing_report = await self.sleep_report_collection.find_one(
+                    {"_id": report_id}
+                )
+                if existing_report:
+                    report["created_at"] = existing_report.get(
+                        "created_at", now
+                    )
+                    report["updated_at"] = now
+                else:
+                    report["created_at"] = now
+                    report["updated_at"] = now
 
                 report["_id"] = report_id
 

@@ -1,5 +1,5 @@
 import hashlib
-from datetime import date
+from datetime import date, datetime
 
 
 class MealReportService:
@@ -59,6 +59,17 @@ class MealReportService:
                 f"{patient_id}_{report['report_type']}_{report['date']}"
             )
             report_id = hashlib.sha256(unique_key.encode()).hexdigest()
+            now = datetime.now()
+
+            existing_report = await self.meal_report_collection.find_one(
+                {"_id": report_id}
+            )
+            if existing_report:
+                report["created_at"] = existing_report.get("created_at", now)
+                report["updated_at"] = now
+            else:
+                report["created_at"] = now
+                report["updated_at"] = now
 
             report["_id"] = report_id
             report["date"] = report["date"].isoformat()
