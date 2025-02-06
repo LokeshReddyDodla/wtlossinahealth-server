@@ -1,8 +1,9 @@
+import hashlib
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
-from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
+from lib.services.meal_report_service import MealReportService
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
@@ -15,6 +16,8 @@ from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.utils.glucose.time_period import GlucoseTimePeriodStatsFetcher
 
+ReportTypeLiteral = Literal["daily", "weekly", "other"]
+
 
 class GlucoseStatsProcessor:
     def __init__(
@@ -22,10 +25,12 @@ class GlucoseStatsProcessor:
         clickhouse_store,
         meal_service,
         fitness_stats_processor: FitnessStatsProcessor,
+        meal_report_service: MealReportService,
     ):
         self.clickhouse_store = clickhouse_store
         self.meal_service = meal_service
         self.fitness_stats_processor = fitness_stats_processor
+        self.meal_report_service = meal_report_service
 
     def fetch_glucose_readings_by_date(
         self,
@@ -91,24 +96,31 @@ class GlucoseStatsProcessor:
         stats = {}
 
         # Overall Stats
-        stats["overall"] = await self._process_period(
-            patient_id,
-            start_date,
-            end_date,
-        )
+        stats["overall"] = (
+            await self._process_period(
+                patient_id, start_date, end_date, "other"
+            )
+        ).model_dump()
 
         # Day-wise Stats
         day_periods = DayWisePeriod(start_date, end_date).periods
-        stats["day_wise"] = await self._process_multiple_periods(
-            patient_id, day_periods, include_readings=True, include_meals=True
-        )
+        stats["day_wise"] = [
+            period.model_dump()
+            for period in await self._process_multiple_periods(
+                patient_id,
+                day_periods,
+                "daily",
+            )
+        ]
 
         # # Week-wise Stats
         week_periods = WeekWisePeriod(start_date, end_date).periods
-        stats["week_wise"] = await self._process_multiple_periods(
-            patient_id,
-            week_periods,
-        )
+        stats["week_wise"] = [
+            period.model_dump()
+            for period in await self._process_multiple_periods(
+                patient_id, week_periods, "weekly"
+            )
+        ]
 
         return stats
 
@@ -117,8 +129,7 @@ class GlucoseStatsProcessor:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        include_readings: bool = False,
-        include_meals: bool = False,
+        report_type: ReportTypeLiteral,
     ) -> GlucoseLevelStats:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -144,19 +155,15 @@ class GlucoseStatsProcessor:
         )["overall"]
 
         glucose_readings = None
-        if include_readings:
+        if report_type == "daily":
             glucose_readings = self.fetch_glucose_readings_by_date(
                 patient_id, start_date_str, end_date_str
             )
 
-        meals = None
-        if include_meals:
-            meals = await self.meal_service.fetch_meals(
-                patient_id=patient_id,
-                start_datetime=start_date,
-                end_datetime=end_date,
-            )
-            meals = [PatientMealSchema.from_orm(meal) for meal in meals]
+        meal_report_id = None
+        if report_type == "daily":
+            unique_key = f"{patient_id}_{report_type}_{start_date.date()}"
+            meal_report_id = hashlib.sha256(unique_key.encode()).hexdigest()
 
         return GlucoseLevelStats(
             start_date=start_date,
@@ -168,15 +175,14 @@ class GlucoseStatsProcessor:
             hypo_stats=hypo_stats,
             time_period_stats=time_period_stats,
             fitness_report=fitness_report,
-            meals=meals,
+            meal_report_id=meal_report_id,
         )
 
     async def _process_multiple_periods(
         self,
         patient_id: str,
         periods: List[Dict[str, datetime]],
-        include_readings: bool = False,
-        include_meals: bool = False,
+        report_type: ReportTypeLiteral,
     ) -> List[GlucoseLevelStats]:
         stats = []
         for period in periods:
@@ -185,8 +191,7 @@ class GlucoseStatsProcessor:
                     patient_id,
                     period["start_date"],
                     period["end_date"],
-                    include_readings=include_readings,
-                    include_meals=include_meals,
+                    report_type,
                 )
             )
         return stats

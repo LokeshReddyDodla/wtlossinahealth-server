@@ -4,11 +4,12 @@ from typing import List
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.tasks.cgm_tasks import generate_cgm_reports_for_patient
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.http_exceptions import raise_http_exception
 
 
-class CGMService:
+class CGMUploadService:
     def __init__(self, clickhouse_store, postgres_session: AsyncSession):
         self.clickhouse_store = clickhouse_store
         self.postgres_session = postgres_session
@@ -58,8 +59,16 @@ class CGMService:
                     }
                 )
 
+            cgm_data_utils = CGMDataUtils(self.clickhouse_store)
+            cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
+            print("==> cgm_report_periods: ", cgm_report_periods)
+
             # Write data to ClickHouse
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+
+            generate_cgm_reports_for_patient.delay(
+                patient_id, cgm_report_periods
+            )
 
         except Exception as e:
             raise_http_exception(

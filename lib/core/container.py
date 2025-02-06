@@ -14,7 +14,7 @@ from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.cgm_report_service import CGMReportService
-from lib.services.cgm_service import CGMService
+from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -255,6 +255,9 @@ container.register(
         fitness_stats_processor=cast(
             FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
         ),
+        meal_report_service=cast(
+            MealReportService, container.resolve(MealReportService)
+        ),
     ),
 )
 
@@ -351,10 +354,10 @@ container.register(
     ),
 )
 
-# 🔹 CGM Service
+# 🔹 CGM Upload Service
 container.register(
-    CGMService,
-    lambda: CGMService(
+    CGMUploadService,
+    lambda: CGMUploadService(
         clickhouse_store=container.resolve(ClickHouseStore),
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
     ),

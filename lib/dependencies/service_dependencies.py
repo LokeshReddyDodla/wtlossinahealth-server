@@ -5,7 +5,8 @@ from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service import AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
-from lib.services.cgm_service import CGMService
+from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -133,10 +134,17 @@ def get_patient_plan_service() -> PatientPlanService:
     )
 
 
-def get_cgm_service() -> CGMService:
+def get_cgm_service() -> CGMUploadService:
     return cast(
-        CGMService,
-        container.resolve(CGMService),
+        CGMUploadService,
+        container.resolve(CGMUploadService),
+    )
+
+
+def get_cgm_report_service() -> CGMReportService:
+    return cast(
+        CGMReportService,
+        container.resolve(CGMReportService),
     )
 
 

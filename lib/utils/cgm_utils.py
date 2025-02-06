@@ -25,11 +25,6 @@ class CGMDataUtils:
                 return True
         return False
 
-    # Function to align a date to the nearest previous Saturday
-    def align_to_previous_saturday(self, date: datetime) -> datetime:
-        days_to_subtract = (date.weekday() + 2) % 7  # 2 = Saturday
-        return date - timedelta(days=days_to_subtract)
-
     # Function to generate all valid 2-week report periods
     def generate_all_report_periods(
         self,
@@ -47,14 +42,19 @@ class CGMDataUtils:
         earliest_date = cgm_data["Device Timestamp"].min()
         latest_date = cgm_data["Device Timestamp"].max()
 
+        print("==> earliest_date: ", earliest_date)
+        print("==> latest_date: ", latest_date)
+
         # Initialize variables
         report_periods = []
-        current_date = self.align_to_previous_saturday(earliest_date)
+        current_date = earliest_date
 
         while current_date <= latest_date:
             # Define the report period
             start_date = current_date
-            end_date = start_date + timedelta(days=period_length - 1)
+            end_date = min(
+                start_date + timedelta(days=period_length - 1), latest_date
+            )
 
             # Filter data for the current period
             period_data = cgm_data[

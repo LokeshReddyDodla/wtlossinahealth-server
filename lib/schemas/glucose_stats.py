@@ -118,10 +118,10 @@ class GlucoseLevelStats(BaseModel):
     start_date: datetime
     end_date: datetime
     glucose_readings: Optional[List[GlucoseReading]] = None
-    meals: Optional[List[PatientMeal]] = None
     glucose_summary_stats: GlucoseSummaryStats
     glucose_range_stats: GlucoseRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
     time_period_stats: Optional[Dict[str, TimePeriodStats]]
     fitness_report: Optional[FitnessStats] = None
+    meal_report_id: Optional[str] = None
