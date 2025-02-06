@@ -65,7 +65,6 @@ async def disconnect(sid):
 
 @sio.event
 async def sendMessage(sid, data):
-    print('==> sendMessage: ', sid, data)
     chat_id = data.get("chat_id")
     sender_id = data.get("sender_id")
     content = data.get("content")
@@ -78,7 +77,6 @@ async def sendMessage(sid, data):
     if not all([chat_id, sender_id, content]):
         return {"status": "error", "message": "Missing required fields"}
 
-    print("==> create message obj")
     # Create a message object
     message_data = ChatMessageCreate(
         chat_id=chat_id,
@@ -91,14 +89,12 @@ async def sendMessage(sid, data):
         severity="low",
         is_flagged=False,
     )
-    print("==> message_data: ", message_data)
 
     try:
         # Save message and update unread counts
         await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
-        print("==> sendMessage exception: ", e)
         await sio.emit(
             "error", {"status": "error", "message": str(e)}, room=sid
         )

@@ -9,11 +9,13 @@ from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import get_patient_profile_service
+from lib.dependencies.service_dependencies import (get_cgm_report_service,
+                                                   get_patient_profile_service)
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient import CompletePatientProfile
+from lib.services.cgm_report_service import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
@@ -30,6 +32,7 @@ async def get_patient_details(
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
@@ -39,12 +42,17 @@ async def get_patient_details(
             include_health_data=include_health_data,
             other_related_data=other_related_data,
         )
-        print("==> package: ", result.package)
-        print("==> package_id: ", result.package_id)
+
+        cgm_reports = await cgm_report_service.fetch_reports(
+            str(current_patient.patient_id)
+        )
 
         return SuccessResponse(
             message="Patient data fetched successfully.",
-            data=CompletePatientProfile.from_orm(result),
+            data={
+                **CompletePatientProfile.from_orm(result).model_dump(),
+                "cgm_reports": cgm_reports,
+            },
         )
     except HTTPException as http_exc:
         raise http_exc
