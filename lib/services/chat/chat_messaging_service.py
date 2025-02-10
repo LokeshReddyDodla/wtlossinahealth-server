@@ -8,6 +8,7 @@ from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+import orjson
 
 
 class ChatMessagingService(BaseChatService):
@@ -23,11 +24,13 @@ class ChatMessagingService(BaseChatService):
             await self._update_chat_on_new_message(
                 message, message_data.sender_id
             )
+            
+            print("==> saved_message: ", saved_message)
 
             notification_info = self._create_notification_info(message)
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
-                data=saved_message,
+                data=orjson.dumps(saved_message).decode("utf-8"),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
