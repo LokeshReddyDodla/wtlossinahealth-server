@@ -19,7 +19,7 @@ class ChatMessagingService(BaseChatService):
         """Add a new message to the chat."""
         try:
             message = self._create_message_instance(message_data)
-            await self._save_message_to_db(message)
+            saved_message = await self._save_message_to_db(message)
             await self._update_chat_on_new_message(
                 message, message_data.sender_id
             )
@@ -27,7 +27,7 @@ class ChatMessagingService(BaseChatService):
             notification_info = self._create_notification_info(message)
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
-                data=jsonable_encoder(message.model_dump(by_alias=True)),
+                data=jsonable_encoder(saved_message),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
@@ -132,8 +132,12 @@ class ChatMessagingService(BaseChatService):
         message_dict = message.model_dump(by_alias=True)
         if message_dict.get("media") and message_dict["media"].get("url"):
             message_dict["media"]["url"] = str(message_dict["media"]["url"])
+            
         await self.mongo_store.insert_document("chat_messages", message_dict)
+        
         print(f"Message {message.id} added to chat {message.chat_id}.")
+        
+        return message_dict
 
     async def _update_chat_on_new_message(
         self, message: ChatMessage, sender_id: str
