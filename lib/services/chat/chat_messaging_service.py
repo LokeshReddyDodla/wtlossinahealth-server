@@ -24,8 +24,6 @@ class ChatMessagingService(BaseChatService):
                 message, message_data.sender_id
             )
             
-            print("==> saved_message: ", saved_message)
-
             notification_info = self._create_notification_info(message)
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
