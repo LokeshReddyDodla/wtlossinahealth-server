@@ -51,7 +51,9 @@ async def get_patient_details(
             message="Patient data fetched successfully.",
             data={
                 **CompletePatientProfile.from_orm(result).model_dump(),
-                "cgm_reports": cgm_reports,
+                "reports": {
+                    "cgm": cgm_reports
+                },
             },
         )
     except HTTPException as http_exc:

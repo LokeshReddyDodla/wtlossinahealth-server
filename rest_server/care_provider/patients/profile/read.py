@@ -46,7 +46,9 @@ async def get_patients(
             )
             updated_patient = {
                 **CareProviderPatients.from_orm(patient).model_dump(),
-                "cgm_reports": cgm_reports,
+                "reports": {
+                    "cgm": cgm_reports
+                },
             }
             updated_patients.append(updated_patient)
             
