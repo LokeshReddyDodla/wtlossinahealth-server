@@ -33,6 +33,7 @@ from rest_server.patients.profile.router import router as profile_router
 from rest_server.patients.sleep.router import router as sleep_router
 from rest_server.patients.smbgs.router import router as smbgs_router
 from rest_server.patients.vitals.router import router as vitals_router
+from rest_server.patients.package.router import router as patient_package_router
 from rest_server.system_management import reload_cache
 from rest_server.test import test
 
@@ -110,6 +111,7 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(meals_router)
     app.include_router(patient_overview_router)
     app.include_router(patient_care_providers_router)
+    app.include_router(patient_package_router)
 
     ###########################################################################
     # Test
