@@ -1,13 +1,16 @@
+from datetime import datetime
 from io import StringIO
 from typing import List
 
 import pandas as pd
+from lib.models.patient_connected_app import PatientConnectedApp
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.tasks.cgm_tasks import generate_cgm_reports_for_patient
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.http_exceptions import raise_http_exception
-
+from sqlalchemy.future import select
+from sqlalchemy.orm import  selectinload
 
 class CGMUploadService:
     def __init__(self, clickhouse_store, postgres_session: AsyncSession):
@@ -65,7 +68,18 @@ class CGMUploadService:
 
             # Write data to ClickHouse
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-
+            
+            # Update last_sync_timestamp for the connected app if it exists
+            connected_app_result = await self.postgres_session.execute(
+                select(PatientConnectedApp)
+                .where(PatientConnectedApp.patient_id == patient_id)
+                .options(selectinload(PatientConnectedApp.libreview))
+            )
+            connected_app = connected_app_result.scalars().first()
+            if connected_app and connected_app.libreview:
+                connected_app.libreview.last_sync_timestamp = datetime.now()
+                await self.postgres_session.commit()
+            
             generate_cgm_reports_for_patient.delay(
                 patient_id, cgm_report_periods
             )
