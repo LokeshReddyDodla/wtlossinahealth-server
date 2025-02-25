@@ -62,7 +62,7 @@ class CGMReportService:
                         "patient_id": {"$first": "$patient_id"},
                         "overall": {"$first": "$overall"},
                         "day_wise": {"$push": "$day_wise"},
-                        "week_wise": {"$push": "$week_wise"},
+                        "week_wise": {"$first": "$week_wise"},
                     }
                 },
                 {"$project": {"_id": 0}},
