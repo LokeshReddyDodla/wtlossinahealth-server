@@ -13,6 +13,7 @@ def generate_agp_points_query(patient_id, start_date, end_date) -> str:
         patient_id = '{patient_id}'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
+        AND glucose_level IS NOT NULL
     GROUP BY hour
     ORDER BY hour
     """
