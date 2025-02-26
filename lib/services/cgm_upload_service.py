@@ -28,7 +28,7 @@ class CGMUploadService:
             # Convert timestamps without changing the timezone
             df["Device Timestamp"] = pd.to_datetime(
                 df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
-            )
+            ).dt.tz_localize(None)
 
             # Determine time range for deletion
             start_time = df["Device Timestamp"].min()
