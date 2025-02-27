@@ -62,7 +62,7 @@ class GlucoseStatsProcessor:
             return []
 
         grouped = [
-            GlucoseReading(Device_Timestamp=row[0], Glucose_Level=row[1])
+            GlucoseReading(Device_Timestamp=row[1], Glucose_Level=row[2])
             for row in data
         ]
         return grouped

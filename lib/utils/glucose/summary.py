@@ -92,16 +92,17 @@ class GlucoseSummaryStatsFetcher:
         query = generate_agp_points_query(
             patient_id, start_date_str, end_date_str
         )
-        agp_result = clickhouse_store.client.execute(query)
+        agp_result = clickhouse_store.client.execute(query)        
         agp_points = [
             AGPPoint(
-                hour=row[0],
-                median=row[1],
+                hour=row[1],
                 tenth_percentile=row[2],
                 twenty_fifth_percentile=row[3],
-                seventy_fifth_percentile=row[4],
-                ninetieth_percentile=row[5],
+                median=row[4],
+                seventy_fifth_percentile=row[5],
+                ninetieth_percentile=row[6],
             )
             for row in agp_result
         ]
+        
         return agp_points

@@ -114,6 +114,7 @@ def generate_avg_glucose_readings_by_hour_query(
 ):
     return f"""
     SELECT
+        toHour(time) AS hour_24,
         formatDateTime(time, '%I:00 %p') AS hour,
         avg(glucose_level) AS avg_glucose_level
     FROM
@@ -122,8 +123,8 @@ def generate_avg_glucose_readings_by_hour_query(
         patient_id = '{patient_id}'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
-    GROUP BY hour
-    ORDER BY hour
+    GROUP BY hour_24, hour
+    ORDER BY hour_24
     """
 
 
