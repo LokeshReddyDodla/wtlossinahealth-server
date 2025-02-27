@@ -1,6 +1,7 @@
 def generate_agp_points_query(patient_id, start_date, end_date) -> str:
     return f"""
     SELECT
+        toHour(time) AS hour_24,
         formatDateTime(time, '%I:00 %p') AS hour,
         quantile(0.10)(glucose_level) AS tenth_percentile,
         quantile(0.25)(glucose_level) AS twenty_fifth_percentile,
@@ -13,8 +14,8 @@ def generate_agp_points_query(patient_id, start_date, end_date) -> str:
         patient_id = '{patient_id}'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
-    GROUP BY hour
-    ORDER BY hour
+    GROUP BY hour_24, hour
+    ORDER BY hour_24
     """
 
 
