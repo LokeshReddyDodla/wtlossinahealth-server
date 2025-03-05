@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 router = APIRouter(
-    prefix="/patients/care-providers", tags=["Patient - Care Providers"]
+    prefix="/patient/care-providers", tags=["Patient - Care Providers"]
 )
 
 
