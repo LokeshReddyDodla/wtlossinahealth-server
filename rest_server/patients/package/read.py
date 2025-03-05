@@ -23,8 +23,7 @@ from .router import router
 @router.get(path="", response_model=SuccessResponse)
 async def get_patient_package_api(
     request: Request,
-    patient_id: str,
-     patient_profile_service: PatientProfileService = Depends(
+    patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
     current_patient: Patient = Depends(get_current_patient),
