@@ -24,7 +24,6 @@ from .router import router
 @router.get(path="", response_model=SuccessResponse)
 async def get_patient_care_providers_api(
     request: Request,
-    patient_id: str,
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
