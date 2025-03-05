@@ -27,11 +27,11 @@ async def get_patient_package_api(
      patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
-    # current_patient: Patient = Depends(get_current_patient),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         result = await patient_profile_service.fetch_patient_profile(
-            str(patient_id),
+            str(current_patient.patient_id),
             
         )
         
@@ -46,9 +46,7 @@ async def get_patient_package_api(
 
         return SuccessResponse(
             message="Patient package fetched successfully",
-            data={
-               "package": package,
-            },
+            data=package,
         )
 
     except HTTPException as http_exc:
