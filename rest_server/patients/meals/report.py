@@ -13,7 +13,7 @@ from .router import router
 
 
 @router.get("/report")
-async def get_meal_report(
+async def get_meal_reports(
     request: Request,
     start_date: date = Query(...),
     end_date: date = Query(...),
