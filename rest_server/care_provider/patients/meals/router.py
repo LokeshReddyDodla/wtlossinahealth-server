@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
 router = APIRouter(
-    prefix="/admin/patient/meals",
-    tags=["Admin - Patient Meals"],
+    prefix="/patients/meals", tags=["Care Provider - Patients Meals"]
 )
+
 
 from .read import *
