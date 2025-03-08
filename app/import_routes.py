@@ -7,8 +7,6 @@ from rest_server.admin.health_facility.router import \
     router as admin_health_facility_router
 from rest_server.admin.patients import connected_apps as admin_patients
 from rest_server.admin.patients.cgm import upload as admin_cgm_upload
-from rest_server.admin.patients.meals.router import \
-    router as admin_patient_meals_router
 from rest_server.ai_conversations.router import \
     router as ai_conversations_router
 from rest_server.auth import auth
@@ -63,7 +61,6 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(admin_patients.router)
     app.include_router(admin_cgm_upload.router)
     app.include_router(admin_care_provider_router)
-    app.include_router(admin_patient_meals_router)
 
     ###########################################################################
     # Auth

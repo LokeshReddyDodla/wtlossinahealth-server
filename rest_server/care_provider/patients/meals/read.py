@@ -3,11 +3,15 @@ from datetime import date
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.admin_auth import get_current_admin
+from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_meal_report_service
 from lib.models.admin import Admin
+from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient
 from lib.services.meal_report_service import MealReportService
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -20,7 +24,11 @@ async def get_day_meal_report(
     patient_id: str = Query(...),
     date: date = Query(...),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
-    current_admin: Admin = Depends(get_current_admin),
+    current_care_provider: CareProviderModel = Depends(
+    get_current_care_provider(
+        CareProviderPermissionAction.READ, CareProviderFeature.REPORTS
+    )
+),
 
 ):
     try:
