@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -5,6 +6,9 @@ from decouple import config
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Read PostgreSQL URL from env
 SQLALCHEMY_DATABASE_URL = config("POSTGRES_ASYNCPG_URL")
@@ -16,12 +20,13 @@ if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
 # Create the SQLAlchemy engine
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=30,     
+    max_overflow=20, 
     pool_timeout=30,
-    pool_recycle=1800,
+    pool_recycle=3600,
     pool_pre_ping=True,
     echo=False,
+    future=True
 )
 
 # Create a configured "Session" class
@@ -34,7 +39,6 @@ AsyncSessionLocal = sessionmaker(
 # Create a Base class for our models to inherit
 Base = declarative_base()
 
-
 class PostgresStore:
     def __init__(self):
         self.engine = engine
@@ -45,6 +49,9 @@ class PostgresStore:
         session: AsyncSession = self.session_local()
         try:
             yield session
+        except Exception as e:
+            logger.error(f"Session error: {e}")
+            await session.rollback()
         finally:
             await session.close()
 
@@ -54,3 +61,6 @@ class PostgresStore:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close()
+    
+    async def close(self):
+        await self.engine.dispose()
