@@ -47,20 +47,28 @@ class PostgresStore:
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         session: AsyncSession = self.session_local()
+        logger.info(f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
+
         try:
             yield session
         except Exception as e:
             logger.error(f"Session error: {e}")
             await session.rollback()
+            logger.info("↩️ Rolled back transaction")
         finally:
             await session.close()
+            logger.info(f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
+
 
     async def __aenter__(self):
         self.session = self.session_local()
+        logger.info(f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
         return self.session
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close()
+        logger.info(f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
     
     async def close(self):
         await self.engine.dispose()
+        logger.info("🛑 Database connection closed")
