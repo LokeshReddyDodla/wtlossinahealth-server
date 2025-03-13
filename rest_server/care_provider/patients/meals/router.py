@@ -5,4 +5,5 @@ router = APIRouter(
 )
 
 
+from .analyze import *
 from .read import *
