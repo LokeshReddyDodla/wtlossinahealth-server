@@ -32,6 +32,7 @@ from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
+from lib.services.patient_token_usage_service import PatientTokenUsageService
 from lib.services.patient_vital_service import PatientVitalService
 # Processors
 from lib.services.sleep_report_service import SleepReportService
@@ -365,3 +366,12 @@ container.register(
 
 # 🔹 Ai Conversation Service
 container.register(AiConversationService, AiConversationService)
+
+
+# 🔹 Ai Patient Token Usage Service
+container.register(
+    PatientTokenUsageService,
+    lambda: PatientTokenUsageService(
+        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+    ),
+)
