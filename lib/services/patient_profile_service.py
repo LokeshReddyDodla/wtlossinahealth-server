@@ -5,7 +5,7 @@ from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKey
@@ -88,9 +88,9 @@ class PatientProfileService:
                 select(PatientModel)
                 .where(PatientModel.patient_id == patient_id)
                 .options(
-                    selectinload(PatientModel.care_providers),
-                    selectinload(PatientModel.package),
-                    selectinload(PatientModel.health_facility),
+                    joinedload(PatientModel.care_providers),
+                    joinedload(PatientModel.package),
+                    joinedload(PatientModel.health_facility),
                 )
             )
 
@@ -102,16 +102,16 @@ class PatientProfileService:
                     selectinload(PatientModel.alcohol_consumption),
                     selectinload(PatientModel.smoking_habit),
                     selectinload(PatientModel.sleep_habit),
-                    selectinload(PatientModel.eating_habit).selectinload(
+                    joinedload(PatientModel.eating_habit).joinedload(
                         PatientEatingHabitModel.meal_timings
                     ),
-                    selectinload(PatientModel.eating_habit).selectinload(
+                    joinedload(PatientModel.eating_habit).joinedload(
                         PatientEatingHabitModel.diet_preferences
                     ),
-                    selectinload(PatientModel.patient_plans).selectinload(
+                    joinedload(PatientModel.patient_plans).joinedload(
                         PatientPlanModel.diet_plan
                     ),
-                    selectinload(PatientModel.patient_plans).selectinload(
+                    joinedload(PatientModel.patient_plans).joinedload(
                         PatientPlanModel.fitness_plan
                     ),
                     selectinload(PatientModel.diabetic_history),
@@ -129,10 +129,10 @@ class PatientProfileService:
             if other_related_data:
                 stmt = stmt.options(
                     selectinload(PatientModel.permissions),
-                    selectinload(PatientModel.connected_apps).selectinload(
+                    joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.libreview
                     ),
-                    selectinload(PatientModel.connected_apps).selectinload(
+                    joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
                     selectinload(PatientModel.token_usage_logs),

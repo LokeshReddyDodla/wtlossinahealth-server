@@ -149,6 +149,8 @@ class PackageService:
                     str(created_by_id)
                 )
             )
+            care_provider = await self.postgres_session.merge(care_provider)
+
             code = await self.generate_unique_code()
             new_package = PackageModel(
                 **package_data.model_dump(),
