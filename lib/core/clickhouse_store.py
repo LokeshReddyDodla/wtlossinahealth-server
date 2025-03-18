@@ -7,11 +7,18 @@ from decouple import config
 # Read ClickHouse URL and credentials from env
 CLICKHOUSE_HOST = config("CLICKHOUSE_HOST", default="localhost")
 CLICKHOUSE_PORT = config("CLICKHOUSE_PORT", default="9000")
+CLICKHOUSE_USER = config("CLICKHOUSE_USER", default="default")
+CLICKHOUSE_PASSWORD = config("CLICKHOUSE_PASSWORD", default="")
 
 
 class ClickHouseStore:
     def __init__(self):
-        self.client = Client(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT)
+        self.client = Client(
+            host=CLICKHOUSE_HOST,
+            port=CLICKHOUSE_PORT,
+            user=CLICKHOUSE_USER,
+            password=CLICKHOUSE_PASSWORD,
+        )
         self.create_database()
 
     def create_database(self):
