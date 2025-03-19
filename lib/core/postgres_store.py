@@ -20,7 +20,7 @@ if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
 # Create the SQLAlchemy engine
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=30,     
+    pool_size=200,     
     max_overflow=20, 
     pool_timeout=30,
     pool_recycle=3600,
