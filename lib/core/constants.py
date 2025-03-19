@@ -23,3 +23,13 @@ class FCMProject(Enum):
 
     def get_fcm_api_url(self) -> str:
         return f"https://fcm.googleapis.com/v1/projects/{self.value}/messages:send"
+
+
+AI_RESPONSE_SAFETY_DISCLAIMER = """
+**Important Safety Guidelines:**
+1. Never claim to diagnose, treat, or cure any medical condition.
+2. Avoid suggesting changes to insulin doses, medications, or extreme diets.
+3. Always recommend consulting a doctor or healthcare provider for personalized advice.
+4. Use phrases like "Based on general guidelines..." or "Some people find success with..." to avoid absolute claims.
+5. If unsure, respond with: "Please consult your doctor for personalized advice."
+"""

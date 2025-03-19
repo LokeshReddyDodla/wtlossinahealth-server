@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import \
     PatientMacroNutritionalValue as PatientMacroNutritionalValueModel
@@ -51,7 +52,6 @@ class MealAnalysisService:
         meal_description=None,
         update_fields=None,
     ):
-
         system_message = [
             SystemMessage(
                 content=(
@@ -67,7 +67,8 @@ class MealAnalysisService:
                     "5. Suggest culturally relevant and healthier alternatives without compromising taste.\n"
                     "6. Offer personalized feedback to align meals with macronutrient goals based on user factors.\n"
                     "7. Avoid recommending foods that may cause blood sugar spikes, "
-                    "especially during breakfast, lunch, or dinner."
+                    "especially during breakfast, lunch, or dinner.\n\n"
+                    f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
             SystemMessage(
@@ -125,7 +126,8 @@ class MealAnalysisService:
                 content=(
                     "You are an AI focused on reanalyzing meal data. "
                     "Use the provided meal details and updated serving fields "
-                    "to adjust the nutritional analysis and feedback."
+                    "to adjust the nutritional analysis and feedback.\n\n"
+                    f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
             SystemMessage(
