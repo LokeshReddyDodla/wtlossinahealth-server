@@ -16,25 +16,7 @@ from rest_server.dump import dump
 from rest_server.file_upload import file_upload
 from rest_server.health import health_check
 from rest_server.health_facility.router import router as health_facility_router
-from rest_server.patients.care_providers.router import \
-    router as patient_care_providers_router
-from rest_server.patients.cgm.router import router as cgm_router
-from rest_server.patients.connected_apps.router import \
-    router as connected_apps_router
-from rest_server.patients.fitness.router import router as fitness_router
-from rest_server.patients.meals.router import router as meals_router
-from rest_server.patients.overview.router import \
-    router as patient_overview_router
-from rest_server.patients.package.router import \
-    router as patient_package_router
-from rest_server.patients.permissions.router import \
-    router as permissions_router
-from rest_server.patients.prescriptions.router import \
-    router as prescriptions_router
-from rest_server.patients.profile.router import router as profile_router
-from rest_server.patients.sleep.router import router as sleep_router
-from rest_server.patients.smbgs.router import router as smbgs_router
-from rest_server.patients.vitals.router import router as vitals_router
+from rest_server.patients.router import router as patients_router
 from rest_server.system_management import reload_cache
 from rest_server.test import test
 
@@ -94,25 +76,9 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(file_upload.router)
 
     ###########################################################################
-    # Report
-    ###########################################################################
-
-    ###########################################################################
     # Patient
     ###########################################################################
-    app.include_router(profile_router)
-    app.include_router(permissions_router)
-    app.include_router(vitals_router)
-    app.include_router(smbgs_router)
-    app.include_router(sleep_router)
-    app.include_router(connected_apps_router)
-    app.include_router(cgm_router)
-    app.include_router(fitness_router)
-    app.include_router(prescriptions_router)
-    app.include_router(meals_router)
-    app.include_router(patient_overview_router)
-    app.include_router(patient_care_providers_router)
-    app.include_router(patient_package_router)
+    app.include_router(patients_router)
 
     ###########################################################################
     # Test

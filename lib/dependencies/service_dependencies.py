@@ -23,6 +23,7 @@ from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
+from lib.services.patient_token_usage_service import PatientTokenUsageService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.sleep_report_service import SleepReportService
 from lib.services.user_device_service import UserDeviceService
@@ -192,4 +193,11 @@ def get_celery_task_manager() -> CeleryTaskManager:
     return cast(
         CeleryTaskManager,
         container.resolve(CeleryTaskManager),
+    )
+
+
+def get_patient_token_usage_service() -> PatientTokenUsageService:
+    return cast(
+        PatientTokenUsageService,
+        container.resolve(PatientTokenUsageService),
     )

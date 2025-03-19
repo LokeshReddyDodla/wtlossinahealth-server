@@ -1,5 +1,5 @@
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/patient/overview", tags=["Patient - Overview"])
+router = APIRouter(prefix="/overview", tags=["Patient - Overview"])
 
 from .read import *
