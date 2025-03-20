@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
@@ -44,13 +44,13 @@ async def get_user_chats(
             p["id"]
             for chat in chats
             for p in chat["participants"]
-            if p["type"] == ProfileType.PATIENT.value
+            if p["type"] == ProfileTypeEnum.PATIENT.value
         }
         care_provider_ids = {
             p["id"]
             for chat in chats
             for p in chat["participants"]
-            if p["type"] == ProfileType.CARE_PROVIDER.value
+            if p["type"] == ProfileTypeEnum.CARE_PROVIDER.value
         }
 
         # Fetch profiles for patients from PostgreSQL
@@ -71,7 +71,7 @@ async def get_user_chats(
         for chat in chats:
             sender = chat.get("sender")
             if sender:
-                if sender["type"] == ProfileType.PATIENT.value:
+                if sender["type"] == ProfileTypeEnum.PATIENT.value:
                     sender["profile"] = patient_profiles.get(sender["id"], {})
                 else:
                     sender["profile"] = care_provider_profiles.get(
@@ -79,7 +79,7 @@ async def get_user_chats(
                     )
 
             for receiver in chat.get("receivers", []):
-                if receiver["type"] == ProfileType.PATIENT.value:
+                if receiver["type"] == ProfileTypeEnum.PATIENT.value:
                     receiver["profile"] = patient_profiles.get(
                         receiver["id"], {}
                     )

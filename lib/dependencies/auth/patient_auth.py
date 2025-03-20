@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
@@ -16,7 +16,7 @@ async def get_current_patient(
 ):
     try:
         user_id, role = user_role
-        if role != ProfileType.PATIENT.value:
+        if role != ProfileTypeEnum.PATIENT.value:
             raise_http_exception(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 message="Access denied. Token is invalid or expired.",

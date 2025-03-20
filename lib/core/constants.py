@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class ProfileType(Enum):
+class ProfileTypeEnum(Enum):
     PATIENT = "patient"
     CARE_PROVIDER = "care_provider"
     ADMIN = "admin"

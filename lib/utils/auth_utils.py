@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.utils.http_exceptions import raise_http_exception
@@ -13,7 +13,7 @@ class AuthUtils:
 
     async def get_or_create_user(self, phone_number: str, role: str):
         try:
-            if role == ProfileType.PATIENT.value:
+            if role == ProfileTypeEnum.PATIENT.value:
                 result = await self.postgres_session.execute(
                     select(Patient).where(Patient.phone_number == phone_number)
                 )
@@ -27,7 +27,7 @@ class AuthUtils:
 
                 user_id = str(user.patient_id)
 
-            elif role == ProfileType.CARE_PROVIDER.value:
+            elif role == ProfileTypeEnum.CARE_PROVIDER.value:
                 result = await self.postgres_session.execute(
                     select(CareProvider).where(
                         CareProvider.phone_number == phone_number
