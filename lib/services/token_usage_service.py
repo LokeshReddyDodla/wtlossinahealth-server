@@ -1,0 +1,139 @@
+from datetime import date
+from typing import Dict, Optional
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from lib.core.constants import ProfileTypeEnum
+from lib.core.types import OpenAIModelLiteral
+from lib.models.token_usage_log import TokenUsageLog
+
+PRICING = {
+    "gpt-4o": {
+        "input": 2.50 / 1_000_000,  # $2.50 per 1M input tokens
+        "cached_input": 1.25 / 1_000_000,  # $1.25 per 1M cached input tokens
+        "output": 10.00 / 1_000_000,  # $10.00 per 1M output tokens
+    },
+    "gpt-4o-mini": {
+        "input": 0.150 / 1_000_000,  # $0.150 per 1M input tokens
+        "cached_input": 0.075 / 1_000_000,  # $0.075 per 1M cached input tokens
+        "output": 0.600 / 1_000_000,  # $0.600 per 1M output tokens
+    },
+}
+
+
+class TokenUsageService:
+    def __init__(self, postgres_session: AsyncSession):
+        self.postgres_session = postgres_session
+
+    async def get_usage_summary(
+        self,
+        user_id: str,
+        user_type: ProfileTypeEnum,
+        start_date: date,
+        end_date: date,
+    ):
+        try:
+            query = (
+                select(
+                    func.date(TokenUsageLog.created_at).label("usage_date"),
+                    func.sum(TokenUsageLog.input_tokens).label(
+                        "total_input_tokens"
+                    ),
+                    func.sum(TokenUsageLog.output_tokens).label(
+                        "total_output_tokens"
+                    ),
+                    func.sum(TokenUsageLog.cached_input_tokens).label(
+                        "total_cached_input_tokens"
+                    ),
+                    func.sum(TokenUsageLog.cost).label("total_cost"),
+                )
+                .where(
+                    TokenUsageLog.user_id == user_id,
+                    TokenUsageLog.user_type == user_type,
+                    TokenUsageLog.created_at >= start_date,
+                    TokenUsageLog.created_at <= end_date,
+                )
+                .group_by(func.date(TokenUsageLog.created_at))
+                .order_by(func.date(TokenUsageLog.created_at))
+            )
+
+            result = await self.postgres_session.execute(query)
+            rows = result.all()
+
+            usage_summary = [
+                {
+                    "date": row.usage_date,
+                    "total_input_tokens": row.total_input_tokens,
+                    "total_output_tokens": row.total_output_tokens,
+                    "total_cached_input_tokens": row.total_cached_input_tokens,
+                    "total_cost": row.total_cost,
+                }
+                for row in rows
+            ]
+
+            return usage_summary
+
+        except Exception as e:
+            raise ValueError(f"Failed to calculate token usage summary: {e}")
+
+    async def log_usage(
+        self,
+        user_id: str,
+        user_type: ProfileTypeEnum,
+        model_used: OpenAIModelLiteral,
+        input_tokens: int,
+        output_tokens: int,
+        api_type: str,
+        api_endpoint: str,
+        cached_input_tokens: Optional[int] = None,
+    ) -> None:
+        try:
+            # Calculate the cost
+            cost = self.calculate_cost(
+                model_used, input_tokens, cached_input_tokens, output_tokens
+            )
+
+            log = TokenUsageLog(
+                user_id=user_id,
+                user_type=user_type,
+                model_used=model_used,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+                cost=cost,
+                api_type=api_type,
+                api_endpoint=api_endpoint,
+            )
+            self.postgres_session.add(log)
+            await self.postgres_session.commit()
+
+        except Exception as e:
+            await self.postgres_session.rollback()
+            raise ValueError(f"Failed to log token usage: {e}")
+
+    def calculate_cost(
+        self,
+        model_used: str,
+        input_tokens: int,
+        cached_input_tokens: Optional[int],
+        output_tokens: int,
+    ) -> float:
+        """
+        Calculate the total cost based on the model used and the number of tokens.
+        """
+        if model_used not in PRICING:
+            raise ValueError(f"Pricing not found for model: {model_used}")
+
+        pricing = PRICING[model_used]
+
+        cached_input_tokens = cached_input_tokens or 0
+
+        # Calculate costs for each type of token
+        input_cost = input_tokens * pricing["input"]
+        cached_input_cost = cached_input_tokens * pricing["cached_input"]
+        output_cost = output_tokens * pricing["output"]
+
+        # Total cost
+        total_cost = input_cost + cached_input_cost + output_cost
+        return total_cost

@@ -32,10 +32,10 @@ from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
-from lib.services.patient_token_usage_service import PatientTokenUsageService
 from lib.services.patient_vital_service import PatientVitalService
 # Processors
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -370,8 +370,8 @@ container.register(AiConversationService, AiConversationService)
 
 # 🔹 Ai Patient Token Usage Service
 container.register(
-    PatientTokenUsageService,
-    lambda: PatientTokenUsageService(
+    TokenUsageService,
+    lambda: TokenUsageService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
     ),
 )

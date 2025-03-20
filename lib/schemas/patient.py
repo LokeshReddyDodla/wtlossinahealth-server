@@ -24,7 +24,6 @@ from lib.schemas.patient_plan import PatientPlan
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
-from lib.schemas.patient_token_usage_log import PatientTokenUsageLog
 from lib.schemas.patient_vital import PatientVital
 
 
@@ -108,7 +107,6 @@ class CompletePatientProfile(CorePatientProfile):
     vitals: List[PatientVital] = []
     smbgs: List[PatientSMBG] = []
     connected_apps: Optional[PatientConnectedApp] = None
-    token_usage_logs: List[PatientTokenUsageLog] = []
     # health_facility: Optional[HealthFacility] = None
     care_providers: List[CareProvider] = []
     package: Optional[Package] = None
