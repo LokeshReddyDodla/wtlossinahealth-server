@@ -1,7 +1,7 @@
 from decouple import config
 from socketio import AsyncRedisManager, AsyncServer
 
-from lib.core.constants import EmitMessageKey
+from lib.core.constants import EmitMessageKeyEnum
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -156,7 +156,7 @@ async def toggleReaction(sid, data):
 
         # Emit the updated reaction event to all participants in the chat
         await chat_notification_service.notify_participants(
-            message_key=EmitMessageKey.MESSAGE_UPDATED.value,
+            message_key=EmitMessageKeyEnum.MESSAGE_UPDATED.value,
             data={
                 "chat_id": chat_id,
                 "message": updated_message,

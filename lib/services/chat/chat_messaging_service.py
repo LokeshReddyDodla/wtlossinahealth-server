@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi.encoders import jsonable_encoder
 
-from lib.core.constants import EmitMessageKey
+from lib.core.constants import EmitMessageKeyEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
@@ -26,7 +26,7 @@ class ChatMessagingService(BaseChatService):
             
             notification_info = self._create_notification_info(message)
             await self.notification_service.notify_participants(
-                message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
+                message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(saved_message),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
@@ -49,7 +49,7 @@ class ChatMessagingService(BaseChatService):
             )
             await self._update_chat_unread_count(chat_id, user_id)
             await self.notification_service.notify_participants(
-                message_key=EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
+                message_key=EmitMessageKeyEnum.MESSAGE_MARKED_AS_READ.value,
                 data={
                     "chat_id": chat_id,
                     "message_id": message_id,
@@ -67,7 +67,7 @@ class ChatMessagingService(BaseChatService):
             await self._mark_all_messages_as_read_in_chat(chat_id, user_id)
             await self._update_chat_unread_count(chat_id, user_id)
             await self.notification_service.notify_participants(
-                message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
+                message_key=EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
                 data={"chat_id": chat_id, "user_id": user_id},
                 chat_id=chat_id,
             )

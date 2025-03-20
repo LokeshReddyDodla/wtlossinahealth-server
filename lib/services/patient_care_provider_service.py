@@ -7,7 +7,7 @@
 # from sqlalchemy.future import select
 # from sqlalchemy.orm import selectinload
 
-# from lib.core.constants import EmitMessageKey, ProfileTypeEnum
+# from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 # from lib.models.care_provider import CareProvider as CareProviderModel
 # from lib.models.patient import Patient as PatientModel
 # from lib.models.patient_care_provider import \
@@ -165,7 +165,7 @@
 #             await self._create_chats(patient, care_provider)
 
             # await self.chat_service.notify_participants(
-            #     message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+            #     message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
             #     user_id=patient_care_provider_data.patient_id,
             # )
 
@@ -196,7 +196,7 @@
 #             await self.postgres_session.refresh(patient_care_provider)
 
 #             await self.chat_service.notify_participants(
-#                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+#                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
 #                 user_id=str(patient_care_provider.patient_id),
 #             )
 
@@ -232,7 +232,7 @@
 #             await self.postgres_session.commit()
 
 #             await self.chat_service.notify_participants(
-#                 message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+#                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
 #                 user_id=str(patient_care_provider.patient_id),
 #             )
 

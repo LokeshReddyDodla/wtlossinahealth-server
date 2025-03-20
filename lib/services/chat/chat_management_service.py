@@ -3,7 +3,7 @@ from typing import Optional
 
 from pymongo.errors import PyMongoError
 
-from lib.core.constants import EmitMessageKey, ProfileTypeEnum
+from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -195,7 +195,7 @@ class ChatManagementService(BaseChatService):
                 f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
             )
             await sio.emit(
-                EmitMessageKey.CHAT_LIST_UPDATED.value, room=participant_id
+                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value, room=participant_id
             )
 
         except Exception as e:

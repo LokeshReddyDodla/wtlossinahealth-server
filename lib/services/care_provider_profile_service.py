@@ -10,7 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
-from lib.core.constants import EmitMessageKey
+from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
@@ -229,7 +229,7 @@ class CareProviderProfileService:
             await self.postgres_session.refresh(care_provider_profile)
 
             await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=care_provider_id,
             )
             return care_provider_profile
@@ -403,11 +403,11 @@ class CareProviderProfileService:
                 care_provider_id=str(care_provider_id),
             )
             await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=str(patient_id),
             )
             await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKey.CHAT_LIST_UPDATED.value,
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=str(care_provider_id),
             )
 
