@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.core.types import ProfileTypeLiteral
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.schemas.user_device import UserDeviceCreate
@@ -115,9 +115,9 @@ class UserDeviceService:
                 "platform_version": platform_version,
             }
 
-            if profile_type == ProfileType.PATIENT.value:
+            if profile_type == ProfileTypeEnum.PATIENT.value:
                 user_device_data["patient_id"] = user_id
-            elif profile_type == ProfileType.CARE_PROVIDER.value:
+            elif profile_type == ProfileTypeEnum.CARE_PROVIDER.value:
                 user_device_data["care_provider_id"] = user_id
             else:
                 raise ValueError(f"Invalid profile_type: {profile_type}")

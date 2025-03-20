@@ -155,12 +155,6 @@ class Patient(Base):
         "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
     )
 
-    token_usage_logs = relationship(
-        "PatientTokenUsageLog",
-        back_populates="patient",
-        cascade="all, delete-orphan",
-    )
-
     health_facility_id = Column(
         UUID(as_uuid=True),
         ForeignKey(

@@ -3,7 +3,7 @@ from typing import Optional
 
 from pymongo.errors import PyMongoError
 
-from lib.core.constants import EmitMessageKey, ProfileType
+from lib.core.constants import EmitMessageKey, ProfileTypeEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -121,13 +121,13 @@ class ChatManagementService(BaseChatService):
         # Create a direct chat
         chat_id = await self.create_new_chat(
             user_id=str(patient.patient_id),
-            type=ProfileType.PATIENT.value,
+            type=ProfileTypeEnum.PATIENT.value,
             is_group=False,
         )
         await self.participant_service.add_participant_in_chat(
             chat_id=chat_id,
             user_id=str(care_provider.care_provider_id),
-            type=ProfileType.CARE_PROVIDER.value,
+            type=ProfileTypeEnum.CARE_PROVIDER.value,
         )
 
         # Find the patient's group chat and add the care provider
@@ -138,7 +138,7 @@ class ChatManagementService(BaseChatService):
             await self.participant_service.add_participant_in_chat(
                 chat_id=group_chat["_id"],
                 user_id=str(care_provider.care_provider_id),
-                type=ProfileType.CARE_PROVIDER.value,
+                type=ProfileTypeEnum.CARE_PROVIDER.value,
             )
 
     async def find_group_chat_for_patient(self, patient_id: str):

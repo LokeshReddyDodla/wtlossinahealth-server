@@ -6,7 +6,7 @@ from pydantic import BaseModel, validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import get_postgres_session
 from lib.models.admin import Admin
 from lib.utils.jwt import create_jwt_token
@@ -88,7 +88,7 @@ async def login_admin(
             )
 
         token = create_jwt_token(
-            user_id=str(admin.id), role=ProfileType.ADMIN.value
+            user_id=str(admin.id), role=ProfileTypeEnum.ADMIN.value
         )
         return SuccessResponse(message="User verified", data={"token": token})
     except HTTPException as e:

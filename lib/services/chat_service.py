@@ -10,7 +10,7 @@
 # from sqlalchemy.ext.asyncio import AsyncSession
 # from sqlalchemy.future import select
 
-# from lib.core.constants import EmitMessageKey, ProfileType
+# from lib.core.constants import EmitMessageKey, ProfileTypeEnum
 # from lib.core.mongo_store import get_mongo_store
 # from lib.core.types import ProfileTypeLiteral
 # from lib.dependencies.database import get_postgres_session

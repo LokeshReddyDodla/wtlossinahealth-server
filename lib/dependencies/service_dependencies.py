@@ -23,9 +23,9 @@ from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
-from lib.services.patient_token_usage_service import PatientTokenUsageService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -196,8 +196,8 @@ def get_celery_task_manager() -> CeleryTaskManager:
     )
 
 
-def get_patient_token_usage_service() -> PatientTokenUsageService:
+def get_token_usage_service() -> TokenUsageService:
     return cast(
-        PatientTokenUsageService,
-        container.resolve(PatientTokenUsageService),
+        TokenUsageService,
+        container.resolve(TokenUsageService),
     )

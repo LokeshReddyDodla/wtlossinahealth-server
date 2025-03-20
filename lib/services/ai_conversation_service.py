@@ -7,7 +7,7 @@ from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr, ValidationError
 
-from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
+from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER, ProfileTypeEnum
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
@@ -16,8 +16,8 @@ from lib.schemas.ai_conversation_schemas import \
 from lib.schemas.ai_conversation_schemas import AiResponseSuggestions
 from lib.schemas.patient import CorePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.token_usage_service import TokenUsageService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.patient_token_usage_logger import PatientTokenUsageLogger
 
 
 class AiConversationService:
@@ -28,6 +28,7 @@ class AiConversationService:
     ):
         from lib.core.container import container
 
+        self.token_usage_service: Any = container.resolve(TokenUsageService)
         self.patient_profile_service: Any = container.resolve(
             PatientProfileService
         )
@@ -342,14 +343,16 @@ class AiConversationService:
             reply_suggestions=reply_suggestions,
         )
 
+        usage_metadata = ai_response.usage_metadata
+
         # Log token usage
-        tokens_used = ai_response.response_metadata.get("token_usage", {}).get(
-            "total_tokens", 0
-        )
-        if tokens_used:
-            await PatientTokenUsageLogger.log_usage(
-                patient_id=UUID(patient_id),
-                tokens_used=tokens_used,
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=UUID(patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
                 model_used=self.current_model,
                 api_type="openai",
                 api_endpoint="/ai-conversation/respond",
@@ -386,15 +389,16 @@ class AiConversationService:
 
         # Generate a response using the chat model
         ai_response: Any = self.chat_model.invoke(messages)
+        usage_metadata = ai_response.usage_metadata
 
         # Log token usage
-        tokens_used = ai_response.response_metadata.get("token_usage", {}).get(
-            "total_tokens", 0
-        )
-        if tokens_used:
-            await PatientTokenUsageLogger.log_usage(
-                patient_id=UUID(patient_id),
-                tokens_used=tokens_used,
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=UUID(patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
                 model_used=self.current_model,
                 api_type="openai",
                 api_endpoint="/ai-conversation/internal",
@@ -455,7 +459,6 @@ class AiConversationService:
         try:
             suggestion_response: Any = suggestion_model.invoke(messages)
             suggestions = suggestion_response.suggestions
-            print("==> suggestions: ", suggestions)
             return suggestions
         except ValidationError as e:
             print("Error: Response did not match the expected schema", e)
@@ -467,16 +470,18 @@ class AiConversationService:
         )
         messages = [self.system_message, patient_context_message]
 
-        ai_tip_response = self.chat_model.invoke(messages)
+        ai_tip_response: Any = self.chat_model.invoke(messages)
         health_tip = ai_tip_response.content
+        usage_metadata = ai_tip_response.usage_metadata
 
-        tokens_used = ai_tip_response.response_metadata.get(
-            "token_usage", {}
-        ).get("total_tokens", 0)
-        if tokens_used:
-            await PatientTokenUsageLogger.log_usage(
-                patient_id=UUID(patient_id),
-                tokens_used=tokens_used,
+        # Log token usage
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=UUID(patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
                 model_used=self.current_model,
                 api_type="openai",
                 api_endpoint="/ai-conversation/health-tip",

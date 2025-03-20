@@ -9,7 +9,7 @@ from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
-from lib.core.constants import FCMProject, ProfileType
+from lib.core.constants import FCMProject, ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (FCMNotificationChannelKeyLiteral,
                             FCMNotificationGroupKeyLiteral)

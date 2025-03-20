@@ -7,7 +7,7 @@
 # from sqlalchemy.future import select
 # from sqlalchemy.orm import selectinload
 
-# from lib.core.constants import EmitMessageKey, ProfileType
+# from lib.core.constants import EmitMessageKey, ProfileTypeEnum
 # from lib.models.care_provider import CareProvider as CareProviderModel
 # from lib.models.patient import Patient as PatientModel
 # from lib.models.patient_care_provider import \
@@ -246,7 +246,7 @@
 
     #     chat_id = await self.chat_service.create_new_chat(
     #         user_id=str(patient.patient_id),
-    #         type=ProfileType.PATIENT.value,
+    #         type=ProfileTypeEnum.PATIENT.value,
     #         is_group=False,
     #         is_read_only=False,
     #         is_muted=False,
@@ -257,7 +257,7 @@
     #     await self.chat_service.add_participant_in_chat(
     #         chat_id=chat_id,
     #         user_id=str(care_provider.care_provider_id),
-    #         type=ProfileType.CARE_PROVIDER.value,
+    #         type=ProfileTypeEnum.CARE_PROVIDER.value,
     #         is_read_only=False,
     #         is_muted=False,
     #         is_archived=False,
@@ -271,5 +271,5 @@
     #         await self.chat_service.add_participant_in_chat(
     #             chat_id=group_chat["_id"],
     #             user_id=str(care_provider.care_provider_id),
-    #             type=ProfileType.CARE_PROVIDER.value,
+    #             type=ProfileTypeEnum.CARE_PROVIDER.value,
     #         )

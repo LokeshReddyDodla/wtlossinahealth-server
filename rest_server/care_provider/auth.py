@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from lib.core.constants import ProfileType
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.service_dependencies import \
     get_care_provider_profile_service
 from lib.services.care_provider_profile_service import \
@@ -33,7 +33,7 @@ async def login_careprovider(
 
         token = create_jwt_token(
             user_id=str(care_provider.care_provider_id),
-            role=ProfileType.CARE_PROVIDER.value,
+            role=ProfileTypeEnum.CARE_PROVIDER.value,
         )
         return SuccessResponse(
             message="Care provider authenticated successfully",

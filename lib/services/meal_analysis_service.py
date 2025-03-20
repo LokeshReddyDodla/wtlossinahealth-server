@@ -112,9 +112,9 @@ class MealAnalysisService:
         )
 
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
-        total_tokens = ai_response["raw"].usage_metadata.get("total_tokens", 0)
+        usage_metadata = ai_response["raw"].usage_metadata
 
-        return parsed_response, total_tokens
+        return parsed_response, usage_metadata
 
     async def reanalyze_meal(
         self,
@@ -156,9 +156,9 @@ class MealAnalysisService:
         )
 
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
-        total_tokens = ai_response["raw"].usage_metadata.get("total_tokens", 0)
+        usage_metadata = ai_response["raw"].usage_metadata
 
-        return parsed_response, total_tokens
+        return parsed_response, usage_metadata
 
     async def save_meal_analysis(
         self, meal: Any, analysis_data: MealAnalysisResponse
