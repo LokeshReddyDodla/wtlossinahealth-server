@@ -10,7 +10,7 @@
 # from sqlalchemy.ext.asyncio import AsyncSession
 # from sqlalchemy.future import select
 
-# from lib.core.constants import EmitMessageKey, ProfileTypeEnum
+# from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 # from lib.core.mongo_store import get_mongo_store
 # from lib.core.types import ProfileTypeLiteral
 # from lib.dependencies.database import get_postgres_session
@@ -237,7 +237,7 @@
 
 #             # Emit message and send notification
 #             await self.notify_participants(
-#                 message_key=EmitMessageKey.NEW_MESSAGE_RECEIVED.value,
+#                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
 #                 data=jsonable_encoder(message_dict),
 #                 chat_id=message_data.chat_id,
 #                 notification_info=notification_info,
@@ -429,7 +429,7 @@
 #             )
 
 #             await sio.emit(
-#                 EmitMessageKey.CHAT_LIST_UPDATED.value, room=participant_id
+#                 EmitMessageKeyEnum.CHAT_LIST_UPDATED.value, room=participant_id
 #             )
 
 #         except Exception as e:
@@ -470,7 +470,7 @@
 
 #             # Emit an acknowledgment to the UI
 #             await self.notify_participants(
-#                 message_key=EmitMessageKey.ALL_MESSAGES_MARKED_AS_READ.value,
+#                 message_key=EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
 #                 data={"chat_id": chat_id, "user_id": str(user_id)},
 #                 chat_id=chat_id,
 #             )
@@ -526,7 +526,7 @@
 
 #             # Emit an acknowledgment to the UI
 #             await self.notify_participants(
-#                 message_key=EmitMessageKey.MESSAGE_MARKED_AS_READ.value,
+#                 message_key=EmitMessageKeyEnum.MESSAGE_MARKED_AS_READ.value,
 #                 data={
 #                     "chat_id": chat_id,
 #                     "message_id": message_id,

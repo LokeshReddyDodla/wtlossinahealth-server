@@ -7,7 +7,7 @@ class ProfileTypeEnum(Enum):
     ADMIN = "admin"
 
 
-class EmitMessageKey(Enum):
+class EmitMessageKeyEnum(Enum):
     CHAT_LIST_UPDATED = "chat_list_updated"
     USER_STATUS_UPDATED = "user_status_updated"
     NEW_MESSAGE_RECEIVED = "new_message_received"
@@ -17,7 +17,7 @@ class EmitMessageKey(Enum):
     MESSAGE_MARKED_AS_READ = "message_marked_as_read"
 
 
-class FCMProject(Enum):
+class FCMProjectEnum(Enum):
     PATIENT_APP = "aihealth-patient-app"
     CARE_PROVIDER_APP = "aihealth-care-provider-app"
 
