@@ -3,7 +3,8 @@ from fastapi.encoders import jsonable_encoder
 
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.service_dependencies import get_ai_conversation_service
-from lib.services.ai_conversation_service import AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

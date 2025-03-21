@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.models.patient_sleep import PatientSleep
 from lib.schemas.sleep_stats import SleepStats
-from lib.services.ai_conversation_service import AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.sleep.duration_fetcher import SleepDurationFetcher
 from lib.utils.sleep.quality_fetcher import SleepQualityFetcher

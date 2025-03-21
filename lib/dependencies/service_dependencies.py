@@ -2,7 +2,8 @@ from typing import cast
 
 from lib.core.container import container
 from lib.managers.celery_task_manager import CeleryTaskManager
-from lib.services.ai_conversation_service import AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.cgm_report_service import CGMReportService

@@ -10,7 +10,8 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.managers.celery_task_manager import CeleryTaskManager
-from lib.services.ai_conversation_service import AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.cgm_report_service import CGMReportService
