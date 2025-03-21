@@ -23,11 +23,7 @@ class HealthTipSystemMessage(BaseSystemMessage):
     - Example: "According to the American Diabetes Association (ADA), staying hydrated can improve energy levels."
     """
 
-    FOLLOW_UP_SUGGESTIONS = """
-    **Follow-Up Suggestions:**
-    - Generate 2-3 follow-up questions or related queries the user might ask after this response.
-    - Example: "How much water should I drink daily?", "What are some healthy snacks I can have?"
-    """
+    FOLLOW_UP_SUGGESTIONS = ""
 
     EXAMPLE_RESPONSES = """
     **Example Responses:**
