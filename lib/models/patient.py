@@ -219,7 +219,8 @@ def create_related_records(mapper, connection, target):
     )
 
     # Add initial message to the conversation
-    from lib.services.ai_conversation_service import AiConversationService
+    from lib.services.ai_conversation_service.ai_conversation_service import \
+        AiConversationService
 
     ai_conversation_service = AiConversationService()
     welcome_message = (

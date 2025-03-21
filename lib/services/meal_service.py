@@ -19,7 +19,8 @@ from lib.schemas.ai_conversation_schemas import \
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.ai_conversation_service import AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.token_usage_service import TokenUsageService

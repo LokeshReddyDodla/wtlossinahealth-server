@@ -13,11 +13,13 @@ from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationTypeLiteral, OpenAIModelLiteral)
 from lib.schemas.ai_conversation_schemas import \
     AiConversationMessage as AiConversationMessageSchema
-from lib.schemas.ai_conversation_schemas import AiResponseSuggestions
+from lib.schemas.ai_conversation_schemas import (AIResponse,
+                                                 AiResponseSuggestions)
 from lib.schemas.patient import CorePatientProfile
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.token_usage_service import TokenUsageService
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.retry_utils import retry_request
 
 
 class AiConversationService:
@@ -42,6 +44,9 @@ class AiConversationService:
             model=self.current_model,
             temperature=0.5,
             api_key=SecretStr(str(config("OPENAI_API_KEY"))),
+        )
+        self.structured_model = self.chat_model.with_structured_output(
+            AIResponse, include_raw=True
         )
         self.system_message = self._get_initial_system_message(
             conversation_type
@@ -69,13 +74,25 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
-                **Example Responses:**
-                - "Based on general guidelines for diabetes management, some people find success with meals rich in leafy greens, whole grains, and lean proteins. However, always consult your doctor for personalized advice."
-                - "This meal contains high-GI foods like white rice. Consider switching to brown rice or quinoa for better blood sugar control. Remember, consult your healthcare provider before making dietary changes."
+                **Citations:**
+                - **You must include a citation from trusted sources like ADA, WHO, or CDC in every response.**
+                - The citation should be embedded directly into the response text.
+                - Example: "According to the **American Diabetes Association (ADA)**, eggs are a nutritious source of protein and can be part of a balanced diet."
+                - If no specific source is available, use a generic citation like: "Based on general guidelines for diabetes management..."
 
-                **Important:** 
-                - If the user refers to a different meal, politely ask them to upload details or images of that meal to start a new conversation.
-                - Stay focused only on the meal currently being discussed without assuming or mixing it with other meals from the same day.
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "What are some low-GI snacks I can have between meals?", "Can you suggest a meal plan for weight loss?"
+
+                **Example Responses:**
+                - "According to the **American Diabetes Association (ADA)**, eggs are a nutritious source of protein and can be part of a balanced diet. They are rich in essential nutrients like vitamins D and B12. For a balanced meal, consider preparing eggs in a healthy way, such as boiling, poaching, or scrambling with vegetables. However, always consult your healthcare provider for personalized dietary advice!"
+                **Follow-Up Suggestions:**
+                - "What are some healthy ways to cook eggs?"
+                - "How many eggs can I eat in a week?"
+                - "Based on guidelines from the **World Health Organization (WHO)**, switching to brown rice or quinoa can help stabilize blood sugar levels. Remember, consult your healthcare provider before making dietary changes."
+                **Follow-Up Suggestions:**
+                - "What are some healthy alternatives to white rice?"
+                - "How can I reduce the glycemic load of my meals?"
                 """
             )
         elif conversation_type == "smbg":
@@ -88,9 +105,23 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+                **Citations:**
+                - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+                - Example: "According to the Centers for Disease Control and Prevention (CDC), monitoring glucose levels regularly can help manage diabetes."
+
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "What should I do if my glucose levels are too high?", "How often should I check my blood sugar?"
+
                 **Example Responses:**
-                - "Your recent glucose readings show a slight increase after meals. Based on general guidelines, some people find success with smaller, more frequent meals. Always consult your doctor for personalized advice."
-                - "Your fasting glucose levels are within the target range. Keep monitoring and consult your healthcare provider for further guidance."
+                - "Your recent glucose readings show a slight increase after meals. According to the **American Diabetes Association (ADA)**, some people find success with smaller, more frequent meals. Always consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "What are some healthy snacks I can have between meals?"
+                - "How can I reduce post-meal glucose spikes?"
+                - "Your fasting glucose levels are within the target range. The **World Health Organization (WHO)** recommends regular monitoring to maintain healthy glucose levels. Keep consulting your healthcare provider for further guidance."
+                **Follow-Up Suggestions:**
+                - "What should I do if my fasting glucose is too high?"
+                - "How often should I check my blood sugar?"
                 """
             )
         elif conversation_type == "sleep":
@@ -104,9 +135,23 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+                **Citations:**
+                - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+                - Example: "According to the American College of Sports Medicine (ACSM), maintaining a consistent bedtime can improve sleep quality."
+
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "How can I improve my sleep quality?", "What are some tips for falling asleep faster?"
+
                 **Example Responses:**
-                - "Your sleep efficiency is 90%, which is excellent! Based on general guidelines, maintaining a consistent bedtime can further improve sleep quality. Consult your doctor for personalized advice."
-                - "Your deep sleep duration is slightly low. Consider avoiding screens and caffeine before bedtime for better restorative sleep. Always consult your healthcare provider for tailored recommendations."
+                - "Your sleep efficiency is 90%, which is excellent! According to the **American College of Sports Medicine (ACSM)**, maintaining a consistent bedtime can further improve sleep quality. Consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "What are some tips for falling asleep faster?"
+                - "How can I improve my sleep quality?"
+                - "Your deep sleep duration is slightly low. The **Centers for Disease Control and Prevention (CDC)** recommends avoiding screens and caffeine before bedtime for better restorative sleep. Always consult your healthcare provider for tailored recommendations."
+                **Follow-Up Suggestions:**
+                - "What are some natural ways to improve deep sleep?"
+                - "How can I reduce screen time before bed?"
                 """
             )
         elif conversation_type == "prescription":
@@ -119,9 +164,23 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+                **Citations:**
+                - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+                - Example: "According to the American Diabetes Association (ADA), this medication is commonly used for..."
+
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "What are the side effects of this medication?", "How should I take this medication?"
+
                 **Example Responses:**
-                - "This prescription contains [medication name]. Based on general guidelines, it is used for [purpose]. Always consult your doctor for personalized advice."
+                - "This prescription contains [medication name]. According to the **American Diabetes Association (ADA)**, it is used for [purpose]. Always consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "What are the side effects of this medication?"
+                - "How should I take this medication?"
                 - "Please consult your healthcare provider for a detailed explanation of this prescription and its usage."
+                **Follow-Up Suggestions:**
+                - "What should I do if I miss a dose?"
+                - "Are there any foods I should avoid while taking this medication?"
                 """
             )
         elif conversation_type == "report":
@@ -134,9 +193,23 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+                **Citations:**
+                - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+                - Example: "According to the World Health Organization (WHO), this biomarker is associated with..."
+
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "What does this biomarker mean?", "How can I improve this metric?"
+
                 **Example Responses:**
-                - "Your recent blood test shows [insight]. Based on general guidelines, some people find success with [recommendation]. Always consult your doctor for personalized advice."
+                - "Your recent blood test shows [insight]. According to the **American Diabetes Association (ADA)**, some people find success with [recommendation]. Always consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "What does this biomarker mean?"
+                - "How can I improve this metric?"
                 - "Please consult your healthcare provider for a detailed interpretation of this report."
+                **Follow-Up Suggestions:**
+                - "What should I do if this metric is too high?"
+                - "Are there any lifestyle changes I can make to improve this?"
                 """
             )
         elif conversation_type == "health-tip":
@@ -151,10 +224,27 @@ class AiConversationService:
                 **Safety Rules:**
                 {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+                **Citations:**
+                - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+                - Example: "According to the American Diabetes Association (ADA), staying hydrated can improve energy levels."
+
+                **Follow-Up Suggestions:**
+                - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+                - Example: "How much water should I drink daily?", "What are some healthy snacks I can have?"
+
                 **Example Responses:**
-                - "**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels! Always consult your doctor for personalized advice."
-                - "**Did you know?** Staying **hydrated** can improve energy levels. Aim to drink water throughout the day. Consult your healthcare provider for tailored recommendations."
-                - "**Make sure** to include a **high-fiber vegetable** in your next meal for better blood sugar control. Based on general guidelines, this can help some people. Always consult your doctor for personalized advice."
+                - "**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels! According to the **American Diabetes Association (ADA)**, light activity after meals can improve glucose control. Always consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "How much exercise should I do daily?"
+                - "What are some other light activities I can try?"
+                - "**Did you know?** Staying **hydrated** can improve energy levels. The **World Health Organization (WHO)** recommends drinking water throughout the day. Consult your healthcare provider for tailored recommendations."
+                **Follow-Up Suggestions:**
+                - "How much water should I drink daily?"
+                - "What are some signs of dehydration?"
+                - "**Make sure** to include a **high-fiber vegetable** in your next meal for better blood sugar control. According to the **Centers for Disease Control and Prevention (CDC)**, high-fiber foods can help stabilize glucose levels. Always consult your doctor for personalized advice."
+                **Follow-Up Suggestions:**
+                - "What are some high-fiber vegetables I can try?"
+                - "How can I add more fiber to my diet?"
                 """
             )
         return SystemMessage(
@@ -171,9 +261,23 @@ class AiConversationService:
             **Safety Rules:**
             {AI_RESPONSE_SAFETY_DISCLAIMER}
 
+            **Citations:**
+            - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
+            - Example: "According to the American Diabetes Association (ADA), some people find success with..."
+
+            **Follow-Up Suggestions:**
+            - Generate 2-3 follow-up questions or related queries the user might ask after this response.
+            - Example: "What are some ways to improve my diet?", "How can I manage stress better?"
+
             **Example Responses:**
-            - "Based on general guidelines for diabetes management, some people find success with [recommendation]. However, always consult your doctor for personalized advice."
-            - "Your recent data shows [insight]. Consider [action] to improve [metric]. Please consult your healthcare provider for tailored recommendations."
+            - "Based on guidelines from the **American Diabetes Association (ADA)**, some people find success with [recommendation]. However, always consult your doctor for personalized advice."
+            **Follow-Up Suggestions:**
+            - "What are some ways to improve my diet?"
+            - "How can I manage stress better?"
+            - "Your recent data shows [insight]. According to the **World Health Organization (WHO)**, [action] can help improve [metric]. Please consult your healthcare provider for tailored recommendations."
+            **Follow-Up Suggestions:**
+            - "What are some other ways to improve [metric]?"
+            - "How often should I monitor [metric]?"
             """
         )
 
@@ -186,7 +290,8 @@ class AiConversationService:
         content: str,
         message_type: AiConversationMessageTypeLiteral = "text",
         exclude_from_frontend: bool = False,
-        reply_suggestions: Optional[List[str]] = None,
+        follow_up_questions: Optional[List[str]] = None,
+        metadata: Optional[Dict] = None,
     ):
         message_data = AiConversationMessageSchema(
             patient_id=patient_id,
@@ -196,7 +301,8 @@ class AiConversationService:
             content=content,
             message_type=message_type,
             exclude_from_frontend=exclude_from_frontend,
-            reply_suggestions=reply_suggestions,
+            follow_up_questions=follow_up_questions,
+            metadata=metadata,
         ).model_dump()
 
         result = await self.ai_messages_collection.insert_one(message_data)
@@ -324,26 +430,36 @@ class AiConversationService:
         )
         messages.insert(1, patient_context_message)
 
-        # Generate a response using the chat model
-        ai_response: Any = self.chat_model.invoke(messages)
+        # Generate a structured response using the chat model
+        ai_response = retry_request(
+            self.structured_model.invoke,
+            input=messages,
+        )
+        parsed_response: AIResponse = ai_response.get("parsed", {})
 
-        reply_suggestions = None
-        if include_reply_suggestions:
-            reply_suggestions = await self._generate_message_suggestions(
-                ai_response.content
-            )
+        response = parsed_response.response
+        follow_up_questions = (
+            parsed_response.follow_up_questions
+            if include_reply_suggestions
+            else None
+        )
 
         ai_message_data = await self.add_message_to_conversation(
             patient_id,
             conversation_id,
             conversation_type,
             "ai",
-            ai_response.content,
+            response,
             message_type="markdown",
-            reply_suggestions=reply_suggestions,
+            follow_up_questions=follow_up_questions,
+            metadata={
+                "sources": parsed_response.sources,
+                "confidence_score": parsed_response.confidence_score,
+                "tags": parsed_response.tags,
+            },
         )
 
-        usage_metadata = ai_response.usage_metadata
+        usage_metadata = ai_response["raw"].usage_metadata
 
         # Log token usage
         if usage_metadata:
