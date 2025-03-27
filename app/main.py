@@ -47,7 +47,6 @@ async def shutdown_event() -> None:
     """
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
-    app.state.clickhouse_store.client.close()
 
 
 socket_app = ASGIApp(sio, other_asgi_app=app, socketio_path="/ws")
