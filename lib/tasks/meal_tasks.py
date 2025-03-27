@@ -4,8 +4,8 @@ from typing import cast
 
 from celery import shared_task
 
-from lib.services.meal_report_service import MealReportService
-from lib.utils.meals.processor import MealStatsProcessor
+from lib.dependencies.service_dependencies import (get_meal_report_service,
+                                                   get_meal_stats_processor)
 
 
 @shared_task
@@ -14,14 +14,8 @@ def generate_daily_meal_report(
     report_date: date,
 ):
     try:
-        from lib.core.container import container
-
-        meal_stats_service = cast(
-            MealStatsProcessor, container.resolve(MealStatsProcessor)
-        )
-        meal_report_service = cast(
-            MealReportService, container.resolve(MealReportService)
-        )
+        meal_stats_service = get_meal_stats_processor()
+        meal_report_service = get_meal_report_service()
 
         async def generate_and_save_report():
             # Generate the meal report

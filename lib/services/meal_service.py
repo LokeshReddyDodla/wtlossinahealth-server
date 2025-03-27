@@ -12,6 +12,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
+from lib.dependencies.service_dependencies import get_token_usage_service
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_schemas import \
@@ -44,8 +45,7 @@ class MealService:
         self.ai_conversation_service = AiConversationService(
             conversation_type="meal", model="gpt-4o-mini"
         )
-
-        self.token_usage_service: Any = container.resolve(TokenUsageService)
+        self.token_usage_service = get_token_usage_service()
 
     async def fetch_meals(
         self,
@@ -256,7 +256,7 @@ class MealService:
             # Log token usage if applicable
             if usage_metadata:
                 await self.token_usage_service.log_usage(
-                    user_id=UUID(patient_id),
+                    user_id=patient_id,
                     user_type=ProfileTypeEnum.PATIENT,
                     input_tokens=usage_metadata["input_tokens"],
                     output_tokens=usage_metadata["output_tokens"],
