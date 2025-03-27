@@ -326,7 +326,7 @@ class MealService:
                 patient_id=str(meal_orm.patient_id),
                 conversation_id=meal_id,
                 conversation_type="meal",
-                role="system",
+                role="ai",
                 message_type="text",
                 content="How can I assist you further regarding this meal?",
             ),
