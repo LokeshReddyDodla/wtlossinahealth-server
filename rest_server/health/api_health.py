@@ -1,6 +1,7 @@
 import httpx
 from fastapi import HTTPException
 
+
 async def check_user_api_health():
     async with httpx.AsyncClient() as client:
         try:
@@ -10,4 +11,5 @@ async def check_user_api_health():
             else:
                 raise HTTPException(status_code=503, detail="User API unavailable")
         except httpx.RequestError:
+            raise HTTPException(status_code=503, detail="User API unavailable")
             raise HTTPException(status_code=503, detail="User API unavailable")

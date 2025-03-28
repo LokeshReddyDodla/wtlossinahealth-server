@@ -1,22 +1,13 @@
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import asc, delete, desc
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import Session, selectinload
+from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_meal_service
 from lib.models.patient import Patient
-from lib.models.patient_meal import PatientFoodItem, PatientMeal
 from lib.services.meal_service import MealService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

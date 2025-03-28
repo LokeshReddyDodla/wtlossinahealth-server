@@ -1,8 +1,6 @@
-import json
-from datetime import date, datetime, time
-from typing import List, Optional
+from datetime import date, datetime
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 
 from lib.dependencies.auth.patient_auth import get_current_patient

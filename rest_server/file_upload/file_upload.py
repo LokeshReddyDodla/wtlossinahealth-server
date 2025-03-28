@@ -1,10 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.s3_utils import generate_presigned_url
 from rest_server.response_models import SuccessResponse
 
-from .api_schema import ImageUploadNotification, PresignedURLRequest
+from .api_schema import PresignedURLRequest
 
 router = APIRouter(prefix="/file_upload")
 

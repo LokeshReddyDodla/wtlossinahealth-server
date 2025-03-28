@@ -1,13 +1,13 @@
-from typing import List, Optional, Union
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.patient import Patient
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

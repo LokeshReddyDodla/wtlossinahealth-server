@@ -1,4 +1,3 @@
-from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -11,7 +10,7 @@ from lib.services.care_provider_profile_service import \
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

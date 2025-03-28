@@ -1,17 +1,13 @@
-from typing import List, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_fitness_upload_service
 from lib.models.patient import Patient
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

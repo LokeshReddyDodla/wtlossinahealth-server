@@ -1,10 +1,5 @@
-from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
-
-from lib.schemas.patient import Patient
-from rest_server.response_models import SuccessResponse
 
 
 class CGMDataUpload(BaseModel):

@@ -1,22 +1,14 @@
-from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
 from lib.dependencies.auth.admin_auth import get_current_admin
-from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_health_facility_service
 from lib.models.admin import Admin
-from lib.models.care_provider import CareProvider
-from lib.models.health_facility import HealthFacility
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.services.health_facility_service import HealthFacilityService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

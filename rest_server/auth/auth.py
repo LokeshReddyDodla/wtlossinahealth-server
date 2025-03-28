@@ -1,16 +1,13 @@
-import traceback
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from lib.core.otp import create_and_send_otp, verify_otp
 from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_user_device_service
-from lib.models.patient import Patient
 from lib.schemas.user import OtpVerificationData, UserPhoneNumber
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.auth_utils import AuthUtils
