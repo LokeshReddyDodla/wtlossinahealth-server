@@ -1,13 +1,11 @@
 from typing import List, Tuple
 
-from fastapi import HTTPException, status
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from fastapi import status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
-from lib.schemas.patient_smbg import PatientSMBG as PatientSMBGSchema
 from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.ai_conversation_service.ai_conversation_service import \
     AiConversationService
@@ -24,12 +22,12 @@ class PatientSmbgService:
         self.postgres_session = postgres_session
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            conversation_type="smbg", model="gpt-4o-mini"
+            conversation_type="smbg",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
 
-    async def get_patient_smbgs(
-        self, patient_id: str
-    ) -> List[PatientSMBGModel]:
+    async def get_patient_smbgs(self, patient_id: str) -> List[PatientSMBGModel]:
         try:
             result = await self.postgres_session.execute(
                 select(PatientSMBGModel)

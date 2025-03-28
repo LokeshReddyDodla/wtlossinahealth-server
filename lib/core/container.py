@@ -223,8 +223,11 @@ container.register(
     MealAnalysisService,
     lambda: MealAnalysisService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
-        model="gemini-2.0-flash",
-        model_provider="gemini",
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
+        ),
+        selected_ai_model="gemini-2.0-flash",
+        ai_model_provider="gemini",
     ),
 )
 

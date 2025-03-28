@@ -32,9 +32,7 @@ from .system_messages.smbg_system_message import SMBGSystemMessage
 
 
 class AiConversationService:
-    _SYSTEM_MESSAGE_MAP: Dict[
-        AiConversationTypeLiteral, Type[BaseSystemMessage]
-    ] = {
+    _SYSTEM_MESSAGE_MAP: Dict[AiConversationTypeLiteral, Type[BaseSystemMessage]] = {
         "meal": MealSystemMessage,
         "smbg": SMBGSystemMessage,
         "sleep": SleepSystemMessage,
@@ -46,8 +44,8 @@ class AiConversationService:
     def __init__(
         self,
         conversation_type: AiConversationTypeLiteral = "other",
-        model_provider: AIModelProviderLiteral = "openai",
-        model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
+        ai_model_provider: AIModelProviderLiteral = "openai",
+        selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
     ):
         from lib.dependencies.service_dependencies import (
             get_ai_conversation_messages_collection,
@@ -55,32 +53,28 @@ class AiConversationService:
 
         self.token_usage_service = get_token_usage_service()
         self.patient_profile_service = get_patient_profile_service()
-        self.ai_messages_collection: Any = (
-            get_ai_conversation_messages_collection()
+        self.ai_messages_collection: Any = get_ai_conversation_messages_collection()
+        self.selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = (
+            selected_ai_model
         )
-        self.current_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = (
-            model
-        )
-        self.model_provider: AIModelProviderLiteral = model_provider
+        self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
 
-        if model_provider == "openai":
+        if ai_model_provider == "openai":
             self.chat_model = ChatOpenAI(
-                model=self.current_model,
+                model=self.selected_ai_model,
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
         else:
             self.chat_model = ChatGoogleGenerativeAI(
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
-                model=self.current_model,
+                model=self.selected_ai_model,
                 temperature=0.5,
             )
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
         )
-        self.system_message = self._get_initial_system_message(
-            conversation_type
-        )
+        self.system_message = self._get_initial_system_message(conversation_type)
         pprint(self.system_message)
 
     def _get_initial_system_message(
@@ -162,9 +156,9 @@ class AiConversationService:
         if return_raw:
             return await messages_cursor.to_list(length=None)
 
-        messages = await self.ai_messages_collection.aggregate(
-            pipeline
-        ).to_list(length=None)
+        messages = await self.ai_messages_collection.aggregate(pipeline).to_list(
+            length=None
+        )
         return await self._process_messages(messages)
 
     async def fetch_user_entire_conversation_messages(
@@ -184,20 +178,16 @@ class AiConversationService:
         if return_raw:
             return await messages_cursor.to_list(length=None)
 
-        messages = await self.ai_messages_collection.aggregate(
-            pipeline
-        ).to_list(length=None)
+        messages = await self.ai_messages_collection.aggregate(pipeline).to_list(
+            length=None
+        )
         return await self._process_messages(messages)
 
-    async def create_patient_context_message(
-        self, patient_id: str
-    ) -> HumanMessage:
+    async def create_patient_context_message(self, patient_id: str) -> HumanMessage:
         patient = await self.patient_profile_service.fetch_patient_profile(
             patient_id=patient_id, detailed=True, include_health_data=True
         )
-        patient_profile_json = CorePatientProfile.from_orm(
-            patient
-        ).model_dump()
+        patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
         return HumanMessage(
             content=f"My Profile:\n```json\n{patient_profile_json}\n```"
         )
@@ -224,9 +214,7 @@ class AiConversationService:
         )
         messages.insert(0, self.system_message)
 
-        patient_context_message = await self.create_patient_context_message(
-            patient_id
-        )
+        patient_context_message = await self.create_patient_context_message(patient_id)
         messages.insert(1, patient_context_message)
 
         ai_response: Any = retry_request(
@@ -260,8 +248,8 @@ class AiConversationService:
                 input_tokens=usage_metadata["input_tokens"],
                 output_tokens=usage_metadata["output_tokens"],
                 cached_input_tokens=usage_metadata.get("cached_input_tokens"),
-                model_used=self.current_model,
-                model_provider=self.model_provider,
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
                 api_endpoint="/ai-conversation/respond",
             )
 
@@ -276,14 +264,10 @@ class AiConversationService:
         Generate a response without saving any messages to the database.
         """
 
-        messages = await self.fetch_user_entire_conversation_messages(
-            patient_id
-        )
+        messages = await self.fetch_user_entire_conversation_messages(patient_id)
         messages.insert(0, self.system_message)
 
-        patient_context_message = await self.create_patient_context_message(
-            patient_id
-        )
+        patient_context_message = await self.create_patient_context_message(patient_id)
         messages.insert(1, patient_context_message)
 
         # Add the human input as part of the context
@@ -306,8 +290,8 @@ class AiConversationService:
                 input_tokens=usage_metadata["input_tokens"],
                 output_tokens=usage_metadata["output_tokens"],
                 cached_input_tokens=usage_metadata.get("cached_input_tokens"),
-                model_used=self.current_model,
-                model_provider=self.model_provider,
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
                 api_endpoint="/ai-conversation/internal",
             )
 
@@ -372,9 +356,7 @@ class AiConversationService:
             return None
 
     async def generate_health_tip_of_the_day(self, patient_id: str):
-        patient_context_message = await self.create_patient_context_message(
-            patient_id
-        )
+        patient_context_message = await self.create_patient_context_message(patient_id)
         messages = [self.system_message, patient_context_message]
 
         ai_tip_response: Any = self.chat_model.invoke(messages)
@@ -389,8 +371,8 @@ class AiConversationService:
                 input_tokens=usage_metadata["input_tokens"],
                 output_tokens=usage_metadata["output_tokens"],
                 cached_input_tokens=usage_metadata.get("cached_input_tokens"),
-                model_used=self.current_model,
-                model_provider=self.model_provider,
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
                 api_endpoint="/ai-conversation/health-tip",
             )
 

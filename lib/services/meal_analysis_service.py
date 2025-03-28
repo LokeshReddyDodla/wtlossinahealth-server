@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
+from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER, ProfileTypeEnum
 from lib.core.types import (AIModelProviderLiteral, GeminiAIModelLiteral,
                             OpenAIModelLiteral)
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
@@ -27,6 +27,7 @@ from lib.schemas.patient_meal import \
     PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema
 from lib.schemas.patient_meal import \
     PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema
+from lib.services.token_usage_service import TokenUsageService
 from lib.utils.retry_utils import retry_request
 
 
@@ -34,23 +35,28 @@ class MealAnalysisService:
     def __init__(
         self,
         postgres_session: AsyncSession,
+        token_usage_service: TokenUsageService,
         timezone="Asia/Kolkata",
-        model_provider: AIModelProviderLiteral = "openai",
-        model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
+        ai_model_provider: AIModelProviderLiteral = "openai",
+        selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
     ):
         self.postgres_session = postgres_session
+        self.token_usage_service = token_usage_service
         self.timezone = timezone
-        self.current_model = model
+        self.selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = (
+            selected_ai_model
+        )
+        self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
 
-        if model_provider == "openai":
+        if ai_model_provider == "openai":
             self.chat_model = ChatOpenAI(
-                model=self.current_model,
+                model=self.selected_ai_model,
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
         else:
             self.chat_model = ChatGoogleGenerativeAI(
-                model=self.current_model,
+                model=self.selected_ai_model,
                 temperature=0.5,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
@@ -58,8 +64,9 @@ class MealAnalysisService:
             MealAnalysisResponse, include_raw=True
         )
 
-    def analyze_meal(
+    async def analyze_meal(
         self,
+        patient_id,
         patient_profile_json,
         meal_time,
         image_url,
@@ -125,10 +132,24 @@ class MealAnalysisService:
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         usage_metadata = ai_response["raw"].usage_metadata
 
-        return parsed_response, usage_metadata
+        # Log token usage if applicable
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=patient_id,
+                user_type=ProfileTypeEnum.PATIENT,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
+                api_endpoint="/patient/meals/analyze",
+            )
+
+        return parsed_response
 
     async def reanalyze_meal(
         self,
+        patient_id: str,
         meal_json: dict,
         update_fields: dict,
     ):
@@ -165,7 +186,20 @@ class MealAnalysisService:
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         usage_metadata = ai_response["raw"].usage_metadata
 
-        return parsed_response, usage_metadata
+        # Log token usage if applicable
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=patient_id,
+                user_type=ProfileTypeEnum.PATIENT,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
+                api_endpoint="/patient/meals/analyze",
+            )
+
+        return parsed_response
 
     async def save_meal_analysis(
         self, meal: Any, analysis_data: MealAnalysisResponse
