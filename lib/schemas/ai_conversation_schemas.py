@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, constr
@@ -35,13 +35,13 @@ class AIResponse(BaseModel):
         ...,
         description="The AI's generated response, including embedded citations.",
     )
+    # citations: Optional[List[Any]] = Field(
+    #     default_factory=list,
+    #     description="List of citations used in the response.",
+    # )
     follow_up_questions: Optional[List[str]] = Field(
         default=None,
         description="List of follow-up questions or related queries the user might ask after this response.",
-    )
-    sources: List[str] = Field(
-        default_factory=list,
-        description="List of sources/citations used in the response.",
     )
     confidence_score: Optional[float] = Field(
         default=None,
