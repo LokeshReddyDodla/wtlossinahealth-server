@@ -1,17 +1,10 @@
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.encoders import jsonable_encoder
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.types import AiConversationTypeLiteral
-from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import (get_ai_conversation_service,
-                                                   get_patient_profile_service)
 from lib.models.patient import Patient as PatientModel
 from lib.services.ai_conversation_service.ai_conversation_service import \
     AiConversationService
-from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -26,14 +19,13 @@ async def send_ai_conversation_message(
     conversation_type: AiConversationTypeLiteral,
     current_patient: PatientModel = Depends(get_current_patient),
 ):
-    """
-    Send a message to AI conversation and get a response.
-    """
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            model="gpt-4o-mini",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
+
         # Generate response from the AI model
         ai_message_data = await ai_conversation_service.generate_response(
             patient_id=str(current_patient.patient_id),
@@ -67,13 +59,12 @@ async def get_daily_health_tip(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type="health-tip",
-            model="gpt-4o-mini",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
         # Generate the health tip of the day
-        health_tip = (
-            await ai_conversation_service.generate_health_tip_of_the_day(
-                patient_id=str(current_patient.patient_id),
-            )
+        health_tip = await ai_conversation_service.generate_health_tip_of_the_day(
+            patient_id=str(current_patient.patient_id),
         )
 
         return SuccessResponse(
