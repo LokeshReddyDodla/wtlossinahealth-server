@@ -1,6 +1,5 @@
-from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -8,13 +7,11 @@ from sqlalchemy.orm import selectinload
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
-from lib.models.patient_permission import PatientPermission
 from lib.schemas.patient_permission import \
     PatientPermission as PatientPermissionSchema
-from lib.schemas.patient_permission import (PatientPermissionCreate,
-                                            PatientPermissionUpdate)
+from lib.schemas.patient_permission import PatientPermissionUpdate
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

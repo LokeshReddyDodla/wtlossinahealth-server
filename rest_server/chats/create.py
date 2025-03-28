@@ -1,13 +1,12 @@
-from typing import Literal, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.service_dependencies import get_chat_messaging_service
 from lib.schemas.chat_message import ChatMessageCreate
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

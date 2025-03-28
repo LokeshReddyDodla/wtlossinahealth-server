@@ -1,7 +1,5 @@
-from fastapi import APIRouter
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import Response
-
 
 # Create FastAPI router
 router = APIRouter(prefix="/system")

@@ -1,20 +1,14 @@
-from datetime import datetime
-from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from fastapi import Depends, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_patient_vital_service
 from lib.models.patient import Patient
-from lib.models.patient_vital import PatientVital
 from lib.schemas.patient_vital import PatientVital as PatientVitalSchema
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_vital_service import PatientVitalService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

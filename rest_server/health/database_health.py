@@ -1,11 +1,9 @@
 import asyncpg
 from clickhouse_driver.errors import Error as ClickHouseError
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from pymongo.errors import PyMongoError
 from redis import RedisError
 from sqlalchemy.sql import text
-
-from lib.dependencies.database import get_postgres_session
 
 
 async def check_postgres_health(request, session):

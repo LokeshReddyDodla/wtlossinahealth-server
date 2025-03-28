@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import Depends, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_patient_smbg_service
@@ -7,7 +7,7 @@ from lib.schemas.patient_smbg import PatientSMBG as PatientSMBGSchema
 from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

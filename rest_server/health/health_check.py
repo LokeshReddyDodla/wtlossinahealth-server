@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.dependencies.database import get_postgres_session
-from rest_server.health.api_health import check_user_api_health
 from rest_server.health.database_health import (check_clickhouse_health,
                                                 check_mongodb_health,
                                                 check_postgres_health,

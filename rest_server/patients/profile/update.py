@@ -1,26 +1,17 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.patient import Patient
-from lib.schemas.patient import CompletePatientProfile, CorePatientProfile
-from lib.schemas.patient import Patient as PatientSchema
-from lib.schemas.patient import PatientCreate, PatientUpdate
+from lib.schemas.patient import CorePatientProfile, PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
     PatientAlcoholConsumptionCreate
 from lib.schemas.patient_current_medication import \
     PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
-from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
 from lib.schemas.patient_eating_habit import PatientEatingHabitCreate
 from lib.schemas.patient_family_diabetic_history import \
@@ -31,7 +22,7 @@ from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

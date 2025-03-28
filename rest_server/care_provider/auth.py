@@ -1,5 +1,3 @@
-from functools import partial
-from typing import List, Optional, Union
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -11,7 +9,7 @@ from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.jwt import create_jwt_token
-from rest_server.response_models import ErrorResponse, SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 
