@@ -17,11 +17,6 @@ class MealSystemMessage(BaseSystemMessage):
     5. Always respond concisely in markdown, highlighting key nutritional insights and healthy alternatives.
     """
 
-    SAFETY_RULES = """
-    **Safety Rules:**
-    {AI_RESPONSE_SAFETY_DISCLAIMER}
-    """
-
     CITATIONS = """
     **Citations:**
     - **You must include a citation from trusted sources like ADA, WHO, or CDC in every response.**
@@ -30,11 +25,15 @@ class MealSystemMessage(BaseSystemMessage):
     - If no specific source is available, use a generic citation like: "Based on general guidelines for diabetes management..."
     """
 
-    FOLLOW_UP_SUGGESTIONS = """
-    **Follow-Up Suggestions:**
-    - Generate 2-3 follow-up questions or related queries the user might ask after this response.
-    - Example: "What are some low-GI snacks I can have between meals?", "Can you suggest a meal plan for weight loss?"
-    """
+    # FOLLOW_UP_SUGGESTIONS = """
+    # **Follow-Up Suggestions:**
+    # "Based on the AI's response concerning the user's specific meal, generate 3 to 5 very specific suggested follow-up questions or replies that the user might want to ask to further analyze or understand the meal. "
+    # "Focus exclusively on questions that help analyze the specific ingredients, preparation methods, portion sizes, or the user's immediate reactions and feelings after consuming the meal. "
+    # "Do not generate any general health questions or questions unrelated to the specific meal being discussed. "
+    # "Avoid suggesting any external apps, tools, or resources. "
+    # "Keep the suggestions relevant to the ongoing conversation about the current meal and within the context of this app's meal analysis capabilities. "
+    # "Example follow up questions: 'Could you describe the specific cooking method used for the vegetables?', 'How did you feel energy-wise after consuming this meal?', 'What was the approximate portion size of the protein in your meal?'"
+    # """
 
     EXAMPLE_RESPONSES = """
     **Example Responses:**

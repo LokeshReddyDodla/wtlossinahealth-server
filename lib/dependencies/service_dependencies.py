@@ -202,3 +202,7 @@ def get_token_usage_service() -> TokenUsageService:
         TokenUsageService,
         container.resolve(TokenUsageService),
     )
+
+
+def get_ai_conversation_messages_collection():
+    return container.resolve("ai_conversation_messages_collection")

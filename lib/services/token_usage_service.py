@@ -1,11 +1,12 @@
 from datetime import date
-from typing import Dict, Optional
+from typing import Dict, Literal, Optional, Union
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import OpenAIModelLiteral
+from lib.core.types import (AIModelProviderLiteral, GeminiAIModelLiteral,
+                            OpenAIModelLiteral)
 from lib.models.token_usage_log import TokenUsageLog
 
 PRICING = {
@@ -18,6 +19,17 @@ PRICING = {
         "input": 0.150 / 1_000_000,  # $0.150 per 1M input tokens
         "cached_input": 0.075 / 1_000_000,  # $0.075 per 1M cached input tokens
         "output": 0.600 / 1_000_000,  # $0.600 per 1M output tokens
+    },
+    "gemini-1.5-flash": {
+        "input": 0.075 / 1_000_000,  # $0.075 per 1M input tokens
+        "cached_input": 0.01875
+        / 1_000_000,  # $0.01875 per 1M cached input tokens
+        "output": 0.30 / 1_000_000,  # $0.30 per 1M output tokens
+    },
+    "gemini-2.0-flash": {
+        "input": 0.10 / 1_000_000,  # $0.10 per 1M input tokens
+        "cached_input": 0.025 / 1_000_000,  # $0.025 per 1M cached input tokens
+        "output": 0.40 / 1_000_000,  # $0.40 per 1M output tokens
     },
 }
 
@@ -81,10 +93,10 @@ class TokenUsageService:
         self,
         user_id: str,
         user_type: ProfileTypeEnum,
-        model_used: OpenAIModelLiteral,
+        model_used: Union[OpenAIModelLiteral, GeminiAIModelLiteral],
+        model_provider: AIModelProviderLiteral,
         input_tokens: int,
         output_tokens: int,
-        api_type: str,
         api_endpoint: str,
         cached_input_tokens: Optional[int] = None,
     ) -> None:
@@ -102,7 +114,7 @@ class TokenUsageService:
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
                 cost=cost,
-                api_type=api_type,
+                model_provider=model_provider,
                 api_endpoint=api_endpoint,
             )
             self.postgres_session.add(log)

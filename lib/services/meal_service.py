@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import status
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from lib.core.constants import ProfileTypeEnum
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_schemas import \
@@ -23,7 +22,6 @@ from lib.services.ai_conversation_service.ai_conversation_service import \
     AiConversationService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.token_usage_service import TokenUsageService
 from lib.tasks.meal_tasks import generate_daily_meal_report
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
@@ -36,16 +34,18 @@ class MealService:
         meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
     ):
-        from lib.core.container import container
+        from lib.dependencies.service_dependencies import \
+            get_token_usage_service
 
         self.postgres_session = postgres_session
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
-            conversation_type="meal", model="gpt-4o-mini"
+            conversation_type="meal",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
-
-        self.token_usage_service: Any = container.resolve(TokenUsageService)
+        self.token_usage_service = get_token_usage_service()
 
     async def fetch_meals(
         self,
@@ -69,12 +69,8 @@ class MealService:
                     selectinload(PatientMealModel.items).selectinload(
                         PatientFoodItemModel.micro_nutritional_values
                     ),
-                    selectinload(
-                        PatientMealModel.total_macro_nutritional_value
-                    ),
-                    selectinload(
-                        PatientMealModel.total_micro_nutritional_value
-                    ),
+                    selectinload(PatientMealModel.total_macro_nutritional_value),
+                    selectinload(PatientMealModel.total_micro_nutritional_value),
                 )
             )
 
@@ -205,22 +201,16 @@ class MealService:
             patient = await self.patient_profile_service.fetch_patient_profile(
                 patient_id=patient_id, detailed=True
             )
-            patient_profile_json = CorePatientProfile.from_orm(
-                patient
-            ).model_dump()
+            patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
 
             # Analyze or reanalyze the meal using the MealAnalysisService
             if update_fields:
-                parsed_ai_response, usage_metadata = (
-                    await self.meal_analysis_service.reanalyze_meal(
-                        meal_orm.model_dump(), update_fields
-                    )
+                parsed_ai_response = await self.meal_analysis_service.reanalyze_meal(
+                    patient_id, meal_orm.model_dump(), update_fields
                 )
             else:
-                (
-                    parsed_ai_response,
-                    usage_metadata,
-                ) = self.meal_analysis_service.analyze_meal(
+                parsed_ai_response = await self.meal_analysis_service.analyze_meal(
+                    patient_id,
                     patient_profile_json,
                     meal.time,
                     meal.image_url,
@@ -252,21 +242,6 @@ class MealService:
             await self.ai_conversation_service.add_multiple_messages_to_conversation(
                 messages=message_sequence,
             )
-
-            # Log token usage if applicable
-            if usage_metadata:
-                await self.token_usage_service.log_usage(
-                    user_id=UUID(patient_id),
-                    user_type=ProfileTypeEnum.PATIENT,
-                    input_tokens=usage_metadata["input_tokens"],
-                    output_tokens=usage_metadata["output_tokens"],
-                    cached_input_tokens=usage_metadata.get(
-                        "cached_input_tokens"
-                    ),
-                    model_used="gpt-4o",
-                    api_type="openai",
-                    api_endpoint="/patient/meals/analyze",
-                )
 
             # 🚀 Trigger Meal Report Generation after Analysis
             generate_daily_meal_report.delay(str(patient_id), meal.date)
@@ -326,7 +301,7 @@ class MealService:
                 patient_id=str(meal_orm.patient_id),
                 conversation_id=meal_id,
                 conversation_type="meal",
-                role="system",
+                role="ai",
                 message_type="text",
                 content="How can I assist you further regarding this meal?",
             ),

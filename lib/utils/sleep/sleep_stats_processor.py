@@ -1,10 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List
 
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.models.patient_sleep import PatientSleep
 from lib.schemas.sleep_stats import SleepStats
 from lib.services.ai_conversation_service.ai_conversation_service import \
     AiConversationService
@@ -20,7 +18,9 @@ class SleepStatsProcessor:
     def __init__(self, postgres_session: AsyncSession):
         self.postgres_session = postgres_session
         self.ai_conversation_service = AiConversationService(
-            conversation_type="sleep", model="gpt-4o-mini"
+            conversation_type="sleep",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
 
     async def generate_report(
@@ -32,7 +32,6 @@ class SleepStatsProcessor:
         include_day_wise: bool = True,
         include_week_wise: bool = True,
     ) -> Dict[str, Any]:
-
         report = {}
 
         # Overall Stats
@@ -60,7 +59,6 @@ class SleepStatsProcessor:
     async def _process_overall(
         self, patient_id: str, start_datetime: datetime, end_datetime: datetime
     ) -> SleepStats:
-
         duration_analysis = await SleepDurationFetcher.fetch(
             self.postgres_session, patient_id, start_datetime, end_datetime
         )

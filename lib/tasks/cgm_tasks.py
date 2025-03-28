@@ -42,14 +42,11 @@ def generate_cgm_report(
     end_date: datetime,
 ):
     try:
-        from lib.core.container import container
+        from lib.dependencies.service_dependencies import (
+            get_cgm_report_service, get_glucose_stats_processor)
 
-        glucose_stats_service = cast(
-            GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
-        )
-        cgm_report_service = cast(
-            CGMReportService, container.resolve(CGMReportService)
-        )
+        glucose_stats_service = get_glucose_stats_processor()
+        cgm_report_service = get_cgm_report_service()
 
         async def generate_and_save_report():
             report = await glucose_stats_service.generate_report(
