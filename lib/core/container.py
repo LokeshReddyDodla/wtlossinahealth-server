@@ -59,51 +59,51 @@ container.register(
 container.register(MongoStore, MongoStore, scope=Scope.singleton)
 container.register(
     "cgm_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("cgm_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "cgm_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "fitness_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("fitness_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "fitness_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "sleep_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("sleep_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "sleep_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "meal_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("meal_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "meal_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "ai_conversation_messages_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("ai_conversation_messages"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "ai_conversation_messages"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "chat_messages_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("chat_messages"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "chat_messages"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "chats_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("chats"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "chats"
+    ),
     scope=Scope.singleton,
 )
 
@@ -223,6 +223,8 @@ container.register(
     MealAnalysisService,
     lambda: MealAnalysisService(
         postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        model="gemini-2.0-flash",
+        model_provider="gemini",
     ),
 )
 
@@ -243,9 +245,7 @@ container.register(
 # 🔹 Fitness Stats Processor
 container.register(
     FitnessStatsProcessor,
-    lambda: FitnessStatsProcessor(
-        clickhouse_store=container.resolve(ClickHouseStore)
-    ),
+    lambda: FitnessStatsProcessor(clickhouse_store=container.resolve(ClickHouseStore)),
 )
 
 # 🔹 Glucose Stats Processor
@@ -295,9 +295,7 @@ container.register(
 container.register(
     FitnessReportService,
     lambda: FitnessReportService(
-        fitness_report_collection=container.resolve(
-            "fitness_report_collection"
-        )
+        fitness_report_collection=container.resolve("fitness_report_collection")
     ),
 )
 

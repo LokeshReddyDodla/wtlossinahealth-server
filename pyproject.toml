@@ -56,7 +56,7 @@ langchain-openai = "^0.2.2"
 markdownify = "^0.13.1"
 punq = "^0.7.0"
 tenacity = "^9.0.0"
-google-generativeai="0.8.4"
+langchain-google-genai = "^2.1.2"
 
 
 [tool.poetry.group.dev.dependencies]

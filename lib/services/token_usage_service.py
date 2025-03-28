@@ -5,7 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import GeminiAIModelLiteral, OpenAIModelLiteral
+from lib.core.types import (AIModelProviderLiteral, GeminiAIModelLiteral,
+                            OpenAIModelLiteral)
 from lib.models.token_usage_log import TokenUsageLog
 
 PRICING = {
@@ -93,9 +94,9 @@ class TokenUsageService:
         user_id: str,
         user_type: ProfileTypeEnum,
         model_used: Union[OpenAIModelLiteral, GeminiAIModelLiteral],
+        model_provider: AIModelProviderLiteral,
         input_tokens: int,
         output_tokens: int,
-        api_type: Literal["openai", "gemini"],
         api_endpoint: str,
         cached_input_tokens: Optional[int] = None,
     ) -> None:
@@ -113,7 +114,7 @@ class TokenUsageService:
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
                 cost=cost,
-                api_type=api_type,
+                model_provider=model_provider,
                 api_endpoint=api_endpoint,
             )
             self.postgres_session.add(log)

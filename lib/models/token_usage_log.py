@@ -18,7 +18,6 @@ class TokenUsageLog(Base):
     )
     user_id = Column(UUID(as_uuid=True), nullable=False)
     user_type = Column(Enum(ProfileTypeEnum), nullable=False)
-    api_type = Column(String, nullable=False)  # e.g., "OpenAI"
     api_endpoint = Column(
         String, nullable=False
     )  # e.g., "/get_nutritional_info"
@@ -27,6 +26,7 @@ class TokenUsageLog(Base):
     cached_input_tokens = Column(Integer, nullable=True)
     cost = Column(Numeric(10, 4), nullable=False)
     model_used = Column(String, nullable=False)
+    model_provider = Column(String, nullable=False)  # e.g., "openai", "gemini"
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

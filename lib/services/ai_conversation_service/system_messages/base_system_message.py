@@ -1,5 +1,7 @@
 from langchain.schema import SystemMessage
 
+from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
+
 
 class BaseSystemMessage:
     GUIDELINES = """
@@ -13,7 +15,7 @@ class BaseSystemMessage:
     Keep responses concise, evidence-based, and focused on improving the patient's overall health and quality of life.
     """
 
-    SAFETY_RULES = """
+    SAFETY_RULES = f"""
     **Safety Rules:**
     {AI_RESPONSE_SAFETY_DISCLAIMER}
     """
@@ -26,8 +28,11 @@ class BaseSystemMessage:
 
     FOLLOW_UP_SUGGESTIONS = """
     **Follow-Up Suggestions:**
-    - Generate 2-3 follow-up questions or related queries the user might ask after this response.
-    - Example: "What are some ways to improve my diet?", "How can I manage stress better?"
+    "Based on the response generate 3 to 5 suggested follow-up questions or replies that the user might want to ask. "
+    "without suggesting any external apps, tools, or resources. "
+    "Keep the suggestions relevant to the ongoing conversation and within the context of this app's capabilities. "
+    "Provide helpful, relevant follow-up questions related to health and wellness, staying within the app's context. "
+    "Avoid general advice or external recommendations; focus on personalized health insights or support."
     """
 
     EXAMPLE_RESPONSES = """

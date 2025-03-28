@@ -12,7 +12,6 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
-from lib.dependencies.service_dependencies import get_token_usage_service
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_schemas import \
@@ -37,7 +36,8 @@ class MealService:
         meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
     ):
-        from lib.core.container import container
+        from lib.dependencies.service_dependencies import \
+            get_token_usage_service
 
         self.postgres_session = postgres_session
         self.meal_analysis_service = meal_analysis_service
@@ -264,7 +264,7 @@ class MealService:
                         "cached_input_tokens"
                     ),
                     model_used="gpt-4o",
-                    api_type="openai",
+                    model_provider="openai",
                     api_endpoint="/patient/meals/analyze",
                 )
 

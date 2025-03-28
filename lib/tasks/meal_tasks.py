@@ -4,9 +4,6 @@ from typing import cast
 
 from celery import shared_task
 
-from lib.dependencies.service_dependencies import (get_meal_report_service,
-                                                   get_meal_stats_processor)
-
 
 @shared_task
 def generate_daily_meal_report(
@@ -14,6 +11,9 @@ def generate_daily_meal_report(
     report_date: date,
 ):
     try:
+        from lib.dependencies.service_dependencies import (
+            get_meal_report_service, get_meal_stats_processor)
+
         meal_stats_service = get_meal_stats_processor()
         meal_report_service = get_meal_report_service()
 

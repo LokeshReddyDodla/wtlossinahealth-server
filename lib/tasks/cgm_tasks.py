@@ -4,8 +4,6 @@ from typing import Any, Dict, List, Tuple, cast
 
 from celery import shared_task
 
-from lib.dependencies.service_dependencies import (get_cgm_report_service,
-                                                   get_glucose_stats_processor)
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.meal_report_service import MealReportService
 from lib.utils.glucose.processor import GlucoseStatsProcessor
@@ -44,6 +42,9 @@ def generate_cgm_report(
     end_date: datetime,
 ):
     try:
+        from lib.dependencies.service_dependencies import (
+            get_cgm_report_service, get_glucose_stats_processor)
+
         glucose_stats_service = get_glucose_stats_processor()
         cgm_report_service = get_cgm_report_service()
 
