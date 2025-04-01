@@ -1,0 +1,293 @@
+services:
+
+  aihealth-api:
+    container_name: aihealth-api
+    build:
+      context: "."
+      dockerfile: ./deployment/rest_server/Dockerfile
+    image: aihealth-api:latest
+    depends_on:
+      - aihealth-redis
+      - aihealth-postgres
+      - aihealth-mongo
+      - aihealth-clickhouse
+    restart: no
+    ports:
+      - 8000:8000
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_ALGORITHM
+      - JWT_SECRET
+      - JWT_AUDIENCE
+      - POSTGRES_URL=${POSTGRES_URL}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_URL_SYNC=${POSTGRES_URL_SYNC}
+      - POSTGRES_SCHEMA=${POSTGRES_SCHEMA}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+
+    volumes:
+      - api_logs:/src/logs
+      - alembic_data:/src/alembic/versions
+      - .:/src # for dev use only
+
+  aihealth-celery:
+    container_name: aihealth-celery
+    image: aihealth-api:latest
+    command: celery -A lib.core.celery_app.celery worker --loglevel=info
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+    volumes:
+      - celery_logs:/var/log/celery
+      - celery_data:/var/lib/celery
+    depends_on:
+      - aihealth-redis
+      - aihealth-api
+    restart: unless-stopped
+    user: "1000:1000"
+
+  aihealth-redis:
+    container_name: aihealth-redis
+    image: redis:alpine
+    command:
+      - "-- requirepass ${REDIS_PASSWORD}"
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_data:/data
+
+  aihealth-postgres:
+    container_name: aihealth-postgres
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  aihealth-mongo:
+    container_name: aihealth-mongo
+    image: mongo:latest
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
+      - MONGO_REPLICA_SET_NAME=rs0
+    ports:
+      - 27017:27017
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
+    # entrypoint: [ "/bin/bash", "-c", "chown mongodb:mongodb /etc/mongo-keyfile/mongodb-keyfile && chmod 600 /etc/mongo-keyfile/mongodb-keyfile && exec mongod --replSet rs0 --bind_ip_all --port 27017 --auth --keyFile /etc/mongo-keyfile/mongodb-keyfile" ]
+
+  aihealth-clickhouse:
+    container_name: aihealth-clickhouse
+    image: clickhouse/clickhouse-server:latest
+    restart: unless-stopped
+    ports:
+      - 8123:8123 # HTTP interface
+      - 9000:9000 # Native client
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse_vol:/var/lib/clickhouse
+
+  aihealth-nginx:
+    container_name: aihealth-nginx
+    build:
+      context: "."
+      dockerfile: "./deployment/nginx/Dockerfile"
+    restart: no
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      - aihealth-api
+    volumes:
+      - ssl_certs:/etc/ssl
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: 'False'
+      PGADMIN_CONFIG_WTF_CSRF_ENABLED: 'False'
+    ports:
+      - "8081:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    container_name: redisinsight
+    ports:
+      - "5540:5540"
+    volumes:
+      - redisinsight_data:/data
+
+  flower:
+    image: mher/flower
+    container_name: flower
+    command: celery --broker=${CELERY_BROKER_URL} flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+    depends_on:
+      - aihealth-redis
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - ME_CONFIG_MONGODB_SERVER=aihealth-mongo
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGOEXPRESS_LOGIN}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGOEXPRESS_PASSWORD}
+    ports:
+      - "8082:8081"
+    depends_on:
+      - aihealth-mongo
+    volumes:
+      - ./config.js:/node_modules/mongo-express/config.default.js
+
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    container_name: cloudbeaver
+    restart: unless-stopped
+    ports:
+      - "8084:8978"
+    environment:
+      - CB_ADMIN_NAME=${CB_ADMIN_NAME}
+      - CB_ADMIN_PASSWORD=${CB_ADMIN_PASSWORD}
+    volumes:
+      - cloudbeaver_workspace:/opt/cloudbeaver/workspace
+
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:latest
+    restart: unless-stopped
+    ports:
+      - "9001:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+  cloudflared:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    volumes:
+      - ./cloudflared:/etc/cloudflared
+
+  meal_analysis_service:
+    build:
+      context: ./lib/services/meal_analysis_service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+      - "-log.level=warn"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - api_logs:/var/log/api
+      - celery_logs:/var/log/celery
+      - ./promtail-config.yaml:/etc/promtail/config.yml
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_DEFAULT_INSTANCE_NAME: Monitoring
+      GF_PATHS_CONFIG: /etc/grafana/grafana.ini
+      GF_SERVER_ENABLE_GZIP: 'true'
+      GF_USERS_DEFAULT_THEME: light
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 384M
+    depends_on:
+      - loki
+
+volumes:
+  api_logs:
+  alembic_data:
+  redis_data:
+  postgres_data:
+  mongo_data:
+  clickhouse_vol:
+  ssl_certs:
+  redisinsight_data:
+  cloudbeaver_workspace:
+  portainer_data:
+  pgadmin_data:
+  celery_logs:
+  celery_data:
+  loki_data:
+  grafana_data:
+
+
+networks:
+  shared_network:
+    external: true
