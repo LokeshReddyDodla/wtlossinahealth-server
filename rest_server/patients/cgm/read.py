@@ -28,10 +28,12 @@ async def get_cgm_day_report(
         glucose_stats = await glucose_stats_processor.generate_report(
             str(current_patient.patient_id), start_date, end_date
         )
+        
+        print("==> glucose_stats: ", glucose_stats)
 
         return SuccessResponse(
             message="Glucose report fetched successfully",
-            data=glucose_stats["overall"],
+            data=glucose_stats["day_wise"][0],
         )
     except Exception as e:
         raise_http_exception(
