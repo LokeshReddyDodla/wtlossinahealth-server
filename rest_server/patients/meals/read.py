@@ -36,7 +36,6 @@ async def get_meals_api(
     Get Meals API
     """
     try:
-
         meals = await meal_service.fetch_meals(
             patient_id=str(current_patient.patient_id),
             start_datetime=start_datetime,
@@ -53,6 +52,39 @@ async def get_meals_api(
         return SuccessResponse(
             message="Meals fetched successfully",
             data=meals,
+        )
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/report/count-by-date", response_model=SuccessResponse)
+async def get_meal_counts_by_date_api(
+    request: Request,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    meal_service: MealService = Depends(get_meal_service),
+    current_patient: Patient = Depends(get_current_patient),
+):
+    try:
+        if start_date > end_date:
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="start_date must be before or equal to end_date",
+            )
+
+        counts = await meal_service.get_meal_counts_by_date(
+            patient_id=str(current_patient.patient_id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return SuccessResponse(
+            message="Meal counts fetched successfully",
+            data=counts,
         )
     except Exception as e:
         raise_http_exception(

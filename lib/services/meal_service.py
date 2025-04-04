@@ -1,11 +1,11 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
 from fastapi import status
 from markdownify import markdownify as md
-from sqlalchemy import asc, delete, desc
+from sqlalchemy import asc, delete, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -151,6 +151,39 @@ class MealService:
             )
 
         return meal
+
+    async def get_meal_counts_by_date(
+        self, patient_id: str, start_date: date, end_date: date
+    ) -> List[dict]:
+        try:
+            query = (
+                select(
+                    PatientMealModel.date,
+                    func.count(PatientMealModel.id).label("meal_count"),
+                )
+                .where(
+                    PatientMealModel.patient_id == patient_id,
+                    PatientMealModel.date >= start_date,
+                    PatientMealModel.date <= end_date,
+                )
+                .group_by(PatientMealModel.date)
+                .order_by(PatientMealModel.date)
+            )
+
+            result = await self.postgres_session.execute(query)
+            records = result.all()
+
+            return [
+                {"date": record.date.isoformat(), "meal_count": record.meal_count}
+                for record in records
+            ]
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
 
     async def upload_meal(
         self, meal_data: PatientMealUploadRequest, patient_id: str
