@@ -29,6 +29,7 @@ AiConversationTypeLiteral = Literal[
     "sleep",
     "health-tip",
     "other",
+    "care-provider",
 ]
 
 OpenAIModelLiteral = Literal[

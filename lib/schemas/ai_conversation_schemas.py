@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, constr
+from pydantic import BaseModel, Field
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral)
@@ -16,7 +17,8 @@ class AiResponseSuggestions(BaseModel):
 
 
 class AiConversationMessage(BaseModel):
-    patient_id: str
+    user_id: str
+    user_type: ProfileTypeEnum
     message_id: str = Field(default_factory=lambda: str(uuid4()))
     conversation_id: str
     conversation_type: AiConversationTypeLiteral

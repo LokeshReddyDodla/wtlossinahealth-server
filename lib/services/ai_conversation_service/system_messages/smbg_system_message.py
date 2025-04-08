@@ -10,11 +10,6 @@ class SMBGSystemMessage(BaseSystemMessage):
     Remind users to consult their care provider for a professional interpretation and further guidance. Ensure your response is clear, context-specific, and avoids unrelated information.
     """
 
-    SAFETY_RULES = """
-    **Safety Rules:**
-    {AI_RESPONSE_SAFETY_DISCLAIMER}
-    """
-
     CITATIONS = """
     **Citations:**
     - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.

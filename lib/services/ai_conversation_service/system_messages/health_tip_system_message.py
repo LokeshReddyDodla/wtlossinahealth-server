@@ -12,23 +12,15 @@ class HealthTipSystemMessage(BaseSystemMessage):
     Focus on dietary advice, light activity suggestions, hydration reminders, and general wellness tips that are easy to follow and suitable for display on a mobile home screen.
     """
 
-    SAFETY_RULES = """
-    **Safety Rules:**
-    {AI_RESPONSE_SAFETY_DISCLAIMER}
-    """
-
-    CITATIONS = """
-    **Citations:**
-    - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
-    - Example: "According to the American Diabetes Association (ADA), staying hydrated can improve energy levels."
-    """
+    CITATIONS = ""
 
     FOLLOW_UP_SUGGESTIONS = ""
 
     EXAMPLE_RESPONSES = """
     **Example Responses:**
-    - "**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels! According to the **American Diabetes Association (ADA)**, light activity after meals can improve glucose control. Always consult your doctor for personalized advice."
-    - "**Make sure** to include a **high-fiber vegetable** in your next meal for better blood sugar control. According to the **Centers for Disease Control and Prevention (CDC)**, high-fiber foods can help stabilize glucose levels. Always consult your doctor for personalized advice."
+    - "**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels!"
+    - "**Make sure** to include a **high-fiber vegetable** in your next meal for better blood sugar control."
+    - "**Did you know?** Drinking a glass of **water before meals** can help you feel full and prevent overeating."
     """
 
     def get_system_message(self) -> SystemMessage:

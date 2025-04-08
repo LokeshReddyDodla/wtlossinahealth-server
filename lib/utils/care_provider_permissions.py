@@ -28,6 +28,7 @@ class CareProviderFeature(Enum):
     HEALTH_FACILITY = "health_facility"
     PATIENTS = "patients"
     PACKAGES = "packages"
+    AI_CHATS = "ai_chats"
 
 
 class CareProviderPermission:
@@ -73,6 +74,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=True, update=True, delete=True
         ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
+        ),
     },
     CareProviderRole.DOCTOR: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -98,6 +102,9 @@ CARE_PROVIDER_PERMISSIONS = {
         ),
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=True, update=True, delete=True
+        ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
         ),
     },
     CareProviderRole.DIETITIAN: {
@@ -125,6 +132,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
+        ),
     },
     CareProviderRole.NURSE: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -150,6 +160,9 @@ CARE_PROVIDER_PERMISSIONS = {
         ),
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
         ),
     },
     CareProviderRole.DIABETIC_EDUCATOR: {
@@ -177,6 +190,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
+        ),
     },
     CareProviderRole.FITNESS_COACH: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -202,6 +218,9 @@ CARE_PROVIDER_PERMISSIONS = {
         ),
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
         ),
     },
     CareProviderRole.RESEARCH_COORDINATOR: {
@@ -229,6 +248,9 @@ CARE_PROVIDER_PERMISSIONS = {
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
         ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
+        ),
     },
     CareProviderRole.LAB_TECHNICIAN: {
         CareProviderFeature.MEALS: CareProviderPermission(
@@ -254,6 +276,9 @@ CARE_PROVIDER_PERMISSIONS = {
         ),
         CareProviderFeature.PACKAGES: CareProviderPermission(
             read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=True, update=False, delete=False
         ),
     },
 }
