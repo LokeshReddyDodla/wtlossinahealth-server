@@ -31,6 +31,9 @@ class AiConversationMessage(BaseModel):
     metadata: Optional[Dict] = None
     language: Optional[str] = "unknown"
 
+    class Config:
+        use_enum_values = True
+
 
 class AIResponse(BaseModel):
     response: str = Field(
