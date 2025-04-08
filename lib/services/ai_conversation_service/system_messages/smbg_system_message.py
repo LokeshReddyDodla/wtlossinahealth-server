@@ -1,3 +1,5 @@
+from typing import Optional
+
 from langchain.schema import SystemMessage
 
 from .base_system_message import BaseSystemMessage
@@ -28,13 +30,19 @@ class SMBGSystemMessage(BaseSystemMessage):
     - "Your fasting glucose levels are within the target range. The **World Health Organization (WHO)** recommends regular monitoring to maintain healthy glucose levels. Keep consulting your healthcare provider for further guidance."
     """
 
-    def get_system_message(self) -> SystemMessage:
-        return SystemMessage(
-            content=f"""
-            {self.GUIDELINES}
-            {self.SAFETY_RULES}
-            {self.CITATIONS}
-            {self.FOLLOW_UP_SUGGESTIONS}
-            {self.EXAMPLE_RESPONSES}
-            """
-        )
+    def get_system_message(
+        self, format_instructions: Optional[str] = None
+    ) -> SystemMessage:
+        content = f"""
+        {self.GUIDELINES}
+        {self.SAFETY_RULES}
+        {self.CITATIONS}
+        {self.FOLLOW_UP_SUGGESTIONS}
+        {self.EXAMPLE_RESPONSES}
+        """
+        if format_instructions:
+            content += (
+                f"\n\nPlease format your response as follows:\n{format_instructions}"
+            )
+
+        return SystemMessage(content=content)
