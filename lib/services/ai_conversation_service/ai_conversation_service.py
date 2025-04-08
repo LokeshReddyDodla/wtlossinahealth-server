@@ -376,19 +376,25 @@ class AiConversationService:
         {ai_response_content}
         
         Generate between 3-5 follow-up questions that meet these criteria:
-        1. Must be complete questions ending with a question mark
+        1. Must be complete questions phrased in FIRST PERSON ("I" form)
         2. Minimum 5 words per question
         3. Directly related to the health content
         4. Avoid yes/no questions
         5. Useful for further health understanding
+        6. Should sound like something the PATIENT would ask, not the AI
 
         Examples:
-        - "What specific dietary changes would help improve these readings?"
-        - "How might exercise timing affect these glucose patterns?"
+        - "What specific foods should I focus on to improve these readings?"
+        - "How might adjusting my exercise timing affect these glucose patterns?"
         - "When should I be most concerned about these levels?"
         """
 
-        messages = [SystemMessage(content=prompt)]
+        messages = [
+            SystemMessage(
+                content="You are a health assistant helping a patient formulate good follow-up questions."
+            ),
+            HumanMessage(content=prompt),
+        ]
         question_model = self.chat_model.with_structured_output(
             AIResponseFollowUpQuestions, strict=True
         )
