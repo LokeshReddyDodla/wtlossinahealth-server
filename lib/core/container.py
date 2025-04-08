@@ -226,8 +226,8 @@ container.register(
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
-        selected_ai_model="gemini-2.0-flash",
-        ai_model_provider="gemini",
+        selected_ai_model="gpt-4o",
+        ai_model_provider="openai",
     ),
 )
 
