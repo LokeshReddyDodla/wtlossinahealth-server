@@ -72,8 +72,8 @@ async def send_ai_conversation_careprovider_message(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            selected_ai_model="gemini-2.0-flash",
-            ai_model_provider="gemini",
+            selected_ai_model="gpt-4o-mini",
+            ai_model_provider="openai",
         )
 
         # Generate response from the AI model
