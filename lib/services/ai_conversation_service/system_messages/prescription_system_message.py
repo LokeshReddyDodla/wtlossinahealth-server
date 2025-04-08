@@ -10,11 +10,6 @@ class PrescriptionSystemMessage(BaseSystemMessage):
     Avoid any response that includes your origin, development, or unrelated topics.
     """
 
-    SAFETY_RULES = """
-    **Safety Rules:**
-    {AI_RESPONSE_SAFETY_DISCLAIMER}
-    """
-
     CITATIONS = """
     **Citations:**
     - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.

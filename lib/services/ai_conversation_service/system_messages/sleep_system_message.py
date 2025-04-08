@@ -11,11 +11,6 @@ class SleepSystemMessage(BaseSystemMessage):
     Use markdown to highlight key insights and actionable feedback in a friendly tone.
     """
 
-    SAFETY_RULES = """
-    **Safety Rules:**
-    {AI_RESPONSE_SAFETY_DISCLAIMER}
-    """
-
     CITATIONS = """
     **Citations:**
     - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.

@@ -22,6 +22,8 @@ from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
 
 from .system_messages.base_system_message import BaseSystemMessage
+from .system_messages.care_provider_system_message import \
+    CareProviderSystemMessage
 from .system_messages.health_tip_system_message import HealthTipSystemMessage
 from .system_messages.meal_system_message import MealSystemMessage
 from .system_messages.prescription_system_message import \
@@ -39,6 +41,7 @@ class AiConversationService:
         "prescription": PrescriptionSystemMessage,
         "report": ReportSystemMessage,
         "health-tip": HealthTipSystemMessage,
+        "care-provider": CareProviderSystemMessage,
     }
 
     def __init__(
@@ -58,6 +61,11 @@ class AiConversationService:
             selected_ai_model
         )
         self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
+        self.user_type = (
+            ProfileTypeEnum.CARE_PROVIDER
+            if conversation_type == "care-provider"
+            else ProfileTypeEnum.PATIENT
+        )
 
         if ai_model_provider == "openai":
             self.chat_model = ChatOpenAI(
@@ -86,7 +94,7 @@ class AiConversationService:
 
     async def add_message_to_conversation(
         self,
-        patient_id: str,
+        user_id: str,
         conversation_id: str,
         conversation_type: AiConversationTypeLiteral,
         role: AiConversationRoleLiteral,
@@ -97,7 +105,7 @@ class AiConversationService:
         metadata: Optional[Dict] = None,
     ):
         message_data = AiConversationMessageSchema(
-            patient_id=patient_id,
+            user_id=user_id,
             conversation_id=conversation_id,
             conversation_type=conversation_type,
             role=role,
@@ -163,11 +171,11 @@ class AiConversationService:
 
     async def fetch_user_entire_conversation_messages(
         self,
-        patient_id: str,
+        user_id: str,
         return_raw: bool = False,
     ) -> List[Any]:
         """Fetch all messages for a given conversation."""
-        filters: Any = {"patient_id": patient_id}
+        filters: Any = {"user_id": user_id}
         pipeline = [
             {"$match": filters},
             {"$sort": {"timestamp": 1}},
@@ -183,38 +191,50 @@ class AiConversationService:
         )
         return await self._process_messages(messages)
 
-    async def create_patient_context_message(self, patient_id: str) -> HumanMessage:
+    async def create_patient_context_message(
+        self, patient_id: str, prefix: str = "Patient Profile:"
+    ) -> HumanMessage:
         patient = await self.patient_profile_service.fetch_patient_profile(
             patient_id=patient_id, detailed=True, include_health_data=True
         )
         patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
-        return HumanMessage(
-            content=f"My Profile:\n```json\n{patient_profile_json}\n```"
-        )
+        return HumanMessage(content=f"{prefix}\n```json\n{patient_profile_json}\n```")
 
     async def generate_response(
         self,
         patient_id: str,
+        user_id: str,
         conversation_id: str,
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
     ) -> Dict:
         await self.add_message_to_conversation(
-            patient_id,
+            user_id,
             conversation_id,
             conversation_type,
             "human",
             human_input,
         )
 
-        messages = (
-            await self.fetch_user_entire_conversation_messages(patient_id)
-            if conversation_id == f"{patient_id}-custom"
-            else await self.fetch_conversation_messages(conversation_id)
-        )
+        if conversation_type == "care-provider":
+            patient_history = await self.fetch_user_entire_conversation_messages(
+                user_id
+            )
+            care_provider_history = await self.fetch_conversation_messages(
+                conversation_id
+            )
+            messages = [*patient_history, *care_provider_history]
+        elif conversation_id == f"{patient_id}-custom":
+            messages = await self.fetch_user_entire_conversation_messages(patient_id)
+        else:
+            messages = await self.fetch_conversation_messages(conversation_id)
+
         messages.insert(0, self.system_message)
 
-        patient_context_message = await self.create_patient_context_message(patient_id)
+        prefix = "My Profile:" if conversation_type == "patient" else "Patient Profile:"
+        patient_context_message = await self.create_patient_context_message(
+            patient_id, prefix=prefix
+        )
         messages.insert(1, patient_context_message)
 
         ai_response: Any = retry_request(
@@ -224,7 +244,7 @@ class AiConversationService:
         parsed_response: AIResponse = ai_response.get("parsed", {})
 
         ai_message_data = await self.add_message_to_conversation(
-            patient_id,
+            user_id,
             conversation_id,
             conversation_type,
             "ai",
@@ -243,8 +263,8 @@ class AiConversationService:
         # Log token usage
         if usage_metadata:
             await self.token_usage_service.log_usage(
-                user_id=patient_id,
-                user_type=ProfileTypeEnum.PATIENT,
+                user_id=user_id,
+                user_type=self.user_type,
                 input_tokens=usage_metadata["input_tokens"],
                 output_tokens=usage_metadata["output_tokens"],
                 cached_input_tokens=usage_metadata.get("cached_input_tokens"),
@@ -257,6 +277,7 @@ class AiConversationService:
 
     async def generate_temporary_response(
         self,
+        user_id: str,
         patient_id: str,
         human_input: str,
     ) -> str:
@@ -264,7 +285,7 @@ class AiConversationService:
         Generate a response without saving any messages to the database.
         """
 
-        messages = await self.fetch_user_entire_conversation_messages(patient_id)
+        messages = await self.fetch_user_entire_conversation_messages(user_id)
         messages.insert(0, self.system_message)
 
         patient_context_message = await self.create_patient_context_message(patient_id)
@@ -285,8 +306,8 @@ class AiConversationService:
         # Log token usage
         if usage_metadata:
             await self.token_usage_service.log_usage(
-                user_id=patient_id,
-                user_type=ProfileTypeEnum.PATIENT,
+                user_id=user_id,
+                user_type=self.user_type,
                 input_tokens=usage_metadata["input_tokens"],
                 output_tokens=usage_metadata["output_tokens"],
                 cached_input_tokens=usage_metadata.get("cached_input_tokens"),
@@ -300,6 +321,7 @@ class AiConversationService:
     async def generate_report_response(
         self,
         patient_id: str,
+        user_id: str,
         report: Dict[str, Any],
         report_type: str,
         max_recommendations: int = 3,
@@ -326,6 +348,7 @@ class AiConversationService:
             """
 
         ai_response = await self.generate_temporary_response(
+            user_id=user_id,
             patient_id=patient_id,
             human_input=human_input,
         )
@@ -355,7 +378,7 @@ class AiConversationService:
             print("Error: Response did not match the expected schema", e)
             return None
 
-    async def generate_health_tip_of_the_day(self, patient_id: str):
+    async def generate_health_tip_for_patient(self, patient_id: str):
         patient_context_message = await self.create_patient_context_message(patient_id)
         messages = [self.system_message, patient_context_message]
 
