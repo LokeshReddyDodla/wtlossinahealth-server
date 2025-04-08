@@ -1,3 +1,5 @@
+from typing import Optional
+
 from langchain.schema import SystemMessage
 
 from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
@@ -41,13 +43,19 @@ class BaseSystemMessage:
     - "Your recent data shows [insight]. According to the **World Health Organization (WHO)**, [action] can help improve [metric]. Please consult your healthcare provider for tailored recommendations."
     """
 
-    def get_system_message(self) -> SystemMessage:
-        return SystemMessage(
-            content=f"""
-            {self.GUIDELINES}
-            {self.SAFETY_RULES}
-            {self.CITATIONS}
-            {self.FOLLOW_UP_SUGGESTIONS}
-            {self.EXAMPLE_RESPONSES}
-            """
-        )
+    def get_system_message(
+        self, format_instructions: Optional[str] = None
+    ) -> SystemMessage:
+        content = f"""
+        {self.GUIDELINES}
+        {self.SAFETY_RULES}
+        {self.CITATIONS}
+        {self.FOLLOW_UP_SUGGESTIONS}
+        {self.EXAMPLE_RESPONSES}
+        """
+        if format_instructions:
+            content += (
+                f"\n\nPlease format your response as follows:\n{format_instructions}"
+            )
+
+        return SystemMessage(content=content)

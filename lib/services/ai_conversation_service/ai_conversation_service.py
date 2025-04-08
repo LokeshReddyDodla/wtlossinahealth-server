@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 
 from decouple import config
 from fastapi import status
+from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -79,18 +80,27 @@ class AiConversationService:
                 model=self.selected_ai_model,
                 temperature=0.5,
             )
+
+        self.output_parser = PydanticOutputParser(pydantic_object=AIResponse)
+        format_instructions = self.output_parser.get_format_instructions()
+        pprint(format_instructions)
+
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
         )
-        self.system_message = self._get_initial_system_message(conversation_type)
+        self.system_message = self._get_initial_system_message(
+            conversation_type, format_instructions
+        )
         pprint(self.system_message)
 
     def _get_initial_system_message(
-        self, conversation_type: AiConversationTypeLiteral
+        self,
+        conversation_type: AiConversationTypeLiteral,
+        format_instructions: Optional[str] = None,
     ) -> SystemMessage:
         return self._SYSTEM_MESSAGE_MAP.get(
             conversation_type, BaseSystemMessage
-        )().get_system_message()
+        )().get_system_message(format_instructions=format_instructions)
 
     async def add_message_to_conversation(
         self,
@@ -424,4 +434,5 @@ class AiConversationService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="An unexpected error occurred while deleting conversation messages.",
                 detail=str(e),
+            )
             )
