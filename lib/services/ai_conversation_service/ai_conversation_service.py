@@ -106,6 +106,7 @@ class AiConversationService:
     ):
         message_data = AiConversationMessageSchema(
             user_id=user_id,
+            user_type=self.user_type,
             conversation_id=conversation_id,
             conversation_type=conversation_type,
             role=role,

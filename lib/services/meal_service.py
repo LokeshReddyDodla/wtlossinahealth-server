@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.constants import ProfileTypeEnum
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.schemas.ai_conversation_schemas import \
@@ -300,7 +301,8 @@ class MealService:
     ) -> List[AiConversationMessageSchema]:
         return [
             AiConversationMessageSchema(
-                patient_id=str(meal_orm.patient_id),
+                user_id=str(meal_orm.patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
                 conversation_id=meal_id,
                 conversation_type="meal",
                 role="human",
@@ -310,7 +312,8 @@ class MealService:
                 ),
             ),
             AiConversationMessageSchema(
-                patient_id=str(meal_orm.patient_id),
+                user_id=str(meal_orm.patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
                 conversation_id=meal_id,
                 conversation_type="meal",
                 role="human",
@@ -322,7 +325,8 @@ class MealService:
                 ),
             ),
             AiConversationMessageSchema(
-                patient_id=str(meal_orm.patient_id),
+                user_id=str(meal_orm.patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
                 conversation_id=meal_id,
                 conversation_type="meal",
                 role="ai",
@@ -331,7 +335,8 @@ class MealService:
                 exclude_from_frontend=True,
             ),
             AiConversationMessageSchema(
-                patient_id=str(meal_orm.patient_id),
+                user_id=str(meal_orm.patient_id),
+                user_type=ProfileTypeEnum.PATIENT,
                 conversation_id=meal_id,
                 conversation_type="meal",
                 role="ai",

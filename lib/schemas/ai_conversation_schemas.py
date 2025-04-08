@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationRoleLiteral,
                             AiConversationTypeLiteral)
@@ -17,6 +18,7 @@ class AiResponseSuggestions(BaseModel):
 
 class AiConversationMessage(BaseModel):
     user_id: str
+    user_type: ProfileTypeEnum
     message_id: str = Field(default_factory=lambda: str(uuid4()))
     conversation_id: str
     conversation_type: AiConversationTypeLiteral
