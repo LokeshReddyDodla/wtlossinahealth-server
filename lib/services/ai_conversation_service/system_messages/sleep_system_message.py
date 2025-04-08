@@ -1,3 +1,5 @@
+from typing import Optional
+
 from langchain.schema import SystemMessage
 
 from .base_system_message import BaseSystemMessage
@@ -29,13 +31,19 @@ class SleepSystemMessage(BaseSystemMessage):
     - "Your deep sleep duration is slightly low. The **Centers for Disease Control and Prevention (CDC)** recommends avoiding screens and caffeine before bedtime for better restorative sleep. Always consult your healthcare provider for tailored recommendations."
     """
 
-    def get_system_message(self) -> SystemMessage:
-        return SystemMessage(
-            content=f"""
-            {self.GUIDELINES}
-            {self.SAFETY_RULES}
-            {self.CITATIONS}
-            {self.FOLLOW_UP_SUGGESTIONS}
-            {self.EXAMPLE_RESPONSES}
-            """
-        )
+    def get_system_message(
+        self, format_instructions: Optional[str] = None
+    ) -> SystemMessage:
+        content = f"""
+        {self.GUIDELINES}
+        {self.SAFETY_RULES}
+        {self.CITATIONS}
+        {self.FOLLOW_UP_SUGGESTIONS}
+        {self.EXAMPLE_RESPONSES}
+        """
+        if format_instructions:
+            content += (
+                f"\n\nPlease format your response as follows:\n{format_instructions}"
+            )
+
+        return SystemMessage(content=content)

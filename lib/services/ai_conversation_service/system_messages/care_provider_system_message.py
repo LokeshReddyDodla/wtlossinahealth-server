@@ -1,3 +1,5 @@
+from typing import Optional
+
 from langchain.schema import SystemMessage
 
 from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
@@ -44,13 +46,19 @@ class CareProviderSystemMessage(BaseSystemMessage):
     - "**Meal Impact Insight**: The SMBG log suggests that meals with high refined carbohydrates result in a 60+ mg/dL spike. According to the **Harvard Nutrition Source**, low-GI carbohydrates can help minimize such excursions."
     """
 
-    def get_system_message(self) -> SystemMessage:
-        return SystemMessage(
-            content=f"""
-            {self.GUIDELINES}
-            {self.SAFETY_RULES}
-            {self.CITATIONS}
-            {self.FOLLOW_UP_SUGGESTIONS}
-            {self.EXAMPLE_RESPONSES}
-            """
-        )
+    def get_system_message(
+        self, format_instructions: Optional[str] = None
+    ) -> SystemMessage:
+        content = f"""
+        {self.GUIDELINES}
+        {self.SAFETY_RULES}
+        {self.CITATIONS}
+        {self.FOLLOW_UP_SUGGESTIONS}
+        {self.EXAMPLE_RESPONSES}
+        """
+        if format_instructions:
+            content += (
+                f"\n\nPlease format your response as follows:\n{format_instructions}"
+            )
+
+        return SystemMessage(content=content)
