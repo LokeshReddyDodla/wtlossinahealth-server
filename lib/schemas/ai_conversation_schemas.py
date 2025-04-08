@@ -10,9 +10,10 @@ from lib.core.types import (AiConversationMessageTypeLiteral,
                             AiConversationTypeLiteral)
 
 
-class AiResponseSuggestions(BaseModel):
-    suggestions: List[str] = Field(
-        description="List of suggested follow-up questions or replies for the user."
+class AIResponseFollowUpQuestions(BaseModel):
+    questions: List[str] = Field(
+        default=...,
+        description="List of 3-5 relevant follow-up questions based on the AI response",
     )
 
 
@@ -44,10 +45,6 @@ class AIResponse(BaseModel):
     #     default_factory=list,
     #     description="List of citations used in the response.",
     # )
-    follow_up_questions: Optional[List[str]] = Field(
-        default=None,
-        description="List of follow-up questions or related queries the user might ask after this response.",
-    )
     confidence_score: Optional[float] = Field(
         default=None,
         description="Confidence score of the AI's response (0 to 1).",

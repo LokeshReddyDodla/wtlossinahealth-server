@@ -16,8 +16,6 @@ class HealthTipSystemMessage(BaseSystemMessage):
 
     CITATIONS = ""
 
-    FOLLOW_UP_SUGGESTIONS = ""
-
     EXAMPLE_RESPONSES = """
     **Example Responses:**
     - "**Hi [name]**, consider a short **walk after lunch** today to help manage blood sugar levels!"
@@ -32,7 +30,6 @@ class HealthTipSystemMessage(BaseSystemMessage):
         {self.GUIDELINES}
         {self.SAFETY_RULES}
         {self.CITATIONS}
-        {self.FOLLOW_UP_SUGGESTIONS}
         {self.EXAMPLE_RESPONSES}
         """
         if format_instructions:

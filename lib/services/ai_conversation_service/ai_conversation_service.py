@@ -17,7 +17,7 @@ from lib.core.types import (AiConversationMessageTypeLiteral,
 from lib.schemas.ai_conversation_schemas import \
     AiConversationMessage as AiConversationMessageSchema
 from lib.schemas.ai_conversation_schemas import (AIResponse,
-                                                 AiResponseSuggestions)
+                                                 AIResponseFollowUpQuestions)
 from lib.schemas.patient import CorePatientProfile
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
@@ -70,7 +70,7 @@ class AiConversationService:
 
         if ai_model_provider == "openai":
             self.chat_model = ChatOpenAI(
-                model=self.selected_ai_model,
+                model=self.selected_ai_model,  # type: ignore
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
@@ -83,7 +83,6 @@ class AiConversationService:
 
         self.output_parser = PydanticOutputParser(pydantic_object=AIResponse)
         format_instructions = self.output_parser.get_format_instructions()
-        pprint(format_instructions)
 
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
@@ -253,6 +252,9 @@ class AiConversationService:
             input=messages,
         )
         parsed_response: AIResponse = ai_response.get("parsed", {})
+        follow_up_questions = await self.generate_followup_questions(
+            parsed_response.response
+        )
 
         ai_message_data = await self.add_message_to_conversation(
             user_id,
@@ -261,7 +263,7 @@ class AiConversationService:
             "ai",
             parsed_response.response,
             message_type="markdown",
-            follow_up_questions=parsed_response.follow_up_questions,
+            follow_up_questions=follow_up_questions,
             metadata={
                 # "sources": parsed_response.sources,
                 "confidence_score": parsed_response.confidence_score,
@@ -311,8 +313,10 @@ class AiConversationService:
         )
 
         # Generate a response using the chat model
-        ai_response: Any = self.chat_model.invoke(messages)
-        usage_metadata = ai_response.usage_metadata
+        ai_response: Any = self.structured_model.invoke(messages)
+        parsed_response: AIResponse = ai_response.get("parsed", {})
+
+        usage_metadata = ai_response["raw"].usage_metadata
 
         # Log token usage
         if usage_metadata:
@@ -327,7 +331,7 @@ class AiConversationService:
                 api_endpoint="/ai-conversation/internal",
             )
 
-        return ai_response.content
+        return parsed_response.response
 
     async def generate_report_response(
         self,
@@ -366,25 +370,32 @@ class AiConversationService:
 
         return ai_response
 
-    async def _generate_message_suggestions(self, ai_response_content: str):
-        suggestion_prompt = (
-            f"Based on the response:\n{ai_response_content}\n"
-            "Generate 3 to 5 suggested follow-up questions or replies that the user might want to ask. "
-            "without suggesting any external apps, tools, or resources. "
-            "Keep the suggestions relevant to the ongoing conversation and within the context of this app's capabilities. "
-            "Provide helpful, relevant follow-up questions related to health and wellness, staying within the app's context. "
-            "Avoid general advice or external recommendations; focus on personalized health insights or support."
-        )
-        messages = [SystemMessage(content=suggestion_prompt)]
+    async def generate_followup_questions(self, ai_response_content: str):
+        prompt = f"""
+        Based on this health response:
+        {ai_response_content}
+        
+        Generate between 3-5 follow-up questions that meet these criteria:
+        1. Must be complete questions ending with a question mark
+        2. Minimum 5 words per question
+        3. Directly related to the health content
+        4. Avoid yes/no questions
+        5. Useful for further health understanding
 
-        suggestion_model = self.chat_model.with_structured_output(
-            AiResponseSuggestions, strict=True
+        Examples:
+        - "What specific dietary changes would help improve these readings?"
+        - "How might exercise timing affect these glucose patterns?"
+        - "When should I be most concerned about these levels?"
+        """
+
+        messages = [SystemMessage(content=prompt)]
+        question_model = self.chat_model.with_structured_output(
+            AIResponseFollowUpQuestions, strict=True
         )
 
         try:
-            suggestion_response: Any = suggestion_model.invoke(messages)
-            suggestions = suggestion_response.suggestions
-            return suggestions
+            response: Any = question_model.invoke(messages)
+            return response.questions
         except ValidationError as e:
             print("Error: Response did not match the expected schema", e)
             return None
@@ -393,9 +404,11 @@ class AiConversationService:
         patient_context_message = await self.create_patient_context_message(patient_id)
         messages = [self.system_message, patient_context_message]
 
-        ai_tip_response: Any = self.chat_model.invoke(messages)
-        health_tip = ai_tip_response.content
-        usage_metadata = ai_tip_response.usage_metadata
+        ai_response: Any = self.structured_model.invoke(messages)
+        parsed_response: AIResponse = ai_response.get("parsed", {})
+
+        health_tip = parsed_response.response
+        usage_metadata = ai_response["raw"].usage_metadata
 
         # Log token usage
         if usage_metadata:

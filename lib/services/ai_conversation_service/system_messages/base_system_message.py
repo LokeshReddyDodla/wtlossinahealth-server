@@ -28,15 +28,6 @@ class BaseSystemMessage:
     - Example: "According to the American Diabetes Association (ADA), some people find success with..."
     """
 
-    FOLLOW_UP_SUGGESTIONS = """
-    **Follow-Up Suggestions:**
-    "Based on the response generate 3 to 5 suggested follow-up questions or replies that the user might want to ask. "
-    "without suggesting any external apps, tools, or resources. "
-    "Keep the suggestions relevant to the ongoing conversation and within the context of this app's capabilities. "
-    "Provide helpful, relevant follow-up questions related to health and wellness, staying within the app's context. "
-    "Avoid general advice or external recommendations; focus on personalized health insights or support."
-    """
-
     EXAMPLE_RESPONSES = """
     **Example Responses:**
     - "Based on guidelines from the **American Diabetes Association (ADA)**, some people find success with [recommendation]. However, always consult your doctor for personalized advice."
@@ -50,7 +41,6 @@ class BaseSystemMessage:
         {self.GUIDELINES}
         {self.SAFETY_RULES}
         {self.CITATIONS}
-        {self.FOLLOW_UP_SUGGESTIONS}
         {self.EXAMPLE_RESPONSES}
         """
         if format_instructions:
