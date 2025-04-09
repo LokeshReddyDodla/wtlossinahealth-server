@@ -5,13 +5,10 @@ from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
-)
-from lib.utils.care_provider_permissions import (
-    CareProviderFeature,
-    CareProviderPermissionAction,
-)
+from lib.services.ai_conversation_service.ai_conversation_service import \
+    AiConversationService
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -100,7 +97,7 @@ async def send_ai_conversation_careprovider_message(
         )
 
 
-@router.post("/health-tip", response_model=SuccessResponse)
+@router.post("/patient/health-tip", response_model=SuccessResponse)
 async def get_daily_health_tip(
     request: Request,
     current_patient: PatientModel = Depends(get_current_patient),
