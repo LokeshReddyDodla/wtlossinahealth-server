@@ -10,28 +10,26 @@ from langchain_perplexity import ChatPerplexity
 from pydantic import SecretStr, ValidationError
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import (
-    AiConversationMessageTypeLiteral,
-    AiConversationRoleLiteral,
-    AiConversationTypeLiteral,
-    AIModelProviderLiteral,
-    GeminiAIModelLiteral,
-    OpenAIModelLiteral,
-    PerplexityAIModelLiteral,
-)
-from lib.schemas.ai_conversation_schemas import (
-    AiConversationMessage as AiConversationMessageSchema,
-)
-from lib.schemas.ai_conversation_schemas import AIResponse, AIResponseFollowUpQuestions
+from lib.core.types import (AiConversationMessageTypeLiteral,
+                            AiConversationRoleLiteral,
+                            AiConversationTypeLiteral, AIModelProviderLiteral,
+                            GeminiAIModelLiteral, OpenAIModelLiteral,
+                            PerplexityAIModelLiteral)
+from lib.schemas.ai_conversation_schemas import \
+    AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.ai_conversation_schemas import (AIResponse,
+                                                 AIResponseFollowUpQuestions)
 from lib.schemas.patient import CorePatientProfile
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
 
 from .system_messages.base_system_message import BaseSystemMessage
-from .system_messages.care_provider_system_message import CareProviderSystemMessage
+from .system_messages.care_provider_system_message import \
+    CareProviderSystemMessage
 from .system_messages.health_tip_system_message import HealthTipSystemMessage
 from .system_messages.meal_system_message import MealSystemMessage
-from .system_messages.prescription_system_message import PrescriptionSystemMessage
+from .system_messages.prescription_system_message import \
+    PrescriptionSystemMessage
 from .system_messages.report_system_message import ReportSystemMessage
 from .system_messages.sleep_system_message import SleepSystemMessage
 from .system_messages.smbg_system_message import SMBGSystemMessage
@@ -58,9 +56,7 @@ class AiConversationService:
     ):
         from lib.dependencies.service_dependencies import (
             get_ai_conversation_messages_collection,
-            get_patient_profile_service,
-            get_token_usage_service,
-        )
+            get_patient_profile_service, get_token_usage_service)
 
         self.token_usage_service = get_token_usage_service()
         self.patient_profile_service = get_patient_profile_service()
@@ -278,6 +274,7 @@ class AiConversationService:
             self.structured_model.invoke,
             input=filtered_messages,
         )
+        print(ai_response)
 
         parsed_response: AIResponse = ai_response.get("parsed", {})
         follow_up_questions = await self.generate_followup_questions(
