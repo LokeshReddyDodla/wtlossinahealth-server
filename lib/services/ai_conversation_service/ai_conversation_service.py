@@ -1,4 +1,3 @@
-from pprint import pprint
 from typing import Any, Dict, List, Optional, Type, Union
 
 from decouple import config
@@ -7,28 +6,32 @@ from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+from langchain_perplexity import ChatPerplexity
 from pydantic import SecretStr, ValidationError
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import (AiConversationMessageTypeLiteral,
-                            AiConversationRoleLiteral,
-                            AiConversationTypeLiteral, AIModelProviderLiteral,
-                            GeminiAIModelLiteral, OpenAIModelLiteral)
-from lib.schemas.ai_conversation_schemas import \
-    AiConversationMessage as AiConversationMessageSchema
-from lib.schemas.ai_conversation_schemas import (AIResponse,
-                                                 AIResponseFollowUpQuestions)
+from lib.core.types import (
+    AiConversationMessageTypeLiteral,
+    AiConversationRoleLiteral,
+    AiConversationTypeLiteral,
+    AIModelProviderLiteral,
+    GeminiAIModelLiteral,
+    OpenAIModelLiteral,
+    PerplexityAIModelLiteral,
+)
+from lib.schemas.ai_conversation_schemas import (
+    AiConversationMessage as AiConversationMessageSchema,
+)
+from lib.schemas.ai_conversation_schemas import AIResponse, AIResponseFollowUpQuestions
 from lib.schemas.patient import CorePatientProfile
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
 
 from .system_messages.base_system_message import BaseSystemMessage
-from .system_messages.care_provider_system_message import \
-    CareProviderSystemMessage
+from .system_messages.care_provider_system_message import CareProviderSystemMessage
 from .system_messages.health_tip_system_message import HealthTipSystemMessage
 from .system_messages.meal_system_message import MealSystemMessage
-from .system_messages.prescription_system_message import \
-    PrescriptionSystemMessage
+from .system_messages.prescription_system_message import PrescriptionSystemMessage
 from .system_messages.report_system_message import ReportSystemMessage
 from .system_messages.sleep_system_message import SleepSystemMessage
 from .system_messages.smbg_system_message import SMBGSystemMessage
@@ -49,18 +52,22 @@ class AiConversationService:
         self,
         conversation_type: AiConversationTypeLiteral = "other",
         ai_model_provider: AIModelProviderLiteral = "openai",
-        selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
+        selected_ai_model: Union[
+            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
+        ] = "gpt-4o",
     ):
         from lib.dependencies.service_dependencies import (
             get_ai_conversation_messages_collection,
-            get_patient_profile_service, get_token_usage_service)
+            get_patient_profile_service,
+            get_token_usage_service,
+        )
 
         self.token_usage_service = get_token_usage_service()
         self.patient_profile_service = get_patient_profile_service()
         self.ai_messages_collection: Any = get_ai_conversation_messages_collection()
-        self.selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = (
-            selected_ai_model
-        )
+        self.selected_ai_model: Union[
+            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
+        ] = selected_ai_model
         self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
         self.user_type = (
             ProfileTypeEnum.CARE_PROVIDER
@@ -73,6 +80,13 @@ class AiConversationService:
                 model=self.selected_ai_model,  # type: ignore
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
+            )
+        elif ai_model_provider == "perplexity":
+            self.chat_model = ChatPerplexity(
+                api_key=SecretStr(str(config("PERPLEXITY_API_KEY"))),
+                model=self.selected_ai_model,
+                temperature=0.5,
+                timeout=200,
             )
         else:
             self.chat_model = ChatGoogleGenerativeAI(
@@ -90,7 +104,7 @@ class AiConversationService:
         self.system_message = self._get_initial_system_message(
             conversation_type, format_instructions
         )
-        pprint(self.system_message)
+        # pprint(self.system_message)
 
     def _get_initial_system_message(
         self,
@@ -122,7 +136,7 @@ class AiConversationService:
             content=content,
             message_type=message_type,
             exclude_from_frontend=exclude_from_frontend,
-            reply_suggestions=follow_up_questions,
+            follow_up_questions=follow_up_questions,
             metadata=metadata,
         ).model_dump()
 
@@ -210,6 +224,18 @@ class AiConversationService:
         patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
         return HumanMessage(content=f"{prefix}\n```json\n{patient_profile_json}\n```")
 
+    def enforce_alternation(self, messages: list) -> list:
+        filtered = [messages[0]]  # Keep system message
+        for msg in messages[1:]:
+            if not filtered:
+                filtered.append(msg)
+                continue
+
+            last_type = filtered[-1].type
+            if msg.type != last_type:  # Only add if alternates
+                filtered.append(msg)
+        return filtered
+
     async def generate_response(
         self,
         patient_id: str,
@@ -246,11 +272,13 @@ class AiConversationService:
             patient_id, prefix=prefix
         )
         messages.insert(1, patient_context_message)
+        filtered_messages = self.enforce_alternation(messages)
 
         ai_response: Any = retry_request(
             self.structured_model.invoke,
-            input=messages,
+            input=filtered_messages,
         )
+
         parsed_response: AIResponse = ai_response.get("parsed", {})
         follow_up_questions = await self.generate_followup_questions(
             parsed_response.response
@@ -265,7 +293,7 @@ class AiConversationService:
             message_type="markdown",
             follow_up_questions=follow_up_questions,
             metadata={
-                # "sources": parsed_response.sources,
+                "citations": parsed_response.citations,
                 "confidence_score": parsed_response.confidence_score,
                 "tags": parsed_response.tags,
             },

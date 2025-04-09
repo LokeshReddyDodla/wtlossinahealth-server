@@ -57,6 +57,7 @@ markdownify = "^0.13.1"
 punq = "^0.7.0"
 tenacity = "^9.0.0"
 langchain-google-genai = "^2.1.2"
+langchain-perplexity = "^0.1.0"
 
 
 [tool.poetry.group.dev.dependencies]
