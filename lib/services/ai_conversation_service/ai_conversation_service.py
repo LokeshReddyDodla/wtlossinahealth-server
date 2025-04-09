@@ -274,7 +274,6 @@ class AiConversationService:
             self.structured_model.invoke,
             input=filtered_messages,
         )
-        print(ai_response)
 
         parsed_response: AIResponse = ai_response.get("parsed", {})
         follow_up_questions = await self.generate_followup_questions(
