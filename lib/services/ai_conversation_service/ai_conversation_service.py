@@ -1,5 +1,8 @@
-from typing import Any, Dict, List, Optional, Type, Union
+import asyncio
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional, Type, Union
 
+from bson import json_util
 from decouple import config
 from fastapi import status
 from langchain.output_parsers import PydanticOutputParser
@@ -55,12 +58,20 @@ class AiConversationService:
         ] = "gpt-4o",
     ):
         from lib.dependencies.service_dependencies import (
-            get_ai_conversation_messages_collection,
-            get_patient_profile_service, get_token_usage_service)
+            get_ai_conversation_messages_collection, get_cgm_report_collection,
+            get_fitness_report_collection, get_meal_report_collection,
+            get_patient_profile_service, get_sleep_report_collection,
+            get_token_usage_service)
 
         self.token_usage_service = get_token_usage_service()
         self.patient_profile_service = get_patient_profile_service()
+
         self.ai_messages_collection: Any = get_ai_conversation_messages_collection()
+        self.cgm_report_collection: Any = get_cgm_report_collection()
+        self.fitness_report_collection: Any = get_fitness_report_collection()
+        self.meal_report_collection: Any = get_meal_report_collection()
+        self.sleep_report_collection: Any = get_sleep_report_collection()
+
         self.selected_ai_model: Union[
             OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
         ] = selected_ai_model
@@ -220,6 +231,92 @@ class AiConversationService:
         patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
         return HumanMessage(content=f"{prefix}\n```json\n{patient_profile_json}\n```")
 
+    async def get_patient_reports(
+        self,
+        patient_id: str,
+        report_types: Optional[List[Literal["sleep", "meal", "fitness", "cgm"]]] = None,
+        date_range: Optional[Dict[Literal["start_date", "end_date"], datetime]] = None,
+        limit_per_report: Optional[int] = None,
+        return_raw: bool = False,
+    ):
+        # Default to all report types if none specified
+        if report_types is None:
+            report_types = ["sleep", "meal", "fitness", "cgm"]
+
+        # Common match filter
+        match_filter: Dict = {"patient_id": patient_id}
+
+        # Add date range filter if provided
+        if date_range:
+            match_filter["start_date"] = {"$gte": date_range["start_date"]}
+            match_filter["end_date"] = {"$lte": date_range["end_date"]}
+
+        # Common pipeline stages
+        pipeline = [
+            {"$match": match_filter},
+            {"$sort": {"start_date": -1}},  # Most recent first
+        ]
+
+        if limit_per_report:
+            pipeline.append({"$limit": limit_per_report})
+
+        if not return_raw:
+            pipeline.append({"$addFields": {"_id": {"$toString": "$_id"}}})
+
+        # Prepare coroutines for requested report types
+        coroutines = []
+
+        if "sleep" in report_types:
+            coroutines.append(
+                self.sleep_report_collection.aggregate(pipeline.copy()).to_list(
+                    length=None
+                )
+            )
+        if "meal" in report_types:
+            coroutines.append(
+                self.meal_report_collection.aggregate(pipeline.copy()).to_list(
+                    length=None
+                )
+            )
+        if "fitness" in report_types:
+            coroutines.append(
+                self.fitness_report_collection.aggregate(pipeline.copy()).to_list(
+                    length=None
+                )
+            )
+        if "cgm" in report_types:
+            coroutines.append(
+                self.cgm_report_collection.aggregate(pipeline.copy()).to_list(
+                    length=None
+                )
+            )
+
+        # Execute all queries in parallel
+        results = await asyncio.gather(*coroutines)
+
+        # Build the response dictionary
+        response = {
+            "sleep_reports": [],
+            "meal_reports": [],
+            "fitness_reports": [],
+            "cgm_reports": [],
+        }
+
+        result_index = 0
+        if "sleep" in report_types:
+            response["sleep_reports"] = results[result_index]
+            result_index += 1
+        if "meal" in report_types:
+            response["meal_reports"] = results[result_index]
+            result_index += 1
+        if "fitness" in report_types:
+            response["fitness_reports"] = results[result_index]
+            result_index += 1
+        if "cgm" in report_types:
+            response["cgm_reports"] = results[result_index]
+
+        return response
+
     def enforce_alternation(self, messages: list) -> list:
         filtered = [messages[0]]  # Keep system message
         for msg in messages[1:]:
@@ -248,69 +345,97 @@ class AiConversationService:
             human_input,
         )
 
-        if conversation_type == "care-provider":
-            patient_history = await self.fetch_user_entire_conversation_messages(
-                user_id
-            )
-            care_provider_history = await self.fetch_conversation_messages(
-                conversation_id
-            )
-            messages = [*patient_history, *care_provider_history]
-        elif conversation_id == f"{patient_id}-custom":
-            messages = await self.fetch_user_entire_conversation_messages(patient_id)
-        else:
-            messages = await self.fetch_conversation_messages(conversation_id)
+        # Start building the message chain
+        messages: Any = [self.system_message]
 
-        messages.insert(0, self.system_message)
-
+        # Add patient context
         prefix = "My Profile:" if conversation_type == "patient" else "Patient Profile:"
         patient_context_message = await self.create_patient_context_message(
             patient_id, prefix=prefix
         )
-        messages.insert(1, patient_context_message)
-        filtered_messages = self.enforce_alternation(messages)
+        messages.append(patient_context_message)
 
-        ai_response: Any = retry_request(
-            self.structured_model.invoke,
-            input=filtered_messages,
-        )
-
-        parsed_response: AIResponse = ai_response.get("parsed", {})
-        follow_up_questions = await self.generate_followup_questions(
-            parsed_response.response
-        )
-
-        ai_message_data = await self.add_message_to_conversation(
-            user_id,
-            conversation_id,
-            conversation_type,
-            "ai",
-            parsed_response.response,
-            message_type="markdown",
-            follow_up_questions=follow_up_questions,
-            metadata={
-                "citations": parsed_response.citations,
-                "confidence_score": parsed_response.confidence_score,
-                "tags": parsed_response.tags,
-            },
-        )
-
-        usage_metadata = ai_response["raw"].usage_metadata
-
-        # Log token usage
-        if usage_metadata:
-            await self.token_usage_service.log_usage(
-                user_id=user_id,
-                user_type=self.user_type,
-                input_tokens=usage_metadata["input_tokens"],
-                output_tokens=usage_metadata["output_tokens"],
-                cached_input_tokens=usage_metadata.get("cached_input_tokens"),
-                model_used=self.selected_ai_model,
-                model_provider=self.ai_model_provider,
-                api_endpoint="/ai-conversation/respond",
+        # Handle care-provider specific messages
+        if conversation_type == "care-provider":
+            patient_reports = await self.get_patient_reports(
+                patient_id, return_raw=True, limit_per_report=1
+            )
+            # Create a properly formatted HumanMessage
+            messages.append(
+                HumanMessage(
+                    content=f"Patient Reports:\n{json_util.dumps(patient_reports, indent=2)}"
+                )
             )
 
-        return ai_message_data
+            # Fetch and process conversation history
+            conversation_history = await self.fetch_conversation_messages(
+                conversation_id
+            )
+            messages.extend(conversation_history)
+        else:
+            # Handle other conversation types
+            if conversation_id == f"{patient_id}-custom":
+                history = await self.fetch_user_entire_conversation_messages(patient_id)
+            else:
+                history = await self.fetch_conversation_messages(conversation_id)
+            messages.extend(history)
+
+        filtered_messages = (
+            self.enforce_alternation(messages)
+            if self.ai_model_provider == "perplexity"
+            else messages
+        )
+
+        try:
+            ai_response: Any = retry_request(
+                self.structured_model.invoke,
+                input=filtered_messages,
+            )
+            # ai_response: Any = self.structured_model.invoke(input=filtered_messages)
+
+            parsed_response: AIResponse = ai_response.get("parsed", {})
+            follow_up_questions = await self.generate_followup_questions(
+                parsed_response.response
+            )
+
+            ai_message_data = await self.add_message_to_conversation(
+                user_id,
+                conversation_id,
+                conversation_type,
+                "ai",
+                parsed_response.response,
+                message_type="markdown",
+                follow_up_questions=follow_up_questions,
+                metadata={
+                    "citations": parsed_response.citations,
+                    "confidence_score": parsed_response.confidence_score,
+                    "tags": parsed_response.tags,
+                },
+            )
+
+            usage_metadata = ai_response["raw"].usage_metadata
+
+            # Log token usage
+            if usage_metadata:
+                await self.token_usage_service.log_usage(
+                    user_id=user_id,
+                    user_type=self.user_type,
+                    input_tokens=usage_metadata["input_tokens"],
+                    output_tokens=usage_metadata["output_tokens"],
+                    cached_input_tokens=usage_metadata.get("cached_input_tokens"),
+                    model_used=self.selected_ai_model,
+                    model_provider=self.ai_model_provider,
+                    api_endpoint="/ai-conversation/respond",
+                )
+
+            return ai_message_data
+        except Exception as e:
+            print(f"Error generating AI response: {str(e)}")
+            raise_http_exception(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Failed to generate AI response.",
+                detail=str(e),
+            )
 
     async def generate_temporary_response(
         self,

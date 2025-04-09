@@ -43,27 +43,19 @@ def get_chat_messaging_service() -> ChatMessagingService:
 
 
 def get_chat_notification_service() -> ChatNotificationService:
-    return cast(
-        ChatNotificationService, container.resolve(ChatNotificationService)
-    )
+    return cast(ChatNotificationService, container.resolve(ChatNotificationService))
 
 
 def get_chat_management_service() -> ChatManagementService:
-    return cast(
-        ChatManagementService, container.resolve(ChatManagementService)
-    )
+    return cast(ChatManagementService, container.resolve(ChatManagementService))
 
 
 def get_ai_conversation_service() -> AiConversationService:
-    return cast(
-        AiConversationService, container.resolve(AiConversationService)
-    )
+    return cast(AiConversationService, container.resolve(AiConversationService))
 
 
 def get_patient_profile_service() -> PatientProfileService:
-    return cast(
-        PatientProfileService, container.resolve(PatientProfileService)
-    )
+    return cast(PatientProfileService, container.resolve(PatientProfileService))
 
 
 def get_care_provider_profile_service() -> CareProviderProfileService:
@@ -162,9 +154,7 @@ def get_fitness_report_service() -> FitnessReportService:
 
 
 def get_glucose_stats_processor() -> GlucoseStatsProcessor:
-    return cast(
-        GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
-    )
+    return cast(GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor))
 
 
 def get_sleep_stats_processor() -> SleepStatsProcessor:
@@ -206,3 +196,19 @@ def get_token_usage_service() -> TokenUsageService:
 
 def get_ai_conversation_messages_collection():
     return container.resolve("ai_conversation_messages_collection")
+
+
+def get_cgm_report_collection():
+    return container.resolve("cgm_report_collection")
+
+
+def get_fitness_report_collection():
+    return container.resolve("fitness_report_collection")
+
+
+def get_meal_report_collection():
+    return container.resolve("meal_report_collection")
+
+
+def get_sleep_report_collection():
+    return container.resolve("sleep_report_collection")
