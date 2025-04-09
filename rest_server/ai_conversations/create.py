@@ -5,19 +5,20 @@ from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
 
 
-@router.post(
-    "/respond", response_model=SuccessResponse
-)  # TODO: update path to /patient/respond
+@router.post("/patient/respond", response_model=SuccessResponse)
 async def send_ai_conversation_patient_message(
     request: Request,
     conversation_id: str,
@@ -28,8 +29,8 @@ async def send_ai_conversation_patient_message(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            selected_ai_model="gpt-4o-mini",
-            ai_model_provider="openai",
+            selected_ai_model="sonar",
+            ai_model_provider="perplexity",
         )
 
         # Generate response from the AI model
@@ -55,7 +56,7 @@ async def send_ai_conversation_patient_message(
         )
 
 
-@router.post("/careprovider/respond", response_model=SuccessResponse)
+@router.post("/care-provider/respond", response_model=SuccessResponse)
 async def send_ai_conversation_careprovider_message(
     request: Request,
     patient_id: str,

@@ -1613,7 +1613,7 @@ description = "Lightweight in-process concurrent programming"
 optional = false
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "python_version < \"3.13\" and (platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
+markers = "python_version <= \"3.12\" and (platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
 files = [
     {file = "greenlet-3.1.1-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:0bbae94a29c9e5c7e4a2b7f0aae5c17e8e90acbfd3bf6270eeba60c39fce3563"},
     {file = "greenlet-3.1.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0fde093fb93f35ca72a556cf72c92ea3ebfda3d79fc35bb19fbe685853869a83"},
@@ -2158,14 +2158,14 @@ tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.49"
+version = "0.3.51"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "langchain_core-0.3.49-py3-none-any.whl", hash = "sha256:893ee42c9af13bf2a2d8c2ec15ba00a5c73cccde21a2bd005234ee0e78a2bdf8"},
-    {file = "langchain_core-0.3.49.tar.gz", hash = "sha256:d9dbff9bac0021463a986355c13864d6a68c41f8559dbbd399a68e1ebd9b04b9"},
+    {file = "langchain_core-0.3.51-py3-none-any.whl", hash = "sha256:4bd71e8acd45362aa428953f2a91d8162318014544a2216e4b769463caf68e13"},
+    {file = "langchain_core-0.3.51.tar.gz", hash = "sha256:db76b9cc331411602cb40ba0469a161febe7a0663fbcaddbc9056046ac2d22f4"},
 ]
 
 [package.dependencies]
@@ -2214,6 +2214,22 @@ files = [
 langchain-core = ">=0.3.27,<0.4.0"
 openai = ">=1.58.1,<2.0.0"
 tiktoken = ">=0.7,<1"
+
+[[package]]
+name = "langchain-perplexity"
+version = "0.1.0"
+description = "An integration package connecting Perplexity and LangChain"
+optional = false
+python-versions = "<4.0,>=3.9"
+groups = ["main"]
+files = [
+    {file = "langchain_perplexity-0.1.0-py3-none-any.whl", hash = "sha256:7e18fa4c28e25240a9e57c613bf75737d2767d63dc92979de2db51f4e40127e0"},
+    {file = "langchain_perplexity-0.1.0.tar.gz", hash = "sha256:947648a223cf1cbbc5b26efcf29d5483443be222fd803da1cff9c2923d6063d6"},
+]
+
+[package.dependencies]
+langchain-core = ">=0.3.50,<1.0.0"
+openai = ">=1.68.2,<2.0.0"
 
 [[package]]
 name = "langchain-text-splitters"
@@ -5213,4 +5229,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4.0"
-content-hash = "89a2ccd09e7096ae30331690a481299a5cfa81dca24cee6749f3dc2175e8a11a"
+content-hash = "fe7267d406aaaf41e5f8c52237a6f9619dda607f7cdd3de7e473a9b5cd2f4ac1"

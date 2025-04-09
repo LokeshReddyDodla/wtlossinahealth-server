@@ -1,12 +1,16 @@
 from datetime import date
-from typing import Dict, Literal, Optional, Union
+from typing import Optional, Union
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import (AIModelProviderLiteral, GeminiAIModelLiteral,
-                            OpenAIModelLiteral)
+from lib.core.types import (
+    AIModelProviderLiteral,
+    GeminiAIModelLiteral,
+    OpenAIModelLiteral,
+    PerplexityAIModelLiteral,
+)
 from lib.models.token_usage_log import TokenUsageLog
 
 PRICING = {
@@ -22,14 +26,31 @@ PRICING = {
     },
     "gemini-1.5-flash": {
         "input": 0.075 / 1_000_000,  # $0.075 per 1M input tokens
-        "cached_input": 0.01875
-        / 1_000_000,  # $0.01875 per 1M cached input tokens
+        "cached_input": 0.01875 / 1_000_000,  # $0.01875 per 1M cached input tokens
         "output": 0.30 / 1_000_000,  # $0.30 per 1M output tokens
     },
     "gemini-2.0-flash": {
         "input": 0.10 / 1_000_000,  # $0.10 per 1M input tokens
         "cached_input": 0.025 / 1_000_000,  # $0.025 per 1M cached input tokens
         "output": 0.40 / 1_000_000,  # $0.40 per 1M output tokens
+    },
+    "sonar": {
+        "input": 1.00 / 1_000_000,  # $1.00 per 1M input tokens
+        "output": 1.00 / 1_000_000,  # $1.00 per 1M output tokens
+        "price_per_1000_requests": {
+            "high": 12.00 / 1_000,  # $12.00 per 1000 requests
+            "medium": 8.00 / 1_000,  # $8.00 per 1000 requests
+            "low": 5.00 / 1_000,  # $5.00 per 1000 requests
+        },
+    },
+    "sonar-reasoning": {
+        "input": 1.00 / 1_000_000,  # $1.00 per 1M input tokens
+        "output": 5.00 / 1_000_000,  # $5.00 per 1M output tokens
+        "price_per_1000_requests": {
+            "high": 12.00 / 1_000,  # $12.00 per 1000 requests
+            "medium": 8.00 / 1_000,  # $8.00 per 1000 requests
+            "low": 5.00 / 1_000,  # $5.00 per 1000 requests
+        },
     },
 }
 
@@ -49,12 +70,8 @@ class TokenUsageService:
             query = (
                 select(
                     func.date(TokenUsageLog.created_at).label("usage_date"),
-                    func.sum(TokenUsageLog.input_tokens).label(
-                        "total_input_tokens"
-                    ),
-                    func.sum(TokenUsageLog.output_tokens).label(
-                        "total_output_tokens"
-                    ),
+                    func.sum(TokenUsageLog.input_tokens).label("total_input_tokens"),
+                    func.sum(TokenUsageLog.output_tokens).label("total_output_tokens"),
                     func.sum(TokenUsageLog.cached_input_tokens).label(
                         "total_cached_input_tokens"
                     ),
@@ -93,7 +110,9 @@ class TokenUsageService:
         self,
         user_id: str,
         user_type: ProfileTypeEnum,
-        model_used: Union[OpenAIModelLiteral, GeminiAIModelLiteral],
+        model_used: Union[
+            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
+        ],
         model_provider: AIModelProviderLiteral,
         input_tokens: int,
         output_tokens: int,
@@ -139,13 +158,15 @@ class TokenUsageService:
 
         pricing = PRICING[model_used]
 
-        cached_input_tokens = cached_input_tokens or 0
+        # Calculate costs for input and output tokens
+        input_cost = input_tokens * pricing.get("input", 0)
+        output_cost = output_tokens * pricing.get("output", 0)
 
-        # Calculate costs for each type of token
-        input_cost = input_tokens * pricing["input"]
-        cached_input_cost = cached_input_tokens * pricing["cached_input"]
-        output_cost = output_tokens * pricing["output"]
+        # Calculate cost for cached input tokens if the key exists
+        cached_input_cost = 0
+        if "cached_input" in pricing and cached_input_tokens is not None:
+            cached_input_cost = cached_input_tokens * pricing["cached_input"]
 
-        # Total cost
         total_cost = input_cost + cached_input_cost + output_cost
+
         return total_cost

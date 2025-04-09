@@ -47,4 +47,6 @@ GeminiAIModelLiteral = Literal[
     "gemini-2.0-flash",
 ]
 
-AIModelProviderLiteral = Literal["openai", "gemini"]
+PerplexityAIModelLiteral = Literal["sonar", "sonar-reasoning"]
+
+AIModelProviderLiteral = Literal["openai", "gemini", "perplexity"]

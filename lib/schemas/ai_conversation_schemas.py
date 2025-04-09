@@ -5,9 +5,11 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import (AiConversationMessageTypeLiteral,
-                            AiConversationRoleLiteral,
-                            AiConversationTypeLiteral)
+from lib.core.types import (
+    AiConversationMessageTypeLiteral,
+    AiConversationRoleLiteral,
+    AiConversationTypeLiteral,
+)
 
 
 class AIResponseFollowUpQuestions(BaseModel):
@@ -28,7 +30,7 @@ class AiConversationMessage(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     message_type: AiConversationMessageTypeLiteral
     exclude_from_frontend: bool = False
-    reply_suggestions: Optional[List[str]] = None  # follow_up_questions
+    follow_up_questions: Optional[List[str]] = None
     metadata: Optional[Dict] = None
     language: Optional[str] = "unknown"
 
@@ -36,15 +38,18 @@ class AiConversationMessage(BaseModel):
         use_enum_values = True
 
 
+class Citation(BaseModel):
+    title: Optional[str] = Field(default=None, description="Title of the source")
+    url: str = Field(..., description="Direct link to the source")
+    source: Optional[str] = Field(default=None, description="Organization/author")
+
+
 class AIResponse(BaseModel):
     response: str = Field(
         ...,
         description="The AI's generated response, including embedded citations.",
     )
-    # citations: Optional[List[Any]] = Field(
-    #     default_factory=list,
-    #     description="List of citations used in the response.",
-    # )
+    citations: List[Citation] = Field(default_factory=list)
     confidence_score: Optional[float] = Field(
         default=None,
         description="Confidence score of the AI's response (0 to 1).",
