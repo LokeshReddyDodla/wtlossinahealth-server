@@ -25,19 +25,21 @@ from .router import router
 )
 async def get_patient_cgm_report(
     request: Request,
-    patient_id: str = Query(...),
     report_id: str = Query(...),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
+    current_patient: Patient = Depends(get_current_patient),
 ):
     try:
         patient_info = await patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, include_health_data=True
+            patient_id=str(current_patient.patient_id), include_health_data=True
         )
 
-        report = await cgm_report_service.fetch_report(patient_id, report_id)
+        report = await cgm_report_service.fetch_report(
+            str(current_patient.patient_id), report_id
+        )
 
         return SuccessResponse(
             message="Report fetched successfully",
