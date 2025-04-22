@@ -166,7 +166,7 @@ class CareProviderProfileService:
                 return code
 
     async def create_care_provider(
-        self, care_provider_data: CareProviderCreate
+        self, care_provider_data: CareProviderCreate, health_facility_id: str
     ) -> CareProviderModel:  # TODO: fix validation on invalid health_facility id
         try:
             # Convert role to enum and get permissions
@@ -178,6 +178,7 @@ class CareProviderProfileService:
             new_care_provider = CareProviderModel(
                 **care_provider_data.model_dump(),
                 code=code,
+                health_facility_id=health_facility_id,
             )
 
             self.postgres_session.add(new_care_provider)
