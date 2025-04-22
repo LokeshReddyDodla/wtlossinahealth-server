@@ -13,28 +13,27 @@ class CareProviderBase(BaseModel):
     phone_number: str
     email: str
     role: str
-    
+
     # Clinic Info
     clinic_name: Optional[str] = None
     clinic_phone_number: Optional[str] = None
     clinic_address: Optional[str] = None
     clinic_website_url: Optional[str] = None
-    
+
     # Medical Info
     medical_council_number: Optional[str] = None
     certificates: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
-    
+
     # System Fields
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
 
 
-
 class CareProviderCreate(CareProviderBase):
-    health_facility_id: UUID
+    pass
 
 
 class CareProviderUpdate(CareProviderBase):
-    health_facility_id: Optional[UUID]
+    pass
 
 
 class CareProvider(CareProviderBase):
