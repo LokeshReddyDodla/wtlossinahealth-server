@@ -88,7 +88,7 @@ async def set_care_provider_password(
         )
 
 
-@router.put("/permissions", response_model=CareProviderSchema)
+@router.patch("/permissions", response_model=SuccessResponse)
 async def update_care_provider_permissions(
     care_provider_id: str,
     permissions_update: CareProviderPermissions,
