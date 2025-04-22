@@ -31,10 +31,8 @@ async def create_care_provider_profile(
     ),
 ):
     try:
-        new_care_provider = (
-            await care_provider_profile_service.create_care_provider(
-                care_provider
-            )
+        new_care_provider = await care_provider_profile_service.create_care_provider(
+            care_provider, str(current_care_provider.health_facility_id)
         )
 
         return SuccessResponse(
