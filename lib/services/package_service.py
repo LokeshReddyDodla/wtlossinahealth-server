@@ -2,19 +2,17 @@ import random
 import string
 from typing import List, Optional
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import UUID
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.attributes import flag_modified
 
 from lib.models.package import Package as PackageModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.package import PackageCreate, PackageUpdate
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.services.care_provider_profile_service import CareProviderProfileService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
@@ -38,9 +36,7 @@ class PackageService:
 
     async def generate_unique_code(self) -> str:
         while True:
-            code = "".join(
-                random.choices(string.ascii_uppercase + string.digits, k=6)
-            )
+            code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
             stmt = select(PackageModel).where(PackageModel.code == code)
             result = await self.postgres_session.execute(stmt)
             if not result.scalars().first():
@@ -50,9 +46,7 @@ class PackageService:
         self, package_id: str, detailed: Optional[bool] = False
     ) -> PackageModel:
         try:
-            stmt = select(PackageModel).where(
-                PackageModel.package_id == package_id
-            )
+            stmt = select(PackageModel).where(PackageModel.package_id == package_id)
 
             if detailed:
                 stmt = stmt.options(
@@ -83,9 +77,7 @@ class PackageService:
         self, package_code: str, detailed: Optional[bool] = False
     ) -> PackageModel:
         try:
-            stmt = select(PackageModel).where(
-                PackageModel.code == package_code
-            )
+            stmt = select(PackageModel).where(PackageModel.code == package_code)
 
             if detailed:
                 stmt = stmt.options(
@@ -144,10 +136,8 @@ class PackageService:
         created_by_id: UUID,
     ) -> PackageModel:
         try:
-            care_provider = (
-                await self.care_provider_service.fetch_care_provider(
-                    str(created_by_id)
-                )
+            care_provider = await self.care_provider_service.fetch_care_provider(
+                str(created_by_id)
             )
             care_provider = await self.postgres_session.merge(care_provider)
 
@@ -218,9 +208,7 @@ class PackageService:
                 detail=str(e),
             )
 
-    async def delete_package(
-        self, package_id: str, health_facility_id: str
-    ) -> None:
+    async def delete_package(self, package_id: str, health_facility_id: str) -> None:
         try:
             package = await self.fetch_package(package_id)
 
@@ -248,11 +236,12 @@ class PackageService:
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            care_provider = (
-                await self.care_provider_service.fetch_care_provider(
-                    care_provider_id
-                )
+            care_provider = await self.care_provider_service.fetch_care_provider(
+                care_provider_id
             )
+
+            # Merge the care provider into the current session
+            care_provider = await self.postgres_session.merge(care_provider)
 
             # Ensure the care provider and package belong to the same health facility
             if package.health_facility_id != care_provider.health_facility_id:  # type: ignore
@@ -283,9 +272,8 @@ class PackageService:
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id
-            )
+            patient = await self.patient_service.fetch_patient_profile(patient_id)
+            patient = await self.postgres_session.merge(patient)
 
             # Check if the patient is already part of the package
             if patient in package.patients:
@@ -330,14 +318,10 @@ class PackageService:
     async def patient_join_package_by_code(
         self, patient_id: str, package_code: str
     ) -> PackageModel:
-
         try:
-            package = await self.fetch_package_by_code(
-                package_code, detailed=True
-            )
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id
-            )
+            package = await self.fetch_package_by_code(package_code, detailed=True)
+            patient = await self.patient_service.fetch_patient_profile(patient_id)
+            patient = await self.postgres_session.merge(patient)
 
             # Check if the patient is already part of the package
             if patient in package.patients:
@@ -384,11 +368,10 @@ class PackageService:
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            care_provider = (
-                await self.care_provider_service.fetch_care_provider(
-                    care_provider_id
-                )
+            care_provider = await self.care_provider_service.fetch_care_provider(
+                care_provider_id
             )
+            care_provider = await self.postgres_session.merge(care_provider)
 
             # Check if the care provider is part of the package
             if care_provider not in package.care_providers:
@@ -419,9 +402,8 @@ class PackageService:
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id
-            )
+            patient = await self.patient_service.fetch_patient_profile(patient_id)
+            patient = await self.postgres_session.merge(patient)
 
             # Check if the patient is part of the package
             if patient not in package.patients:
