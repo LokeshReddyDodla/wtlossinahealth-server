@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 
 class CareProviderBase(BaseModel):
@@ -67,8 +67,6 @@ class PermissionActionSchema(BaseModel):
     delete: bool = False
 
 
-class CareProviderPermissions(BaseModel):
-    __root__: Dict[str, PermissionActionSchema]
-
+class CareProviderPermissions(RootModel[Dict[str, PermissionActionSchema]]):
     def model_dump(self):
-        return {feature: perms.dict() for feature, perms in self.__root__.items()}
+        return {feature: perms.model_dump() for feature, perms in self.root.items()}
