@@ -104,7 +104,7 @@ async def update_care_provider_permissions(
 ):
     try:
         _ = await care_provider_profile_service.update_care_provider_permissions(
-            care_provider_id, permissions_update.__root__
+            care_provider_id, permissions_update.root
         )
         return SuccessResponse(message="Permissions updated successfully.")
     except HTTPException as e:
