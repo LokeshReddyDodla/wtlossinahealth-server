@@ -58,3 +58,17 @@ class CareProvider(CareProviderBase):
         }
 
         return cls(**kwargs)
+
+
+class PermissionActionSchema(BaseModel):
+    read: bool = False
+    create: bool = False
+    update: bool = False
+    delete: bool = False
+
+
+class CareProviderPermissions(BaseModel):
+    __root__: Dict[str, PermissionActionSchema]
+
+    def model_dump(self):
+        return {feature: perms.dict() for feature, perms in self.__root__.items()}

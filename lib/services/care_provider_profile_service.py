@@ -8,17 +8,24 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
+from lib.schemas.care_provider import (
+    CareProviderCreate,
+    CareProviderUpdate,
+    PermissionActionSchema,
+)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (CareProviderRole,
-                                                 get_care_provider_permissions)
+from lib.utils.care_provider_permissions import (
+    CareProviderRole,
+    get_care_provider_permissions,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.security import hash_password, verify_password
 
@@ -389,6 +396,35 @@ class CareProviderProfileService:
                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=str(care_provider_id),
             )
+
+        except SQLAlchemyError as e:
+            await self.postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def update_care_provider_permissions(
+        self,
+        care_provider_id: str,
+        permissions_update: Dict[str, PermissionActionSchema],
+    ) -> CareProviderModel:
+        try:
+            care_provider = await self.fetch_care_provider(care_provider_id)
+
+            # Directly update permissions
+            care_provider.permissions = {  # type: ignore
+                feature: action.model_dump()
+                for feature, action in permissions_update.items()
+            }
+            flag_modified(care_provider, "permissions")
+
+            self.postgres_session.add(care_provider)
+            await self.postgres_session.commit()
+            await self.postgres_session.refresh(care_provider)
+
+            return care_provider
 
         except SQLAlchemyError as e:
             await self.postgres_session.rollback()
