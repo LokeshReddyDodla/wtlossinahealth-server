@@ -1,21 +1,32 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
-
-from lib.schemas.health_facility import HealthFacility
-from lib.schemas.package import Package
+from pydantic import BaseModel, Field
 
 
 class CareProviderBase(BaseModel):
+    # Personal Info
     first_name: str
     last_name: str
-    role: str
     profile_picture: Optional[str] = None
     phone_number: str
     email: str
+    role: str
+    
+    # Clinic Info
+    clinic_name: Optional[str] = None
+    clinic_phone_number: Optional[str] = None
+    clinic_address: Optional[str] = None
+    clinic_website_url: Optional[str] = None
+    
+    # Medical Info
+    medical_council_number: Optional[str] = None
+    certificates: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    
+    # System Fields
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
+
 
 
 class CareProviderCreate(CareProviderBase):

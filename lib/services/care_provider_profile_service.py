@@ -1,14 +1,13 @@
 import random
 import string
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
@@ -18,7 +17,6 @@ from lib.schemas.care_provider import CareProviderCreate, CareProviderUpdate
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.socketio_service import sio
 from lib.utils.care_provider_permissions import (CareProviderRole,
                                                  get_care_provider_permissions)
 from lib.utils.http_exceptions import raise_http_exception
@@ -26,6 +24,12 @@ from lib.utils.security import hash_password, verify_password
 
 
 class CareProviderProfileService:
+    PROFILE_SECTION_REQUIREMENTS: Dict[str, Set[str]] = {
+        "personal_info": {"first_name", "last_name", "email", "phone_number", "role"},
+        "clinic_info": {"clinic_name", "clinic_phone_number", "clinic_address"},
+        "medical_info": {"medical_council_number"},
+    }
+
     def __init__(
         self,
         postgres_session: AsyncSession,
@@ -84,9 +88,7 @@ class CareProviderProfileService:
             profiles = result.scalars().all()
 
             return {
-                str(profile.care_provider_id): CareProviderSchema.from_orm(
-                    profile
-                )
+                str(profile.care_provider_id): CareProviderSchema.from_orm(profile)
                 for profile in profiles
             }
         except SQLAlchemyError as e:
@@ -136,9 +138,7 @@ class CareProviderProfileService:
         try:
             stmt = (
                 select(CareProviderModel)
-                .where(
-                    CareProviderModel.health_facility_id == health_facility_id
-                )
+                .where(CareProviderModel.health_facility_id == health_facility_id)
                 .options(
                     selectinload(CareProviderModel.patients),
                     selectinload(CareProviderModel.packages),
@@ -159,21 +159,15 @@ class CareProviderProfileService:
 
     async def generate_unique_code(self) -> str:
         while True:
-            code = "".join(
-                random.choices(string.ascii_uppercase + string.digits, k=6)
-            )
-            stmt = select(CareProviderModel).where(
-                CareProviderModel.code == code
-            )
+            code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            stmt = select(CareProviderModel).where(CareProviderModel.code == code)
             result = await self.postgres_session.execute(stmt)
             if not result.scalars().first():
                 return code
 
     async def create_care_provider(
         self, care_provider_data: CareProviderCreate
-    ) -> (
-        CareProviderModel
-    ):  # TODO: fix validation on invalid health_facility id
+    ) -> CareProviderModel:  # TODO: fix validation on invalid health_facility id
         try:
             # Convert role to enum and get permissions
             role_enum = CareProviderRole(care_provider_data.role.lower())
@@ -185,6 +179,7 @@ class CareProviderProfileService:
                 **care_provider_data.model_dump(),
                 code=code,
             )
+
             self.postgres_session.add(new_care_provider)
             await self.postgres_session.commit()
             await self.postgres_session.refresh(new_care_provider)
@@ -210,21 +205,13 @@ class CareProviderProfileService:
         self, care_provider_id: str, updates: CareProviderUpdate
     ) -> CareProviderModel:
         try:
-            care_provider_profile = await self.fetch_care_provider(
-                care_provider_id
-            )
+            care_provider_profile = await self.fetch_care_provider(care_provider_id)
 
+            # Apply updates
             for key, value in updates.model_dump(exclude_unset=True).items():
                 setattr(care_provider_profile, key, value)
 
-            updated = self._mark_profile_section_complete(
-                care_provider_profile.profile_completion, "basic"
-            )
-            if updated:
-                flag_modified(care_provider_profile, "profile_completion")
-
             self.postgres_session.add(care_provider_profile)
-
             await self.postgres_session.commit()
             await self.postgres_session.refresh(care_provider_profile)
 
@@ -267,9 +254,7 @@ class CareProviderProfileService:
     async def check_care_provider_exists(self, care_provider_id: str) -> bool:
         try:
             stmt = select(
-                exists().where(
-                    CareProviderModel.care_provider_id == care_provider_id
-                )
+                exists().where(CareProviderModel.care_provider_id == care_provider_id)
             )
             result = await self.postgres_session.execute(stmt)
             (exists_result,) = result.scalars()
@@ -291,11 +276,8 @@ class CareProviderProfileService:
     async def set_care_provider_password(
         self, care_provider_id: str, raw_password: str
     ) -> CareProviderModel:
-
         try:
-            care_provider_profile = await self.fetch_care_provider(
-                care_provider_id
-            )
+            care_provider_profile = await self.fetch_care_provider(care_provider_id)
 
             if care_provider_profile.email is None:
                 raise_http_exception(
@@ -332,9 +314,7 @@ class CareProviderProfileService:
         self, email: str, password: str
     ) -> CareProviderModel:
         try:
-            stmt = select(CareProviderModel).where(
-                CareProviderModel.email == email
-            )
+            stmt = select(CareProviderModel).where(CareProviderModel.email == email)
             result = await self.postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
@@ -350,9 +330,7 @@ class CareProviderProfileService:
                     message="Password not set. Please set your password to log in.",
                 )
 
-            if not verify_password(
-                password, str(care_provider.hashed_password)
-            ):
+            if not verify_password(password, str(care_provider.hashed_password)):
                 raise_http_exception(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     message="Invalid email or password",
@@ -378,7 +356,7 @@ class CareProviderProfileService:
                 patient_id, detailed=True
             )
 
-            if not patient in care_provider.patients:
+            if patient not in care_provider.patients:
                 raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     message="Patient is not linked to the specified care provider.",
@@ -418,11 +396,3 @@ class CareProviderProfileService:
                 message="Database Error",
                 detail=str(e),
             )
-
-    def _mark_profile_section_complete(
-        self, profile_completion, section: str
-    ) -> bool:
-        if not profile_completion[section]["is_complete"]:
-            profile_completion[section]["is_complete"] = True
-            return True
-        return False

@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,6 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
-from lib.models.care_provider import CareProvider
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import \
@@ -40,7 +39,6 @@ from lib.models.patient_sleep_habit import \
     PatientSleepHabit as PatientSleepHabitModel
 from lib.models.patient_smoking_habit import \
     PatientSmokingHabit as PatientSmokingHabitModel
-from lib.schemas.patient import CompletePatientProfile
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
@@ -49,19 +47,16 @@ from lib.schemas.patient_current_medication import \
     PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
-from lib.schemas.patient_diet_preference import PatientDietPreferenceCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
 from lib.schemas.patient_eating_habit import PatientEatingHabitCreate
 from lib.schemas.patient_family_diabetic_history import \
     PatientFamilyDiabeticHistoryCreate
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
-from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
-from lib.services.socketio_service import sio
 from lib.utils.http_exceptions import raise_http_exception
 
 

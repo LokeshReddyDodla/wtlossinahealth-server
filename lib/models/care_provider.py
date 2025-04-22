@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, ForeignKey,
-                        String, Table)
+                        String)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -26,21 +26,29 @@ class CareProvider(Base):
         unique=True,
         comment="Unique 6-digit uppercase code for the package",
     )
+
+    # Personal Info
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
-    role = Column(
-        String, nullable=False
-    )  # e.g., Doctor, Nurse, Dietitian, etc.
     profile_picture = Column(String, nullable=True)
     phone_number = Column(String, unique=True, index=True)
     email = Column(String, nullable=False, unique=True)
+    role = Column(String, nullable=False)  # e.g., Doctor, Nurse, Dietitian, etc.
     hashed_password = Column(String, nullable=True)
-    permissions = Column(
-        JSON, nullable=True
-    )  # Store permissions as JSON or use a separate permissions table
-    created_at = Column(
-        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
-    )
+
+    # Clinic Info
+    clinic_name = Column(String, nullable=True)
+    clinic_phone_number = Column(String, nullable=True)
+    clinic_address = Column(String, nullable=True)
+    clinic_website_url = Column(String, nullable=True)
+
+    # Medical Info
+    medical_council_number = Column(String, nullable=True)
+    certificates = Column(JSON, nullable=True)
+
+    # System Fields
+    permissions = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
     updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
@@ -51,16 +59,16 @@ class CareProvider(Base):
     profile_completion = Column(
         JSON,
         default={
-            "basic": {"is_complete": False, "is_mandatory": True},
+            "personal_info": {"is_complete": False, "is_mandatory": True},
+            "clinic_info": {"is_complete": False, "is_mandatory": True},
+            "medical_info": {"is_complete": False, "is_mandatory": True},
         },
     )
 
     # Foreign Keys
     health_facility_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(
-            "health_facilities.health_facility_id", ondelete="SET NULL"
-        ),
+        ForeignKey("health_facilities.health_facility_id", ondelete="SET NULL"),
     )
     health_facility = relationship(
         "HealthFacility", back_populates="care_providers", passive_deletes=True

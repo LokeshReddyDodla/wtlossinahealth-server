@@ -1,4 +1,3 @@
-
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
@@ -21,7 +20,6 @@ from .router import router
 @router.put("", response_model=SuccessResponse)
 async def update_care_provider_profile(
     request: Request,
-    care_provider_id: str,
     care_provider_update: CareProviderUpdate,
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
@@ -36,7 +34,7 @@ async def update_care_provider_profile(
     try:
         updated_care_provider = (
             await care_provider_profile_service.update_care_provider(
-                care_provider_id, care_provider_update
+                str(current_care_provider.care_provider_id), care_provider_update
             )
         )
 
@@ -68,12 +66,9 @@ async def set_care_provider_password(
     ),
 ):
     try:
-
-        updated_care_provider = (
-            await care_provider_profile_service.set_care_provider_password(
-                care_provider_id=str(current_care_provider.care_provider_id),
-                raw_password=raw_password,
-            )
+        await care_provider_profile_service.set_care_provider_password(
+            care_provider_id=str(current_care_provider.care_provider_id),
+            raw_password=raw_password,
         )
 
         return SuccessResponse(message="Password set successfully.")
