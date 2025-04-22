@@ -37,13 +37,13 @@ class CareProvider(Base):
     hashed_password = Column(String, nullable=True)
 
     # Clinic Info
-    clinic_name = Column(String, nullable=True)
-    clinic_phone_number = Column(String, nullable=True)
-    clinic_address = Column(String, nullable=True)
+    clinic_name = Column(String, nullable=False)
+    clinic_phone_number = Column(String, nullable=False)
+    clinic_address = Column(String, nullable=False)
     clinic_website_url = Column(String, nullable=True)
 
     # Medical Info
-    medical_council_number = Column(String, nullable=True)
+    medical_council_number = Column(String, nullable=False, unique=True)
     certificates = Column(JSON, nullable=True)
 
     # System Fields
