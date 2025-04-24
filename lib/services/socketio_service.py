@@ -1,3 +1,5 @@
+import datetime
+
 from decouple import config
 from socketio import AsyncRedisManager, AsyncServer
 
@@ -70,12 +72,13 @@ async def sendMessage(sid, data):
     content = data.get("content")
     media = data.get("media")
     reply_to = data.get("reply_to")
-    timestamp = data.get("timestamp")
     metadata = data.get("metadata", {})
 
     # Ensure that required fields are present
     if not all([chat_id, sender_id, content]):
         return {"status": "error", "message": "Missing required fields"}
+
+    timestamp = datetime.datetime.now(datetime.timezone.utc)
 
     # Create a message object
     message_data = ChatMessageCreate(
@@ -95,9 +98,7 @@ async def sendMessage(sid, data):
         await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
-        await sio.emit(
-            "error", {"status": "error", "message": str(e)}, room=sid
-        )
+        await sio.emit("error", {"status": "error", "message": str(e)}, room=sid)
 
 
 @sio.event
@@ -116,9 +117,7 @@ async def markAsRead(sid, data):
         # Fetch all messages in the chat if no message_id is provided (mark all as read)
         if not message_id:
             # Mark all messages as read for this user
-            await chat_messaging_service.mark_all_messages_as_read(
-                chat_id, user_id
-            )
+            await chat_messaging_service.mark_all_messages_as_read(chat_id, user_id)
         else:
             # Mark specific message as read
             await chat_messaging_service.mark_message_as_read(
@@ -150,9 +149,7 @@ async def toggleReaction(sid, data):
         )
 
         # Fetch the updated message with the latest reactions
-        updated_message = await chat_messaging_service.get_message_by_id(
-            message_id
-        )
+        updated_message = await chat_messaging_service.get_message_by_id(message_id)
 
         # Emit the updated reaction event to all participants in the chat
         await chat_notification_service.notify_participants(
@@ -178,4 +175,5 @@ async def toggleReaction(sid, data):
 async def list_rooms(sid):
     rooms = sio.rooms(sid)
     print(f"Listing rooms for {sid}: {rooms}")
+    await sio.emit("rooms_list", rooms, room=sid)
     await sio.emit("rooms_list", rooms, room=sid)
