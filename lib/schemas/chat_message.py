@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, constr
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class MediaSchema(BaseModel):
