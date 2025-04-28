@@ -14,18 +14,13 @@ from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import (
-    CareProviderCreate,
-    CareProviderUpdate,
-    PermissionActionSchema,
-)
+from lib.schemas.care_provider import (CareProviderCreate, CareProviderUpdate,
+                                       PermissionActionSchema)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (
-    CareProviderRole,
-    get_care_provider_permissions,
-)
+from lib.utils.care_provider_permissions import (CareProviderRole,
+                                                 get_care_provider_permissions)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.security import hash_password, verify_password
 
@@ -156,6 +151,34 @@ class CareProviderProfileService:
             care_providers = result.scalars().all()
 
             return list(care_providers)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    async def fetch_care_provider_by_code(self, code: str) -> CareProviderModel:
+        try:
+            # Validate code format (6 uppercase alphanumeric characters)
+            if not (len(code) == 6 and code.isalnum() and code.isupper()):
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Invalid code format. Must be 6 uppercase alphanumeric characters.",
+                )
+
+            stmt = select(CareProviderModel).where(CareProviderModel.code == code)
+            result = await self.postgres_session.execute(stmt)
+            care_provider = result.scalars().first()
+
+            if not care_provider:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Care provider not found with the provided code.",
+                )
+
+            return care_provider
 
         except SQLAlchemyError as e:
             raise_http_exception(
