@@ -26,8 +26,8 @@ async def send_ai_conversation_patient_message(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            selected_ai_model="sonar",
-            ai_model_provider="perplexity",
+            selected_ai_model="gpt-4o-mini", # sonar
+            ai_model_provider="openai", # perplexity
         )
 
         # Generate response from the AI model
