@@ -14,13 +14,18 @@ from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import (CareProviderCreate, CareProviderUpdate,
-                                       PermissionActionSchema)
+from lib.schemas.care_provider import (
+    CareProviderCreate,
+    CareProviderUpdate,
+    PermissionActionSchema,
+)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (CareProviderRole,
-                                                 get_care_provider_permissions)
+from lib.utils.care_provider_permissions import (
+    CareProviderRole,
+    get_care_provider_permissions,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.security import hash_password, verify_password
 
@@ -238,8 +243,15 @@ class CareProviderProfileService:
         try:
             care_provider_profile = await self.fetch_care_provider(care_provider_id)
 
-            # Apply updates
-            for key, value in updates.model_dump(exclude_unset=True).items():
+            # Create filtered updates dict
+            update_data = updates.model_dump(exclude_unset=True)
+            restricted_fields = {"phone_number", "role", "permissions"}
+            filtered_updates = {
+                k: v for k, v in update_data.items() if k not in restricted_fields
+            }
+
+            # Apply only filtered updates
+            for key, value in filtered_updates.items():
                 setattr(care_provider_profile, key, value)
 
             self.postgres_session.add(care_provider_profile)
