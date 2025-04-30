@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, RootModel
@@ -22,7 +22,7 @@ class CareProviderBase(BaseModel):
 
     # Medical Info
     medical_council_number: Optional[str] = None
-    certificates: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    certificates: Optional[List[str]] = Field(default_factory=list)
 
     # System Fields
     permissions: Optional[Dict[str, Dict[str, bool]]] = None
