@@ -1,2 +1,5 @@
-from lib.schemas.care_provider import CareProvider
-from rest_server.response_models import SuccessResponse
+from openai import BaseModel
+
+
+class SetPasswordRequest(BaseModel):
+    raw_password: str
