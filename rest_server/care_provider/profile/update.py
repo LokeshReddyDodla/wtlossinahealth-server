@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Body, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
@@ -54,7 +54,7 @@ async def update_care_provider_profile(
 
 @router.put("/set-password", response_model=SuccessResponse)
 async def set_care_provider_password(
-    raw_password: str,
+    raw_password: str = Body(...),
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
