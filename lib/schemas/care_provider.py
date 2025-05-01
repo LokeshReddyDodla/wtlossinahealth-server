@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, RootModel
 
+from lib.core.constants import CareProviderStatus
+
 
 class CareProviderBase(BaseModel):
     # Personal Info
@@ -33,8 +35,8 @@ class CareProviderUpdate(CareProviderBase):
 class CareProvider(CareProviderBase):
     code: str
     care_provider_id: UUID
+    status: CareProviderStatus = Field(default=CareProviderStatus.PENDING_VERIFICATION)
     is_verified: Optional[bool] = False
-    is_disabled: Optional[bool] = False
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]

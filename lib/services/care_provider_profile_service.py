@@ -1,4 +1,5 @@
 import random
+import re
 import string
 from typing import Dict, List, Optional, Set
 
@@ -160,11 +161,13 @@ class CareProviderProfileService:
 
     async def fetch_care_provider_by_code(self, code: str) -> CareProviderModel:
         try:
+            CODE_PATTERN = re.compile(r"^[A-Za-z0-9-]{6}$")
+
             # Validate code format (6 uppercase alphanumeric characters)
-            if not (len(code) == 6 and code.isalnum() and code.isupper()):
+            if not (len(code) == 6 and CODE_PATTERN.match(code)):
                 raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Invalid code format. Must be 6 uppercase alphanumeric characters.",
+                    message="Invalid code.",
                 )
 
             stmt = select(CareProviderModel).where(CareProviderModel.code == code)
