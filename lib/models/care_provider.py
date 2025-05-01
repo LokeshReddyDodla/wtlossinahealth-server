@@ -44,7 +44,7 @@ class CareProvider(Base):
     # System Fields
     status = Column(
         Enum(CareProviderStatus),
-        nullable=False,
+        nullable=True,
         default=CareProviderStatus.PENDING_VERIFICATION,
         comment="Current status of the care provider",
     )
