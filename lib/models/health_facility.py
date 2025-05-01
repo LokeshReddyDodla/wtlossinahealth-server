@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import UUID, Column, DateTime, String, Text
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -24,6 +24,20 @@ class HealthFacility(Base):
     )
     logo_url = Column(
         String, nullable=True, comment="URL of the facility's logo (optional)"
+    )
+    phone_number = Column(
+        String, nullable=True, comment="Primary phone number of the facility"
+    )
+    emergency_phone_number = Column(
+        String, nullable=True, comment="Emergency contact number"
+    )
+    email = Column(
+        String, nullable=True, comment="Primary email address of the facility"
+    )
+    address = Column(
+        Text,
+        nullable=True,
+        comment="Complete address of the  facility",
     )
     operating_hours = Column(
         Text, nullable=True, comment="Operating hours in JSON format"
@@ -52,19 +66,6 @@ class HealthFacility(Base):
         nullable=True,
         comment="Parent organization or group name (if applicable)",
     )
-    emergency_contact = Column(
-        String, nullable=True, comment="Emergency contact number"
-    )
-    address = Column(
-        Text,
-        nullable=True,
-        comment="Complete address of the  facility",
-    )
-    contact_info = Column(
-        String,
-        nullable=True,
-        comment="General contact information such as phone or email",
-    )
 
     subdomain = Column(
         String,
@@ -77,9 +78,7 @@ class HealthFacility(Base):
         comment="Custom domain for the health facility",
     )
 
-    created_at = Column(
-        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
-    )
+    created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
     updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
