@@ -1,5 +1,5 @@
 FROM nginx:alpine
 
-COPY deployment/nginx/nginx.dev.conf /etc/nginx/conf.d/default.conf
+COPY deployment/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 ENTRYPOINT ["nginx"]
 CMD ["-g", "daemon off;"]
