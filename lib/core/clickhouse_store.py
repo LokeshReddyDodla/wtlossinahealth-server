@@ -16,8 +16,8 @@ class ClickHouseStore:
         self.client = Client(
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
-            # user=CLICKHOUSE_USER,
-            # password=CLICKHOUSE_PASSWORD,
+            user=CLICKHOUSE_USER,
+            password=CLICKHOUSE_PASSWORD,
         )
         self.create_database()
 
