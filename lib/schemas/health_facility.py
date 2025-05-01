@@ -8,12 +8,12 @@ from pydantic import BaseModel, Field
 class HealthFacilityBase(BaseModel):
     name: str
     logo_url: Optional[str] = None
-    phone_number: Optional[str] = None
+    phone_number: str
     emergency_phone_number: Optional[str] = None
-    email: Optional[str] = None
-    address: Optional[str] = None
+    email: str
+    address: str
     operating_hours: Optional[str] = None
-    facility_type: Optional[str] = None
+    facility_type: str
     website_url: Optional[str] = None
     specialties: Optional[str] = None
     latitude: Optional[str] = None

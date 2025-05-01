@@ -34,6 +34,7 @@ class CareProvider(CareProviderBase):
     code: str
     care_provider_id: UUID
     is_verified: Optional[bool] = False
+    is_disabled: Optional[bool] = False
     created_at: datetime
     updated_at: datetime
     profile_completion: Optional[dict]
