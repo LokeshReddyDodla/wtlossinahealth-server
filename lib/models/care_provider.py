@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, ForeignKey,
-                        String)
+from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, Enum,
+                        ForeignKey, String)
 from sqlalchemy.orm import relationship
 
+from lib.core.constants import CareProviderStatus
 from lib.models import Base
 from lib.models.associations import (package_care_provider_association,
                                      patient_care_provider_association)
@@ -41,6 +42,12 @@ class CareProvider(Base):
     certificates = Column(JSON, nullable=True)
 
     # System Fields
+    status = Column(
+        Enum(CareProviderStatus),
+        nullable=False,
+        default=CareProviderStatus.PENDING_VERIFICATION,
+        comment="Current status of the care provider",
+    )
     permissions = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
     updated_at = Column(
@@ -49,7 +56,6 @@ class CareProvider(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
     is_verified = Column(Boolean, default=False)
-    is_disabled = Column(Boolean, default=False)
 
     profile_completion = Column(
         JSON,

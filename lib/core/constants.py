@@ -7,6 +7,14 @@ class ProfileTypeEnum(Enum):
     ADMIN = "admin"
 
 
+class CareProviderStatus(Enum):
+    ACTIVE = "active"
+    ON_LEAVE = "on_leave"
+    TERMINATED = "terminated"
+    SUSPENDED = "suspended"
+    PENDING_VERIFICATION = "pending_verification"
+
+
 class EmitMessageKeyEnum(Enum):
     CHAT_LIST_UPDATED = "chat_list_updated"
     USER_STATUS_UPDATED = "user_status_updated"
