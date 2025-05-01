@@ -14,18 +14,13 @@ from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import (
-    CareProviderCreate,
-    CareProviderUpdate,
-    PermissionActionSchema,
-)
+from lib.schemas.care_provider import (CareProviderCreate, CareProviderUpdate,
+                                       PermissionActionSchema)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (
-    CareProviderRole,
-    get_care_provider_permissions,
-)
+from lib.utils.care_provider_permissions import (CareProviderRole,
+                                                 get_care_provider_permissions)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.security import hash_password, verify_password
 
@@ -33,7 +28,6 @@ from lib.utils.security import hash_password, verify_password
 class CareProviderProfileService:
     PROFILE_SECTION_REQUIREMENTS: Dict[str, Set[str]] = {
         "personal_info": {"first_name", "last_name", "email", "phone_number", "role"},
-        "clinic_info": {"clinic_name", "clinic_phone_number", "clinic_address"},
         "medical_info": {"medical_council_number"},
     }
 

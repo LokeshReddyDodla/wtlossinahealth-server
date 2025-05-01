@@ -1,15 +1,17 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, constr
-
-from lib.schemas.package import Package
+from pydantic import BaseModel, Field
 
 
 class HealthFacilityBase(BaseModel):
     name: str
     logo_url: Optional[str] = None
+    phone_number: Optional[str] = None
+    emergency_phone_number: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
     operating_hours: Optional[str] = None
     facility_type: Optional[str] = None
     website_url: Optional[str] = None
@@ -17,9 +19,6 @@ class HealthFacilityBase(BaseModel):
     latitude: Optional[str] = None
     longitude: Optional[str] = None
     parent_organization: Optional[str] = None
-    emergency_contact: Optional[str] = None
-    address: Optional[str] = None
-    contact_info: Optional[str] = None
 
 
 class HealthFacilityCreate(HealthFacilityBase):
