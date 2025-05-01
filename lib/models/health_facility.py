@@ -26,17 +26,17 @@ class HealthFacility(Base):
         String, nullable=True, comment="URL of the facility's logo (optional)"
     )
     phone_number = Column(
-        String, nullable=True, comment="Primary phone number of the facility"
+        String, nullable=False, comment="Primary phone number of the facility"
     )
     emergency_phone_number = Column(
         String, nullable=True, comment="Emergency contact number"
     )
     email = Column(
-        String, nullable=True, comment="Primary email address of the facility"
+        String, nullable=False, comment="Primary email address of the facility"
     )
     address = Column(
         Text,
-        nullable=True,
+        nullable=False,
         comment="Complete address of the  facility",
     )
     operating_hours = Column(
@@ -44,7 +44,7 @@ class HealthFacility(Base):
     )
     facility_type = Column(
         String,
-        nullable=True,
+        nullable=False,
         comment="Type of facility (e.g., hospital, clinic, diagnostic center)",
     )
     website_url = Column(

@@ -1,6 +1,6 @@
 import re
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select

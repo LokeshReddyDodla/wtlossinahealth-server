@@ -49,6 +49,7 @@ class CareProvider(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
     is_verified = Column(Boolean, default=False)
+    is_disabled = Column(Boolean, default=False)
 
     profile_completion = Column(
         JSON,
