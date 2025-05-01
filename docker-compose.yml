@@ -95,7 +95,7 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
-    # command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
     entrypoint: [ "/bin/bash", "-c", "chown mongodb:mongodb /etc/mongo-keyfile/mongodb-keyfile && chmod 600 /etc/mongo-keyfile/mongodb-keyfile && exec mongod --replSet rs0 --bind_ip_all --port 27017 --auth --keyFile /etc/mongo-keyfile/mongodb-keyfile" ]
 
   aihealth-clickhouse:
