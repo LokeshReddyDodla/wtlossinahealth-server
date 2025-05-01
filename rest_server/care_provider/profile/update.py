@@ -2,15 +2,16 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import get_care_provider_profile_service
+from lib.dependencies.service_dependencies import \
+    get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import CareProviderPermissions, CareProviderUpdate
-from lib.services.care_provider_profile_service import CareProviderProfileService
-from lib.utils.care_provider_permissions import (
-    CareProviderFeature,
-    CareProviderPermissionAction,
-)
+from lib.schemas.care_provider import (CareProviderPermissions,
+                                       CareProviderUpdate)
+from lib.services.care_provider_profile_service import \
+    CareProviderProfileService
+from lib.utils.care_provider_permissions import (CareProviderFeature,
+                                                 CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.care_provider.profile.api_schema import SetPasswordRequest
 from rest_server.response_models import SuccessResponse
@@ -29,6 +30,7 @@ async def update_care_provider_profile(
         get_current_care_provider(
             CareProviderPermissionAction.UPDATE,
             CareProviderFeature.CARE_PROVIDERS,
+            check_permissions=False,
         )
     ),
 ):

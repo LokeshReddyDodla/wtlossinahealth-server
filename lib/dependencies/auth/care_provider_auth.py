@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -16,6 +16,7 @@ from lib.utils.http_exceptions import raise_http_exception
 def get_current_care_provider(
     action: CareProviderPermissionAction,
     feature: CareProviderFeature,
+    check_permissions: bool = True,
 ):
     async def dependency(
         request: Request,
@@ -31,9 +32,7 @@ def get_current_care_provider(
             )
 
         result = await session.execute(
-            select(CareProvider).where(
-                CareProvider.care_provider_id == user_id
-            )
+            select(CareProvider).where(CareProvider.care_provider_id == user_id)
         )
         care_provider = result.scalars().first()
         if not care_provider:
@@ -42,7 +41,7 @@ def get_current_care_provider(
                 message="Care Provider not found",
             )
 
-        if not has_care_provider_permission(
+        if check_permissions and not has_care_provider_permission(
             role=CareProviderRole(care_provider.role),
             feature=feature,
             action=action,
