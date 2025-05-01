@@ -27,7 +27,7 @@ class CareProviderCreate(CareProviderBase):
 
 
 class CareProviderUpdate(CareProviderBase):
-    pass
+    code: str
 
 
 class CareProvider(CareProviderBase):
