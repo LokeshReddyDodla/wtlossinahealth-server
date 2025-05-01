@@ -31,7 +31,11 @@ services:
       - MONGO_DB_NAME=${MONGO_DB_NAME}
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
@@ -48,10 +52,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     volumes:
       - celery_logs:/var/log/celery
       - celery_data:/var/lib/celery
