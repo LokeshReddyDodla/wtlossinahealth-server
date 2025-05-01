@@ -36,12 +36,6 @@ class CareProvider(Base):
     role = Column(String, nullable=False)  # e.g., Doctor, Nurse, Dietitian, etc.
     hashed_password = Column(String, nullable=True)
 
-    # Clinic Info
-    clinic_name = Column(String, nullable=False)
-    clinic_phone_number = Column(String, nullable=False)
-    clinic_address = Column(String, nullable=False)
-    clinic_website_url = Column(String, nullable=True)
-
     # Medical Info
     medical_council_number = Column(String, nullable=False, unique=True)
     certificates = Column(JSON, nullable=True)

@@ -14,12 +14,6 @@ class CareProviderBase(BaseModel):
     email: str
     role: str
 
-    # Clinic Info
-    clinic_name: Optional[str] = None
-    clinic_phone_number: Optional[str] = None
-    clinic_address: Optional[str] = None
-    clinic_website_url: Optional[str] = None
-
     # Medical Info
     medical_council_number: Optional[str] = None
     certificates: Optional[List[str]] = Field(default_factory=list)
