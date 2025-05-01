@@ -8,7 +8,7 @@ from decouple import config
 CLICKHOUSE_HOST = config("CLICKHOUSE_HOST", default="localhost")
 CLICKHOUSE_PORT = config("CLICKHOUSE_PORT", default="9000")
 CLICKHOUSE_USER = config("CLICKHOUSE_USER", default="default")
-CLICKHOUSE_PASSWORD = config("CLICKHOUSE_PASSWORD", default="")
+CLICKHOUSE_PASSWORD = str(config("CLICKHOUSE_PASSWORD", default=""))
 
 
 class ClickHouseStore:
@@ -17,7 +17,7 @@ class ClickHouseStore:
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
+            password=CLICKHOUSE_PASSWORD.strip(),
         )
         self.create_database()
 
