@@ -1,13 +1,11 @@
-import asyncio
 import uuid
 from datetime import datetime
 
-from fastapi import BackgroundTasks
 from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Float,
-                        ForeignKey, Integer, String, Table, Text, Time)
+                        ForeignKey, String, Text)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.event import listens_for
-from sqlalchemy.orm import Session, object_session, relationship
+from sqlalchemy.orm import relationship
 
 from lib.core.background_task_runner import BackgroundTaskRunner
 from lib.models import Base
@@ -215,7 +213,7 @@ def create_related_records(mapper, connection, target):
         str(target.patient_id),
         "patient",
         True,
-        group_name="Care Team Group",
+        group_name="My Care Team Group",
     )
 
     # Add initial message to the conversation
