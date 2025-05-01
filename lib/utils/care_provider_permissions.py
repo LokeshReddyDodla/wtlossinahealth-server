@@ -16,7 +16,8 @@ class CareProviderRole(Enum):
     FITNESS_COACH = "fitness_coach"
     RESEARCH_COORDINATOR = "research_coordinator"
     ADMIN = "admin"
-    LAB_TECHNICIAN = "lab_technician"
+    LAB_TECHNICIAN = "lab_technician" 
+    # TODO: ADD Physio
 
 
 class CareProviderFeature(Enum):
@@ -92,7 +93,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=True, delete=False
+            read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=True, delete=False
@@ -101,7 +102,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=True
         ),
         CareProviderFeature.PACKAGES: CareProviderPermission(
-            read=True, create=True, update=True, delete=True
+            read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.AI_CHATS: CareProviderPermission(
             read=True, create=True, update=False, delete=False
