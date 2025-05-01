@@ -1,12 +1,7 @@
-from typing import Callable, List, Optional, Union
-
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from lib.dependencies.auth.admin_auth import get_current_admin
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import \
     get_care_provider_profile_service
 from lib.models.admin import Admin
@@ -22,18 +17,16 @@ from .router import router
 @router.post("", response_model=SuccessResponse)
 async def create_care_provider_profile(
     request: Request,
+    health_facility_id: str,
     care_provider: CareProviderCreate,
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
     current_admin: Admin = Depends(get_current_admin),
 ):
-
     try:
-        new_care_provider = (
-            await care_provider_profile_service.create_care_provider(
-                care_provider
-            )
+        new_care_provider = await care_provider_profile_service.create_care_provider(
+            care_provider, health_facility_id
         )
 
         return SuccessResponse(
