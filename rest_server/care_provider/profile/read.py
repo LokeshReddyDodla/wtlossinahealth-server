@@ -8,6 +8,7 @@ from lib.dependencies.service_dependencies import \
     get_care_provider_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
@@ -61,11 +62,18 @@ async def get_care_provider_profile_by_code(
     current_user=Depends(get_current_user),
 ):
     try:
-        result = await care_provider_profile_service.fetch_care_provider_by_code(code)
+        care_provider = await care_provider_profile_service.fetch_care_provider_by_code(
+            code
+        )
 
         return SuccessResponse(
             message="Care Provider profile retrieved successfully.",
-            data=CareProviderSchema.from_orm(result),
+            data={
+                "profile": CareProviderSchema.from_orm(care_provider),
+                "facility": HealthFacilitySchema.from_orm(
+                    care_provider.health_facility
+                ),
+            },
         )
     except HTTPException as e:
         raise e

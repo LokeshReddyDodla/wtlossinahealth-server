@@ -170,7 +170,13 @@ class CareProviderProfileService:
                     message="Invalid code.",
                 )
 
-            stmt = select(CareProviderModel).where(CareProviderModel.code == code)
+            stmt = (
+                select(CareProviderModel)
+                .where(CareProviderModel.code == code)
+                .options(
+                    selectinload(CareProviderModel.health_facility),
+                )
+            )
             result = await self.postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
