@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlalchemy import (ARRAY, JSON, Boolean, Column, Date, DateTime, Float,
-                        ForeignKey, Integer, String, Text, Time)
+from sqlalchemy import (ARRAY, Boolean, Column, Date, DateTime, Float,
+                        ForeignKey, String, Text, Time)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -133,7 +133,7 @@ class PatientMeal(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
-    image_url = Column(Text)
+    image_url = Column(Text, nullable=True)
     description = Column(String, nullable=True)
     source = Column(String, nullable=False)
     feedback = Column(String, nullable=True)

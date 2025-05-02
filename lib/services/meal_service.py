@@ -196,7 +196,7 @@ class MealService:
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
                 description=meal_data.description,
-                image_url=str(meal_data.image_url),
+                image_url=str(meal_data.image_url) if meal_data.image_url else None,
                 patient_id=patient_id,
             )
 
