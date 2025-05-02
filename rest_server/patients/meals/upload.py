@@ -1,4 +1,3 @@
-
 from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
