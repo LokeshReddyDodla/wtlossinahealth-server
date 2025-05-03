@@ -130,7 +130,6 @@ class PatientProfileService:
                     joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
-                    selectinload(PatientModel.token_usage_logs),
                 )
 
             result = await self.postgres_session.execute(stmt)
@@ -155,9 +154,7 @@ class PatientProfileService:
         self, patient_ids: List[str]
     ) -> Dict[str, PatientSchema]:
         try:
-            stmt = select(PatientModel).where(
-                PatientModel.patient_id.in_(patient_ids)
-            )
+            stmt = select(PatientModel).where(PatientModel.patient_id.in_(patient_ids))
             result = await self.postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
@@ -178,9 +175,7 @@ class PatientProfileService:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
 
-            for key, value in patient_data.model_dump(
-                exclude_unset=True
-            ).items():
+            for key, value in patient_data.model_dump(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
@@ -270,14 +265,12 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.food_allergies = (
-                await self._upsert_multiple_entities(
-                    patient_profile.food_allergies,
-                    food_allergies or [],
-                    PatientFoodAllergyModel,
-                    "patient_id",
-                    patient_id,
-                )
+            patient_profile.food_allergies = await self._upsert_multiple_entities(
+                patient_profile.food_allergies,
+                food_allergies or [],
+                PatientFoodAllergyModel,
+                "patient_id",
+                patient_id,
             )
 
             ignore_fields = [
@@ -303,14 +296,12 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.eating_habit.diet_preferences = (
-                self._upsert_single_entity(
-                    patient_profile.eating_habit.diet_preferences,
-                    eating_habit.diet_preferences,
-                    PatientDietPreferenceModel,
-                    "eating_habit_id",
-                    patient_profile.eating_habit.eating_habit_id,
-                )
+            patient_profile.eating_habit.diet_preferences = self._upsert_single_entity(
+                patient_profile.eating_habit.diet_preferences,
+                eating_habit.diet_preferences,
+                PatientDietPreferenceModel,
+                "eating_habit_id",
+                patient_profile.eating_habit.eating_habit_id,
             )
 
             updated = self._mark_profile_section_complete(
@@ -376,14 +367,12 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.drug_allergies = (
-                await self._upsert_multiple_entities(
-                    patient_profile.drug_allergies,
-                    drug_allergies or [],
-                    PatientDrugAllergyModel,
-                    "patient_id",
-                    patient_id,
-                )
+            patient_profile.drug_allergies = await self._upsert_multiple_entities(
+                patient_profile.drug_allergies,
+                drug_allergies or [],
+                PatientDrugAllergyModel,
+                "patient_id",
+                patient_id,
             )
 
             patient_profile.family_diabetic_histories = (
@@ -396,14 +385,12 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.medical_histories = (
-                await self._upsert_multiple_entities(
-                    patient_profile.medical_histories,
-                    medical_histories or [],
-                    PatientMedicalHistoryModel,
-                    "patient_id",
-                    patient_id,
-                )
+            patient_profile.medical_histories = await self._upsert_multiple_entities(
+                patient_profile.medical_histories,
+                medical_histories or [],
+                PatientMedicalHistoryModel,
+                "patient_id",
+                patient_id,
             )
 
             updated = self._mark_profile_section_complete(
@@ -440,7 +427,6 @@ class PatientProfileService:
     async def delete_patient_profile(
         self, patient_id: str, delete_chats: bool = False
     ) -> None:
-
         try:
             patient = await self.fetch_patient_profile(patient_id)
 
@@ -466,7 +452,6 @@ class PatientProfileService:
         patient_id: str,
         assigned_care_provider_id: str,
     ) -> PatientModel:
-
         try:
             patient = await self.fetch_patient_profile(patient_id)
 
@@ -485,9 +470,7 @@ class PatientProfileService:
 
             # Automatically assign the patient to the care provider's health facility if unassigned
             if not patient.health_facility_id:  # type: ignore
-                patient.health_facility_id = (
-                    current_care_provider.health_facility_id
-                )
+                patient.health_facility_id = current_care_provider.health_facility_id
 
             # Ensure the same health facility
             if (
@@ -555,9 +538,7 @@ class PatientProfileService:
                 )
 
             # Fetch the patient
-            patient = await self.fetch_patient_profile(
-                patient_id, detailed=True
-            )
+            patient = await self.fetch_patient_profile(patient_id, detailed=True)
 
             # Check if the care provider is already linked
             if care_provider in patient.care_providers:
@@ -596,9 +577,7 @@ class PatientProfileService:
 
     async def check_patient_exists(self, patient_id: str) -> bool:
         try:
-            stmt = select(
-                exists().where(PatientModel.patient_id == patient_id)
-            )
+            stmt = select(exists().where(PatientModel.patient_id == patient_id))
             result = await self.postgres_session.execute(stmt)
             (exists_result,) = result.scalars()
 
@@ -670,9 +649,7 @@ class PatientProfileService:
 
         return new_entities
 
-    def _mark_profile_section_complete(
-        self, profile_completion, section: str
-    ) -> bool:
+    def _mark_profile_section_complete(self, profile_completion, section: str) -> bool:
         if not profile_completion[section]["is_complete"]:
             profile_completion[section]["is_complete"] = True
             return True

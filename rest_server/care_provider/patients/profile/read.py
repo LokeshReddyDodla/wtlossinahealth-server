@@ -2,11 +2,14 @@ from fastapi import Depends, HTTPException, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service, get_cgm_report_service)
+    get_care_provider_profile_service, get_cgm_report_service,
+    get_patient_profile_service)
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.schemas.patient import CompletePatientProfile
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
 from lib.utils.http_exceptions import raise_http_exception
@@ -49,6 +52,43 @@ async def get_patients(
         return SuccessResponse(
             message="Patients fetched successfully",
             data=updated_patients,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/profile", response_model=SuccessResponse)
+async def get_patient_profile(
+    patient_id: str,
+    detailed: bool = False,
+    include_health_data: bool = False,
+    other_related_data: bool = False,
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ, CareProviderFeature.PATIENTS
+        )
+    ),
+):
+    try:
+        profile = await patient_profile_service.fetch_patient_profile(
+            patient_id,
+            detailed=detailed,
+            include_health_data=include_health_data,
+            other_related_data=other_related_data,
+        )
+
+        return SuccessResponse(
+            message="Patient profile fetched successfully",
+            data=CompletePatientProfile.from_orm(profile).model_dump(),
         )
     except HTTPException as e:
         raise e
