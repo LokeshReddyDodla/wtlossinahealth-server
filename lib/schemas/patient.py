@@ -1,12 +1,10 @@
 from datetime import date, datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, HttpUrl
-from sqlalchemy.orm import attributes
+from pydantic import BaseModel
 
 from lib.schemas.care_provider import CareProvider
-from lib.schemas.health_facility import HealthFacility
 from lib.schemas.package import Package
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_connected_app import PatientConnectedApp
@@ -104,9 +102,9 @@ class CorePatientProfile(Patient):
 
 class CompletePatientProfile(CorePatientProfile):
     permissions: Optional[PatientPermission] = None
+    connected_apps: Optional[PatientConnectedApp] = None
     vitals: List[PatientVital] = []
     smbgs: List[PatientSMBG] = []
-    connected_apps: Optional[PatientConnectedApp] = None
     # health_facility: Optional[HealthFacility] = None
     care_providers: List[CareProvider] = []
     package: Optional[Package] = None
