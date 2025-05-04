@@ -31,12 +31,9 @@ class ChatManagementService(BaseChatService):
         is_archived: Optional[bool] = False,
         is_pinned: Optional[bool] = False,
     ):
-
         if not is_group:
             # Check for an existing chat
-            existing_chat_id = await self._find_existing_1on1_chat(
-                user_id=user_id
-            )
+            existing_chat_id = await self._find_existing_1on1_chat(user_id=user_id)
             if existing_chat_id:
                 print(f"Chat already exists with ID: {existing_chat_id}")
                 return existing_chat_id
@@ -115,8 +112,27 @@ class ChatManagementService(BaseChatService):
             print(f"MongoDB Error: {e}")
             raise
 
+    async def find_direct_chat(self, user_id_1: str, user_id_2: str) -> Optional[str]:
+        try:
+            existing_chat = await self.mongo_store.find_document(
+                "chats",
+                {
+                    "is_group": False,
+                    "participants.id": {"$all": [user_id_1, user_id_2]},
+                    "participants": {"$size": 2},
+                },
+            )
+            return str(existing_chat["_id"]) if existing_chat else None
+        except PyMongoError as e:
+            print(
+                f"Failed to find direct chat between {user_id_1} and {user_id_2}: {e}"
+            )
+            raise
+
     async def create_direct_and_group_chats(
-        self, patient, care_provider: CareProviderModel  # PatientModel,
+        self,
+        patient,
+        care_provider: CareProviderModel,  # PatientModel,
     ):
         # Create a direct chat
         chat_id = await self.create_new_chat(
@@ -175,11 +191,7 @@ class ChatManagementService(BaseChatService):
                 raise Exception("Chat not found")
 
             participant = next(
-                (
-                    p
-                    for p in chat_document["participants"]
-                    if p["id"] == participant_id
-                ),
+                (p for p in chat_document["participants"] if p["id"] == participant_id),
                 None,
             )
             if not participant:
