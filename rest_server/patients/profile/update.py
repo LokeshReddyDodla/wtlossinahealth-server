@@ -40,6 +40,7 @@ async def update_basic_patient(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
+        print(patient_data)
         updated_patient = (
             await patient_profile_service.update_basic_patient_profile(
                 patient_id=str(current_patient.patient_id),
