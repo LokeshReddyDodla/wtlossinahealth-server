@@ -3,12 +3,13 @@ from fastapi import Depends, HTTPException, status
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
     get_care_provider_profile_service, get_cgm_report_service,
-    get_patient_profile_service)
+    get_chat_management_service, get_patient_profile_service)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CompletePatientProfile
 from lib.services.care_provider_profile_service import \
     CareProviderProfileService
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
@@ -72,6 +73,9 @@ async def get_patient_profile(
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
+    chat_management_service: ChatManagementService = Depends(
+        get_chat_management_service
+    ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ, CareProviderFeature.PATIENTS
@@ -86,9 +90,16 @@ async def get_patient_profile(
             other_related_data=other_related_data,
         )
 
+        direct_chat = await chat_management_service.find_direct_chat(
+            patient_id, str(current_care_provider.care_provider_id)
+        )
+
         return SuccessResponse(
             message="Patient profile fetched successfully",
-            data=CompletePatientProfile.from_orm(profile).model_dump(),
+            data={
+                **CompletePatientProfile.from_orm(profile).model_dump(),
+                "direct_chat_id": direct_chat,
+            },
         )
     except HTTPException as e:
         raise e
