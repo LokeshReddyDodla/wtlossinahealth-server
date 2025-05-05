@@ -549,6 +549,7 @@ class PatientProfileService:
 
             # Link the care provider to the patient
             patient.care_providers.append(care_provider)
+            patient.health_facility_id = care_provider.health_facility_id
 
             self.postgres_session.add(patient)
             await self.postgres_session.commit()
