@@ -329,6 +329,7 @@ def has_care_provider_permission(
     action: CareProviderPermissionAction,
 ) -> bool:
     feature_permissions = CARE_PROVIDER_PERMISSIONS.get(role, {}).get(feature)
+    print("==> feature_permissions: ", feature_permissions)
     if not feature_permissions:
         return False
     return feature_permissions.has_permission(action)
