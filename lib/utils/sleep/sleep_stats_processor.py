@@ -4,14 +4,14 @@ from typing import Any, Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.schemas.sleep_stats import SleepStats
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.sleep.duration_fetcher import SleepDurationFetcher
 from lib.utils.sleep.quality_fetcher import SleepQualityFetcher
 from lib.utils.sleep.timing_fetcher import SleepTimingFetcher
-from lib.utils.sleep.type_distribution_fetcher import \
-    SleepTypeDistributionFetcher
+from lib.utils.sleep.type_distribution_fetcher import SleepTypeDistributionFetcher
 
 
 class SleepStatsProcessor:
@@ -82,38 +82,7 @@ class SleepStatsProcessor:
             quality_analysis=quality_analysis,
         )
 
-        if (
-            report.duration_analysis["total_duration"] is not None
-            and report.duration_analysis["total_duration"] != 0
-        ):
-            # Generate feedback message based on the sleep report
-            feedback_message = (
-                await self.ai_conversation_service.generate_report_response(
-                    patient_id, report.model_dump(), "sleep"
-                )
-            )
-            report.feedback = feedback_message
-
         return report
-
-        # message_content = f"""
-        #     ### Sleep Feedback Report
-        #     **Date Range:** {start_datetime.strftime('%Y-%m-%d')} to {end_datetime.strftime('%Y-%m-%d')}
-
-        #     **Feedback:**
-        #     {feedback_message}
-        # """
-
-        # # Add feedback message to the conversation
-        # await self.ai_conversation_service.add_message_to_conversation(
-        #     patient_id=patient_id,
-        #     conversation_id=f"{patient_id}-custom",
-        #     conversation_type="sleep",
-        #     role="ai",
-        #     content=message_content,
-        #     message_type="markdown",
-        #     exclude_from_frontend=True,
-        # )
 
     async def _process_multiple_periods(
         self, patient_id: str, periods: List[Dict[str, datetime]]

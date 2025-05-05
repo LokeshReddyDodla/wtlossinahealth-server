@@ -1,12 +1,10 @@
 import asyncio
 from datetime import datetime
-from typing import cast
 
 from celery import shared_task
 
 from lib.core.types import FitnessReportTypeLiteral
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
-from lib.utils.fitness.processor import FitnessStatsProcessor
 
 
 @shared_task
@@ -46,7 +44,9 @@ def generate_fitness_report_for_month(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_fitness_report_service, get_fitness_stats_processor)
+            get_fitness_report_service,
+            get_fitness_stats_processor,
+        )
 
         fitness_stats_service = get_fitness_stats_processor()
         fitness_report_service = get_fitness_report_service()
@@ -116,7 +116,9 @@ def generate_fitness_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_fitness_report_service, get_fitness_stats_processor)
+            get_fitness_report_service,
+            get_fitness_stats_processor,
+        )
 
         fitness_stats_service = get_fitness_stats_processor()
         fitness_report_service = get_fitness_report_service()

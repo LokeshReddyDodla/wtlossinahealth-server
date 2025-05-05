@@ -1,6 +1,5 @@
 import asyncio
 from datetime import date
-from typing import cast
 
 from celery import shared_task
 
@@ -12,7 +11,9 @@ def generate_daily_meal_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_meal_report_service, get_meal_stats_processor)
+            get_meal_report_service,
+            get_meal_stats_processor,
+        )
 
         meal_stats_service = get_meal_stats_processor()
         meal_report_service = get_meal_report_service()

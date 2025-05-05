@@ -1,19 +1,12 @@
 import asyncio
-from datetime import date, datetime
-from typing import Any, Dict, List, Tuple, cast
+from datetime import datetime
+from typing import List, Tuple
 
 from celery import shared_task
 
-from lib.services.cgm_report_service import CGMReportService
-from lib.services.meal_report_service import MealReportService
-from lib.utils.glucose.processor import GlucoseStatsProcessor
-from lib.utils.meals.processor import MealStatsProcessor
-
 
 @shared_task
-def generate_cgm_reports_for_patient(
-    patient_id: str, periods: List[Tuple[str, str]]
-):
+def generate_cgm_reports_for_patient(patient_id: str, periods: List[Tuple[str, str]]):
     from lib.dependencies.service_dependencies import get_celery_task_manager
 
     try:
@@ -30,9 +23,7 @@ def generate_cgm_reports_for_patient(
             )
 
     except Exception as e:
-        print(
-            f"❌ Failed to generate CGM reports for {patient_id}. Error: {e}"
-        )
+        print(f"❌ Failed to generate CGM reports for {patient_id}. Error: {e}")
 
 
 @shared_task
@@ -43,14 +34,24 @@ def generate_cgm_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_cgm_report_service, get_glucose_stats_processor)
+            get_ai_conversation_service,
+            get_cgm_report_service,
+            get_glucose_stats_processor,
+        )
 
         glucose_stats_service = get_glucose_stats_processor()
         cgm_report_service = get_cgm_report_service()
+        ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
             report = await glucose_stats_service.generate_report(
                 patient_id, start_date, end_date
+            )
+            feedback_message = await ai_conversation_service.generate_report_response(
+                patient_id,
+                patient_id,
+                report,
+                "cgm",
             )
 
             await cgm_report_service.save_report(
@@ -59,6 +60,7 @@ def generate_cgm_report(
                     "patient_id": patient_id,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "feedback": feedback_message,
                     **report,
                 },
             )
