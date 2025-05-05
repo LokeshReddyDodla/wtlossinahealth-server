@@ -65,6 +65,7 @@ async def set_care_provider_password(
         get_current_care_provider(
             CareProviderPermissionAction.UPDATE,
             CareProviderFeature.CARE_PROVIDERS,
+            check_permissions=False,
         )
     ),
 ):
