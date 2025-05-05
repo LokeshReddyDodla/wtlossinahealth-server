@@ -35,7 +35,9 @@ async def get_patients(
 ):
     try:
         patients = await care_provider_profile_service.fetch_care_provider_patients(
-            str(current_care_provider.care_provider_id)
+            str(current_care_provider.care_provider_id),
+            str(current_care_provider.role).lower(),
+            str(current_care_provider.health_facility_id),
         )
 
         updated_patients = []

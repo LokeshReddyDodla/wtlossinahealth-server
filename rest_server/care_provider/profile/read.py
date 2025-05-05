@@ -30,6 +30,7 @@ async def get_care_provider_profile(
         get_current_care_provider(
             CareProviderPermissionAction.READ,
             CareProviderFeature.CARE_PROVIDERS,
+            check_permissions=False,
         )
     ),
 ):
