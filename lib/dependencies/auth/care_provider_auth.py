@@ -1,6 +1,7 @@
 from fastapi import Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
@@ -32,7 +33,11 @@ def get_current_care_provider(
             )
 
         result = await session.execute(
-            select(CareProvider).where(CareProvider.care_provider_id == user_id)
+            select(CareProvider)
+            .where(CareProvider.care_provider_id == user_id)
+            .options(
+                selectinload(CareProvider.health_facility),
+            )
         )
         care_provider = result.scalars().first()
         if not care_provider:
