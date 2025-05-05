@@ -1,6 +1,4 @@
 import asyncio
-import logging
-from typing import List
 
 import nest_asyncio
 from celery import shared_task
