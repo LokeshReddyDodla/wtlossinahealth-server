@@ -97,3 +97,7 @@ class CareProvider(Base):
         back_populates="care_provider",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def is_admin(self):
+        return str(self.role).lower() == "admin"

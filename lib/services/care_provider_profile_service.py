@@ -101,31 +101,44 @@ class CareProviderProfileService:
             )
 
     async def fetch_care_provider_patients(
-        self, care_provider_id: str
+        self, care_provider_id: str, role: str, health_facility_id: str
     ) -> List[PatientModel]:
         try:
-            stmt = (
-                select(CareProviderModel)
-                .where(CareProviderModel.care_provider_id == care_provider_id)
-                .options(
-                    selectinload(CareProviderModel.patients).options(
+            if role == "admin" and health_facility_id:
+                stmt = (
+                    select(PatientModel)
+                    .where(PatientModel.health_facility_id == health_facility_id)
+                    .options(
                         selectinload(PatientModel.health_facility),
                         selectinload(PatientModel.care_providers),
                         selectinload(PatientModel.package),
                     )
                 )
-            )
-
-            result = await self.postgres_session.execute(stmt)
-            care_provider = result.scalars().first()
-
-            if not care_provider:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Care provider patients not found.",
+                result = await self.postgres_session.execute(stmt)
+                return list(result.scalars().all())
+            else:
+                stmt = (
+                    select(CareProviderModel)
+                    .where(CareProviderModel.care_provider_id == care_provider_id)
+                    .options(
+                        selectinload(CareProviderModel.patients).options(
+                            selectinload(PatientModel.health_facility),
+                            selectinload(PatientModel.care_providers),
+                            selectinload(PatientModel.package),
+                        )
+                    )
                 )
 
-            return care_provider.patients
+                result = await self.postgres_session.execute(stmt)
+                care_provider = result.scalars().first()
+
+                if not care_provider:
+                    raise_http_exception(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        message="Care provider patients not found.",
+                    )
+
+                return care_provider.patients
 
         except SQLAlchemyError as e:
             raise_http_exception(
