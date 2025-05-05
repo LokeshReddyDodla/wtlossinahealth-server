@@ -1,12 +1,9 @@
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import Optional
 
 from dateutil.parser import parse
 from sqlalchemy import delete
-from sqlalchemy.future import select
-from sqlalchemy.orm import Session
 
-from lib.models.patient import Patient
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
