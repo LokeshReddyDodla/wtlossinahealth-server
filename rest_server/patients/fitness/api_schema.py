@@ -1,9 +1,7 @@
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import datetime
+from typing import List
 
 from pydantic import BaseModel
-
-from rest_server.response_models import SuccessResponse
 
 
 class FitnessDataPoint(BaseModel):
