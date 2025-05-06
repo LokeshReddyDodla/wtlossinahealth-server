@@ -33,7 +33,7 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
-      
+
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
@@ -42,7 +42,7 @@ services:
   aihealth-celery:
     container_name: aihealth-celery
     image: aihealth-api:latest
-    command: celery -A lib.core.celery_app.celery worker --loglevel=info
+    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --loglevel=info
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
