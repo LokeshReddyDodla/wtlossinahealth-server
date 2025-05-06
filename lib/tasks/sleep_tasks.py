@@ -42,14 +42,11 @@ def generate_sleep_report_for_month(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_ai_conversation_service,
-            get_sleep_report_service,
-            get_sleep_stats_processor,
-        )
+            get_sleep_report_service, get_sleep_stats_processor)
 
         sleep_stats_service = get_sleep_stats_processor()
         sleep_report_service = get_sleep_report_service()
-        ai_conversation_service = get_ai_conversation_service()
+        # ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
             # Generate report for the specific month
@@ -63,12 +60,12 @@ def generate_sleep_report_for_month(
             )
 
             # Generate AI feedback based on the sleep report
-            feedback_message = await ai_conversation_service.generate_report_response(
-                patient_id,
-                patient_id,
-                report,
-                "sleep",
-            )
+            # feedback_message = await ai_conversation_service.generate_report_response(
+            #     patient_id,
+            #     patient_id,
+            #     report,
+            #     "sleep",
+            # )
 
             # Prepare reports for bulk saving
             bulk_reports = []
@@ -76,7 +73,7 @@ def generate_sleep_report_for_month(
                 {
                     "patient_id": patient_id,
                     "report_type": "monthly",
-                    "feedback": feedback_message,
+                    # "feedback": feedback_message,
                     **report["overall"].model_dump(),
                 }
             )
@@ -125,14 +122,11 @@ def generate_sleep_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_ai_conversation_service,
-            get_sleep_report_service,
-            get_sleep_stats_processor,
-        )
+            get_sleep_report_service, get_sleep_stats_processor)
 
         sleep_stats_service = get_sleep_stats_processor()
         sleep_report_service = get_sleep_report_service()
-        ai_conversation_service = get_ai_conversation_service()
+        # ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
             report = await sleep_stats_service.generate_report(
@@ -144,19 +138,19 @@ def generate_sleep_report(
             )
 
             # AI feedback
-            feedback_message = await ai_conversation_service.generate_report_response(
-                patient_id,
-                patient_id,
-                report,
-                "sleep",
-            )
+            # feedback_message = await ai_conversation_service.generate_report_response(
+            #     patient_id,
+            #     patient_id,
+            #     report,
+            #     "sleep",
+            # )
 
             bulk_reports = []
             bulk_reports.append(
                 {
                     "patient_id": patient_id,
                     "report_type": report_type,
-                    "feedback": feedback_message,
+                    # "feedback": feedback_message,
                     **report["overall"].model_dump(),
                 }
             )
