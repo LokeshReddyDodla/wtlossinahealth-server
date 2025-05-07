@@ -9,7 +9,6 @@ from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction,
-                                                 CareProviderRole,
                                                  has_care_provider_permission)
 from lib.utils.http_exceptions import raise_http_exception
 
@@ -47,7 +46,7 @@ def get_current_care_provider(
             )
 
         if check_permissions and not has_care_provider_permission(
-            role=CareProviderRole(care_provider.role),
+            permissions=care_provider.permissions,  # type: ignore
             feature=feature,
             action=action,
         ):

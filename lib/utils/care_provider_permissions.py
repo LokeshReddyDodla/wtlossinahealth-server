@@ -324,12 +324,9 @@ def get_care_provider_permissions(role: CareProviderRole):
 
 # Utility function to check if a specific role has permission for an action
 def has_care_provider_permission(
-    role: CareProviderRole,
+    permissions: dict,
     feature: CareProviderFeature,
     action: CareProviderPermissionAction,
 ) -> bool:
-    feature_permissions = CARE_PROVIDER_PERMISSIONS.get(role, {}).get(feature)
-    print("==> feature_permissions: ", feature_permissions)
-    if not feature_permissions:
-        return False
-    return feature_permissions.has_permission(action)
+    feature_perms = permissions.get(feature.value, {})
+    return feature_perms.get(action.value, False)
