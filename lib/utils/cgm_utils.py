@@ -38,9 +38,13 @@ class CGMDataUtils:
         # Sort data by timestamp
         cgm_data = cgm_data.sort_values("Device Timestamp")
 
-        # Extract the earliest and latest dates
-        earliest_date = cgm_data["Device Timestamp"].min()
-        latest_date = cgm_data["Device Timestamp"].max()
+        # Normalize timestamps (earliest at 00:00:00, latest at 23:59:59)
+        earliest_date = (
+            cgm_data["Device Timestamp"].min().replace(hour=0, minute=0, second=0)
+        )
+        latest_date = (
+            cgm_data["Device Timestamp"].max().replace(hour=23, minute=59, second=59)
+        )
 
         print("==> earliest_date: ", earliest_date)
         print("==> latest_date: ", latest_date)
@@ -51,9 +55,9 @@ class CGMDataUtils:
 
         while current_date <= latest_date:
             # Define the report period
-            start_date = current_date
-            end_date = min(
-                start_date + timedelta(days=period_length - 1), latest_date
+            start_date = current_date.replace(hour=0, minute=0, second=0)
+            end_date = (current_date + timedelta(days=period_length - 1)).replace(
+                hour=23, minute=59, second=59
             )
 
             # Filter data for the current period
