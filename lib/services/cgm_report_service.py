@@ -60,6 +60,8 @@ class CGMReportService:
                     "$group": {
                         "_id": "$_id",
                         "patient_id": {"$first": "$patient_id"},
+                        "start_date": {"$first": "$start_date"},
+                        "end_date": {"$first": "$end_date"},
                         "updated_at": {"$first": "$updated_at"},
                         "overall": {"$first": "$overall"},
                         "day_wise": {"$push": "$day_wise"},
