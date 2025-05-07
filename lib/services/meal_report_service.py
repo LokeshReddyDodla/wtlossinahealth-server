@@ -54,8 +54,7 @@ class MealReportService:
         report_date: date,
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
