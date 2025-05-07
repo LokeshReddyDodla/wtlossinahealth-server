@@ -60,6 +60,7 @@ class CGMReportService:
                     "$group": {
                         "_id": "$_id",
                         "patient_id": {"$first": "$patient_id"},
+                        "updated_at": {"$first": "$updated_at"},
                         "overall": {"$first": "$overall"},
                         "day_wise": {"$push": "$day_wise"},
                         "week_wise": {"$first": "$week_wise"},
@@ -89,8 +90,7 @@ class CGMReportService:
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
@@ -109,9 +109,7 @@ class CGMReportService:
 
     async def save_report(self, patient_id: str, report: Dict[str, Any]):
         try:
-            unique_key = (
-                f"{patient_id}_{report['start_date']}_{report['end_date']}"
-            )
+            unique_key = f"{patient_id}_{report['start_date']}_{report['end_date']}"
             report_id = hashlib.sha256(unique_key.encode()).hexdigest()
             now = datetime.now()
 
@@ -119,9 +117,7 @@ class CGMReportService:
                 {"_id": report_id}
             )
             report["created_at"] = (
-                existing_report.get("created_at", now)
-                if existing_report
-                else now
+                existing_report.get("created_at", now) if existing_report else now
             )
             report["updated_at"] = now
 
