@@ -7,6 +7,20 @@ class MealReportService:
     def __init__(self, meal_report_collection):
         self.meal_report_collection = meal_report_collection
 
+    async def fetch_report_by_id(self, report_id: str):
+        try:
+            report = await self.meal_report_collection.find_one(
+                {
+                    "_id": report_id,
+                },
+            )
+            return report
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch meal report by ID {report_id}. Error: {error}"
+            )
+            return None
+
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
@@ -54,7 +68,8 @@ class MealReportService:
         report_date: date,
     ):
         try:
-            from lib.dependencies.service_dependencies import get_celery_task_manager
+            from lib.dependencies.service_dependencies import \
+                get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
@@ -72,9 +87,7 @@ class MealReportService:
 
     async def save_report(self, patient_id: str, report: dict):
         try:
-            unique_key = (
-                f"{patient_id}_{report['report_type']}_{report['date']}"
-            )
+            unique_key = f"{patient_id}_{report['report_type']}_{report['date']}"
             report_id = hashlib.sha256(unique_key.encode()).hexdigest()
             now = datetime.now()
 
@@ -82,9 +95,7 @@ class MealReportService:
                 {"_id": report_id}
             )
             report["created_at"] = (
-                existing_report.get("created_at", now)
-                if existing_report
-                else now
+                existing_report.get("created_at", now) if existing_report else now
             )
             report["updated_at"] = now
 
@@ -96,9 +107,7 @@ class MealReportService:
                 {"_id": report_id}, report, upsert=True
             )
 
-            print(
-                f"✅ Saved/Updated daily report for {patient_id} on {report['date']}"
-            )
+            print(f"✅ Saved/Updated daily report for {patient_id} on {report['date']}")
 
         except Exception as error:
             print(

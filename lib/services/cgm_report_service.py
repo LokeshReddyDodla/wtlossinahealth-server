@@ -92,7 +92,7 @@ class CGMReportService:
     async def fetch_day_report(self, patient_id: str, date: date):
         try:
             start_date = datetime.combine(date, time.min)
-            end_date = datetime.combine(date, time.max)
+            end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
             report = await self.cgm_report_collection.find_one(
                 {
@@ -105,22 +105,22 @@ class CGMReportService:
             if not report:
                 return None
 
-            target_date_str = date.isoformat()
             day_report = next(
                 (
                     day
                     for day in report.get("day_wise", [])
-                    if day["start_date"].split("T")[0] == target_date_str
+                    if day["start_date"].date() == start_date.date()
                 ),
                 None,
             )
 
             if not day_report:
+                print("⚠️ Found report but no matching day entry")
                 return None
 
             # If there's a meal report ID, fetch the full meal report
             if day_report.get("meal_report_id"):
-                meal_report = await self.meal_report_service.fetch_report(
+                meal_report = await self.meal_report_service.fetch_report_by_id(
                     day_report["meal_report_id"]
                 )
                 day_report["meal_report"] = meal_report
@@ -138,7 +138,8 @@ class CGMReportService:
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         try:
-            from lib.dependencies.service_dependencies import get_celery_task_manager
+            from lib.dependencies.service_dependencies import \
+                get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
