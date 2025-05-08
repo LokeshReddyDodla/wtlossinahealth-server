@@ -138,8 +138,7 @@ class CGMReportService:
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
