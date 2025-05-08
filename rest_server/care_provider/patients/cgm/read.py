@@ -1,13 +1,13 @@
-from datetime import date, datetime, time
+from datetime import date
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import get_glucose_stats_processor
+from lib.dependencies.service_dependencies import get_cgm_report_service
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.services.cgm_report_service import CGMReportService
 from lib.utils.care_provider_permissions import (CareProviderFeature,
                                                  CareProviderPermissionAction)
-from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -19,9 +19,7 @@ async def get_cgm_day_report(
     request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
-    glucose_stats_processor: GlucoseStatsProcessor = Depends(
-        get_glucose_stats_processor
-    ),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ, CareProviderFeature.REPORTS
@@ -29,16 +27,11 @@ async def get_cgm_day_report(
     ),
 ):
     try:
-        start_date = datetime.combine(date, time.min)  # Start of the day
-        end_date = datetime.combine(date, time.max)  # End of the day
-
-        glucose_stats = await glucose_stats_processor.generate_report(
-            str(patient_id), start_date, end_date
-        )
+        day_report = cgm_report_service.fetch_day_report(patient_id, date)
 
         return SuccessResponse(
             message="Day Glucose report fetched successfully",
-            data=glucose_stats["day_wise"][0],
+            data=day_report,
         )
     except HTTPException as http_exc:
         raise http_exc

@@ -1,12 +1,13 @@
 import hashlib
 import logging
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any, Dict
 
 
 class CGMReportService:
-    def __init__(self, cgm_report_collection):
+    def __init__(self, cgm_report_collection, meal_report_service):
         self.cgm_report_collection = cgm_report_collection
+        self.meal_report_service = meal_report_service
 
     async def fetch_reports(self, patient_id: str):
         try:
@@ -88,11 +89,57 @@ class CGMReportService:
             )
             return None
 
+    async def fetch_day_report(self, patient_id: str, date: date):
+        try:
+            start_date = datetime.combine(date, time.min)
+            end_date = datetime.combine(date, time.max)
+
+            report = await self.cgm_report_collection.find_one(
+                {
+                    "patient_id": patient_id,
+                    "start_date": {"$lte": start_date},
+                    "end_date": {"$gte": end_date},
+                }
+            )
+
+            if not report:
+                return None
+
+            target_date_str = date.isoformat()
+            day_report = next(
+                (
+                    day
+                    for day in report.get("day_wise", [])
+                    if day["start_date"].split("T")[0] == target_date_str
+                ),
+                None,
+            )
+
+            if not day_report:
+                return None
+
+            # If there's a meal report ID, fetch the full meal report
+            if day_report.get("meal_report_id"):
+                meal_report = await self.meal_report_service.fetch_report(
+                    day_report["meal_report_id"]
+                )
+                day_report["meal_report"] = meal_report
+                del day_report["meal_report_id"]
+
+            return day_report
+
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch day report for {patient_id} on {date}. Error: {error}"
+            )
+            return None
+
     def _trigger_report_generation(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         try:
-            from lib.dependencies.service_dependencies import get_celery_task_manager
+            from lib.dependencies.service_dependencies import \
+                get_celery_task_manager
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(

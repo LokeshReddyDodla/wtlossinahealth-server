@@ -314,7 +314,10 @@ container.register(
 container.register(
     CGMReportService,
     lambda: CGMReportService(
-        cgm_report_collection=container.resolve("cgm_report_collection")
+        cgm_report_collection=container.resolve("cgm_report_collection"),
+        meal_report_service=cast(
+            MealReportService, container.resolve(MealReportService)
+        ),
     ),
 )
 
