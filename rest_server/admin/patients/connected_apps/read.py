@@ -18,12 +18,10 @@ from lib.services.patient_connected_app_service import \
     PatientConnectedAppService
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
-router = APIRouter(prefix="/admin/patient")
-
+from .router import router
 
 @router.get(
-    "/connected-apps/libreview",
-    tags=["Admin Patient"],
+    "/libreview",
     response_model=SuccessResponse,
 )
 async def get_libreview_connected_patients(
