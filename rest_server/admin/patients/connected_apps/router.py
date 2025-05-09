@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/connected-apps", tags=["Admin - Connected Apps"])
+router = APIRouter(prefix="/patients/connected-apps", tags=["Admin - Patients Connected Apps"])
 
 from .read import *
 
