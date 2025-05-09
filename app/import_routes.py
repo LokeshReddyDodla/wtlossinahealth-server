@@ -1,12 +1,7 @@
 from fastapi import FastAPI
 
-from rest_server.admin import admin
-from rest_server.admin.care_provider.profile.router import \
-    router as admin_care_provider_router
-from rest_server.admin.health_facility.router import \
-    router as admin_health_facility_router
-from rest_server.admin.patients import connected_apps as admin_patients
-from rest_server.admin.patients.cgm import upload as admin_cgm_upload
+
+
 from rest_server.ai_conversations.router import \
     router as ai_conversations_router
 from rest_server.auth import auth
@@ -17,6 +12,7 @@ from rest_server.file_upload import file_upload
 from rest_server.health import health_check
 from rest_server.health_facility.router import router as health_facility_router
 from rest_server.patients.router import router as patients_router
+from rest_server.admin.router import router as admin_router
 from rest_server.system_management import reload_cache
 from rest_server.test import test
 
@@ -39,10 +35,7 @@ def import_routes(app: FastAPI) -> None:
     ###########################################################################
     # Admin
     ###########################################################################
-    app.include_router(admin.router)
-    app.include_router(admin_patients.router)
-    app.include_router(admin_cgm_upload.router)
-    app.include_router(admin_care_provider_router)
+    app.include_router(admin_router)
 
     ###########################################################################
     # Auth
@@ -53,7 +46,6 @@ def import_routes(app: FastAPI) -> None:
     # Health Facility
     ###########################################################################
     app.include_router(health_facility_router)
-    app.include_router(admin_health_facility_router)
 
     ###########################################################################
     # Care Providers

@@ -13,8 +13,7 @@ from lib.utils.jwt import create_jwt_token
 from lib.utils.security import hash_password, verify_password
 from lib.utils.validators import validate_email
 from rest_server.response_models import ErrorResponse, SuccessResponse
-
-router = APIRouter(prefix="/admin")
+from .router import router
 
 
 class AdminCreate(BaseModel):
@@ -26,7 +25,7 @@ class AdminCreate(BaseModel):
         return validate_email(value)
 
 
-@router.post("/register", tags=["Admin"], response_model=SuccessResponse)
+@router.post("/register", tags=["Admin - Auth"], response_model=SuccessResponse)
 async def register_admin(
     request: Request,
     admin_data: AdminCreate,
@@ -67,7 +66,7 @@ async def register_admin(
         raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.post("/login", tags=["Admin"], response_model=SuccessResponse)
+@router.post("/login", tags=["Admin - Auth"], response_model=SuccessResponse)
 async def login_admin(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
