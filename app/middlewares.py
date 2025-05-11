@@ -25,6 +25,8 @@ async def create_context(request: Request, call_next):
         config_store=request.app.state.config_store,
         rate_limit_store=request.app.state.rate_limit_store,
         address_mapping_store=request.app.state.address_mapping_store,
+        fitness_sync_store=request.app.state.fitness_sync_store,
+        libreview_sync_store=request.app.state.libreview_sync_store,
         postgres_store=request.app.state.postgres_store,
         mongo_store=request.app.state.mongo_store,
         clickhouse_store=request.app.state.clickhouse_store,

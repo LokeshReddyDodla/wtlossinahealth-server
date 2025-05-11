@@ -13,8 +13,10 @@ from lib.services.user_device_service import UserDeviceService
 from lib.utils.auth_utils import AuthUtils
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.jwt import create_jwt_token
-from rest_server.auth.api_schema import (OtpVerifyResponse,
-                                         OtpVerifySuccessResponse)
+from rest_server.auth.api_schema import (
+    OtpVerifyResponse,
+    OtpVerifySuccessResponse,
+)
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 router = APIRouter()

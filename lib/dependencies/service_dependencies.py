@@ -2,10 +2,12 @@ from typing import cast
 
 from lib.core.container import container
 from lib.managers.celery_task_manager import CeleryTaskManager
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -18,20 +20,26 @@ from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.services.package_service import PackageService
-from lib.services.patient_connected_app_service import \
-    PatientConnectedAppService
+from lib.services.patient_connected_app_service import (
+    PatientConnectedAppService,
+)
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.glucose.processor import GlucoseStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
+
+
+def get_libreview_sync_queue() -> SQSService:
+    return cast(SQSService, container.resolve("libreview_sync_queue"))
 
 
 def get_user_device_service() -> UserDeviceService:
@@ -43,19 +51,27 @@ def get_chat_messaging_service() -> ChatMessagingService:
 
 
 def get_chat_notification_service() -> ChatNotificationService:
-    return cast(ChatNotificationService, container.resolve(ChatNotificationService))
+    return cast(
+        ChatNotificationService, container.resolve(ChatNotificationService)
+    )
 
 
 def get_chat_management_service() -> ChatManagementService:
-    return cast(ChatManagementService, container.resolve(ChatManagementService))
+    return cast(
+        ChatManagementService, container.resolve(ChatManagementService)
+    )
 
 
 def get_ai_conversation_service() -> AiConversationService:
-    return cast(AiConversationService, container.resolve(AiConversationService))
+    return cast(
+        AiConversationService, container.resolve(AiConversationService)
+    )
 
 
 def get_patient_profile_service() -> PatientProfileService:
-    return cast(PatientProfileService, container.resolve(PatientProfileService))
+    return cast(
+        PatientProfileService, container.resolve(PatientProfileService)
+    )
 
 
 def get_care_provider_profile_service() -> CareProviderProfileService:
@@ -154,7 +170,9 @@ def get_fitness_report_service() -> FitnessReportService:
 
 
 def get_glucose_stats_processor() -> GlucoseStatsProcessor:
-    return cast(GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor))
+    return cast(
+        GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
+    )
 
 
 def get_sleep_stats_processor() -> SleepStatsProcessor:

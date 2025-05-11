@@ -3,8 +3,10 @@ from socketio import ASGIApp
 
 from app.import_routes import import_routes
 from lib.initializers.cache_setup import initialize_caches
-from lib.initializers.db_setup import (create_db_and_tables,
-                                       initialize_databases)
+from lib.initializers.db_setup import (
+    create_db_and_tables,
+    initialize_databases,
+)
 from lib.initializers.logger_setup import setup_logger
 from lib.initializers.middleware_setup import setup_middlewares
 from lib.services.socketio_service import sio

@@ -6,14 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.cache_store import CacheStore
 from lib.core.celery_app import celery
 from lib.core.clickhouse_store import ClickHouseStore
+from decouple import config
+
 # Services
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.managers.celery_task_manager import CeleryTaskManager
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -27,15 +31,18 @@ from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.services.package_service import PackageService
-from lib.services.patient_connected_app_service import \
-    PatientConnectedAppService
+from lib.services.patient_connected_app_service import (
+    PatientConnectedAppService,
+)
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
+
 # Processors
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
@@ -59,51 +66,51 @@ container.register(
 container.register(MongoStore, MongoStore, scope=Scope.singleton)
 container.register(
     "cgm_report_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "cgm_reports"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("cgm_reports"),
     scope=Scope.singleton,
 )
 container.register(
     "fitness_report_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "fitness_reports"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("fitness_reports"),
     scope=Scope.singleton,
 )
 container.register(
     "sleep_report_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "sleep_reports"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("sleep_reports"),
     scope=Scope.singleton,
 )
 container.register(
     "meal_report_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "meal_reports"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("meal_reports"),
     scope=Scope.singleton,
 )
 container.register(
     "ai_conversation_messages_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "ai_conversation_messages"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("ai_conversation_messages"),
     scope=Scope.singleton,
 )
 container.register(
     "chat_messages_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "chat_messages"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("chat_messages"),
     scope=Scope.singleton,
 )
 container.register(
     "chats_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "chats"
-    ),
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("chats"),
     scope=Scope.singleton,
 )
 
@@ -122,6 +129,17 @@ for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
         lambda ns=namespace: CacheStore(namespace=ns),
     )
 
+# 🔹 Libreview SQS Service
+container.register(
+    "libreview_sync_queue",
+    lambda: SQSService(
+        queue_url=str(
+            config("LIBREVIEW_SYNC_QUEUE_URL"),
+        ),
+        message_group_id="libreview",
+    ),
+    scope=Scope.singleton,  # or transient if you want a fresh instance each time
+)
 
 # 🔹 Chat Services
 container.register(ChatMessagingService, ChatMessagingService)
@@ -248,7 +266,9 @@ container.register(
 # 🔹 Fitness Stats Processor
 container.register(
     FitnessStatsProcessor,
-    lambda: FitnessStatsProcessor(clickhouse_store=container.resolve(ClickHouseStore)),
+    lambda: FitnessStatsProcessor(
+        clickhouse_store=container.resolve(ClickHouseStore)
+    ),
 )
 
 # 🔹 Glucose Stats Processor
@@ -298,7 +318,9 @@ container.register(
 container.register(
     FitnessReportService,
     lambda: FitnessReportService(
-        fitness_report_collection=container.resolve("fitness_report_collection")
+        fitness_report_collection=container.resolve(
+            "fitness_report_collection"
+        )
     ),
 )
 
