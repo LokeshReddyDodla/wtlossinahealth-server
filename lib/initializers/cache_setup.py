@@ -10,3 +10,4 @@ def initialize_caches(app):
     app.state.rate_limit_store = CacheStore(namespace="rate_limiting")
     app.state.address_mapping_store = CacheStore(namespace="address_mapping")
     app.state.fitness_sync_store = CacheStore(namespace="fitness_sync")
+    app.state.libreview_sync_store = CacheStore(namespace="libreview_sync")
