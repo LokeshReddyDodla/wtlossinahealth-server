@@ -10,14 +10,15 @@ from lib.tasks.cgm_tasks import generate_cgm_reports_for_patient
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.future import select
-from sqlalchemy.orm import  selectinload
+from sqlalchemy.orm import selectinload
+
 
 class CGMUploadService:
     def __init__(self, clickhouse_store, postgres_session: AsyncSession):
         self.clickhouse_store = clickhouse_store
         self.postgres_session = postgres_session
 
-    async def parse_and_upload_cgm_data(
+    async def parse_and_upload_libreview_raw_csv_data(
         self, patient_id: str, file_contents: bytes
     ):
         try:
@@ -68,7 +69,7 @@ class CGMUploadService:
 
             # Write data to ClickHouse
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
-            
+
             # Update last_sync_timestamp for the connected app if it exists
             connected_app_result = await self.postgres_session.execute(
                 select(PatientConnectedApp)
@@ -79,7 +80,7 @@ class CGMUploadService:
             if connected_app and connected_app.libreview:
                 connected_app.libreview.last_sync_timestamp = datetime.now()
                 await self.postgres_session.commit()
-            
+
             generate_cgm_reports_for_patient.delay(
                 patient_id, cgm_report_periods
             )
