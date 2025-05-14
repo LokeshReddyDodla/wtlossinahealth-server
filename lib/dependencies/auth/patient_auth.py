@@ -32,6 +32,7 @@ async def get_current_patient(
                 message=f"Patient with ID '{user_id}' not found.",
             )
         return patient
+
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from fastapi import status
+from fastapi import HTTPException, status
 from sqlalchemy import exists
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,46 +11,62 @@ from sqlalchemy.orm.attributes import flag_modified
 from lib.core.constants import EmitMessageKeyEnum
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
-from lib.models.patient_alcohol_consumption import \
-    PatientAlcoholConsumption as PatientAlcoholConsumptionModel
+from lib.models.patient_alcohol_consumption import (
+    PatientAlcoholConsumption as PatientAlcoholConsumptionModel,
+)
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_current_medication import \
-    PatientCurrentMedication as PatientCurrentMedicationModel
-from lib.models.patient_daily_activity import \
-    PatientDailyActivity as PatientDailyActivityModel
-from lib.models.patient_diabetic_history import \
-    PatientDiabeticHistory as PatientDiabeticHistoryModel
-from lib.models.patient_diet_preference import \
-    PatientDietPreference as PatientDietPreferenceModel
-from lib.models.patient_drug_allergy import \
-    PatientDrugAllergy as PatientDrugAllergyModel
-from lib.models.patient_eating_habit import \
-    PatientEatingHabit as PatientEatingHabitModel
-from lib.models.patient_family_diabetic_history import \
-    PatientFamilyDiabeticHistory as PatientFamilyDiabeticHistoryModel
-from lib.models.patient_food_allergy import \
-    PatientFoodAllergy as PatientFoodAllergyModel
-from lib.models.patient_meal_timing import \
-    PatientMealTiming as PatientMealTimingModel
-from lib.models.patient_medical_history import \
-    PatientMedicalHistory as PatientMedicalHistoryModel
+from lib.models.patient_current_medication import (
+    PatientCurrentMedication as PatientCurrentMedicationModel,
+)
+from lib.models.patient_daily_activity import (
+    PatientDailyActivity as PatientDailyActivityModel,
+)
+from lib.models.patient_diabetic_history import (
+    PatientDiabeticHistory as PatientDiabeticHistoryModel,
+)
+from lib.models.patient_diet_preference import (
+    PatientDietPreference as PatientDietPreferenceModel,
+)
+from lib.models.patient_drug_allergy import (
+    PatientDrugAllergy as PatientDrugAllergyModel,
+)
+from lib.models.patient_eating_habit import (
+    PatientEatingHabit as PatientEatingHabitModel,
+)
+from lib.models.patient_family_diabetic_history import (
+    PatientFamilyDiabeticHistory as PatientFamilyDiabeticHistoryModel,
+)
+from lib.models.patient_food_allergy import (
+    PatientFoodAllergy as PatientFoodAllergyModel,
+)
+from lib.models.patient_meal_timing import (
+    PatientMealTiming as PatientMealTimingModel,
+)
+from lib.models.patient_medical_history import (
+    PatientMedicalHistory as PatientMedicalHistoryModel,
+)
 from lib.models.patient_plan import PatientPlan as PatientPlanModel
-from lib.models.patient_sleep_habit import \
-    PatientSleepHabit as PatientSleepHabitModel
-from lib.models.patient_smoking_habit import \
-    PatientSmokingHabit as PatientSmokingHabitModel
+from lib.models.patient_sleep_habit import (
+    PatientSleepHabit as PatientSleepHabitModel,
+)
+from lib.models.patient_smoking_habit import (
+    PatientSmokingHabit as PatientSmokingHabitModel,
+)
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientUpdate
-from lib.schemas.patient_alcohol_consumption import \
-    PatientAlcoholConsumptionCreate
-from lib.schemas.patient_current_medication import \
-    PatientCurrentMedicationCreate
+from lib.schemas.patient_alcohol_consumption import (
+    PatientAlcoholConsumptionCreate,
+)
+from lib.schemas.patient_current_medication import (
+    PatientCurrentMedicationCreate,
+)
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
 from lib.schemas.patient_eating_habit import PatientEatingHabitCreate
-from lib.schemas.patient_family_diabetic_history import \
-    PatientFamilyDiabeticHistoryCreate
+from lib.schemas.patient_family_diabetic_history import (
+    PatientFamilyDiabeticHistoryCreate,
+)
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
@@ -154,7 +170,9 @@ class PatientProfileService:
         self, patient_ids: List[str]
     ) -> Dict[str, PatientSchema]:
         try:
-            stmt = select(PatientModel).where(PatientModel.patient_id.in_(patient_ids))
+            stmt = select(PatientModel).where(
+                PatientModel.patient_id.in_(patient_ids)
+            )
             result = await self.postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
@@ -175,7 +193,9 @@ class PatientProfileService:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
 
-            for key, value in patient_data.model_dump(exclude_unset=True).items():
+            for key, value in patient_data.model_dump(
+                exclude_unset=True
+            ).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
@@ -205,6 +225,10 @@ class PatientProfileService:
                 message="Failed to update basic patient profile due to an integrity error.",
                 detail=str(e),
             )
+
+        except HTTPException as http_exc:
+            raise http_exc
+
         except Exception as e:
             await self.postgres_session.rollback()
             raise_http_exception(
@@ -265,12 +289,14 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.food_allergies = await self._upsert_multiple_entities(
-                patient_profile.food_allergies,
-                food_allergies or [],
-                PatientFoodAllergyModel,
-                "patient_id",
-                patient_id,
+            patient_profile.food_allergies = (
+                await self._upsert_multiple_entities(
+                    patient_profile.food_allergies,
+                    food_allergies or [],
+                    PatientFoodAllergyModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
             ignore_fields = [
@@ -296,12 +322,14 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.eating_habit.diet_preferences = self._upsert_single_entity(
-                patient_profile.eating_habit.diet_preferences,
-                eating_habit.diet_preferences,
-                PatientDietPreferenceModel,
-                "eating_habit_id",
-                patient_profile.eating_habit.eating_habit_id,
+            patient_profile.eating_habit.diet_preferences = (
+                self._upsert_single_entity(
+                    patient_profile.eating_habit.diet_preferences,
+                    eating_habit.diet_preferences,
+                    PatientDietPreferenceModel,
+                    "eating_habit_id",
+                    patient_profile.eating_habit.eating_habit_id,
+                )
             )
 
             updated = self._mark_profile_section_complete(
@@ -367,12 +395,14 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.drug_allergies = await self._upsert_multiple_entities(
-                patient_profile.drug_allergies,
-                drug_allergies or [],
-                PatientDrugAllergyModel,
-                "patient_id",
-                patient_id,
+            patient_profile.drug_allergies = (
+                await self._upsert_multiple_entities(
+                    patient_profile.drug_allergies,
+                    drug_allergies or [],
+                    PatientDrugAllergyModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
             patient_profile.family_diabetic_histories = (
@@ -385,12 +415,14 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.medical_histories = await self._upsert_multiple_entities(
-                patient_profile.medical_histories,
-                medical_histories or [],
-                PatientMedicalHistoryModel,
-                "patient_id",
-                patient_id,
+            patient_profile.medical_histories = (
+                await self._upsert_multiple_entities(
+                    patient_profile.medical_histories,
+                    medical_histories or [],
+                    PatientMedicalHistoryModel,
+                    "patient_id",
+                    patient_id,
+                )
             )
 
             updated = self._mark_profile_section_complete(
@@ -470,7 +502,9 @@ class PatientProfileService:
 
             # Automatically assign the patient to the care provider's health facility if unassigned
             if not patient.health_facility_id:  # type: ignore
-                patient.health_facility_id = current_care_provider.health_facility_id
+                patient.health_facility_id = (
+                    current_care_provider.health_facility_id
+                )
 
             # Ensure the same health facility
             if (
@@ -538,7 +572,9 @@ class PatientProfileService:
                 )
 
             # Fetch the patient
-            patient = await self.fetch_patient_profile(patient_id, detailed=True)
+            patient = await self.fetch_patient_profile(
+                patient_id, detailed=True
+            )
 
             # Check if the care provider is already linked
             if care_provider in patient.care_providers:
@@ -578,7 +614,9 @@ class PatientProfileService:
 
     async def check_patient_exists(self, patient_id: str) -> bool:
         try:
-            stmt = select(exists().where(PatientModel.patient_id == patient_id))
+            stmt = select(
+                exists().where(PatientModel.patient_id == patient_id)
+            )
             result = await self.postgres_session.execute(stmt)
             (exists_result,) = result.scalars()
 
@@ -650,7 +688,9 @@ class PatientProfileService:
 
         return new_entities
 
-    def _mark_profile_section_complete(self, profile_completion, section: str) -> bool:
+    def _mark_profile_section_complete(
+        self, profile_completion, section: str
+    ) -> bool:
         if not profile_completion[section]["is_complete"]:
             profile_completion[section]["is_complete"] = True
             return True
