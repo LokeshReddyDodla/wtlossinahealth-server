@@ -16,6 +16,13 @@ def with_postgres_session(func: Callable[..., Coroutine[Any, Any, Any]]):
                 "Service must have a 'postgres_store' attribute."
             )
 
+        # If session is already passed, reuse it
+        if (
+            "postgres_session" in kwargs
+            and kwargs["postgres_session"] is not None
+        ):
+            return await func(self, *args, **kwargs)
+
         # Log the current pool size if the pool object exists
         if hasattr(self.postgres_store.engine, "pool"):
             pool = self.postgres_store.engine.pool

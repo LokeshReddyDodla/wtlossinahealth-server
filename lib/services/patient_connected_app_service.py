@@ -84,7 +84,7 @@ class PatientConnectedAppService:
     ) -> PatientLibreViewModel:
         try:
             connected_app = await self.get_connected_apps_for_patient(
-                patient_id
+                patient_id, postgres_session=postgres_session
             )
 
             result = await postgres_session.execute(

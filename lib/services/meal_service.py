@@ -259,7 +259,9 @@ class MealService:
         postgres_session: AsyncSession,
     ) -> PatientMealModel:
         try:
-            meal = await self.fetch_meal(meal_id)
+            meal = await self.fetch_meal(
+                meal_id, postgres_session=postgres_session
+            )
             meal_orm = PatientMealSchema.model_validate(meal)
 
             if meal_orm.analyzed and not re_analyze:
