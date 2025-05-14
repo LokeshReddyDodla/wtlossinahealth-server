@@ -3,20 +3,27 @@ from typing import Any, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.postgres_store import PostgresStore
 from lib.schemas.sleep_stats import SleepStats
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
+from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.utils.sleep.duration_fetcher import SleepDurationFetcher
 from lib.utils.sleep.quality_fetcher import SleepQualityFetcher
 from lib.utils.sleep.timing_fetcher import SleepTimingFetcher
-from lib.utils.sleep.type_distribution_fetcher import SleepTypeDistributionFetcher
+from lib.utils.sleep.type_distribution_fetcher import (
+    SleepTypeDistributionFetcher,
+)
 
 
 class SleepStatsProcessor:
-    def __init__(self, postgres_session: AsyncSession):
-        self.postgres_session = postgres_session
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+    ):
+        self.postgres_store = postgres_store
         self.ai_conversation_service = AiConversationService(
             conversation_type="sleep",
             selected_ai_model="gpt-4o-mini",
@@ -56,20 +63,26 @@ class SleepStatsProcessor:
 
         return report
 
+    @with_postgres_session
     async def _process_overall(
-        self, patient_id: str, start_datetime: datetime, end_datetime: datetime
+        self,
+        patient_id: str,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        *,
+        postgres_session: AsyncSession
     ) -> SleepStats:
         duration_analysis = await SleepDurationFetcher.fetch(
-            self.postgres_session, patient_id, start_datetime, end_datetime
+            postgres_session, patient_id, start_datetime, end_datetime
         )
         type_distribution = await SleepTypeDistributionFetcher.fetch(
-            self.postgres_session, patient_id, start_datetime, end_datetime
+            postgres_session, patient_id, start_datetime, end_datetime
         )
         timing_analysis = await SleepTimingFetcher.fetch(
-            self.postgres_session, patient_id, start_datetime, end_datetime
+            postgres_session, patient_id, start_datetime, end_datetime
         )  # Inaccurate
         quality_analysis = await SleepQualityFetcher.fetch(
-            self.postgres_session, patient_id, start_datetime, end_datetime
+            postgres_session, patient_id, start_datetime, end_datetime
         )
 
         # Construct the sleep stats report

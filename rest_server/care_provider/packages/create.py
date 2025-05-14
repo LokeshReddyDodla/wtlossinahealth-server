@@ -8,8 +8,10 @@ from lib.models.patient import Patient as PatientModel
 from lib.schemas.package import Package as PackageSchema
 from lib.schemas.package import PackageCreate
 from lib.services.package_service import PackageService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -24,6 +26,7 @@ async def create_package(
         get_current_care_provider(
             CareProviderPermissionAction.CREATE,
             CareProviderFeature.PACKAGES,
+            check_permissions=False,
         )
     ),
 ):
@@ -69,9 +72,11 @@ async def assign_care_provider_to_package(
     ),
 ):
     try:
-        updated_package = await package_service.assign_care_provider_to_package(
-            package_id=package_id,
-            care_provider_id=care_provider_id,
+        updated_package = (
+            await package_service.assign_care_provider_to_package(
+                package_id=package_id,
+                care_provider_id=care_provider_id,
+            )
         )
 
         return SuccessResponse(

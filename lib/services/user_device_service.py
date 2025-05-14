@@ -7,32 +7,46 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
+from lib.core.postgres_store import PostgresStore
 from lib.core.types import ProfileTypeLiteral
 from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.schemas.user_device import UserDeviceCreate
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class UserDeviceService:
-    def __init__(self, postgres_session: AsyncSession):
-        self.postgres_session = postgres_session
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+    ):
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def create_user_device(
-        self, user_device_data: UserDeviceCreate
+        self,
+        user_device_data: UserDeviceCreate,
+        *,
+        postgres_session: AsyncSession,
     ) -> UserDeviceModel:
         """Create a new user device record in the database."""
         try:
             new_device = UserDeviceModel(**user_device_data.dict())
-            self.postgres_session.add(new_device)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(new_device)
+            postgres_session.add(new_device)
+            await postgres_session.commit()
+            await postgres_session.refresh(new_device)
             return new_device
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             print(f"Failed to create user device: {str(e)}")
             raise
 
+    @with_postgres_session
     async def get_user_devices(
-        self, user_id: UUID, profile_type: Optional[str] = None
+        self,
+        user_id: UUID,
+        profile_type: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
     ) -> list[UserDeviceModel]:
         """Retrieve all devices associated with a user."""
         try:
@@ -47,22 +61,27 @@ class UserDeviceService:
             if profile_type is not None:
                 stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             devices = result.scalars().all()
             return list(devices)
         except SQLAlchemyError as e:
             print(f"Failed to retrieve user devices: {str(e)}")
             raise
 
+    @with_postgres_session
     async def update_user_device(
-        self, device_id: UUID, user_device_data: dict
+        self,
+        device_id: UUID,
+        user_device_data: dict,
+        *,
+        postgres_session: AsyncSession,
     ) -> UserDeviceModel:
         """Update an existing user device."""
         try:
             stmt = select(UserDeviceModel).where(
                 UserDeviceModel.device_id == device_id
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             device = result.scalars().first()
             if not device:
                 raise ValueError(f"Device with ID {device_id} not found")
@@ -70,33 +89,37 @@ class UserDeviceService:
             for key, value in user_device_data.items():
                 setattr(device, key, value)
 
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(device)
+            await postgres_session.commit()
+            await postgres_session.refresh(device)
             return device
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             print(f"Failed to update user device: {str(e)}")
             raise
 
-    async def delete_user_device(self, device_id: UUID):
+    @with_postgres_session
+    async def delete_user_device(
+        self, device_id: UUID, *, postgres_session: AsyncSession
+    ):
         """Delete a user device."""
         try:
             stmt = select(UserDeviceModel).where(
                 UserDeviceModel.device_id == device_id
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             device = result.scalars().first()
             if not device:
                 # raise ValueError(f"Device with ID {device_id} not found")
                 return
 
-            await self.postgres_session.delete(device)
-            await self.postgres_session.commit()
+            await postgres_session.delete(device)
+            await postgres_session.commit()
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             print(f"Failed to delete user device: {str(e)}")
             raise
 
+    @with_postgres_session
     async def create_or_update_user_device(
         self,
         user_id: UUID,
@@ -104,6 +127,8 @@ class UserDeviceService:
         profile_type: ProfileTypeLiteral,
         device_type: str,
         platform_version: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
     ) -> UserDeviceModel:
         """Create or update a user device based on FCM token and user ID."""
         try:
@@ -128,10 +153,10 @@ class UserDeviceService:
             )
 
             for device in existing_devices:
-                if device.fcm_token == fcm_token: # type: ignore
+                if device.fcm_token == fcm_token:  # type: ignore
                     # Update the existing device if the FCM token matches
                     return await self.update_user_device(
-                        device_id=device.device_id, # type: ignore
+                        device_id=device.device_id,  # type: ignore
                         user_device_data=user_device_data,
                     )
 
@@ -140,6 +165,6 @@ class UserDeviceService:
                 UserDeviceCreate(**user_device_data)
             )
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             print(f"Failed to create or update user device: {str(e)}")
             raise

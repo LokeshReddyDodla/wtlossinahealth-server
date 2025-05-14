@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import ProfileTypeEnum
+from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
     AIModelProviderLiteral,
     GeminiAIModelLiteral,
@@ -12,6 +13,7 @@ from lib.core.types import (
     PerplexityAIModelLiteral,
 )
 from lib.models.token_usage_log import TokenUsageLog
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 PRICING = {
     "gpt-4o": {
@@ -26,7 +28,8 @@ PRICING = {
     },
     "gemini-1.5-flash": {
         "input": 0.075 / 1_000_000,  # $0.075 per 1M input tokens
-        "cached_input": 0.01875 / 1_000_000,  # $0.01875 per 1M cached input tokens
+        "cached_input": 0.01875
+        / 1_000_000,  # $0.01875 per 1M cached input tokens
         "output": 0.30 / 1_000_000,  # $0.30 per 1M output tokens
     },
     "gemini-2.0-flash": {
@@ -56,22 +59,32 @@ PRICING = {
 
 
 class TokenUsageService:
-    def __init__(self, postgres_session: AsyncSession):
-        self.postgres_session = postgres_session
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+    ):
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def get_usage_summary(
         self,
         user_id: str,
         user_type: ProfileTypeEnum,
         start_date: date,
         end_date: date,
+        *,
+        postgres_session: AsyncSession,
     ):
         try:
             query = (
                 select(
                     func.date(TokenUsageLog.created_at).label("usage_date"),
-                    func.sum(TokenUsageLog.input_tokens).label("total_input_tokens"),
-                    func.sum(TokenUsageLog.output_tokens).label("total_output_tokens"),
+                    func.sum(TokenUsageLog.input_tokens).label(
+                        "total_input_tokens"
+                    ),
+                    func.sum(TokenUsageLog.output_tokens).label(
+                        "total_output_tokens"
+                    ),
                     func.sum(TokenUsageLog.cached_input_tokens).label(
                         "total_cached_input_tokens"
                     ),
@@ -87,7 +100,7 @@ class TokenUsageService:
                 .order_by(func.date(TokenUsageLog.created_at))
             )
 
-            result = await self.postgres_session.execute(query)
+            result = await postgres_session.execute(query)
             rows = result.all()
 
             usage_summary = [
@@ -106,6 +119,7 @@ class TokenUsageService:
         except Exception as e:
             raise ValueError(f"Failed to calculate token usage summary: {e}")
 
+    @with_postgres_session
     async def log_usage(
         self,
         user_id: str,
@@ -118,6 +132,8 @@ class TokenUsageService:
         output_tokens: int,
         api_endpoint: str,
         cached_input_tokens: Optional[int] = None,
+        *,
+        postgres_session: AsyncSession,
     ) -> None:
         try:
             # Calculate the cost
@@ -136,11 +152,11 @@ class TokenUsageService:
                 model_provider=model_provider,
                 api_endpoint=api_endpoint,
             )
-            self.postgres_session.add(log)
-            await self.postgres_session.commit()
+            postgres_session.add(log)
+            await postgres_session.commit()
 
         except Exception as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise ValueError(f"Failed to log token usage: {e}")
 
     def calculate_cost(

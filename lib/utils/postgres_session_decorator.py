@@ -5,17 +5,19 @@ from typing import Any, Callable, Coroutine
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+
 def with_postgres_session(func: Callable[..., Coroutine[Any, Any, Any]]):
     """Decorator to automatically manage sessions for service methods."""
 
     @wraps(func)
     async def wrapper(self, *args, **kwargs):
-        if not hasattr(self, 'postgres_store'):
-            raise AttributeError("Service must have a 'postgres_store' attribute.")
-        
-        
+        if not hasattr(self, "postgres_store"):
+            raise AttributeError(
+                "Service must have a 'postgres_store' attribute."
+            )
+
         # Log the current pool size if the pool object exists
-        if hasattr(self.postgres_store.engine, 'pool'):
+        if hasattr(self.postgres_store.engine, "pool"):
             pool = self.postgres_store.engine.pool
             logger.info(
                 f"Current pool size: {pool.size()}, "
@@ -29,10 +31,12 @@ def with_postgres_session(func: Callable[..., Coroutine[Any, Any, Any]]):
             logger.info(f"Connection acquired for {func.__name__}.")
             try:
                 # Inject the session into the method if it accepts a `postgres_session` parameter
-                if 'postgres_session' in func.__code__.co_varnames:
-                    kwargs['postgres_session'] = postgres_session
+                if "postgres_session" in func.__code__.co_varnames:
+                    kwargs["postgres_session"] = postgres_session
                 return await func(self, *args, **kwargs)
             finally:
-                logger.info(f"Releasing database connection for {func.__name__}...")
+                logger.info(
+                    f"Releasing database connection for {func.__name__}..."
+                )
 
     return wrapper

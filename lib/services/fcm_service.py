@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
 import firebase_admin
@@ -9,10 +9,13 @@ from firebase_admin import credentials, messaging
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
+from lib.core.container import container
 from lib.core.constants import FCMProjectEnum, ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
-from lib.core.types import (FCMNotificationChannelKeyLiteral,
-                            FCMNotificationGroupKeyLiteral)
+from lib.core.types import (
+    FCMNotificationChannelKeyLiteral,
+    FCMNotificationGroupKeyLiteral,
+)
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.json_utils import ensure_string_values
@@ -116,48 +119,49 @@ class FCMService:
         """Send a batch of FCM notifications to all devices of a user."""
 
         try:
-            async with PostgresStore().get_session() as session:
-                user_device_service = UserDeviceService(
-                    postgres_session=session
+            user_device_service = UserDeviceService(
+                postgres_store=cast(
+                    PostgresStore, container.resolve(PostgresStore)
                 )
-                
-                # Fetch all devices associated with the user_id
-                devices = await user_device_service.get_user_devices(
-                    user_id=UUID(user_id)
+            )
+
+            # Fetch all devices associated with the user_id
+            devices = await user_device_service.get_user_devices(
+                user_id=UUID(user_id)
+            )  # type: ignore
+            print(f"==> user_id -> {user_id} -> devices: {devices}")
+
+            # Create a list to hold all messages
+            messages = []
+            for device in devices:
+                notification_title = title
+
+                # Build the message
+                message = self._build_message(
+                    fcm_token=device.fcm_token,
+                    title=notification_title,
+                    body=body,
+                    channel_key=channel_key,
+                    group_key=group_key,
+                    data=jsonable_encoder(data) or {},
                 )
-                print(f"==> user_id -> {user_id} -> devices: {devices}")
+                messages.append(message)
 
-                # Create a list to hold all messages
-                messages = []
-                for device in devices:
-                    notification_title = title
+            # Send all messages in a batch
+            response = messaging.send_each(messages)
 
-                    # Build the message
-                    message = self._build_message(
-                        fcm_token=device.fcm_token,
-                        title=notification_title,
-                        body=body,
-                        channel_key=channel_key,
-                        group_key=group_key,
-                        data=jsonable_encoder(data) or {},
+            # Handle individual responses
+            for index, resp in enumerate(response.responses):
+                if not resp.success:
+                    # Log or handle individual message failure
+                    print(
+                        f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}"
                     )
-                    messages.append(message)
+                else:
+                    print(
+                        f"Successfully sent message to device {devices[index].fcm_token}"
+                    )
 
-                # Send all messages in a batch
-                response = messaging.send_each(messages)
-
-                # Handle individual responses
-                for index, resp in enumerate(response.responses):
-                    if not resp.success:
-                        # Log or handle individual message failure
-                        print(
-                            f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}"
-                        )
-                    else:
-                        print(
-                            f"Successfully sent message to device {devices[index].fcm_token}"
-                        )
-
-                print(f"Batch notification response: {response}")
+            print(f"Batch notification response: {response}")
         except Exception as e:
             print(f"Failed to send batch notifications. Error: {str(e)}")

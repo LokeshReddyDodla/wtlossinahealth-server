@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
+from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import (
@@ -74,25 +75,29 @@ from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class PatientProfileService:
     def __init__(
         self,
-        postgres_session: AsyncSession,
+        postgres_store: PostgresStore,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.chat_notification_service = chat_notification_service
         self.chat_management_service = chat_management_service
 
+    @with_postgres_session
     async def fetch_patient_profile(
         self,
         patient_id: str,
         detailed: bool = False,
         include_health_data: bool = False,
         other_related_data: bool = False,
+        *,
+        postgres_session: AsyncSession
     ) -> PatientModel:
         try:
             stmt = (
@@ -148,7 +153,7 @@ class PatientProfileService:
                     ),
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             patient = result.scalars().first()
 
             if not patient:
@@ -166,14 +171,15 @@ class PatientProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_patient_profiles(
-        self, patient_ids: List[str]
+        self, patient_ids: List[str], *, postgres_session: AsyncSession
     ) -> Dict[str, PatientSchema]:
         try:
             stmt = select(PatientModel).where(
                 PatientModel.patient_id.in_(patient_ids)
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
             return {
@@ -187,8 +193,13 @@ class PatientProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def update_basic_patient_profile(
-        self, patient_id: str, patient_data: PatientUpdate
+        self,
+        patient_id: str,
+        patient_data: PatientUpdate,
+        *,
+        postgres_session: AsyncSession
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(patient_id)
@@ -205,8 +216,8 @@ class PatientProfileService:
             if updated:
                 flag_modified(patient_profile, "profile_completion")
 
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient_profile)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient_profile)
 
             await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
@@ -219,7 +230,7 @@ class PatientProfileService:
             return updated_patient
 
         except IntegrityError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Failed to update basic patient profile due to an integrity error.",
@@ -230,13 +241,14 @@ class PatientProfileService:
             raise http_exc
 
         except Exception as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="An unexpected error occurred while updating basic patient profile.",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def upsert_patient_lifestyle(
         self,
         patient_id: str,
@@ -246,6 +258,8 @@ class PatientProfileService:
         eating_habit: PatientEatingHabitCreate,
         sleep_habit: PatientSleepHabitCreate,
         food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
+        *,
+        postgres_session: AsyncSession
     ):
         try:
             patient_profile = await self.fetch_patient_profile(
@@ -338,9 +352,9 @@ class PatientProfileService:
             if updated:
                 flag_modified(patient_profile, "profile_completion")
 
-            self.postgres_session.add(patient_profile)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient_profile)
+            postgres_session.add(patient_profile)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -348,20 +362,21 @@ class PatientProfileService:
             return updated_patient
 
         except IntegrityError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Integrity Error",
                 detail=str(e),
             )
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def upsert_patient_medical_history(
         self,
         patient_id: str,
@@ -372,6 +387,8 @@ class PatientProfileService:
             List[PatientFamilyDiabeticHistoryCreate]
         ] = None,
         medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
+        *,
+        postgres_session: AsyncSession
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(
@@ -431,9 +448,9 @@ class PatientProfileService:
             if updated:
                 flag_modified(patient_profile, "profile_completion")
 
-            self.postgres_session.add(patient_profile)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient_profile)
+            postgres_session.add(patient_profile)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True
@@ -442,22 +459,27 @@ class PatientProfileService:
             return updated_patient
 
         except IntegrityError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Integrity Error",
                 detail=str(e),
             )
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def delete_patient_profile(
-        self, patient_id: str, delete_chats: bool = False
+        self,
+        patient_id: str,
+        delete_chats: bool = False,
+        *,
+        postgres_session: AsyncSession
     ) -> None:
         try:
             patient = await self.fetch_patient_profile(patient_id)
@@ -467,22 +489,25 @@ class PatientProfileService:
                     user_id=str(patient.patient_id),
                 )
 
-            await self.postgres_session.delete(patient)
-            await self.postgres_session.commit()
+            await postgres_session.delete(patient)
+            await postgres_session.commit()
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def assign_care_provider_to_patient(
         self,
         current_care_provider: CareProviderModel,
         patient_id: str,
         assigned_care_provider_id: str,
+        *,
+        postgres_session: AsyncSession
     ) -> PatientModel:
         try:
             patient = await self.fetch_patient_profile(patient_id)
@@ -491,7 +516,7 @@ class PatientProfileService:
             stmt = select(CareProviderModel).where(
                 CareProviderModel.care_provider_id == assigned_care_provider_id
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             assigned_care_provider = result.scalars().first()
 
             if not assigned_care_provider:
@@ -529,9 +554,9 @@ class PatientProfileService:
             patient.care_providers.append(assigned_care_provider)
 
             # Commit changes
-            self.postgres_session.add(patient)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient)
 
             # Create direct and group chats
             await self.chat_management_service.create_direct_and_group_chats(
@@ -547,22 +572,27 @@ class PatientProfileService:
             return patient
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=500,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def add_care_provider_by_code(
-        self, patient_id: str, care_provider_code: str
+        self,
+        patient_id: str,
+        care_provider_code: str,
+        *,
+        postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
             # Fetch care provider by code
             stmt = select(CareProviderModel).where(
                 CareProviderModel.code == care_provider_code
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
             if not care_provider:
@@ -587,9 +617,9 @@ class PatientProfileService:
             patient.care_providers.append(care_provider)
             patient.health_facility_id = care_provider.health_facility_id
 
-            self.postgres_session.add(patient)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(patient)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient)
 
             # Create direct and group chats
             await self.chat_management_service.create_direct_and_group_chats(
@@ -605,19 +635,22 @@ class PatientProfileService:
             return care_provider
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
-    async def check_patient_exists(self, patient_id: str) -> bool:
+    @with_postgres_session
+    async def check_patient_exists(
+        self, patient_id: str, *, postgres_session: AsyncSession
+    ) -> bool:
         try:
             stmt = select(
                 exists().where(PatientModel.patient_id == patient_id)
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             (exists_result,) = result.scalars()
 
             if not exists_result:
@@ -663,6 +696,7 @@ class PatientProfileService:
 
         return entity
 
+    @with_postgres_session
     async def _upsert_multiple_entities(
         self,
         existing_entities,
@@ -670,12 +704,14 @@ class PatientProfileService:
         model,
         foreign_key_name,
         foreign_key_value,
+        *,
+        postgres_session: AsyncSession
     ):
         """Helper method to delete existing entities and upsert multiple new entities."""
 
         # Delete existing entities
         for entity in existing_entities:
-            await self.postgres_session.delete(entity)
+            await postgres_session.delete(entity)
 
         # Create new entities
         new_entities = [
@@ -684,7 +720,7 @@ class PatientProfileService:
         ]
 
         # Add new entities to the session
-        self.postgres_session.add_all(new_entities)
+        postgres_session.add_all(new_entities)
 
         return new_entities
 

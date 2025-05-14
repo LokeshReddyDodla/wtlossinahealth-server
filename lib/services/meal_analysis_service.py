@@ -9,43 +9,56 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER, ProfileTypeEnum
-from lib.core.types import (AIModelProviderLiteral, GeminiAIModelLiteral,
-                            OpenAIModelLiteral)
+from lib.core.postgres_store import PostgresStore
+from lib.core.types import (
+    AIModelProviderLiteral,
+    GeminiAIModelLiteral,
+    OpenAIModelLiteral,
+)
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
-from lib.models.patient_meal import \
-    PatientMacroNutritionalValue as PatientMacroNutritionalValueModel
+from lib.models.patient_meal import (
+    PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
+)
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.models.patient_meal import \
-    PatientMicroNutritionalValue as PatientMicroNutritionalValueModel
-from lib.models.patient_meal import \
-    PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel
-from lib.models.patient_meal import \
-    PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel
+from lib.models.patient_meal import (
+    PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
+)
+from lib.models.patient_meal import (
+    PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel,
+)
+from lib.models.patient_meal import (
+    PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel,
+)
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
-from lib.schemas.patient_meal import \
-    PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema
-from lib.schemas.patient_meal import \
-    PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema
+from lib.schemas.patient_meal import (
+    PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema,
+)
+from lib.schemas.patient_meal import (
+    PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema,
+)
 from lib.services.token_usage_service import TokenUsageService
+from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.utils.retry_utils import retry_request
 
 
 class MealAnalysisService:
     def __init__(
         self,
-        postgres_session: AsyncSession,
+        postgres_store: PostgresStore,
         token_usage_service: TokenUsageService,
         timezone="Asia/Kolkata",
         ai_model_provider: AIModelProviderLiteral = "openai",
-        selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = "gpt-4o",
+        selected_ai_model: Union[
+            OpenAIModelLiteral, GeminiAIModelLiteral
+        ] = "gpt-4o",
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.token_usage_service = token_usage_service
         self.timezone = timezone
-        self.selected_ai_model: Union[OpenAIModelLiteral, GeminiAIModelLiteral] = (
-            selected_ai_model
-        )
+        self.selected_ai_model: Union[
+            OpenAIModelLiteral, GeminiAIModelLiteral
+        ] = selected_ai_model
         self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
 
         if ai_model_provider == "openai":
@@ -98,7 +111,9 @@ class MealAnalysisService:
             ),
         ]
 
-        human_messages = [HumanMessage(content=f"I had {meal_type} at {meal_time}.")]
+        human_messages = [
+            HumanMessage(content=f"I had {meal_type} at {meal_time}.")
+        ]
 
         if image_url:
             human_messages.append(
@@ -119,7 +134,9 @@ class MealAnalysisService:
 
         if update_fields:
             human_messages.append(
-                HumanMessage(content=f"Updated Serving Details: {update_fields}")
+                HumanMessage(
+                    content=f"Updated Serving Details: {update_fields}"
+                )
             )
 
         messages = system_message + human_messages
@@ -162,11 +179,15 @@ class MealAnalysisService:
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
-            SystemMessage(content=f"Original Meal Details:\n```json\n{meal_json}\n```"),
+            SystemMessage(
+                content=f"Original Meal Details:\n```json\n{meal_json}\n```"
+            ),
         ]
 
         human_messages = [
-            HumanMessage(content="Reanalyze the meal based on the updated details.")
+            HumanMessage(
+                content="Reanalyze the meal based on the updated details."
+            )
         ]
 
         if update_fields:
@@ -201,24 +222,34 @@ class MealAnalysisService:
 
         return parsed_response
 
+    @with_postgres_session
     async def save_meal_analysis(
-        self, meal: Any, analysis_data: MealAnalysisResponse
+        self,
+        meal: Any,
+        analysis_data: MealAnalysisResponse,
+        *,
+        postgres_session: AsyncSession,
     ) -> PatientMealModel:
         # create FoodItem records
         meal.items = [
-            self._create_food_item(meal, item_data) for item_data in analysis_data.items
+            self._create_food_item(meal, item_data)
+            for item_data in analysis_data.items
         ]
 
         # Update total macro nutritional values
         total_macro = analysis_data.total_macro_nutritional_value.model_dump()
-        meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValueModel(
-            meal_id=meal.id, **total_macro
+        meal.total_macro_nutritional_value = (
+            PatientTotalMacroNutritionalValueModel(
+                meal_id=meal.id, **total_macro
+            )
         )
 
         # Update total micro nutritional values
         total_micro = analysis_data.total_micro_nutritional_value.model_dump()
-        meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
-            meal_id=meal.id, **total_micro
+        meal.total_micro_nutritional_value = (
+            PatientTotalMicroNutritionalValueModel(
+                meal_id=meal.id, **total_micro
+            )
         )
 
         # Update other meal fields
@@ -230,8 +261,8 @@ class MealAnalysisService:
         meal.analyzed_at = datetime.now()
 
         # Commit changes to the database
-        await self.postgres_session.merge(meal)
-        await self.postgres_session.commit()
+        await postgres_session.merge(meal)
+        await postgres_session.commit()
 
         return meal
 

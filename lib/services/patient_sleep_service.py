@@ -4,21 +4,29 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from lib.core.postgres_store import PostgresStore
 from lib.models.patient_sleep import PatientSleep as PatientSleepModel
 from lib.services.patient_profile_service import PatientProfileService
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class PatientSleepService:
     def __init__(
         self,
+        postgres_store: PostgresStore,
         patient_profile_service: PatientProfileService,
-        postgres_session: AsyncSession,
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.patient_profile_service = patient_profile_service
 
+    @with_postgres_session
     async def get_daily_report_in_range(
-        self, patient_id: str, start_datetime: datetime, end_datetime: datetime
+        self,
+        patient_id: str,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        *,
+        postgres_session: AsyncSession
     ):
         query = text(
             """
@@ -46,7 +54,7 @@ class PatientSleepService:
         """
         )
 
-        result = await self.postgres_session.execute(
+        result = await postgres_session.execute(
             query,
             {
                 "patient_id": patient_id,
@@ -58,7 +66,10 @@ class PatientSleepService:
         grouped_data = result.scalar()
         return grouped_data
 
-    async def get_daily_sleep_data(self, patient_id: str, date: date):
+    @with_postgres_session
+    async def get_daily_sleep_data(
+        self, patient_id: str, date: date, *, postgres_session: AsyncSession
+    ):
         start_datetime = datetime.combine(date, time.min)
         end_datetime = datetime.combine(date, time.max).replace(microsecond=0)
 
@@ -88,7 +99,7 @@ class PatientSleepService:
         """
         )
 
-        result = await self.postgres_session.execute(
+        result = await postgres_session.execute(
             query,
             {
                 "patient_id": patient_id,

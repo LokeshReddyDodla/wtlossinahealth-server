@@ -4,12 +4,15 @@ from typing import Optional
 from dateutil.parser import parse
 from sqlalchemy import delete
 
+from lib.core.postgres_store import PostgresStore
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
 from lib.tasks.fitness_tasks import generate_fitness_reports_for_patient
 from lib.tasks.sleep_tasks import generate_sleep_reports_for_patient
+from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class FitnessUploadService:
@@ -17,14 +20,19 @@ class FitnessUploadService:
         self,
         clickhouse_store,
         fitness_sync_store,
-        postgres_session,
+        postgres_store: PostgresStore,
     ):
         self.clickhouse_store = clickhouse_store
         self.fitness_sync_store = fitness_sync_store
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def process_fitness_data(
-        self, patient_id: str, fitness_data: FitnessDataRequest
+        self,
+        patient_id: str,
+        fitness_data: FitnessDataRequest,
+        *,
+        postgres_session: AsyncSession,
     ) -> datetime:
         start_datetime, end_datetime = (
             fitness_data.start_datetime,
@@ -38,7 +46,7 @@ class FitnessUploadService:
         await self.update_last_sync(patient_id, end_datetime)
 
         # Commit the session to save all changes
-        await self.postgres_session.commit()
+        await postgres_session.commit()
 
         # Trigger report generation asynchronously
         generate_fitness_reports_for_patient.delay(
@@ -51,12 +59,15 @@ class FitnessUploadService:
 
         return end_datetime
 
+    @with_postgres_session
     async def delete_existing_data(
         self,
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
         source_name: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
     ):
         # Delete data from ClickHouse
         self.clickhouse_store.delete_existing_fitness_data(
@@ -104,12 +115,17 @@ class FitnessUploadService:
             )
 
         # Execute queries
-        await self.postgres_session.execute(smbg_query)
-        await self.postgres_session.execute(vital_query)
-        await self.postgres_session.execute(sleep_query)
+        await postgres_session.execute(smbg_query)
+        await postgres_session.execute(vital_query)
+        await postgres_session.execute(sleep_query)
 
+    @with_postgres_session
     async def insert_new_data(
-        self, patient_id: str, fitness_data: FitnessDataRequest
+        self,
+        patient_id: str,
+        fitness_data: FitnessDataRequest,
+        *,
+        postgres_session: AsyncSession,
     ):
         # Insert data into ClickHouse (steps and active_energy_burned)
         data_points = [
@@ -194,7 +210,7 @@ class FitnessUploadService:
             for item in sleep_data
         ]
 
-        self.postgres_session.add_all(vitals + smbg_records + sleep_records)
+        postgres_session.add_all(vitals + smbg_records + sleep_records)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"
