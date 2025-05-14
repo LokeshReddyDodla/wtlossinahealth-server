@@ -152,7 +152,7 @@ container.register(ChatManagementService, ChatManagementService)
 container.register(
     PatientProfileService,
     lambda: PatientProfileService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         chat_notification_service=cast(
             ChatNotificationService, container.resolve(ChatNotificationService)
         ),
@@ -166,7 +166,7 @@ container.register(
 container.register(
     CareProviderProfileService,
     lambda: CareProviderProfileService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
@@ -183,7 +183,7 @@ container.register(
 container.register(
     HealthFacilityService,
     lambda: HealthFacilityService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -191,7 +191,7 @@ container.register(
 container.register(
     PatientConnectedAppService,
     lambda: PatientConnectedAppService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -199,7 +199,7 @@ container.register(
 container.register(
     PatientSmbgService,
     lambda: PatientSmbgService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
@@ -210,7 +210,7 @@ container.register(
 container.register(
     PatientVitalService,
     lambda: PatientVitalService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
@@ -221,7 +221,7 @@ container.register(
 container.register(
     PatientSleepService,
     lambda: PatientSleepService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
@@ -232,7 +232,7 @@ container.register(
 container.register(
     PatientPlanService,
     lambda: PatientPlanService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -240,7 +240,7 @@ container.register(
 container.register(
     MealAnalysisService,
     lambda: MealAnalysisService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
@@ -253,7 +253,7 @@ container.register(
 container.register(
     MealService,
     lambda: MealService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         meal_analysis_service=cast(
             MealAnalysisService, container.resolve(MealAnalysisService)
         ),
@@ -290,7 +290,7 @@ container.register(
 container.register(
     MealStatsProcessor,
     lambda: MealStatsProcessor(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=container.resolve(ClickHouseStore),
         glucose_stats_processor=container.resolve(GlucoseStatsProcessor),
         patient_profile_service=container.resolve(PatientProfileService),
@@ -302,7 +302,7 @@ container.register(
 container.register(
     SleepStatsProcessor,
     lambda: SleepStatsProcessor(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -347,7 +347,7 @@ container.register(
 container.register(
     FitnessUploadService,
     lambda: FitnessUploadService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=container.resolve(ClickHouseStore),
         fitness_sync_store=container.resolve("fitness_sync"),
     ),
@@ -357,7 +357,7 @@ container.register(
 container.register(
     UserDeviceService,
     lambda: UserDeviceService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -365,7 +365,7 @@ container.register(
 container.register(
     PackageService,
     lambda: PackageService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
@@ -387,7 +387,7 @@ container.register(
     CGMUploadService,
     lambda: CGMUploadService(
         clickhouse_store=container.resolve(ClickHouseStore),
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -399,6 +399,6 @@ container.register(AiConversationService, AiConversationService)
 container.register(
     TokenUsageService,
     lambda: TokenUsageService(
-        postgres_session=cast(AsyncSession, container.resolve(AsyncSession)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )

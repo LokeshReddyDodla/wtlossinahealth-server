@@ -3,6 +3,7 @@ from io import StringIO
 from typing import List
 
 import pandas as pd
+from lib.core.postgres_store import PostgresStore
 from lib.models.patient_connected_app import PatientConnectedApp
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,14 +13,25 @@ from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.utils.postgres_session_decorator import with_postgres_session
+
 
 class CGMUploadService:
-    def __init__(self, clickhouse_store, postgres_session: AsyncSession):
+    def __init__(
+        self,
+        clickhouse_store,
+        postgres_store: PostgresStore,
+    ):
         self.clickhouse_store = clickhouse_store
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def parse_and_upload_libreview_raw_csv_data(
-        self, patient_id: str, file_contents: bytes
+        self,
+        patient_id: str,
+        file_contents: bytes,
+        *,
+        postgres_session: AsyncSession
     ):
         try:
             # Decode and read the CSV file
@@ -71,7 +83,7 @@ class CGMUploadService:
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
             # Update last_sync_timestamp for the connected app if it exists
-            connected_app_result = await self.postgres_session.execute(
+            connected_app_result = await postgres_session.execute(
                 select(PatientConnectedApp)
                 .where(PatientConnectedApp.patient_id == patient_id)
                 .options(selectinload(PatientConnectedApp.libreview))
@@ -79,7 +91,7 @@ class CGMUploadService:
             connected_app = connected_app_result.scalars().first()
             if connected_app and connected_app.libreview:
                 connected_app.libreview.last_sync_timestamp = datetime.now()
-                await self.postgres_session.commit()
+                await postgres_session.commit()
 
             generate_cgm_reports_for_patient.delay(
                 patient_id, cgm_report_periods

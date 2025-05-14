@@ -7,23 +7,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from lib.models.patient_connected_app import \
-    PatientConnectedApp as PatientConnectedAppModel
-from lib.models.patient_connected_app import \
-    PatientLibreView as PatientLibreViewModel
+from lib.core.postgres_store import PostgresStore
+from lib.models.patient_connected_app import (
+    PatientConnectedApp as PatientConnectedAppModel,
+)
+from lib.models.patient_connected_app import (
+    PatientLibreView as PatientLibreViewModel,
+)
 from lib.schemas.patient_connected_app import PatientLibreViewCreate
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class PatientConnectedAppService:
-    def __init__(self, postgres_session: AsyncSession):
-        self.postgres_session = postgres_session
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+    ):
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def get_connected_apps_for_patient(
-        self, patient_id: str
+        self, patient_id: str, *, postgres_session: AsyncSession
     ) -> PatientConnectedAppModel:
         try:
-            result = await self.postgres_session.execute(
+            result = await postgres_session.execute(
                 select(PatientConnectedAppModel)
                 .where(PatientConnectedAppModel.patient_id == patient_id)
                 .options(selectinload(PatientConnectedAppModel.libreview))
@@ -43,11 +51,12 @@ class PatientConnectedAppService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def get_all_connected_apps_with_libreview(
-        self,
+        self, *, postgres_session: AsyncSession
     ) -> List[PatientConnectedAppModel]:
         try:
-            result = await self.postgres_session.execute(
+            result = await postgres_session.execute(
                 select(PatientConnectedAppModel)
                 .where(PatientConnectedAppModel.libreview != None)
                 .options(
@@ -65,15 +74,20 @@ class PatientConnectedAppService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def add_or_update_libreview(
-        self, patient_id: str, libreview_data: PatientLibreViewCreate
+        self,
+        patient_id: str,
+        libreview_data: PatientLibreViewCreate,
+        *,
+        postgres_session: AsyncSession,
     ) -> PatientLibreViewModel:
         try:
             connected_app = await self.get_connected_apps_for_patient(
                 patient_id
             )
 
-            result = await self.postgres_session.execute(
+            result = await postgres_session.execute(
                 select(PatientLibreViewModel).where(
                     PatientLibreViewModel.connected_app_id == connected_app.id,
                 )
@@ -85,8 +99,8 @@ class PatientConnectedAppService:
                 existing_libreview.libreview_id = libreview_data.libreview_id
                 existing_libreview.last_sync_timestamp = None
 
-                await self.postgres_session.commit()
-                await self.postgres_session.refresh(existing_libreview)
+                await postgres_session.commit()
+                await postgres_session.refresh(existing_libreview)
                 return existing_libreview
             else:
                 # Create new LibreView record
@@ -95,13 +109,13 @@ class PatientConnectedAppService:
                     libreview_id=libreview_data.libreview_id,
                 )
 
-                self.postgres_session.add(new_libreview)
-                await self.postgres_session.commit()
-                await self.postgres_session.refresh(new_libreview)
+                postgres_session.add(new_libreview)
+                await postgres_session.commit()
+                await postgres_session.refresh(new_libreview)
                 return new_libreview
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message=f"Failed to add or update LibreView data for patient ID '{patient_id}'.",

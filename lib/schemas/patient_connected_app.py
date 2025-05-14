@@ -60,7 +60,7 @@ class PatientConnectedApp(PatientConnectedAppBase):
     id: UUID
     libreview: Optional[PatientLibreView] = None
     other_app: Optional[PatientOtherApp] = None
-    patient: Optional[PatientSchema] = None
+    # patient: Optional[PatientSchema] = None
 
     class Config:
         from_attributes = True

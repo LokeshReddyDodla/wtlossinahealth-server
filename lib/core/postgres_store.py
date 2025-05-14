@@ -20,13 +20,13 @@ if not SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg://"):
 # Create the SQLAlchemy engine
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_size=200,     
-    max_overflow=20, 
+    pool_size=100,
+    max_overflow=10,
     pool_timeout=30,
     pool_recycle=3600,
     pool_pre_ping=True,
     echo=False,
-    future=True
+    future=True,
 )
 
 # Create a configured "Session" class
@@ -39,6 +39,7 @@ AsyncSessionLocal = sessionmaker(
 # Create a Base class for our models to inherit
 Base = declarative_base()
 
+
 class PostgresStore:
     def __init__(self):
         self.engine = engine
@@ -47,7 +48,10 @@ class PostgresStore:
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         session: AsyncSession = self.session_local()
-        logger.info(f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
+        logger.info(
+            f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, "
+            f"in pool: {self.engine.pool.checkedin()})"
+        )
 
         try:
             yield session
@@ -57,18 +61,11 @@ class PostgresStore:
             logger.info("↩️ Rolled back transaction")
         finally:
             await session.close()
-            logger.info(f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
+            logger.info(
+                f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, "
+                f"in pool: {self.engine.pool.checkedin()})"
+            )
 
-
-    async def __aenter__(self):
-        self.session = self.session_local()
-        logger.info(f"🔌 Acquiring connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
-        return self.session
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.session.close()
-        logger.info(f"🔓 Releasing connection (checked out: {self.engine.pool.checkedout()}, in pool: {self.engine.pool.checkedin()})")
-    
     async def close(self):
         await self.engine.dispose()
         logger.info("🛑 Database connection closed")

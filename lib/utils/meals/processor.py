@@ -5,33 +5,41 @@ from sqlalchemy import func
 from sqlalchemy.future import select
 from sqlalchemy.orm import aliased
 
-from lib.models.patient_meal import (PatientFoodItem,
-                                     PatientMacroNutritionalValue, PatientMeal,
-                                     PatientMicroNutritionalValue,
-                                     PatientTotalMacroNutritionalValue,
-                                     PatientTotalMicroNutritionalValue)
+from lib.core.postgres_store import PostgresStore
+from lib.models.patient_meal import (
+    PatientFoodItem,
+    PatientMacroNutritionalValue,
+    PatientMeal,
+    PatientMicroNutritionalValue,
+    PatientTotalMacroNutritionalValue,
+    PatientTotalMicroNutritionalValue,
+)
 from lib.schemas.meal_stats import DailyMealStats
 from lib.schemas.patient_diet_plan import MealDistribution, PatientDietPlanBase
 from lib.utils.diet_plan_calculator import DietPlanCalculator
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class MealStatsProcessor:
     def __init__(
         self,
-        postgres_session,
+        postgres_store: PostgresStore,
         clickhouse_store,
         glucose_stats_processor,
         patient_profile_service,
         patient_plan_service,
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
         self.glucose_processor = glucose_stats_processor
 
-    async def get_meal_report_by_date(self, patient_id: str, date: date):
+    @with_postgres_session
+    async def get_meal_report_by_date(
+        self, patient_id: str, date: date, *, postgres_session
+    ):
         diet_recommendations = await self.get_diet_recommendations(
             patient_id, date
         )
@@ -42,7 +50,7 @@ class MealStatsProcessor:
         ).get(date, 0.0)
 
         query = self._build_meal_query(patient_id, date, date)
-        result = await self.postgres_session.execute(query)
+        result = await postgres_session.execute(query)
         row = result.first()
 
         if not row:
@@ -54,8 +62,14 @@ class MealStatsProcessor:
             row, {date: avg_glucose}, diet_recommendations, patient_id
         )
 
+    @with_postgres_session
     async def get_meal_report_by_date_range(
-        self, patient_id: str, start_date: datetime, end_date: datetime
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        *,
+        postgres_session
     ):
         diet_recommendations = await self.get_diet_recommendations(
             patient_id, start_date
@@ -69,7 +83,7 @@ class MealStatsProcessor:
         )
 
         query = self._build_meal_query(patient_id, start_date, end_date)
-        result = await self.postgres_session.execute(query)
+        result = await postgres_session.execute(query)
         rows = result.all()
 
         if not rows:

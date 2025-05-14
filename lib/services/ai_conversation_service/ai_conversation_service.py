@@ -13,33 +13,44 @@ from langchain_perplexity import ChatPerplexity
 from pydantic import SecretStr, ValidationError
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.types import (AiConversationMessageTypeLiteral,
-                            AiConversationRoleLiteral,
-                            AiConversationTypeLiteral, AIModelProviderLiteral,
-                            GeminiAIModelLiteral, OpenAIModelLiteral,
-                            PerplexityAIModelLiteral)
-from lib.schemas.ai_conversation_schemas import \
-    AiConversationMessage as AiConversationMessageSchema
-from lib.schemas.ai_conversation_schemas import (AIResponse,
-                                                 AIResponseFollowUpQuestions)
+from lib.core.types import (
+    AiConversationMessageTypeLiteral,
+    AiConversationRoleLiteral,
+    AiConversationTypeLiteral,
+    AIModelProviderLiteral,
+    GeminiAIModelLiteral,
+    OpenAIModelLiteral,
+    PerplexityAIModelLiteral,
+)
+from lib.schemas.ai_conversation_schemas import (
+    AiConversationMessage as AiConversationMessageSchema,
+)
+from lib.schemas.ai_conversation_schemas import (
+    AIResponse,
+    AIResponseFollowUpQuestions,
+)
 from lib.schemas.patient import CorePatientProfile
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
 
 from .system_messages.base_system_message import BaseSystemMessage
-from .system_messages.care_provider_system_message import \
-    CareProviderSystemMessage
+from .system_messages.care_provider_system_message import (
+    CareProviderSystemMessage,
+)
 from .system_messages.health_tip_system_message import HealthTipSystemMessage
 from .system_messages.meal_system_message import MealSystemMessage
-from .system_messages.prescription_system_message import \
-    PrescriptionSystemMessage
+from .system_messages.prescription_system_message import (
+    PrescriptionSystemMessage,
+)
 from .system_messages.report_system_message import ReportSystemMessage
 from .system_messages.sleep_system_message import SleepSystemMessage
 from .system_messages.smbg_system_message import SMBGSystemMessage
 
 
 class AiConversationService:
-    _SYSTEM_MESSAGE_MAP: Dict[AiConversationTypeLiteral, Type[BaseSystemMessage]] = {
+    _SYSTEM_MESSAGE_MAP: Dict[
+        AiConversationTypeLiteral, Type[BaseSystemMessage]
+    ] = {
         "meal": MealSystemMessage,
         "smbg": SMBGSystemMessage,
         "sleep": SleepSystemMessage,
@@ -58,15 +69,21 @@ class AiConversationService:
         ] = "gpt-4o",
     ):
         from lib.dependencies.service_dependencies import (
-            get_ai_conversation_messages_collection, get_cgm_report_collection,
-            get_fitness_report_collection, get_meal_report_collection,
-            get_patient_profile_service, get_sleep_report_collection,
-            get_token_usage_service)
+            get_ai_conversation_messages_collection,
+            get_cgm_report_collection,
+            get_fitness_report_collection,
+            get_meal_report_collection,
+            get_patient_profile_service,
+            get_sleep_report_collection,
+            get_token_usage_service,
+        )
 
         self.token_usage_service = get_token_usage_service()
         self.patient_profile_service = get_patient_profile_service()
 
-        self.ai_messages_collection: Any = get_ai_conversation_messages_collection()
+        self.ai_messages_collection: Any = (
+            get_ai_conversation_messages_collection()
+        )
         self.cgm_report_collection: Any = get_cgm_report_collection()
         self.fitness_report_collection: Any = get_fitness_report_collection()
         self.meal_report_collection: Any = get_meal_report_collection()
@@ -195,9 +212,9 @@ class AiConversationService:
         if return_raw:
             return await messages_cursor.to_list(length=None)
 
-        messages = await self.ai_messages_collection.aggregate(pipeline).to_list(
-            length=None
-        )
+        messages = await self.ai_messages_collection.aggregate(
+            pipeline
+        ).to_list(length=None)
         return await self._process_messages(messages)
 
     async def fetch_user_entire_conversation_messages(
@@ -217,25 +234,35 @@ class AiConversationService:
         if return_raw:
             return await messages_cursor.to_list(length=None)
 
-        messages = await self.ai_messages_collection.aggregate(pipeline).to_list(
-            length=None
-        )
+        messages = await self.ai_messages_collection.aggregate(
+            pipeline
+        ).to_list(length=None)
         return await self._process_messages(messages)
 
     async def create_patient_context_message(
         self, patient_id: str, prefix: str = "Patient Profile:"
     ) -> HumanMessage:
         patient = await self.patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, detailed=True, include_health_data=True
+            patient_id=patient_id,
+            detailed=True,
+            include_health_data=True,
+        )  # type: ignore
+        patient_profile_json = CorePatientProfile.from_orm(
+            patient
+        ).model_dump()
+        return HumanMessage(
+            content=f"{prefix}\n```json\n{patient_profile_json}\n```"
         )
-        patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
-        return HumanMessage(content=f"{prefix}\n```json\n{patient_profile_json}\n```")
 
     async def get_patient_reports(
         self,
         patient_id: str,
-        report_types: Optional[List[Literal["sleep", "meal", "fitness", "cgm"]]] = None,
-        date_range: Optional[Dict[Literal["start_date", "end_date"], datetime]] = None,
+        report_types: Optional[
+            List[Literal["sleep", "meal", "fitness", "cgm"]]
+        ] = None,
+        date_range: Optional[
+            Dict[Literal["start_date", "end_date"], datetime]
+        ] = None,
         limit_per_report: Optional[int] = None,
         return_raw: bool = False,
     ):
@@ -268,9 +295,9 @@ class AiConversationService:
 
         if "sleep" in report_types:
             coroutines.append(
-                self.sleep_report_collection.aggregate(pipeline.copy()).to_list(
-                    length=None
-                )
+                self.sleep_report_collection.aggregate(
+                    pipeline.copy()
+                ).to_list(length=None)
             )
         if "meal" in report_types:
             coroutines.append(
@@ -280,9 +307,9 @@ class AiConversationService:
             )
         if "fitness" in report_types:
             coroutines.append(
-                self.fitness_report_collection.aggregate(pipeline.copy()).to_list(
-                    length=None
-                )
+                self.fitness_report_collection.aggregate(
+                    pipeline.copy()
+                ).to_list(length=None)
             )
         if "cgm" in report_types:
             coroutines.append(
@@ -349,7 +376,11 @@ class AiConversationService:
         messages: Any = [self.system_message]
 
         # Add patient context
-        prefix = "My Profile:" if conversation_type == "patient" else "Patient Profile:"
+        prefix = (
+            "My Profile:"
+            if conversation_type == "patient"
+            else "Patient Profile:"
+        )
         patient_context_message = await self.create_patient_context_message(
             patient_id, prefix=prefix
         )
@@ -375,9 +406,13 @@ class AiConversationService:
         else:
             # Handle other conversation types
             if conversation_id == f"{patient_id}-custom":
-                history = await self.fetch_user_entire_conversation_messages(patient_id)
+                history = await self.fetch_user_entire_conversation_messages(
+                    patient_id
+                )
             else:
-                history = await self.fetch_conversation_messages(conversation_id)
+                history = await self.fetch_conversation_messages(
+                    conversation_id
+                )
             messages.extend(history)
 
         filtered_messages = (
@@ -422,11 +457,13 @@ class AiConversationService:
                     user_type=self.user_type,
                     input_tokens=usage_metadata["input_tokens"],
                     output_tokens=usage_metadata["output_tokens"],
-                    cached_input_tokens=usage_metadata.get("cached_input_tokens"),
+                    cached_input_tokens=usage_metadata.get(
+                        "cached_input_tokens"
+                    ),
                     model_used=self.selected_ai_model,
                     model_provider=self.ai_model_provider,
                     api_endpoint="/ai-conversation/respond",
-                )
+                )  # type: ignore
 
             return ai_message_data
         except Exception as e:
@@ -450,7 +487,9 @@ class AiConversationService:
         messages = await self.fetch_user_entire_conversation_messages(user_id)
         messages.insert(0, self.system_message)
 
-        patient_context_message = await self.create_patient_context_message(patient_id)
+        patient_context_message = await self.create_patient_context_message(
+            patient_id
+        )
         messages.insert(1, patient_context_message)
 
         # Add the human input as part of the context
@@ -478,7 +517,7 @@ class AiConversationService:
                 model_used=self.selected_ai_model,
                 model_provider=self.ai_model_provider,
                 api_endpoint="/ai-conversation/internal",
-            )
+            )  # type: ignore
 
         return parsed_response.response
 
@@ -556,7 +595,9 @@ class AiConversationService:
             return None
 
     async def generate_health_tip_for_patient(self, patient_id: str):
-        patient_context_message = await self.create_patient_context_message(patient_id)
+        patient_context_message = await self.create_patient_context_message(
+            patient_id
+        )
         messages = [self.system_message, patient_context_message]
 
         ai_response: Any = self.structured_model.invoke(messages)
@@ -576,7 +617,7 @@ class AiConversationService:
                 model_used=self.selected_ai_model,
                 model_provider=self.ai_model_provider,
                 api_endpoint="/ai-conversation/health-tip",
-            )
+            )  # type: ignore
 
         return health_tip
 

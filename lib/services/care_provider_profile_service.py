@@ -12,40 +12,58 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
+from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.care_provider import (CareProviderCreate, CareProviderUpdate,
-                                       PermissionActionSchema)
+from lib.schemas.care_provider import (
+    CareProviderCreate,
+    CareProviderUpdate,
+    PermissionActionSchema,
+)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (CareProviderRole,
-                                                 get_care_provider_permissions)
+from lib.utils.care_provider_permissions import (
+    CareProviderRole,
+    get_care_provider_permissions,
+)
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.utils.security import hash_password, verify_password
 
 
 class CareProviderProfileService:
     PROFILE_SECTION_REQUIREMENTS: Dict[str, Set[str]] = {
-        "personal_info": {"first_name", "last_name", "email", "phone_number", "role"},
+        "personal_info": {
+            "first_name",
+            "last_name",
+            "email",
+            "phone_number",
+            "role",
+        },
         "medical_info": {"medical_council_number"},
     }
 
     def __init__(
         self,
-        postgres_session: AsyncSession,
+        postgres_store: PostgresStore,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
         patient_service: PatientProfileService,
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.chat_management_service = chat_management_service
         self.chat_notification_service = chat_notification_service
         self.patient_service = patient_service
 
+    @with_postgres_session
     async def fetch_care_provider(
-        self, care_provider_id: str, detailed: Optional[bool] = False
+        self,
+        care_provider_id: str,
+        detailed: Optional[bool] = False,
+        *,
+        postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
             stmt = select(CareProviderModel).where(
@@ -61,7 +79,7 @@ class CareProviderProfileService:
                     selectinload(CareProviderModel.user_devices),
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
             if not care_provider:
@@ -79,18 +97,21 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_care_provider_profiles(
-        self, care_provider_ids: List[str]
+        self, care_provider_ids: List[str], *, postgres_session: AsyncSession
     ) -> Dict[str, CareProviderSchema]:
         try:
             stmt = select(CareProviderModel).where(
                 CareProviderModel.care_provider_id.in_(care_provider_ids)
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
             return {
-                str(profile.care_provider_id): CareProviderSchema.from_orm(profile)
+                str(profile.care_provider_id): CareProviderSchema.from_orm(
+                    profile
+                )
                 for profile in profiles
             }
         except SQLAlchemyError as e:
@@ -100,26 +121,36 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_care_provider_patients(
-        self, care_provider_id: str, role: str, health_facility_id: str
+        self,
+        care_provider_id: str,
+        role: str,
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession
     ) -> List[PatientModel]:
         try:
             if role == "admin" and health_facility_id:
                 stmt = (
                     select(PatientModel)
-                    .where(PatientModel.health_facility_id == health_facility_id)
+                    .where(
+                        PatientModel.health_facility_id == health_facility_id
+                    )
                     .options(
                         selectinload(PatientModel.health_facility),
                         selectinload(PatientModel.care_providers),
                         selectinload(PatientModel.package),
                     )
                 )
-                result = await self.postgres_session.execute(stmt)
+                result = await postgres_session.execute(stmt)
                 return list(result.scalars().all())
             else:
                 stmt = (
                     select(CareProviderModel)
-                    .where(CareProviderModel.care_provider_id == care_provider_id)
+                    .where(
+                        CareProviderModel.care_provider_id == care_provider_id
+                    )
                     .options(
                         selectinload(CareProviderModel.patients).options(
                             selectinload(PatientModel.health_facility),
@@ -129,7 +160,7 @@ class CareProviderProfileService:
                     )
                 )
 
-                result = await self.postgres_session.execute(stmt)
+                result = await postgres_session.execute(stmt)
                 care_provider = result.scalars().first()
 
                 if not care_provider:
@@ -147,20 +178,23 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_care_providers_in_health_facility(
-        self, health_facility_id: str
+        self, health_facility_id: str, *, postgres_session: AsyncSession
     ) -> List[CareProviderModel]:
         try:
             stmt = (
                 select(CareProviderModel)
-                .where(CareProviderModel.health_facility_id == health_facility_id)
+                .where(
+                    CareProviderModel.health_facility_id == health_facility_id
+                )
                 .options(
                     selectinload(CareProviderModel.patients),
                     selectinload(CareProviderModel.packages),
                 )
             )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             care_providers = result.scalars().all()
 
             return list(care_providers)
@@ -172,7 +206,10 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
-    async def fetch_care_provider_by_code(self, code: str) -> CareProviderModel:
+    @with_postgres_session
+    async def fetch_care_provider_by_code(
+        self, code: str, *, postgres_session: AsyncSession
+    ) -> CareProviderModel:
         try:
             CODE_PATTERN = re.compile(r"^[A-Za-z0-9-]{6}$")
 
@@ -190,7 +227,7 @@ class CareProviderProfileService:
                     selectinload(CareProviderModel.health_facility),
                 )
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
             if not care_provider:
@@ -208,23 +245,37 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
-    async def generate_unique_code(self) -> str:
+    @with_postgres_session
+    async def generate_unique_code(
+        self, *, postgres_session: AsyncSession
+    ) -> str:
         while True:
-            code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-            stmt = select(CareProviderModel).where(CareProviderModel.code == code)
-            result = await self.postgres_session.execute(stmt)
+            code = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=6)
+            )
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.code == code
+            )
+            result = await postgres_session.execute(stmt)
             if not result.scalars().first():
                 return code
 
+    @with_postgres_session
     async def create_care_provider(
-        self, care_provider_data: CareProviderCreate, health_facility_id: str
-    ) -> CareProviderModel:  # TODO: fix validation on invalid health_facility id
+        self,
+        care_provider_data: CareProviderCreate,
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession
+    ) -> (
+        CareProviderModel
+    ):  # TODO: fix validation on invalid health_facility id
         try:
             # Convert role to enum and get permissions
             role_enum = CareProviderRole(care_provider_data.role.lower())
             permissions = get_care_provider_permissions(role_enum)
             care_provider_data.permissions = permissions
-            code = await self.generate_unique_code()
+            code = await self.generate_unique_code()  # type: ignore
 
             new_care_provider = CareProviderModel(
                 **care_provider_data.model_dump(),
@@ -232,47 +283,56 @@ class CareProviderProfileService:
                 health_facility_id=health_facility_id,
             )
 
-            self.postgres_session.add(new_care_provider)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(new_care_provider)
+            postgres_session.add(new_care_provider)
+            await postgres_session.commit()
+            await postgres_session.refresh(new_care_provider)
 
             return new_care_provider
 
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Care provider already exists",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def update_care_provider(
-        self, care_provider_id: str, updates: CareProviderUpdate
+        self,
+        care_provider_id: str,
+        updates: CareProviderUpdate,
+        *,
+        postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
-            care_provider_profile = await self.fetch_care_provider(care_provider_id)
+            care_provider_profile = await self.fetch_care_provider(
+                care_provider_id
+            )
 
             # Create filtered updates dict
             update_data = updates.model_dump(exclude_unset=True)
             restricted_fields = {"phone_number", "role", "permissions"}
             filtered_updates = {
-                k: v for k, v in update_data.items() if k not in restricted_fields
+                k: v
+                for k, v in update_data.items()
+                if k not in restricted_fields
             }
 
             # Apply only filtered updates
             for key, value in filtered_updates.items():
                 setattr(care_provider_profile, key, value)
 
-            self.postgres_session.add(care_provider_profile)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(care_provider_profile)
+            postgres_session.add(care_provider_profile)
+            await postgres_session.commit()
+            await postgres_session.refresh(care_provider_profile)
 
             await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
@@ -281,41 +341,49 @@ class CareProviderProfileService:
             return care_provider_profile
 
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Care provider already exists.",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
-    async def delete_care_provider(self, care_provider_id: str):
+    @with_postgres_session
+    async def delete_care_provider(
+        self, care_provider_id: str, *, postgres_session: AsyncSession
+    ):
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
 
-            await self.postgres_session.delete(care_provider)
-            await self.postgres_session.commit()
+            await postgres_session.delete(care_provider)
+            await postgres_session.commit()
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
-    async def check_care_provider_exists(self, care_provider_id: str) -> bool:
+    @with_postgres_session
+    async def check_care_provider_exists(
+        self, care_provider_id: str, *, postgres_session: AsyncSession
+    ) -> bool:
         try:
             stmt = select(
-                exists().where(CareProviderModel.care_provider_id == care_provider_id)
+                exists().where(
+                    CareProviderModel.care_provider_id == care_provider_id
+                )
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             (exists_result,) = result.scalars()
 
             if not exists_result:
@@ -332,11 +400,18 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def set_care_provider_password(
-        self, care_provider_id: str, raw_password: str
+        self,
+        care_provider_id: str,
+        raw_password: str,
+        *,
+        postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
-            care_provider_profile = await self.fetch_care_provider(care_provider_id)
+            care_provider_profile = await self.fetch_care_provider(
+                care_provider_id
+            )
 
             if care_provider_profile.email is None:
                 raise_http_exception(
@@ -347,34 +422,37 @@ class CareProviderProfileService:
             hashed_password = hash_password(raw_password)
 
             care_provider_profile.hashed_password = hashed_password  # type: ignore
-            self.postgres_session.add(care_provider_profile)
+            postgres_session.add(care_provider_profile)
 
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(care_provider_profile)
+            await postgres_session.commit()
+            await postgres_session.refresh(care_provider_profile)
 
             return care_provider_profile
 
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Failed to set password due to a database conflict.",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def authenticate_care_provider(
-        self, email: str, password: str
+        self, email: str, password: str, *, postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
-            stmt = select(CareProviderModel).where(CareProviderModel.email == email)
-            result = await self.postgres_session.execute(stmt)
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.email == email
+            )
+            result = await postgres_session.execute(stmt)
             care_provider = result.scalars().first()
 
             if not care_provider:
@@ -389,7 +467,9 @@ class CareProviderProfileService:
                     message="Password not set. Please set your password to log in.",
                 )
 
-            if not verify_password(password, str(care_provider.hashed_password)):
+            if not verify_password(
+                password, str(care_provider.hashed_password)
+            ):
                 raise_http_exception(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     message="Invalid email or password",
@@ -404,8 +484,13 @@ class CareProviderProfileService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def remove_patient_from_care_provider(
-        self, care_provider_id: str, patient_id: str
+        self,
+        care_provider_id: str,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession
     ) -> None:
         try:
             care_provider = await self.fetch_care_provider(
@@ -424,15 +509,15 @@ class CareProviderProfileService:
             # Remove the patient from the care provider's list
             if patient in care_provider.patients:
                 care_provider.patients.remove(patient)
-                self.postgres_session.add(care_provider)
+                postgres_session.add(care_provider)
 
             # Remove the care provider from the patient's list
             if care_provider in patient.care_providers:
                 patient.care_providers.remove(care_provider)
-                self.postgres_session.add(patient)
+                postgres_session.add(patient)
 
             # Commit the changes
-            await self.postgres_session.commit()
+            await postgres_session.commit()
 
             #  Notify participants about changes in their chat list
             await self.chat_management_service.delete_direct_chat(
@@ -449,17 +534,20 @@ class CareProviderProfileService:
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def update_care_provider_permissions(
         self,
         care_provider_id: str,
         permissions_update: Dict[str, PermissionActionSchema],
+        *,
+        postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(care_provider_id)
@@ -471,14 +559,14 @@ class CareProviderProfileService:
             }
             flag_modified(care_provider, "permissions")
 
-            self.postgres_session.add(care_provider)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(care_provider)
+            postgres_session.add(care_provider)
+            await postgres_session.commit()
+            await postgres_session.refresh(care_provider)
 
             return care_provider
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",

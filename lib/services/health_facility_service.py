@@ -6,18 +6,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.postgres_store import PostgresStore
 from lib.models.health_facility import HealthFacility as HealthFacilityModel
-from lib.schemas.health_facility import (HealthFacilityCreate,
-                                         HealthFacilityUpdate)
+from lib.schemas.health_facility import (
+    HealthFacilityCreate,
+    HealthFacilityUpdate,
+)
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class HealthFacilityService:
-    def __init__(self, postgres_session: AsyncSession):
-        self.postgres_session = postgres_session
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+    ):
+        self.postgres_store = postgres_store
 
+    @with_postgres_session
     async def fetch_health_facility(
-        self, health_facility_id: str, detailed: bool = False
+        self,
+        health_facility_id: str,
+        detailed: bool = False,
+        *,
+        postgres_session: AsyncSession
     ) -> HealthFacilityModel:
         try:
             stmt = select(HealthFacilityModel).where(
@@ -31,7 +43,7 @@ class HealthFacilityService:
                     selectinload(HealthFacilityModel.packages),
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             health_facility = result.scalars().first()
 
             if not health_facility:
@@ -49,15 +61,20 @@ class HealthFacilityService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_health_facility_by_domain(
-        self, subdomain: str, custom_domain: str
+        self,
+        subdomain: str,
+        custom_domain: str,
+        *,
+        postgres_session: AsyncSession
     ) -> HealthFacilityModel:
         try:
             stmt = select(HealthFacilityModel).where(
                 (HealthFacilityModel.subdomain == subdomain)
                 & (HealthFacilityModel.custom_domain == custom_domain)
             )
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             health_facility = result.scalars().first()
 
             if not health_facility:
@@ -75,8 +92,12 @@ class HealthFacilityService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def create_health_facility(
-        self, health_facility_data: HealthFacilityCreate
+        self,
+        health_facility_data: HealthFacilityCreate,
+        *,
+        postgres_session: AsyncSession
     ) -> HealthFacilityModel:
         try:
             if not health_facility_data.subdomain:
@@ -87,28 +108,33 @@ class HealthFacilityService:
             new_health_facility = HealthFacilityModel(
                 **health_facility_data.model_dump()
             )
-            self.postgres_session.add(new_health_facility)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(new_health_facility)
+            postgres_session.add(new_health_facility)
+            await postgres_session.commit()
+            await postgres_session.refresh(new_health_facility)
 
             return new_health_facility
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Health facility already exists.",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def update_health_facility(
-        self, health_facility_id: str, updates: HealthFacilityUpdate
+        self,
+        health_facility_id: str,
+        updates: HealthFacilityUpdate,
+        *,
+        postgres_session: AsyncSession
     ) -> HealthFacilityModel:
         try:
             health_facility = await self.fetch_health_facility(
@@ -118,38 +144,41 @@ class HealthFacilityService:
             for key, value in updates.model_dump(exclude_unset=True).items():
                 setattr(health_facility, key, value)
 
-            self.postgres_session.add(health_facility)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(health_facility)
+            postgres_session.add(health_facility)
+            await postgres_session.commit()
+            await postgres_session.refresh(health_facility)
 
             return health_facility
 
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Health facility already exists.",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Internal Server Error",
                 detail=str(e),
             )
 
-    async def delete_health_facility(self, health_facility_id: str) -> None:
+    @with_postgres_session
+    async def delete_health_facility(
+        self, health_facility_id: str, *, postgres_session: AsyncSession
+    ) -> None:
         try:
             health_facility = await self.fetch_health_facility(
                 health_facility_id
             )
 
-            await self.postgres_session.delete(health_facility)
-            await self.postgres_session.commit()
+            await postgres_session.delete(health_facility)
+            await postgres_session.commit()
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Internal Server Error",

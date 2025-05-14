@@ -9,44 +9,60 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.core.postgres_store import PostgresStore
 from lib.models.package import Package as PackageModel
 from lib.models.patient import Patient as PatientModel
 from lib.schemas.package import PackageCreate, PackageUpdate
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class PackageService:
     def __init__(
         self,
-        postgres_session: AsyncSession,
+        postgres_store: PostgresStore,
         patient_service: PatientProfileService,
         care_provider_service: CareProviderProfileService,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
     ):
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.patient_service = patient_service
         self.care_provider_service = care_provider_service
         self.chat_notification_service = chat_notification_service
         self.chat_management_service = chat_management_service
 
-    async def generate_unique_code(self) -> str:
+    @with_postgres_session
+    async def generate_unique_code(
+        self, *, postgres_session: AsyncSession
+    ) -> str:
         while True:
-            code = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            code = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=6)
+            )
             stmt = select(PackageModel).where(PackageModel.code == code)
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             if not result.scalars().first():
                 return code
 
+    @with_postgres_session
     async def fetch_package(
-        self, package_id: str, detailed: Optional[bool] = False
+        self,
+        package_id: str,
+        detailed: Optional[bool] = False,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            stmt = select(PackageModel).where(PackageModel.package_id == package_id)
+            stmt = select(PackageModel).where(
+                PackageModel.package_id == package_id
+            )
 
             if detailed:
                 stmt = stmt.options(
@@ -55,7 +71,7 @@ class PackageService:
                     selectinload(PackageModel.patients),
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             package = result.scalars().first()
 
             if not package:
@@ -73,11 +89,18 @@ class PackageService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_package_by_code(
-        self, package_code: str, detailed: Optional[bool] = False
+        self,
+        package_code: str,
+        detailed: Optional[bool] = False,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            stmt = select(PackageModel).where(PackageModel.code == package_code)
+            stmt = select(PackageModel).where(
+                PackageModel.code == package_code
+            )
 
             if detailed:
                 stmt = stmt.options(
@@ -86,7 +109,7 @@ class PackageService:
                     selectinload(PackageModel.patients),
                 )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             package = result.scalars().first()
 
             if not package:
@@ -104,8 +127,9 @@ class PackageService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def fetch_packages_in_health_facility(
-        self, health_facility_id: str
+        self, health_facility_id: str, *, postgres_session: AsyncSession
     ) -> List[PackageModel]:
         try:
             stmt = (
@@ -117,7 +141,7 @@ class PackageService:
                 )
             )
 
-            result = await self.postgres_session.execute(stmt)
+            result = await postgres_session.execute(stmt)
             packages = result.scalars().all()
 
             return list(packages)
@@ -129,19 +153,24 @@ class PackageService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def create_package(
         self,
         package_data: PackageCreate,
         health_facility_id: UUID,
         created_by_id: UUID,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            care_provider = await self.care_provider_service.fetch_care_provider(
-                str(created_by_id)
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    str(created_by_id)
+                )
             )
-            care_provider = await self.postgres_session.merge(care_provider)
+            care_provider = await postgres_session.merge(care_provider)
 
-            code = await self.generate_unique_code()
+            code = await self.generate_unique_code()  # type: ignore
             new_package = PackageModel(
                 **package_data.model_dump(),
                 code=code,
@@ -150,14 +179,14 @@ class PackageService:
             )
             new_package.care_providers.append(care_provider)
 
-            self.postgres_session.add(new_package)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(new_package)
+            postgres_session.add(new_package)
+            await postgres_session.commit()
+            await postgres_session.refresh(new_package)
 
             return new_package
 
         except IntegrityError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             if "uq_package_name_per_health_facility" in str(e.orig):
                 raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -171,15 +200,20 @@ class PackageService:
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def update_package(
-        self, package_id: str, updates: PackageUpdate
+        self,
+        package_id: str,
+        updates: PackageUpdate,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id)
@@ -187,28 +221,35 @@ class PackageService:
             for key, value in updates.model_dump(exclude_unset=True).items():
                 setattr(package, key, value)
 
-            self.postgres_session.add(package)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(package)
+            postgres_session.add(package)
+            await postgres_session.commit()
+            await postgres_session.refresh(package)
 
             return package
 
         except IntegrityError:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Package already exists.",
             )
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
-    async def delete_package(self, package_id: str, health_facility_id: str) -> None:
+    @with_postgres_session
+    async def delete_package(
+        self,
+        package_id: str,
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
         try:
             package = await self.fetch_package(package_id)
 
@@ -218,30 +259,35 @@ class PackageService:
                     message="You do not have permission to delete this package as it belongs to a different health facility.",
                 )
 
-            await self.postgres_session.delete(package)
-            await self.postgres_session.commit()
+            await postgres_session.delete(package)
+            await postgres_session.commit()
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def assign_care_provider_to_package(
         self,
         package_id: str,
         care_provider_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            care_provider = await self.care_provider_service.fetch_care_provider(
-                care_provider_id
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    care_provider_id
+                )
             )
 
             # Merge the care provider into the current session
-            care_provider = await self.postgres_session.merge(care_provider)
+            care_provider = await postgres_session.merge(care_provider)
 
             # Ensure the care provider and package belong to the same health facility
             if package.health_facility_id != care_provider.health_facility_id:  # type: ignore
@@ -253,27 +299,34 @@ class PackageService:
             # Assign the care provider to the package
             if care_provider not in package.care_providers:
                 package.care_providers.append(care_provider)
-                self.postgres_session.add(package)
-                await self.postgres_session.commit()
-                await self.postgres_session.refresh(package)
+                postgres_session.add(package)
+                await postgres_session.commit()
+                await postgres_session.refresh(package)
 
             return package
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def assign_patient_to_package(
-        self, patient_id: str, package_id: str
+        self,
+        patient_id: str,
+        package_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            patient = await self.patient_service.fetch_patient_profile(patient_id)
-            patient = await self.postgres_session.merge(patient)
+            patient = await self.patient_service.fetch_patient_profile(
+                patient_id
+            )
+            patient = await postgres_session.merge(patient)
 
             # Check if the patient is already part of the package
             if patient in package.patients:
@@ -296,11 +349,11 @@ class PackageService:
             package.patients.append(patient)
             patient.package = package
 
-            self.postgres_session.add(package)
-            self.postgres_session.add(patient)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(package)
-            await self.postgres_session.refresh(patient)
+            postgres_session.add(package)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(package)
+            await postgres_session.refresh(patient)
 
             # Handle care provider chat connections
             await self._handle_package_care_provider_chats(patient, package)
@@ -308,20 +361,29 @@ class PackageService:
             return package
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def patient_join_package_by_code(
-        self, patient_id: str, package_code: str
+        self,
+        patient_id: str,
+        package_code: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package_by_code(package_code, detailed=True)
-            patient = await self.patient_service.fetch_patient_profile(patient_id)
-            patient = await self.postgres_session.merge(patient)
+            package = await self.fetch_package_by_code(
+                package_code, detailed=True
+            )
+            patient = await self.patient_service.fetch_patient_profile(
+                patient_id
+            )
+            patient = await postgres_session.merge(patient)
 
             # Check if the patient is already part of the package
             if patient in package.patients:
@@ -344,11 +406,11 @@ class PackageService:
             package.patients.append(patient)
             patient.package = package
 
-            self.postgres_session.add(package)
-            self.postgres_session.add(patient)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(package)
-            await self.postgres_session.refresh(patient)
+            postgres_session.add(package)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(package)
+            await postgres_session.refresh(patient)
 
             # Handle care provider chat connections
             await self._handle_package_care_provider_chats(patient, package)
@@ -356,22 +418,29 @@ class PackageService:
             return package
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def remove_care_provider_from_package(
-        self, care_provider_id: str, package_id: str
+        self,
+        care_provider_id: str,
+        package_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            care_provider = await self.care_provider_service.fetch_care_provider(
-                care_provider_id
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    care_provider_id
+                )
             )
-            care_provider = await self.postgres_session.merge(care_provider)
+            care_provider = await postgres_session.merge(care_provider)
 
             # Check if the care provider is part of the package
             if care_provider not in package.care_providers:
@@ -383,27 +452,34 @@ class PackageService:
             # Remove the care provider from the package
             package.care_providers.remove(care_provider)
 
-            self.postgres_session.add(package)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(package)
+            postgres_session.add(package)
+            await postgres_session.commit()
+            await postgres_session.refresh(package)
 
             return package
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def remove_patient_from_package(
-        self, patient_id: str, package_id: str
+        self,
+        patient_id: str,
+        package_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
             package = await self.fetch_package(package_id, detailed=True)
-            patient = await self.patient_service.fetch_patient_profile(patient_id)
-            patient = await self.postgres_session.merge(patient)
+            patient = await self.patient_service.fetch_patient_profile(
+                patient_id
+            )
+            patient = await postgres_session.merge(patient)
 
             # Check if the patient is part of the package
             if patient not in package.patients:
@@ -415,16 +491,16 @@ class PackageService:
             package.patients.remove(patient)
             patient.package = None
 
-            self.postgres_session.add(package)
-            self.postgres_session.add(patient)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(package)
-            await self.postgres_session.refresh(patient)
+            postgres_session.add(package)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(package)
+            await postgres_session.refresh(patient)
 
             return package
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",

@@ -12,33 +12,38 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
+from lib.core.postgres_store import PostgresStore
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.schemas.ai_conversation_schemas import \
-    AiConversationMessage as AiConversationMessageSchema
+from lib.schemas.ai_conversation_schemas import (
+    AiConversationMessage as AiConversationMessageSchema,
+)
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.tasks.meal_tasks import generate_daily_meal_report
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import PatientMealUploadRequest
 
 
 class MealService:
     def __init__(
         self,
-        postgres_session: AsyncSession,
+        postgres_store: PostgresStore,
         meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
     ):
-        from lib.dependencies.service_dependencies import \
-            get_token_usage_service
+        from lib.dependencies.service_dependencies import (
+            get_token_usage_service,
+        )
 
-        self.postgres_session = postgres_session
+        self.postgres_store = postgres_store
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
@@ -48,6 +53,7 @@ class MealService:
         )
         self.token_usage_service = get_token_usage_service()
 
+    @with_postgres_session
     async def fetch_meals(
         self,
         patient_id: str,
@@ -58,6 +64,8 @@ class MealService:
         order_by: Optional[str] = "time",
         order: Optional[str] = "asc",
         limit: Optional[int] = None,
+        *,
+        postgres_session: AsyncSession,
     ):
         try:
             query = (
@@ -70,8 +78,12 @@ class MealService:
                     selectinload(PatientMealModel.items).selectinload(
                         PatientFoodItemModel.micro_nutritional_values
                     ),
-                    selectinload(PatientMealModel.total_macro_nutritional_value),
-                    selectinload(PatientMealModel.total_micro_nutritional_value),
+                    selectinload(
+                        PatientMealModel.total_macro_nutritional_value
+                    ),
+                    selectinload(
+                        PatientMealModel.total_micro_nutritional_value
+                    ),
                 )
             )
 
@@ -115,7 +127,7 @@ class MealService:
             if limit:
                 query = query.limit(limit)
 
-            result = await self.postgres_session.execute(query)
+            result = await postgres_session.execute(query)
             meals = result.scalars().all()
 
             return meals
@@ -126,7 +138,10 @@ class MealService:
                 detail=str(e),
             )
 
-    async def fetch_meal(self, meal_id: str) -> PatientMealModel:
+    @with_postgres_session
+    async def fetch_meal(
+        self, meal_id: str, *, postgres_session: AsyncSession
+    ) -> PatientMealModel:
         query = (
             select(PatientMealModel)
             .where(PatientMealModel.id == meal_id)
@@ -142,7 +157,7 @@ class MealService:
             )
         )
 
-        result = await self.postgres_session.execute(query)
+        result = await postgres_session.execute(query)
         meal = result.scalars().first()
 
         if not meal:
@@ -153,8 +168,14 @@ class MealService:
 
         return meal
 
+    @with_postgres_session
     async def get_meal_counts_by_date(
-        self, patient_id: str, start_date: date, end_date: date
+        self,
+        patient_id: str,
+        start_date: date,
+        end_date: date,
+        *,
+        postgres_session: AsyncSession,
     ) -> List[dict]:
         try:
             query = (
@@ -171,11 +192,14 @@ class MealService:
                 .order_by(PatientMealModel.date)
             )
 
-            result = await self.postgres_session.execute(query)
+            result = await postgres_session.execute(query)
             records = result.all()
 
             return [
-                {"date": record.date.isoformat(), "meal_count": record.meal_count}
+                {
+                    "date": record.date.isoformat(),
+                    "meal_count": record.meal_count,
+                }
                 for record in records
             ]
 
@@ -186,8 +210,13 @@ class MealService:
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def upload_meal(
-        self, meal_data: PatientMealUploadRequest, patient_id: str
+        self,
+        meal_data: PatientMealUploadRequest,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> PatientMealModel:
         try:
             meal = PatientMealModel(
@@ -196,13 +225,15 @@ class MealService:
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
                 description=meal_data.description,
-                image_url=str(meal_data.image_url) if meal_data.image_url else None,
+                image_url=(
+                    str(meal_data.image_url) if meal_data.image_url else None
+                ),
                 patient_id=patient_id,
             )
 
-            self.postgres_session.add(meal)
-            await self.postgres_session.commit()
-            await self.postgres_session.refresh(meal)
+            postgres_session.add(meal)
+            await postgres_session.commit()
+            await postgres_session.refresh(meal)
 
             # 🚀 Trigger Meal Report Generation after Upload
             generate_daily_meal_report.delay(str(patient_id), meal.date)
@@ -210,19 +241,22 @@ class MealService:
             return meal
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
+    @with_postgres_session
     async def analyze_or_reanalyze_meal(
         self,
         meal_id: str,
         patient_id: str,
         re_analyze: Optional[bool] = False,
         update_fields: Optional[dict] = None,
+        *,
+        postgres_session: AsyncSession,
     ) -> PatientMealModel:
         try:
             meal = await self.fetch_meal(meal_id)
@@ -234,22 +268,28 @@ class MealService:
             # Fetch patient Profile
             patient = await self.patient_profile_service.fetch_patient_profile(
                 patient_id=patient_id, detailed=True
-            )
-            patient_profile_json = CorePatientProfile.from_orm(patient).model_dump()
+            )  # type: ignore
+            patient_profile_json = CorePatientProfile.from_orm(
+                patient
+            ).model_dump()
 
             # Analyze or reanalyze the meal using the MealAnalysisService
             if update_fields:
-                parsed_ai_response = await self.meal_analysis_service.reanalyze_meal(
-                    patient_id, meal_orm.model_dump(), update_fields
+                parsed_ai_response = (
+                    await self.meal_analysis_service.reanalyze_meal(
+                        patient_id, meal_orm.model_dump(), update_fields
+                    )
                 )
             else:
-                parsed_ai_response = await self.meal_analysis_service.analyze_meal(
-                    patient_id,
-                    patient_profile_json,
-                    meal.time,
-                    meal.image_url,
-                    meal.type,
-                    meal.description,
+                parsed_ai_response = (
+                    await self.meal_analysis_service.analyze_meal(
+                        patient_id,
+                        patient_profile_json,
+                        meal.time,
+                        meal.image_url,
+                        meal.type,
+                        meal.description,
+                    )
                 )
 
             if not parsed_ai_response:
@@ -282,14 +322,14 @@ class MealService:
 
             return updated_meal
         except json.JSONDecodeError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Invalid JSON",
                 detail=str(e),
             )
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
@@ -345,9 +385,12 @@ class MealService:
             ),
         ]
 
-    async def delete_meal(self, meal_id: UUID):
+    @with_postgres_session
+    async def delete_meal(
+        self, meal_id: UUID, *, postgres_session: AsyncSession
+    ):
         try:
-            result = await self.postgres_session.execute(
+            result = await postgres_session.execute(
                 select(PatientMealModel).where(PatientMealModel.id == meal_id)
             )
             meal = result.scalars().first()
@@ -358,27 +401,30 @@ class MealService:
                     message="Meal not found.",
                 )
 
-            await self.postgres_session.delete(meal)
-            await self.postgres_session.commit()
+            await postgres_session.delete(meal)
+            await postgres_session.commit()
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
                 detail=str(e),
             )
 
-    async def delete_all_meals_for_patient(self, patient_id: str):
+    @with_postgres_session
+    async def delete_all_meals_for_patient(
+        self, patient_id: str, *, postgres_session: AsyncSession
+    ):
         try:
-            await self.postgres_session.execute(
+            await postgres_session.execute(
                 delete(PatientMealModel).where(
                     PatientMealModel.patient_id == patient_id
                 )
             )
-            await self.postgres_session.commit()
+            await postgres_session.commit()
 
         except SQLAlchemyError as e:
-            await self.postgres_session.rollback()
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
