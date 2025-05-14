@@ -138,7 +138,7 @@ class HealthFacilityService:
     ) -> HealthFacilityModel:
         try:
             health_facility = await self.fetch_health_facility(
-                health_facility_id
+                health_facility_id, postgres_session=postgres_session
             )
 
             for key, value in updates.model_dump(exclude_unset=True).items():
@@ -171,7 +171,7 @@ class HealthFacilityService:
     ) -> None:
         try:
             health_facility = await self.fetch_health_facility(
-                health_facility_id
+                health_facility_id, postgres_session=postgres_session
             )
 
             await postgres_session.delete(health_facility)

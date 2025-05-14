@@ -149,7 +149,7 @@ class UserDeviceService:
 
             # Retrieve devices to check if the device already exists
             existing_devices = await self.get_user_devices(
-                user_id, profile_type
+                user_id, profile_type, postgres_session=postgres_session
             )
 
             for device in existing_devices:
@@ -158,11 +158,13 @@ class UserDeviceService:
                     return await self.update_user_device(
                         device_id=device.device_id,  # type: ignore
                         user_device_data=user_device_data,
+                        postgres_session=postgres_session,
                     )
 
             # If no existing device with the FCM token is found, create a new one
             return await self.create_user_device(
-                UserDeviceCreate(**user_device_data)
+                UserDeviceCreate(**user_device_data),
+                postgres_session=postgres_session,
             )
         except SQLAlchemyError as e:
             await postgres_session.rollback()

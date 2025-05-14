@@ -170,7 +170,7 @@ class PackageService:
             )
             care_provider = await postgres_session.merge(care_provider)
 
-            code = await self.generate_unique_code()  # type: ignore
+            code = await self.generate_unique_code(postgres_session=postgres_session)  # type: ignore
             new_package = PackageModel(
                 **package_data.model_dump(),
                 code=code,
@@ -216,7 +216,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package(package_id)
+            package = await self.fetch_package(
+                package_id, postgres_session=postgres_session
+            )
 
             for key, value in updates.model_dump(exclude_unset=True).items():
                 setattr(package, key, value)
@@ -251,7 +253,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> None:
         try:
-            package = await self.fetch_package(package_id)
+            package = await self.fetch_package(
+                package_id, postgres_session=postgres_session
+            )
 
             if str(package.health_facility_id) != health_facility_id:
                 raise_http_exception(
@@ -279,7 +283,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package(package_id, detailed=True)
+            package = await self.fetch_package(
+                package_id, detailed=True, postgres_session=postgres_session
+            )
             care_provider = (
                 await self.care_provider_service.fetch_care_provider(
                     care_provider_id
@@ -322,7 +328,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package(package_id, detailed=True)
+            package = await self.fetch_package(
+                package_id, detailed=True, postgres_session=postgres_session
+            )
             patient = await self.patient_service.fetch_patient_profile(
                 patient_id
             )
@@ -378,10 +386,10 @@ class PackageService:
     ) -> PackageModel:
         try:
             package = await self.fetch_package_by_code(
-                package_code, detailed=True
+                package_code, detailed=True, postgres_session=postgres_session
             )
             patient = await self.patient_service.fetch_patient_profile(
-                patient_id
+                patient_id,
             )
             patient = await postgres_session.merge(patient)
 
@@ -434,7 +442,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package(package_id, detailed=True)
+            package = await self.fetch_package(
+                package_id, detailed=True, postgres_session=postgres_session
+            )
             care_provider = (
                 await self.care_provider_service.fetch_care_provider(
                     care_provider_id
@@ -475,7 +485,9 @@ class PackageService:
         postgres_session: AsyncSession,
     ) -> PackageModel:
         try:
-            package = await self.fetch_package(package_id, detailed=True)
+            package = await self.fetch_package(
+                package_id, detailed=True, postgres_session=postgres_session
+            )
             patient = await self.patient_service.fetch_patient_profile(
                 patient_id
             )

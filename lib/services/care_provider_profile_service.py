@@ -275,7 +275,7 @@ class CareProviderProfileService:
             role_enum = CareProviderRole(care_provider_data.role.lower())
             permissions = get_care_provider_permissions(role_enum)
             care_provider_data.permissions = permissions
-            code = await self.generate_unique_code()  # type: ignore
+            code = await self.generate_unique_code(postgres_session=postgres_session)  # type: ignore
 
             new_care_provider = CareProviderModel(
                 **care_provider_data.model_dump(),
@@ -314,7 +314,7 @@ class CareProviderProfileService:
     ) -> CareProviderModel:
         try:
             care_provider_profile = await self.fetch_care_provider(
-                care_provider_id
+                care_provider_id, postgres_session=postgres_session
             )
 
             # Create filtered updates dict
@@ -360,7 +360,9 @@ class CareProviderProfileService:
         self, care_provider_id: str, *, postgres_session: AsyncSession
     ):
         try:
-            care_provider = await self.fetch_care_provider(care_provider_id)
+            care_provider = await self.fetch_care_provider(
+                care_provider_id, postgres_session=postgres_session
+            )
 
             await postgres_session.delete(care_provider)
             await postgres_session.commit()
@@ -410,7 +412,7 @@ class CareProviderProfileService:
     ) -> CareProviderModel:
         try:
             care_provider_profile = await self.fetch_care_provider(
-                care_provider_id
+                care_provider_id, postgres_session=postgres_session
             )
 
             if care_provider_profile.email is None:
@@ -494,10 +496,12 @@ class CareProviderProfileService:
     ) -> None:
         try:
             care_provider = await self.fetch_care_provider(
-                care_provider_id, detailed=True
+                care_provider_id,
+                detailed=True,
+                postgres_session=postgres_session,
             )
             patient = await self.patient_service.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
 
             if patient not in care_provider.patients:
@@ -550,7 +554,9 @@ class CareProviderProfileService:
         postgres_session: AsyncSession
     ) -> CareProviderModel:
         try:
-            care_provider = await self.fetch_care_provider(care_provider_id)
+            care_provider = await self.fetch_care_provider(
+                care_provider_id, postgres_session=postgres_session
+            )
 
             # Directly update permissions
             care_provider.permissions = {  # type: ignore

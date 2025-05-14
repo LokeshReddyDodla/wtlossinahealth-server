@@ -202,7 +202,9 @@ class PatientProfileService:
         postgres_session: AsyncSession
     ) -> PatientModel:
         try:
-            patient_profile = await self.fetch_patient_profile(patient_id)
+            patient_profile = await self.fetch_patient_profile(
+                patient_id, postgres_session=postgres_session
+            )
 
             for key, value in patient_data.model_dump(
                 exclude_unset=True
@@ -225,7 +227,7 @@ class PatientProfileService:
             )
 
             updated_patient = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
             return updated_patient
 
@@ -263,7 +265,7 @@ class PatientProfileService:
     ):
         try:
             patient_profile = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
 
             # Upsert operations using helper methods
@@ -357,7 +359,7 @@ class PatientProfileService:
             await postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
             return updated_patient
 
@@ -392,7 +394,7 @@ class PatientProfileService:
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
 
             # Upsert operations using helper methods
@@ -453,7 +455,7 @@ class PatientProfileService:
             await postgres_session.refresh(patient_profile)
 
             updated_patient = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
 
             return updated_patient
@@ -482,7 +484,9 @@ class PatientProfileService:
         postgres_session: AsyncSession
     ) -> None:
         try:
-            patient = await self.fetch_patient_profile(patient_id)
+            patient = await self.fetch_patient_profile(
+                patient_id, postgres_session=postgres_session
+            )
 
             if delete_chats:
                 await self.chat_management_service.delete_all_chats(
@@ -510,7 +514,9 @@ class PatientProfileService:
         postgres_session: AsyncSession
     ) -> PatientModel:
         try:
-            patient = await self.fetch_patient_profile(patient_id)
+            patient = await self.fetch_patient_profile(
+                patient_id, postgres_session=postgres_session
+            )
 
             # Fetch the assigned Care Provider
             stmt = select(CareProviderModel).where(
@@ -603,7 +609,7 @@ class PatientProfileService:
 
             # Fetch the patient
             patient = await self.fetch_patient_profile(
-                patient_id, detailed=True
+                patient_id, detailed=True, postgres_session=postgres_session
             )
 
             # Check if the care provider is already linked

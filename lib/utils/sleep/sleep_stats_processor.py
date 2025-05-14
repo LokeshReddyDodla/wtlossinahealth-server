@@ -97,8 +97,13 @@ class SleepStatsProcessor:
 
         return report
 
+    @with_postgres_session
     async def _process_multiple_periods(
-        self, patient_id: str, periods: List[Dict[str, datetime]]
+        self,
+        patient_id: str,
+        periods: List[Dict[str, datetime]],
+        *,
+        postgres_session: AsyncSession
     ) -> List[Dict[str, SleepStats]]:
         stats = []
         for period in periods:
@@ -107,6 +112,7 @@ class SleepStatsProcessor:
                     patient_id,
                     period["start_date"],
                     period["end_date"],
+                    postgres_session=postgres_session,
                 )
             )
         return stats
