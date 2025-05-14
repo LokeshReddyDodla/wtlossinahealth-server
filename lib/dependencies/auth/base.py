@@ -31,6 +31,9 @@ async def get_current_user(
 
         return user_id, role
 
+    except HTTPException as http_exc:
+        raise http_exc
+
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

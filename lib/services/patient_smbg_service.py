@@ -7,8 +7,9 @@ from sqlalchemy.future import select
 
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
 from lib.schemas.patient_smbg import PatientSMBGCreate
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 
@@ -27,7 +28,9 @@ class PatientSmbgService:
             ai_model_provider="openai",
         )
 
-    async def get_patient_smbgs(self, patient_id: str) -> List[PatientSMBGModel]:
+    async def get_patient_smbgs(
+        self, patient_id: str
+    ) -> List[PatientSMBGModel]:
         try:
             result = await self.postgres_session.execute(
                 select(PatientSMBGModel)
@@ -88,6 +91,7 @@ class PatientSmbgService:
             )
             await self.ai_conversation_service.generate_response(
                 patient_id=patient_id,
+                user_id=patient_id,
                 conversation_id=conversation_id,
                 human_input=human_input,
                 conversation_type="smbg",

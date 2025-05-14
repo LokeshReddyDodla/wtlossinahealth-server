@@ -1,4 +1,12 @@
-from fastapi import Depends, File, Query, Request, UploadFile, status
+from fastapi import (
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
@@ -33,6 +41,9 @@ async def upload_libreview_raw_csv(
         return SuccessResponse(
             message="CGM data uploaded and stored successfully."
         )
+
+    except HTTPException as http_exc:
+        raise http_exc
 
     except Exception as e:
         raise_http_exception(
