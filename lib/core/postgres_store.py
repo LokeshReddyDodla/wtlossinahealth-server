@@ -59,6 +59,7 @@ class PostgresStore:
             logger.error(f"Session error: {e}")
             await session.rollback()
             logger.info("↩️ Rolled back transaction")
+            raise
         finally:
             await session.close()
             logger.info(

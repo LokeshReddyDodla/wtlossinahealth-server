@@ -1,8 +1,17 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (JSON, Boolean, Column, Date, DateTime, Float,
-                        ForeignKey, String, Text)
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.event import listens_for
 from sqlalchemy.orm import relationship
@@ -211,14 +220,16 @@ def create_related_records(mapper, connection, target):
     runner.run(
         chat_service.create_new_chat,
         str(target.patient_id),
+        str(target.patient_id),
         "patient",
         True,
         group_name="My Care Team Group",
     )
 
     # Add initial message to the conversation
-    from lib.services.ai_conversation_service.ai_conversation_service import \
-        AiConversationService
+    from lib.services.ai_conversation_service.ai_conversation_service import (
+        AiConversationService,
+    )
 
     ai_conversation_service = AiConversationService()
     welcome_message = (
@@ -227,10 +238,10 @@ def create_related_records(mapper, connection, target):
     )
     runner.run(
         ai_conversation_service.add_message_to_conversation,
-        patient_id=str(target.patient_id),
-        conversation_id=f"{target.patient_id}-custom",
+        user_id=str(target.patient_id),
+        conversation_id=f"{target.patient_id}-patient",
         conversation_type="other",
-        role="assistant",
+        role="system",
         content=welcome_message,
         message_type="text",
     )
