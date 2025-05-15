@@ -220,6 +220,7 @@ def create_related_records(mapper, connection, target):
     runner.run(
         chat_service.create_new_chat,
         str(target.patient_id),
+        str(target.patient_id),
         "patient",
         True,
         group_name="My Care Team Group",

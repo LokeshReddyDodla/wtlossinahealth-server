@@ -7,9 +7,11 @@ from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.pipelines.chat_pipelines import (get_chat_messages_pipeline,
-                                          get_user_chat_pipeline,
-                                          get_user_messages_pipeline)
+from lib.pipelines.chat_pipelines import (
+    get_chat_messages_pipeline,
+    get_user_chat_pipeline,
+    get_user_messages_pipeline,
+)
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_participant_service import ChatParticipantService
@@ -23,6 +25,7 @@ class ChatManagementService(BaseChatService):
     async def create_new_chat(
         self,
         user_id: str,
+        other_user_id: str,
         type: ProfileTypeLiteral,
         is_group: bool,
         group_name: Optional[str] = None,
@@ -33,7 +36,9 @@ class ChatManagementService(BaseChatService):
     ):
         if not is_group:
             # Check for an existing chat
-            existing_chat_id = await self._find_existing_1on1_chat(user_id=user_id)
+            existing_chat_id = await self._find_existing_1on1_chat(
+                user_id_1=user_id, user_id_2=other_user_id
+            )
             if existing_chat_id:
                 print(f"Chat already exists with ID: {existing_chat_id}")
                 return existing_chat_id
@@ -112,7 +117,9 @@ class ChatManagementService(BaseChatService):
             print(f"MongoDB Error: {e}")
             raise
 
-    async def find_direct_chat(self, user_id_1: str, user_id_2: str) -> Optional[str]:
+    async def find_direct_chat(
+        self, user_id_1: str, user_id_2: str
+    ) -> Optional[str]:
         try:
             existing_chat = await self.mongo_store.find_document(
                 "chats",
@@ -137,6 +144,7 @@ class ChatManagementService(BaseChatService):
         # Create a direct chat
         chat_id = await self.create_new_chat(
             user_id=str(patient.patient_id),
+            other_user_id=str(care_provider.care_provider_id),
             type=ProfileTypeEnum.PATIENT.value,
             is_group=False,
         )
@@ -191,7 +199,11 @@ class ChatManagementService(BaseChatService):
                 raise Exception("Chat not found")
 
             participant = next(
-                (p for p in chat_document["participants"] if p["id"] == participant_id),
+                (
+                    p
+                    for p in chat_document["participants"]
+                    if p["id"] == participant_id
+                ),
                 None,
             )
             if not participant:
@@ -254,16 +266,20 @@ class ChatManagementService(BaseChatService):
                     raise
 
     async def _find_existing_1on1_chat(
-        self,
-        user_id: str,
+        self, user_id_1: str, user_id_2: str
     ) -> Optional[str]:
         try:
             existing_chat = await self.mongo_store.find_document(
                 "chats",
                 {
                     "is_group": False,
-                    "participants.id": user_id,
-                    "participants": {"$size": 2},
+                    "participants": {
+                        "$all": [
+                            {"$elemMatch": {"id": user_id_1}},
+                            {"$elemMatch": {"id": user_id_2}},
+                        ],
+                        "$size": 2,
+                    },
                 },
             )
             return existing_chat["_id"] if existing_chat else None
