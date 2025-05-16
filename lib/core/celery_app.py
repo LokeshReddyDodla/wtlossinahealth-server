@@ -23,3 +23,4 @@ from lib.tasks.cgm_tasks import *
 from lib.tasks.fitness_tasks import *
 from lib.tasks.meal_tasks import *
 from lib.tasks.sleep_tasks import *
+from lib.tasks.fcm_tasks import *
