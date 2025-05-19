@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import exists
+from sqlalchemy import exists, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -53,7 +53,7 @@ from lib.models.patient_sleep_habit import (
 from lib.models.patient_smoking_habit import (
     PatientSmokingHabit as PatientSmokingHabitModel,
 )
-from lib.schemas.patient import Patient as PatientSchema
+from lib.schemas.patient import Patient as PatientSchema, PatientCreate
 from lib.schemas.patient import PatientUpdate
 from lib.schemas.patient_alcohol_consumption import (
     PatientAlcoholConsumptionCreate,
@@ -190,6 +190,83 @@ class PatientProfileService:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def create_patient(
+        self,
+        patient_data: PatientCreate,
+        *,
+        creating_care_provider: Optional[CareProviderModel] = None,
+        postgres_session: AsyncSession
+    ) -> PatientModel:
+        try:
+            # Check if patient already exists
+            existing_patient = await postgres_session.execute(
+                select(PatientModel).where(
+                    or_(
+                        PatientModel.email == patient_data.email,
+                        PatientModel.phone_number == patient_data.phone_number,
+                    )
+                )
+            )
+            existing_patient = existing_patient.scalar_one_or_none()
+            if existing_patient:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Patient with this email or phone number already exists",
+                )
+
+            # Create new patient
+            patient_dict = patient_data.model_dump()
+            if creating_care_provider:
+                patient_dict["health_facility_id"] = (
+                    creating_care_provider.health_facility_id
+                )
+
+            new_patient = PatientModel(**patient_dict)
+            postgres_session.add(new_patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(new_patient)
+
+            # Auto-assign care provider if present
+            if creating_care_provider:
+                new_patient.care_providers.append(creating_care_provider)
+                await postgres_session.commit()
+
+                # Only create chats when created by care provider
+                await self.chat_management_service.create_direct_and_group_chats(
+                    new_patient, creating_care_provider
+                )
+
+                # Notify participants
+                await self.chat_notification_service.notify_participants(
+                    message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                    user_id=str(new_patient.patient_id),
+                )
+
+            return new_patient
+
+        except IntegrityError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Database integrity error",
+                detail=str(e),
+            )
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database error while creating patient",
+                detail=str(e),
+            )
+        except Exception as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Unexpected error while creating patient",
                 detail=str(e),
             )
 
@@ -518,9 +595,11 @@ class PatientProfileService:
                 patient_id, postgres_session=postgres_session
             )
 
-            # Fetch the assigned Care Provider
             stmt = select(CareProviderModel).where(
-                CareProviderModel.care_provider_id == assigned_care_provider_id
+                CareProviderModel.care_provider_id
+                == assigned_care_provider_id,
+                CareProviderModel.health_facility_id
+                == current_care_provider.health_facility_id,
             )
             result = await postgres_session.execute(stmt)
             assigned_care_provider = result.scalars().first()
@@ -528,7 +607,7 @@ class PatientProfileService:
             if not assigned_care_provider:
                 raise_http_exception(
                     status_code=404,
-                    message="Assigned Care Provider not found.",
+                    message="Care provider not found or not in your health facility.",
                 )
 
             # Automatically assign the patient to the care provider's health facility if unassigned
@@ -536,24 +615,17 @@ class PatientProfileService:
                 patient.health_facility_id = (
                     current_care_provider.health_facility_id
                 )
-
-            # Ensure the same health facility
-            if (
-                assigned_care_provider.health_facility_id
+            elif (
+                patient.health_facility_id
                 != current_care_provider.health_facility_id
-                or current_care_provider.health_facility_id
-                != patient.health_facility_id  # type: ignore
-            ):  # type: ignore
-                raise_http_exception(
-                    status_code=400,
-                    message="The assigned care provider, current care provider, and the patient must belong to the same health facility.",
-                )
+            ):
+                raise_http_exception(400, "Patient is in a different facility")
 
             # Check if care provider is already assigned
             if assigned_care_provider in patient.care_providers:
                 raise_http_exception(
                     status_code=400,
-                    message="The assigned care provider is already linked to this patient.",
+                    message="Care provider already assigned to this patient.",
                 )
 
             # Link the care provider to the patient
