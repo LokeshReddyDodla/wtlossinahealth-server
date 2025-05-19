@@ -231,8 +231,12 @@ class PatientProfileService:
 
             # Auto-assign care provider if present
             if creating_care_provider:
-                await postgres_session.refresh(new_patient)
-                new_patient.care_providers.append(creating_care_provider)
+                await postgres_session.refresh(new_patient, ["care_providers"])
+
+                new_patient.care_providers = [
+                    *new_patient.care_providers,
+                    creating_care_provider,
+                ]
                 await postgres_session.flush()
 
                 # Create chats and notifications
