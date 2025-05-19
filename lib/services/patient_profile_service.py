@@ -227,25 +227,20 @@ class PatientProfileService:
 
             new_patient = PatientModel(**patient_dict)
             postgres_session.add(new_patient)
-            await postgres_session.commit()
-            await postgres_session.refresh(new_patient)
+            await postgres_session.flush()  # First flush to get the ID
 
             # Auto-assign care provider if present
             if creating_care_provider:
+                await postgres_session.refresh(new_patient)
                 new_patient.care_providers.append(creating_care_provider)
-                await postgres_session.commit()
+                await postgres_session.flush()
 
-                # Only create chats when created by care provider
-                await self.chat_management_service.create_direct_and_group_chats(
-                    new_patient, creating_care_provider
+                # Create chats and notifications
+                await self._create_chat_relationships(
+                    new_patient, creating_care_provider, postgres_session
                 )
 
-                # Notify participants
-                await self.chat_notification_service.notify_participants(
-                    message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                    user_id=str(new_patient.patient_id),
-                )
-
+            await postgres_session.commit()
             return new_patient
 
         except IntegrityError as e:
@@ -631,15 +626,9 @@ class PatientProfileService:
             await postgres_session.commit()
             await postgres_session.refresh(patient)
 
-            # Create direct and group chats
-            await self.chat_management_service.create_direct_and_group_chats(
-                patient, assigned_care_provider
-            )
-
-            # Notify participants
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=str(patient.patient_id),
+            # Create chats and notifications
+            await self._create_chat_relationships(
+                patient, assigned_care_provider, postgres_session
             )
 
             return patient
@@ -694,15 +683,9 @@ class PatientProfileService:
             await postgres_session.commit()
             await postgres_session.refresh(patient)
 
-            # Create direct and group chats
-            await self.chat_management_service.create_direct_and_group_chats(
-                patient, care_provider
-            )
-
-            # Notify participants about chat updates
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=str(patient.patient_id),
+            # Create chats and notifications
+            await self._create_chat_relationships(
+                patient, care_provider, postgres_session
             )
 
             return care_provider
@@ -737,6 +720,29 @@ class PatientProfileService:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
+                detail=str(e),
+            )
+
+    async def _create_chat_relationships(
+        self,
+        patient: PatientModel,
+        care_provider: CareProviderModel,
+        postgres_session: AsyncSession,
+    ):
+        """Helper method to handle async chat creation"""
+        try:
+            await self.chat_management_service.create_direct_and_group_chats(
+                patient, care_provider
+            )
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                user_id=str(patient.patient_id),
+            )
+        except Exception as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Failed to create chat relationships",
                 detail=str(e),
             )
 
