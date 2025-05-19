@@ -227,17 +227,17 @@ class PatientProfileService:
 
             new_patient = PatientModel(**patient_dict)
             postgres_session.add(new_patient)
-            await postgres_session.flush()  # First flush to get the ID
+            await postgres_session.flush()
 
-            # Auto-assign care provider if present
+            # Assign care provider (re-fetch in this session to avoid merge issues)
             if creating_care_provider:
-                await postgres_session.refresh(new_patient, ["care_providers"])
-
-                new_patient.care_providers = [
-                    *new_patient.care_providers,
-                    creating_care_provider,
-                ]
-                await postgres_session.flush()
+                new_patient = await self.fetch_patient_profile(
+                    new_patient.patient_id, postgres_session=postgres_session
+                )
+                merged_care_provider = await postgres_session.merge(
+                    creating_care_provider
+                )
+                new_patient.care_providers.append(merged_care_provider)
 
                 # Create chats and notifications
                 await self._create_chat_relationships(
@@ -245,6 +245,7 @@ class PatientProfileService:
                 )
 
             await postgres_session.commit()
+
             return new_patient
 
         except IntegrityError as e:
