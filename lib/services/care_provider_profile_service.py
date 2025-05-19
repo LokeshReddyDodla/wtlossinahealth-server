@@ -142,6 +142,7 @@ class CareProviderProfileService:
                         selectinload(PatientModel.care_providers),
                         selectinload(PatientModel.package),
                     )
+                    .order_by(PatientModel.created_at.desc())
                 )
                 result = await postgres_session.execute(stmt)
                 return list(result.scalars().all())
@@ -168,6 +169,10 @@ class CareProviderProfileService:
                         status_code=status.HTTP_404_NOT_FOUND,
                         message="Care provider patients not found.",
                     )
+
+                care_provider.patients.sort(
+                    key=lambda patient: patient.created_at, reverse=True
+                )
 
                 return care_provider.patients
 
