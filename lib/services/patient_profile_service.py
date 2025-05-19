@@ -264,13 +264,6 @@ class PatientProfileService:
             )
         except HTTPException as http_exc:
             raise http_exc
-        except Exception as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Unexpected error while creating patient",
-                detail=str(e),
-            )
 
     @with_postgres_session
     async def update_basic_patient_profile(
