@@ -262,6 +262,8 @@ class PatientProfileService:
                 message="Database error while creating patient",
                 detail=str(e),
             )
+        except HTTPException as http_exc:
+            raise http_exc
         except Exception as e:
             await postgres_session.rollback()
             raise_http_exception(
