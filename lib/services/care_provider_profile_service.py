@@ -492,65 +492,6 @@ class CareProviderProfileService:
             )
 
     @with_postgres_session
-    async def remove_patient_from_care_provider(
-        self,
-        care_provider_id: str,
-        patient_id: str,
-        *,
-        postgres_session: AsyncSession
-    ) -> None:
-        try:
-            care_provider = await self.fetch_care_provider(
-                care_provider_id,
-                detailed=True,
-                postgres_session=postgres_session,
-            )
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id, detailed=True, postgres_session=postgres_session
-            )
-
-            if patient not in care_provider.patients:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Patient is not linked to the specified care provider.",
-                )
-
-            # Remove the patient from the care provider's list
-            if patient in care_provider.patients:
-                care_provider.patients.remove(patient)
-                postgres_session.add(care_provider)
-
-            # Remove the care provider from the patient's list
-            if care_provider in patient.care_providers:
-                patient.care_providers.remove(care_provider)
-                postgres_session.add(patient)
-
-            # Commit the changes
-            await postgres_session.commit()
-
-            #  Notify participants about changes in their chat list
-            await self.chat_management_service.delete_direct_chat(
-                patient_id=str(patient_id),
-                care_provider_id=str(care_provider_id),
-            )
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=str(patient_id),
-            )
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=str(care_provider_id),
-            )
-
-        except SQLAlchemyError as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
-            )
-
-    @with_postgres_session
     async def update_care_provider_permissions(
         self,
         care_provider_id: str,

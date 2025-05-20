@@ -4,8 +4,10 @@ from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from rest_server.response_models import SuccessResponse
 
 from .router import router
