@@ -27,6 +27,7 @@ from lib.services.chat.chat_participant_service import ChatParticipantService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
+from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
@@ -123,7 +124,12 @@ container.register(
 
 
 # CacheStores
-for namespace in ["fitness_sync", "user_otp", "user_sessions"]:
+for namespace in [
+    "fitness_sync",
+    "user_otp",
+    "user_sessions",
+    "libreview_sync",
+]:
     container.register(
         namespace,
         lambda ns=namespace: CacheStore(namespace=ns),
@@ -400,5 +406,23 @@ container.register(
     TokenUsageService,
     lambda: TokenUsageService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 LibreView Service
+container.register(
+    LibreViewService,
+    lambda: LibreViewService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_connected_app_service=cast(
+            PatientConnectedAppService,
+            container.resolve(PatientConnectedAppService),
+        ),
+        libreview_sync_queue=cast(
+            SQSService, container.resolve("libreview_sync_queue")
+        ),
+        libreview_sync_store=cast(
+            CacheStore, container.resolve("libreview_sync")
+        ),
     ),
 )

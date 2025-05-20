@@ -1,5 +1,4 @@
 services:
-
   aihealth-api:
     container_name: aihealth-api
     build:
@@ -57,6 +56,21 @@ services:
     restart: unless-stopped
     # user: "1000:1000"
 
+  aihealth-celery-beat:
+    container_name: aihealth-celery-beat
+    image: aihealth-api:latest
+    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery beat --loglevel=info
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+    volumes:
+      - celery_beat_logs:/var/log/celery
+    depends_on:
+      - aihealth-redis
+      - aihealth-api
+    restart: unless-stopped
+
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
@@ -95,7 +109,18 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
-    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017", "--auth", "--keyFile", "/etc/mongo-keyfile/mongodb-keyfile" ]
+    command:
+      [
+        "mongod",
+        "--replSet",
+        "rs0",
+        "--bind_ip_all",
+        "--port",
+        "27017",
+        "--auth",
+        "--keyFile",
+        "/etc/mongo-keyfile/mongodb-keyfile",
+      ]
     # entrypoint: [ "/bin/bash", "-c", "chown mongodb:mongodb /etc/mongo-keyfile/mongodb-keyfile && chmod 600 /etc/mongo-keyfile/mongodb-keyfile && exec mongod --replSet rs0 --bind_ip_all --port 27017 --auth --keyFile /etc/mongo-keyfile/mongodb-keyfile" ]
 
   aihealth-clickhouse:
@@ -131,8 +156,8 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-      PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: 'False'
-      PGADMIN_CONFIG_WTF_CSRF_ENABLED: 'False'
+      PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: "False"
+      PGADMIN_CONFIG_WTF_CSRF_ENABLED: "False"
     ports:
       - "8081:80"
     volumes:
@@ -228,7 +253,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
 
   promtail:
@@ -245,7 +270,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.3'
+          cpus: "0.3"
           memory: 256M
     depends_on:
       - loki
@@ -260,12 +285,12 @@ services:
     environment:
       GF_DEFAULT_INSTANCE_NAME: Monitoring
       GF_PATHS_CONFIG: /etc/grafana/grafana.ini
-      GF_SERVER_ENABLE_GZIP: 'true'
+      GF_SERVER_ENABLE_GZIP: "true"
       GF_USERS_DEFAULT_THEME: light
     deploy:
       resources:
         limits:
-          cpus: '0.4'
+          cpus: "0.4"
           memory: 384M
     depends_on:
       - loki
@@ -284,9 +309,9 @@ volumes:
   pgadmin_data:
   celery_logs:
   celery_data:
+  celery_beat_logs:
   loki_data:
   grafana_data:
-
 
 networks:
   shared_network:
