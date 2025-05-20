@@ -16,6 +16,7 @@ from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
+from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
@@ -210,6 +211,10 @@ def get_token_usage_service() -> TokenUsageService:
         TokenUsageService,
         container.resolve(TokenUsageService),
     )
+
+
+def get_libreview_service() -> LibreViewService:
+    return cast(LibreViewService, container.resolve(LibreViewService))
 
 
 def get_ai_conversation_messages_collection():
