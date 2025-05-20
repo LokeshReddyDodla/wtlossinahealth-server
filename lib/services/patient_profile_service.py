@@ -647,6 +647,53 @@ class PatientProfileService:
             )
 
     @with_postgres_session
+    async def remove_care_provider_from_patient(
+        self,
+        patient_id: str,
+        care_provider_id: str,
+        *,
+        postgres_session: AsyncSession
+    ) -> None:
+        try:
+            patient = await self.fetch_patient_profile(
+                patient_id, detailed=True, postgres_session=postgres_session
+            )
+            care_provider = await postgres_session.get(
+                CareProviderModel, care_provider_id
+            )
+
+            if (
+                not care_provider
+                or care_provider not in patient.care_providers
+            ):
+                raise_http_exception(
+                    400, "Care provider not assigned to patient"
+                )
+
+            patient.care_providers.remove(care_provider)
+            postgres_session.add(patient)
+            await postgres_session.commit()
+
+            # Cleanup chats & notify
+            await self.chat_management_service.delete_direct_chat(
+                patient_id=patient_id,
+                care_provider_id=care_provider_id,
+            )
+
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                user_id=patient_id,
+            )
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                user_id=care_provider_id,
+            )
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(500, "Database Error", detail=str(e))
+
+    @with_postgres_session
     async def add_care_provider_by_code(
         self,
         patient_id: str,
