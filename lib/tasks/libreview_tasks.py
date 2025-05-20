@@ -4,8 +4,8 @@ import logging
 
 from celery import shared_task
 
-from lib.dependencies.service_dependencies import get_libreview_service
 from lib.models.patient import Patient as PatientModel
+from lib.services.libreview_service import LibreViewService
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ def sync_all_libreview(self):
 
 
 async def _sync_all_libreview_async():
+    from lib.dependencies.service_dependencies import get_libreview_service
+
     libreview_service = get_libreview_service()
     patients = await libreview_service.get_patients_with_libreview()  # type: ignore
 
@@ -58,7 +60,7 @@ async def _sync_all_libreview_async():
 
 
 async def _sync_patient_libreview(
-    patient: PatientModel, libreview_service
+    patient: PatientModel, libreview_service: LibreViewService
 ) -> dict:
     libreview = patient.connected_apps.libreview
     patient_id = str(patient.patient_id)
