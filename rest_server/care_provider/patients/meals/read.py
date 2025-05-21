@@ -50,3 +50,43 @@ async def get_day_meal_report(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.get("/report/range")
+async def get_meal_reports_in_range(
+    request: Request,
+    patient_id: str = Query(...),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    meal_report_service: MealReportService = Depends(get_meal_report_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ, CareProviderFeature.REPORTS
+        )
+    ),
+):
+    try:
+        # Validate date range
+        if start_date > end_date:
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid date range",
+                detail="Start date cannot be after end date",
+            )
+
+        reports = await meal_report_service.fetch_daily_reports_in_range(
+            str(patient_id), start_date, end_date
+        )
+
+        return SuccessResponse(
+            message=f"Successfully fetched reports from {start_date} to {end_date}",
+            data=reports,
+        )
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
