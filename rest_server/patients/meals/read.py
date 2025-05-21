@@ -4,8 +4,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import (get_meal_report_service,
-                                                   get_meal_service)
+from lib.dependencies.service_dependencies import (
+    get_meal_report_service,
+    get_meal_service,
+)
 from lib.models.patient import Patient
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_report_service import MealReportService
@@ -105,6 +107,11 @@ async def get_day_meal_report(
         meal_report = await meal_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
+
+        if not meal_report:
+            return SuccessResponse(
+                message="Report is being generated. Please check back shortly.",
+            )
 
         return SuccessResponse(
             message="Day Meal report fetched successfully",
