@@ -4,12 +4,16 @@ from fastapi import Depends, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import (get_fitness_report_service,
-                                                   get_fitness_stats_processor)
+from lib.dependencies.service_dependencies import (
+    get_fitness_report_service,
+    get_fitness_stats_processor,
+)
 from lib.models.patient import Patient
 from lib.services.fitness_report_service import FitnessReportService
-from lib.utils.date_utils import (get_month_start_end,
-                                  get_week_start_and_end_from_week_no)
+from lib.utils.date_utils import (
+    get_month_start_end,
+    get_week_start_and_end_from_week_no,
+)
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
@@ -66,6 +70,12 @@ async def get_day_fitness_report(
         report = await fitness_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
+
+        if not report:
+            return SuccessResponse(
+                message="Report is being generated. Please check back shortly.",
+            )
+
         return SuccessResponse(
             message="Day fitness report fetched successfully",
             data=jsonable_encoder(report),
@@ -103,6 +113,11 @@ async def get_week_fitness_report(
             )
         )
 
+        if not weekly_report or not daily_report:
+            return SuccessResponse(
+                message="Report is being generated. Please check back shortly.",
+            )
+
         return SuccessResponse(
             message="Week fitness report fetched successfully",
             data={"overall": weekly_report, "day_wise": daily_report},
@@ -137,6 +152,11 @@ async def get_month_fitness_report(
                 str(current_patient.patient_id), start_date, end_date
             )
         )
+
+        if not monthly_report or not daily_report:
+            return SuccessResponse(
+                message="Report is being generated. Please check back shortly.",
+            )
 
         return SuccessResponse(
             message="Month fitness report fetched successfully",
