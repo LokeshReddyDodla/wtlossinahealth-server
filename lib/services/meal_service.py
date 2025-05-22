@@ -403,8 +403,15 @@ class MealService:
                     message="Meal not found.",
                 )
 
+            patient_id = meal.patient_id
+            meal_date = meal.date
+
             await postgres_session.delete(meal)
             await postgres_session.commit()
+
+            # 🚀 Trigger Meal Report Generation after Deletion
+            generate_daily_meal_report.delay(str(patient_id), meal_date)
+
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
