@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_meal_service
@@ -12,10 +12,10 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.delete(path="/{meal_id}", response_model=SuccessResponse)
+@router.delete(path="", response_model=SuccessResponse)
 async def delete_meal_api(
     request: Request,
-    meal_id: uuid.UUID,
+    meal_id: uuid.UUID = Query(...),
     meal_service: MealService = Depends(get_meal_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
