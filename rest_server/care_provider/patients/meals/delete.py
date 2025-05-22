@@ -21,10 +21,11 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.delete(path="/{meal_id}", response_model=SuccessResponse)
+@router.delete(path="", response_model=SuccessResponse)
 async def delete_meal_api(
     request: Request,
-    meal_id: uuid.UUID,
+    patient_id: str = Query(...),
+    meal_id: uuid.UUID = Query(...),
     meal_service: MealService = Depends(get_meal_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
