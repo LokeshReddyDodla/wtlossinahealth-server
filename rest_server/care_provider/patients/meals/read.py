@@ -3,9 +3,14 @@ from datetime import date
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import get_meal_report_service
+from lib.dependencies.service_dependencies import (
+    get_meal_report_service,
+    get_patient_profile_service,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.schemas.patient import CorePatientProfile
 from lib.services.meal_report_service import MealReportService
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -59,6 +64,9 @@ async def get_meal_reports_in_range(
     start_date: date = Query(...),
     end_date: date = Query(...),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ, CareProviderFeature.REPORTS
@@ -74,13 +82,20 @@ async def get_meal_reports_in_range(
                 detail="Start date cannot be after end date",
             )
 
+        patient_info = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, include_health_data=True
+        )
+
         reports = await meal_report_service.fetch_daily_reports_in_range(
             str(patient_id), start_date, end_date
         )
 
         return SuccessResponse(
             message=f"Successfully fetched reports from {start_date} to {end_date}",
-            data=reports,
+            data={
+                "patient_info": CorePatientProfile.from_orm(patient_info),
+                "reports": reports,
+            },
         )
     except HTTPException as http_exc:
         raise http_exc
