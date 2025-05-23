@@ -22,7 +22,7 @@ from .router import router
 
 
 @router.get(
-    "",
+    "/report",
     response_model=SuccessResponse,
 )
 async def fetch_patient_cgm_report(
