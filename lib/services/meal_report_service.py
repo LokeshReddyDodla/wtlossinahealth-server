@@ -30,8 +30,10 @@ class MealReportService:
                     {
                         "patient_id": patient_id,
                         "report_type": "daily",
-                        "date": {"$gte": start_date.isoformat()},
-                        "date": {"$lte": end_date.isoformat()},
+                        "date": {
+                            "$gte": start_date.isoformat(),
+                            "$lte": end_date.isoformat(),
+                        },
                     },
                     {"_id": 0},
                 )
@@ -68,8 +70,9 @@ class MealReportService:
         report_date: date,
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import (
+                get_celery_task_manager,
+            )
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
@@ -87,7 +90,9 @@ class MealReportService:
 
     async def save_report(self, patient_id: str, report: dict):
         try:
-            unique_key = f"{patient_id}_{report['report_type']}_{report['date']}"
+            unique_key = (
+                f"{patient_id}_{report['report_type']}_{report['date']}"
+            )
             report_id = hashlib.sha256(unique_key.encode()).hexdigest()
             now = datetime.now()
 
@@ -95,7 +100,9 @@ class MealReportService:
                 {"_id": report_id}
             )
             report["created_at"] = (
-                existing_report.get("created_at", now) if existing_report else now
+                existing_report.get("created_at", now)
+                if existing_report
+                else now
             )
             report["updated_at"] = now
 
@@ -107,7 +114,9 @@ class MealReportService:
                 {"_id": report_id}, report, upsert=True
             )
 
-            print(f"✅ Saved/Updated daily report for {patient_id} on {report['date']}")
+            print(
+                f"✅ Saved/Updated daily report for {patient_id} on {report['date']}"
+            )
 
         except Exception as error:
             print(
