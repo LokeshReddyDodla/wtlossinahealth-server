@@ -29,7 +29,10 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.tasks.meal_tasks import generate_daily_meal_report
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
-from rest_server.patients.meals.api_schema import PatientMealUploadRequest
+from rest_server.patients.meals.api_schema import (
+    PatientMealUpdateRequest,
+    PatientMealUploadRequest,
+)
 
 
 class MealService:
@@ -236,6 +239,71 @@ class MealService:
             await postgres_session.refresh(meal)
 
             # 🚀 Trigger Meal Report Generation after Upload
+            generate_daily_meal_report.delay(str(patient_id), meal.date)
+
+            return meal
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def update_meal(
+        self,
+        meal_id: str,
+        update_data: PatientMealUpdateRequest,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientMealModel:
+        try:
+            meal = await self.fetch_meal(
+                meal_id, postgres_session=postgres_session
+            )
+
+            # Update basic fields
+            meal.type = update_data.type
+            meal.time = update_data.datetime.time()
+            meal.date = update_data.datetime.date()
+            meal.source = update_data.source
+            if update_data.description is not None:
+                meal.description = update_data.description
+            if update_data.image_url is not None:
+                meal.image_url = (
+                    str(update_data.image_url)
+                    if update_data.image_url
+                    else None
+                )
+
+            # Clear all analysis-related data
+            meal.analyzed = False
+            meal.analyzed_at = None
+            meal.score = None
+            meal.feedback = None
+            meal.tags = None
+
+            # Delete all related items and their nutritional values
+            for item in meal.items:
+                await postgres_session.delete(item)
+
+            # Delete total nutritional values if they exist
+            if meal.total_macro_nutritional_value:
+                await postgres_session.delete(
+                    meal.total_macro_nutritional_value
+                )
+            if meal.total_micro_nutritional_value:
+                await postgres_session.delete(
+                    meal.total_micro_nutritional_value
+                )
+
+            await postgres_session.commit()
+            await postgres_session.refresh(meal)
+
+            # Trigger report generation
             generate_daily_meal_report.delay(str(patient_id), meal.date)
 
             return meal

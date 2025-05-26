@@ -15,6 +15,14 @@ class PatientMealUploadRequest(BaseModel):
     image_url: Optional[HttpUrl] = None
 
 
+class PatientMealUpdateRequest(BaseModel):
+    type: str
+    datetime: datetime
+    source: Optional[str] = "app"
+    description: Optional[str] = None
+    image_url: Optional[HttpUrl] = None
+
+
 class PatientMealAnalysis(BaseModel):
     meal_data: PatientMeal
     meal_recommendation: MealDistribution
