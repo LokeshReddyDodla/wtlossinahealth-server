@@ -389,11 +389,14 @@ class MealService:
 
     @with_postgres_session
     async def delete_meal(
-        self, meal_id: UUID, *, postgres_session: AsyncSession
+        self, meal_id: UUID, patient_id: str, *, postgres_session: AsyncSession
     ):
         try:
             result = await postgres_session.execute(
-                select(PatientMealModel).where(PatientMealModel.id == meal_id)
+                select(PatientMealModel).where(
+                    PatientMealModel.id == meal_id,
+                    PatientMealModel.patient_id == patient_id,
+                )
             )
             meal = result.scalars().first()
 
@@ -403,7 +406,6 @@ class MealService:
                     message="Meal not found.",
                 )
 
-            patient_id = meal.patient_id
             meal_date = meal.date
 
             await postgres_session.delete(meal)

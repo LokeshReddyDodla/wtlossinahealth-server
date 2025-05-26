@@ -34,7 +34,7 @@ async def delete_meal_api(
     ),
 ):
     try:
-        await meal_service.delete_meal(meal_id=meal_id)
+        await meal_service.delete_meal(meal_id=meal_id, patient_id=patient_id)
 
         return SuccessResponse(
             message="Meal deleted successfully. Your reports will be updated shortly."
