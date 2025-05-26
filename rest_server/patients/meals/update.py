@@ -28,7 +28,7 @@ async def meal_update_api(
         )
 
         return SuccessResponse(
-            message="Meal updated Successfully",
+            message="Meal updated Successfully. Your reports will be updated shortly.",
             data=PatientMealSchema.from_orm(new_meal),
         )
     except HTTPException as http_exc:
