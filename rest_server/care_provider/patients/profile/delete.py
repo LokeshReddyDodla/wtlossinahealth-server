@@ -32,8 +32,8 @@ async def remove_care_provider_from_patient(
         )
     ),
 ):
-
     await patient_service.remove_care_provider_from_patient(
+        current_care_provider=current_care_provider,
         patient_id=patient_id,
         care_provider_id=care_provider_id,
     )
