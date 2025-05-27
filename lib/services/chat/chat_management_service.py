@@ -174,6 +174,58 @@ class ChatManagementService(BaseChatService):
             },
         )
 
+    async def disable_direct_chat(
+        self, patient_id: str, care_provider_id: str
+    ):
+        """Disables a direct chat by archiving and making it read-only"""
+        await self.mongo_store.update_document_with_array_filters(
+            collection_name="chats",
+            query={
+                "is_group": False,
+                "participants.id": {"$all": [patient_id, care_provider_id]},
+                "participants": {"$size": 2},
+            },
+            update={
+                "$set": {
+                    "participants.$[patient].is_read_only": True,
+                    "participants.$[patient].is_archived": True,
+                    "participants.$[provider].is_read_only": True,
+                    "participants.$[provider].is_archived": True,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+            array_filters=[
+                {"patient.id": patient_id},
+                {"provider.id": care_provider_id},
+            ],
+        )
+
+    async def reactivate_direct_chat(
+        self, patient_id: str, care_provider_id: str
+    ):
+        """Re-enables a previously disabled chat"""
+        return await self.mongo_store.update_document_with_array_filters(
+            collection_name="chats",
+            query={
+                "is_group": False,
+                "participants.id": {"$all": [patient_id, care_provider_id]},
+                "participants": {"$size": 2},
+            },
+            update={
+                "$set": {
+                    "participants.$[patient].is_read_only": False,
+                    "participants.$[patient].is_archived": False,
+                    "participants.$[provider].is_read_only": False,
+                    "participants.$[provider].is_archived": False,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+            array_filters=[
+                {"patient.id": patient_id},
+                {"provider.id": care_provider_id},
+            ],
+        )
+
     async def delete_direct_chat(self, patient_id: str, care_provider_id: str):
         """Deletes a direct chat between a patient and care provider."""
         await self._delete_chat_with_condition(

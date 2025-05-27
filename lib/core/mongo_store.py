@@ -57,6 +57,19 @@ class MongoStore:
         result = await collection.update_many(query, update, session=session)
         return result.modified_count
 
+    async def update_document_with_array_filters(
+        self,
+        collection_name: str,
+        query: dict,
+        update: dict,
+        array_filters: Optional[List[dict]] = None,
+    ):
+        collection = self.db[collection_name]
+        result = await collection.update_one(
+            query, update, array_filters=array_filters
+        )
+        return result.modified_count
+
     async def delete_document(self, collection_name: str, query: dict):
         collection = self.db[collection_name]
         result = await collection.delete_one(query)

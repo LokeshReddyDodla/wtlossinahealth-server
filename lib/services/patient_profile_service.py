@@ -581,7 +581,7 @@ class PatientProfileService:
         self,
         current_care_provider: CareProviderModel,
         patient_id: str,
-        assigned_care_provider_id: str,
+        care_provider_id: str,
         *,
         postgres_session: AsyncSession
     ) -> PatientModel:
@@ -591,8 +591,7 @@ class PatientProfileService:
             )
 
             stmt = select(CareProviderModel).where(
-                CareProviderModel.care_provider_id
-                == assigned_care_provider_id,
+                CareProviderModel.care_provider_id == care_provider_id,
                 CareProviderModel.health_facility_id
                 == current_care_provider.health_facility_id,
             )
@@ -649,6 +648,7 @@ class PatientProfileService:
     @with_postgres_session
     async def remove_care_provider_from_patient(
         self,
+        current_care_provider: CareProviderModel,
         patient_id: str,
         care_provider_id: str,
         *,
@@ -658,14 +658,30 @@ class PatientProfileService:
             patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
-            care_provider = await postgres_session.get(
-                CareProviderModel, care_provider_id
-            )
 
+            # Check patient is in the same facility
             if (
-                not care_provider
-                or care_provider not in patient.care_providers
+                patient.health_facility_id
+                != current_care_provider.health_facility_id
             ):
+                raise_http_exception(400, "Patient is in a different facility")
+
+            # Get care provider with facility check
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.care_provider_id == care_provider_id,
+                CareProviderModel.health_facility_id
+                == current_care_provider.health_facility_id,
+            )
+            result = await postgres_session.execute(stmt)
+            care_provider = result.scalars().first()
+
+            if not care_provider:
+                raise_http_exception(
+                    status_code=404,
+                    message="Care provider not found or not in your health facility.",
+                )
+
+            if care_provider not in patient.care_providers:
                 raise_http_exception(
                     400, "Care provider not assigned to patient"
                 )
@@ -675,7 +691,7 @@ class PatientProfileService:
             await postgres_session.commit()
 
             # Cleanup chats & notify
-            await self.chat_management_service.delete_direct_chat(
+            await self.chat_management_service.disable_direct_chat(
                 patient_id=patient_id,
                 care_provider_id=care_provider_id,
             )

@@ -16,7 +16,7 @@ from .router import router
 @router.post("/assign", response_model=SuccessResponse)
 async def assign_care_provider_to_patient(
     patient_id: str,
-    assigned_care_provider_id: str,
+    care_provider_id: str,
     patient_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
@@ -29,7 +29,7 @@ async def assign_care_provider_to_patient(
     updated_patient = await patient_service.assign_care_provider_to_patient(
         current_care_provider=current_care_provider,
         patient_id=patient_id,
-        assigned_care_provider_id=assigned_care_provider_id,
+        care_provider_id=care_provider_id,
     )
 
     return SuccessResponse(
