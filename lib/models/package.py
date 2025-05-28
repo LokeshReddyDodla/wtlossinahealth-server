@@ -3,12 +3,30 @@ import string
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (UUID, Column, DateTime, ForeignKey, String,
-                        UniqueConstraint)
+from sqlalchemy import (
+    JSON,
+    UUID,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
+from sqlalchemy import Enum as SQLEnum
 
 from lib.models import Base
 from lib.models.associations import package_care_provider_association
+from enum import Enum
+
+
+class PackageStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DRAFT = "draft"
+    DEPRECATED = "deprecated"
 
 
 class Package(Base):
@@ -27,6 +45,37 @@ class Package(Base):
         nullable=False,
         unique=True,
         comment="Unique 6-digit uppercase code for the package",
+    )
+    description = Column(
+        String,
+        nullable=True,
+        comment="Short description of what this package includes",
+    )
+    duration_days = Column(
+        Integer,
+        nullable=False,
+        comment="Total duration of the package in days",
+    )
+    price = Column(
+        Integer,
+        nullable=True,
+        comment="Optional price in smallest currency unit (e.g., cents)",
+    )
+    status = Column(
+        SQLEnum(PackageStatus),
+        default=PackageStatus.ACTIVE,
+        nullable=False,
+        comment="Current status of the package (active, archived, draft, etc.)",
+    )
+    features = Column(
+        JSON,
+        nullable=True,
+        comment="JSON defining feature flags or module availability for this package",
+    )
+    package_type = Column(
+        String,
+        nullable=True,
+        comment="E.g., 'Basic', 'Premium', 'Trial', etc.",
     )
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
@@ -59,9 +108,11 @@ class Package(Base):
         secondary=package_care_provider_association,
         back_populates="packages",
     )
-    patients = relationship(
-        "Patient",
+
+    patient_assignments = relationship(
+        "PatientPackageAssignment",
         back_populates="package",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
