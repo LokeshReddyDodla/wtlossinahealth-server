@@ -9,8 +9,11 @@ from .health_facility import HealthFacility
 from .package import Package
 from .patient import Patient
 from .patient_alcohol_consumption import PatientAlcoholConsumption
-from .patient_connected_app import (PatientConnectedApp, PatientLibreView,
-                                    PatientOtherApp)
+from .patient_connected_app import (
+    PatientConnectedApp,
+    PatientLibreView,
+    PatientOtherApp,
+)
 from .patient_current_medication import PatientCurrentMedication
 from .patient_daily_activity import PatientDailyActivity
 from .patient_diabetic_history import PatientDiabeticHistory
@@ -21,10 +24,14 @@ from .patient_eating_habit import PatientEatingHabit
 from .patient_family_diabetic_history import PatientFamilyDiabeticHistory
 from .patient_fitness_plan import PatientFitnessPlan
 from .patient_food_allergy import PatientFoodAllergy
-from .patient_meal import (PatientFoodItem, PatientMacroNutritionalValue,
-                           PatientMeal, PatientMicroNutritionalValue,
-                           PatientTotalMacroNutritionalValue,
-                           PatientTotalMicroNutritionalValue)
+from .patient_meal import (
+    PatientFoodItem,
+    PatientMacroNutritionalValue,
+    PatientMeal,
+    PatientMicroNutritionalValue,
+    PatientTotalMacroNutritionalValue,
+    PatientTotalMicroNutritionalValue,
+)
 from .patient_meal_timing import PatientMealTiming
 from .patient_medical_history import PatientMedicalHistory
 from .patient_permission import PatientPermission
@@ -37,3 +44,4 @@ from .patient_smoking_habit import PatientSmokingHabit
 from .patient_vital import PatientVital
 from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
+from .patient_package_assignment import PatientPackageAssignment

@@ -140,7 +140,7 @@ class CareProviderProfileService:
                     .options(
                         selectinload(PatientModel.health_facility),
                         selectinload(PatientModel.care_providers),
-                        selectinload(PatientModel.package),
+                        selectinload(PatientModel.package_assignments),
                     )
                     .order_by(PatientModel.created_at.desc())
                 )
@@ -156,7 +156,7 @@ class CareProviderProfileService:
                         selectinload(CareProviderModel.patients).options(
                             selectinload(PatientModel.health_facility),
                             selectinload(PatientModel.care_providers),
-                            selectinload(PatientModel.package),
+                            selectinload(PatientModel.package_assignments),
                         )
                     )
                 )

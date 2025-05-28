@@ -173,13 +173,10 @@ class Patient(Base):
         back_populates="patients",
     )
 
-    package_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("packages.package_id", ondelete="SET NULL"),
-    )
-    package = relationship(
-        "Package",
-        back_populates="patients",
+    package_assignments = relationship(
+        "PatientPackageAssignment",
+        back_populates="patient",
+        cascade="all, delete-orphan",
     )
 
     care_providers = relationship(
@@ -191,6 +188,19 @@ class Patient(Base):
     user_devices = relationship(
         "UserDevice", back_populates="patient", cascade="all, delete-orphan"
     )
+
+    @property
+    def current_package(self):
+        """Returns the currently active package assignment"""
+        today = datetime.now().date()
+        return next(
+            (
+                pa
+                for pa in self.package_assignments
+                if pa.is_active and pa.start_date <= today <= pa.end_date
+            ),
+            None,
+        )
 
 
 @listens_for(Patient, "after_insert")

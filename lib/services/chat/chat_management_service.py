@@ -41,6 +41,7 @@ class ChatManagementService(BaseChatService):
             )
             if existing_chat_id:
                 print(f"Chat already exists with ID: {existing_chat_id}")
+                await self.reactivate_direct_chat(user_id, other_user_id)
                 return existing_chat_id
             else:
                 print("No existing 1-on-1 chat found.")

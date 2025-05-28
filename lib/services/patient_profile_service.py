@@ -105,7 +105,7 @@ class PatientProfileService:
                 .where(PatientModel.patient_id == patient_id)
                 .options(
                     joinedload(PatientModel.care_providers),
-                    joinedload(PatientModel.package),
+                    joinedload(PatientModel.package_assignments),
                     joinedload(PatientModel.health_facility),
                 )
             )
