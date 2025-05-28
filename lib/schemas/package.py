@@ -16,9 +16,6 @@ class PackageStatus(str, Enum):
 class PackageBase(BaseModel):
     name: str
     status: Optional[PackageStatus] = PackageStatus.ACTIVE
-
-
-class PackageCreate(PackageBase):
     duration_days: int
     price: Optional[int] = None
     description: Optional[str] = None
@@ -26,14 +23,12 @@ class PackageCreate(PackageBase):
     package_type: Optional[str] = None
 
 
+class PackageCreate(PackageBase):
+    pass
+
+
 class PackageUpdate(PackageBase):
-    name: Optional[str] = None
-    status: Optional[PackageStatus] = None
-    duration_days: Optional[int] = None
-    price: Optional[int] = None
-    description: Optional[str] = None
-    features: Optional[dict] = None
-    package_type: Optional[str] = None
+    pass
 
 
 class Package(PackageBase):
