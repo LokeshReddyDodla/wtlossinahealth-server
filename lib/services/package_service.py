@@ -68,7 +68,6 @@ class PackageService:
                 stmt = stmt.options(
                     selectinload(PackageModel.health_facility),
                     selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patients),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -106,7 +105,6 @@ class PackageService:
                 stmt = stmt.options(
                     selectinload(PackageModel.health_facility),
                     selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patients),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -137,7 +135,6 @@ class PackageService:
                 .where(PackageModel.health_facility_id == health_facility_id)
                 .options(
                     selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patients),
                 )
             )
 
@@ -320,120 +317,6 @@ class PackageService:
             )
 
     @with_postgres_session
-    async def assign_patient_to_package(
-        self,
-        patient_id: str,
-        package_id: str,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PackageModel:
-        try:
-            package = await self.fetch_package(
-                package_id, detailed=True, postgres_session=postgres_session
-            )
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id
-            )
-            patient = await postgres_session.merge(patient)
-
-            # Check if the patient is already part of the package
-            if patient in package.patients:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Patient is already part of this package.",
-                )
-
-            # Check if the patient is already in another package
-            if patient.package:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message=(
-                        f"Patient is already part of the package '{patient.package.name}'. "
-                        "Please remove them from the current package before reassigning."
-                    ),
-                )
-
-            # Assign the patient to the package
-            package.patients.append(patient)
-            patient.package = package
-
-            postgres_session.add(package)
-            postgres_session.add(patient)
-            await postgres_session.commit()
-            await postgres_session.refresh(package)
-            await postgres_session.refresh(patient)
-
-            # Handle care provider chat connections
-            await self._handle_package_care_provider_chats(patient, package)
-
-            return package
-
-        except SQLAlchemyError as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
-            )
-
-    @with_postgres_session
-    async def patient_join_package_by_code(
-        self,
-        patient_id: str,
-        package_code: str,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PackageModel:
-        try:
-            package = await self.fetch_package_by_code(
-                package_code, detailed=True, postgres_session=postgres_session
-            )
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id,
-            )
-            patient = await postgres_session.merge(patient)
-
-            # Check if the patient is already part of the package
-            if patient in package.patients:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Patient is already part of this package.",
-                )
-
-            # Check if the patient is already in another package
-            if patient.package:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message=(
-                        f"Patient is already part of the package '{patient.package.name}'. "
-                        "Please remove them from the current package before reassigning."
-                    ),
-                )
-
-            # Assign the patient to the package
-            package.patients.append(patient)
-            patient.package = package
-
-            postgres_session.add(package)
-            postgres_session.add(patient)
-            await postgres_session.commit()
-            await postgres_session.refresh(package)
-            await postgres_session.refresh(patient)
-
-            # Handle care provider chat connections
-            await self._handle_package_care_provider_chats(patient, package)
-
-            return package
-
-        except SQLAlchemyError as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
-            )
-
-    @with_postgres_session
     async def remove_care_provider_from_package(
         self,
         care_provider_id: str,
@@ -476,49 +359,6 @@ class PackageService:
                 detail=str(e),
             )
 
-    @with_postgres_session
-    async def remove_patient_from_package(
-        self,
-        patient_id: str,
-        package_id: str,
-        *,
-        postgres_session: AsyncSession,
-    ) -> PackageModel:
-        try:
-            package = await self.fetch_package(
-                package_id, detailed=True, postgres_session=postgres_session
-            )
-            patient = await self.patient_service.fetch_patient_profile(
-                patient_id
-            )
-            patient = await postgres_session.merge(patient)
-
-            # Check if the patient is part of the package
-            if patient not in package.patients:
-                raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Patient is not part of this package.",
-                )
-
-            package.patients.remove(patient)
-            patient.package = None
-
-            postgres_session.add(package)
-            postgres_session.add(patient)
-            await postgres_session.commit()
-            await postgres_session.refresh(package)
-            await postgres_session.refresh(patient)
-
-            return package
-
-        except SQLAlchemyError as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
-            )
-
     async def _handle_package_care_provider_chats(
         self, patient: PatientModel, package: PackageModel
     ):
@@ -528,3 +368,160 @@ class PackageService:
             await self.chat_management_service.create_direct_and_group_chats(
                 patient=patient, care_provider=care_provider
             )
+
+    # @with_postgres_session
+    # async def assign_patient_to_package(
+    #     self,
+    #     patient_id: str,
+    #     package_id: str,
+    #     *,
+    #     postgres_session: AsyncSession,
+    # ) -> PackageModel:
+    #     try:
+    #         package = await self.fetch_package(
+    #             package_id, detailed=True, postgres_session=postgres_session
+    #         )
+    #         patient = await self.patient_service.fetch_patient_profile(
+    #             patient_id
+    #         )
+    #         patient = await postgres_session.merge(patient)
+
+    #         # Check if the patient is already part of the package
+    #         if patient in package.patients:
+    #             raise_http_exception(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 message="Patient is already part of this package.",
+    #             )
+
+    #         # Check if the patient is already in another package
+    #         if patient.package:
+    #             raise_http_exception(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 message=(
+    #                     f"Patient is already part of the package '{patient.package.name}'. "
+    #                     "Please remove them from the current package before reassigning."
+    #                 ),
+    #             )
+
+    #         # Assign the patient to the package
+    #         package.patients.append(patient)
+    #         patient.package = package
+
+    #         postgres_session.add(package)
+    #         postgres_session.add(patient)
+    #         await postgres_session.commit()
+    #         await postgres_session.refresh(package)
+    #         await postgres_session.refresh(patient)
+
+    #         # Handle care provider chat connections
+    #         await self._handle_package_care_provider_chats(patient, package)
+
+    #         return package
+
+    #     except SQLAlchemyError as e:
+    #         await postgres_session.rollback()
+    #         raise_http_exception(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             message="Database Error",
+    #             detail=str(e),
+    #         )
+
+    # @with_postgres_session
+    # async def patient_join_package_by_code(
+    #     self,
+    #     patient_id: str,
+    #     package_code: str,
+    #     *,
+    #     postgres_session: AsyncSession,
+    # ) -> PackageModel:
+    #     try:
+    #         package = await self.fetch_package_by_code(
+    #             package_code, detailed=True, postgres_session=postgres_session
+    #         )
+    #         patient = await self.patient_service.fetch_patient_profile(
+    #             patient_id,
+    #         )
+    #         patient = await postgres_session.merge(patient)
+
+    #         # Check if the patient is already part of the package
+    #         if patient in package.patients:
+    #             raise_http_exception(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 message="Patient is already part of this package.",
+    #             )
+
+    #         # Check if the patient is already in another package
+    #         if patient.package:
+    #             raise_http_exception(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 message=(
+    #                     f"Patient is already part of the package '{patient.package.name}'. "
+    #                     "Please remove them from the current package before reassigning."
+    #                 ),
+    #             )
+
+    #         # Assign the patient to the package
+    #         package.patients.append(patient)
+    #         patient.package = package
+
+    #         postgres_session.add(package)
+    #         postgres_session.add(patient)
+    #         await postgres_session.commit()
+    #         await postgres_session.refresh(package)
+    #         await postgres_session.refresh(patient)
+
+    #         # Handle care provider chat connections
+    #         await self._handle_package_care_provider_chats(patient, package)
+
+    #         return package
+
+    #     except SQLAlchemyError as e:
+    #         await postgres_session.rollback()
+    #         raise_http_exception(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             message="Database Error",
+    #             detail=str(e),
+    #         )
+
+    # @with_postgres_session
+    # async def remove_patient_from_package(
+    #     self,
+    #     patient_id: str,
+    #     package_id: str,
+    #     *,
+    #     postgres_session: AsyncSession,
+    # ) -> PackageModel:
+    #     try:
+    #         package = await self.fetch_package(
+    #             package_id, detailed=True, postgres_session=postgres_session
+    #         )
+    #         patient = await self.patient_service.fetch_patient_profile(
+    #             patient_id
+    #         )
+    #         patient = await postgres_session.merge(patient)
+
+    #         # Check if the patient is part of the package
+    #         if patient not in package.patients:
+    #             raise_http_exception(
+    #                 status_code=status.HTTP_400_BAD_REQUEST,
+    #                 message="Patient is not part of this package.",
+    #             )
+
+    #         package.patients.remove(patient)
+    #         patient.package = None
+
+    #         postgres_session.add(package)
+    #         postgres_session.add(patient)
+    #         await postgres_session.commit()
+    #         await postgres_session.refresh(package)
+    #         await postgres_session.refresh(patient)
+
+    #         return package
+
+    #     except SQLAlchemyError as e:
+    #         await postgres_session.rollback()
+    #         raise_http_exception(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             message="Database Error",
+    #             detail=str(e),
+    #         )

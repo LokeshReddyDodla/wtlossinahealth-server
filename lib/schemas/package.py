@@ -3,23 +3,43 @@ from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
+from enum import Enum
+
+
+class PackageStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DRAFT = "draft"
+    DEPRECATED = "deprecated"
 
 
 class PackageBase(BaseModel):
     name: str
+    status: Optional[PackageStatus] = PackageStatus.ACTIVE
 
 
 class PackageCreate(PackageBase):
-    pass
+    duration_days: int
+    price: Optional[int] = None
+    description: Optional[str] = None
+    features: Optional[dict] = None
+    package_type: Optional[str] = None
 
 
 class PackageUpdate(PackageBase):
-    health_facility_id: Optional[UUID]
+    name: Optional[str] = None
+    status: Optional[PackageStatus] = None
+    duration_days: Optional[int] = None
+    price: Optional[int] = None
+    description: Optional[str] = None
+    features: Optional[dict] = None
+    package_type: Optional[str] = None
 
 
 class Package(PackageBase):
-    code: str
     package_id: UUID
+    code: str
+    health_facility_id: UUID
     created_at: datetime
     updated_at: datetime
 
