@@ -7,7 +7,6 @@ from lib.schemas.patient import Patient
 
 class HealthFacilityPackages(Package):
     care_providers: List[CareProvider] = []
-    patients: List[Patient] = []
 
 
 class HealthFacilityCareProviders(CareProvider):
