@@ -4,12 +4,12 @@ from pydantic import BaseModel
 
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.health_facility import HealthFacility
-from lib.schemas.package import Package
 from lib.schemas.patient import Patient
+from lib.schemas.patient_package_assignment import PatientPackageAssignment
 from rest_server.response_models import SuccessResponse
 
 
 class CareProviderPatients(Patient):
     care_providers: List[CareProvider] = []
-    package: Optional[Package] = None
+    package_assignments: Optional[PatientPackageAssignment] = None
     health_facility: Optional[HealthFacility] = None

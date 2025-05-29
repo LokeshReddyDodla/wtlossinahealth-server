@@ -24,17 +24,16 @@ async def get_patient_package_api(
     try:
         result = await patient_profile_service.fetch_patient_profile(
             str(current_patient.patient_id),
-            
         )
-        
+
         if result.package is None:
             return SuccessResponse(
                 message="No package found for the patient",
             )
-         
+
         package = Package.from_orm(result.package).model_dump()
-        package["start_date"] = "2025-01-01T00:00:00Z"  
-        package["end_date"] = "2025-12-31T23:59:59Z" 
+        package["start_date"] = "2025-01-01T00:00:00Z"
+        package["end_date"] = "2025-12-31T23:59:59Z"
 
         return SuccessResponse(
             message="Patient package fetched successfully",
