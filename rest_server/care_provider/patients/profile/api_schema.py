@@ -11,5 +11,5 @@ from rest_server.response_models import SuccessResponse
 
 class CareProviderPatients(Patient):
     care_providers: List[CareProvider] = []
-    package_assignments: Optional[PatientPackageAssignment] = None
+    package_assignments: List[PatientPackageAssignment] = []
     health_facility: Optional[HealthFacility] = None
