@@ -5,7 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from lib.schemas.care_provider import CareProvider
-from lib.schemas.package import Package
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_current_medication import PatientCurrentMedication
