@@ -21,8 +21,8 @@ class PatientPackageAssignmentBase(BaseModel):
 
     @model_validator(mode="before")
     def check_dates(cls, data):
-        if data.start_date is not None and data.end_date is not None:
-            if data.end_date < data.start_date:
+        if "start_date" in data and "end_date" in data:
+            if data["end_date"] < data["start_date"]:
                 raise ValueError("end_date must be >= start_date")
         return data
 
