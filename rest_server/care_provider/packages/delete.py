@@ -5,8 +5,10 @@ from lib.dependencies.service_dependencies import get_package_service
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.package import Package as PackageSchema
 from lib.services.package_service import PackageService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -57,7 +59,9 @@ async def remove_care_provider_from_package(
 ):
     try:
         package = await package_service.remove_care_provider_from_package(
-            care_provider_id=care_provider_id, package_id=package_id
+            current_care_provider=current_care_provider,
+            care_provider_id=care_provider_id,
+            package_id=package_id,
         )
         return SuccessResponse(
             message="Care Provider removed from the package successfully.",

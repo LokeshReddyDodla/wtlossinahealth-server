@@ -35,6 +35,9 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_package_assignment_service import (
+    PatientPackageAssignmentService,
+)
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -367,6 +370,15 @@ container.register(
     ),
 )
 
+# 🔹 Patient Package Assignment Service
+container.register(
+    PatientPackageAssignmentService,
+    lambda: PatientPackageAssignmentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+
 # 🔹 Package Service
 container.register(
     PackageService,
@@ -379,6 +391,10 @@ container.register(
             CareProviderProfileService,
             container.resolve(CareProviderProfileService),
         ),
+        patient_package_assignment_service=cast(
+            PatientPackageAssignmentService,
+            container.resolve(PatientPackageAssignmentService),
+        ),
         chat_management_service=cast(
             ChatManagementService, container.resolve(ChatManagementService)
         ),
@@ -387,6 +403,7 @@ container.register(
         ),
     ),
 )
+
 
 # 🔹 CGM Upload Service
 container.register(

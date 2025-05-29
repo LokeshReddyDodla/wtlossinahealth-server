@@ -11,6 +11,7 @@ from .patients.profile.router import router as patients_router
 from .patients.report.router import router as patients_report_router
 from .patients.uploads.router import router as patients_uploads_router
 from .profile.router import router as profile_router
+from .package_assignment.router import router as package_assignment_router
 
 router.include_router(profile_router)
 router.include_router(health_facility_router)
@@ -21,6 +22,7 @@ router.include_router(patients_meals_router)
 router.include_router(patients_fitness_router)
 router.include_router(patients_cgm_router)
 router.include_router(patients_uploads_router)
+router.include_router(package_assignment_router)
 
 
 from .auth import *
