@@ -2,20 +2,27 @@ from fastapi import Depends, HTTPException, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service, get_cgm_report_service,
-    get_chat_management_service, get_patient_profile_service)
+    get_care_provider_profile_service,
+    get_cgm_report_service,
+    get_chat_management_service,
+    get_patient_profile_service,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CompletePatientProfile
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.care_provider.patients.profile.api_schema import \
-    CareProviderPatients
+from rest_server.care_provider.patients.profile.api_schema import (
+    CareProviderPatients,
+)
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -34,10 +41,12 @@ async def get_patients(
     ),
 ):
     try:
-        patients = await care_provider_profile_service.fetch_care_provider_patients(
-            str(current_care_provider.care_provider_id),
-            str(current_care_provider.role).lower(),
-            str(current_care_provider.health_facility_id),
+        patients = (
+            await care_provider_profile_service.fetch_care_provider_patients(
+                str(current_care_provider.care_provider_id),
+                str(current_care_provider.role).lower(),
+                str(current_care_provider.health_facility_id),
+            )
         )
 
         updated_patients = []

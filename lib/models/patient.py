@@ -197,7 +197,8 @@ class Patient(Base):
             (
                 pa
                 for pa in self.package_assignments
-                if pa.is_active and pa.start_date <= today <= pa.end_date
+                if pa.status == "active"
+                and pa.start_date <= today <= pa.end_date
             ),
             None,
         )

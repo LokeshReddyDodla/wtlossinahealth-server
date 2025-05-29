@@ -15,6 +15,9 @@ from lib.core.constants import EmitMessageKeyEnum
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
+from lib.models.patient_package_assignment import (
+    PatientPackageAssignment as PatientPackageAssignmentModel,
+)
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import (
     CareProviderCreate,
@@ -140,7 +143,9 @@ class CareProviderProfileService:
                     .options(
                         selectinload(PatientModel.health_facility),
                         selectinload(PatientModel.care_providers),
-                        selectinload(PatientModel.package_assignments),
+                        selectinload(PatientModel.package_assignments).options(
+                            selectinload(PatientPackageAssignmentModel.package)
+                        ),
                     )
                     .order_by(PatientModel.created_at.desc())
                 )
@@ -156,7 +161,13 @@ class CareProviderProfileService:
                         selectinload(CareProviderModel.patients).options(
                             selectinload(PatientModel.health_facility),
                             selectinload(PatientModel.care_providers),
-                            selectinload(PatientModel.package_assignments),
+                            selectinload(
+                                PatientModel.package_assignments
+                            ).options(
+                                selectinload(
+                                    PatientPackageAssignmentModel.package
+                                )
+                            ),
                         )
                     )
                 )
