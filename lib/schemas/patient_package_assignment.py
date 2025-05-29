@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from lib.schemas.package import Package
+
 
 class AssignmentStatus(str, Enum):
     ACTIVE = "active"
@@ -52,3 +54,7 @@ class PatientPackageAssignment(PatientPackageAssignmentBase):
 
     class Config:
         from_attributes = True
+
+
+class PatientPackageAssignmentWithDetail(PatientPackageAssignment):
+    package: Optional[Package] = None
