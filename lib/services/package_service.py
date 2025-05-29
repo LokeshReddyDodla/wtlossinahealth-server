@@ -8,19 +8,27 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from lib.models.care_provider import CareProvider as CareProviderModel
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.package import Package as PackageModel
 from lib.models.patient import Patient as PatientModel
+from lib.models.patient_package_assignment import (
+    PatientPackageAssignment as PatientPackageAssignmentModel,
+)
 from lib.schemas.package import PackageCreate, PackageUpdate
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.patient_package_assignment_service import (
+    PatientPackageAssignmentService,
+)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+from sqlalchemy.orm import joinedload, selectinload
 
 
 class PackageService:
@@ -28,6 +36,7 @@ class PackageService:
         self,
         postgres_store: PostgresStore,
         patient_service: PatientProfileService,
+        patient_package_assignment_service: PatientPackageAssignmentService,
         care_provider_service: CareProviderProfileService,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
@@ -35,6 +44,9 @@ class PackageService:
         self.postgres_store = postgres_store
         self.patient_service = patient_service
         self.care_provider_service = care_provider_service
+        self.patient_package_assignment_service = (
+            patient_package_assignment_service
+        )
         self.chat_notification_service = chat_notification_service
         self.chat_management_service = chat_management_service
 
@@ -68,6 +80,7 @@ class PackageService:
                 stmt = stmt.options(
                     selectinload(PackageModel.health_facility),
                     selectinload(PackageModel.care_providers),
+                    selectinload(PackageModel.patient_assignments),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -274,6 +287,7 @@ class PackageService:
     @with_postgres_session
     async def assign_care_provider_to_package(
         self,
+        current_care_provider: CareProviderModel,
         package_id: str,
         care_provider_id: str,
         *,
@@ -288,8 +302,6 @@ class PackageService:
                     care_provider_id
                 )
             )
-
-            # Merge the care provider into the current session
             care_provider = await postgres_session.merge(care_provider)
 
             # Ensure the care provider and package belong to the same health facility
@@ -299,9 +311,24 @@ class PackageService:
                     message="Care Provider and Package belong to different health facilities.",
                 )
 
+            if care_provider in package.care_providers:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Care Provider is already assigned to this package.",
+                )
+
             # Assign the care provider to the package
             if care_provider not in package.care_providers:
                 package.care_providers.append(care_provider)
+
+                # Assign to all patients in this package
+                for assignment in package.patient_assignments:
+                    await self.patient_service.assign_care_provider_to_patient(
+                        current_care_provider,
+                        str(assignment.patient_id),
+                        care_provider_id,
+                    )
+
                 postgres_session.add(package)
                 await postgres_session.commit()
                 await postgres_session.refresh(package)
@@ -319,6 +346,7 @@ class PackageService:
     @with_postgres_session
     async def remove_care_provider_from_package(
         self,
+        current_care_provider: CareProviderModel,
         care_provider_id: str,
         package_id: str,
         *,
@@ -344,6 +372,14 @@ class PackageService:
 
             # Remove the care provider from the package
             package.care_providers.remove(care_provider)
+
+            # Remove from all patients in this package
+            for assignment in package.patient_assignments:
+                await self.patient_service.remove_care_provider_from_patient(
+                    current_care_provider,
+                    str(assignment.patient_id),
+                    care_provider_id,
+                )
 
             postgres_session.add(package)
             await postgres_session.commit()

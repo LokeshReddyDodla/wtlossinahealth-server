@@ -24,6 +24,9 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_package_assignment_service import (
+    PatientPackageAssignmentService,
+)
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -142,6 +145,15 @@ def get_patient_plan_service() -> PatientPlanService:
     return cast(
         PatientPlanService,
         container.resolve(PatientPlanService),
+    )
+
+
+def get_patient_package_assignment_service() -> (
+    PatientPackageAssignmentService
+):
+    return cast(
+        PatientPackageAssignmentService,
+        container.resolve(PatientPackageAssignmentService),
     )
 
 

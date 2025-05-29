@@ -73,6 +73,7 @@ async def assign_care_provider_to_package(
     try:
         updated_package = (
             await package_service.assign_care_provider_to_package(
+                current_care_provider=current_care_provider,
                 package_id=package_id,
                 care_provider_id=care_provider_id,
             )
