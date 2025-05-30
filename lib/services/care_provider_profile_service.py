@@ -26,7 +26,6 @@ from lib.schemas.care_provider import (
 )
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
-from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
     CareProviderRole,
     get_care_provider_permissions,
@@ -53,12 +52,10 @@ class CareProviderProfileService:
         postgres_store: PostgresStore,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
-        patient_service: PatientProfileService,
     ):
         self.postgres_store = postgres_store
         self.chat_management_service = chat_management_service
         self.chat_notification_service = chat_notification_service
-        self.patient_service = patient_service
 
     @with_postgres_session
     async def fetch_care_provider(

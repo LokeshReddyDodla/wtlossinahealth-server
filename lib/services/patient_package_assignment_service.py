@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,16 +14,62 @@ from lib.models.patient_package_assignment import (
 from lib.schemas.patient_package_assignment import (
     PatientPackageAssignmentCreate,
 )
+from lib.services.chat.chat_exceptions import ChatCreationError
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import HTTPException, status
+from lib.models import Package as PackageModel
+from lib.models import CareProvider as CareProviderModel
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class PatientPackageAssignmentService:
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(
+        self,
+        patient_service: PatientProfileService,
+        postgres_store: PostgresStore,
+        package_service,
+    ):
+        self.patient_service = patient_service
+        self.package_service = package_service
         self.postgres_store = postgres_store
+
+    @with_postgres_session
+    async def get_assignments_for_patient(
+        self,
+        patient_id: str,
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> list[PatientPackageAssignmentModel]:
+        try:
+            stmt = (
+                select(PatientPackageAssignmentModel)
+                .options(
+                    selectinload(
+                        PatientPackageAssignmentModel.package
+                    ).selectinload(PackageModel.care_providers)
+                )
+                .join(PatientPackageAssignmentModel.package)
+                .where(
+                    PatientPackageAssignmentModel.patient_id == patient_id,
+                    PackageModel.health_facility_id == health_facility_id,
+                )
+            )
+            result = await postgres_session.execute(stmt)
+            return list(result.scalars().all())
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error while fetching patient assignments",
+                detail=str(e),
+            )
 
     @with_postgres_session
     async def get_active_assignments_for_package(
@@ -78,8 +125,9 @@ class PatientPackageAssignmentService:
     async def create_assignment(
         self,
         assignment_data: PatientPackageAssignmentCreate,
+        health_facility_id: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientPackageAssignmentModel:
         try:
             # Check if patient already has an active assignment for this package
@@ -97,17 +145,130 @@ class PatientPackageAssignmentService:
                     detail="Patient already has an active assignment for this package",
                 )
 
+            patient = await self.patient_service.fetch_patient_profile(
+                patient_id=assignment_data.patient_id,
+                postgres_session=postgres_session,
+            )
+            package = await self.package_service.fetch_package(
+                package_id=assignment_data.package_id,
+                detailed=True,
+                postgres_session=postgres_session,
+            )
+
+            if not patient or not package:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Patient or package not found",
+                )
+
             # Create new assignment
             new_assignment = PatientPackageAssignmentModel(
                 **assignment_data.model_dump()
             )
             postgres_session.add(new_assignment)
-            await postgres_session.commit()
+
+            # Assign care providers from package if not already assigned
+            added_provider_ids = [
+                str(cp.care_provider_id)
+                for cp in package.care_providers
+                if cp not in patient.care_providers
+            ]
+
+            if added_provider_ids:
+                await self.patient_service.assign_care_providers_to_patient(
+                    patient_id=assignment_data.patient_id,
+                    care_provider_ids=added_provider_ids,
+                    health_facility_id=health_facility_id,
+                    postgres_session=postgres_session,
+                )
+
+            postgres_session.add(patient)
+            await postgres_session.flush()
             await postgres_session.refresh(new_assignment)
+            await postgres_session.commit()
 
             return new_assignment
 
+        except ChatCreationError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Chat creation failed",
+                detail=str(e),
+            )
+
         except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def remove_assignment(
+        self,
+        assignment_id: str,
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        try:
+            assignment = await self._fetch_assignment_with_patient_and_package(
+                assignment_id, postgres_session
+            )
+
+            patient = assignment.patient
+            package = assignment.package
+
+            # Determine care providers that are only linked through this package
+            care_provider_ids_to_remove = []
+            for care_provider in package.care_providers:
+                # Check if the care provider is used in any other assignment for this patient
+                other_assignments_stmt = (
+                    select(PatientPackageAssignmentModel)
+                    .join(PatientPackageAssignmentModel.package)
+                    .join(PackageModel.care_providers)
+                    .where(
+                        PatientPackageAssignmentModel.patient_id
+                        == patient.patient_id,
+                        PatientPackageAssignmentModel.assignment_id
+                        != assignment.assignment_id,
+                        CareProviderModel.care_provider_id
+                        == care_provider.care_provider_id,
+                    )
+                    .limit(1)
+                )
+                other_result = await postgres_session.execute(
+                    other_assignments_stmt
+                )
+                is_used_elsewhere = other_result.scalars().first()
+
+                if (
+                    not is_used_elsewhere
+                    and care_provider in patient.care_providers
+                ):
+                    care_provider_ids_to_remove.append(
+                        str(care_provider.care_provider_id)
+                    )
+
+            # Remove the care providers through proper method
+            if care_provider_ids_to_remove:
+                await self.patient_service.remove_care_providers_from_patient(
+                    patient_id=str(patient.patient_id),
+                    care_provider_ids=care_provider_ids_to_remove,
+                    health_facility_id=health_facility_id,
+                    postgres_session=postgres_session,
+                )
+
+            # Delete the assignment
+            await postgres_session.delete(assignment)
+            postgres_session.add(patient)
+
+            await postgres_session.commit()
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
@@ -120,7 +281,7 @@ class PatientPackageAssignmentService:
         patient_id: UUID,
         package_id: UUID,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> Optional[PatientPackageAssignmentModel]:
         try:
             stmt = select(PatientPackageAssignmentModel).where(
@@ -139,47 +300,32 @@ class PatientPackageAssignmentService:
                 detail=str(e),
             )
 
-    @with_postgres_session
-    async def sync_package_care_providers(
-        self, patient_id: str, *, postgres_session: AsyncSession
-    ) -> PatientModel:
-        """Ensure patient has all care providers from their active packages."""
-        try:
-            assignments = await self.get_active_assignments_for_patient(
-                patient_id, postgres_session=postgres_session
+    async def _fetch_assignment_with_patient_and_package(
+        self,
+        assignment_id: str,
+        postgres_session: AsyncSession,
+    ) -> PatientPackageAssignmentModel:
+        stmt = (
+            select(PatientPackageAssignmentModel)
+            .options(
+                selectinload(
+                    PatientPackageAssignmentModel.package
+                ).selectinload(PackageModel.care_providers),
+                selectinload(
+                    PatientPackageAssignmentModel.patient
+                ).selectinload(PatientModel.care_providers),
             )
+            .where(
+                PatientPackageAssignmentModel.assignment_id == assignment_id
+            )
+        )
+        result = await postgres_session.execute(stmt)
+        assignment = result.scalars().first()
 
-            patient = assignments[0].patient if assignments else None
-            if not patient:
-                raise_http_exception(
-                    404, "Patient not found or has no active packages"
-                )
-
-            # Get all unique care providers from all active packages
-            package_care_providers = set()
-            for assignment in assignments:
-                package_care_providers.update(
-                    assignment.package.care_providers
-                )
-
-            # Get current patient care providers
-            current_care_providers = set(patient.care_providers)
-
-            # Add missing care providers
-            added = False
-            for cp in package_care_providers - current_care_providers:
-                patient.care_providers.append(cp)
-                added = True
-
-            if added:
-                await postgres_session.commit()
-                await postgres_session.refresh(patient)
-
-            return patient
-
-        except SQLAlchemyError as e:
+        if not assignment:
             raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Database Error",
-                detail=str(e),
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Assignment not found.",
             )
+
+        return assignment

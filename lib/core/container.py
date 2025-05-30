@@ -162,6 +162,10 @@ container.register(
     PatientProfileService,
     lambda: PatientProfileService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        care_provider_service=cast(
+            CareProviderProfileService,
+            container.resolve(CareProviderProfileService),
+        ),
         chat_notification_service=cast(
             ChatNotificationService, container.resolve(ChatNotificationService)
         ),
@@ -176,9 +180,6 @@ container.register(
     CareProviderProfileService,
     lambda: CareProviderProfileService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
         chat_management_service=cast(
             ChatManagementService, container.resolve(ChatManagementService)
         ),
@@ -374,6 +375,10 @@ container.register(
 container.register(
     PatientPackageAssignmentService,
     lambda: PatientPackageAssignmentService(
+        patient_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        package_service=container.resolve(PackageService),
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
@@ -390,10 +395,6 @@ container.register(
         care_provider_service=cast(
             CareProviderProfileService,
             container.resolve(CareProviderProfileService),
-        ),
-        patient_package_assignment_service=cast(
-            PatientPackageAssignmentService,
-            container.resolve(PatientPackageAssignmentService),
         ),
         chat_management_service=cast(
             ChatManagementService, container.resolve(ChatManagementService)

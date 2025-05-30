@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 from typing import Optional
 
 from pymongo.errors import PyMongoError
@@ -14,13 +15,21 @@ from lib.pipelines.chat_pipelines import (
 )
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.services.chat.base import BaseChatService
+from lib.services.chat.chat_exceptions import ChatCreationError
+from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.utils.http_exceptions import raise_http_exception
+from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 class ChatManagementService(BaseChatService):
     def __init__(self):
         self.mongo_store = get_mongo_store()
         self.participant_service = ChatParticipantService()
+        self.chat_notification_service = ChatNotificationService()
 
     async def create_new_chat(
         self,
@@ -40,11 +49,11 @@ class ChatManagementService(BaseChatService):
                 user_id_1=user_id, user_id_2=other_user_id
             )
             if existing_chat_id:
-                print(f"Chat already exists with ID: {existing_chat_id}")
+                logger.info(f"Chat already exists with ID: {existing_chat_id}")
                 await self.reactivate_direct_chat(user_id, other_user_id)
                 return existing_chat_id
             else:
-                print("No existing 1-on-1 chat found.")
+                logger.info("No existing 1-on-1 chat found.")
 
         participant = ParticipantSchema(
             id=user_id,
@@ -69,11 +78,30 @@ class ChatManagementService(BaseChatService):
         chat_dict = chat.model_dump(by_alias=True)
         try:
             await self.mongo_store.insert_document("chats", chat_dict)
-            print(f"New chat created with ID: {chat.id}")
+            logger.info(f"New chat created with ID: {chat.id}")
             return chat.id
         except PyMongoError as e:
-            print(f"Failed to create new chat: {e}")
+            logger.info(f"Failed to create new chat: {e}")
             raise
+
+    async def create_chat_relationships(
+        self,
+        patient_id: str,
+        care_provider_id: str,
+    ):
+        try:
+            await self.create_direct_and_group_chats(
+                patient_id, care_provider_id
+            )
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                user_id=patient_id,
+            )
+        except Exception as e:
+            logger.error(f"Chat creation failed: {str(e)}")
+            raise ChatCreationError(
+                "Failed to create chat relationships"
+            ) from e
 
     async def fetch_user_chats(
         self,
@@ -88,7 +116,7 @@ class ChatManagementService(BaseChatService):
             )
 
         except PyMongoError as e:
-            print(f"MongoDB Error: {e}")
+            logger.info(f"MongoDB Error: {e}")
             raise
 
     async def fetch_user_messages(
@@ -103,7 +131,7 @@ class ChatManagementService(BaseChatService):
             )
 
         except PyMongoError as e:
-            print(f"MongoDB Error: {e}")
+            logger.info(f"MongoDB Error: {e}")
             raise
 
     async def fetch_chat_messages(self, chat_id: str, user_id: str):
@@ -115,7 +143,7 @@ class ChatManagementService(BaseChatService):
                 .to_list(length=None)
             )
         except PyMongoError as e:
-            print(f"MongoDB Error: {e}")
+            logger.info(f"MongoDB Error: {e}")
             raise
 
     async def find_direct_chat(
@@ -132,37 +160,37 @@ class ChatManagementService(BaseChatService):
             )
             return str(existing_chat["_id"]) if existing_chat else None
         except PyMongoError as e:
-            print(
+            logger.info(
                 f"Failed to find direct chat between {user_id_1} and {user_id_2}: {e}"
             )
             raise
 
     async def create_direct_and_group_chats(
         self,
-        patient,
-        care_provider: CareProviderModel,  # PatientModel,
+        patient_id: str,
+        care_provider_id: str,
     ):
         # Create a direct chat
         chat_id = await self.create_new_chat(
-            user_id=str(patient.patient_id),
-            other_user_id=str(care_provider.care_provider_id),
+            user_id=patient_id,
+            other_user_id=care_provider_id,
             type=ProfileTypeEnum.PATIENT.value,
             is_group=False,
         )
         await self.participant_service.add_participant_in_chat(
             chat_id=chat_id,
-            user_id=str(care_provider.care_provider_id),
+            user_id=care_provider_id,
             type=ProfileTypeEnum.CARE_PROVIDER.value,
         )
 
         # Find the patient's group chat and add the care provider
         group_chat = await self.find_group_chat_for_patient(
-            patient_id=str(patient.patient_id)
+            patient_id=patient_id
         )
         if group_chat:
             await self.participant_service.add_participant_in_chat(
                 chat_id=group_chat["_id"],
-                user_id=str(care_provider.care_provider_id),
+                user_id=care_provider_id,
                 type=ProfileTypeEnum.CARE_PROVIDER.value,
             )
 
@@ -268,7 +296,7 @@ class ChatManagementService(BaseChatService):
                 {"$set": {"participants.$.is_pinned": new_is_pinned_status}},
             )
 
-            print(
+            logger.info(
                 f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
             )
             await sio.emit(
@@ -276,7 +304,7 @@ class ChatManagementService(BaseChatService):
             )
 
         except Exception as e:
-            print(
+            logger.info(
                 f"Failed to toggle pin for chat {chat_id} and participant {participant_id}: {str(e)}"
             )
             raise
@@ -294,14 +322,14 @@ class ChatManagementService(BaseChatService):
                     )
                     chat_ids = [doc["_id"] for doc in chat_documents]
                     if not chat_ids:
-                        print("No chats found for the given condition.")
+                        logger.info("No chats found for the given condition.")
                         return
 
                     # Delete the chats
                     await self.mongo_store.delete_many_documents(
                         "chats", {"_id": {"$in": chat_ids}}, session=session
                     )
-                    print(f"Deleted chats: {chat_ids}")
+                    logger.info(f"Deleted chats: {chat_ids}")
 
                     # Optionally delete associated messages
                     if delete_messages:
@@ -310,12 +338,12 @@ class ChatManagementService(BaseChatService):
                             {"chat_id": {"$in": chat_ids}},
                             session=session,
                         )
-                        print(f"Deleted messages for chats: {chat_ids}")
+                        logger.info(f"Deleted messages for chats: {chat_ids}")
 
                     await session.commit_transaction()
                 except Exception as e:
                     await session.abort_transaction()
-                    print(f"Transaction aborted: {e}")
+                    logger.info(f"Transaction aborted: {e}")
                     raise
 
     async def _find_existing_1on1_chat(
@@ -337,5 +365,5 @@ class ChatManagementService(BaseChatService):
             )
             return existing_chat["_id"] if existing_chat else None
         except PyMongoError as e:
-            print(f"Failed to check for existing chat: {e}")
+            logger.info(f"Failed to check for existing chat: {e}")
             raise
