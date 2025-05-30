@@ -18,7 +18,6 @@ from lib.models.patient import Patient as PatientModel
 from lib.models.patient_package_assignment import (
     PatientPackageAssignment as PatientPackageAssignmentModel,
 )
-from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import (
     CareProviderCreate,
     CareProviderUpdate,
@@ -100,7 +99,7 @@ class CareProviderProfileService:
     @with_postgres_session
     async def fetch_care_provider_profiles(
         self, care_provider_ids: List[str], *, postgres_session: AsyncSession
-    ) -> Dict[str, CareProviderSchema]:
+    ) -> Dict[str, CareProviderModel]:
         try:
             stmt = select(CareProviderModel).where(
                 CareProviderModel.care_provider_id.in_(care_provider_ids)
@@ -109,11 +108,9 @@ class CareProviderProfileService:
             profiles = result.scalars().all()
 
             return {
-                str(profile.care_provider_id): CareProviderSchema.from_orm(
-                    profile
-                )
-                for profile in profiles
+                str(profile.care_provider_id): profile for profile in profiles
             }
+
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
