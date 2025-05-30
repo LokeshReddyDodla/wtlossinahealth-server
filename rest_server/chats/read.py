@@ -10,6 +10,7 @@ from lib.dependencies.service_dependencies import (
     get_chat_management_service,
     get_patient_profile_service,
 )
+from lib.schemas.patient_connected_app import PatientSchema
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -17,6 +18,7 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
+from lib.schemas.care_provider import CareProvider as CareProviderSchema
 
 from .router import router
 
@@ -71,22 +73,34 @@ async def get_user_chats(
         for chat in chats:
             sender = chat.get("sender")
             if sender:
+                profile_data = None
                 if sender["type"] == ProfileTypeEnum.PATIENT.value:
-                    sender["profile"] = patient_profiles.get(sender["id"], {})
+                    profile_data = patient_profiles.get(sender["id"])
+                    if profile_data:
+                        sender["profile"] = PatientSchema.from_orm(
+                            profile_data
+                        )
                 else:
-                    sender["profile"] = care_provider_profiles.get(
-                        sender["id"], {}
-                    )
+                    profile_data = care_provider_profiles.get(sender["id"])
+                    if profile_data:
+                        sender["profile"] = CareProviderSchema.from_orm(
+                            profile_data
+                        )
 
             for receiver in chat.get("receivers", []):
+                profile_data = None
                 if receiver["type"] == ProfileTypeEnum.PATIENT.value:
-                    receiver["profile"] = patient_profiles.get(
-                        receiver["id"], {}
-                    )
+                    profile_data = patient_profiles.get(receiver["id"])
+                    if profile_data:
+                        receiver["profile"] = PatientSchema.from_orm(
+                            profile_data
+                        )
                 else:
-                    receiver["profile"] = care_provider_profiles.get(
-                        receiver["id"], {}
-                    )
+                    profile_data = care_provider_profiles.get(receiver["id"])
+                    if profile_data:
+                        receiver["profile"] = CareProviderSchema.from_orm(
+                            profile_data
+                        )
 
         return SuccessResponse(
             message="Chats fetched successfully",
