@@ -23,7 +23,7 @@ from .router import router
 
 @router.delete("", response_model=SuccessResponse)
 async def delete_package_assignment(
-    assignment_data: PatientPackageAssignmentCreate,
+    assignment_id: str,
     patient_package_assignment_service: PatientPackageAssignmentService = Depends(
         get_patient_package_assignment_service
     ),
@@ -43,13 +43,9 @@ async def delete_package_assignment(
                 message="Care provider is not associated with any health facility.",
             )
 
-        new_assignment = (
-            await patient_package_assignment_service.remove_assignment(
-                assignment_data=assignment_data,
-                health_facility_id=str(
-                    current_care_provider.health_facility_id
-                ),
-            )
+        await patient_package_assignment_service.remove_assignment(
+            assignment_id=assignment_id,
+            health_facility_id=str(current_care_provider.health_facility_id),
         )
 
         return SuccessResponse(

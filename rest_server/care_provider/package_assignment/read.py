@@ -8,6 +8,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient_package_assignment import (
     PatientPackageAssignment,
     PatientPackageAssignmentCreate,
+    PatientPackageAssignmentWithDetail,
 )
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
@@ -51,7 +52,10 @@ async def get_patient_assignments(
 
         return SuccessResponse(
             message="Package assignments fetched successfully",
-            data=[PatientPackageAssignment.from_orm(a) for a in assignments],
+            data=[
+                PatientPackageAssignmentWithDetail.from_orm(a)
+                for a in assignments
+            ],
         )
     except HTTPException as e:
         raise e

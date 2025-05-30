@@ -181,8 +181,12 @@ class PatientProfileService:
         self, patient_ids: List[str], *, postgres_session: AsyncSession
     ) -> Dict[str, PatientModel]:
         try:
-            stmt = select(PatientModel).where(
-                PatientModel.patient_id.in_(patient_ids)
+            stmt = (
+                select(PatientModel)
+                .where(PatientModel.patient_id.in_(patient_ids))
+                .options(
+                    selectinload(PatientModel.care_providers),
+                )
             )
             result = await postgres_session.execute(stmt)
             profiles = result.scalars().all()
@@ -600,9 +604,9 @@ class PatientProfileService:
             )
 
             # Auto-assign health facility if not already assigned
-            if not patient.health_facility_id:
+            if not str(patient.health_facility_id):
                 patient.health_facility_id = health_facility_id
-            elif patient.health_facility_id != health_facility_id:
+            elif str(patient.health_facility_id) != health_facility_id:
                 raise_http_exception(400, "Patient is in a different facility")
 
             # Fetch all care providers in batch (scoped to same facility)
@@ -681,8 +685,9 @@ class PatientProfileService:
                     care_provider_id
                 )
             )
+            care_provider = await postgres_session.merge(care_provider)
 
-            if care_provider.health_facility_id != health_facility_id:
+            if str(care_provider.health_facility_id) != health_facility_id:
                 raise_http_exception(
                     400, "Care provider is in a different facility"
                 )
@@ -701,7 +706,7 @@ class PatientProfileService:
                 # Facility checks
                 if (
                     patient.health_facility_id
-                    and patient.health_facility_id != health_facility_id
+                    and str(patient.health_facility_id) != health_facility_id
                 ):
                     continue
 
@@ -759,7 +764,7 @@ class PatientProfileService:
             )
 
             # Ensure patient is in the same facility
-            if patient.health_facility_id != health_facility_id:
+            if str(patient.health_facility_id) != health_facility_id:
                 raise_http_exception(400, "Patient is in a different facility")
 
             if not patient.care_providers:
@@ -783,7 +788,7 @@ class PatientProfileService:
             for cp in care_providers_to_remove:
                 if cp in patient.care_providers:
                     patient.care_providers.remove(cp)
-                    removed_ids.append(cp.care_provider_id)
+                    removed_ids.append(str(cp.care_provider_id))
 
             if not removed_ids:
                 raise_http_exception(
@@ -830,8 +835,9 @@ class PatientProfileService:
                     care_provider_id
                 )
             )
+            care_provider = await postgres_session.merge(care_provider)
 
-            if care_provider.health_facility_id != health_facility_id:
+            if str(care_provider.health_facility_id) != health_facility_id:
                 raise_http_exception(
                     400, "Care provider is in a different facility"
                 )
@@ -849,7 +855,7 @@ class PatientProfileService:
                     continue
 
                 # Ensure same facility
-                if patient.health_facility_id != health_facility_id:
+                if str(patient.health_facility_id) != health_facility_id:
                     continue
 
                 if care_provider in patient.care_providers:

@@ -312,13 +312,14 @@ class PackageService:
                 for assignment in package.patient_assignments
             ]
 
-            # Assign care provider to all patients in batch
-            await self.patient_service.assign_care_provider_to_patients(
-                care_provider_id=care_provider_id,
-                patient_ids=patient_ids,
-                health_facility_id=health_facility_id,
-                postgres_session=postgres_session,
-            )
+            if patient_ids:
+                # Assign care provider to all patients in batch
+                await self.patient_service.assign_care_provider_to_patients(
+                    care_provider_id=care_provider_id,
+                    patient_ids=patient_ids,
+                    health_facility_id=health_facility_id,
+                    postgres_session=postgres_session,
+                )
 
             # Persist changes
             postgres_session.add(package)
@@ -370,13 +371,14 @@ class PackageService:
                 str(a.patient_id) for a in package.patient_assignments
             ]
 
-            # Bulk remove the care provider from all patients
-            await self.patient_service.remove_care_provider_from_patients(
-                care_provider_id=care_provider_id,
-                patient_ids=patient_ids,
-                health_facility_id=health_facility_id,
-                postgres_session=postgres_session,
-            )
+            if patient_ids:
+                # Bulk remove the care provider from all patients
+                await self.patient_service.remove_care_provider_from_patients(
+                    care_provider_id=care_provider_id,
+                    patient_ids=patient_ids,
+                    health_facility_id=health_facility_id,
+                    postgres_session=postgres_session,
+                )
 
             postgres_session.add(package)
             await postgres_session.commit()
