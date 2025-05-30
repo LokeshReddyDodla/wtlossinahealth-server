@@ -6,10 +6,13 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service, get_chat_management_service,
-    get_patient_profile_service)
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+    get_care_provider_profile_service,
+    get_chat_management_service,
+    get_patient_profile_service,
+)
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception

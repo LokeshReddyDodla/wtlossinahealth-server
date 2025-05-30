@@ -59,9 +59,9 @@ async def remove_care_provider_from_package(
 ):
     try:
         package = await package_service.remove_care_provider_from_package(
-            current_care_provider=current_care_provider,
             care_provider_id=care_provider_id,
             package_id=package_id,
+            health_facility_id=str(current_care_provider.health_facility_id),
         )
         return SuccessResponse(
             message="Care Provider removed from the package successfully.",

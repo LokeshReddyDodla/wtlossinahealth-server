@@ -72,6 +72,10 @@ from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
+from lib.services.chat.chat_exceptions import ChatCreationError
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.utils.http_exceptions import raise_http_exception
@@ -82,10 +86,12 @@ class PatientProfileService:
     def __init__(
         self,
         postgres_store: PostgresStore,
+        care_provider_service: CareProviderProfileService,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
     ):
         self.postgres_store = postgres_store
+        self.care_provider_service = care_provider_service
         self.chat_notification_service = chat_notification_service
         self.chat_management_service = chat_management_service
 
@@ -97,7 +103,7 @@ class PatientProfileService:
         include_health_data: bool = False,
         other_related_data: bool = False,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientModel:
         try:
             stmt = (
@@ -153,8 +159,7 @@ class PatientProfileService:
                     ),
                 )
 
-            result = await postgres_session.execute(stmt)
-            patient = result.scalars().first()
+            patient = await postgres_session.scalar(stmt)
 
             if not patient:
                 raise_http_exception(
@@ -174,18 +179,19 @@ class PatientProfileService:
     @with_postgres_session
     async def fetch_patient_profiles(
         self, patient_ids: List[str], *, postgres_session: AsyncSession
-    ) -> Dict[str, PatientSchema]:
+    ) -> Dict[str, PatientModel]:
         try:
-            stmt = select(PatientModel).where(
-                PatientModel.patient_id.in_(patient_ids)
+            stmt = (
+                select(PatientModel)
+                .where(PatientModel.patient_id.in_(patient_ids))
+                .options(
+                    selectinload(PatientModel.care_providers),
+                )
             )
             result = await postgres_session.execute(stmt)
             profiles = result.scalars().all()
 
-            return {
-                str(profile.patient_id): PatientSchema.from_orm(profile)
-                for profile in profiles
-            }
+            return {str(profile.patient_id): profile for profile in profiles}
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -199,19 +205,17 @@ class PatientProfileService:
         patient_data: PatientCreate,
         *,
         creating_care_provider: Optional[CareProviderModel] = None,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientModel:
         try:
             # Check if patient already exists
-            existing_patient = await postgres_session.execute(
-                select(PatientModel).where(
-                    or_(
-                        PatientModel.email == patient_data.email,
-                        PatientModel.phone_number == patient_data.phone_number,
-                    )
+            stmt = select(PatientModel).where(
+                or_(
+                    PatientModel.email == patient_data.email,
+                    PatientModel.phone_number == patient_data.phone_number,
                 )
             )
-            existing_patient = existing_patient.scalar_one_or_none()
+            existing_patient = await postgres_session.scalar(stmt)
             if existing_patient:
                 raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,14 +244,23 @@ class PatientProfileService:
                 new_patient.care_providers.append(merged_care_provider)
 
                 # Create chats and notifications
-                await self._create_chat_relationships(
-                    new_patient, creating_care_provider, postgres_session
+                await self.chat_management_service.create_chat_relationships(
+                    str(new_patient.patient_id),
+                    str(creating_care_provider.care_provider_id),
                 )
 
             await postgres_session.commit()
+            await postgres_session.refresh(new_patient)
 
             return new_patient
 
+        except ChatCreationError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Chat creation failed",
+                detail=str(e),
+            )
         except IntegrityError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -271,7 +284,7 @@ class PatientProfileService:
         patient_id: str,
         patient_data: PatientUpdate,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(
@@ -333,7 +346,7 @@ class PatientProfileService:
         sleep_habit: PatientSleepHabitCreate,
         food_allergies: Optional[List[PatientFoodAllergyCreate]] = None,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ):
         try:
             patient_profile = await self.fetch_patient_profile(
@@ -462,7 +475,7 @@ class PatientProfileService:
         ] = None,
         medical_histories: Optional[List[PatientMedicalHistoryCreate]] = None,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientModel:
         try:
             patient_profile = await self.fetch_patient_profile(
@@ -553,7 +566,7 @@ class PatientProfileService:
         patient_id: str,
         delete_chats: bool = False,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> None:
         try:
             patient = await self.fetch_patient_profile(
@@ -577,133 +590,303 @@ class PatientProfileService:
             )
 
     @with_postgres_session
-    async def assign_care_provider_to_patient(
+    async def assign_care_providers_to_patient(
         self,
-        current_care_provider: CareProviderModel,
         patient_id: str,
-        care_provider_id: str,
+        care_provider_ids: list[str],
+        health_facility_id: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientModel:
         try:
             patient = await self.fetch_patient_profile(
                 patient_id, postgres_session=postgres_session
             )
 
-            stmt = select(CareProviderModel).where(
-                CareProviderModel.care_provider_id == care_provider_id,
-                CareProviderModel.health_facility_id
-                == current_care_provider.health_facility_id,
-            )
-            result = await postgres_session.execute(stmt)
-            assigned_care_provider = result.scalars().first()
-
-            if not assigned_care_provider:
-                raise_http_exception(
-                    status_code=404,
-                    message="Care provider not found or not in your health facility.",
-                )
-
-            # Automatically assign the patient to the care provider's health facility if unassigned
-            if not patient.health_facility_id:  # type: ignore
-                patient.health_facility_id = (
-                    current_care_provider.health_facility_id
-                )
-            elif (
-                patient.health_facility_id
-                != current_care_provider.health_facility_id
-            ):
+            # Auto-assign health facility if not already assigned
+            if not str(patient.health_facility_id):
+                patient.health_facility_id = health_facility_id
+            elif str(patient.health_facility_id) != health_facility_id:
                 raise_http_exception(400, "Patient is in a different facility")
 
-            # Check if care provider is already assigned
-            if assigned_care_provider in patient.care_providers:
+            # Fetch all care providers in batch (scoped to same facility)
+            stmt = select(CareProviderModel).where(
+                CareProviderModel.care_provider_id.in_(care_provider_ids),
+                CareProviderModel.health_facility_id == health_facility_id,
+            )
+            result = await postgres_session.execute(stmt)
+            fetched_care_providers = result.scalars().all()
+
+            fetched_ids = {
+                str(cp.care_provider_id) for cp in fetched_care_providers
+            }
+            missing_ids = set(care_provider_ids) - fetched_ids
+            if missing_ids:
                 raise_http_exception(
-                    status_code=400,
-                    message="Care provider already assigned to this patient.",
+                    404,
+                    message=f"Care provider(s) not found or not in your health facility: {', '.join(missing_ids)}",
                 )
 
-            # Link the care provider to the patient
-            patient.care_providers.append(assigned_care_provider)
+            # Track which ones are newly added for chat creation
+            newly_added_providers = []
 
-            # Commit changes
-            postgres_session.add(patient)
-            await postgres_session.commit()
-            await postgres_session.refresh(patient)
+            for cp in fetched_care_providers:
+                if cp not in patient.care_providers:
+                    patient.care_providers.append(cp)
+                    newly_added_providers.append(cp)
+
+            if not newly_added_providers:
+                raise_http_exception(
+                    400, "All care providers already assigned."
+                )
+
+            # Ensure changes are flushed before creating chats
+            await postgres_session.flush()
 
             # Create chats and notifications
-            await self._create_chat_relationships(
-                patient, assigned_care_provider, postgres_session
-            )
+            for cp in newly_added_providers:
+                await self.chat_management_service.create_chat_relationships(
+                    str(patient.patient_id), str(cp.care_provider_id)
+                )
 
+            await postgres_session.commit()
+            await postgres_session.refresh(patient)
             return patient
+
+        except ChatCreationError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Chat creation failed",
+                detail=str(e),
+            )
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=500,
-                message="Database Error",
+                message="Database error during care provider assignment",
                 detail=str(e),
             )
 
     @with_postgres_session
-    async def remove_care_provider_from_patient(
+    async def assign_care_provider_to_patients(
         self,
-        current_care_provider: CareProviderModel,
-        patient_id: str,
         care_provider_id: str,
+        patient_ids: list[str],
+        health_facility_id: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
+    ) -> list[PatientModel]:
+        try:
+            # Fetch care provider
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    care_provider_id
+                )
+            )
+            care_provider = await postgres_session.merge(care_provider)
+
+            if str(care_provider.health_facility_id) != health_facility_id:
+                raise_http_exception(
+                    400, "Care provider is in a different facility"
+                )
+
+            # Fetch all patients in batch
+            patient_map = await self.fetch_patient_profiles(
+                patient_ids, postgres_session=postgres_session
+            )
+
+            assigned_patients = []
+            for patient_id in patient_ids:
+                patient = patient_map.get(patient_id)
+                if not patient:
+                    continue
+
+                # Facility checks
+                if (
+                    patient.health_facility_id
+                    and str(patient.health_facility_id) != health_facility_id
+                ):
+                    continue
+
+                # Auto-assign facility if not already assigned
+                if not patient.health_facility_id:
+                    patient.health_facility_id = health_facility_id
+
+                if care_provider not in patient.care_providers:
+                    patient.care_providers.append(care_provider)
+                    await self.chat_management_service.create_chat_relationships(
+                        str(patient.patient_id),
+                        str(care_provider.care_provider_id),
+                    )
+
+                    assigned_patients.append(patient)
+
+            if not assigned_patients:
+                raise_http_exception(
+                    400,
+                    "Care provider was already assigned to all patients or invalid patients",
+                )
+
+            await postgres_session.commit()
+
+            return assigned_patients
+
+        except ChatCreationError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Chat creation failed",
+                detail=str(e),
+            )
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=500,
+                message="Database error during bulk patient assignment",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def remove_care_providers_from_patient(
+        self,
+        patient_id: str,
+        care_provider_ids: list[str],
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession,
     ) -> None:
         try:
             patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
 
-            # Check patient is in the same facility
-            if (
-                patient.health_facility_id
-                != current_care_provider.health_facility_id
-            ):
+            # Ensure patient is in the same facility
+            if str(patient.health_facility_id) != health_facility_id:
                 raise_http_exception(400, "Patient is in a different facility")
 
-            # Get care provider with facility check
+            if not patient.care_providers:
+                raise_http_exception(
+                    400, "Patient has no assigned care providers"
+                )
+
+            # Fetch care providers in batch
             stmt = select(CareProviderModel).where(
-                CareProviderModel.care_provider_id == care_provider_id,
-                CareProviderModel.health_facility_id
-                == current_care_provider.health_facility_id,
+                CareProviderModel.care_provider_id.in_(care_provider_ids),
+                CareProviderModel.health_facility_id == health_facility_id,
             )
             result = await postgres_session.execute(stmt)
-            care_provider = result.scalars().first()
+            care_providers_to_remove = result.scalars().all()
 
-            if not care_provider:
+            if not care_providers_to_remove:
+                raise_http_exception(404, "No matching care providers found")
+
+            removed_ids = []
+
+            for cp in care_providers_to_remove:
+                if cp in patient.care_providers:
+                    patient.care_providers.remove(cp)
+                    removed_ids.append(str(cp.care_provider_id))
+
+            if not removed_ids:
                 raise_http_exception(
-                    status_code=404,
-                    message="Care provider not found or not in your health facility.",
+                    400,
+                    "None of the care providers were assigned to the patient",
                 )
 
-            if care_provider not in patient.care_providers:
-                raise_http_exception(
-                    400, "Care provider not assigned to patient"
-                )
-
-            patient.care_providers.remove(care_provider)
             postgres_session.add(patient)
             await postgres_session.commit()
 
-            # Cleanup chats & notify
-            await self.chat_management_service.disable_direct_chat(
-                patient_id=patient_id,
-                care_provider_id=care_provider_id,
-            )
+            # Disable chats and send notifications
+            for cp_id in removed_ids:
+                await self.chat_management_service.disable_direct_chat(
+                    patient_id=patient_id,
+                    care_provider_id=cp_id,
+                )
+                await self.chat_notification_service.notify_participants(
+                    message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                    user_id=cp_id,
+                )
 
             await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=patient_id,
             )
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(500, "Database Error", detail=str(e))
+
+    @with_postgres_session
+    async def remove_care_provider_from_patients(
+        self,
+        care_provider_id: str,
+        patient_ids: list[str],
+        health_facility_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> list[str]:
+        try:
+            # Fetch care provider
+            care_provider = (
+                await self.care_provider_service.fetch_care_provider(
+                    care_provider_id
+                )
+            )
+            care_provider = await postgres_session.merge(care_provider)
+
+            if str(care_provider.health_facility_id) != health_facility_id:
+                raise_http_exception(
+                    400, "Care provider is in a different facility"
+                )
+
+            # Fetch patients in batch
+            patient_map = await self.fetch_patient_profiles(
+                patient_ids, postgres_session=postgres_session
+            )
+
+            removed_patient_ids = []
+
+            for patient_id in patient_ids:
+                patient = patient_map.get(patient_id)
+                if not patient:
+                    continue
+
+                # Ensure same facility
+                if str(patient.health_facility_id) != health_facility_id:
+                    continue
+
+                if care_provider in patient.care_providers:
+                    patient.care_providers.remove(care_provider)
+                    removed_patient_ids.append(patient_id)
+
+            if not removed_patient_ids:
+                raise_http_exception(
+                    400,
+                    "Care provider was not assigned to any of the specified patients",
+                )
+
+            await postgres_session.commit()
+
+            # Disable chat + notify all
+            for pid in removed_patient_ids:
+                await self.chat_management_service.disable_direct_chat(
+                    patient_id=pid,
+                    care_provider_id=care_provider_id,
+                )
+                await self.chat_notification_service.notify_participants(
+                    message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                    user_id=pid,
+                )
+
             await self.chat_notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                 user_id=care_provider_id,
             )
+
+            return removed_patient_ids
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -715,15 +898,16 @@ class PatientProfileService:
         patient_id: str,
         care_provider_code: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> CareProviderModel:
         try:
             # Fetch care provider by code
             stmt = select(CareProviderModel).where(
                 CareProviderModel.code == care_provider_code
             )
-            result = await postgres_session.execute(stmt)
-            care_provider = result.scalars().first()
+            care_provider = (
+                (await postgres_session.execute(stmt)).scalars().first()
+            )
 
             if not care_provider:
                 raise_http_exception(
@@ -731,32 +915,36 @@ class PatientProfileService:
                     message="Invalid care provider code.",
                 )
 
-            # Fetch the patient
+            # Fetch patient with full details
             patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
 
-            # Check if the care provider is already linked
             if care_provider in patient.care_providers:
                 raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Care provider is already added.",
+                    status.HTTP_400_BAD_REQUEST,
+                    "Care provider is already added.",
                 )
 
-            # Link the care provider to the patient
+            # Link care provider and assign facility
             patient.care_providers.append(care_provider)
             patient.health_facility_id = care_provider.health_facility_id
-
             postgres_session.add(patient)
+
+            # Create chats and notifications
+            await self.chat_management_service.create_chat_relationships(
+                str(patient.patient_id),
+                str(care_provider.care_provider_id),
+            )
+
             await postgres_session.commit()
             await postgres_session.refresh(patient)
 
-            # Create chats and notifications
-            await self._create_chat_relationships(
-                patient, care_provider, postgres_session
-            )
-
             return care_provider
+
+        except ChatCreationError as e:
+            await postgres_session.rollback()
+            raise_http_exception(500, "Chat creation failed", detail=str(e))
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -774,8 +962,7 @@ class PatientProfileService:
             stmt = select(
                 exists().where(PatientModel.patient_id == patient_id)
             )
-            result = await postgres_session.execute(stmt)
-            (exists_result,) = result.scalars()
+            exists_result = await postgres_session.scalar(stmt)
 
             if not exists_result:
                 raise_http_exception(
@@ -784,33 +971,11 @@ class PatientProfileService:
                 )
 
             return True
+
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Database Error",
-                detail=str(e),
-            )
-
-    async def _create_chat_relationships(
-        self,
-        patient: PatientModel,
-        care_provider: CareProviderModel,
-        postgres_session: AsyncSession,
-    ):
-        """Helper method to handle async chat creation"""
-        try:
-            await self.chat_management_service.create_direct_and_group_chats(
-                patient, care_provider
-            )
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=str(patient.patient_id),
-            )
-        except Exception as e:
-            await postgres_session.rollback()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to create chat relationships",
                 detail=str(e),
             )
 
@@ -852,7 +1017,7 @@ class PatientProfileService:
         foreign_key_name,
         foreign_key_value,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ):
         """Helper method to delete existing entities and upsert multiple new entities."""
 

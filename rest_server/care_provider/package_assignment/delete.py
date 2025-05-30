@@ -5,9 +5,7 @@ from lib.dependencies.service_dependencies import (
     get_patient_package_assignment_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.package import PackageCreate
 from lib.schemas.patient_package_assignment import (
-    PatientPackageAssignment,
     PatientPackageAssignmentCreate,
 )
 from lib.services.patient_package_assignment_service import (
@@ -23,9 +21,9 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.post("", response_model=SuccessResponse)
-async def create_package_assignment(
-    assignment_data: PatientPackageAssignmentCreate,
+@router.delete("", response_model=SuccessResponse)
+async def delete_package_assignment(
+    assignment_id: str,
     patient_package_assignment_service: PatientPackageAssignmentService = Depends(
         get_patient_package_assignment_service
     ),
@@ -45,18 +43,13 @@ async def create_package_assignment(
                 message="Care provider is not associated with any health facility.",
             )
 
-        new_assignment = (
-            await patient_package_assignment_service.create_assignment(
-                assignment_data=assignment_data,
-                health_facility_id=str(
-                    current_care_provider.health_facility_id
-                ),
-            )
+        await patient_package_assignment_service.remove_assignment(
+            assignment_id=assignment_id,
+            health_facility_id=str(current_care_provider.health_facility_id),
         )
 
         return SuccessResponse(
-            message="Package assignment created successfully",
-            data=PatientPackageAssignment.from_orm(new_assignment),
+            message="Package assignment removed successfully",
         )
     except HTTPException as e:
         raise e
