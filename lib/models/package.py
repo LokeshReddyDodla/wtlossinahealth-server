@@ -1,7 +1,7 @@
 import random
 import string
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
@@ -122,3 +122,13 @@ class Package(Base):
             name="uq_package_name_per_health_facility",
         ),
     )
+
+    @property
+    def active_patients(self):
+        today = date.today()
+        return [
+            assignment.patient
+            for assignment in self.patient_assignments
+            if assignment.status == "active"
+            and assignment.start_date <= today <= assignment.end_date
+        ]
