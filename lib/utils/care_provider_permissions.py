@@ -18,6 +18,7 @@ class CareProviderRole(Enum):
     ADMIN = "admin"
     LAB_TECHNICIAN = "lab_technician"
     PHYSIOTHERAPIST = "physiotherapist"
+    SUPPORT_STAFF = "support_staff"
 
 
 class CareProviderFeature(Enum):
@@ -309,6 +310,35 @@ CARE_PROVIDER_PERMISSIONS = {
         ),
         CareProviderFeature.AI_CHATS: CareProviderPermission(
             read=True, create=True, update=False, delete=False
+        ),
+    },
+    CareProviderRole.SUPPORT_STAFF: {
+        CareProviderFeature.MEALS: CareProviderPermission(
+            read=False, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.REPORTS: CareProviderPermission(
+            read=False, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.FITNESS: CareProviderPermission(
+            read=False, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.CGMS: CareProviderPermission(
+            read=False, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PATIENTS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.PACKAGES: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
+        ),
+        CareProviderFeature.AI_CHATS: CareProviderPermission(
+            read=True, create=False, update=False, delete=False
         ),
     },
 }
