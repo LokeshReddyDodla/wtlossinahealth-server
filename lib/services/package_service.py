@@ -1,3 +1,4 @@
+from datetime import date
 import random
 import string
 from typing import List, Optional
@@ -22,6 +23,10 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from sqlalchemy.orm import joinedload, selectinload
+from lib.models.patient_package_assignment import (
+    AssignmentStatus,
+    PatientPackageAssignment as PatientPackageAssignmentModel,
+)
 
 
 class PackageService:
@@ -135,6 +140,10 @@ class PackageService:
                 .where(PackageModel.health_facility_id == health_facility_id)
                 .options(
                     selectinload(PackageModel.care_providers),
+                    selectinload(PackageModel.patient_assignments).options(
+                        joinedload(PatientPackageAssignmentModel.package),
+                        joinedload(PatientPackageAssignmentModel.patient),
+                    ),
                 )
             )
 

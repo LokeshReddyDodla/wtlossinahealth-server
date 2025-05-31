@@ -2,17 +2,25 @@ from fastapi import Depends, HTTPException, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service, get_package_service)
+    get_care_provider_profile_service,
+    get_package_service,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.schemas.patient import Patient as PatientSchema
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.package_service import PackageService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.care_provider.health_facility.api_schema import (
-    HealthFacilityCareProviders, HealthFacilityPackages)
+    HealthFacilityCareProviders,
+    HealthFacilityPackages,
+)
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -119,9 +127,18 @@ async def get_health_facility_packages(
             health_facility_id=str(current_care_provider.health_facility_id)
         )
 
+        response_data = []
+        for pkg in packages:
+            package_dict = HealthFacilityPackages.from_orm(pkg).model_dump()
+            package_dict["active_patients"] = [
+                PatientSchema.from_orm(patient).model_dump()
+                for patient in pkg.active_patients
+            ]
+            response_data.append(package_dict)
+
         return SuccessResponse(
             message="Packages in the health facility fetched successfully.",
-            data=[HealthFacilityPackages.from_orm(pkg) for pkg in packages],
+            data=response_data,
         )
     except HTTPException as e:
         raise e
