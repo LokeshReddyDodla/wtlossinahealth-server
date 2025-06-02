@@ -141,7 +141,7 @@ async def delete_package_assignment(
         )
 
         return SuccessResponse(
-            message="Package assignment removed successfully",
+            message="Patient removed successfully",
         )
     except HTTPException as e:
         raise e

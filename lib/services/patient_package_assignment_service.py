@@ -1,3 +1,4 @@
+from datetime import timedelta
 import logging
 from typing import Optional
 from uuid import UUID
@@ -162,8 +163,12 @@ class PatientPackageAssignmentService:
                 )
 
             # Create new assignment
+            calculated_end_date = assignment_data.start_date + timedelta(
+                days=package.duration_days
+            )
             new_assignment = PatientPackageAssignmentModel(
-                **assignment_data.model_dump()
+                **assignment_data.model_dump(exclude={"end_date"}),
+                end_date=calculated_end_date,
             )
             postgres_session.add(new_assignment)
 
