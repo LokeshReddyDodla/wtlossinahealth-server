@@ -20,7 +20,7 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("active-patients", response_model=SuccessResponse)
+@router.get("/active-patients", response_model=SuccessResponse)
 async def get_active_patients_of_package(
     package_id: str,
     package_service: PackageService = Depends(get_package_service),
