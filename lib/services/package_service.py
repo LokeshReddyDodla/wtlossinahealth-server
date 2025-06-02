@@ -74,7 +74,10 @@ class PackageService:
                 stmt = stmt.options(
                     selectinload(PackageModel.health_facility),
                     selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patient_assignments),
+                    selectinload(PackageModel.patient_assignments).options(
+                        joinedload(PatientPackageAssignmentModel.package),
+                        joinedload(PatientPackageAssignmentModel.patient),
+                    ),
                 )
 
             package = (await postgres_session.execute(stmt)).scalars().first()
