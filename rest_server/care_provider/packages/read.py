@@ -7,6 +7,7 @@ from lib.dependencies.service_dependencies import (
     get_patient_package_assignment_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.models.patient_package_assignment import AssignmentStatus
 from lib.schemas.patient import Patient as PatientSchema
 
 from lib.schemas.patient_package_assignment import (
@@ -53,10 +54,17 @@ async def get_active_patients_of_package(
         )
 
         # Extract and return only active patients
-        active_patients = [
-            PatientSchema.from_orm(patient).model_dump()
-            for patient in package.active_patients
-        ]
+        active_patients = []
+        for assignment in package.patient_assignments:
+            if assignment.status == AssignmentStatus.ACTIVE:
+                active_patients.append(
+                    {
+                        "assignment_id": str(assignment.assignment_id),
+                        "patient": PatientSchema.from_orm(
+                            assignment.patient
+                        ).model_dump(),
+                    }
+                )
 
         return SuccessResponse(
             message="Active patients of the package fetched successfully.",
