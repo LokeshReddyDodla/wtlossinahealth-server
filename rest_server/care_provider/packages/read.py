@@ -60,6 +60,9 @@ async def get_active_patients_of_package(
                 active_patients.append(
                     {
                         "assignment_id": str(assignment.assignment_id),
+                        "start_date": assignment.start_date,
+                        "end_date": assignment.end_date,
+                        "status": assignment.status,
                         "patient": PatientSchema.from_orm(
                             assignment.patient
                         ).model_dump(),
