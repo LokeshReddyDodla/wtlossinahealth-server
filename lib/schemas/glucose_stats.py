@@ -59,6 +59,7 @@ class RapidSpikeEvent(BaseModel):
     end_time: datetime
     initial_glucose_level: float
     peak_glucose_level: float
+    peak_glucose_time: datetime
     duration: float
 
 
@@ -74,6 +75,7 @@ class RapidDropEvent(BaseModel):
     end_time: datetime
     initial_glucose_level: float
     lowest_glucose_level: float
+    lowest_glucose_time: datetime
     duration: float
 
 

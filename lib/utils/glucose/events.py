@@ -2,8 +2,12 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from lib.schemas.glucose_stats import (HyperEvent, HypoEvent, RapidDropStats,
-                                       RapidSpikeStats)
+from lib.schemas.glucose_stats import (
+    HyperEvent,
+    HypoEvent,
+    RapidDropStats,
+    RapidSpikeStats,
+)
 
 
 def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
@@ -126,12 +130,19 @@ class GlucoseEventsProcessor:
                             "Glucose_Level"
                         ],
                         "peak_glucose_level": df.iloc[i]["Glucose_Level"],
+                        "peak_glucose_time": df.iloc[i]["Device_Timestamp"],
                     }
                 else:
-                    current_spike["peak_glucose_level"] = max(
-                        current_spike["peak_glucose_level"],
-                        df.iloc[i]["Glucose_Level"],
-                    )
+                    if (
+                        df.iloc[i]["Glucose_Level"]
+                        > current_spike["peak_glucose_level"]
+                    ):
+                        current_spike["peak_glucose_level"] = df.iloc[i][
+                            "Glucose_Level"
+                        ]
+                        current_spike["peak_glucose_time"] = df.iloc[i][
+                            "Device_Timestamp"
+                        ]
             else:
                 if current_spike is not None:
                     duration = (
@@ -195,12 +206,19 @@ class GlucoseEventsProcessor:
                             "Glucose_Level"
                         ],
                         "lowest_glucose_level": df.iloc[i]["Glucose_Level"],
+                        "lowest_glucose_time": df.iloc[i]["Device_Timestamp"],
                     }
                 else:
-                    current_drop["lowest_glucose_level"] = min(
-                        current_drop["lowest_glucose_level"],
-                        df.iloc[i]["Glucose_Level"],
-                    )
+                    if (
+                        df.iloc[i]["Glucose_Level"]
+                        < current_drop["lowest_glucose_level"]
+                    ):
+                        current_drop["lowest_glucose_level"] = df.iloc[i][
+                            "Glucose_Level"
+                        ]
+                        current_drop["lowest_glucose_time"] = df.iloc[i][
+                            "Device_Timestamp"
+                        ]
             else:
                 if current_drop is not None:
                     duration = (

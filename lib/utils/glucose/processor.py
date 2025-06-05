@@ -11,7 +11,8 @@ from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.glucose.queries import (
     generate_avg_glucose_readings_by_hour_query,
     generate_glucose_readings_around_meal_query,
-    generate_glucose_readings_by_date_query)
+    generate_glucose_readings_by_date_query,
+)
 from lib.utils.glucose.range import GlucoseRangeStatsFetcher
 from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
 from lib.utils.glucose.time_period import GlucoseTimePeriodStatsFetcher

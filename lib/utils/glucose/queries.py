@@ -26,7 +26,7 @@ def generate_glucose_level_query(
     SELECT
         COUNT(*) AS total_readings,
         SUM(CASE WHEN {range_condition} THEN 1 ELSE 0 END) AS condition_met,
-        (SUM(CASE WHEN {range_condition} THEN 1 ELSE 0 END) / COUNT(*)) * 100 AS {alias}
+        IF(COUNT(*) = 0, 0, (SUM(CASE WHEN {range_condition} THEN 1 ELSE 0 END) / COUNT(*)) * 100) AS {alias}
     FROM
         aihealth.cgm_data
     WHERE
@@ -42,9 +42,9 @@ def generate_glucose_stats_query(patient_id, start_date, end_date):
         AVG(glucose_level) AS average_glucose,
         STDDEV_SAMP(glucose_level) AS glucose_stddev,
         MAX(glucose_level) AS highest_glucose,
-        MAX(time) AS highest_glucose_date,
+        argMax(time, glucose_level) AS highest_glucose_date,
         MIN(glucose_level) AS lowest_glucose,
-        MIN(time) AS lowest_glucose_date
+        argMin(time, glucose_level) AS lowest_glucose_date
     FROM
         aihealth.cgm_data
     WHERE
@@ -128,7 +128,9 @@ def generate_avg_glucose_readings_by_hour_query(
     """
 
 
-def generate_avg_glucose_reading_by_date_query(patient_id, start_date, end_date):
+def generate_avg_glucose_reading_by_date_query(
+    patient_id, start_date, end_date
+):
     return f"""
     SELECT
         toDate(time) AS date,
