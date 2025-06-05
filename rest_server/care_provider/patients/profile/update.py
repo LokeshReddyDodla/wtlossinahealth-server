@@ -28,7 +28,7 @@ async def assign_care_provider_to_patient(
 ):
     updated_patient = await patient_service.assign_care_providers_to_patient(
         patient_id=patient_id,
-        care_provider_id=[care_provider_id],
+        care_provider_ids=[care_provider_id],
         health_facility_id=str(current_care_provider.health_facility_id),
     )
 
