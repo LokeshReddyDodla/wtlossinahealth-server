@@ -4,9 +4,11 @@ from datetime import datetime
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import (get_cgm_report_service,
-                                                   get_glucose_stats_processor,
-                                                   get_patient_profile_service)
+from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
+    get_glucose_stats_processor,
+    get_patient_profile_service,
+)
 from lib.models.patient import Patient
 from lib.schemas.patient import CorePatientProfile
 from lib.services.cgm_report_service import CGMReportService
@@ -34,7 +36,8 @@ async def get_patient_cgm_report(
 ):
     try:
         patient_info = await patient_profile_service.fetch_patient_profile(
-            patient_id=str(current_patient.patient_id), include_health_data=True
+            patient_id=str(current_patient.patient_id),
+            include_health_data=True,
         )
 
         report = await cgm_report_service.fetch_report(
@@ -65,7 +68,6 @@ async def get_patient_cgm_report(
 )
 async def get_patient_cgm_report_raw(
     request: Request,
-    patient_id: str = Query(...),
     start_date: datetime = Query(...),
     end_date: datetime = Query(...),
     glucose_stats_processor: GlucoseStatsProcessor = Depends(
@@ -83,13 +85,13 @@ async def get_patient_cgm_report_raw(
         patient_id = str(current_patient.patient_id)
 
         # Check if data exists and is continuous within the provided date range
-        if not await cgm_data_utils.is_data_available_and_continuous(
-            patient_id, start_date, end_date
-        ):
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="No continuous data available for the provided date range.",
-            )
+        # if not await cgm_data_utils.is_data_available_and_continuous(
+        #     patient_id, start_date, end_date
+        # ):
+        #     raise_http_exception(
+        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #         message="No continuous data available for the provided date range.",
+        #     )
 
         # Fetch patient info
         patient_info = await patient_profile_service.fetch_patient_profile(
