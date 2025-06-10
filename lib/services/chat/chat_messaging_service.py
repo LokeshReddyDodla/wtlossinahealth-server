@@ -44,7 +44,7 @@ class ChatMessagingService(BaseChatService):
         self,
         chat_id: str,
         message_id: str,
-        user_id: str,
+        sender_id: str,
         new_content: str,
         metadata: Optional[Dict] = None,
     ):
@@ -52,7 +52,7 @@ class ChatMessagingService(BaseChatService):
         try:
             existing_message = await self.get_message_by_id(message_id)
 
-            if existing_message["sender_id"] != user_id:
+            if existing_message["sender_id"] != sender_id:
                 raise Exception("You are not allowed to edit this message")
 
             update_data = {

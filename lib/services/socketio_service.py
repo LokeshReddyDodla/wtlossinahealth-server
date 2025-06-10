@@ -107,18 +107,18 @@ async def sendMessage(sid, data):
 async def editMessage(sid, data):
     chat_id = data.get("chat_id")
     message_id = data.get("message_id")
-    user_id = data.get("user_id")
-    new_content = data.get("new_content")
+    sender_id = data.get("sender_id")
+    new_content = data.get("content")
     metadata = data.get("metadata", {})
 
-    if not all([chat_id, message_id, user_id, new_content]):
+    if not all([chat_id, message_id, sender_id, new_content]):
         return {"status": "error", "message": "Missing required fields"}
 
     try:
         await chat_messaging_service.edit_message(
             chat_id=chat_id,
             message_id=message_id,
-            user_id=user_id,
+            sender_id=sender_id,
             new_content=new_content,
             metadata=metadata,
         )
