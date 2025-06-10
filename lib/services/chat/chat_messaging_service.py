@@ -58,7 +58,7 @@ class ChatMessagingService(BaseChatService):
             update_data = {
                 "content": new_content,
                 "updated_at": datetime.now(timezone.utc),
-                "edited": True,
+                "is_edited": True,
             }
             if metadata:
                 update_data["metadata"] = metadata
