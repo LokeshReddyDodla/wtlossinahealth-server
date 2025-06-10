@@ -73,7 +73,12 @@ class ChatMessagingService(BaseChatService):
 
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.MESSAGE_UPDATED.value,
-                data=jsonable_encoder(updated_message),
+                data={
+                    **jsonable_encoder(updated_message),
+                    "message": jsonable_encoder(
+                        updated_message
+                    ),  # TODO: remove "message" key after making changes in patient app
+                },
                 chat_id=chat_id,
             )
 
