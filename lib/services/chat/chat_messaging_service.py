@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
 
@@ -23,7 +24,7 @@ class ChatMessagingService(BaseChatService):
             await self._update_chat_on_new_message(
                 message, message_data.sender_id
             )
-            
+
             notification_info = self._create_notification_info(message)
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
@@ -38,6 +39,49 @@ class ChatMessagingService(BaseChatService):
         except Exception as e:
             print(f"Failed to add message: {str(e)}")
             raise Exception(f"Failed to add message: {str(e)}")
+
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str,
+        user_id: str,
+        new_content: str,
+        metadata: Optional[Dict] = None,
+    ):
+        """Edit the content of a message."""
+        try:
+            existing_message = await self.get_message_by_id(message_id)
+
+            if existing_message["sender_id"] != user_id:
+                raise Exception("You are not allowed to edit this message")
+
+            update_data = {
+                "content": new_content,
+                "updated_at": datetime.now(timezone.utc),
+                "edited": True,
+            }
+            if metadata:
+                update_data["metadata"] = metadata
+
+            result = await self.mongo_store.db["chat_messages"].update_one(
+                {"_id": message_id, "chat_id": chat_id}, {"$set": update_data}
+            )
+            if result.matched_count == 0:
+                raise Exception("No matching message found to update.")
+
+            updated_message = {**existing_message, **update_data}
+
+            await self.notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.MESSAGE_UPDATED.value,
+                data=jsonable_encoder(updated_message),
+                chat_id=chat_id,
+            )
+
+            print(f"Message {message_id} updated and broadcasted.")
+
+        except Exception as e:
+            print(f"Failed to edit message: {str(e)}")
+            raise Exception(f"Failed to edit message: {str(e)}")
 
     async def mark_message_as_read(
         self, chat_id: str, user_id: str, message_id: str
@@ -132,11 +176,11 @@ class ChatMessagingService(BaseChatService):
         message_dict = message.model_dump(by_alias=True)
         if message_dict.get("media") and message_dict["media"].get("url"):
             message_dict["media"]["url"] = str(message_dict["media"]["url"])
-            
+
         await self.mongo_store.insert_document("chat_messages", message_dict)
-        
+
         print(f"Message {message.id} added to chat {message.chat_id}.")
-        
+
         return message_dict
 
     async def _update_chat_on_new_message(

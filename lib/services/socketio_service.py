@@ -98,7 +98,36 @@ async def sendMessage(sid, data):
         await chat_messaging_service.add_message(message_data)
 
     except Exception as e:
-        await sio.emit("error", {"status": "error", "message": str(e)}, room=sid)
+        await sio.emit(
+            "error", {"status": "error", "message": str(e)}, room=sid
+        )
+
+
+@sio.event
+async def editMessage(sid, data):
+    chat_id = data.get("chat_id")
+    message_id = data.get("message_id")
+    user_id = data.get("user_id")
+    new_content = data.get("new_content")
+    metadata = data.get("metadata", {})
+
+    if not all([chat_id, message_id, user_id, new_content]):
+        return {"status": "error", "message": "Missing required fields"}
+
+    try:
+        await chat_messaging_service.edit_message(
+            chat_id=chat_id,
+            message_id=message_id,
+            user_id=user_id,
+            new_content=new_content,
+            metadata=metadata,
+        )
+
+    except Exception as e:
+        print(f"Error editing message: {str(e)}")
+        await sio.emit(
+            "error", {"status": "error", "message": str(e)}, room=sid
+        )
 
 
 @sio.event
@@ -117,7 +146,9 @@ async def markAsRead(sid, data):
         # Fetch all messages in the chat if no message_id is provided (mark all as read)
         if not message_id:
             # Mark all messages as read for this user
-            await chat_messaging_service.mark_all_messages_as_read(chat_id, user_id)
+            await chat_messaging_service.mark_all_messages_as_read(
+                chat_id, user_id
+            )
         else:
             # Mark specific message as read
             await chat_messaging_service.mark_message_as_read(
@@ -149,7 +180,9 @@ async def toggleReaction(sid, data):
         )
 
         # Fetch the updated message with the latest reactions
-        updated_message = await chat_messaging_service.get_message_by_id(message_id)
+        updated_message = await chat_messaging_service.get_message_by_id(
+            message_id
+        )
 
         # Emit the updated reaction event to all participants in the chat
         await chat_notification_service.notify_participants(
