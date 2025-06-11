@@ -603,11 +603,8 @@ class PatientProfileService:
                 patient_id, postgres_session=postgres_session
             )
 
-            print(
-                "==> patient.health_facility_id: ", patient.health_facility_id
-            )
             # Auto-assign health facility if not already assigned
-            if not str(patient.health_facility_id):
+            if patient.health_facility_id is None:
                 patient.health_facility_id = health_facility_id
             elif str(patient.health_facility_id) != health_facility_id:
                 raise_http_exception(400, "Patient is in a different facility")
