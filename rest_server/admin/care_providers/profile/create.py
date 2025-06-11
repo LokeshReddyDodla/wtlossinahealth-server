@@ -1,14 +1,17 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from lib.dependencies.auth.admin_auth import get_current_admin
-from lib.dependencies.service_dependencies import \
-    get_care_provider_profile_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_profile_service,
+)
 from lib.models.admin import Admin
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.care_provider import CareProviderCreate
-from lib.services.care_provider_profile_service import \
-    CareProviderProfileService
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
@@ -25,8 +28,10 @@ async def create_care_provider_profile(
     current_admin: Admin = Depends(get_current_admin),
 ):
     try:
-        new_care_provider = await care_provider_profile_service.create_care_provider(
-            care_provider, health_facility_id
+        new_care_provider = (
+            await care_provider_profile_service.create_care_provider(
+                care_provider, health_facility_id
+            )
         )
 
         return SuccessResponse(
@@ -37,4 +42,8 @@ async def create_care_provider_profile(
         raise e
     except SQLAlchemyError as e:
         response = ErrorResponse(message="Database Error", detail=str(e))
-        raise HTTPException(status_code=500, detail=response.dict())
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Database Error",
+            detail=str(e),
+        )
