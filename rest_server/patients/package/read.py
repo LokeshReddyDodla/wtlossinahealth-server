@@ -68,10 +68,9 @@ async def get_package_by_code_api(
             package_code=code, detailed=True
         )
 
-      
-         return SuccessResponse(
+        return SuccessResponse(
             message="Package retrieved successfully",
-            data=PackageByCodeResponse.from_orm(package)
+            data=PackageByCodeResponse.from_orm(package),
         )
 
     except HTTPException as http_exc:
