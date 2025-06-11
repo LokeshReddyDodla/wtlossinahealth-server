@@ -121,7 +121,7 @@ class PackageService:
             if not package:
                 raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    message="Package not found.",
+                    message="Package not found with the provided code.",
                 )
 
             return package
