@@ -8,7 +8,7 @@ from .connected_apps.router import router as connected_apps_router
 from .fitness.router import router as fitness_router
 from .meals.router import router as meals_router
 from .overview.router import router as overview_router
-from .package.router import router as package_router
+from .packages.router import router as packages_router
 from .permissions.router import router as permissions_router
 from .prescriptions.router import router as prescriptions_router
 from .profile.router import router as profile_router
@@ -23,7 +23,7 @@ router.include_router(connected_apps_router)
 router.include_router(fitness_router)
 router.include_router(meals_router)
 router.include_router(overview_router)
-router.include_router(package_router)
+router.include_router(packages_router)
 router.include_router(permissions_router)
 router.include_router(prescriptions_router)
 router.include_router(profile_router)
