@@ -1,24 +1,30 @@
 from typing import Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session, selectinload
 
 from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import \
-    get_patient_connected_app_service
+from lib.dependencies.service_dependencies import (
+    get_patient_connected_app_service,
+)
 from lib.models.admin import Admin
-from lib.models.patient_connected_app import \
-    PatientConnectedApp as PatientConnectedAppModel
-from lib.schemas.patient_connected_app import \
-    PatientConnectedApp as PatientConnectedAppSchema
-from lib.services.patient_connected_app_service import \
-    PatientConnectedAppService
+from lib.models.patient_connected_app import (
+    PatientConnectedApp as PatientConnectedAppModel,
+)
+from lib.schemas.patient_connected_app import (
+    PatientConnectedApp as PatientConnectedAppSchema,
+)
+from lib.services.patient_connected_app_service import (
+    PatientConnectedAppService,
+)
+from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import ErrorResponse, SuccessResponse
 
 from .router import router
+
 
 @router.get(
     "/libreview",
@@ -50,4 +56,8 @@ async def get_libreview_connected_patients(
         response = ErrorResponse(
             message="Internal Server Error", detail=str(e)
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

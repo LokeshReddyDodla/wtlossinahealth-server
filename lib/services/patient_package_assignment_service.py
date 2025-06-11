@@ -140,9 +140,9 @@ class PatientPackageAssignmentService:
             )
 
             if existing_assignment:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Patient already has an active assignment for this package",
+                    message="Patient already has an active assignment for this package",
                 )
 
             patient = await self.patient_service.fetch_patient_profile(
@@ -156,9 +156,9 @@ class PatientPackageAssignmentService:
             )
 
             if not patient or not package:
-                raise HTTPException(
+                raise_http_exception(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Patient or package not found",
+                    message="Patient or package not found",
                 )
 
             # Create new assignment

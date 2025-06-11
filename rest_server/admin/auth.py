@@ -25,7 +25,9 @@ class AdminCreate(BaseModel):
         return validate_email(value)
 
 
-@router.post("/register", tags=["Admin - Auth"], response_model=SuccessResponse)
+@router.post(
+    "/register", tags=["Admin - Auth"], response_model=SuccessResponse
+)
 async def register_admin(
     request: Request,
     admin_data: AdminCreate,
@@ -80,7 +82,7 @@ async def login_admin(
         admin = result.scalars().first()
 
         if not admin or not verify_password(
-            form_data.password, admin.hashed_password # type: ignore
+            form_data.password, admin.hashed_password  # type: ignore
         ):
             raise HTTPException(
                 status_code=400, detail="Invalid email or password"
