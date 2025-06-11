@@ -130,9 +130,6 @@ async def create_package_assignment(
         new_assignment = (
             await patient_package_assignment_service.create_assignment(
                 assignment_data=assignment_data,
-                health_facility_id=str(
-                    current_care_provider.health_facility_id
-                ),
             )
         )
 
