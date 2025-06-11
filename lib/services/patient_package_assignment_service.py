@@ -178,6 +178,11 @@ class PatientPackageAssignmentService:
                 if cp not in patient.care_providers
             ]
 
+            print(
+                "==> package.health_facility_id: ", package.health_facility_id
+            )
+            print("==> package.health_facility: ", package.health_facility)
+
             if added_provider_ids:
                 await self.patient_service.assign_care_providers_to_patient(
                     patient_id=assignment_data.patient_id,
