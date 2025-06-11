@@ -603,6 +603,9 @@ class PatientProfileService:
                 patient_id, postgres_session=postgres_session
             )
 
+            print(
+                "==> patient.health_facility_id: ", patient.health_facility_id
+            )
             # Auto-assign health facility if not already assigned
             if not str(patient.health_facility_id):
                 patient.health_facility_id = health_facility_id
