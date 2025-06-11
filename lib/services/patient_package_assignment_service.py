@@ -126,7 +126,6 @@ class PatientPackageAssignmentService:
     async def create_assignment(
         self,
         assignment_data: PatientPackageAssignmentCreate,
-        health_facility_id: str,
         *,
         postgres_session: AsyncSession,
     ) -> PatientPackageAssignmentModel:
@@ -183,7 +182,7 @@ class PatientPackageAssignmentService:
                 await self.patient_service.assign_care_providers_to_patient(
                     patient_id=assignment_data.patient_id,
                     care_provider_ids=added_provider_ids,
-                    health_facility_id=health_facility_id,
+                    health_facility_id=package.health_facility_id,
                     postgres_session=postgres_session,
                 )
 
