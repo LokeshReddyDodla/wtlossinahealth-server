@@ -18,7 +18,7 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.patients.package.api_schema import PackageByCodeResponse
+from rest_server.patients.packages.api_schema import PackageByCodeResponse
 from rest_server.response_models import SuccessResponse
 
 from .router import router
