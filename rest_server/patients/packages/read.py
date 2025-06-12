@@ -56,6 +56,38 @@ async def get_patient_packages_api(
         )
 
 
+@router.get(path="/active", response_model=SuccessResponse)
+async def get_patient_active_package_api(
+    request: Request,
+    patient_package_assignment_service: PatientPackageAssignmentService = Depends(
+        get_patient_package_assignment_service
+    ),
+    current_patient: Patient = Depends(get_current_patient),
+):
+    try:
+        assignment = await patient_package_assignment_service.get_active_assignment_for_patient(
+            patient_id=str(current_patient.patient_id),
+        )
+
+        return SuccessResponse(
+            message="Patient package fetched successfully",
+            data=(
+                PatientPackageAssignmentWithDetail.from_orm(assignment)
+                if assignment
+                else None
+            ),
+        )
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
 @router.get(path="/code", response_model=SuccessResponse)
 async def get_package_by_code_api(
     request: Request,
