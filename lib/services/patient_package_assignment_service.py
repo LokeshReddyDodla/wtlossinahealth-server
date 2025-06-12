@@ -83,7 +83,7 @@ class PatientPackageAssignmentService:
                 .where(
                     PatientPackageAssignmentModel.package_id == package_id,
                     PatientPackageAssignmentModel.status
-                    == PatientPackageAssignmentModel.ACTIVE,
+                    == AssignmentStatus.ACTIVE,
                 )
                 .options(joinedload(PatientPackageAssignmentModel.patient))
             )
@@ -108,7 +108,7 @@ class PatientPackageAssignmentService:
                 .where(
                     PatientPackageAssignmentModel.patient_id == patient_id,
                     PatientPackageAssignmentModel.status
-                    == PatientPackageAssignmentModel.ACTIVE,
+                    == AssignmentStatus.ACTIVE,
                 )
                 .options(joinedload(PatientPackageAssignmentModel.package))
                 .limit(1)
