@@ -98,10 +98,10 @@ class PatientPackageAssignmentService:
             )
 
     @with_postgres_session
-    async def get_active_assignments_for_patient(
+    async def get_active_assignment_for_patient(
         self, patient_id: str, *, postgres_session: AsyncSession
-    ) -> list[PatientPackageAssignmentModel]:
-        """Get all active package assignments for a patient."""
+    ) -> Optional[PatientPackageAssignmentModel]:
+        """Get active package assignment for a patient."""
         try:
             stmt = (
                 select(PatientPackageAssignmentModel)
@@ -111,9 +111,10 @@ class PatientPackageAssignmentService:
                     == PatientPackageAssignmentModel.ACTIVE,
                 )
                 .options(joinedload(PatientPackageAssignmentModel.package))
+                .limit(1)
             )
             result = await postgres_session.execute(stmt)
-            return list(result.scalars().all())
+            return result.scalars().first()
 
         except SQLAlchemyError as e:
             raise_http_exception(
