@@ -17,7 +17,10 @@ from lib.schemas.patient_family_diabetic_history import (
 )
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_medical_history import PatientMedicalHistory
-from lib.schemas.patient_package_assignment import PatientPackageAssignment
+from lib.schemas.patient_package_assignment import (
+    PatientPackageAssignment,
+    PatientPackageAssignmentWithDetail,
+)
 from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_plan import PatientPlan
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
@@ -108,7 +111,7 @@ class CompletePatientProfile(CorePatientProfile):
     smbgs: List[PatientSMBG] = []
     # health_facility: Optional[HealthFacility] = None
     care_providers: List[CareProvider] = []
-    package_assignments: List[PatientPackageAssignment] = []
+    package_assignments: List[PatientPackageAssignmentWithDetail] = []
 
     class Config:
         from_attributes = True

@@ -61,6 +61,9 @@ from lib.schemas.patient_alcohol_consumption import (
 from lib.schemas.patient_current_medication import (
     PatientCurrentMedicationCreate,
 )
+from lib.models.patient_package_assignment import (
+    PatientPackageAssignment as PatientPackageAssignmentModel,
+)
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
@@ -111,7 +114,9 @@ class PatientProfileService:
                 .where(PatientModel.patient_id == patient_id)
                 .options(
                     joinedload(PatientModel.care_providers),
-                    joinedload(PatientModel.package_assignments),
+                    joinedload(PatientModel.package_assignments).options(
+                        selectinload(PatientPackageAssignmentModel.package)
+                    ),
                     joinedload(PatientModel.health_facility),
                 )
             )
