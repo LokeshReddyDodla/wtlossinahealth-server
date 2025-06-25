@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import Depends, Request
@@ -8,6 +9,7 @@ from lib.core.postgres_store import PostgresStore
 postgres_store = PostgresStore()
 
 
+@asynccontextmanager
 async def get_postgres_session() -> AsyncGenerator[AsyncSession, None]:
     async with postgres_store.get_session() as session:
         yield session
