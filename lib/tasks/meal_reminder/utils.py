@@ -13,6 +13,12 @@ DEFAULT_MEAL_WINDOWS = {
     "dinner": {"start": 19, "end": 22},
 }
 
+MEAL_ICONS = {
+    "breakfast": "🍳",
+    "lunch": "🥗",
+    "dinner": "🍛",
+}
+
 
 async def process_meal_reminder_for_type(meal_type: str):
     """
@@ -44,14 +50,12 @@ async def process_meal_reminder_for_type(meal_type: str):
 
             first_name = patient.first_name or "there"
             meal_label = meal_type.capitalize()
+            meal_icon = MEAL_ICONS.get(meal_type.lower(), "🍽️")
 
-            title = (
-                f"[BETA] Hey {first_name}, don't forget your {meal_label} 🍽️"
-            )
-            # body = f"Logging your {meal_label.lower()} helps keep your nutrition on track. Tap to upload it now!"
+            title = f"{meal_icon} {first_name}, log your {meal_label}"
             body = (
                 f"Logging your {meal_label.lower()} helps keep your nutrition on track. "
-                "Tap to upload it now!\n\n(This feature is in testing – feedback welcome 🙌)"
+                "Tap to upload it now! 🙌"
             )
 
             participants = [{"id": str(patient.patient_id), "is_muted": False}]
@@ -97,8 +101,8 @@ async def process_missed_meals_check():
                 continue
 
             first_name = str(patient.first_name) or "there"
-            title = f"[BETA] Hey {first_name}, let's get back on track! 🍱"
-            body = f"{_generate_missed_meal_message(days_missed, first_name)}\n\n(This feature is in testing – feedback welcome 🙌)"
+            title = f"🍽️ {first_name}, missed some meals?"
+            body = _generate_missed_meal_message(days_missed, first_name)
 
             send_fcm_notification_task.delay(
                 participants=[
