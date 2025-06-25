@@ -4,7 +4,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.patient import PatientCreate
