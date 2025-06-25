@@ -31,6 +31,28 @@ celery.conf.update(
                 "expires": 30 * 60,  # 30 minutes expiration
             },
         },
+        "meal-reminder-breakfast": {
+            "task": "lib.tasks.meal_reminder.check_breakfast_reminders",
+            "schedule": crontab(
+                hour="10", minute="30"
+            ),  # After breakfast window ends
+        },
+        "meal-reminder-lunch": {
+            "task": "lib.tasks.meal_reminder.check_lunch_reminders",
+            "schedule": crontab(
+                hour="14", minute="30"
+            ),  # After lunch window ends
+        },
+        "meal-reminder-dinner": {
+            "task": "lib.tasks.meal_reminder.check_dinner_reminders",
+            "schedule": crontab(
+                hour="22", minute="30"
+            ),  # After dinner window ends
+        },
+        "meal-reminder-missed-streak": {
+            "task": "lib.tasks.meal_reminder.check_missed_meals_streaks",
+            "schedule": crontab(hour="9", minute="15"),  # Once every morning
+        },
     },
 )
 
@@ -41,3 +63,5 @@ from lib.tasks.meal_tasks import *
 from lib.tasks.sleep_tasks import *
 from lib.tasks.fcm_tasks import *
 from lib.tasks.libreview_tasks import *
+from lib.tasks.meal_reminder.general_check_task import *
+from lib.tasks.meal_reminder.time_based_tasks import *

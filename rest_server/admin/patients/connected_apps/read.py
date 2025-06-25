@@ -6,7 +6,6 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import Session, selectinload
 
 from lib.dependencies.auth.admin_auth import get_current_admin
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_patient_connected_app_service,
 )

@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_patient_profile_service
 from lib.models.patient import Patient
 from lib.schemas.patient import Patient as PatientSchema
