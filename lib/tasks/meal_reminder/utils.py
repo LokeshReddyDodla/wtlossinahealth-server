@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, date
 from sqlalchemy.future import select
 
-from lib.dependencies.database import get_postgres_session
+from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
 from lib.tasks.fcm_tasks import send_fcm_notification_task
 from sqlalchemy.orm import selectinload
@@ -19,7 +19,7 @@ async def process_meal_reminder_for_type(meal_type: str):
     Send reminders to patients who haven't uploaded a specific meal today.
     E.g., breakfast by 10:30 AM, lunch by 2:30 PM, dinner by 10:30 PM
     """
-    async with get_postgres_session() as session:
+    async with get_async_postgres_session() as session:
         today = datetime.now().date()
 
         result = await session.execute(
@@ -72,7 +72,7 @@ async def process_missed_meals_check():
     """
     General reminder: Send to users who haven’t uploaded meals in the last few days.
     """
-    async with get_postgres_session() as session:
+    async with get_async_postgres_session() as session:
         today = datetime.now().date()
         past_7_days = [today - timedelta(days=i) for i in range(1, 8)]
 
