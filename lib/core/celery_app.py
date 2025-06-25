@@ -32,19 +32,19 @@ celery.conf.update(
             },
         },
         "meal-reminder-breakfast": {
-            "task": "lib.tasks.meal_reminder.check_breakfast_reminders",
+            "task": "lib.tasks.meal_reminder.time_based_tasks.check_breakfast_reminders",
             "schedule": crontab(
                 hour="10", minute="30"
             ),  # After breakfast window ends
         },
         "meal-reminder-lunch": {
-            "task": "lib.tasks.meal_reminder.check_lunch_reminders",
+            "task": "lib.tasks.meal_reminder.time_based_tasks.check_lunch_reminders",
             "schedule": crontab(
                 hour="14", minute="30"
             ),  # After lunch window ends
         },
         "meal-reminder-dinner": {
-            "task": "lib.tasks.meal_reminder.check_dinner_reminders",
+            "task": "lib.tasks.meal_reminder.time_based_tasks.check_dinner_reminders",
             "schedule": crontab(
                 hour="22", minute="30"
             ),  # After dinner window ends
