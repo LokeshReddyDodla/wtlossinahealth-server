@@ -50,7 +50,7 @@ celery.conf.update(
             ),  # After dinner window ends
         },
         "meal-reminder-missed-streak": {
-            "task": "lib.tasks.meal_reminder.check_missed_meals_streaks",
+            "task": "lib.tasks.meal_reminder.general_check_task.check_missed_meals_streaks",
             "schedule": crontab(hour="9", minute="15"),  # Once every morning
         },
     },
