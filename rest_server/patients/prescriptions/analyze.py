@@ -41,7 +41,12 @@ async def analyze_prescription_api(
 
         return SuccessResponse(
             message="Prescription analyzed successfully.",
-            data=PatientPrescriptionRead.model_validate(response),
+            data={
+                "prescription_data": PatientPrescriptionRead.model_validate(
+                    response
+                ),
+                "ai_response_generated": True,
+            },
         )
 
     except HTTPException as http_exc:
