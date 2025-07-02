@@ -45,6 +45,10 @@ from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 
 # Processors
+from lib.services.prescription_analysis_service import (
+    PrescriptionAnalysisService,
+)
+from lib.services.prescription_service import PrescriptionService
 from lib.services.sleep_report_service import SleepReportService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
@@ -270,6 +274,35 @@ container.register(
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
+    ),
+)
+
+# 🔹 Prescription Service
+container.register(
+    PrescriptionService,
+    lambda: PrescriptionService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        prescription_analysis_service=cast(
+            PrescriptionAnalysisService,
+            container.resolve(PrescriptionAnalysisService),
+        ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+    ),
+)
+
+
+# 🔹 Prescription Analysis Service
+container.register(
+    PrescriptionAnalysisService,
+    lambda: PrescriptionAnalysisService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
+        ),
+        selected_ai_model="gpt-4o",
+        ai_model_provider="openai",
     ),
 )
 

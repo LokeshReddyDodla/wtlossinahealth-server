@@ -151,6 +151,12 @@ class Patient(Base):
         "PatientSMBG", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    prescriptions = relationship(
+        "PatientPrescription",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
     connected_apps = relationship(
         "PatientConnectedApp",
         uselist=False,
