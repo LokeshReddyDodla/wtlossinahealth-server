@@ -32,6 +32,10 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
+from lib.services.prescription_analysis_service import (
+    PrescriptionAnalysisService,
+)
+from lib.services.prescription_service import PrescriptionService
 from lib.services.sleep_report_service import SleepReportService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
@@ -138,6 +142,17 @@ def get_meal_service() -> MealService:
     return cast(
         MealService,
         container.resolve(MealService),
+    )
+
+
+def get_prescription_service() -> PrescriptionService:
+    return cast(PrescriptionService, container.resolve(PrescriptionService))
+
+
+def get_prescription_analysis_service() -> PrescriptionAnalysisService:
+    return cast(
+        PrescriptionAnalysisService,
+        container.resolve(PrescriptionAnalysisService),
     )
 
 

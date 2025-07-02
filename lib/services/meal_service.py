@@ -1,6 +1,6 @@
 import json
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import status
@@ -32,6 +32,28 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
     PatientMealUpdateRequest,
     PatientMealUploadRequest,
+)
+from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
+from lib.models.patient_meal import (
+    PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
+)
+from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.models.patient_meal import (
+    PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
+)
+from lib.models.patient_meal import (
+    PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel,
+)
+from lib.models.patient_meal import (
+    PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel,
+)
+from lib.schemas.patient_meal import MealAnalysisResponse
+from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
+from lib.schemas.patient_meal import (
+    PatientMacroNutritionalValue as PatientMacroNutritionalValueSchema,
+)
+from lib.schemas.patient_meal import (
+    PatientMicroNutritionalValue as PatientMicroNutritionalValueSchema,
 )
 
 
@@ -368,7 +390,7 @@ class MealService:
                     message=f"Meal with ID {meal_id} failed to be analyzed",
                 )
 
-            updated_meal = await self.meal_analysis_service.save_meal_analysis(
+            updated_meal = await self.save_meal_analysis(
                 meal, parsed_ai_response
             )
 
@@ -405,6 +427,86 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
+
+    @with_postgres_session
+    async def save_meal_analysis(
+        self,
+        meal: Any,
+        analysis_data: MealAnalysisResponse,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientMealModel:
+        # create FoodItem records
+        meal.items = [
+            self._create_food_item(meal, item_data)
+            for item_data in analysis_data.items
+        ]
+
+        # Update total macro nutritional values
+        total_macro = analysis_data.total_macro_nutritional_value.model_dump()
+        meal.total_macro_nutritional_value = (
+            PatientTotalMacroNutritionalValueModel(
+                meal_id=meal.id, **total_macro
+            )
+        )
+
+        # Update total micro nutritional values
+        total_micro = analysis_data.total_micro_nutritional_value.model_dump()
+        meal.total_micro_nutritional_value = (
+            PatientTotalMicroNutritionalValueModel(
+                meal_id=meal.id, **total_micro
+            )
+        )
+
+        # Update other meal fields
+        meal.name = analysis_data.meal_name
+        meal.feedback = analysis_data.feedback
+        meal.tags = analysis_data.tags
+        meal.score = float(analysis_data.score)
+        meal.analyzed = True
+        meal.analyzed_at = datetime.now()
+
+        # Commit changes to the database
+        await postgres_session.merge(meal)
+        await postgres_session.commit()
+
+        return meal
+
+    def _create_food_item(
+        self, meal: PatientMealModel, item_data: PatientFoodItemSchema
+    ) -> PatientFoodItemModel:
+        food_item = PatientFoodItemModel(
+            name=item_data.name,
+            coordinates=item_data.coordinates,
+            serving_size=item_data.serving_size,
+            serving_quantity=float(item_data.serving_quantity),
+            serving_unit=item_data.serving_unit,
+            category=item_data.category,
+            meal=meal,
+        )
+        food_item.macro_nutritional_values = PatientMacroNutritionalValueModel(
+            food_item_id=food_item.id,
+            **item_data.macro_nutritional_values.model_dump(),
+        )
+        food_item.micro_nutritional_values = PatientMicroNutritionalValueModel(
+            food_item_id=food_item.id,
+            **item_data.micro_nutritional_values.model_dump(),
+        )
+        return food_item
+
+    def _upsert_total_macro_nutritional_value(
+        self,
+        meal: PatientMealModel,
+        macro_data: PatientMacroNutritionalValueSchema,
+    ) -> PatientTotalMacroNutritionalValueModel:
+        return PatientTotalMacroNutritionalValueModel(meal=meal, **macro_data)
+
+    def _upsert_total_micro_nutritional_value(
+        self,
+        meal: PatientMealModel,
+        micro_data: PatientMicroNutritionalValueSchema,
+    ) -> PatientTotalMicroNutritionalValueModel:
+        return PatientTotalMicroNutritionalValueModel(meal=meal, **micro_data)
 
     def _generate_conversation_flow(
         self, meal_orm, meal_id: str, parsed_ai_response: MealAnalysisResponse
