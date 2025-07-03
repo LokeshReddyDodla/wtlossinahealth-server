@@ -48,8 +48,14 @@ class MealReportService:
             )
             return []
 
-    async def fetch_daily_report(self, patient_id: str, report_date: date):
+    async def fetch_daily_report(
+        self, patient_id: str, report_date: date, regenerate: bool = False
+    ):
         try:
+            if regenerate:
+                self.trigger_daily_report_generation(patient_id, report_date)
+                return None
+
             report = await self.meal_report_collection.find_one(
                 {"patient_id": patient_id, "date": report_date.isoformat()},
                 {"_id": 0},

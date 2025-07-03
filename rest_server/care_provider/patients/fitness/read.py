@@ -21,6 +21,7 @@ async def get_day_fitness_report(
     request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
+    regenerate: bool = Query(False),
     fitness_report_service: FitnessReportService = Depends(
         get_fitness_report_service
     ),
@@ -32,7 +33,7 @@ async def get_day_fitness_report(
 ):
     try:
         fitness_report = await fitness_report_service.fetch_daily_report(
-            str(patient_id), date
+            str(patient_id), date, regenerate=regenerate
         )
 
         if not fitness_report:
