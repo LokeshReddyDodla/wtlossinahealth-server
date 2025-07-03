@@ -16,7 +16,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -81,7 +81,7 @@ async def get_cgm_day_report(
         )
 
         if not day_report:
-            return SuccessResponse(
+            return InQueueResponse(
                 message="CGM report is being generated. Please check back shortly.",
             )
 

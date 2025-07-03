@@ -11,7 +11,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -37,7 +37,7 @@ async def get_day_fitness_report(
         )
 
         if not fitness_report:
-            return SuccessResponse(
+            return InQueueResponse(
                 message="Report is being generated. Please check back shortly.",
             )
 
