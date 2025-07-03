@@ -163,7 +163,10 @@ class PrescriptionService:
                 )
 
             saved_prescription = await self.save_prescription_analysis(
-                patient_id, prescription_file_url, parsed_ai_response
+                patient_id,
+                prescription_file_url,
+                parsed_ai_response,
+                postgres_session=postgres_session,
             )
 
             refetched_prescription = await self.fetch_prescription(
@@ -180,9 +183,6 @@ class PrescriptionService:
             await self.ai_conversation_service.add_multiple_messages_to_conversation(
                 messages=message_sequence,
             )
-
-            # 🚀 Trigger Meal Report Generation after Analysis
-            # generate_daily_meal_report.delay(str(patient_id), meal.date)
 
             return refetched_prescription
         except json.JSONDecodeError as e:

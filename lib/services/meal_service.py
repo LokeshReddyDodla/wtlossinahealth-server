@@ -391,7 +391,7 @@ class MealService:
                 )
 
             updated_meal = await self.save_meal_analysis(
-                meal, parsed_ai_response
+                meal, parsed_ai_response, postgres_session=postgres_session
             )
 
             if re_analyze:
