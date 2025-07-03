@@ -16,7 +16,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -67,6 +67,7 @@ async def get_cgm_day_report(
     request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
+    regenerate: bool = Query(False),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -76,8 +77,13 @@ async def get_cgm_day_report(
 ):
     try:
         day_report = await cgm_report_service.fetch_day_report(
-            patient_id, date
+            patient_id, date, regenerate=regenerate
         )
+
+        if not day_report:
+            return InQueueResponse(
+                message="CGM report is being generated. Please check back shortly.",
+            )
 
         return SuccessResponse(
             message="Day Glucose report fetched successfully",

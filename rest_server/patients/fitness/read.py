@@ -16,7 +16,7 @@ from lib.utils.date_utils import (
 )
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -72,7 +72,7 @@ async def get_day_fitness_report(
         )
 
         if not report:
-            return SuccessResponse(
+            return InQueueResponse(
                 message="Report is being generated. Please check back shortly.",
             )
 
