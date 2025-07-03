@@ -13,7 +13,7 @@ from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -109,7 +109,7 @@ async def get_day_meal_report(
         )
 
         if not meal_report:
-            return SuccessResponse(
+            return InQueueResponse(
                 message="Report is being generated. Please check back shortly.",
             )
 

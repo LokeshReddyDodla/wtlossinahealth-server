@@ -12,7 +12,7 @@ from lib.utils.date_utils import (
     get_week_start_and_end_from_week_no,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -32,7 +32,7 @@ async def get_day_sleep_data(
         )
 
         if not report:
-            return SuccessResponse(
+            return InQueueResponse(
                 message="Report is being generated. Please check back shortly.",
             )
 
