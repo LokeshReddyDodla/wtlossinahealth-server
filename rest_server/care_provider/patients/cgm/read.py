@@ -67,6 +67,7 @@ async def get_cgm_day_report(
     request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
+    regenerate: bool = Query(False),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -76,8 +77,13 @@ async def get_cgm_day_report(
 ):
     try:
         day_report = await cgm_report_service.fetch_day_report(
-            patient_id, date
+            patient_id, date, regenerate=regenerate
         )
+
+        if not day_report:
+            return SuccessResponse(
+                message="CGM report is being generated. Please check back shortly.",
+            )
 
         return SuccessResponse(
             message="Day Glucose report fetched successfully",
