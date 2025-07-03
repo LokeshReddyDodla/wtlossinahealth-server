@@ -89,10 +89,18 @@ class CGMReportService:
             )
             return None
 
-    async def fetch_day_report(self, patient_id: str, date: date):
+    async def fetch_day_report(
+        self, patient_id: str, date: date, regenerate: bool = False
+    ):
         try:
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
+
+            if regenerate:
+                self._trigger_report_generation(
+                    patient_id, start_date, end_date
+                )
+                return None
 
             report = await self.cgm_report_collection.find_one(
                 {
@@ -120,8 +128,10 @@ class CGMReportService:
 
             # If there's a meal report ID, fetch the full meal report
             if day_report.get("meal_report_id"):
-                meal_report = await self.meal_report_service.fetch_report_by_id(
-                    day_report["meal_report_id"]
+                meal_report = (
+                    await self.meal_report_service.fetch_report_by_id(
+                        day_report["meal_report_id"]
+                    )
                 )
                 day_report["meal_report"] = meal_report
                 del day_report["meal_report_id"]
@@ -138,8 +148,9 @@ class CGMReportService:
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import (
+                get_celery_task_manager,
+            )
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
@@ -158,7 +169,9 @@ class CGMReportService:
 
     async def save_report(self, patient_id: str, report: Dict[str, Any]):
         try:
-            unique_key = f"{patient_id}_{report['start_date']}_{report['end_date']}"
+            unique_key = (
+                f"{patient_id}_{report['start_date']}_{report['end_date']}"
+            )
             report_id = hashlib.sha256(unique_key.encode()).hexdigest()
             now = datetime.now()
 
@@ -166,7 +179,9 @@ class CGMReportService:
                 {"_id": report_id}
             )
             report["created_at"] = (
-                existing_report.get("created_at", now) if existing_report else now
+                existing_report.get("created_at", now)
+                if existing_report
+                else now
             )
             report["updated_at"] = now
 

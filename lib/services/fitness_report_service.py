@@ -5,8 +5,10 @@ from datetime import date, datetime, time
 from pymongo import ReplaceOne
 
 from lib.core.types import FitnessReportTypeLiteral
-from lib.utils.date_utils import (get_month_start_end,
-                                  get_week_start_and_end_from_week_no)
+from lib.utils.date_utils import (
+    get_month_start_end,
+    get_week_start_and_end_from_week_no,
+)
 
 
 class FitnessReportService:
@@ -38,10 +40,18 @@ class FitnessReportService:
             )
             return []
 
-    async def fetch_daily_report(self, patient_id: str, date: date):
+    async def fetch_daily_report(
+        self, patient_id: str, date: date, regenerate: bool = False
+    ):
         try:
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
+
+            if regenerate:
+                self._trigger_report_generation(
+                    patient_id, start_date, end_date, "daily"
+                )
+                return None
 
             report = await self.fitness_report_collection.find_one(
                 {
@@ -56,6 +66,7 @@ class FitnessReportService:
                 self._trigger_report_generation(
                     patient_id, start_date, end_date, "daily"
                 )
+                return None
 
             return report
         except Exception as error:
@@ -127,8 +138,9 @@ class FitnessReportService:
         report_type: FitnessReportTypeLiteral,
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import (
+                get_celery_task_manager,
+            )
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(

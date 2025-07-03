@@ -26,6 +26,7 @@ async def get_day_meal_report(
     request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
+    regenerate: bool = Query(False),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -35,7 +36,7 @@ async def get_day_meal_report(
 ):
     try:
         meal_report = await meal_report_service.fetch_daily_report(
-            str(patient_id), date
+            str(patient_id), date, regenerate=regenerate
         )
 
         if not meal_report:
