@@ -363,6 +363,7 @@ class AiConversationService:
         conversation_id: str,
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
+        additional_context: Optional[str] = None,
     ) -> Dict:
         await self.add_message_to_conversation(
             user_id,
@@ -372,48 +373,38 @@ class AiConversationService:
             human_input,
         )
 
-        # Start building the message chain
+        # System + profile context
         messages: Any = [self.system_message]
-
-        # Add patient context
-        prefix = (
+        profile_prefix = (
             "My Profile:"
             if conversation_type == "patient"
             else "Patient Profile:"
         )
-        patient_context_message = await self.create_patient_context_message(
-            patient_id, prefix=prefix
+        messages.append(
+            await self.create_patient_context_message(
+                patient_id, prefix=profile_prefix
+            )
         )
-        messages.append(patient_context_message)
 
-        # Handle care-provider specific messages
-        if conversation_type == "care-provider":
-            patient_reports = await self.get_patient_reports(
-                patient_id, return_raw=True, limit_per_report=1
-            )
-            # Create a properly formatted HumanMessage
-            messages.append(
-                HumanMessage(
-                    content=f"Patient Reports:\n{json_util.dumps(patient_reports, indent=2)}"
-                )
-            )
-
-            # Fetch and process conversation history
-            conversation_history = await self.fetch_conversation_messages(
-                conversation_id
-            )
-            messages.extend(conversation_history)
-        else:
-            # Handle other conversation types
-            if conversation_id == f"{patient_id}-custom":
-                history = await self.fetch_user_entire_conversation_messages(
-                    patient_id
-                )
+        if additional_context:
+            if isinstance(additional_context, dict):
+                context_str = json_util.dumps(additional_context, indent=2)
             else:
-                history = await self.fetch_conversation_messages(
-                    conversation_id
-                )
-            messages.extend(history)
+                context_str = str(additional_context)
+
+            messages.append(
+                HumanMessage(content=f"User Context:\n{context_str}")
+            )
+
+        # Handle conversation type specific context
+        if conversation_type == "care-provider":
+            messages += await self._build_care_provider_context(
+                conversation_id, patient_id
+            )
+        else:  # patient or others
+            messages += await self._build_standard_context(
+                conversation_id, patient_id
+            )
 
         filtered_messages = (
             self.enforce_alternation(messages)
@@ -644,3 +635,26 @@ class AiConversationService:
                 message="An unexpected error occurred while deleting conversation messages.",
                 detail=str(e),
             )
+
+    async def _build_care_provider_context(
+        self, conversation_id: str, patient_id: str
+    ):
+        patient_reports = await self.get_patient_reports(
+            patient_id, return_raw=True, limit_per_report=1
+        )
+        history = await self.fetch_conversation_messages(conversation_id)
+        return [
+            HumanMessage(
+                content=f"Patient Reports:\n{json_util.dumps(patient_reports, indent=2)}"
+            ),
+            *history,
+        ]
+
+    async def _build_standard_context(
+        self, conversation_id: str, patient_id: str
+    ):
+        if conversation_id.endswith("-patient"):
+            return await self.fetch_user_entire_conversation_messages(
+                patient_id
+            )
+        return await self.fetch_conversation_messages(conversation_id)
