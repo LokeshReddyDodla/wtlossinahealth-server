@@ -639,14 +639,14 @@ class AiConversationService:
     async def _build_care_provider_context(
         self, conversation_id: str, patient_id: str
     ):
-        patient_reports = await self.get_patient_reports(
-            patient_id, return_raw=True, limit_per_report=1
-        )
+        # patient_reports = await self.get_patient_reports(
+        #     patient_id, return_raw=True, limit_per_report=1
+        # )
         history = await self.fetch_conversation_messages(conversation_id)
         return [
-            HumanMessage(
-                content=f"Patient Reports:\n{json_util.dumps(patient_reports, indent=2)}"
-            ),
+            # HumanMessage(
+            #     content=f"Patient Reports:\n{json_util.dumps(patient_reports, indent=2)}"
+            # ),
             *history,
         ]
 
