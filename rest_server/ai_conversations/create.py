@@ -1,14 +1,18 @@
-from fastapi import Depends, HTTPException, Request, status
+from typing import Optional
+from fastapi import Body, Depends, HTTPException, Request, status
 
 from lib.core.types import AiConversationTypeLiteral
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
-from lib.services.ai_conversation_service.ai_conversation_service import \
-    AiConversationService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -26,8 +30,8 @@ async def send_ai_conversation_patient_message(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            selected_ai_model="gpt-4o-mini", # sonar
-            ai_model_provider="openai", # perplexity
+            selected_ai_model="gpt-4o-mini",  # sonar
+            ai_model_provider="openai",  # perplexity
         )
 
         # Generate response from the AI model
@@ -60,6 +64,7 @@ async def send_ai_conversation_careprovider_message(
     conversation_id: str,
     human_input: str,
     conversation_type: AiConversationTypeLiteral,
+    context: Optional[str] = Body(None),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.CREATE,
@@ -81,6 +86,7 @@ async def send_ai_conversation_careprovider_message(
             conversation_id=conversation_id,
             conversation_type=conversation_type,
             human_input=human_input,
+            additional_context=context,
         )
 
         return SuccessResponse(
@@ -112,8 +118,10 @@ async def get_daily_health_tip(
             ai_model_provider="openai",
         )
         # Generate the health tip of the day
-        health_tip = await ai_conversation_service.generate_health_tip_for_patient(
-            patient_id=str(current_patient.patient_id),
+        health_tip = (
+            await ai_conversation_service.generate_health_tip_for_patient(
+                patient_id=str(current_patient.patient_id),
+            )
         )
 
         return SuccessResponse(
