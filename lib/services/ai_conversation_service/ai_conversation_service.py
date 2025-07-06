@@ -363,7 +363,7 @@ class AiConversationService:
         conversation_id: str,
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
-        additional_context: Optional[str] = None,
+        additional_context: Optional[Any] = None,
     ) -> Dict:
         await self.add_message_to_conversation(
             user_id,

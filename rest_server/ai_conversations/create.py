@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from fastapi import Body, Depends, HTTPException, Request, status
 
 from lib.core.types import AiConversationTypeLiteral
@@ -64,7 +64,7 @@ async def send_ai_conversation_careprovider_message(
     conversation_id: str,
     human_input: str,
     conversation_type: AiConversationTypeLiteral,
-    context: Optional[str] = Body(None),
+    additional_context: Optional[Any] = Body(None),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.CREATE,
@@ -86,7 +86,7 @@ async def send_ai_conversation_careprovider_message(
             conversation_id=conversation_id,
             conversation_type=conversation_type,
             human_input=human_input,
-            additional_context=context,
+            additional_context=additional_context,
         )
 
         return SuccessResponse(
