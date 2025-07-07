@@ -21,12 +21,12 @@ celery.conf.update(
     beat_schedule={
         "sync-libreview-every-2-hours": {
             "task": "lib.tasks.libreview_tasks.sync_all_libreview",
-            # "schedule": crontab(
-            #     minute="0", hour="7,9,11,13,15,17,19"
-            # ),  # 7AM-7PM every 2h
             "schedule": crontab(
-                minute="0", hour="*/2"
-            ),  # Every 2 hours at :00
+                minute="0", hour="10,12,14,16,18"
+            ),  # 10AM-6PM every 2h
+            # "schedule": crontab(
+            #     minute="0", hour="*/2"
+            # ),  # Every 2 hours at :00
             "options": {
                 "expires": 30 * 60,  # 30 minutes expiration
             },
