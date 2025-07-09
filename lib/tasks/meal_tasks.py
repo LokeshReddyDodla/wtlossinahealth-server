@@ -1,4 +1,3 @@
-import asyncio
 from datetime import date
 
 from celery import shared_task
@@ -9,6 +8,8 @@ def generate_daily_meal_report(
     patient_id: str,
     report_date: date,
 ):
+    import asyncio
+
     try:
         from lib.dependencies.service_dependencies import (
             get_meal_report_service,
