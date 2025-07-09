@@ -34,8 +34,9 @@ def generate_daily_meal_report(
                 },
             )
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # loop = asyncio.get_event_loop()
+        # loop.run_until_complete(generate_and_save_report())
+        asyncio.run(generate_and_save_report())
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
