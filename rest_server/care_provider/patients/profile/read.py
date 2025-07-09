@@ -87,6 +87,7 @@ async def get_patient_profile(
     chat_management_service: ChatManagementService = Depends(
         get_chat_management_service
     ),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ, CareProviderFeature.PATIENTS
@@ -105,11 +106,14 @@ async def get_patient_profile(
             patient_id, str(current_care_provider.care_provider_id)
         )
 
+        cgm_reports = await cgm_report_service.fetch_reports(patient_id)
+
         return SuccessResponse(
             message="Patient profile fetched successfully",
             data={
                 **CompletePatientProfile.from_orm(profile).model_dump(),
                 "direct_chat_id": direct_chat,
+                "reports": {"cgm": cgm_reports},
             },
         )
     except HTTPException as e:
