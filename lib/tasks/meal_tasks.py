@@ -37,10 +37,16 @@ def generate_daily_meal_report(
 
         # loop = asyncio.get_event_loop()
         # loop.run_until_complete(generate_and_save_report())
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Loop is closed")
+        except (RuntimeError, AssertionError):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         loop.run_until_complete(generate_and_save_report())
-        loop.close()
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
