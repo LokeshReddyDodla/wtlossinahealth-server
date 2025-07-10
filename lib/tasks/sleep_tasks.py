@@ -104,7 +104,8 @@ def generate_sleep_report_for_month(
             await sleep_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        run_async_task(generate_and_save_report())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(generate_and_save_report())
 
         print(
             f"✅ Generated sleep report for {patient_id} from {start_date}-{end_date}"
@@ -173,7 +174,8 @@ def generate_sleep_report(
             await sleep_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        run_async_task(generate_and_save_report())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(generate_and_save_report())
 
         print(
             f"✅ Generated {report_type} sleep report for {patient_id} from {start_date} to {end_date}"
