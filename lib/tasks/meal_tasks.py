@@ -2,6 +2,8 @@ from datetime import date
 
 from celery import shared_task
 
+from lib.utils.async_runner import run_async_task
+
 
 @shared_task
 def generate_daily_meal_report(
@@ -35,18 +37,7 @@ def generate_daily_meal_report(
                 },
             )
 
-        # loop = asyncio.get_event_loop()
-        # loop.run_until_complete(generate_and_save_report())
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("Loop is closed")
-        except (RuntimeError, AssertionError):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        loop.run_until_complete(generate_and_save_report())
+        run_async_task(generate_and_save_report())
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
