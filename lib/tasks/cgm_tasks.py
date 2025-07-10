@@ -1,12 +1,15 @@
-import asyncio
 from datetime import datetime
 from typing import List, Tuple
 
 from celery import shared_task
 
+from lib.utils.async_runner import run_async_task
+
 
 @shared_task
-def generate_cgm_reports_for_patient(patient_id: str, periods: List[Tuple[str, str]]):
+def generate_cgm_reports_for_patient(
+    patient_id: str, periods: List[Tuple[str, str]]
+):
     from lib.dependencies.service_dependencies import get_celery_task_manager
 
     try:
@@ -23,7 +26,9 @@ def generate_cgm_reports_for_patient(patient_id: str, periods: List[Tuple[str, s
             )
 
     except Exception as e:
-        print(f"❌ Failed to generate CGM reports for {patient_id}. Error: {e}")
+        print(
+            f"❌ Failed to generate CGM reports for {patient_id}. Error: {e}"
+        )
 
 
 @shared_task
@@ -34,7 +39,9 @@ def generate_cgm_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_cgm_report_service, get_glucose_stats_processor)
+            get_cgm_report_service,
+            get_glucose_stats_processor,
+        )
 
         glucose_stats_service = get_glucose_stats_processor()
         cgm_report_service = get_cgm_report_service()
@@ -62,8 +69,7 @@ def generate_cgm_report(
                 },
             )
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        run_async_task(generate_and_save_report())
 
         print(
             f"✅ Successfully generated cgm report for {patient_id} from {start_date} to {end_date}."

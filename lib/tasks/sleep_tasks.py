@@ -4,6 +4,7 @@ from datetime import datetime
 from celery import shared_task
 
 from lib.core.types import SleepReportTypeLiteral
+from lib.utils.async_runner import run_async_task
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 
 
@@ -42,7 +43,9 @@ def generate_sleep_report_for_month(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_sleep_report_service, get_sleep_stats_processor)
+            get_sleep_report_service,
+            get_sleep_stats_processor,
+        )
 
         sleep_stats_service = get_sleep_stats_processor()
         sleep_report_service = get_sleep_report_service()
@@ -101,8 +104,7 @@ def generate_sleep_report_for_month(
             await sleep_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        run_async_task(generate_and_save_report())
 
         print(
             f"✅ Generated sleep report for {patient_id} from {start_date}-{end_date}"
@@ -122,7 +124,9 @@ def generate_sleep_report(
 ):
     try:
         from lib.dependencies.service_dependencies import (
-            get_sleep_report_service, get_sleep_stats_processor)
+            get_sleep_report_service,
+            get_sleep_stats_processor,
+        )
 
         sleep_stats_service = get_sleep_stats_processor()
         sleep_report_service = get_sleep_report_service()
@@ -169,8 +173,7 @@ def generate_sleep_report(
             await sleep_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        run_async_task(generate_and_save_report())
 
         print(
             f"✅ Generated {report_type} sleep report for {patient_id} from {start_date} to {end_date}"
