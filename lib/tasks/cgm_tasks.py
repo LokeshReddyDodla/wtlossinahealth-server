@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import List, Tuple
 
@@ -69,7 +70,8 @@ def generate_cgm_report(
                 },
             )
 
-        run_async_task(generate_and_save_report())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(generate_and_save_report())
 
         print(
             f"✅ Successfully generated cgm report for {patient_id} from {start_date} to {end_date}."

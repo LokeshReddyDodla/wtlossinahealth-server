@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from celery import shared_task
@@ -95,7 +96,8 @@ def generate_fitness_report_for_month(
             await fitness_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        run_async_task(save_fitness_report())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(save_fitness_report())
 
         print(
             f"Generated fitness report for {patient_id} from {start_date}-{end_date}"
@@ -155,7 +157,8 @@ def generate_fitness_report(
             await fitness_report_service.save_reports_bulk(bulk_reports)
 
         # Save reports
-        run_async_task(save_fitness_report())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(save_fitness_report())
 
         print(
             f"Generated {report_type} fitness report for {patient_id} from {start_date} to {end_date}"
