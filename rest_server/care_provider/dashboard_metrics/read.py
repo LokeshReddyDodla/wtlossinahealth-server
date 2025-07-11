@@ -150,48 +150,6 @@ async def meals_grouped_by_date(
     )
 
 
-@router.get("/meals/high-carb-detailed", response_model=SuccessResponse)
-async def high_carb_detailed_meals(
-    start: Optional[datetime] = Query(None),
-    end: Optional[datetime] = Query(None),
-    carb_threshold: float = Query(50.0),
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0),
-    meal_metrics_service: MealMetricsService = Depends(
-        get_meal_metrics_service
-    ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
-        )
-    ),
-):
-    try:
-        meals = await meal_metrics_service.get_high_carb_meals(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            start=start,
-            end=end,
-            carb_threshold=carb_threshold,
-            limit=limit,
-            offset=offset,
-        )
-
-        return SuccessResponse(
-            message="High-carb meals fetched successfully",
-            data=[PatientMealSchema.from_orm(meal) for meal in meals],
-        )
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Unexpected error fetching high-carb meals",
-            detail=str(e),
-        )
-
-
 class ComparisonOperator(str, Enum):
     lt = "lt"
     lte = "lte"
@@ -200,7 +158,7 @@ class ComparisonOperator(str, Enum):
     eq = "eq"
 
 
-@router.get("/meals/low-macro-major", response_model=SuccessResponse)
+@router.get("/meals/filter-macro", response_model=SuccessResponse)
 async def macro_filtered_major_meals(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
