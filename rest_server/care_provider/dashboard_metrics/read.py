@@ -210,9 +210,14 @@ async def macro_filtered_major_meals(
         )
 
 
-@router.get("/low-steps")
-async def get_patients_with_low_steps(
-    min_steps: int = Query(1000, description="Max step count to consider low"),
+@router.get("/steps-threshold")
+async def get_patients_by_step_threshold(
+    steps_op: str = Query(
+        "lt", description="Comparison operator: lt, lte, gt, gte, eq"
+    ),
+    steps_value: int = Query(
+        1000, description="Step count value to compare against"
+    ),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     limit: int = Query(100, le=500),
@@ -229,17 +234,22 @@ async def get_patients_with_low_steps(
 ):
 
     try:
-        patients = await fitness_metrics_service.get_patients_with_low_steps(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            min_steps=min_steps,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            offset=offset,
+        patients = (
+            await fitness_metrics_service.get_patients_by_step_threshold(
+                health_facility_id=str(
+                    current_care_provider.health_facility_id
+                ),
+                steps_op=steps_op,
+                steps_value=steps_value,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit,
+                offset=offset,
+            )
         )
 
         return SuccessResponse(
-            message="Patients with low steps fetched successfully",
+            message="Patients filtered by step threshold fetched successfully",
             data=patients,
         )
 
