@@ -26,6 +26,53 @@ from lib.models.patient_meal import (
 
 
 class MealMetricsService:
+    async def get_food_photos_grouped_by_date(
+        self,
+        health_facility_id: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> list[dict]:
+        try:
+            async with get_async_postgres_session() as session:
+                stmt = (
+                    select(
+                        cast(PatientMealModel.uploaded_at, Date).label("date"),
+                        func.count().label("count"),
+                    )
+                    .join(
+                        PatientModel,
+                        PatientModel.patient_id == PatientMealModel.patient_id,
+                    )
+                    .where(
+                        PatientModel.health_facility_id == health_facility_id,
+                        PatientMealModel.image_url.isnot(
+                            None
+                        ),  # only meals with image_url
+                    )
+                    .group_by(cast(PatientMealModel.uploaded_at, Date))
+                    .order_by("date")
+                )
+
+                if start:
+                    stmt = stmt.where(PatientMealModel.uploaded_at >= start)
+                if end:
+                    stmt = stmt.where(PatientMealModel.uploaded_at <= end)
+
+                result = await session.execute(stmt)
+                rows = result.all()
+
+                return [
+                    {"date": row.date.isoformat(), "count": row.count}
+                    for row in rows
+                ]
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Failed to fetch food photo uploads",
+                detail=str(e),
+            )
+
     async def get_meal_uploads_grouped_by_date(
         self,
         health_facility_id: str,

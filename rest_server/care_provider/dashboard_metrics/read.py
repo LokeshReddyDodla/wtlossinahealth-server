@@ -120,6 +120,31 @@ async def total_patients_grouped_by_date(
         )
 
 
+@router.get("/meals/photos/grouped", response_model=SuccessResponse)
+async def food_photos_grouped_by_date(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    meal_metrics_service: MealMetricsService = Depends(
+        get_meal_metrics_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ,
+            CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    data = await meal_metrics_service.get_food_photos_grouped_by_date(
+        health_facility_id=str(current_care_provider.health_facility_id),
+        start=start,
+        end=end,
+    )
+    return SuccessResponse(
+        message="Food photos uploaded grouped by date",
+        data=data,
+    )
+
+
 @router.get("/meals/grouped", response_model=SuccessResponse)
 async def meals_grouped_by_date(
     start: Optional[datetime] = Query(None),
