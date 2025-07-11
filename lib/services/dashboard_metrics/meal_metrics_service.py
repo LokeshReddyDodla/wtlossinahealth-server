@@ -25,6 +25,19 @@ from lib.models.patient_meal import (
 )
 
 
+def build_condition(column, threshold, op: Optional[str]):
+    if threshold is None or op is None:
+        return None
+    op_map = {
+        "lt": column < threshold,
+        "lte": column <= threshold,
+        "gt": column > threshold,
+        "gte": column >= threshold,
+        "eq": column == threshold,
+    }
+    return op_map.get(op)
+
+
 class MealMetricsService:
     async def get_meal_uploads_grouped_by_date(
         self,
@@ -140,13 +153,17 @@ class MealMetricsService:
                 detail=str(e),
             )
 
-    async def get_low_protein_fiber_major_meals(
+    async def get_macro_filtered_major_meals(
         self,
         health_facility_id: str,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
-        protein_threshold: float = 20.0,
-        fiber_threshold: float = 10.0,
+        protein_threshold: Optional[float] = None,
+        protein_op: Optional[str] = None,
+        fiber_threshold: Optional[float] = None,
+        fiber_op: Optional[str] = None,
+        carbs_threshold: Optional[float] = None,
+        carbs_op: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[PatientMealModel]:
@@ -182,10 +199,6 @@ class MealMetricsService:
                     )
                     .where(
                         PatientModel.health_facility_id == health_facility_id,
-                        PatientTotalMacroNutritionalValueModel.proteins
-                        < protein_threshold,
-                        PatientTotalMacroNutritionalValueModel.fiber
-                        < fiber_threshold,
                         PatientMealModel.type.in_(major_meals),
                     )
                     .order_by(PatientMealModel.uploaded_at.desc())
@@ -198,6 +211,26 @@ class MealMetricsService:
                 if end:
                     stmt = stmt.where(PatientMealModel.uploaded_at <= end)
 
+                for condition in [
+                    build_condition(
+                        PatientTotalMacroNutritionalValueModel.proteins,
+                        protein_threshold,
+                        protein_op,
+                    ),
+                    build_condition(
+                        PatientTotalMacroNutritionalValueModel.fiber,
+                        fiber_threshold,
+                        fiber_op,
+                    ),
+                    build_condition(
+                        PatientTotalMacroNutritionalValueModel.carbohydrates,
+                        carbs_threshold,
+                        carbs_op,
+                    ),
+                ]:
+                    if condition is not None:
+                        stmt = stmt.where(condition)
+
                 result = await session.execute(stmt)
                 meals = result.scalars().all()
 
@@ -206,6 +239,6 @@ class MealMetricsService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch low protein and fiber major meals",
+                message="Failed to fetch macro filtered meals",
                 detail=str(e),
             )

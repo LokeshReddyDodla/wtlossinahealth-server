@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException, Query, status
@@ -191,12 +192,24 @@ async def high_carb_detailed_meals(
         )
 
 
-@router.get("/meals/low-protein-fiber-major", response_model=SuccessResponse)
-async def low_protein_fiber_major_meals(
+class ComparisonOperator(str, Enum):
+    lt = "lt"
+    lte = "lte"
+    gt = "gt"
+    gte = "gte"
+    eq = "eq"
+
+
+@router.get("/meals/low-macro-major", response_model=SuccessResponse)
+async def macro_filtered_major_meals(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
-    protein_threshold: float = Query(20.0),
-    fiber_threshold: float = Query(10.0),
+    protein_threshold: Optional[float] = Query(None),
+    protein_op: Optional[ComparisonOperator] = Query(None),
+    fiber_threshold: Optional[float] = Query(None),
+    fiber_op: Optional[ComparisonOperator] = Query(None),
+    carbs_threshold: Optional[float] = Query(None),
+    carbs_op: Optional[ComparisonOperator] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0),
     meal_metrics_service: MealMetricsService = Depends(
@@ -210,18 +223,22 @@ async def low_protein_fiber_major_meals(
     ),
 ):
     try:
-        meals = await meal_metrics_service.get_low_protein_fiber_major_meals(
+        meals = await meal_metrics_service.get_macro_filtered_major_meals(
             health_facility_id=str(current_care_provider.health_facility_id),
             start=start,
             end=end,
             protein_threshold=protein_threshold,
+            protein_op=protein_op,
             fiber_threshold=fiber_threshold,
+            fiber_op=fiber_op,
+            carbs_threshold=carbs_threshold,
+            carbs_op=carbs_op,
             limit=limit,
             offset=offset,
         )
 
         return SuccessResponse(
-            message="Low protein and fiber major meals fetched successfully",
+            message="Filtered major meals fetched successfully",
             data=[PatientMealSchema.from_orm(meal) for meal in meals],
         )
 
