@@ -13,6 +13,21 @@ from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.dashboard_metrics.cgm_metrics_service import (
+    CGMMetricsService,
+)
+from lib.services.dashboard_metrics.fitneess_metrics_service import (
+    FitnessMetricsService,
+)
+from lib.services.dashboard_metrics.meal_metrics_service import (
+    MealMetricsService,
+)
+from lib.services.dashboard_metrics.smbg_metrics_service import (
+    SMBGMetricsService,
+)
+from lib.services.dashboard_metrics.patient_metrics_service import (
+    PatientMetricsService,
+)
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
@@ -262,3 +277,23 @@ def get_meal_report_collection():
 
 def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
+
+
+def get_patient_metrics_service() -> PatientMetricsService:
+    return PatientMetricsService()
+
+
+def get_meal_metrics_service() -> MealMetricsService:
+    return MealMetricsService()
+
+
+def get_smbg_metrics_service() -> SMBGMetricsService:
+    return SMBGMetricsService()
+
+
+def get_cgm_metrics_service() -> CGMMetricsService:
+    return CGMMetricsService()
+
+
+def get_fitness_metrics_service() -> FitnessMetricsService:
+    return FitnessMetricsService()
