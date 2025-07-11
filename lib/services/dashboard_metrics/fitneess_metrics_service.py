@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 from sqlalchemy import Date, cast, func, select
 
 from lib.dependencies.database import get_async_postgres_session
@@ -29,23 +30,21 @@ class FitnessMetricsService:
                 "report_type": "daily",
                 "steps": {"$lt": min_steps},
             }
-            if start_date:
+
+            if start_date and end_date:
                 query["start_date"] = {"$gte": start_date}
-            if end_date:
-                query.setdefault("end_date", {})["$lte"] = end_date
+                query["end_date"] = {"$lte": end_date}
 
             # Get reports
             mongo_db = get_fitness_report_collection()
             cursor = mongo_db.find(query).skip(offset).limit(limit)  # type: ignore
             reports = await cursor.to_list(length=limit)
 
-            print("==> len: ", len(reports))
             if not reports:
                 return []
 
             # Unique patient IDs
             patient_ids = list({r["patient_id"] for r in reports})
-            print("==> patient_ids: ", patient_ids)
 
             async with get_async_postgres_session() as session:
                 stmt = select(Patient).where(
@@ -63,13 +62,15 @@ class FitnessMetricsService:
                         "active_duration": report.get("active_duration"),
                         "start_date": report.get("start_date"),
                         "patient": {
-                            "name": patient.name,
+                            "name": patient.first_name
+                            + " "
+                            + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
                         },
                     }
                     for report in reports
-                    if (patient := patients.get(report["patient_id"]))
+                    if (patient := patients.get(UUID(report["patient_id"])))
                 ]
 
         except SQLAlchemyError as e:
