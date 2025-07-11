@@ -11,10 +11,11 @@ from fastapi import status
 
 
 class FitnessMetricsService:
-    async def get_patients_with_low_steps(
+    async def get_patients_by_step_threshold(
         self,
         health_facility_id: str,
-        min_steps: int = 1000,
+        steps_op: str = "lt",
+        steps_value: int = 1000,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         limit: int = 100,
@@ -25,10 +26,21 @@ class FitnessMetricsService:
         )
 
         try:
+            op_map = {
+                "lt": "$lt",
+                "lte": "$lte",
+                "gt": "$gt",
+                "gte": "$gte",
+                "eq": "$eq",
+            }
+
+            mongo_op = op_map.get(steps_op)
+            if not mongo_op:
+                raise ValueError(f"Invalid operator: {steps_op}")
 
             query = {
                 "report_type": "daily",
-                "steps": {"$lt": min_steps},
+                "steps": {mongo_op: steps_value},
             }
 
             if start_date and end_date:
