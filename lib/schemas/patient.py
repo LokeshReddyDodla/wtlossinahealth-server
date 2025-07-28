@@ -112,6 +112,7 @@ class CompletePatientProfile(CorePatientProfile):
     # health_facility: Optional[HealthFacility] = None
     care_providers: List[CareProvider] = []
     package_assignments: List[PatientPackageAssignmentWithDetail] = []
+    current_package: Optional[PatientPackageAssignmentWithDetail] = None
 
     class Config:
         from_attributes = True

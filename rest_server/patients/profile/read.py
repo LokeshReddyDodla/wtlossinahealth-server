@@ -1,10 +1,11 @@
-
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import (get_cgm_report_service,
-                                                   get_patient_profile_service)
+from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
+    get_patient_profile_service,
+)
 from lib.models.patient import Patient
 from lib.schemas.patient import CompletePatientProfile
 from lib.services.cgm_report_service import CGMReportService
@@ -43,9 +44,7 @@ async def get_patient_details(
             message="Patient data fetched successfully.",
             data={
                 **CompletePatientProfile.from_orm(result).model_dump(),
-                "reports": {
-                    "cgm": cgm_reports
-                },
+                "reports": {"cgm": cgm_reports},
             },
         )
     except HTTPException as http_exc:
