@@ -1,8 +1,8 @@
 from lib.schemas.glucose_stats import HyperStats, RapidSpikeStats
-from lib.utils.glucose.events import GlucoseEventsProcessor, execute_query
+from lib.utils.cgm.events import CGMEventsProcessor, execute_query
 
 
-class HyperStatsFetcher(GlucoseEventsProcessor):
+class HyperStatsFetcher(CGMEventsProcessor):
     def __init__(self):
         super().__init__(threshold=180)
 

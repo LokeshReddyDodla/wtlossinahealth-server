@@ -8,7 +8,7 @@ from lib.schemas.fitness_stats import FitnessStats
 from lib.schemas.patient_meal import PatientMeal
 
 
-class GlucoseRangeStats(BaseModel):
+class CGMRangeStats(BaseModel):
     below_54: float
     below_70_above_54: float
     in_target_70_180: float
@@ -16,17 +16,17 @@ class GlucoseRangeStats(BaseModel):
     above_250: float
 
 
-class GlucoseEvent(BaseModel):
+class CGMEvent(BaseModel):
     start_time: datetime
     end_time: datetime
     duration: float
 
 
-class HyperEvent(GlucoseEvent):
+class HyperEvent(CGMEvent):
     peak_glucose_level: float
 
 
-class HypoEvent(GlucoseEvent):
+class HypoEvent(CGMEvent):
     lowest_glucose_level: float
 
 
@@ -39,7 +39,7 @@ class AGPPoint(BaseModel):
     seventy_fifth_percentile: float
 
 
-class GlucoseSummaryStats(BaseModel):
+class CGMSummaryStats(BaseModel):
     average_glucose: float
     gmi: float
     gmi_mmol: float
@@ -102,12 +102,12 @@ class HypoStats(BaseModel):
     rapid_drop_stats: RapidDropStats
 
 
-class GlucoseReading(BaseModel):
+class CGMReading(BaseModel):
     Device_Timestamp: Union[datetime, str]
     Glucose_Level: float
 
 
-class TimePeriodStats(BaseModel):
+class CGMTimePeriodStats(BaseModel):
     average_glucose: float
     highest_glucose: float
     lowest_glucose: float
@@ -116,14 +116,15 @@ class TimePeriodStats(BaseModel):
     to_time: str
 
 
-class GlucoseLevelStats(BaseModel):
+class CGMStats(BaseModel):
     start_date: datetime
     end_date: datetime
-    glucose_readings: Optional[List[GlucoseReading]] = None
-    glucose_summary_stats: GlucoseSummaryStats
-    glucose_range_stats: GlucoseRangeStats
+    report_type: str
+    glucose_readings: Optional[List[CGMReading]] = None
+    glucose_summary_stats: CGMSummaryStats
+    glucose_range_stats: CGMRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
-    time_period_stats: Optional[Dict[str, TimePeriodStats]]
+    time_period_stats: Optional[Dict[str, CGMTimePeriodStats]]
     fitness_report: Optional[FitnessStats] = None
     meal_report_id: Optional[str] = None

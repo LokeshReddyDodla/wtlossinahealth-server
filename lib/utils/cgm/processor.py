@@ -2,25 +2,25 @@ import hashlib
 from datetime import datetime
 from typing import Any, Dict, List, Literal
 
-from lib.schemas.glucose_stats import GlucoseLevelStats, GlucoseReading
+from lib.schemas.cgm_stats import CGMStats, CGMReading
 from lib.services.meal_report_service import MealReportService
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.glucose.hyper_stats_fetcher import HyperStatsFetcher
-from lib.utils.glucose.hypo_stats_fetcher import HypoStatsFetcher
-from lib.utils.glucose.queries import (
-    generate_avg_glucose_readings_by_hour_query,
-    generate_glucose_readings_around_meal_query,
-    generate_glucose_readings_by_date_query,
+from lib.utils.cgm.hyper_stats_fetcher import HyperStatsFetcher
+from lib.utils.cgm.hypo_stats_fetcher import HypoStatsFetcher
+from lib.utils.cgm.queries import (
+    generate_hourly_avg_cgm_query,
+    generate_cgm_readings_around_meal_query,
+    generate_cgm_readings_in_range_query,
 )
-from lib.utils.glucose.range import GlucoseRangeStatsFetcher
-from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
-from lib.utils.glucose.time_period import GlucoseTimePeriodStatsFetcher
+from lib.utils.cgm.range import CGMRangeStatsFetcher
+from lib.utils.cgm.summary import GlucoseSummaryStatsFetcher
+from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
 
-ReportTypeLiteral = Literal["daily", "weekly", "other"]
+ReportTypeLiteral = Literal["daily", "weekly", "custom", "other"]
 
 
-class GlucoseStatsProcessor:
+class CGMStatsProcessor:
     def __init__(
         self,
         clickhouse_store,
@@ -33,13 +33,13 @@ class GlucoseStatsProcessor:
         self.fitness_stats_processor = fitness_stats_processor
         self.meal_report_service = meal_report_service
 
-    def fetch_glucose_readings_by_date(
+    def get_cgm_readings_in_range(
         self,
         patient_id: str,
         start_date_str: str,
         end_date_str: str,
-    ) -> List[GlucoseReading]:
-        query = generate_glucose_readings_by_date_query(
+    ) -> List[CGMReading]:
+        query = generate_cgm_readings_in_range_query(
             patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
@@ -47,15 +47,15 @@ class GlucoseStatsProcessor:
             return []
 
         readings = [
-            GlucoseReading(Device_Timestamp=row[0], Glucose_Level=row[1])
+            CGMReading(Device_Timestamp=row[0], Glucose_Level=row[1])
             for row in data
         ]
         return readings
 
-    def fetch_avg_glucose_readings_by_hour(
+    def get_hourly_avg_cgm_readings(
         self, patient_id: str, start_date_str: str, end_date_str: str
-    ) -> List[GlucoseReading]:
-        query = generate_avg_glucose_readings_by_hour_query(
+    ) -> List[CGMReading]:
+        query = generate_hourly_avg_cgm_query(
             patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
@@ -63,12 +63,12 @@ class GlucoseStatsProcessor:
             return []
 
         grouped = [
-            GlucoseReading(Device_Timestamp=row[1], Glucose_Level=row[2])
+            CGMReading(Device_Timestamp=row[1], Glucose_Level=row[2])
             for row in data
         ]
         return grouped
 
-    def fetch_glucose_around_meal(
+    def get_cgm_readings_around_meal(
         self,
         patient_id: str,
         meal_time: datetime,
@@ -76,7 +76,7 @@ class GlucoseStatsProcessor:
         after_minutes=90,
     ):
         """Fetch glucose readings around the meal time."""
-        query = generate_glucose_readings_around_meal_query(
+        query = generate_cgm_readings_around_meal_query(
             patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),
             before_minutes,
@@ -131,14 +131,14 @@ class GlucoseStatsProcessor:
         start_date: datetime,
         end_date: datetime,
         report_type: ReportTypeLiteral,
-    ) -> GlucoseLevelStats:
+    ) -> CGMStats:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
         glucose_summary_stats = GlucoseSummaryStatsFetcher.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        glucose_range_stats = GlucoseRangeStatsFetcher.fetch(
+        glucose_range_stats = CGMRangeStatsFetcher.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         hyper_stats = HyperStatsFetcher().fetch(
@@ -153,11 +153,13 @@ class GlucoseStatsProcessor:
 
         fitness_report = self.fitness_stats_processor.generate_report(
             patient_id, start_date, end_date, include_overall=True
-        )["overall"]
+        )[
+            "overall"
+        ]  # TODO store it in fitness_report (report_type=custom)
 
         glucose_readings = None
         if report_type == "daily":
-            glucose_readings = self.fetch_glucose_readings_by_date(
+            glucose_readings = self.get_cgm_readings_in_range(
                 patient_id, start_date_str, end_date_str
             )
 
@@ -166,9 +168,10 @@ class GlucoseStatsProcessor:
             unique_key = f"{patient_id}_{report_type}_{start_date.date()}"
             meal_report_id = hashlib.sha256(unique_key.encode()).hexdigest()
 
-        return GlucoseLevelStats(
+        return CGMStats(
             start_date=start_date,
             end_date=end_date,
+            report_type=report_type,
             glucose_readings=glucose_readings,
             glucose_summary_stats=glucose_summary_stats,
             glucose_range_stats=glucose_range_stats,
@@ -184,7 +187,7 @@ class GlucoseStatsProcessor:
         patient_id: str,
         periods: List[Dict[str, datetime]],
         report_type: ReportTypeLiteral,
-    ) -> List[GlucoseLevelStats]:
+    ) -> List[CGMStats]:
         stats = []
         for period in periods:
             stats.append(

@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from lib.schemas.glucose_stats import (
+from lib.schemas.cgm_stats import (
     HyperEvent,
     HypoEvent,
     RapidDropStats,
@@ -19,7 +19,7 @@ def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
     return df
 
 
-class GlucoseEventsProcessor:
+class CGMEventsProcessor:
     def __init__(self, threshold: int):
         self.threshold = threshold
 

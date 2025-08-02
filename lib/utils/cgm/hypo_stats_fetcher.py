@@ -1,8 +1,8 @@
-from lib.schemas.glucose_stats import HypoStats, RapidDropStats
-from lib.utils.glucose.events import GlucoseEventsProcessor, execute_query
+from lib.schemas.cgm_stats import HypoStats, RapidDropStats
+from lib.utils.cgm.events import CGMEventsProcessor, execute_query
 
 
-class HypoStatsFetcher(GlucoseEventsProcessor):
+class HypoStatsFetcher(CGMEventsProcessor):
     def __init__(self):
         super().__init__(threshold=70)
 
