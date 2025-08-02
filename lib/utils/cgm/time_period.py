@@ -2,17 +2,19 @@ from datetime import datetime
 from datetime import time as datetime_time
 from typing import Any, Dict
 
-from lib.schemas.glucose_stats import TimePeriodStats
-from lib.utils.glucose.queries import (generate_glucose_readings_by_date_query,
-                                       generate_time_period_stats_query)
+from lib.schemas.cgm_stats import CGMTimePeriodStats
+from lib.utils.cgm.queries import (
+    generate_cgm_readings_in_range_query,
+    generate_time_period_cgm_stats_query,
+)
 
 
 class GlucoseTimePeriodStatsFetcher:
     @staticmethod
     def fetch(
         clickhouse_store, patient_id, start_date_str, end_date_str
-    ) -> Dict[str, TimePeriodStats]:
-        query = generate_time_period_stats_query(
+    ) -> Dict[str, CGMTimePeriodStats]:
+        query = generate_time_period_cgm_stats_query(
             patient_id, start_date_str, end_date_str
         )
         results = clickhouse_store.client.execute(query)
@@ -21,7 +23,7 @@ class GlucoseTimePeriodStatsFetcher:
         for row in results:
             time_period = row[0]
             if time_period != "unknown":
-                time_period_stats[time_period] = TimePeriodStats(
+                time_period_stats[time_period] = CGMTimePeriodStats(
                     from_time=row[1],
                     to_time=row[2],
                     average_glucose=row[3],

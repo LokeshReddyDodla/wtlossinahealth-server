@@ -5,10 +5,12 @@ from typing import List
 import pandas as pd
 from numpy import NaN
 
-from lib.schemas.glucose_stats import AGPPoint, GlucoseSummaryStats
-from lib.utils.glucose.queries import (
-    generate_agp_points_query, generate_avg_glucose_reading_by_date_query,
-    generate_glucose_stats_query)
+from lib.schemas.cgm_stats import AGPPoint, CGMSummaryStats
+from lib.utils.cgm.queries import (
+    generate_hourly_agp_points_cgm_query,
+    generate_daily_avg_cgm_query,
+    generate_summary_stats_cgm_query,
+)
 from lib.utils.validation_utils import validate_float
 
 
@@ -16,8 +18,8 @@ class GlucoseSummaryStatsFetcher:
     @staticmethod
     def fetch(
         clickhouse_store, patient_id, start_date_str, end_date_str
-    ) -> GlucoseSummaryStats:
-        query = generate_glucose_stats_query(
+    ) -> CGMSummaryStats:
+        query = generate_summary_stats_cgm_query(
             patient_id, start_date_str, end_date_str
         )
         result = clickhouse_store.client.execute(query)
@@ -57,7 +59,7 @@ class GlucoseSummaryStatsFetcher:
             clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
-        return GlucoseSummaryStats(
+        return CGMSummaryStats(
             average_glucose=average_glucose,
             gmi=gmi,
             gmi_mmol=gmi_mmol,
@@ -76,7 +78,7 @@ class GlucoseSummaryStatsFetcher:
     def fetch_daily_average_glucose(
         clickhouse_store, patient_id, start_date, end_date
     ):
-        query = generate_avg_glucose_reading_by_date_query(
+        query = generate_daily_avg_cgm_query(
             patient_id,
             start_date.strftime("%Y-%m-%dT00:00:00"),
             end_date.strftime("%Y-%m-%dT23:59:59"),
@@ -89,10 +91,10 @@ class GlucoseSummaryStatsFetcher:
     def fetch_agp_points(
         clickhouse_store, patient_id, start_date_str, end_date_str
     ) -> List[AGPPoint]:
-        query = generate_agp_points_query(
+        query = generate_hourly_agp_points_cgm_query(
             patient_id, start_date_str, end_date_str
         )
-        agp_result = clickhouse_store.client.execute(query)        
+        agp_result = clickhouse_store.client.execute(query)
         agp_points = [
             AGPPoint(
                 hour=row[1],
@@ -104,5 +106,5 @@ class GlucoseSummaryStatsFetcher:
             )
             for row in agp_result
         ]
-        
+
         return agp_points

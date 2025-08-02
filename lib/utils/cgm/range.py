@@ -1,45 +1,45 @@
 import math
 
-from lib.schemas.glucose_stats import GlucoseRangeStats
-from lib.utils.glucose.queries import generate_glucose_level_query
+from lib.schemas.cgm_stats import CGMRangeStats
+from lib.utils.cgm.queries import generate_cgm_range_coverage_query
 from lib.utils.validation_utils import validate_float
 
 
-class GlucoseRangeStatsFetcher:
+class CGMRangeStatsFetcher:
     @staticmethod
     def fetch(
         clickhouse_store, patient_id, start_date_str, end_date_str
-    ) -> GlucoseRangeStats:
+    ) -> CGMRangeStats:
         queries = {
-            "below_54": generate_glucose_level_query(
+            "below_54": generate_cgm_range_coverage_query(
                 patient_id,
                 start_date_str,
                 end_date_str,
                 "glucose_level < 54",
                 "below_54",
             ),
-            "below_70_above_54": generate_glucose_level_query(
+            "below_70_above_54": generate_cgm_range_coverage_query(
                 patient_id,
                 start_date_str,
                 end_date_str,
                 "glucose_level < 70 AND glucose_level >= 54",
                 "below_70_above_54",
             ),
-            "in_target_70_180": generate_glucose_level_query(
+            "in_target_70_180": generate_cgm_range_coverage_query(
                 patient_id,
                 start_date_str,
                 end_date_str,
                 "glucose_level >= 70 AND glucose_level <= 180",
                 "in_target_70_180",
             ),
-            "above_180_below_250": generate_glucose_level_query(
+            "above_180_below_250": generate_cgm_range_coverage_query(
                 patient_id,
                 start_date_str,
                 end_date_str,
                 "glucose_level > 180 AND glucose_level < 250",
                 "above_180_below_250",
             ),
-            "above_250": generate_glucose_level_query(
+            "above_250": generate_cgm_range_coverage_query(
                 patient_id,
                 start_date_str,
                 end_date_str,
@@ -54,7 +54,7 @@ class GlucoseRangeStatsFetcher:
             percentage = validate_float(result[0][2] if result else 0.0)
             results[key] = percentage
 
-        return GlucoseRangeStats(
+        return CGMRangeStats(
             below_54=results["below_54"],
             below_70_above_54=results["below_70_above_54"],
             in_target_70_180=results["in_target_70_180"],

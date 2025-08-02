@@ -1,4 +1,6 @@
-def generate_agp_points_query(patient_id, start_date, end_date) -> str:
+def generate_hourly_agp_points_cgm_query(
+    patient_id, start_date, end_date
+) -> str:
     return f"""
     SELECT
         toHour(time) AS hour_24,
@@ -19,7 +21,7 @@ def generate_agp_points_query(patient_id, start_date, end_date) -> str:
     """
 
 
-def generate_glucose_level_query(
+def generate_cgm_range_coverage_query(
     patient_id, start_date, end_date, range_condition, alias
 ):
     return f"""
@@ -36,7 +38,7 @@ def generate_glucose_level_query(
     """
 
 
-def generate_glucose_stats_query(patient_id, start_date, end_date):
+def generate_summary_stats_cgm_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         AVG(glucose_level) AS average_glucose,
@@ -54,7 +56,7 @@ def generate_glucose_stats_query(patient_id, start_date, end_date):
     """
 
 
-def generate_time_period_stats_query(patient_id, start_date, end_date):
+def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         CASE
@@ -94,7 +96,7 @@ def generate_time_period_stats_query(patient_id, start_date, end_date):
     """
 
 
-def generate_glucose_readings_by_date_query(patient_id, start_date, end_date):
+def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         time AS Device_Timestamp,
@@ -109,9 +111,7 @@ def generate_glucose_readings_by_date_query(patient_id, start_date, end_date):
     """
 
 
-def generate_avg_glucose_readings_by_hour_query(
-    patient_id, start_date, end_date
-):
+def generate_hourly_avg_cgm_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         toHour(time) AS hour_24,
@@ -128,9 +128,7 @@ def generate_avg_glucose_readings_by_hour_query(
     """
 
 
-def generate_avg_glucose_reading_by_date_query(
-    patient_id, start_date, end_date
-):
+def generate_daily_avg_cgm_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         toDate(time) AS date,
@@ -146,7 +144,7 @@ def generate_avg_glucose_reading_by_date_query(
     """
 
 
-def generate_glucose_readings_around_meal_query(
+def generate_cgm_readings_around_meal_query(
     patient_id, meal_time, before_minutes=30, after_minutes=30
 ):
     return f"""

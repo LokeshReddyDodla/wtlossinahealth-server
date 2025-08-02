@@ -2,8 +2,8 @@ from typing import Any, Dict
 
 import pandas as pd
 
-from lib.schemas.glucose_stats import HyperEvent
-from lib.utils.glucose.events import execute_query
+from lib.schemas.cgm_stats import HyperEvent
+from lib.utils.cgm.events import execute_query
 
 
 def fetch_hyper_stats(
