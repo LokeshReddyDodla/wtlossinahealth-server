@@ -1,4 +1,4 @@
-from lib.schemas.glucose_stats import HyperStats, RapidSpikeStats
+from lib.schemas.cgm_stats import HyperStats, RapidSpikeStats
 from lib.utils.cgm.events import CGMEventsProcessor, execute_query
 
 
