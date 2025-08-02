@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Sequence
-from fastapi import Request
+from fastapi import Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from lib.models.user_device import UserDevice
+from lib.utils.http_exceptions import raise_http_exception
 
 
 async def log_last_active_time(
@@ -14,11 +15,19 @@ async def log_last_active_time(
 ):
     device_id_str = request.headers.get("x-device-id")
     if not device_id_str:
+        # raise_http_exception(
+        #     status_code=status.HTTP_401_UNAUTHORIZED,
+        #     message="Missing x-device-id header",
+        # )
         return
 
     try:
         device_id = UUID(device_id_str)
     except ValueError:
+        # raise_http_exception(
+        #     status_code=status.HTTP_401_UNAUTHORIZED,
+        #     message="Invalid x-device-id format",
+        # )
         return
 
     matching_device: UserDevice | None = next(
@@ -26,6 +35,10 @@ async def log_last_active_time(
         None,
     )
     if not matching_device:
+        # raise_http_exception(
+        #     status_code=status.HTTP_401_UNAUTHORIZED,
+        #     message="Device not registered. Please log in again.",
+        # )
         return
 
     last_active_at_value = matching_device.last_active_at
