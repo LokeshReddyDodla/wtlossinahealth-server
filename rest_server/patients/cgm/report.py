@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
-    get_glucose_stats_processor,
+    get_cgm_stats_processor,
     get_patient_profile_service,
 )
 from lib.models.patient import Patient
@@ -14,7 +14,7 @@ from lib.schemas.patient import CorePatientProfile
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.cgm_utils import CGMDataUtils
-from lib.utils.glucose.processor import GlucoseStatsProcessor
+from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -70,9 +70,7 @@ async def get_patient_cgm_report_raw(
     request: Request,
     start_date: datetime = Query(...),
     end_date: datetime = Query(...),
-    glucose_stats_processor: GlucoseStatsProcessor = Depends(
-        get_glucose_stats_processor
-    ),
+    cgm_stats_processor: CGMStatsProcessor = Depends(get_cgm_stats_processor),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
@@ -98,7 +96,7 @@ async def get_patient_cgm_report_raw(
             patient_id=patient_id, include_health_data=True
         )
 
-        report = await glucose_stats_processor.generate_report(
+        report = await cgm_stats_processor.generate_report(
             patient_id, start_date, end_date
         )
 

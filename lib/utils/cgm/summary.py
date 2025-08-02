@@ -14,7 +14,7 @@ from lib.utils.cgm.queries import (
 from lib.utils.validation_utils import validate_float
 
 
-class GlucoseSummaryStatsFetcher:
+class CGMSummaryStatsFetcher:
     @staticmethod
     def fetch(
         clickhouse_store, patient_id, start_date_str, end_date_str
@@ -55,7 +55,7 @@ class GlucoseSummaryStatsFetcher:
 
         standard_deviation = validate_float(glucose_stddev)
 
-        agp_points = GlucoseSummaryStatsFetcher.fetch_agp_points(
+        agp_points = CGMSummaryStatsFetcher.fetch_agp_points(
             clickhouse_store, patient_id, start_date_str, end_date_str
         )
 

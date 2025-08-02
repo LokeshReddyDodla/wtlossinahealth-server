@@ -54,7 +54,7 @@ from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.glucose.processor import GlucoseStatsProcessor
+from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 
@@ -316,8 +316,8 @@ container.register(
 
 # 🔹 Glucose Stats Processor
 container.register(
-    GlucoseStatsProcessor,
-    lambda: GlucoseStatsProcessor(
+    CGMStatsProcessor,
+    lambda: CGMStatsProcessor(
         clickhouse_store=container.resolve(ClickHouseStore),
         meal_service=container.resolve(MealService),
         fitness_stats_processor=cast(
@@ -335,7 +335,7 @@ container.register(
     lambda: MealStatsProcessor(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=container.resolve(ClickHouseStore),
-        glucose_stats_processor=container.resolve(GlucoseStatsProcessor),
+        cgm_stats_processor=container.resolve(CGMStatsProcessor),
         patient_profile_service=container.resolve(PatientProfileService),
         patient_plan_service=container.resolve(PatientPlanService),
     ),

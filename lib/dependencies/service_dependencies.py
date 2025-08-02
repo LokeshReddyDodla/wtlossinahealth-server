@@ -56,7 +56,7 @@ from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.glucose.processor import GlucoseStatsProcessor
+from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 
@@ -212,10 +212,8 @@ def get_fitness_report_service() -> FitnessReportService:
     return cast(FitnessReportService, container.resolve(FitnessReportService))
 
 
-def get_glucose_stats_processor() -> GlucoseStatsProcessor:
-    return cast(
-        GlucoseStatsProcessor, container.resolve(GlucoseStatsProcessor)
-    )
+def get_cgm_stats_processor() -> CGMStatsProcessor:
+    return cast(CGMStatsProcessor, container.resolve(CGMStatsProcessor))
 
 
 def get_sleep_stats_processor() -> SleepStatsProcessor:

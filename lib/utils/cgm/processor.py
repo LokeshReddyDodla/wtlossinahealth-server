@@ -14,7 +14,7 @@ from lib.utils.cgm.queries import (
     generate_cgm_readings_in_range_query,
 )
 from lib.utils.cgm.range import CGMRangeStatsFetcher
-from lib.utils.cgm.summary import GlucoseSummaryStatsFetcher
+from lib.utils.cgm.summary import CGMSummaryStatsFetcher
 from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
 
 ReportTypeLiteral = Literal["daily", "weekly", "custom", "other"]
@@ -135,7 +135,7 @@ class CGMStatsProcessor:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        glucose_summary_stats = GlucoseSummaryStatsFetcher.fetch(
+        glucose_summary_stats = CGMSummaryStatsFetcher.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         glucose_range_stats = CGMRangeStatsFetcher.fetch(

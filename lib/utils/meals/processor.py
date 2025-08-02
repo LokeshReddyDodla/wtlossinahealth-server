@@ -17,7 +17,7 @@ from lib.models.patient_meal import (
 from lib.schemas.meal_stats import DailyMealStats
 from lib.schemas.patient_diet_plan import MealDistribution, PatientDietPlanBase
 from lib.utils.diet_plan_calculator import DietPlanCalculator
-from lib.utils.glucose.summary import GlucoseSummaryStatsFetcher
+from lib.utils.cgm.summary import CGMSummaryStatsFetcher
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 
@@ -26,7 +26,7 @@ class MealStatsProcessor:
         self,
         postgres_store: PostgresStore,
         clickhouse_store,
-        glucose_stats_processor,
+        cgm_stats_processor,
         patient_profile_service,
         patient_plan_service,
     ):
@@ -34,7 +34,7 @@ class MealStatsProcessor:
         self.clickhouse_store = clickhouse_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
-        self.glucose_processor = glucose_stats_processor
+        self.cgm_stats_processor = cgm_stats_processor
 
     @with_postgres_session
     async def get_meal_report_by_date(
@@ -45,7 +45,7 @@ class MealStatsProcessor:
         )
 
         # Fetch average glucose for the single date
-        avg_glucose = GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
+        avg_glucose = CGMSummaryStatsFetcher.fetch_daily_average_glucose(
             self.clickhouse_store, patient_id, date, date
         ).get(date, 0.0)
 
@@ -77,7 +77,7 @@ class MealStatsProcessor:
 
         # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
-            GlucoseSummaryStatsFetcher.fetch_daily_average_glucose(
+            CGMSummaryStatsFetcher.fetch_daily_average_glucose(
                 self.clickhouse_store, patient_id, start_date, end_date
             )
         )
@@ -463,7 +463,7 @@ class MealStatsProcessor:
                 row.date, parse_date(meal["time"]).time()
             )
             glucose_before_meal, glucose_after_meal = (
-                self.glucose_processor.fetch_glucose_around_meal(
+                self.cgm_stats_processor.fetch_glucose_around_meal(
                     patient_id, meal_time
                 )
             )

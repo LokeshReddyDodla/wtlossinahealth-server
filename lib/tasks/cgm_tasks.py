@@ -41,15 +41,15 @@ def generate_cgm_report(
     try:
         from lib.dependencies.service_dependencies import (
             get_cgm_report_service,
-            get_glucose_stats_processor,
+            get_cgm_stats_processor,
         )
 
-        glucose_stats_service = get_glucose_stats_processor()
+        cgm_stats_service = get_cgm_stats_processor()
         cgm_report_service = get_cgm_report_service()
         # ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
-            report = await glucose_stats_service.generate_report(
+            report = await cgm_stats_service.generate_report(
                 patient_id, start_date, end_date
             )
             # feedback_message = await ai_conversation_service.generate_report_response(
