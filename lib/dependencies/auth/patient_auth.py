@@ -7,12 +7,15 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.patient import Patient
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.logging_utils import log_last_active_time
+from sqlalchemy.orm import joinedload, selectinload
 
 
 async def get_current_patient(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
     user_role: tuple = Depends(get_current_user),
+    log_activity: bool = True,
 ):
     try:
         user_id, role = user_role
@@ -23,7 +26,11 @@ async def get_current_patient(
             )
 
         result = await session.execute(
-            select(Patient).where(Patient.patient_id == user_id)
+            select(Patient)
+            .where(Patient.patient_id == user_id)
+            .options(
+                joinedload(Patient.user_devices),
+            )
         )
         patient = result.scalars().first()
         if not patient:
@@ -31,6 +38,10 @@ async def get_current_patient(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message=f"Patient with ID '{user_id}' not found.",
             )
+
+        if log_activity:
+            await log_last_active_time(request, session, patient.user_devices)
+
         return patient
 
     except Exception as e:

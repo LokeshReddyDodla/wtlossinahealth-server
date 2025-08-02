@@ -94,7 +94,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=True, delete=False
@@ -123,7 +123,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -152,7 +152,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -181,7 +181,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -210,7 +210,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=False, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -239,7 +239,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -268,7 +268,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -297,7 +297,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=True, create=True, update=True, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False
@@ -326,7 +326,7 @@ CARE_PROVIDER_PERMISSIONS = {
             read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.CARE_PROVIDERS: CareProviderPermission(
-            read=True, create=False, update=False, delete=False
+            read=False, create=False, update=False, delete=False
         ),
         CareProviderFeature.HEALTH_FACILITY: CareProviderPermission(
             read=True, create=False, update=False, delete=False

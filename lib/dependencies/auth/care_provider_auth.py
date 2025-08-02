@@ -1,22 +1,26 @@
 from fastapi import Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
 from lib.models.care_provider import CareProvider
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction,
-                                                 has_care_provider_permission)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+    has_care_provider_permission,
+)
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.logging_utils import log_last_active_time
 
 
 def get_current_care_provider(
     action: CareProviderPermissionAction,
     feature: CareProviderFeature,
     check_permissions: bool = True,
+    log_activity: bool = True,
 ):
     async def dependency(
         request: Request,
@@ -35,7 +39,8 @@ def get_current_care_provider(
             select(CareProvider)
             .where(CareProvider.care_provider_id == user_id)
             .options(
-                selectinload(CareProvider.health_facility),
+                joinedload(CareProvider.health_facility),
+                joinedload(CareProvider.user_devices),
             )
         )
         care_provider = result.scalars().first()
@@ -53,6 +58,11 @@ def get_current_care_provider(
             raise_http_exception(
                 status_code=status.HTTP_403_FORBIDDEN,
                 message="Forbidden: Insufficient permissions",
+            )
+
+        if log_activity:
+            await log_last_active_time(
+                request, session, care_provider.user_devices
             )
 
         return care_provider

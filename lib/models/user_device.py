@@ -19,11 +19,14 @@ class UserDevice(Base):
         String, nullable=False
     )  # 'patient' or 'care_provider'
     fcm_token = Column(String, nullable=False)
+
     last_updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
+    last_active_at = Column(DateTime, nullable=True)
+
     device_type = Column(String, nullable=True)  # e.g., 'iOS', 'Android'
     platform_version = Column(String, nullable=True)
 
