@@ -1,19 +1,32 @@
 import hashlib
 import logging
 from datetime import date, datetime, time
+from typing import List, Optional
 
 from pymongo import ReplaceOne
 
-from lib.core.types import FitnessReportTypeLiteral
+from lib.schemas.fitness_stats import FitnessStats
 from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
+from lib.utils.fitness.processor import FitnessReportType
 
 
 class FitnessReportService:
     def __init__(self, fitness_report_collection):
         self.fitness_report_collection = fitness_report_collection
+
+    async def fetch_report_by_id(self, report_id: str) -> Optional[dict]:
+        try:
+            return await self.fitness_report_collection.find_one(
+                {"_id": report_id}
+            )
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch report by ID {report_id}: {error}"
+            )
+            return None
 
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
@@ -23,7 +36,7 @@ class FitnessReportService:
                 await self.fitness_report_collection.find(
                     {
                         "patient_id": patient_id,
-                        "report_type": "daily",
+                        "report_type": FitnessReportType.DAILY,
                         "start_date": {"$gte": start_date},
                         "end_date": {"$lte": end_date},
                     },
@@ -49,14 +62,14 @@ class FitnessReportService:
 
             if regenerate:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "daily"
+                    patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
 
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "daily",
+                    "report_type": FitnessReportType.DAILY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -64,7 +77,7 @@ class FitnessReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "daily"
+                    patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
 
@@ -86,7 +99,7 @@ class FitnessReportService:
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "weekly",
+                    "report_type": FitnessReportType.WEEKLY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -94,7 +107,7 @@ class FitnessReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "weekly"
+                    patient_id, start_date, end_date, FitnessReportType.WEEKLY
                 )
 
             return report
@@ -113,7 +126,7 @@ class FitnessReportService:
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "monthly",
+                    "report_type": FitnessReportType.MONTHLY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -121,7 +134,7 @@ class FitnessReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "monthly"
+                    patient_id, start_date, end_date, FitnessReportType.MONTHLY
                 )
             return report
         except Exception as error:
@@ -135,7 +148,7 @@ class FitnessReportService:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        report_type: FitnessReportTypeLiteral,
+        report_type: str,
     ):
         try:
             from lib.dependencies.service_dependencies import (
@@ -157,38 +170,97 @@ class FitnessReportService:
                 f"❌ Failed to trigger report generation for {patient_id} from {start_date} to {end_date}. Error: {error}"
             )
 
-    async def save_reports_bulk(self, reports: list):
+    def _generate_report_id(
+        self,
+        patient_id: str,
+        report_type: str,
+        start: datetime,
+        end: datetime,
+    ) -> str:
+        key = f"{patient_id}_{report_type}_{start.date()}_{end.date()}"
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    async def save_report(self, patient_id: str, report: FitnessStats):
         try:
-            operations = []
             now = datetime.now()
+            report_id = self._generate_report_id(
+                patient_id,
+                report.report_type,
+                report.start_date,
+                report.end_date,
+            )
+
+            existing = await self.fitness_report_collection.find_one(
+                {"_id": report_id}
+            )
+
+            report_dict = report.model_dump(exclude_none=True)
+            report_dict.update(
+                {
+                    "_id": report_id,
+                    "created_at": (
+                        existing.get("created_at", now) if existing else now
+                    ),
+                    "updated_at": now,
+                }
+            )
+
+            await self.fitness_report_collection.replace_one(
+                {"_id": report_id},
+                report_dict,
+                upsert=True,
+            )
+
+            print(
+                f"✅ Saved/Updated fitness report for {patient_id} ({report.report_type}) from {report.start_date} to {report.end_date}"
+            )
+            return report_id
+
+        except Exception as e:
+            print(f"❌ Failed to save report: {e}")
+            raise
+
+    async def save_reports_bulk(
+        self, patient_id: str, reports: List[FitnessStats]
+    ):
+        try:
+            from pymongo import UpdateOne
+            from datetime import datetime
+
+            now = datetime.now()
+            ops = []
 
             for report in reports:
-                unique_string = f"{report['patient_id']}_{report['report_type']}_{report['start_date']}_{report['end_date']}"
-                report_id = hashlib.sha256(unique_string.encode()).hexdigest()
+                report_dict = report.model_dump(exclude_none=True)
+                report_id = self._generate_report_id(
+                    patient_id,
+                    report.report_type,
+                    report.start_date,
+                    report.end_date,
+                )
 
-                existing_report = (
-                    await self.fitness_report_collection.find_one(
-                        {"_id": report_id}
+                report_dict.update(
+                    {
+                        "_id": report_id,
+                        "patient_id": patient_id,
+                        "updated_at": now,
+                        "created_at": report_dict.get("created_at", now),
+                    }
+                )
+
+                ops.append(
+                    UpdateOne(
+                        {"_id": report_id}, {"$set": report_dict}, upsert=True
                     )
                 )
-                report["created_at"] = (
-                    existing_report.get("created_at", now)
-                    if existing_report
-                    else now
+
+            if ops:
+                await self.fitness_report_collection.bulk_write(ops)
+                print(
+                    f"✅ Bulk saved {len(ops)} Fitness reports for {patient_id}"
                 )
-                report["updated_at"] = now
-
-                report["_id"] = report_id
-
-                operations.append(
-                    ReplaceOne({"_id": report_id}, report, upsert=True)
-                )
-
-            # Perform bulk upsert
-            await self.fitness_report_collection.bulk_write(
-                operations, ordered=False
-            )
-            print(f"Saved/Updated {len(reports)} reports successfully")
+            else:
+                print("⚠️ No Fitness reports to save.")
         except Exception as e:
             print(f"Failed to save reports in bulk: {e}")
             raise

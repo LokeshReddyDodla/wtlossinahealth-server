@@ -120,9 +120,9 @@ class CGMStats(BaseModel):
     start_date: datetime
     end_date: datetime
     report_type: str
-    glucose_readings: Optional[List[CGMReading]] = None
-    glucose_summary_stats: CGMSummaryStats
-    glucose_range_stats: CGMRangeStats
+    cgm_readings: Optional[List[CGMReading]] = None
+    cgm_summary_stats: CGMSummaryStats
+    cgm_range_stats: CGMRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
     time_period_stats: Optional[Dict[str, CGMTimePeriodStats]]

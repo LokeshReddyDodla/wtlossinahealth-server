@@ -24,6 +24,21 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.dashboard_metrics.cgm_metrics_service import (
+    CGMMetricsService,
+)
+from lib.services.dashboard_metrics.fitneess_metrics_service import (
+    FitnessMetricsService,
+)
+from lib.services.dashboard_metrics.meal_metrics_service import (
+    MealMetricsService,
+)
+from lib.services.dashboard_metrics.patient_metrics_service import (
+    PatientMetricsService,
+)
+from lib.services.dashboard_metrics.smbg_metrics_service import (
+    SMBGMetricsService,
+)
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
@@ -383,6 +398,9 @@ container.register(
         meal_report_service=cast(
             MealReportService, container.resolve(MealReportService)
         ),
+        fitness_report_service=cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        ),
     ),
 )
 
@@ -475,5 +493,41 @@ container.register(
         libreview_sync_store=cast(
             CacheStore, container.resolve("libreview_sync")
         ),
+    ),
+)
+
+# 🔹 Patient Metrics Service
+container.register(
+    PatientMetricsService,
+    lambda: PatientMetricsService(),
+)
+
+# 🔹 Meal Metrics Service
+container.register(
+    MealMetricsService,
+    lambda: MealMetricsService(),
+)
+
+# 🔹 SMBG Metrics Service
+container.register(
+    SMBGMetricsService,
+    lambda: SMBGMetricsService(),
+)
+
+# 🔹 CGM Metrics Service
+container.register(
+    CGMMetricsService,
+    lambda: CGMMetricsService(
+        cgm_report_collection=container.resolve("cgm_report_collection"),
+    ),
+)
+
+# 🔹 Fitness Metrics Service
+container.register(
+    FitnessMetricsService,
+    lambda: FitnessMetricsService(
+        fitness_report_collection=container.resolve(
+            "fitness_report_collection"
+        )
     ),
 )

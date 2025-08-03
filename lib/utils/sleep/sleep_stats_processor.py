@@ -18,6 +18,13 @@ from lib.utils.sleep.type_distribution_fetcher import (
 )
 
 
+class SleepReportType:
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    CUSTOM = "custom"
+
+
 class SleepStatsProcessor:
     def __init__(
         self,
@@ -35,40 +42,49 @@ class SleepStatsProcessor:
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
-        include_overall: bool = True,
-        include_day_wise: bool = True,
-        include_week_wise: bool = True,
-    ) -> Dict[str, Any]:
-        report = {}
+        report_types: List[str] = [
+            SleepReportType.MONTHLY,
+            SleepReportType.DAILY,
+            SleepReportType.WEEKLY,
+        ],
+    ) -> List[SleepStats]:
+        reports: List[SleepStats] = []
 
-        # Overall Stats
-        if include_overall:
-            report["overall"] = await self._process_overall(
-                patient_id, start_datetime, end_datetime
+        if SleepReportType.MONTHLY in report_types:
+            reports.append(
+                await self._process_period(
+                    patient_id,
+                    start_datetime,
+                    end_datetime,
+                    SleepReportType.MONTHLY,
+                )
             )
 
-        # Day-wise Stats
-        if include_day_wise:
-            day_periods = DayWisePeriod(start_datetime, end_datetime).periods
-            report["day_wise"] = await self._process_multiple_periods(
-                patient_id, day_periods
-            )
-
-        # Week-wise Stats
-        if include_week_wise:
+        if SleepReportType.WEEKLY in report_types:
             week_periods = WeekWisePeriod(start_datetime, end_datetime).periods
-            report["week_wise"] = await self._process_multiple_periods(
-                patient_id, week_periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, week_periods, SleepReportType.WEEKLY
+                )
             )
 
-        return report
+        if SleepReportType.DAILY in report_types:
+            day_periods = DayWisePeriod(start_datetime, end_datetime).periods
+            reports.extend(
+                await self._process_multiple_periods(
+                    patient_id, day_periods, SleepReportType.DAILY
+                )
+            )
+
+        return reports
 
     @with_postgres_session
-    async def _process_overall(
+    async def _process_period(
         self,
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
+        report_type: str,
         *,
         postgres_session: AsyncSession
     ) -> SleepStats:
@@ -89,6 +105,7 @@ class SleepStatsProcessor:
         report = SleepStats(
             start_date=start_datetime,
             end_date=end_datetime,
+            report_type=report_type,
             duration_analysis=duration_analysis,
             type_distribution=type_distribution,
             timing_analysis=timing_analysis,
@@ -102,16 +119,18 @@ class SleepStatsProcessor:
         self,
         patient_id: str,
         periods: List[Dict[str, datetime]],
+        report_type: str,
         *,
         postgres_session: AsyncSession
     ) -> List[Dict[str, SleepStats]]:
         stats = []
         for period in periods:
             stats.append(
-                await self._process_overall(
+                await self._process_period(
                     patient_id,
                     period["start_date"],
                     period["end_date"],
+                    report_type,
                     postgres_session=postgres_session,
                 )
             )

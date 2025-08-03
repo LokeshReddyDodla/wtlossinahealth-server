@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 from uuid import UUID
@@ -210,7 +210,7 @@ async def macro_filtered_major_meals(
         )
 
 
-@router.get("/steps-threshold")
+@router.get("/fitness/steps-threshold")
 async def get_patients_by_step_threshold(
     steps_op: str = Query(
         "lt", description="Comparison operator: lt, lte, gt, gte, eq"
@@ -287,16 +287,12 @@ async def get_active_smbg_patients(
     )
 
 
-@router.get(
-    "/patients-hyper-duration",
-    response_model=SuccessResponse,
-)
-async def patients_with_hyper_duration(
-    min_duration_minutes: int = Query(45, ge=1),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+@router.get("/cgm/hyper-patients", response_model=SuccessResponse)
+async def get_patients_with_hyper_events(
+    days: int = Query(3, ge=1, le=90),
+    min_duration_minutes: float = Query(45, ge=1),
+    limit: int = Query(50, le=500),
+    offset: int = Query(0),
     cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -306,24 +302,108 @@ async def patients_with_hyper_duration(
     ),
 ):
     try:
-        results = await cgm_metrics_service.get_patients_with_time_above_range(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            min_duration_minutes=min_duration_minutes,
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        patients = await cgm_metrics_service.find_patients_with_hyper_events(
             start_date=start_date,
             end_date=end_date,
+            min_duration_minutes=min_duration_minutes,
+            health_facility_id=str(current_care_provider.health_facility_id),
             limit=limit,
             offset=offset,
         )
 
         return SuccessResponse(
-            message="Patients with time above range fetched successfully",
-            data=results,
+            message=f"{len(patients)} patients with hyperglycemia events ≥ {min_duration_minutes} mins in past {days} days",
+            data=patients,
         )
     except HTTPException as e:
         raise e
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
+            message="Unexpected error fetching patients with hyperglycemia events",
+            detail=str(e),
+        )
+
+
+@router.get("/cgm/hypo-patients", response_model=SuccessResponse)
+async def get_patients_with_hypo_events(
+    days: int = Query(7, ge=1, le=60),
+    min_duration_minutes: float = Query(20, ge=1),
+    limit: int = Query(50, le=500),
+    offset: int = Query(0),
+    cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ,
+            CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        patients = await cgm_metrics_service.find_patients_with_hypo_events(
+            start_date=start_date,
+            end_date=end_date,
+            min_duration_minutes=min_duration_minutes,
+            health_facility_id=str(current_care_provider.health_facility_id),
+            limit=limit,
+            offset=offset,
+        )
+
+        return SuccessResponse(
+            message=f"{len(patients)} patients with hypoglycemia events ≥ {min_duration_minutes} mins in past {days} days",
+            data=patients,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Unexpected error fetching patients with hypoglycemia events",
+            detail=str(e),
+        )
+
+@router.get("/cgm/high-gv-patients", response_model=SuccessResponse)
+async def get_patients_with_high_gv(
+    days: int = Query(7, ge=1, le=60),
+    gv_threshold: float = Query(20, ge=0),
+    limit: int = Query(50, le=500),
+    offset: int = Query(0),
+    cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ,
+            CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        patients = await cgm_metrics_service.find_patients_with_high_glucose_variability(
+            start_date=start_date,
+            end_date=end_date,
+            gv_threshold=gv_threshold,
+            health_facility_id=str(current_care_provider.health_facility_id),
+            limit=limit,
+            offset=offset,
+        )
+
+        return SuccessResponse(
+            message=f"{len(patients)} patients with GV > {gv_threshold} in past {days} days",
+            data=patients,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Unexpected error fetching patients with high glucose variability",
             detail=str(e),
         )

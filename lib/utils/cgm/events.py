@@ -20,8 +20,9 @@ def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
 
 
 class CGMEventsProcessor:
-    def __init__(self, threshold: int):
+    def __init__(self, threshold: int, buffer: int = 0):
         self.threshold = threshold
+        self.buffer = buffer
 
     def process_events(
         self, df: pd.DataFrame, event_type: str
@@ -29,12 +30,16 @@ class CGMEventsProcessor:
         events = []
         current_event = None
 
+        threshold = (
+            self.threshold + self.buffer
+            if event_type == "hyper"
+            else self.threshold - self.buffer
+        )
+
         for _, row in df.iterrows():
             if (
-                event_type == "hyper" and row["Glucose_Level"] > self.threshold
-            ) or (
-                event_type == "hypo" and row["Glucose_Level"] < self.threshold
-            ):
+                event_type == "hyper" and row["Glucose_Level"] > threshold
+            ) or (event_type == "hypo" and row["Glucose_Level"] < threshold):
                 if current_event is None:
                     current_event = {
                         "start_time": row["Device_Timestamp"],

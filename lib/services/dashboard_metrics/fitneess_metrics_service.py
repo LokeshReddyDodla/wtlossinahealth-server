@@ -1,16 +1,26 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import select
 
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
+from lib.utils.date.age_utils import calculate_age
+from lib.utils.fitness.processor import FitnessReportType
 from lib.utils.http_exceptions import raise_http_exception
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from fastapi import status
+
+from lib.utils.patient_mapping import map_patients_to_reports
 
 
 class FitnessMetricsService:
+    def __init__(
+        self,
+        fitness_report_collection,
+    ):
+        self.fitness_report_collection = fitness_report_collection
+
     async def get_patients_by_step_threshold(
         self,
         health_facility_id: str,
@@ -21,10 +31,6 @@ class FitnessMetricsService:
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        from lib.dependencies.service_dependencies import (
-            get_fitness_report_collection,
-        )
-
         try:
             op_map = {
                 "lt": "$lt",
@@ -39,7 +45,7 @@ class FitnessMetricsService:
                 raise ValueError(f"Invalid operator: {steps_op}")
 
             query = {
-                "report_type": "daily",
+                "report_type": FitnessReportType.DAILY,
                 "steps": {mongo_op: steps_value},
             }
 
@@ -48,26 +54,23 @@ class FitnessMetricsService:
                 query["end_date"] = {"$lte": end_date}
 
             # Get reports
-            mongo_db = get_fitness_report_collection()
-            cursor = mongo_db.find(query).skip(offset).limit(limit)  # type: ignore
+            cursor = (
+                self.fitness_report_collection.find(query)
+                .skip(offset)
+                .limit(limit)
+            )
             reports = await cursor.to_list(length=limit)
 
             if not reports:
                 return []
 
-            # Unique patient IDs
-            patient_ids = list({r["patient_id"] for r in reports})
-
             async with get_async_postgres_session() as session:
-                stmt = select(Patient).where(
-                    Patient.patient_id.in_(patient_ids),
-                    Patient.health_facility_id == health_facility_id,
-                )
-                result = await session.execute(stmt)
-                patients = {p.patient_id: p for p in result.scalars().all()}
-
-                return [
-                    {
+                return await map_patients_to_reports(
+                    reports=reports,
+                    health_facility_id=health_facility_id,
+                    postgres_session=session,
+                    extract_patient_id=lambda r: r["patient_id"],
+                    enrich_payload=lambda report, patient: {
                         "_id": str(report["_id"]),
                         "patient_id": report["patient_id"],
                         "steps": report.get("steps"),
@@ -79,11 +82,10 @@ class FitnessMetricsService:
                             + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
+                            "age": calculate_age(patient.dob)
                         },
-                    }
-                    for report in reports
-                    if (patient := patients.get(UUID(report["patient_id"])))
-                ]
+                    },
+                )
 
         except SQLAlchemyError as e:
             raise_http_exception(

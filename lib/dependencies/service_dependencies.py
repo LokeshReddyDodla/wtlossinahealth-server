@@ -278,20 +278,24 @@ def get_sleep_report_collection():
 
 
 def get_patient_metrics_service() -> PatientMetricsService:
-    return PatientMetricsService()
+    return cast(
+        PatientMetricsService, container.resolve(PatientMetricsService)
+    )
 
 
 def get_meal_metrics_service() -> MealMetricsService:
-    return MealMetricsService()
+    return cast(MealMetricsService, container.resolve(MealMetricsService))
 
 
 def get_smbg_metrics_service() -> SMBGMetricsService:
-    return SMBGMetricsService()
+    return cast(SMBGMetricsService, container.resolve(SMBGMetricsService))
 
 
 def get_cgm_metrics_service() -> CGMMetricsService:
-    return CGMMetricsService()
+    return cast(CGMMetricsService, container.resolve(CGMMetricsService))
 
 
 def get_fitness_metrics_service() -> FitnessMetricsService:
-    return FitnessMetricsService()
+    return cast(
+        FitnessMetricsService, container.resolve(FitnessMetricsService)
+    )

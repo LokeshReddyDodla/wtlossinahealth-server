@@ -3,9 +3,9 @@ from datetime import datetime
 
 from celery import shared_task
 
-from lib.core.types import SleepReportTypeLiteral
 from lib.utils.async_runner import run_async_task
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
+from lib.utils.sleep.sleep_stats_processor import SleepReportType
 
 
 @shared_task
@@ -17,7 +17,6 @@ def generate_sleep_reports_for_patient(
     try:
         task_manager = get_celery_task_manager()
         months_between = get_months_between_dates(start_date, end_date)
-        report_type: SleepReportTypeLiteral = "monthly"
 
         for year, month in reversed(months_between):
             month_start_date, month_end_date = get_month_start_end(year, month)
@@ -29,7 +28,7 @@ def generate_sleep_reports_for_patient(
                     month_start_date,
                     month_end_date,
                 ],
-                task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{report_type}",
+                task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{SleepReportType.MONTHLY}",
             )
 
         print(f"Generated sleep report for patient: {patient_id}")
@@ -42,66 +41,29 @@ def generate_sleep_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
-        from lib.dependencies.service_dependencies import (
-            get_sleep_report_service,
-            get_sleep_stats_processor,
-        )
-
-        sleep_stats_service = get_sleep_stats_processor()
-        sleep_report_service = get_sleep_report_service()
-        # ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
-            # Generate report for the specific month
-            report = await sleep_stats_service.generate_report(
+            from lib.dependencies.service_dependencies import (
+                get_sleep_report_service,
+                get_sleep_stats_processor,
+            )
+
+            processor = get_sleep_stats_processor()
+            service = get_sleep_report_service()
+
+            reports = await processor.generate_report(
                 patient_id,
                 start_date,
                 end_date,
-                include_overall=True,
-                include_week_wise=True,
-                include_day_wise=True,
+                report_types=[
+                    SleepReportType.MONTHLY,
+                    SleepReportType.WEEKLY,
+                    SleepReportType.DAILY,
+                ],
             )
 
-            # Generate AI feedback based on the sleep report
-            # feedback_message = await ai_conversation_service.generate_report_response(
-            #     patient_id,
-            #     patient_id,
-            #     report,
-            #     "sleep",
-            # )
-
-            # Prepare reports for bulk saving
-            bulk_reports = []
-            bulk_reports.append(
-                {
-                    "patient_id": patient_id,
-                    "report_type": "monthly",
-                    # "feedback": feedback_message,
-                    **report["overall"].model_dump(),
-                }
-            )
-            bulk_reports.extend(
-                [
-                    {
-                        "patient_id": patient_id,
-                        "report_type": "weekly",
-                        **week_stat.model_dump(),
-                    }
-                    for week_stat in report["week_wise"]
-                ]
-            )
-            bulk_reports.extend(
-                [
-                    {
-                        "patient_id": patient_id,
-                        "report_type": "daily",
-                        **day_stat.model_dump(),
-                    }
-                    for day_stat in report["day_wise"]
-                ]
-            )
-
-            await sleep_report_service.save_reports_bulk(bulk_reports)
+            # Bulk save
+            await service.save_reports_bulk(patient_id, reports)
 
         # Save reports
         loop = asyncio.get_event_loop()
@@ -121,59 +83,36 @@ def generate_sleep_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
-    report_type: SleepReportTypeLiteral,
+    report_type: str,
 ):
     try:
-        from lib.dependencies.service_dependencies import (
-            get_sleep_report_service,
-            get_sleep_stats_processor,
-        )
-
-        sleep_stats_service = get_sleep_stats_processor()
-        sleep_report_service = get_sleep_report_service()
-        # ai_conversation_service = get_ai_conversation_service()
 
         async def generate_and_save_report():
-            report = await sleep_stats_service.generate_report(
-                patient_id,
-                start_date,
-                end_date,
-                include_overall=True,
-                include_day_wise=report_type in ["weekly", "monthly"],
+
+            from lib.dependencies.service_dependencies import (
+                get_sleep_report_service,
+                get_sleep_stats_processor,
             )
 
-            # AI feedback
-            # feedback_message = await ai_conversation_service.generate_report_response(
-            #     patient_id,
-            #     patient_id,
-            #     report,
-            #     "sleep",
-            # )
+            processor = get_sleep_stats_processor()
+            service = get_sleep_report_service()
 
-            bulk_reports = []
-            bulk_reports.append(
-                {
-                    "patient_id": patient_id,
-                    "report_type": report_type,
-                    # "feedback": feedback_message,
-                    **report["overall"].model_dump(),
-                }
+            report_types = []
+            if report_type in [
+                SleepReportType.WEEKLY,
+                SleepReportType.MONTHLY,
+            ]:
+                report_types = [report_type, SleepReportType.DAILY]
+            else:
+                report_types = [report_type]
+
+            reports = await processor.generate_report(
+                patient_id, start_date, end_date, report_types=report_types
             )
-            if report_type in ["weekly", "monthly"]:
-                bulk_reports.extend(
-                    [
-                        {
-                            "patient_id": patient_id,
-                            "report_type": "daily",
-                            **day_stat.model_dump(),
-                        }
-                        for day_stat in report["day_wise"]
-                    ]
-                )
 
-            await sleep_report_service.save_reports_bulk(bulk_reports)
+            # Bulk save
+            await service.save_reports_bulk(patient_id, reports)
 
-        # Save reports
         loop = asyncio.get_event_loop()
         loop.run_until_complete(generate_and_save_report())
 
