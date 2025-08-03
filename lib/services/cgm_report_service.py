@@ -4,6 +4,7 @@ from datetime import date, datetime, time
 from typing import Any, Dict, List
 
 from lib.schemas.cgm_stats import CGMStats
+from lib.utils.cgm.processor import CGMReportType
 
 
 class CGMReportService:
@@ -20,8 +21,15 @@ class CGMReportService:
     async def fetch_reports(self, patient_id: str):
         try:
             reports_cursor = self.cgm_report_collection.find(
-                {"patient_id": patient_id},
-                {"_id": 1, "start_date": 1, "end_date": 1},
+                {
+                    "patient_id": patient_id,
+                    "report_type": CGMReportType.CUSTOM,
+                },
+                {
+                    "_id": 1,
+                    "start_date": 1,
+                    "end_date": 1,
+                },
             ).sort("start_date", 1)
 
             reports = await reports_cursor.to_list(length=None)
@@ -40,111 +48,186 @@ class CGMReportService:
     async def fetch_report(self, patient_id: str, report_id: str):
         try:
             pipeline = [
-                {"$match": {"patient_id": patient_id, "_id": report_id}},
-                # Lookup meal reports for each "day_wise" entry
                 {
-                    "$unwind": {
-                        "path": "$day_wise",
-                        "preserveNullAndEmptyArrays": True,
+                    "$match": {
+                        "_id": report_id,
+                        "patient_id": patient_id,
+                        "report_type": "custom",
                     }
                 },
                 {
                     "$lookup": {
                         "from": "meal_reports",
-                        "localField": "day_wise.meal_report_id",
+                        "localField": "meal_report_id",
                         "foreignField": "_id",
-                        "as": "day_wise.meal_report",
+                        "as": "meal_report",
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "fitness_reports",
+                        "localField": "fitness_report_id",
+                        "foreignField": "_id",
+                        "as": "fitness_report",
                     }
                 },
                 {
                     "$unwind": {
-                        "path": "$day_wise.meal_report",
+                        "path": "$meal_report",
                         "preserveNullAndEmptyArrays": True,
                     }
                 },
-                {"$unset": "overall.meal_report_id"},
-                {"$unset": "day_wise.meal_report_id"},
-                {"$unset": "week_wise.meal_report_id"},
                 {
-                    "$group": {
-                        "_id": "$_id",
-                        "patient_id": {"$first": "$patient_id"},
-                        "start_date": {"$first": "$start_date"},
-                        "end_date": {"$first": "$end_date"},
-                        "updated_at": {"$first": "$updated_at"},
-                        "overall": {"$first": "$overall"},
-                        "day_wise": {"$push": "$day_wise"},
-                        "week_wise": {"$first": "$week_wise"},
+                    "$unwind": {
+                        "path": "$fitness_report",
+                        "preserveNullAndEmptyArrays": True,
                     }
                 },
-                {"$project": {"_id": 0}},
+                {
+                    "$project": {
+                        "meal_report_id": 0,
+                        "fitness_report_id": 0,
+                    }
+                },
             ]
 
-            cursor = self.cgm_report_collection.aggregate(pipeline)
-            report = await cursor.to_list(length=1)
+            custom_cursor = self.cgm_report_collection.aggregate(pipeline)
+            custom_results = await custom_cursor.to_list(length=1)
+            custom_report = custom_results[0] if custom_results else None
 
-            if report:
-                return report[0]
-            else:
+            if not custom_report:
                 logging.warning(
-                    f"⚠️ No CGM report found for {patient_id} with report_id {report_id}."
+                    f"⚠️ No custom CGM report found for {patient_id} with ID {report_id}"
                 )
                 return None
 
+            overall = custom_report
+            start_date = custom_report["start_date"]
+            end_date = custom_report["end_date"]
+
+            # Step 2: Fetch matching daily and weekly reports
+            other_cursor = self.cgm_report_collection.aggregate(
+                [
+                    {
+                        "$match": {
+                            "patient_id": patient_id,
+                            "report_type": {"$in": ["daily", "weekly"]},
+                            "start_date": {"$gte": start_date},
+                            "end_date": {"$lte": end_date},
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "meal_reports",
+                            "localField": "meal_report_id",
+                            "foreignField": "_id",
+                            "as": "meal_report",
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "fitness_reports",
+                            "localField": "fitness_report_id",
+                            "foreignField": "_id",
+                            "as": "fitness_report",
+                        }
+                    },
+                    {
+                        "$unwind": {
+                            "path": "$meal_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
+                        "$unwind": {
+                            "path": "$fitness_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
+                        "$project": {
+                            "meal_report_id": 0,
+                            "fitness_report_id": 0,
+                        }
+                    },
+                ]
+            )
+
+            day_wise = []
+            week_wise = []
+
+            async for report in other_cursor:
+                if report["report_type"] == "daily":
+                    day_wise.append(report)
+                elif report["report_type"] == "weekly":
+                    week_wise.append(report)
+
+            return {
+                "overall": overall,
+                "day_wise": day_wise,
+                "week_wise": week_wise,
+            }
+
         except Exception as error:
             logging.error(
-                f"❌ Failed to fetch CGM report for {patient_id} with report_id {report_id}. Error: {error}"
+                f"❌ Failed to fetch full CGM report for {patient_id} with report_id {report_id}. Error: {error}"
             )
             return None
 
-    async def fetch_day_report(
-        self, patient_id: str, date: date, regenerate: bool = False
-    ):
+    async def fetch_day_report(self, patient_id: str, date: date):
         try:
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
-            if regenerate:
-                self._trigger_report_generation(
-                    patient_id, start_date, end_date
-                )
-                return None
-
-            report = await self.cgm_report_collection.find_one(
-                {
-                    "patient_id": patient_id,
-                    "start_date": {"$lte": start_date},
-                    "end_date": {"$gte": end_date},
-                }
+            cursor = self.cgm_report_collection.aggregate(
+                [
+                    {
+                        "$match": {
+                            "patient_id": patient_id,
+                            "report_type": "daily",
+                            "start_date": start_date,
+                            "end_date": end_date,
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "meal_reports",
+                            "localField": "meal_report_id",
+                            "foreignField": "_id",
+                            "as": "meal_report",
+                        }
+                    },
+                    {
+                        "$lookup": {
+                            "from": "fitness_reports",
+                            "localField": "fitness_report_id",
+                            "foreignField": "_id",
+                            "as": "fitness_report",
+                        }
+                    },
+                    {
+                        "$unwind": {
+                            "path": "$meal_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
+                        "$unwind": {
+                            "path": "$fitness_report",
+                            "preserveNullAndEmptyArrays": True,
+                        }
+                    },
+                    {
+                        "$project": {
+                            "meal_report_id": 0,
+                            "fitness_report_id": 0,
+                        }
+                    },
+                    {"$limit": 1},
+                ]
             )
-
-            if not report:
-                return None
-
-            day_report = next(
-                (
-                    day
-                    for day in report.get("day_wise", [])
-                    if day["start_date"].date() == start_date.date()
-                ),
-                None,
-            )
-
-            if not day_report:
-                print("⚠️ Found report but no matching day entry")
-                return None
-
-            # If there's a meal report ID, fetch the full meal report
-            if day_report.get("meal_report_id"):
-                meal_report = (
-                    await self.meal_report_service.fetch_report_by_id(
-                        day_report["meal_report_id"]
-                    )
-                )
-                day_report["meal_report"] = meal_report
-                del day_report["meal_report_id"]
-
-            return day_report
+            report = await cursor.to_list(length=1)
+            return report[0] if report else None
 
         except Exception as error:
             logging.error(
