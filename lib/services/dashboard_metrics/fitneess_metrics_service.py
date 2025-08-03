@@ -5,6 +5,7 @@ from sqlalchemy import Date, cast, func, select
 
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
+from lib.utils.fitness.processor import FitnessReportType
 from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from fastapi import status
@@ -39,7 +40,7 @@ class FitnessMetricsService:
                 raise ValueError(f"Invalid operator: {steps_op}")
 
             query = {
-                "report_type": "daily",
+                "report_type": FitnessReportType.DAILY,
                 "steps": {mongo_op: steps_value},
             }
 

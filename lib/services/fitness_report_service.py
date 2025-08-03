@@ -36,7 +36,7 @@ class FitnessReportService:
                 await self.fitness_report_collection.find(
                     {
                         "patient_id": patient_id,
-                        "report_type": "daily",
+                        "report_type": FitnessReportType.DAILY,
                         "start_date": {"$gte": start_date},
                         "end_date": {"$lte": end_date},
                     },
