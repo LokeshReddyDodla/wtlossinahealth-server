@@ -3,8 +3,8 @@ from lib.utils.cgm.events import CGMEventsProcessor, execute_query
 
 
 class HyperStatsFetcher(CGMEventsProcessor):
-    def __init__(self):
-        super().__init__(threshold=180)
+    def __init__(self, buffer: int = 5):
+        super().__init__(threshold=180, buffer=buffer)
 
     def fetch(
         self, clickhouse_store, patient_id, start_date_str, end_date_str
