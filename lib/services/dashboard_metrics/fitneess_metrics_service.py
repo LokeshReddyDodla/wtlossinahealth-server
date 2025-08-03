@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
+from lib.utils.date.age_utils import calculate_age
 from lib.utils.fitness.processor import FitnessReportType
 from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.exc import SQLAlchemyError
@@ -81,6 +82,7 @@ class FitnessMetricsService:
                             + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
+                            "age": calculate_age(patient.dob)
                         },
                     },
                 )

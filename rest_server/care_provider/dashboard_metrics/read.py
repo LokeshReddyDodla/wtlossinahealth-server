@@ -367,3 +367,43 @@ async def get_patients_with_hypo_events(
             message="Unexpected error fetching patients with hypoglycemia events",
             detail=str(e),
         )
+
+@router.get("/cgm/high-gv-patients", response_model=SuccessResponse)
+async def get_patients_with_high_gv(
+    days: int = Query(7, ge=1, le=60),
+    gv_threshold: float = Query(20, ge=0),
+    limit: int = Query(50, le=500),
+    offset: int = Query(0),
+    cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ,
+            CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        patients = await cgm_metrics_service.find_patients_with_high_glucose_variability(
+            start_date=start_date,
+            end_date=end_date,
+            gv_threshold=gv_threshold,
+            health_facility_id=str(current_care_provider.health_facility_id),
+            limit=limit,
+            offset=offset,
+        )
+
+        return SuccessResponse(
+            message=f"{len(patients)} patients with GV > {gv_threshold} in past {days} days",
+            data=patients,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Unexpected error fetching patients with high glucose variability",
+            detail=str(e),
+        )
