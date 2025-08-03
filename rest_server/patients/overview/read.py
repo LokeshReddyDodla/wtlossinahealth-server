@@ -5,11 +5,13 @@ from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
     get_fitness_report_service,
     get_cgm_stats_processor,
     get_meal_report_service,
 )
 from lib.models.patient import Patient
+from lib.services.cgm_report_service import CGMReportService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.meal_report_service import MealReportService
 from lib.utils.cgm.processor import CGMStatsProcessor
@@ -27,12 +29,10 @@ async def get_patient_overview_api(
     fitness_report_service: FitnessReportService = Depends(
         get_fitness_report_service
     ),
-    cgm_stats_processor: CGMStatsProcessor = Depends(get_cgm_stats_processor),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        start_date = datetime.combine(date, time.min)  # Start of the day
-        end_date = datetime.combine(date, time.max)  # End of the day
         patient_id = str(current_patient.patient_id)
 
         meal_report = await meal_report_service.fetch_daily_report(
@@ -43,8 +43,8 @@ async def get_patient_overview_api(
             patient_id, date
         )
 
-        cgm_report = await cgm_stats_processor.generate_report(
-            patient_id, start_date, end_date
+        cgm_report = await cgm_report_service.fetch_day_report(
+            patient_id, date
         )
 
         return SuccessResponse(
@@ -52,9 +52,7 @@ async def get_patient_overview_api(
             data={
                 "meal_report": meal_report,
                 "fitness_report": fitness_report,
-                "glucose_report": cgm_report[
-                    "overall"
-                ],  # TODO: change it to cgm_report
+                "cgm_report": cgm_report
             },
         )
 
