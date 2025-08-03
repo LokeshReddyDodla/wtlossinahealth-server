@@ -51,3 +51,4 @@ class FitnessStats(BaseModel):
     hourly_stats: Optional[List[FitnessHourlyStats]] = None
     start_date: datetime
     end_date: datetime
+    report_type: str

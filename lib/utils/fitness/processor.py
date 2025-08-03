@@ -3,64 +3,98 @@ import math
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from lib.schemas.fitness_stats import (FitnessActivityDistribution,
-                                       FitnessHourlyStats,
-                                       FitnessInactivePeriod,
-                                       FitnessPeakActivityTime, FitnessStats)
+from lib.schemas.fitness_stats import (
+    FitnessActivityDistribution,
+    FitnessHourlyStats,
+    FitnessInactivePeriod,
+    FitnessPeakActivityTime,
+    FitnessStats,
+)
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.fitness.queries import (
     generate_activity_distribution_query,
     generate_average_active_session_duration_query,
-    generate_hourly_stats_query, generate_inactive_periods_query,
-    generate_peak_activity_time_query, generate_summary_stats_query)
+    generate_hourly_stats_query,
+    generate_inactive_periods_query,
+    generate_peak_activity_time_query,
+    generate_summary_stats_query,
+)
+
+
+class FitnessReportType:
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    CUSTOM = "custom"
 
 
 class FitnessStatsProcessor:
     def __init__(self, clickhouse_store):
         self.clickhouse_store = clickhouse_store
 
+    def generate_custom_report(
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        report_type: str,
+    ) -> Optional[FitnessStats]:
+        try:
+            report = self._process_period(
+                patient_id, start_date, end_date, report_type
+            )
+
+            return report
+        except Exception as e:
+            print(
+                f"❌ Failed to generate {report_type} report for {patient_id} from {start_date} to {end_date}. Error: {e}"
+            )
+        return None
+
     def generate_report(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        include_overall: bool = False,
-        include_day_wise: bool = False,
-        include_week_wise: bool = False,
-    ) -> Dict[str, Any]:
-        stats = {}
+        report_types: List[str] = [
+            FitnessReportType.MONTHLY,
+            FitnessReportType.DAILY,
+            FitnessReportType.WEEKLY,
+        ],
+    ) -> List[FitnessStats]:
+        reports: List[FitnessStats] = []
 
-        # Overall Stats
-        if include_overall:
-            stats["overall"] = self._process_period(
-                patient_id,
-                start_date,
-                end_date,
+        if FitnessReportType.MONTHLY in report_types:
+            reports.append(
+                self._process_period(
+                    patient_id, start_date, end_date, FitnessReportType.MONTHLY
+                )
             )
 
-        # Day-wise Stats
-        if include_day_wise:
-            day_periods = DayWisePeriod(start_date, end_date).periods
-            stats["day_wise"] = self._process_multiple_periods(
-                patient_id,
-                day_periods,
-            )
-
-        # Week-wise Stats
-        if include_week_wise:
+        if FitnessReportType.WEEKLY in report_types:
             week_periods = WeekWisePeriod(start_date, end_date).periods
-            stats["week_wise"] = self._process_multiple_periods(
-                patient_id,
-                week_periods,
+            reports.extend(
+                self._process_multiple_periods(
+                    patient_id, week_periods, FitnessReportType.WEEKLY
+                )
             )
 
-        return stats
+        if FitnessReportType.DAILY in report_types:
+            day_periods = DayWisePeriod(start_date, end_date).periods
+            reports.extend(
+                self._process_multiple_periods(
+                    patient_id, day_periods, FitnessReportType.DAILY
+                )
+            )
+
+        return reports
 
     def _process_period(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
+        report_type: str,
     ) -> FitnessStats:
 
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
@@ -114,6 +148,7 @@ class FitnessStatsProcessor:
         return FitnessStats(
             start_date=start_date,
             end_date=end_date,
+            report_type=report_type,
             steps=summary_stats[0][0],
             active_energy=summary_stats[0][1],
             active_duration=summary_stats[0][2],
@@ -128,6 +163,7 @@ class FitnessStatsProcessor:
         self,
         patient_id: str,
         periods: List[Dict[str, datetime]],
+        report_type: str,
     ) -> List[FitnessStats]:
         stats = []
         for period in periods:
@@ -136,6 +172,7 @@ class FitnessStatsProcessor:
                     patient_id,
                     period["start_date"],
                     period["end_date"],
+                    report_type,
                 )
             )
         return stats

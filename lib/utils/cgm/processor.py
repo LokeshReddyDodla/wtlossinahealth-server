@@ -1,11 +1,14 @@
 import hashlib
 from datetime import datetime
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from lib.schemas.cgm_stats import CGMStats, CGMReading
 from lib.services.meal_report_service import MealReportService
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
-from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.utils.fitness.processor import (
+    FitnessReportType,
+    FitnessStatsProcessor,
+)
 from lib.utils.cgm.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.cgm.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.cgm.queries import (
@@ -17,7 +20,11 @@ from lib.utils.cgm.range import CGMRangeStatsFetcher
 from lib.utils.cgm.summary import CGMSummaryStatsFetcher
 from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
 
-ReportTypeLiteral = Literal["daily", "weekly", "custom", "other"]
+
+class CGMReportType:
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    CUSTOM = "custom"
 
 
 class CGMStatsProcessor:
@@ -75,7 +82,7 @@ class CGMStatsProcessor:
         before_minutes=15,
         after_minutes=90,
     ):
-        """Fetch glucose readings around the meal time."""
+        """Fetch cgm readings around the meal time."""
         query = generate_cgm_readings_around_meal_query(
             patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -93,52 +100,48 @@ class CGMStatsProcessor:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> Dict[str, Any]:
-        stats = {}
+    ) -> List[CGMStats]:
+        reports: List[CGMStats] = []
 
-        # Overall Stats
-        stats["overall"] = (
+        # Overall
+        reports.append(
             await self._process_period(
-                patient_id, start_date, end_date, "other"
+                patient_id, start_date, end_date, CGMReportType.CUSTOM
             )
-        ).model_dump()
+        )
 
-        # Day-wise Stats
+        # Daily
         day_periods = DayWisePeriod(start_date, end_date).periods
-        stats["day_wise"] = [
-            period.model_dump()
-            for period in await self._process_multiple_periods(
-                patient_id,
-                day_periods,
-                "daily",
+        reports.extend(
+            await self._process_multiple_periods(
+                patient_id, day_periods, CGMReportType.DAILY
             )
-        ]
+        )
 
-        # # Week-wise Stats
+        # Weekly
         week_periods = WeekWisePeriod(start_date, end_date).periods
-        stats["week_wise"] = [
-            period.model_dump()
-            for period in await self._process_multiple_periods(
-                patient_id, week_periods, "weekly"
+        reports.extend(
+            await self._process_multiple_periods(
+                patient_id, week_periods, CGMReportType.WEEKLY
             )
-        ]
+        )
 
-        return stats
+        return reports
 
     async def _process_period(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        report_type: ReportTypeLiteral,
+        report_type: str,
     ) -> CGMStats:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        glucose_summary_stats = CGMSummaryStatsFetcher.fetch(
+        cgm_summary_stats = CGMSummaryStatsFetcher.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        glucose_range_stats = CGMRangeStatsFetcher.fetch(
+        cgm_range_stats = CGMRangeStatsFetcher.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
         hyper_stats = HyperStatsFetcher().fetch(
@@ -151,30 +154,31 @@ class CGMStatsProcessor:
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
-        fitness_report = self.fitness_stats_processor.generate_report(
-            patient_id, start_date, end_date, include_overall=True
-        )[
-            "overall"
-        ]  # TODO store it in fitness_report (report_type=custom)
+        fitness_report = self.fitness_stats_processor.generate_custom_report(
+            patient_id,
+            start_date,
+            end_date,
+            report_type=report_type,
+        )
 
-        glucose_readings = None
-        if report_type == "daily":
-            glucose_readings = self.get_cgm_readings_in_range(
+        cgm_readings: Optional[List[CGMReading]] = None
+        meal_report_id: Optional[str] = None
+
+        if report_type == CGMReportType.DAILY:
+            cgm_readings = self.get_cgm_readings_in_range(
                 patient_id, start_date_str, end_date_str
             )
-
-        meal_report_id = None
-        if report_type == "daily":
-            unique_key = f"{patient_id}_{report_type}_{start_date.date()}"
-            meal_report_id = hashlib.sha256(unique_key.encode()).hexdigest()
+            meal_report_id = hashlib.sha256(
+                f"{patient_id}_{report_type}_{start_date.date()}".encode()
+            ).hexdigest()
 
         return CGMStats(
             start_date=start_date,
             end_date=end_date,
             report_type=report_type,
-            glucose_readings=glucose_readings,
-            glucose_summary_stats=glucose_summary_stats,
-            glucose_range_stats=glucose_range_stats,
+            cgm_readings=cgm_readings,
+            cgm_summary_stats=cgm_summary_stats,
+            cgm_range_stats=cgm_range_stats,
             hyper_stats=hyper_stats,
             hypo_stats=hypo_stats,
             time_period_stats=time_period_stats,
@@ -186,7 +190,7 @@ class CGMStatsProcessor:
         self,
         patient_id: str,
         periods: List[Dict[str, datetime]],
-        report_type: ReportTypeLiteral,
+        report_type: str,
     ) -> List[CGMStats]:
         stats = []
         for period in periods:

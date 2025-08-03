@@ -1,12 +1,16 @@
 import hashlib
 import logging
 from datetime import date, datetime, time
+from typing import List
 
 from pymongo import ReplaceOne
 
-from lib.core.types import SleepReportTypeLiteral
-from lib.utils.date_utils import (get_month_start_end,
-                                  get_week_start_and_end_from_week_no)
+from lib.schemas.sleep_stats import SleepStats
+from lib.utils.date_utils import (
+    get_month_start_end,
+    get_week_start_and_end_from_week_no,
+)
+from lib.utils.sleep.sleep_stats_processor import SleepReportType
 
 
 class SleepReportService:
@@ -21,7 +25,7 @@ class SleepReportService:
                 await self.sleep_report_collection.find(
                     {
                         "patient_id": patient_id,
-                        "report_type": "daily",
+                        "report_type": SleepReportType.DAILY,
                         "start_date": {"$gte": start_date},
                         "end_date": {"$lte": end_date},
                     },
@@ -46,7 +50,7 @@ class SleepReportService:
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "daily",
+                    "report_type": SleepReportType.DAILY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -54,7 +58,7 @@ class SleepReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "daily"
+                    patient_id, start_date, end_date, SleepReportType.DAILY
                 )
 
             return report
@@ -75,7 +79,7 @@ class SleepReportService:
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "weekly",
+                    "report_type": SleepReportType.WEEKLY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -83,7 +87,7 @@ class SleepReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "weekly"
+                    patient_id, start_date, end_date, SleepReportType.WEEKLY
                 )
 
             return report
@@ -102,7 +106,7 @@ class SleepReportService:
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": "monthly",
+                    "report_type": SleepReportType.MONTHLY,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
@@ -110,7 +114,7 @@ class SleepReportService:
             )
             if not report:
                 self._trigger_report_generation(
-                    patient_id, start_date, end_date, "monthly"
+                    patient_id, start_date, end_date, SleepReportType.MONTHLY
                 )
             return report
         except Exception as error:
@@ -124,11 +128,12 @@ class SleepReportService:
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        report_type: SleepReportTypeLiteral,
+        report_type: str,
     ):
         try:
-            from lib.dependencies.service_dependencies import \
-                get_celery_task_manager
+            from lib.dependencies.service_dependencies import (
+                get_celery_task_manager,
+            )
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
@@ -145,36 +150,59 @@ class SleepReportService:
                 f"❌ Failed to trigger {report_type} sleep report generation for {patient_id}. Error: {error}"
             )
 
-    async def save_reports_bulk(self, reports: list):
+    def _generate_report_id(
+        self,
+        patient_id: str,
+        report_type: str,
+        start: datetime,
+        end: datetime,
+    ) -> str:
+        key = f"{patient_id}_{report_type}_{start.date()}_{end.date()}"
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    async def save_reports_bulk(self, patient_id, reports: List[SleepStats]):
         try:
+            from pymongo import UpdateOne
+            from datetime import datetime
+
+            now = datetime.now()
+            ops = []
+
             operations = []
             now = datetime.now()
 
             for report in reports:
-                unique_string = f"{report['patient_id']}_{report['report_type']}_{report['start_date']}_{report['end_date']}"
-                report_id = hashlib.sha256(unique_string.encode()).hexdigest()
-
-                existing_report = await self.sleep_report_collection.find_one(
-                    {"_id": report_id}
-                )
-                report["created_at"] = (
-                    existing_report.get("created_at", now)
-                    if existing_report
-                    else now
-                )
-                report["updated_at"] = now
-
-                report["_id"] = report_id
-
-                operations.append(
-                    ReplaceOne({"_id": report_id}, report, upsert=True)
+                report_dict = report.model_dump(exclude_none=True)
+                report_id = self._generate_report_id(
+                    patient_id,
+                    report.report_type,
+                    report.start_date,
+                    report.end_date,
                 )
 
-            # Perform bulk upsert
-            await self.sleep_report_collection.bulk_write(
-                operations, ordered=False
-            )
-            print(f"Saved/Updated {len(reports)} reports successfully")
+                report_dict.update(
+                    {
+                        "_id": report_id,
+                        "patient_id": patient_id,
+                        "updated_at": now,
+                        "created_at": report_dict.get("created_at", now),
+                    }
+                )
+
+                ops.append(
+                    UpdateOne(
+                        {"_id": report_id}, {"$set": report_dict}, upsert=True
+                    )
+                )
+
+            if ops:
+                await self.sleep_report_collection.bulk_write(ops)
+                print(
+                    f"✅ Bulk saved {len(ops)} Sleep reports for {patient_id}"
+                )
+            else:
+                print("⚠️ No Fitness reports to save.")
+
         except Exception as e:
             print(f"Failed to save reports in bulk: {e}")
             raise

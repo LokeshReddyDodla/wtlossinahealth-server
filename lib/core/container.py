@@ -383,6 +383,9 @@ container.register(
         meal_report_service=cast(
             MealReportService, container.resolve(MealReportService)
         ),
+        fitness_report_service=cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        ),
     ),
 )
 

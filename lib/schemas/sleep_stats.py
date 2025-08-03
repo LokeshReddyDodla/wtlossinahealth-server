@@ -5,8 +5,9 @@ from pydantic import BaseModel
 
 
 class SleepStats(BaseModel):
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    start_date: datetime
+    end_date: datetime
+    report_type: str
     duration_analysis: Dict[str, Any]
     type_distribution: Dict[str, Any]
     timing_analysis: Dict[str, Any]

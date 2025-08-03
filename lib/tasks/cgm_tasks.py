@@ -5,6 +5,7 @@ from typing import List, Tuple
 from celery import shared_task
 
 from lib.utils.async_runner import run_async_task
+from lib.utils.cgm.processor import CGMReportType
 
 
 @shared_task
@@ -44,40 +45,24 @@ def generate_cgm_report(
             get_cgm_stats_processor,
         )
 
-        cgm_stats_service = get_cgm_stats_processor()
-        cgm_report_service = get_cgm_report_service()
-        # ai_conversation_service = get_ai_conversation_service()
-
         async def generate_and_save_report():
-            report = await cgm_stats_service.generate_report(
+            processor = get_cgm_stats_processor()
+            service = get_cgm_report_service()
+            reports = await processor.generate_report(
                 patient_id, start_date, end_date
             )
-            # feedback_message = await ai_conversation_service.generate_report_response(
-            #     patient_id,
-            #     patient_id,
-            #     report,
-            #     "cgm",
-            # )
 
-            await cgm_report_service.save_report(
-                patient_id,
-                {
-                    "patient_id": patient_id,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    # "feedback": feedback_message,
-                    **report,
-                },
-            )
+            # Bulk save
+            await service.save_reports_bulk(patient_id, reports)
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(generate_and_save_report())
 
         print(
-            f"✅ Successfully generated cgm report for {patient_id} from {start_date} to {end_date}."
+            f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
         )
 
     except Exception as error:
         print(
-            f"❌ Failed to generate cgm report for {patient_id} from {start_date} to {end_date}. Error: {error}"
+            f"❌ Failed to generate CGM report for {patient_id} from {start_date} to {end_date}. Error: {error}"
         )
