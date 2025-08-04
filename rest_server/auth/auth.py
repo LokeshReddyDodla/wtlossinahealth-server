@@ -6,9 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.otp import (
     create_and_send_otp,
-    send_otp_backend,
     verify_otp,
-    verify_otp_backend,
 )
 from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
