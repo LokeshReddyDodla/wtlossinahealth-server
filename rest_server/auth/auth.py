@@ -81,6 +81,7 @@ async def verify_otp_endpoint(
                 manufacturer=otp_data.manufacturer,
                 device_name=otp_data.device_name,
                 is_physical_device=otp_data.is_physical_device,
+                app_name=otp_data.app_name,
                 app_version=otp_data.app_version,
                 latitude=otp_data.latitude,
                 longitude=otp_data.longitude,
