@@ -4,7 +4,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.otp import create_and_send_otp, verify_otp
+from lib.core.otp import (
+    create_and_send_otp,
+    send_otp_backend,
+    verify_otp,
+    verify_otp_backend,
+)
 from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_user_device_service
@@ -27,6 +32,7 @@ async def send_otp(request: Request, user_phone: UserPhoneNumber):
     try:
         cache_store = request.state.context.otp_store
         await create_and_send_otp(user_phone.phone_number, cache_store)
+        # await send_otp_backend(user_phone.phone_number)
         return SuccessResponse(message="OTP sent successfully")
     except Exception as e:
         return ErrorResponse(message="Failed to generate OTP", detail=str(e))
@@ -67,17 +73,21 @@ async def verify_otp_endpoint(
             )
 
             # Store or update user device information if provided
-            device = None
-            if otp_data.fcm_token:
-                device = (
-                    await user_device_service.create_or_update_user_device(
-                        user_id=UUID(user_id),
-                        fcm_token=otp_data.fcm_token,
-                        device_type=otp_data.device_type,
-                        profile_type=role,
-                        platform_version=otp_data.platform_version,
-                    )
-                )
+            device = await user_device_service.create_or_update_user_device(
+                user_id=UUID(user_id),
+                fcm_token=otp_data.fcm_token,
+                profile_type=role,
+                device_type=otp_data.device_type,
+                platform_version=otp_data.platform_version,
+                device_model=otp_data.device_model,
+                manufacturer=otp_data.manufacturer,
+                device_name=otp_data.device_name,
+                is_physical_device=otp_data.is_physical_device,
+                app_version=otp_data.app_version,
+                latitude=otp_data.latitude,
+                longitude=otp_data.longitude,
+                location_name=otp_data.location_name,
+            )  # type: ignore
 
             return OtpVerifySuccessResponse(
                 message="OTP verified",

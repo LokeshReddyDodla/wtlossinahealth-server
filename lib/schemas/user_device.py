@@ -15,6 +15,15 @@ class UserDeviceBase(BaseModel):
     fcm_token: str
     device_type: Optional[str] = None  # e.g., 'iOS', 'Android'
     platform_version: Optional[str] = None
+    device_model: Optional[str] = None
+    manufacturer: Optional[str] = None
+    device_name: Optional[str] = None
+    is_physical_device: Optional[bool] = None
+    app_version: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_name: Optional[str] = None
+
     last_updated_at: Optional[datetime] = None
     last_active_at: Optional[datetime] = None
     patient_id: Optional[UUID] = None
