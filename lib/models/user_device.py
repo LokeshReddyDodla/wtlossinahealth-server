@@ -33,6 +33,7 @@ class UserDevice(Base):
     manufacturer = Column(String, nullable=True)
     device_name = Column(String, nullable=True)
     is_physical_device = Column(Boolean, nullable=True)
+    app_name = Column(String, nullable=True)
     app_version = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)

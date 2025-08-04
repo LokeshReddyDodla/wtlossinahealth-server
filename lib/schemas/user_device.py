@@ -19,6 +19,7 @@ class UserDeviceBase(BaseModel):
     manufacturer: Optional[str] = None
     device_name: Optional[str] = None
     is_physical_device: Optional[bool] = None
+    app_name: Optional[str] = None
     app_version: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
