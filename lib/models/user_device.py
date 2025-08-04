@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -18,7 +18,6 @@ class UserDevice(Base):
     profile_type = Column(
         String, nullable=False
     )  # 'patient' or 'care_provider'
-    fcm_token = Column(String, nullable=False)
 
     last_updated_at = Column(
         DateTime,
@@ -27,8 +26,17 @@ class UserDevice(Base):
     )
     last_active_at = Column(DateTime, nullable=True)
 
+    fcm_token = Column(String, nullable=True)
     device_type = Column(String, nullable=True)  # e.g., 'iOS', 'Android'
     platform_version = Column(String, nullable=True)
+    device_model = Column(String, nullable=True)
+    manufacturer = Column(String, nullable=True)
+    device_name = Column(String, nullable=True)
+    is_physical_device = Column(Boolean, nullable=True)
+    app_version = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    location_name = Column(String, nullable=True)
 
     patient_id = Column(
         UUID,

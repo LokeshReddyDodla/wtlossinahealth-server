@@ -125,12 +125,19 @@ class UserDeviceService:
         user_id: UUID,
         fcm_token: str,
         profile_type: ProfileTypeLiteral,
-        device_type: str,
+        device_type: Optional[str] = None,
         platform_version: Optional[str] = None,
+        device_model: Optional[str] = None,
+        manufacturer: Optional[str] = None,
+        device_name: Optional[str] = None,
+        is_physical_device: Optional[bool] = None,
+        app_version: Optional[str] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        location_name: Optional[str] = None,
         *,
         postgres_session: AsyncSession,
     ) -> UserDeviceModel:
-        """Create or update a user device based on FCM token and user ID."""
         try:
             user_device_data = {
                 "user_id": user_id,
@@ -138,6 +145,14 @@ class UserDeviceService:
                 "profile_type": profile_type,
                 "device_type": device_type,
                 "platform_version": platform_version,
+                "device_model": device_model,
+                "manufacturer": manufacturer,
+                "device_name": device_name,
+                "is_physical_device": is_physical_device,
+                "app_version": app_version,
+                "latitude": latitude,
+                "longitude": longitude,
+                "location_name": location_name,
             }
 
             if profile_type == ProfileTypeEnum.PATIENT.value:
@@ -153,10 +168,21 @@ class UserDeviceService:
             )
 
             for device in existing_devices:
-                if device.fcm_token == fcm_token:  # type: ignore
-                    # Update the existing device if the FCM token matches
+                # Prefer FCM match if provided
+                if fcm_token and device.fcm_token == fcm_token:
                     return await self.update_user_device(
-                        device_id=device.device_id,  # type: ignore
+                        device_id=device.device_id,
+                        user_device_data=user_device_data,
+                        postgres_session=postgres_session,
+                    )
+                # Fallback to match on device_name + type
+                elif (
+                    not fcm_token
+                    and device.device_name == device_name
+                    and device.device_type == device_type
+                ):
+                    return await self.update_user_device(
+                        device_id=device.device_id,
                         user_device_data=user_device_data,
                         postgres_session=postgres_session,
                     )
