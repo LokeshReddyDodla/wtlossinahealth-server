@@ -463,7 +463,7 @@ class MealStatsProcessor:
                 row.date, parse_date(meal["time"]).time()
             )
             glucose_before_meal, glucose_after_meal = (
-                self.cgm_stats_processor.fetch_glucose_around_meal(
+                self.cgm_stats_processor.get_cgm_readings_around_meal(
                     patient_id, meal_time
                 )
             )
