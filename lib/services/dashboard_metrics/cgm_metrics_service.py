@@ -77,7 +77,7 @@ class CGMMetricsService:
                             + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
-                            "age": calculate_age(patient.dob)
+                            "age": calculate_age(patient.dob),
                         },
                     },
                 )
@@ -143,7 +143,7 @@ class CGMMetricsService:
                             + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
-                            "age": calculate_age(patient.dob)
+                            "age": calculate_age(patient.dob),
                         },
                     },
                 )
@@ -155,7 +155,6 @@ class CGMMetricsService:
                 detail=str(e),
             )
 
-    
     async def find_patients_with_high_glucose_variability(
         self,
         start_date: datetime,
@@ -176,6 +175,7 @@ class CGMMetricsService:
             projection = {
                 "_id": 1,
                 "patient_id": 1,
+                "start_date": 1,
                 "cgm_summary_stats.glucose_variability": 1,
             }
 
@@ -197,9 +197,14 @@ class CGMMetricsService:
                     enrich_payload=lambda report, patient: {
                         "_id": str(report["_id"]),
                         "patient_id": report["patient_id"],
-                        "glucose_variability": report["cgm_summary_stats"]["glucose_variability"],
+                        "glucose_variability": report["cgm_summary_stats"][
+                            "glucose_variability"
+                        ],
+                        "date": report["start_date"],
                         "patient": {
-                            "name": patient.first_name + " " + patient.last_name,
+                            "name": patient.first_name
+                            + " "
+                            + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
                             "age": calculate_age(patient.dob),
