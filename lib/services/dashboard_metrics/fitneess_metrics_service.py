@@ -58,6 +58,7 @@ class FitnessMetricsService:
             # Get reports
             cursor = (
                 self.fitness_report_collection.find(query)
+                .sort("start_date", -1)
                 .skip(offset)
                 .limit(limit)
             )

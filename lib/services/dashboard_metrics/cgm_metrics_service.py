@@ -52,6 +52,7 @@ class CGMMetricsService:
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
+                .sort("start_date", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -122,6 +123,7 @@ class CGMMetricsService:
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
+                .sort("start_date", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -191,6 +193,7 @@ class CGMMetricsService:
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
+                .sort("start_date", -1)
                 .skip(offset)
                 .limit(limit)
             )
