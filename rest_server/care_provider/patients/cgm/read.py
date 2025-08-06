@@ -77,7 +77,8 @@ async def get_cgm_day_report(
 ):
     try:
         day_report = await cgm_report_service.fetch_day_report(
-            patient_id, date, regenerate=regenerate
+            patient_id,
+            date,
         )
 
         if not day_report:
