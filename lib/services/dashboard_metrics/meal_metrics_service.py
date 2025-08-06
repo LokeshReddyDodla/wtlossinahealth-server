@@ -23,6 +23,7 @@ from lib.models.patient_meal import (
 from lib.models.patient_meal import (
     PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel,
 )
+from lib.models.associations import patient_care_provider_association
 
 
 def build_condition(column, threshold, op: Optional[str]):
@@ -42,27 +43,37 @@ class MealMetricsService:
     async def get_meal_uploads_grouped_by_date(
         self,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         with_photos_only: bool = False,
     ) -> list[dict]:
         try:
             async with get_async_postgres_session() as session:
-                stmt = (
-                    select(
-                        cast(PatientMealModel.uploaded_at, Date).label("date"),
-                        func.count().label("count"),
-                    )
-                    .join(
-                        PatientModel,
-                        PatientModel.patient_id == PatientMealModel.patient_id,
-                    )
-                    .where(
+                stmt = select(
+                    cast(PatientMealModel.uploaded_at, Date).label("date"),
+                    func.count().label("count"),
+                ).join(
+                    PatientModel,
+                    PatientMealModel.patient_id == PatientModel.patient_id,
+                )
+
+                if is_admin:
+                    stmt = stmt.where(
                         PatientModel.health_facility_id == health_facility_id
                     )
-                    .group_by(cast(PatientMealModel.uploaded_at, Date))
-                    .order_by("date")
-                )
+                else:
+                    stmt = stmt.where(
+                        PatientMealModel.patient_id.in_(
+                            select(
+                                patient_care_provider_association.c.patient_id
+                            ).where(
+                                patient_care_provider_association.c.care_provider_id
+                                == care_provider_id
+                            )
+                        )
+                    )
 
                 if start:
                     stmt = stmt.where(PatientMealModel.uploaded_at >= start)
@@ -70,6 +81,10 @@ class MealMetricsService:
                     stmt = stmt.where(PatientMealModel.uploaded_at <= end)
                 if with_photos_only:
                     stmt = stmt.where(PatientMealModel.image_url.isnot(None))
+
+                stmt = stmt.group_by(
+                    cast(PatientMealModel.uploaded_at, Date)
+                ).order_by("date")
 
                 result = await session.execute(stmt)
                 rows = result.all()
@@ -89,6 +104,8 @@ class MealMetricsService:
     async def get_macro_filtered_major_meals(
         self,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         protein_threshold: Optional[float] = None,
@@ -130,14 +147,27 @@ class MealMetricsService:
                         ),
                         selectinload(PatientMealModel.patient),
                     )
-                    .where(
-                        PatientModel.health_facility_id == health_facility_id,
-                        PatientMealModel.type.in_(major_meals),
-                    )
+                    .where(PatientMealModel.type.in_(major_meals))
                     .order_by(PatientMealModel.uploaded_at.desc())
                     .offset(offset)
                     .limit(limit)
                 )
+
+                if is_admin:
+                    stmt = stmt.where(
+                        PatientModel.health_facility_id == health_facility_id
+                    )
+                else:
+                    stmt = stmt.where(
+                        PatientMealModel.patient_id.in_(
+                            select(
+                                patient_care_provider_association.c.patient_id
+                            ).where(
+                                patient_care_provider_association.c.care_provider_id
+                                == care_provider_id
+                            )
+                        )
+                    )
 
                 if start:
                     stmt = stmt.where(PatientMealModel.uploaded_at >= start)
