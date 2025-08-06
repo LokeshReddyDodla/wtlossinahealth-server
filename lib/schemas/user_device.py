@@ -12,7 +12,7 @@ from lib.schemas.patient import Patient as PatientSchema
 class UserDeviceBase(BaseModel):
     user_id: UUID
     profile_type: ProfileTypeLiteral
-    fcm_token: str
+    fcm_token: Optional[str] = None
     device_type: Optional[str] = None  # e.g., 'iOS', 'Android'
     platform_version: Optional[str] = None
     device_model: Optional[str] = None

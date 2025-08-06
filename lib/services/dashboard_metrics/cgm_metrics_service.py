@@ -25,9 +25,11 @@ class CGMMetricsService:
 
     async def find_patients_with_hyper_events(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start: datetime,
+        end: datetime,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         min_duration_minutes: float = 45,
         limit: int = 100,
         offset: int = 0,
@@ -35,8 +37,8 @@ class CGMMetricsService:
         try:
             query = {
                 "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start_date},
-                "end_date": {"$lte": end_date},
+                "start_date": {"$gte": start},
+                "end_date": {"$lte": end},
                 f"hyper_stats.hyper_events": {
                     "$elemMatch": {"duration": {"$gte": min_duration_minutes}}
                 },
@@ -61,6 +63,8 @@ class CGMMetricsService:
                 return await map_patients_to_reports(
                     reports=reports,
                     health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_admin=is_admin,
                     postgres_session=session,
                     extract_patient_id=lambda r: r["patient_id"],
                     enrich_payload=lambda report, patient: {
@@ -91,9 +95,11 @@ class CGMMetricsService:
 
     async def find_patients_with_hypo_events(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start: datetime,
+        end: datetime,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         min_duration_minutes: float = 20,
         limit: int = 100,
         offset: int = 0,
@@ -101,8 +107,8 @@ class CGMMetricsService:
         try:
             query = {
                 "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start_date},
-                "end_date": {"$lte": end_date},
+                "start_date": {"$gte": start},
+                "end_date": {"$lte": end},
                 "hypo_stats.hypo_events": {
                     "$elemMatch": {"duration": {"$gte": min_duration_minutes}}
                 },
@@ -127,6 +133,8 @@ class CGMMetricsService:
                 return await map_patients_to_reports(
                     reports=reports,
                     health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_admin=is_admin,
                     postgres_session=session,
                     extract_patient_id=lambda r: r["patient_id"],
                     enrich_payload=lambda report, patient: {
@@ -157,9 +165,11 @@ class CGMMetricsService:
 
     async def find_patients_with_high_glucose_variability(
         self,
-        start_date: datetime,
-        end_date: datetime,
+        start: datetime,
+        end: datetime,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         gv_threshold: float = 20.0,
         limit: int = 100,
         offset: int = 0,
@@ -167,8 +177,8 @@ class CGMMetricsService:
         try:
             query = {
                 "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start_date},
-                "end_date": {"$lte": end_date},
+                "start_date": {"$gte": start},
+                "end_date": {"$lte": end},
                 "cgm_summary_stats.glucose_variability": {"$gt": gv_threshold},
             }
 
@@ -192,6 +202,8 @@ class CGMMetricsService:
                 return await map_patients_to_reports(
                     reports=reports,
                     health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_admin=is_admin,
                     postgres_session=session,
                     extract_patient_id=lambda r: r["patient_id"],
                     enrich_payload=lambda report, patient: {

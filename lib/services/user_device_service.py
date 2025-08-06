@@ -123,8 +123,8 @@ class UserDeviceService:
     async def create_or_update_user_device(
         self,
         user_id: UUID,
-        fcm_token: str,
         profile_type: ProfileTypeLiteral,
+        fcm_token: Optional[str] = None,
         device_type: Optional[str] = None,
         platform_version: Optional[str] = None,
         device_model: Optional[str] = None,

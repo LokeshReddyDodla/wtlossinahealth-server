@@ -198,6 +198,7 @@ class FitnessReportService:
             report_dict.update(
                 {
                     "_id": report_id,
+                    "patient_id": patient_id,
                     "created_at": (
                         existing.get("created_at", now) if existing else now
                     ),

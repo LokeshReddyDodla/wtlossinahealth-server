@@ -24,10 +24,12 @@ class FitnessMetricsService:
     async def get_patients_by_step_threshold(
         self,
         health_facility_id: str,
+        care_provider_id: str,
+        is_admin: bool,
         steps_op: str = "lt",
         steps_value: int = 1000,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -49,9 +51,9 @@ class FitnessMetricsService:
                 "steps": {mongo_op: steps_value},
             }
 
-            if start_date and end_date:
-                query["start_date"] = {"$gte": start_date}
-                query["end_date"] = {"$lte": end_date}
+            if start and end:
+                query["start_date"] = {"$gte": start}
+                query["end_date"] = {"$lte": end}
 
             # Get reports
             cursor = (
@@ -68,6 +70,8 @@ class FitnessMetricsService:
                 return await map_patients_to_reports(
                     reports=reports,
                     health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_admin=is_admin,
                     postgres_session=session,
                     extract_patient_id=lambda r: r["patient_id"],
                     enrich_payload=lambda report, patient: {
@@ -82,7 +86,7 @@ class FitnessMetricsService:
                             + patient.last_name,
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
-                            "age": calculate_age(patient.dob)
+                            "age": calculate_age(patient.dob),
                         },
                     },
                 )

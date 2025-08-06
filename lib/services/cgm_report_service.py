@@ -285,6 +285,7 @@ class CGMReportService:
             report_dict.update(
                 {
                     "_id": report_id,
+                    "patient_id": patient_id,
                     "created_at": (
                         existing_report.get("created_at", now)
                         if existing_report

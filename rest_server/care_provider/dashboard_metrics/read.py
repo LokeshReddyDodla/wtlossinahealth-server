@@ -65,6 +65,8 @@ async def total_patients_enrolled(
     try:
         patients = await patient_metrics_service.get_patients(
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             start=start,
             end=end,
             limit=limit,
@@ -102,6 +104,8 @@ async def total_patients_grouped_by_date(
     try:
         grouped = await patient_metrics_service.get_patient_counts_by_date(
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             start=start,
             end=end,
         )
@@ -140,6 +144,8 @@ async def meals_grouped_by_date(
 ):
     data = await meal_metrics_service.get_meal_uploads_grouped_by_date(
         health_facility_id=str(current_care_provider.health_facility_id),
+        care_provider_id=str(current_care_provider.care_provider_id),
+        is_admin=current_care_provider.is_admin,
         start=start,
         end=end,
         with_photos_only=with_photos_only,
@@ -183,6 +189,8 @@ async def macro_filtered_major_meals(
     try:
         meals = await meal_metrics_service.get_macro_filtered_major_meals(
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             start=start,
             end=end,
             protein_threshold=protein_threshold,
@@ -218,8 +226,8 @@ async def get_patients_by_step_threshold(
     steps_value: int = Query(
         1000, description="Step count value to compare against"
     ),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
     limit: int = Query(100, le=500),
     offset: int = Query(0),
     fitness_metrics_service: FitnessMetricsService = Depends(
@@ -239,10 +247,12 @@ async def get_patients_by_step_threshold(
                 health_facility_id=str(
                     current_care_provider.health_facility_id
                 ),
+                care_provider_id=str(current_care_provider.care_provider_id),
+                is_admin=current_care_provider.is_admin,
                 steps_op=steps_op,
                 steps_value=steps_value,
-                start_date=start_date,
-                end_date=end_date,
+                start=start,
+                end=end,
                 limit=limit,
                 offset=offset,
             )
@@ -302,14 +312,16 @@ async def get_patients_with_hyper_events(
     ),
 ):
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        end = datetime.now()
+        start = end - timedelta(days=days)
 
         patients = await cgm_metrics_service.find_patients_with_hyper_events(
-            start_date=start_date,
-            end_date=end_date,
+            start=start,
+            end=end,
             min_duration_minutes=min_duration_minutes,
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             limit=limit,
             offset=offset,
         )
@@ -343,14 +355,16 @@ async def get_patients_with_hypo_events(
     ),
 ):
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        end = datetime.now()
+        start = end - timedelta(days=days)
 
         patients = await cgm_metrics_service.find_patients_with_hypo_events(
-            start_date=start_date,
-            end_date=end_date,
+            start=start,
+            end=end,
             min_duration_minutes=min_duration_minutes,
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             limit=limit,
             offset=offset,
         )
@@ -368,6 +382,7 @@ async def get_patients_with_hypo_events(
             detail=str(e),
         )
 
+
 @router.get("/cgm/high-gv-patients", response_model=SuccessResponse)
 async def get_patients_with_high_gv(
     days: int = Query(7, ge=1, le=60),
@@ -383,14 +398,16 @@ async def get_patients_with_high_gv(
     ),
 ):
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        end = datetime.now()
+        start = end - timedelta(days=days)
 
         patients = await cgm_metrics_service.find_patients_with_high_glucose_variability(
-            start_date=start_date,
-            end_date=end_date,
+            start=start,
+            end=end,
             gv_threshold=gv_threshold,
             health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
             limit=limit,
             offset=offset,
         )
