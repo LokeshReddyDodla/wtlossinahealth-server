@@ -9,8 +9,10 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.event import listens_for
@@ -22,6 +24,7 @@ from lib.models.associations import patient_care_provider_association
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
 from lib.services.chat.chat_management_service import ChatManagementService
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class Patient(Base):
@@ -208,6 +211,24 @@ class Patient(Base):
             ),
             None,
         )
+
+    @hybrid_property
+    def age(self):  # type: ignore
+        if self.dob is None:
+            return None
+        today = datetime.today()
+        return (
+            today.year
+            - self.dob.year
+            - ((today.month, today.day) < (self.dob.month, self.dob.day))
+        )
+
+    @age.expression
+    def age(cls):
+        # This uses PostgreSQL's date functions to calculate age in years
+        return func.date_part(
+            "year", func.age(func.current_date(), cls.dob)
+        ).cast(Integer)
 
 
 @listens_for(Patient, "after_insert")

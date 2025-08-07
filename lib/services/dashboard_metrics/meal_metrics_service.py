@@ -124,10 +124,6 @@ class MealMetricsService:
                 stmt = (
                     select(PatientMealModel)
                     .join(
-                        PatientModel,
-                        PatientMealModel.patient_id == PatientModel.patient_id,
-                    )
-                    .join(
                         PatientTotalMacroNutritionalValueModel,
                         PatientMealModel.id
                         == PatientTotalMacroNutritionalValueModel.meal_id,
@@ -145,7 +141,9 @@ class MealMetricsService:
                         selectinload(
                             PatientMealModel.total_micro_nutritional_value
                         ),
-                        selectinload(PatientMealModel.patient),
+                        selectinload(PatientMealModel.patient).selectinload(
+                            PatientModel.diabetic_history
+                        ),
                     )
                     .where(PatientMealModel.type.in_(major_meals))
                     .order_by(PatientMealModel.uploaded_at.desc())
@@ -195,7 +193,7 @@ class MealMetricsService:
                         stmt = stmt.where(condition)
 
                 result = await session.execute(stmt)
-                meals = result.scalars().all()
+                meals = result.unique().scalars().all()
 
                 return list(meals)
 
