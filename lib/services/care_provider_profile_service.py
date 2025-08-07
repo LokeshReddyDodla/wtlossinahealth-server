@@ -140,6 +140,7 @@ class CareProviderProfileService:
                         selectinload(PatientModel.package_assignments).options(
                             selectinload(PatientPackageAssignmentModel.package)
                         ),
+                        selectinload(PatientModel.user_devices),
                     )
                     .order_by(PatientModel.created_at.desc())
                 )
@@ -162,6 +163,7 @@ class CareProviderProfileService:
                                     PatientPackageAssignmentModel.package
                                 )
                             ),
+                            selectinload(PatientModel.user_devices),
                         )
                     )
                 )
