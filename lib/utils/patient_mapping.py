@@ -6,6 +6,7 @@ from lib.models.patient import Patient
 from lib.utils.http_exceptions import raise_http_exception
 from fastapi import status
 from lib.models.associations import patient_care_provider_association
+from sqlalchemy.orm import selectinload
 
 
 async def map_patients_to_reports(
@@ -26,7 +27,11 @@ async def map_patients_to_reports(
         {extract_patient_id(r) for r in reports if "patient_id" in r}
     )
 
-    stmt = select(Patient).where(Patient.patient_id.in_(patient_ids))
+    stmt = (
+        select(Patient)
+        .options(selectinload(Patient.diabetic_history))
+        .where(Patient.patient_id.in_(patient_ids))
+    )
 
     if is_admin:
         stmt = stmt.where(Patient.health_facility_id == health_facility_id)

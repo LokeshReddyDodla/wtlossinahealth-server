@@ -33,6 +33,7 @@ class PatientBase(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     dob: Optional[date]
+    age: Optional[float]
     gender: Optional[str]
     profile_picture: Optional[str] = None
     height: Optional[float]
@@ -72,6 +73,13 @@ class Patient(PatientBase):
         }
 
         return cls(**kwargs)
+
+
+class PatientDiabeticHistorySchema(Patient):
+    diabetic_history: Optional[PatientDiabeticHistory] = None
+
+    class Config:
+        from_attributes = True
 
 
 class CorePatientProfile(Patient):
