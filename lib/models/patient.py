@@ -25,6 +25,7 @@ from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
 from lib.services.chat.chat_management_service import ChatManagementService
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import object_session
 
 
 class Patient(Base):
@@ -210,6 +211,23 @@ class Patient(Base):
                 and pa.start_date <= today <= pa.end_date
             ),
             None,
+        )
+
+    @property
+    def last_active_at(self, allow_lazy=False):
+        if not allow_lazy and "user_devices" not in self.__dict__:
+            return None
+
+        if not self.user_devices:
+            return None
+
+        return max(
+            (
+                device.last_active_at
+                for device in self.user_devices
+                if device.last_active_at
+            ),
+            default=None,
         )
 
     @hybrid_property

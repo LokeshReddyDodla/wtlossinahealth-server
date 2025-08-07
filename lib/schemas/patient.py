@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -43,6 +43,7 @@ class PatientBase(BaseModel):
     phone_number: str
     is_verified: Optional[bool] = False
     locale: Optional[str] = None
+    last_active_at: Optional[Any] = None
 
 
 class PatientCreate(PatientBase):
