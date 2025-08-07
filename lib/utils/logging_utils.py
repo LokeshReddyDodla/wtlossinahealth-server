@@ -15,31 +15,31 @@ async def log_last_active_time(
 ):
     device_id_str = request.headers.get("x-device-id")
     if not device_id_str:
-        # raise_http_exception(
-        #     status_code=status.HTTP_401_UNAUTHORIZED,
-        #     message="Missing x-device-id header",
-        # )
-        return
+        raise_http_exception(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Missing x-device-id header",
+        )
+        # return
 
     try:
         device_id = UUID(device_id_str)
     except ValueError:
-        # raise_http_exception(
-        #     status_code=status.HTTP_401_UNAUTHORIZED,
-        #     message="Invalid x-device-id format",
-        # )
-        return
+        raise_http_exception(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Invalid x-device-id format",
+        )
+        # return
 
     matching_device: UserDevice | None = next(
         (d for d in device_list if str(d.device_id) == str(device_id)),
         None,
     )
     if not matching_device:
-        # raise_http_exception(
-        #     status_code=status.HTTP_401_UNAUTHORIZED,
-        #     message="Device not registered. Please log in again.",
-        # )
-        return
+        raise_http_exception(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Device not registered. Please log in again.",
+        )
+        # return
 
     last_active_at_value = matching_device.last_active_at
     now = datetime.now()
