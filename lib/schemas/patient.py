@@ -33,7 +33,6 @@ class PatientBase(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     dob: Optional[date]
-    age: Optional[float]
     gender: Optional[str]
     profile_picture: Optional[str] = None
     height: Optional[float]
@@ -56,6 +55,7 @@ class PatientUpdate(PatientBase):
 
 class Patient(PatientBase):
     patient_id: UUID
+    age: Optional[float]
     profile_completion: Optional[dict]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
