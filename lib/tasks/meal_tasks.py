@@ -3,7 +3,11 @@ from datetime import date
 
 from celery import shared_task
 
-from lib.utils.async_runner import run_async_blocking, run_async_task
+from lib.utils.async_runner import (
+    run_async_blocking,
+    run_async_in_thread,
+    run_async_task,
+)
 
 
 @shared_task
@@ -36,7 +40,7 @@ def generate_daily_meal_report(
                 },
             )
 
-        run_async_blocking(generate_and_save_report())
+        run_async_in_thread(generate_and_save_report())
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"

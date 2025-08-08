@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from typing import Coroutine, Any
 
 
@@ -23,3 +24,15 @@ def run_async_blocking(coro: Coroutine) -> Any:
     except RuntimeError:
         # No loop is running — safe to create and run one
         return asyncio.run(coro)
+
+
+def run_async_in_thread(coro: Coroutine) -> None:
+    def run():
+        try:
+            asyncio.run(coro)
+        except Exception as e:
+            print(f"[run_async_in_thread] Error: {e}")
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
