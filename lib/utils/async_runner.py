@@ -12,3 +12,14 @@ def run_async_task(coro: Coroutine) -> Any:
         asyncio.set_event_loop(loop)
 
     return loop.run_until_complete(coro)
+
+
+def run_async_blocking(coro: Coroutine) -> Any:
+    try:
+        loop = asyncio.get_running_loop()
+        # Already in an event loop (e.g., FastAPI, Jupyter) — run in thread-safe way
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
+    except RuntimeError:
+        # No loop is running — safe to create and run one
+        return asyncio.run(coro)
