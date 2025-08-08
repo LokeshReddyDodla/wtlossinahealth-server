@@ -2,6 +2,7 @@ import asyncio
 from datetime import date
 
 from celery import shared_task
+from asgiref.sync import async_to_sync
 
 from lib.utils.async_runner import (
     run_async_blocking,
@@ -40,7 +41,7 @@ def generate_daily_meal_report(
                 },
             )
 
-        run_async_in_thread(generate_and_save_report())
+        async_to_sync(generate_and_save_report)()
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
