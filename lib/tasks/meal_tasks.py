@@ -2,17 +2,13 @@ import asyncio
 from datetime import date
 
 from celery import shared_task
-from asgiref.sync import async_to_sync
 
-from lib.utils.async_runner import (
-    run_async_blocking,
-    run_async_in_thread,
-    run_async_task,
-)
+from lib.utils.async_runner import run_async_task
 
 
 @shared_task
 def generate_daily_meal_report(
+    self,
     patient_id: str,
     report_date: date,
 ):
@@ -41,7 +37,8 @@ def generate_daily_meal_report(
                 },
             )
 
-        async_to_sync(generate_and_save_report)()
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(generate_and_save_report())
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
@@ -51,3 +48,4 @@ def generate_daily_meal_report(
         print(
             f"❌ Failed to generate meal report for {patient_id} on {report_date}. Error: {error}"
         )
+        raise self.retry(exc=error, countdown=60)
