@@ -130,9 +130,9 @@ async def get_health_facility_packages(
         response_data = []
         for pkg in packages:
             package_dict = HealthFacilityPackages.from_orm(pkg).model_dump()
-            package_dict["active_patients"] = [
+            package_dict["patients"] = [
                 PatientSchema.from_orm(patient).model_dump()
-                for patient in pkg.active_patients
+                for patient in pkg.patients
             ]
             response_data.append(package_dict)
 

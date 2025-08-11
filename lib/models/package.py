@@ -132,3 +132,7 @@ class Package(Base):
             if assignment.status == "active"
             and assignment.start_date <= today <= assignment.end_date
         ]
+
+    @property
+    def patients(self):
+        return [assignment.patient for assignment in self.patient_assignments]
