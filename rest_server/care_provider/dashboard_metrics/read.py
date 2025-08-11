@@ -46,8 +46,45 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("/total-patients", response_model=SuccessResponse)
-async def total_patients_enrolled(
+@router.get("/patients/active/grouped", response_model=SuccessResponse)
+async def get_active_patients_grouped(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    patient_metrics_service: PatientMetricsService = Depends(
+        get_patient_metrics_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ,
+            CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        grouped = await patient_metrics_service.get_active_patients_by_date(
+            health_facility_id=str(current_care_provider.health_facility_id),
+            care_provider_id=str(current_care_provider.care_provider_id),
+            is_admin=current_care_provider.is_admin,
+            start=start,
+            end=end,
+        )
+
+        return SuccessResponse(
+            message="Active patients grouped by date",
+            data=grouped,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/patients/enrolled", response_model=SuccessResponse)
+async def get_enrolled_patients(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
@@ -63,7 +100,7 @@ async def total_patients_enrolled(
     ),
 ):
     try:
-        patients = await patient_metrics_service.get_patients(
+        patients = await patient_metrics_service.get_enrolled_patients(
             health_facility_id=str(current_care_provider.health_facility_id),
             care_provider_id=str(current_care_provider.care_provider_id),
             is_admin=current_care_provider.is_admin,
@@ -87,8 +124,8 @@ async def total_patients_enrolled(
         )
 
 
-@router.get("/total-patients/grouped", response_model=SuccessResponse)
-async def total_patients_grouped_by_date(
+@router.get("/patients/enrolled/grouped", response_model=SuccessResponse)
+async def get_enrolled_patients_grouped(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     patient_metrics_service: PatientMetricsService = Depends(
@@ -102,12 +139,16 @@ async def total_patients_grouped_by_date(
     ),
 ):
     try:
-        grouped = await patient_metrics_service.get_patient_counts_by_date(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
-            start=start,
-            end=end,
+        grouped = (
+            await patient_metrics_service.get_enrolled_patient_counts_by_date(
+                health_facility_id=str(
+                    current_care_provider.health_facility_id
+                ),
+                care_provider_id=str(current_care_provider.care_provider_id),
+                is_admin=current_care_provider.is_admin,
+                start=start,
+                end=end,
+            )
         )
 
         return SuccessResponse(
@@ -126,7 +167,7 @@ async def total_patients_grouped_by_date(
 
 
 @router.get("/meals/grouped", response_model=SuccessResponse)
-async def meals_grouped_by_date(
+async def get_meals_grouped(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     with_photos_only: bool = Query(
@@ -165,7 +206,7 @@ class ComparisonOperator(str, Enum):
 
 
 @router.get("/meals/filter-macro", response_model=SuccessResponse)
-async def macro_filtered_major_meals(
+async def get_macro_filtered_meals(
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
     protein_threshold: Optional[float] = Query(None),
