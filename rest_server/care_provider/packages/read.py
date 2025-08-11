@@ -30,7 +30,7 @@ from .router import router
 
 
 @router.get("/patients", response_model=SuccessResponse)
-async def get_active_patients_of_package(
+async def get_patients_of_package(
     package_id: str,
     package_status: Optional[Literal["active", "inactive"]] = Query(
         None,
