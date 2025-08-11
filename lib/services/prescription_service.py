@@ -59,12 +59,11 @@ class PrescriptionService:
     async def fetch_prescriptions(
         self,
         patient_id: str,
-        start_datetime: Optional[datetime] = None,
-        end_datetime: Optional[datetime] = None,
         source: Optional[str] = None,
         analyzed: Optional[str] = None,
         order: Optional[str] = "asc",
         limit: Optional[int] = None,
+        offset: int = 0,
         *,
         postgres_session: AsyncSession,
     ):
@@ -74,15 +73,6 @@ class PrescriptionService:
                 .where(PatientPrescriptionModel.patient_id == patient_id)
                 .options(selectinload(PatientPrescriptionModel.medicines))
             )
-
-            if start_datetime:
-                query = query.filter(
-                    (PatientPrescriptionModel.created_at > start_datetime)
-                )
-            if end_datetime:
-                query = query.filter(
-                    (PatientPrescriptionModel.created_at < end_datetime)
-                )
 
             if source:
                 query = query.filter(PatientPrescriptionModel.source == source)
@@ -103,14 +93,15 @@ class PrescriptionService:
                     desc(PatientPrescriptionModel.created_at)
                 )
 
-            # Apply limit if provided
+            # Apply offset and limit if provided
+            query = query.offset(offset)
             if limit:
                 query = query.limit(limit)
 
             result = await postgres_session.execute(query)
-            meals = result.scalars().all()
+            prescriptions = result.scalars().all()
 
-            return meals
+            return prescriptions
         except Exception as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -129,15 +120,15 @@ class PrescriptionService:
         )
 
         result = await postgres_session.execute(query)
-        meal = result.scalars().first()
+        prescription = result.scalars().first()
 
-        if not meal:
+        if not prescription:
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Prescription not found",
             )
 
-        return meal
+        return prescription
 
     @with_postgres_session
     async def upload_and_analyze_prescription(
