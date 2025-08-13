@@ -4,10 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.otp import (
-    create_and_send_otp,
-    verify_otp,
-)
+
+from lib.core.otp.otp_service import OTPService
+from lib.core.otp.twilio_provider import TwilioOTPProvider
 from lib.core.types import ProfileTypeLiteral
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import get_user_device_service
@@ -29,11 +28,20 @@ router = APIRouter()
 async def send_otp(request: Request, user_phone: UserPhoneNumber):
     try:
         cache_store = request.state.context.otp_store
-        await create_and_send_otp(user_phone.phone_number, cache_store)
-        # await send_otp_backend(user_phone.phone_number)
-        return SuccessResponse(message="OTP sent successfully")
+        twilio_provider = TwilioOTPProvider()
+        otp_service = OTPService(
+            provider=twilio_provider, cache_store=cache_store
+        )
+        await otp_service.generate_and_send_otp(user_phone.phone_number)
+
+        return SuccessResponse(
+            message=f"OTP sent successfully to your WhatsApp number {user_phone.phone_number}"
+        )
     except Exception as e:
-        return ErrorResponse(message="Failed to generate OTP", detail=str(e))
+        raise_http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="Failed to generate OTP",
+        )
 
 
 @router.post(
@@ -50,7 +58,13 @@ async def verify_otp_endpoint(
 ):
     try:
         cache_store = request.state.context.otp_store
-        if await verify_otp(otp_data.phone_number, otp_data.otp, cache_store):
+        twilio_provider = TwilioOTPProvider()
+        otp_service = OTPService(
+            provider=twilio_provider, cache_store=cache_store
+        )
+        if await otp_service.verify_otp(
+            otp_data.phone_number, otp_data.otp, cache_only=True
+        ):
             # Create or get user using AuthUtils
             auth_utils = AuthUtils(session)
             user, user_id = await auth_utils.get_or_create_user(
