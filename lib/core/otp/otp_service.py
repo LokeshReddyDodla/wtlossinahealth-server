@@ -15,7 +15,7 @@ class OTPService:
     async def generate_and_send_otp(self, phone_number: str):
         otp = generate_otp(length=4)
         self.cache_store.set_key(phone_number, otp, OTP_EXPIRY_TIME)
-        await self.provider.send_otp(phone_number, otp)
+        # await self.provider.send_otp(phone_number, otp)
         logger.info(f"Sent OTP {otp} to {phone_number}")
 
     async def verify_otp(

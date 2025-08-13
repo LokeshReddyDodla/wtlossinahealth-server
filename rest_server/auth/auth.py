@@ -34,9 +34,13 @@ async def send_otp(request: Request, user_phone: UserPhoneNumber):
         )
         await otp_service.generate_and_send_otp(user_phone.phone_number)
 
+        # return SuccessResponse(
+        #     message=f"OTP sent successfully to your WhatsApp number {user_phone.phone_number}"
+        # )
         return SuccessResponse(
-            message=f"OTP sent successfully to your WhatsApp number {user_phone.phone_number}"
+            message="Unable to send OTP on WhatsApp. Please enter the last 4 digits of your device number to proceed."
         )
+
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
