@@ -1,9 +1,7 @@
-import asyncio
 from datetime import datetime
 
 from celery import shared_task
 
-from lib.utils.async_runner import run_async_task
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.fitness.processor import FitnessReportType
 
@@ -39,36 +37,32 @@ def generate_fitness_reports_for_patient(
 
 
 @shared_task
-def generate_fitness_report_for_month(
+async def generate_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
 
-        async def generate_and_save_report():
-            from lib.dependencies.service_dependencies import (
-                get_fitness_report_service,
-                get_fitness_stats_processor,
-            )
+        from lib.dependencies.service_dependencies import (
+            get_fitness_report_service,
+            get_fitness_stats_processor,
+        )
 
-            processor = get_fitness_stats_processor()
-            service = get_fitness_report_service()
+        processor = get_fitness_stats_processor()
+        service = get_fitness_report_service()
 
-            reports = processor.generate_report(
-                patient_id,
-                start_date,
-                end_date,
-                report_types=[
-                    FitnessReportType.MONTHLY,
-                    FitnessReportType.WEEKLY,
-                    FitnessReportType.DAILY,
-                ],
-            )
+        reports = processor.generate_report(
+            patient_id,
+            start_date,
+            end_date,
+            report_types=[
+                FitnessReportType.MONTHLY,
+                FitnessReportType.WEEKLY,
+                FitnessReportType.DAILY,
+            ],
+        )
 
-            # Bulk save
-            await service.save_reports_bulk(patient_id, reports)
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # Bulk save
+        await service.save_reports_bulk(patient_id, reports)
 
         print(
             f"✅ Generated fitness report for {patient_id} from {start_date}-{end_date}"
@@ -80,41 +74,36 @@ def generate_fitness_report_for_month(
 
 
 @shared_task
-def generate_fitness_report(
+async def generate_fitness_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
     report_type: str,
 ):
     try:
+        from lib.dependencies.service_dependencies import (
+            get_fitness_report_service,
+            get_fitness_stats_processor,
+        )
 
-        async def generate_and_save_report():
-            from lib.dependencies.service_dependencies import (
-                get_fitness_report_service,
-                get_fitness_stats_processor,
-            )
+        processor = get_fitness_stats_processor()
+        service = get_fitness_report_service()
 
-            processor = get_fitness_stats_processor()
-            service = get_fitness_report_service()
+        report_types = []
+        if report_type in [
+            FitnessReportType.WEEKLY,
+            FitnessReportType.MONTHLY,
+        ]:
+            report_types = [report_type, FitnessReportType.DAILY]
+        else:
+            report_types = [report_type]
 
-            report_types = []
-            if report_type in [
-                FitnessReportType.WEEKLY,
-                FitnessReportType.MONTHLY,
-            ]:
-                report_types = [report_type, FitnessReportType.DAILY]
-            else:
-                report_types = [report_type]
+        reports = processor.generate_report(
+            patient_id, start_date, end_date, report_types=report_types
+        )
 
-            reports = processor.generate_report(
-                patient_id, start_date, end_date, report_types=report_types
-            )
-
-            # Bulk save
-            await service.save_reports_bulk(patient_id, reports)
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # Bulk save
+        await service.save_reports_bulk(patient_id, reports)
 
         print(
             f"✅ Generated {report_type} fitness report for {patient_id} from {start_date} to {end_date}"

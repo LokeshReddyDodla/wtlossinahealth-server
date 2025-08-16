@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timedelta
 import logging
 
@@ -11,10 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3)
-def sync_all_libreview(self):
+async def sync_all_libreview(self):
     try:
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_sync_all_libreview_async())
+        result = await _sync_all_libreview_async()
         return result
 
     except Exception as exc:
