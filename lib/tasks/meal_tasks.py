@@ -3,11 +3,9 @@ from datetime import date
 
 from celery import shared_task
 
-from lib.utils.async_runner import run_async_task
-
 
 @shared_task
-def generate_daily_meal_report(
+async def generate_daily_meal_report(
     patient_id: str,
     report_date: date,
 ):
@@ -20,24 +18,20 @@ def generate_daily_meal_report(
         processor = get_meal_stats_processor()
         service = get_meal_report_service()
 
-        async def generate_and_save_report():
-            # Generate the meal report
-            report = await processor.get_meal_report_by_date(
-                patient_id, report_date
-            )
+        # Generate the meal report
+        report = await processor.get_meal_report_by_date(
+            patient_id, report_date
+        )
 
-            # Save the meal report
-            await service.save_report(
-                patient_id,
-                {
-                    "patient_id": patient_id,
-                    "report_type": "daily",
-                    **report.model_dump(),
-                },
-            )
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # Save the meal report
+        await service.save_report(
+            patient_id,
+            {
+                "patient_id": patient_id,
+                "report_type": "daily",
+                **report.model_dump(),
+            },
+        )
 
         print(
             f"✅ Successfully generated meal report for {patient_id} on {report_date}"
