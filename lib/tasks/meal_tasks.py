@@ -10,13 +10,6 @@ async def generate_daily_meal_report(
     report_date: date,
 ):
     try:
-        # Ensure current thread has a running event loop
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
         from lib.dependencies.service_dependencies import (
             get_meal_report_service,
             get_meal_stats_processor,
