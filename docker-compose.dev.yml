@@ -39,10 +39,11 @@ services:
   aihealth-celery:
     container_name: aihealth-celery
     image: aihealth-api:latest
-    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --loglevel=info
+    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --pool=custom --loglevel=info
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}

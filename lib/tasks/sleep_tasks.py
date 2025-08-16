@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 
 from celery import shared_task
@@ -37,37 +36,31 @@ def generate_sleep_reports_for_patient(
 
 
 @shared_task
-def generate_sleep_report_for_month(
+async def generate_sleep_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
+        from lib.dependencies.service_dependencies import (
+            get_sleep_report_service,
+            get_sleep_stats_processor,
+        )
 
-        async def generate_and_save_report():
-            from lib.dependencies.service_dependencies import (
-                get_sleep_report_service,
-                get_sleep_stats_processor,
-            )
+        processor = get_sleep_stats_processor()
+        service = get_sleep_report_service()
 
-            processor = get_sleep_stats_processor()
-            service = get_sleep_report_service()
+        reports = await processor.generate_report(
+            patient_id,
+            start_date,
+            end_date,
+            report_types=[
+                SleepReportType.MONTHLY,
+                SleepReportType.WEEKLY,
+                SleepReportType.DAILY,
+            ],
+        )
 
-            reports = await processor.generate_report(
-                patient_id,
-                start_date,
-                end_date,
-                report_types=[
-                    SleepReportType.MONTHLY,
-                    SleepReportType.WEEKLY,
-                    SleepReportType.DAILY,
-                ],
-            )
-
-            # Bulk save
-            await service.save_reports_bulk(patient_id, reports)
-
-        # Save reports
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # Bulk save
+        await service.save_reports_bulk(patient_id, reports)
 
         print(
             f"✅ Generated sleep report for {patient_id} from {start_date}-{end_date}"
@@ -79,42 +72,36 @@ def generate_sleep_report_for_month(
 
 
 @shared_task
-def generate_sleep_report(
+async def generate_sleep_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
     report_type: str,
 ):
     try:
+        from lib.dependencies.service_dependencies import (
+            get_sleep_report_service,
+            get_sleep_stats_processor,
+        )
 
-        async def generate_and_save_report():
+        processor = get_sleep_stats_processor()
+        service = get_sleep_report_service()
 
-            from lib.dependencies.service_dependencies import (
-                get_sleep_report_service,
-                get_sleep_stats_processor,
-            )
+        report_types = []
+        if report_type in [
+            SleepReportType.WEEKLY,
+            SleepReportType.MONTHLY,
+        ]:
+            report_types = [report_type, SleepReportType.DAILY]
+        else:
+            report_types = [report_type]
 
-            processor = get_sleep_stats_processor()
-            service = get_sleep_report_service()
+        reports = await processor.generate_report(
+            patient_id, start_date, end_date, report_types=report_types
+        )
 
-            report_types = []
-            if report_type in [
-                SleepReportType.WEEKLY,
-                SleepReportType.MONTHLY,
-            ]:
-                report_types = [report_type, SleepReportType.DAILY]
-            else:
-                report_types = [report_type]
-
-            reports = await processor.generate_report(
-                patient_id, start_date, end_date, report_types=report_types
-            )
-
-            # Bulk save
-            await service.save_reports_bulk(patient_id, reports)
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(generate_and_save_report())
+        # Bulk save
+        await service.save_reports_bulk(patient_id, reports)
 
         print(
             f"✅ Generated {report_type} sleep report for {patient_id} from {start_date} to {end_date}"

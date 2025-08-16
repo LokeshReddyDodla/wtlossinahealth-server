@@ -59,6 +59,7 @@ tenacity = "^9.0.0"
 langchain-google-genai = "^2.1.2"
 langchain-perplexity = "^0.1.0"
 twilio = "^9.7.0"
+celery-aio-pool = "^0.1.0rc8"
 
 
 [tool.poetry.group.dev.dependencies]
