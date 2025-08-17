@@ -2,21 +2,18 @@ from typing import Optional, cast
 from uuid import UUID
 
 import firebase_admin
-import httpx
 from decouple import config
 from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
-from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 
 from lib.core.container import container
-from lib.core.constants import FCMProjectEnum, ProfileTypeEnum
+from lib.core.constants import FCMProjectEnum
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
     FCMNotificationChannelKeyLiteral,
     FCMNotificationGroupKeyLiteral,
 )
-from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.json_utils import ensure_string_values
 
@@ -131,37 +128,53 @@ class FCMService:
             )  # type: ignore
             print(f"==> user_id -> {user_id} -> devices: {devices}")
 
-            # Create a list to hold all messages
-            messages = []
-            for device in devices:
-                notification_title = title
+            # Collect valid tokens
+            tokens = [
+                d.fcm_token for d in devices if getattr(d, "fcm_token", None)
+            ]
+            if not tokens:
+                print(f"⚠️ No valid fcm_token found for user {user_id}")
+                return
 
-                # Build the message
-                message = self._build_message(
-                    fcm_token=device.fcm_token,
-                    title=notification_title,
-                    body=body,
-                    channel_key=channel_key,
-                    group_key=group_key,
-                    data=jsonable_encoder(data) or {},
-                )
-                messages.append(message)
+            # Build multicast message
+            multicast_message = messaging.MulticastMessage(
+                tokens=tokens,
+                notification=messaging.Notification(title=title, body=body),
+                android=messaging.AndroidConfig(
+                    notification=messaging.AndroidNotification(
+                        channel_id=channel_key
+                    )
+                ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(sound="default"),
+                        mutable_content=True,
+                    )
+                ),
+                data=ensure_string_values(
+                    {
+                        **(jsonable_encoder(data) or {}),
+                        "groupKey": group_key,
+                        "channelKey": channel_key,
+                    }
+                ),
+            )
 
-            # Send all messages in a batch
-            response = messaging.send_each(messages)
+            # Send notifications
+            response = messaging.send_each_for_multicast(multicast_message)
 
             # Handle individual responses
-            for index, resp in enumerate(response.responses):
+            for idx, resp in enumerate(response.responses):
+                token = tokens[idx]
                 if not resp.success:
-                    # Log or handle individual message failure
                     print(
-                        f"Failed to send message to device {devices[index].fcm_token}. Error: {resp.exception}"
+                        f"❌ Failed to send to {token}. Error: {resp.exception}"
                     )
                 else:
-                    print(
-                        f"Successfully sent message to device {devices[index].fcm_token}"
-                    )
+                    print(f"✅ Successfully sent to {token}")
 
-            print(f"Batch notification response: {response}")
+            print(
+                f"📦 Batch notification summary: {response.success_count} success, {response.failure_count} failure(s)"
+            )
         except Exception as e:
             print(f"Failed to send batch notifications. Error: {str(e)}")
