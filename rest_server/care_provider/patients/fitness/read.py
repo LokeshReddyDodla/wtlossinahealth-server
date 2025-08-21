@@ -16,7 +16,7 @@ from rest_server.response_models import InQueueResponse, SuccessResponse
 from .router import router
 
 
-@router.get("/report/day")
+@router.get("/reports/day/{date}")
 async def get_day_fitness_report(
     request: Request,
     patient_id: str = Query(...),

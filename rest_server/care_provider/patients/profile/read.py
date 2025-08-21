@@ -29,7 +29,7 @@ from .router import router
 
 
 @router.get("", response_model=SuccessResponse)
-async def get_patients(
+async def list_patients(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
@@ -75,7 +75,7 @@ async def get_patients(
         )
 
 
-@router.get("/profile", response_model=SuccessResponse)
+@router.get("/{patient_id}", response_model=SuccessResponse)
 async def get_patient_profile(
     patient_id: str,
     detailed: bool = False,

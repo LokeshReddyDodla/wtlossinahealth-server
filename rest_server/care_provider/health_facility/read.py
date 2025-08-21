@@ -26,8 +26,8 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("", response_model=SuccessResponse)
-async def get_health_facility(
+@router.get("/current", response_model=SuccessResponse)
+async def get_current_health_facility(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
@@ -66,7 +66,7 @@ async def get_health_facility(
 
 
 @router.get("/care-providers", response_model=SuccessResponse)
-async def get_health_facility_care_providers(
+async def list_health_facility_care_providers(
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
@@ -106,7 +106,7 @@ async def get_health_facility_care_providers(
 
 
 @router.get("/packages", response_model=SuccessResponse)
-async def get_health_facility_packages(
+async def list_health_facility_packages(
     package_service: PackageService = Depends(get_package_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(

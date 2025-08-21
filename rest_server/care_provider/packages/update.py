@@ -1,12 +1,9 @@
 from fastapi import Depends, HTTPException, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_package_service
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.models.patient import Patient as PatientModel
 from lib.schemas.package import Package as PackageSchema, PackageUpdate
-from lib.schemas.package import PackageCreate
 from lib.services.package_service import PackageService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -18,7 +15,7 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.patch("", response_model=SuccessResponse)
+@router.patch("/{package_id}", response_model=SuccessResponse)
 async def update_package(
     package_id: str,
     updates: PackageUpdate,
