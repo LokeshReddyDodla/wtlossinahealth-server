@@ -27,7 +27,7 @@ from .router import router
 )
 async def get_patient_prescriptions(
     request: Request,
-    patient_id: str = Query(...),
+    patient_id: str,
     source: Optional[str] = Query(None),
     analyzed: Optional[str] = Query(None, regex="^(true|false|both)$"),
     order: Optional[str] = Query("desc"),

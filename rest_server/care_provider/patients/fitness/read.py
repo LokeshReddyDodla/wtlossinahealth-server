@@ -19,8 +19,8 @@ from .router import router
 @router.get("/reports/day/{date}")
 async def get_day_fitness_report(
     request: Request,
-    patient_id: str = Query(...),
-    date: date = Query(...),
+    patient_id: str,
+    date: date,
     regenerate: bool = Query(False),
     fitness_report_service: FitnessReportService = Depends(
         get_fitness_report_service
