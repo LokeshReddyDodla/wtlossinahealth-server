@@ -25,7 +25,7 @@ from .router import router
     path="",
     response_model=SuccessResponse,
 )
-async def get_patient_prescriptions_api(
+async def get_patient_prescriptions(
     request: Request,
     patient_id: str = Query(...),
     source: Optional[str] = Query(None),
@@ -42,9 +42,6 @@ async def get_patient_prescriptions_api(
         )
     ),
 ):
-    """
-    Get Prescriptions API
-    """
     try:
         prescriptions = await prescription_service.fetch_prescriptions(
             patient_id=patient_id,

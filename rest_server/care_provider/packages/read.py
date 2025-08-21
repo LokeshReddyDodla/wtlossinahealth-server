@@ -29,7 +29,7 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("/patients", response_model=SuccessResponse)
+@router.get("/{package_id}/patients", response_model=SuccessResponse)
 async def get_patients_of_package(
     package_id: str,
     package_status: Optional[Literal["active", "inactive"]] = Query(
@@ -100,7 +100,7 @@ async def get_patients_of_package(
         )
 
 
-@router.get("/assignment", response_model=SuccessResponse)
+@router.get("/patients/{patient_id}/packages", response_model=SuccessResponse)
 async def get_patient_assignments(
     patient_id: str,
     patient_package_assignment_service: PatientPackageAssignmentService = Depends(

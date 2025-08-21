@@ -21,7 +21,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from .router import router
 
 
-@router.post(path="/profile", response_model=SuccessResponse)
+@router.post(path="", response_model=SuccessResponse)
 async def create_patient(
     request: Request,
     patient_data: PatientCreate,

@@ -15,7 +15,7 @@ from .router import router
 
 
 @router.post("/libreview-raw-csv", response_model=SuccessResponse)
-async def upload_libreview_raw_csv(
+async def upload_libreview_csv(
     request: Request,
     patient_id: str = Query(...),
     file: UploadFile = File(...),

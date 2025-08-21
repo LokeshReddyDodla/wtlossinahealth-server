@@ -5,11 +5,9 @@ from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
-    get_meal_report_service,
     get_meal_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -21,8 +19,8 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.delete(path="", response_model=SuccessResponse)
-async def delete_meal_api(
+@router.delete(path="/{meal_id}", response_model=SuccessResponse)
+async def delete_meal(
     request: Request,
     patient_id: str = Query(...),
     meal_id: uuid.UUID = Query(...),

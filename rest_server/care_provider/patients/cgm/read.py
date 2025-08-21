@@ -22,11 +22,10 @@ from .router import router
 
 
 @router.get(
-    "/report",
+    "/reports/{report_id}",
     response_model=SuccessResponse,
 )
-async def fetch_patient_cgm_report(
-    request: Request,
+async def fetch_cgm_report(
     patient_id: str = Query(...),
     report_id: str = Query(...),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
@@ -62,9 +61,8 @@ async def fetch_patient_cgm_report(
         )
 
 
-@router.get("/report/day")
+@router.get("/reports/day/{date}")
 async def get_cgm_day_report(
-    request: Request,
     patient_id: str = Query(...),
     date: date = Query(...),
     regenerate: bool = Query(False),
