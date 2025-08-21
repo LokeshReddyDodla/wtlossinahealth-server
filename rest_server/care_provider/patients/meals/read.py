@@ -33,8 +33,8 @@ from .router import router
 @router.get("/reports/day/{date}")
 async def get_day_meal_report(
     request: Request,
-    patient_id: str = Query(...),
-    date: date = Query(...),
+    patient_id: str,
+    date: date,
     regenerate: bool = Query(False),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_care_provider: CareProviderModel = Depends(
@@ -70,9 +70,9 @@ async def get_day_meal_report(
 @router.get("/reports/range")
 async def get_meal_reports_in_range(
     request: Request,
-    patient_id: str = Query(...),
-    start_date: date = Query(...),
-    end_date: date = Query(...),
+    patient_id: str,
+    start_date: date,
+    end_date: date,
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service

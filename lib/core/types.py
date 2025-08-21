@@ -10,9 +10,13 @@ FitnessReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 SleepReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 
 
-FCMNotificationChannelKeyLiteral = Literal["fitness_sync", "chat_messages", "other"]
+FCMNotificationChannelKeyLiteral = Literal[
+    "fitness_sync", "chat_messages", "other"
+]
 
-FCMNotificationGroupKeyLiteral = Literal["fitness_group", "chat_group", "other_group"]
+FCMNotificationGroupKeyLiteral = Literal[
+    "fitness_group", "chat_group", "other_group"
+]
 
 AiConversationRoleLiteral = Literal["system", "human", "ai"]
 
@@ -29,6 +33,7 @@ AiConversationTypeLiteral = Literal[
     "sleep",
     "health-tip",
     "other",
+    "patient",
     "care-provider",
 ]
 

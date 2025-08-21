@@ -26,8 +26,8 @@ from .router import router
     response_model=SuccessResponse,
 )
 async def fetch_cgm_report(
-    patient_id: str = Query(...),
-    report_id: str = Query(...),
+    patient_id: str,
+    report_id: str,
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
@@ -63,8 +63,8 @@ async def fetch_cgm_report(
 
 @router.get("/reports/day/{date}")
 async def get_cgm_day_report(
-    patient_id: str = Query(...),
-    date: date = Query(...),
+    patient_id: str,
+    date: date,
     regenerate: bool = Query(False),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_care_provider: CareProviderModel = Depends(

@@ -22,8 +22,8 @@ from .router import router
 @router.delete(path="/{meal_id}", response_model=SuccessResponse)
 async def delete_meal(
     request: Request,
-    patient_id: str = Query(...),
-    meal_id: uuid.UUID = Query(...),
+    patient_id: str,
+    meal_id: uuid.UUID,
     meal_service: MealService = Depends(get_meal_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
