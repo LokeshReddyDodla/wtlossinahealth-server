@@ -78,7 +78,7 @@ class PatientConnectedAppService:
     async def add_or_update_libreview(
         self,
         patient_id: str,
-        libreview_data: PatientLibreViewCreate,
+        libreview_id: str,
         *,
         postgres_session: AsyncSession,
     ) -> PatientLibreViewModel:
@@ -96,7 +96,7 @@ class PatientConnectedAppService:
 
             if existing_libreview:
                 # Update existing LibreView record
-                existing_libreview.libreview_id = libreview_data.libreview_id
+                existing_libreview.libreview_id = libreview_id
                 existing_libreview.last_sync_timestamp = None
 
                 await postgres_session.commit()
@@ -106,7 +106,7 @@ class PatientConnectedAppService:
                 # Create new LibreView record
                 new_libreview = PatientLibreViewModel(
                     connected_app_id=connected_app.id,
-                    libreview_id=libreview_data.libreview_id,
+                    libreview_id=libreview_id,
                 )
 
                 postgres_session.add(new_libreview)
