@@ -32,12 +32,12 @@ from .router import router
 
 
 @router.post(
-    "/libreview",
+    "/libreview/connect",
     response_model=SuccessResponse,
 )
-async def upsert_libreview(
+async def connect_libreview(
     patient_id: str,
-    libreview_data: PatientLibreViewCreate,
+    libreview_id: str,
     patient_connected_app_service: PatientConnectedAppService = Depends(
         get_patient_connected_app_service
     ),
@@ -50,7 +50,7 @@ async def upsert_libreview(
     try:
         libreview = (
             await patient_connected_app_service.add_or_update_libreview(
-                libreview_data=libreview_data,
+                libreview_id=libreview_id,
                 patient_id=patient_id,
             )  # type: ignore
         )

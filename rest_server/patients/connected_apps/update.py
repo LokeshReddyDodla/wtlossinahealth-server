@@ -40,7 +40,7 @@ async def upsert_libreview(
     try:
         libreview = (
             await patient_connected_app_service.add_or_update_libreview(
-                libreview_data=libreview_data,
+                libreview_id=libreview_data.libreview_id,
                 patient_id=str(current_patient.patient_id),
             )  # type: ignore
         )
