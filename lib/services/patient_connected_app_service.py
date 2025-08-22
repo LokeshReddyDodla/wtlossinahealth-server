@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, List
+from typing import Any, List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -119,5 +119,44 @@ class PatientConnectedAppService:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message=f"Failed to add or update LibreView data for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def remove_libreview(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientLibreViewModel).where(
+                    PatientLibreViewModel.connected_app_id == connected_app.id,
+                )
+            )
+            libreview: Optional[PatientLibreViewModel] = (
+                result.scalars().first()
+            )
+
+            if not libreview:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No LibreView account found for patient ID '{patient_id}'.",
+                )
+
+            await postgres_session.delete(libreview)
+            await postgres_session.commit()
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to unlink LibreView for patient ID '{patient_id}'.",
                 detail=str(e),
             )
