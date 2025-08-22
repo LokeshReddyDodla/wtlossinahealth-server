@@ -13,7 +13,10 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.post("/{patient_id}/care-providers", response_model=SuccessResponse)
+@router.post(
+    "/{patient_id}/care-providers/{care_provider_id}",
+    response_model=SuccessResponse,
+)
 async def assign_care_provider_to_patient(
     patient_id: str,
     care_provider_id: str,
