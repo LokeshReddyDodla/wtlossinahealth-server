@@ -35,7 +35,7 @@ from .router import router
     "/libreview",
     response_model=SuccessResponse,
 )
-async def unlink_libreview(
+async def disconnect_libreview(
     patient_id: str,
     patient_connected_app_service: PatientConnectedAppService = Depends(
         get_patient_connected_app_service
