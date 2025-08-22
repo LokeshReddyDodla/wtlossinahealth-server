@@ -6,3 +6,4 @@ router = APIRouter(
 )
 
 from .update import *
+from .delete import *
