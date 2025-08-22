@@ -34,9 +34,6 @@ async def get_meals_api(
     meal_service: MealService = Depends(get_meal_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
-    """
-    Get Meals API
-    """
     try:
         meals = await meal_service.fetch_meals(
             patient_id=str(current_patient.patient_id),
