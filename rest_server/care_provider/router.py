@@ -7,6 +7,7 @@ from .packages.router import router as packages_router
 from .patients.cgm.router import router as patients_cgm_router
 from .patients.fitness.router import router as patients_fitness_router
 from .patients.meals.router import router as patients_meals_router
+from .patients.smbg.router import router as patients_smbg_router
 from .patients.prescriptions.router import (
     router as patients_prescriptions_router,
 )
@@ -30,6 +31,7 @@ router.include_router(packages_router)
 router.include_router(patients_profile_router)
 router.include_router(patients_report_router)
 router.include_router(patients_meals_router)
+router.include_router(patients_smbg_router)
 router.include_router(patients_fitness_router)
 router.include_router(patients_cgm_router)
 router.include_router(patients_uploads_router)
