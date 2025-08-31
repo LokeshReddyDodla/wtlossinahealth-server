@@ -173,7 +173,7 @@ class MealAnalysisService:
         if update_fields:
             human_messages.append(
                 HumanMessage(
-                    content=f"Updated Serving Details:\n```json\n{update_fields}\n```"
+                    content=f"Updated Meal Details:\n```json\n{update_fields}\n```"
                 )
             )
 
