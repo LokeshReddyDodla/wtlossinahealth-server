@@ -367,9 +367,8 @@ class MealService:
 
             # Analyze or reanalyze the meal using the MealAnalysisService
             if update_fields:
-                for key, value in update_fields.items():
-                    if hasattr(meal, key):
-                        setattr(meal, key, value)
+                if "description" in update_fields:
+                    meal.description = update_fields["description"]
 
                 parsed_ai_response = (
                     await self.meal_analysis_service.reanalyze_meal(
