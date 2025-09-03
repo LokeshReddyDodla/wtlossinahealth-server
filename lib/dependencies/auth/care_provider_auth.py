@@ -40,7 +40,6 @@ def get_current_care_provider(
             .where(CareProvider.care_provider_id == user_id)
             .options(
                 joinedload(CareProvider.health_facility),
-                joinedload(CareProvider.user_devices),
             )
         )
         care_provider = result.scalars().first()
@@ -62,7 +61,10 @@ def get_current_care_provider(
 
         if log_activity:
             await log_last_active_time(
-                request, session, care_provider.user_devices
+                request,
+                session,
+                user_id,
+                ProfileTypeEnum.CARE_PROVIDER,
             )
 
         return care_provider

@@ -75,7 +75,6 @@ class CareProviderProfileService:
                     selectinload(CareProviderModel.patients),
                     selectinload(CareProviderModel.packages),
                     selectinload(CareProviderModel.created_packages),
-                    selectinload(CareProviderModel.user_devices),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -140,7 +139,6 @@ class CareProviderProfileService:
                         selectinload(PatientModel.package_assignments).options(
                             selectinload(PatientPackageAssignmentModel.package)
                         ),
-                        selectinload(PatientModel.user_devices),
                     )
                     .order_by(PatientModel.created_at.desc())
                 )
@@ -163,7 +161,6 @@ class CareProviderProfileService:
                                     PatientPackageAssignmentModel.package
                                 )
                             ),
-                            selectinload(PatientModel.user_devices),
                         )
                     )
                 )

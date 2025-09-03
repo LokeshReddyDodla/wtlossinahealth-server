@@ -26,11 +26,7 @@ async def get_current_patient(
             )
 
         result = await session.execute(
-            select(Patient)
-            .where(Patient.patient_id == user_id)
-            .options(
-                joinedload(Patient.user_devices),
-            )
+            select(Patient).where(Patient.patient_id == user_id)
         )
         patient = result.scalars().first()
         if not patient:
@@ -40,7 +36,12 @@ async def get_current_patient(
             )
 
         if log_activity:
-            await log_last_active_time(request, session, patient.user_devices)
+            await log_last_active_time(
+                request,
+                session,
+                user_id,
+                ProfileTypeEnum.PATIENT,
+            )
 
         return patient
 

@@ -22,8 +22,8 @@ celery.conf.update(
         "sync-libreview-every-2-hours": {
             "task": "lib.tasks.libreview_tasks.sync_all_libreview",
             "schedule": crontab(
-                minute="0", hour="10,12,14,16,18"
-            ),  # 10AM-6PM every 2h
+                minute="0", hour="10,13,16"
+            ),  # 10AM-4PM every 3h
             # "schedule": crontab(
             #     minute="0", hour="*/2"
             # ),  # Every 2 hours at :00

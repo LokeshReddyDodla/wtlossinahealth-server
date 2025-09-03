@@ -2,7 +2,9 @@ from typing import List, Optional
 from sqlalchemy import Date, cast, distinct, func, select
 from uuid import UUID
 from datetime import datetime
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import get_async_postgres_session
+from lib.models.user_activity_log import UserActivityLog
 from lib.models.user_device import UserDevice
 from lib.utils.http_exceptions import raise_http_exception
 from lib.models.patient import Patient
@@ -129,53 +131,32 @@ class PatientMetricsService:
         """
         try:
             async with get_async_postgres_session() as session:
-                # Subquery: latest activity per patient
-                latest_activity_subq = (
-                    select(
-                        UserDevice.patient_id,
-                        func.max(UserDevice.last_active_at).label(
-                            "last_active_at"
-                        ),
+                stmt = (
+                    select(func.count(distinct(UserActivityLog.user_id)))
+                    .select_from(UserActivityLog)
+                    .join(
+                        Patient, Patient.patient_id == UserActivityLog.user_id
                     )
-                    .group_by(UserDevice.patient_id)
-                    .subquery()
+                    .where(
+                        UserActivityLog.profile_type
+                        == ProfileTypeEnum.PATIENT.value
+                    )
                 )
 
                 if is_admin:
-                    stmt = (
-                        select(func.count(distinct(Patient.patient_id)))
-                        .join(
-                            latest_activity_subq,
-                            Patient.patient_id
-                            == latest_activity_subq.c.patient_id,
-                        )
-                        .where(
-                            Patient.health_facility_id == health_facility_id
-                        )
+                    stmt = stmt.where(
+                        Patient.health_facility_id == health_facility_id
                     )
                 else:
-                    stmt = (
-                        select(func.count(distinct(Patient.patient_id)))
-                        .join(
-                            latest_activity_subq,
-                            Patient.patient_id
-                            == latest_activity_subq.c.patient_id,
-                        )
-                        .join(patient_care_provider_association)
-                        .where(
-                            patient_care_provider_association.c.care_provider_id
-                            == care_provider_id
-                        )
+                    stmt = stmt.join(patient_care_provider_association).where(
+                        patient_care_provider_association.c.care_provider_id
+                        == care_provider_id
                     )
 
                 if start:
-                    stmt = stmt.where(
-                        latest_activity_subq.c.last_active_at >= start
-                    )
+                    stmt = stmt.where(UserActivityLog.active_at >= start)
                 if end:
-                    stmt = stmt.where(
-                        latest_activity_subq.c.last_active_at <= end
-                    )
+                    stmt = stmt.where(UserActivityLog.active_at <= end)
 
                 result = await session.execute(stmt)
                 return result.scalar() or 0
@@ -196,72 +177,41 @@ class PatientMetricsService:
         end: Optional[datetime] = None,
     ) -> List[dict]:
         """
-        Returns daily counts of unique active patients based on their most recent device activity date.
+        Returns daily counts of unique active patients based on activity logs.
         """
         try:
             async with get_async_postgres_session() as session:
-                # Subquery: latest activity per patient
-                latest_activity_subq = (
+                stmt = (
                     select(
-                        UserDevice.patient_id,
-                        func.max(UserDevice.last_active_at).label(
-                            "last_active_at"
+                        cast(UserActivityLog.active_at, Date).label("date"),
+                        func.count(distinct(UserActivityLog.user_id)).label(
+                            "count"
                         ),
                     )
-                    .group_by(UserDevice.patient_id)
-                    .subquery()
+                    .select_from(UserActivityLog)
+                    .join(
+                        Patient, Patient.patient_id == UserActivityLog.user_id
+                    )
+                    .where(UserActivityLog.profile_type == "patient")
                 )
 
                 if is_admin:
-                    stmt = (
-                        select(
-                            cast(
-                                latest_activity_subq.c.last_active_at, Date
-                            ).label("date"),
-                            func.count().label("count"),
-                        )
-                        .select_from(Patient)
-                        .join(
-                            latest_activity_subq,
-                            Patient.patient_id
-                            == latest_activity_subq.c.patient_id,
-                        )
-                        .where(
-                            Patient.health_facility_id == health_facility_id
-                        )
+                    stmt = stmt.where(
+                        Patient.health_facility_id == health_facility_id
                     )
                 else:
-                    stmt = (
-                        select(
-                            cast(
-                                latest_activity_subq.c.last_active_at, Date
-                            ).label("date"),
-                            func.count().label("count"),
-                        )
-                        .select_from(Patient)
-                        .join(
-                            latest_activity_subq,
-                            Patient.patient_id
-                            == latest_activity_subq.c.patient_id,
-                        )
-                        .join(patient_care_provider_association)
-                        .where(
-                            patient_care_provider_association.c.care_provider_id
-                            == care_provider_id
-                        )
+                    stmt = stmt.join(patient_care_provider_association).where(
+                        patient_care_provider_association.c.care_provider_id
+                        == care_provider_id
                     )
 
                 if start:
-                    stmt = stmt.where(
-                        latest_activity_subq.c.last_active_at >= start
-                    )
+                    stmt = stmt.where(UserActivityLog.active_at >= start)
                 if end:
-                    stmt = stmt.where(
-                        latest_activity_subq.c.last_active_at <= end
-                    )
+                    stmt = stmt.where(UserActivityLog.active_at <= end)
 
                 stmt = stmt.group_by(
-                    cast(latest_activity_subq.c.last_active_at, Date)
+                    cast(UserActivityLog.active_at, Date)
                 ).order_by("date")
 
                 result = await session.execute(stmt)
