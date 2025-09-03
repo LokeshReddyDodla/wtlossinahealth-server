@@ -27,8 +27,6 @@ class UserDeviceBase(BaseModel):
 
     last_updated_at: Optional[datetime] = None
     last_active_at: Optional[datetime] = None
-    patient_id: Optional[UUID] = None
-    care_provider_id: Optional[UUID] = None
 
 
 class UserDeviceCreate(UserDeviceBase):
