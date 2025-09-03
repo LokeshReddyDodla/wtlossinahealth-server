@@ -2,7 +2,10 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Sequence
 from fastapi import Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from lib.core.constants import ProfileTypeEnum
+from lib.models.user_activity_log import UserActivityLog
 from lib.models.user_device import UserDevice
 from lib.utils.http_exceptions import raise_http_exception
 
@@ -10,9 +13,21 @@ from lib.utils.http_exceptions import raise_http_exception
 async def log_last_active_time(
     request: Request,
     session: AsyncSession,
-    device_list: Sequence[UserDevice],
+    user_id: str,
+    profile_type: ProfileTypeEnum,
     threshold_minutes: int = 5,
 ):
+    result = await session.execute(
+        select(UserDevice).where(
+            UserDevice.user_id == user_id,
+            UserDevice.profile_type == profile_type.value,
+        )
+    )
+    devices = result.scalars().all()
+
+    if not devices:
+        return  # optional: skip if no device
+
     device_id_str = request.headers.get("x-device-id")
     if not device_id_str:
         raise_http_exception(
@@ -31,7 +46,7 @@ async def log_last_active_time(
         # return
 
     matching_device: UserDevice | None = next(
-        (d for d in device_list if str(d.device_id) == str(device_id)),
+        (d for d in devices if str(d.device_id) == str(device_id)),
         None,
     )
     if not matching_device:
@@ -41,13 +56,26 @@ async def log_last_active_time(
         )
         # return
 
-    last_active_at_value = matching_device.last_active_at
     now = datetime.now()
 
-    if last_active_at_value is None or (
-        now - last_active_at_value
+    if matching_device.last_active_at is None or (
+        now - matching_device.last_active_at
     ) > timedelta(
         minutes=threshold_minutes
     ):  # type: ignore
         matching_device.last_active_at = now  # type: ignore
-        await session.commit()
+
+    session.add(
+        UserActivityLog(
+            user_id=matching_device.user_id,
+            profile_type=profile_type.value,
+            device_id=matching_device.device_id,
+            api_endpoint=request.url.path,
+            method=request.method,
+            ip_address=request.client.host if request.client else None,
+            status_code=None,  # TODO: populate this in middleware after response
+            active_at=now,
+        )
+    )
+
+    await session.commit()

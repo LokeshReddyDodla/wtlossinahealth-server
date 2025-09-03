@@ -38,17 +38,3 @@ class UserDevice(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     location_name = Column(String, nullable=True)
-
-    patient_id = Column(
-        UUID,
-        ForeignKey("patients.patient_id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    care_provider_id = Column(
-        UUID,
-        ForeignKey("care_providers.care_provider_id", ondelete="CASCADE"),
-        nullable=True,
-    )
-
-    patient = relationship("Patient", back_populates="user_devices")
-    care_provider = relationship("CareProvider", back_populates="user_devices")
