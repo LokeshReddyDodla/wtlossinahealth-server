@@ -72,6 +72,7 @@ from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
+from lib.utils.smbg.processor import SMBGStatsProcessor
 
 # Initialize Container
 container = Container()
@@ -353,6 +354,18 @@ container.register(
         cgm_stats_processor=container.resolve(CGMStatsProcessor),
         patient_profile_service=container.resolve(PatientProfileService),
         patient_plan_service=container.resolve(PatientPlanService),
+        meal_report_service=container.resolve(MealReportService),
+    ),
+)
+
+# 🔹 SMBG Stats Processor
+container.register(
+    SMBGStatsProcessor,
+    lambda: SMBGStatsProcessor(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=container.resolve(PatientProfileService),
+        patient_plan_service=container.resolve(PatientPlanService),
+        meal_stats_processor=container.resolve(MealStatsProcessor),
     ),
 )
 

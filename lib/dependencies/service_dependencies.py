@@ -59,6 +59,7 @@ from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
+from lib.utils.smbg.processor import SMBGStatsProcessor
 
 
 def get_libreview_sync_queue() -> SQSService:
@@ -233,6 +234,10 @@ def get_meal_stats_processor() -> MealStatsProcessor:
 
 def get_meal_report_service() -> MealReportService:
     return cast(MealReportService, container.resolve(MealReportService))
+
+
+def get_smbg_stats_processor() -> SMBGStatsProcessor:
+    return cast(SMBGStatsProcessor, container.resolve(SMBGStatsProcessor))
 
 
 def get_fitness_upload_service() -> FitnessUploadService:
