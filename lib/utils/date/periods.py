@@ -47,9 +47,12 @@ class WeekWisePeriod:
             if week_end_date > end_date:
                 week_end_date = end_date.replace(hour=23, minute=59, second=59)
 
+            iso_week_no = current_date.isocalendar()[1]
+
             weeks.append(
                 {
                     "week_no": week_no,
+                    "iso_week_no": iso_week_no,
                     "start_date": current_date,
                     "end_date": week_end_date,
                 }
