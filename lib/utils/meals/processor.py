@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from functools import partial
 from statistics import median
 
 from lib.core.postgres_store import PostgresStore
@@ -31,15 +32,19 @@ class MealStatsProcessor:
         self.cgm_stats_processor = cgm_stats_processor
         self.meal_report_service = meal_report_service
 
+        self.get_diet_recommendation = partial(
+            get_diet_recommendations,
+            patient_plan_service=self.patient_plan_service,
+            patient_profile_service=self.patient_profile_service,
+        )
+
     @with_postgres_session
     async def get_meal_report_by_date(
         self, patient_id: str, date: date, *, postgres_session
     ):
-        diet_recommendations = await get_diet_recommendations(
+        diet_recommendations = await self.get_diet_recommendation(
             patient_id,
             date,
-            self.patient_plan_service,
-            self.patient_profile_service,
         )
 
         # Fetch average glucose for the single date
@@ -73,11 +78,9 @@ class MealStatsProcessor:
         *,
         postgres_session,
     ):
-        diet_recommendations = await get_diet_recommendations(
+        diet_recommendations = await self.get_diet_recommendation(
             patient_id,
             start_date,
-            self.patient_plan_service,
-            self.patient_profile_service,
         )
 
         # Fetch all glucose stats once for the entire date range

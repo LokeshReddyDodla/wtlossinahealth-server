@@ -3,8 +3,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import (get_meal_service,
-                                                   get_meal_stats_processor)
+from lib.dependencies.service_dependencies import (
+    get_meal_service,
+    get_meal_stats_processor,
+)
 from lib.models.patient import Patient
 from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
@@ -27,7 +29,9 @@ async def analyze_meal_api(
     re_analyze: Optional[bool] = False,
     update_fields: Optional[dict] = None,
     meal_service: MealService = Depends(get_meal_service),
-    meal_stats_processor: MealStatsProcessor = Depends(get_meal_stats_processor),
+    meal_stats_processor: MealStatsProcessor = Depends(
+        get_meal_stats_processor
+    ),
     current_patient: Patient = Depends(get_current_patient),
 ):
     """
@@ -43,8 +47,10 @@ async def analyze_meal_api(
 
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
 
-        diet_recommendations_data = await meal_stats_processor.get_diet_recommendations(
-            str(current_patient.patient_id), meal_data.uploaded_at
+        diet_recommendations_data = (
+            await meal_stats_processor.get_diet_recommendation(
+                str(current_patient.patient_id), meal_data.uploaded_at
+            )
         )
 
         meal_recommendation = (
@@ -53,7 +59,9 @@ async def analyze_meal_api(
             else diet_recommendations_data.major_meal
         )
 
-        validated_recommendations = MealDistribution.model_validate(meal_recommendation)
+        validated_recommendations = MealDistribution.model_validate(
+            meal_recommendation
+        )
 
         return SuccessResponse(
             message="Meal analyzed successfully.",

@@ -16,6 +16,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.meals.diet_recommendations import get_diet_recommendations
 from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.patients.meals.api_schema import PatientMealAnalysis
 from rest_server.response_models import SuccessResponse
@@ -54,7 +55,7 @@ async def analyze_meal(
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
 
         diet_recommendations_data = (
-            await meal_stats_processor.get_diet_recommendations(
+            await meal_stats_processor.get_diet_recommendation(
                 str(patient_id), meal_data.uploaded_at
             )
         )
