@@ -59,7 +59,7 @@ async def get_patient_smbg(
 
 
 @router.get(
-    "/reports/",
+    "/reports/range",
     response_model=SuccessResponse,
 )
 async def fetch_smbg_report_inrange(
