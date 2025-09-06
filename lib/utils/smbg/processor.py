@@ -1,7 +1,7 @@
 import calendar
 from datetime import datetime, timedelta
 import statistics
-from typing import Optional
+from typing import Any, Optional
 from sqlalchemy import select
 
 from lib.models.patient_smbg import PatientSMBG
@@ -52,9 +52,12 @@ class SMBGStatsProcessor:
         # classify readings into meal windows
         buckets = self._bucketize_by_meal(smbg_records)
 
-        stats = {}
-        stats["start_date"] = start_date
-        stats["end_date"] = end_date
+        stats: dict[str, Any] = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "meal_windows": {},
+        }
+
         for bucket_name, readings in buckets.items():
             levels = [r.glucose_level for r in readings]
             if not levels:
@@ -62,7 +65,7 @@ class SMBGStatsProcessor:
 
             avg_time = self._average_time([r.reading_time for r in readings])
 
-            stats[bucket_name] = {
+            stats["meal_windows"][bucket_name] = {
                 "count": len(levels),
                 "out_of_range": sum(
                     1 for v in levels if not self._is_in_range(v)
@@ -97,6 +100,7 @@ class SMBGStatsProcessor:
             ),
         }
 
+        # month summary
         month_start = datetime(start_date.year, start_date.month, 1)
         last_day = calendar.monthrange(start_date.year, start_date.month)[1]
         month_end = datetime(
