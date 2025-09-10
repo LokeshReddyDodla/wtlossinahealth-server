@@ -125,6 +125,7 @@ class MealStatsProcessor:
         total_meals = 0
         high_carb_meals = 0
         low_protein_meals = 0
+        low_fiber_meals = 0
 
         meal_type_stats = defaultdict(
             lambda: {"carbs": [], "proteins": [], "fats": [], "fiber": []}
@@ -133,6 +134,11 @@ class MealStatsProcessor:
         # thresholds (tune as needed or fetch from diet plan)
         HIGH_CARB_THRESHOLD = 60
         LOW_PROTEIN_THRESHOLD = 10
+        LOW_FIBER_THRESHOLD = 3
+
+        CARB_MIN, CARB_MAX = 45, 65
+        PROTEIN_MIN, PROTEIN_MAX = 15, 40
+        FIBER_MIN, FIBER_MAX = 8, 15
 
         for report in reports:
             for meal in report.get("meals", []):
@@ -148,6 +154,15 @@ class MealStatsProcessor:
                     high_carb_meals += 1
                 if proteins < LOW_PROTEIN_THRESHOLD:
                     low_protein_meals += 1
+                if fiber < LOW_FIBER_THRESHOLD:
+                    low_fiber_meals += 1
+
+                if CARB_MIN <= carbs <= CARB_MAX:
+                    within_carb_range += 1
+                if PROTEIN_MIN <= proteins <= PROTEIN_MAX:
+                    within_protein_range += 1
+                if FIBER_MIN <= fiber <= FIBER_MAX:
+                    within_fiber_budget += 1
 
                 meal_type = meal.get("type", "other").lower()
                 meal_type_stats[meal_type]["carbs"].append(
@@ -183,6 +198,22 @@ class MealStatsProcessor:
             "total_meals": total_meals,
             "high_carb_meals": high_carb_meals,
             "low_protein_meals": low_protein_meals,
+            "low_fiber_meals": low_fiber_meals,
+            "within_carb_range_pct": (
+                round(within_carb_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0
+            ),
+            "within_protein_range_pct": (
+                round(within_protein_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0
+            ),
+            "within_fiber_budget_pct": (
+                round(within_fiber_budget * 100 / total_meals, 1)
+                if total_meals
+                else 0.0
+            ),
             "meal_type_stats": detailed_stats,
         }
 
