@@ -127,6 +127,10 @@ class MealStatsProcessor:
         low_protein_meals = 0
         low_fiber_meals = 0
 
+        within_carb_range = 0
+        within_protein_range = 0
+        within_fiber_budget = 0
+
         meal_type_stats = defaultdict(
             lambda: {"carbs": [], "proteins": [], "fats": [], "fiber": []}
         )
