@@ -142,6 +142,7 @@ class MealStatsProcessor:
 
         CARB_MIN, CARB_MAX = 45, 65
         PROTEIN_MIN, PROTEIN_MAX = 15, 40
+        FAT_MIN, FAT_MAX = 20, 35
         FIBER_MIN, FIBER_MAX = 8, 15
 
         for report in reports:
@@ -165,6 +166,8 @@ class MealStatsProcessor:
                     within_carb_range += 1
                 if PROTEIN_MIN <= proteins <= PROTEIN_MAX:
                     within_protein_range += 1
+                if FAT_MIN <= fats <= FAT_MAX:
+                    within_fat_budget += 1
                 if FIBER_MIN <= fiber <= FIBER_MAX:
                     within_fiber_budget += 1
 
@@ -213,6 +216,11 @@ class MealStatsProcessor:
                 if total_meals
                 else 0.0
             ),
+            "within_fat_budget_pct": (
+                round(within_fat_budget * 100 / total_meals, 1)
+                if total_meals
+                else 0.0
+            ),
             "within_fiber_budget_pct": (
                 round(within_fiber_budget * 100 / total_meals, 1)
                 if total_meals
@@ -240,9 +248,20 @@ class MealStatsProcessor:
         high_carb_count = 0
         low_protein_count = 0
 
+        # ---- Within-budget counters ----
+        within_carb_range = 0
+        within_protein_range = 0
+        within_fat_range = 0
+        within_fiber_range = 0
+
         # thresholds (can also come from diet recommendations)
         HIGH_CARB_THRESHOLD = 60
         LOW_PROTEIN_THRESHOLD = 10
+
+        CARB_MIN, CARB_MAX = 45, 65
+        PROTEIN_MIN, PROTEIN_MAX = 15, 40
+        FAT_MIN, FAT_MAX = 20, 35
+        FIBER_MIN, FIBER_MAX = 8, 15
 
         # ---- Weekly breakdowns (init buckets from split_into_weeks) ----
         week_periods = WeekWisePeriod(start_date, end_date).periods
@@ -285,6 +304,16 @@ class MealStatsProcessor:
                             high_carb_count += 1
                         if protein < LOW_PROTEIN_THRESHOLD:
                             low_protein_count += 1
+
+                        # Within budget checks
+                        if CARB_MIN <= carbs <= CARB_MAX:
+                            within_carb_range += 1
+                        if PROTEIN_MIN <= protein <= PROTEIN_MAX:
+                            within_protein_range += 1
+                        if FAT_MIN <= fat <= FAT_MAX:
+                            within_fat_range += 1
+                        if FIBER_MIN <= fiber <= FIBER_MAX:
+                            within_fiber_range += 1
 
                         # Add to week bucket
                         bucket["carbs"].append(carbs)
@@ -385,5 +414,27 @@ class MealStatsProcessor:
                 "low_protein_meals": low_protein_count,
             },
             "weekly": weekly,
+            "within_budget_pct": {
+                "carbs": (
+                    round(within_carb_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0
+                ),
+                "protein": (
+                    round(within_protein_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0
+                ),
+                "fat": (
+                    round(within_fat_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0
+                ),
+                "fiber": (
+                    round(within_fiber_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0
+                ),
+            },
             "meal_type_medians_month_compare": meal_type_medians_month_compare,
         }
