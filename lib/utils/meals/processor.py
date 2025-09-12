@@ -129,6 +129,7 @@ class MealStatsProcessor:
 
         within_carb_range = 0
         within_protein_range = 0
+        within_fat_range = 0
         within_fiber_budget = 0
 
         meal_type_stats = defaultdict(
