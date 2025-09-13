@@ -1,6 +1,6 @@
 from datetime import datetime
 from io import StringIO
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 from lib.core.postgres_store import PostgresStore
@@ -13,6 +13,9 @@ from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.utils.libre_view_sensor_report_generator import (
+    SensorLifecycleReportGenerator,
+)
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 
@@ -40,8 +43,11 @@ class CGMUploadService:
 
             # Convert timestamps without changing the timezone
             df["Device Timestamp"] = pd.to_datetime(
-                df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
+                df["Device Timestamp"],
+                format="%d-%m-%Y %I:%M %p",
+                errors="coerce",
             ).dt.tz_localize(None)
+            df = df.dropna(subset=["Device Timestamp"])
 
             # Determine time range for deletion
             start_time = df["Device Timestamp"].min()
@@ -75,9 +81,30 @@ class CGMUploadService:
                     }
                 )
 
-            cgm_data_utils = CGMDataUtils(self.clickhouse_store)
-            cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
-            print("==> cgm_report_periods: ", cgm_report_periods)
+            # cgm_data_utils = CGMDataUtils(self.clickhouse_store)
+            # cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
+            # print("==> cgm_report_periods: ", cgm_report_periods)
+
+            gen = SensorLifecycleReportGenerator(df)
+            reports = gen.generate_reports()
+            report_periods: List[Tuple[str, str]] = [
+                (
+                    r["start"].strftime("%Y-%m-%d %H:%M:%S"),
+                    r["end"].strftime("%Y-%m-%d %H:%M:%S"),
+                )
+                for idx, r in enumerate(reports, start=1)
+            ]
+            # print("==> report_periods: ", report_periods)
+            # for r in reports:
+            #     print(
+            #         r["start"],
+            #         "→",
+            #         r["end"],
+            #         "days:",
+            #         r["duration_h"] / 24,
+            #         "coverage:",
+            #         round(r["coverage"], 2),
+            #     )
 
             # Write data to ClickHouse
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
@@ -93,9 +120,7 @@ class CGMUploadService:
                 connected_app.libreview.last_sync_timestamp = datetime.now()
                 await postgres_session.commit()
 
-            generate_cgm_reports_for_patient.delay(
-                patient_id, cgm_report_periods
-            )
+            generate_cgm_reports_for_patient.delay(patient_id, report_periods)
 
         except Exception as e:
             raise_http_exception(
