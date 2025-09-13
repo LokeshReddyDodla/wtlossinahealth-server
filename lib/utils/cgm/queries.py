@@ -14,6 +14,7 @@ def generate_hourly_agp_points_cgm_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY hour_24, hour
@@ -33,6 +34,7 @@ def generate_cgm_range_coverage_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     """
@@ -51,6 +53,7 @@ def generate_summary_stats_cgm_query(patient_id, start_date, end_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     """
@@ -88,6 +91,7 @@ def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time IS NOT NULL
         AND time >= '{start_date}'
         AND time <= '{end_date}'
@@ -105,6 +109,7 @@ def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     ORDER BY time
@@ -121,6 +126,7 @@ def generate_hourly_avg_cgm_query(patient_id, start_date, end_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY hour_24, hour
@@ -137,6 +143,7 @@ def generate_daily_avg_cgm_query(patient_id, start_date, end_date):
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY date
@@ -155,6 +162,7 @@ def generate_cgm_readings_around_meal_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time BETWEEN 
             toDateTime('{meal_time}') - INTERVAL {before_minutes} MINUTE
             AND 
