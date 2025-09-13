@@ -43,8 +43,11 @@ class CGMUploadService:
 
             # Convert timestamps without changing the timezone
             df["Device Timestamp"] = pd.to_datetime(
-                df["Device Timestamp"], format="%d-%m-%Y %I:%M %p"
+                df["Device Timestamp"],
+                format="%d-%m-%Y %I:%M %p",
+                errors="coerce",
             ).dt.tz_localize(None)
+            df = df.dropna(subset=["Device Timestamp"])
 
             # Determine time range for deletion
             start_time = df["Device Timestamp"].min()
@@ -78,49 +81,46 @@ class CGMUploadService:
                     }
                 )
 
-            cgm_data_utils = CGMDataUtils(self.clickhouse_store)
-            cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
-            print("==> cgm_report_periods: ", cgm_report_periods)
+            # cgm_data_utils = CGMDataUtils(self.clickhouse_store)
+            # cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
+            # print("==> cgm_report_periods: ", cgm_report_periods)
 
             gen = SensorLifecycleReportGenerator(df)
             reports = gen.generate_reports()
-
             report_periods: List[Tuple[str, str]] = [
                 (
                     r["start"].strftime("%Y-%m-%d %H:%M:%S"),
                     r["end"].strftime("%Y-%m-%d %H:%M:%S"),
                 )
-                for r in reports
+                for idx, r in enumerate(reports, start=1)
             ]
-            print("==> report_periods: ", report_periods)
-            for r in reports:
-                print(
-                    r["start"],
-                    "→",
-                    r["end"],
-                    "days:",
-                    r["duration_h"] / 24,
-                    "coverage:",
-                    round(r["coverage"], 2),
-                )
+            # print("==> report_periods: ", report_periods)
+            # for r in reports:
+            #     print(
+            #         r["start"],
+            #         "→",
+            #         r["end"],
+            #         "days:",
+            #         r["duration_h"] / 24,
+            #         "coverage:",
+            #         round(r["coverage"], 2),
+            #     )
 
             # Write data to ClickHouse
-            # self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
             # Update last_sync_timestamp for the connected app if it exists
-            # connected_app_result = await postgres_session.execute(
-            #     select(PatientConnectedApp)
-            #     .where(PatientConnectedApp.patient_id == patient_id)
-            #     .options(selectinload(PatientConnectedApp.libreview))
-            # )
-            # connected_app = connected_app_result.scalars().first()
-            # if connected_app and connected_app.libreview:
-            #     connected_app.libreview.last_sync_timestamp = datetime.now()
-            #     await postgres_session.commit()
+            connected_app_result = await postgres_session.execute(
+                select(PatientConnectedApp)
+                .where(PatientConnectedApp.patient_id == patient_id)
+                .options(selectinload(PatientConnectedApp.libreview))
+            )
+            connected_app = connected_app_result.scalars().first()
+            if connected_app and connected_app.libreview:
+                connected_app.libreview.last_sync_timestamp = datetime.now()
+                await postgres_session.commit()
 
-            # generate_cgm_reports_for_patient.delay(
-            #     patient_id, cgm_report_periods
-            # )
+            generate_cgm_reports_for_patient.delay(patient_id, report_periods)
 
         except Exception as e:
             raise_http_exception(

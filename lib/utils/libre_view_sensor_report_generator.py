@@ -76,16 +76,23 @@ class SensorLifecycleReportGenerator:
     def _trim_edges(self, ts):
         if len(ts) < 2:
             return ts
+
         # Trim leading noise
-        if (
-            ts.iloc[1] - ts.iloc[0]
-        ).total_seconds() / 60 > self.EDGE_TOL_MINUTES:
+        while (
+            len(ts) > 1
+            and (ts.iloc[1] - ts.iloc[0]).total_seconds() / 60
+            > self.EDGE_TOL_MINUTES
+        ):
             ts = ts.iloc[1:]
+
         # Trim trailing noise
-        if (
-            ts.iloc[-1] - ts.iloc[-2]
-        ).total_seconds() / 60 > self.EDGE_TOL_MINUTES:
+        while (
+            len(ts) > 1
+            and (ts.iloc[-1] - ts.iloc[-2]).total_seconds() / 60
+            > self.EDGE_TOL_MINUTES
+        ):
             ts = ts.iloc[:-1]
+
         return ts
 
     def _finalize_segment(self, segment, gaps):
