@@ -101,6 +101,13 @@ class CGMStatsProcessor:
         start_date: datetime,
         end_date: datetime,
     ) -> List[CGMStats]:
+        start_date = start_date.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        end_date = end_date.replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+
         reports: List[CGMStats] = []
 
         # Overall
