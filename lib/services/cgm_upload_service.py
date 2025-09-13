@@ -87,10 +87,10 @@ class CGMUploadService:
 
             gen = SensorLifecycleReportGenerator(df)
             reports = gen.generate_reports()
-            report_periods: List[Tuple[str, str]] = [
+            report_periods: List[Tuple[datetime, datetime]] = [
                 (
-                    r["start"].strftime("%Y-%m-%d %H:%M:%S"),
-                    r["end"].strftime("%Y-%m-%d %H:%M:%S"),
+                    r["start"],
+                    r["end"],
                 )
                 for idx, r in enumerate(reports, start=1)
             ]
