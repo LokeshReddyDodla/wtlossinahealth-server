@@ -45,9 +45,9 @@ class CGMUploadService:
             df["Device Timestamp"] = pd.to_datetime(
                 df["Device Timestamp"],
                 format="%d-%m-%Y %I:%M %p",
-                errors="coerce",
+                # errors="coerce",
             ).dt.tz_localize(None)
-            df = df.dropna(subset=["Device Timestamp"])
+            # df = df.dropna(subset=["Device Timestamp"])
 
             # Determine time range for deletion
             start_time = df["Device Timestamp"].min()
