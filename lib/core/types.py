@@ -30,6 +30,7 @@ AiConversationTypeLiteral = Literal[
     "health-tip",
     "other",
     "care-provider",
+    "weight-loss-agent",
 ]
 
 OpenAIModelLiteral = Literal[

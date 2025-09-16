@@ -199,6 +199,13 @@ class Patient(Base):
         "UserDevice", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    weight_loss_enrollment = relationship(
+        "WeightLossAgentEnrollment",
+        back_populates="patient",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
     @property
     def current_package(self):
         """Returns the currently active package assignment"""

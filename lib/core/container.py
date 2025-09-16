@@ -73,6 +73,9 @@ from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 
+# Weight Loss Agent Service
+from lib.services.weight_loss_agent_service import WeightLossAgentService
+
 # Initialize Container
 container = Container()
 
@@ -453,6 +456,14 @@ container.register(
         chat_notification_service=cast(
             ChatNotificationService, container.resolve(ChatNotificationService)
         ),
+    ),
+)
+
+# 🔹 Weight Loss Agent Service
+container.register(
+    WeightLossAgentService,
+    lambda: WeightLossAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 

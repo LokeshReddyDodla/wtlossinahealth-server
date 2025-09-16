@@ -98,6 +98,12 @@ class CareProvider(Base):
         cascade="all, delete-orphan",
     )
 
+    weight_loss_enrollments = relationship(
+        "WeightLossAgentEnrollment",
+        back_populates="enrolled_by",
+        cascade="all, delete-orphan",
+    )
+
     @property
     def is_admin(self):
         return str(self.role).lower() == "admin"
