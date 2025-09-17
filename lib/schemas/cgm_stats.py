@@ -44,7 +44,6 @@ class CGMSummaryStats(BaseModel):
     gmi: float
     gmi_mmol: float
     glucose_variability: float
-    glycemic_estimate: float
     coefficient_of_variation: float
     standard_deviation: float
     highest_glucose: float
