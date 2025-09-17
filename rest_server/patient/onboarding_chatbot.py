@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # ─────────────────────────  CONFIG  ──────────────────────────
-MODEL_ID = "gpt-3.5-turbo"                   # one place to change model
+MODEL_ID = "gpt-5-nano"                   # one place to change model
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", "demo-key-not-set"))
 
 # ─────────────────────────  DATA CLASSES  ────────────────────
