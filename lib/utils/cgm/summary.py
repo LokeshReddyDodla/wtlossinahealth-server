@@ -41,12 +41,6 @@ class CGMSummaryStatsFetcher:
             else 0.0
         )
 
-        glycemic_estimate = validate_float(
-            (average_glucose - lowest_glucose)
-            / (highest_glucose - lowest_glucose)
-            if highest_glucose != lowest_glucose
-            else 0.0
-        )
         coefficient_of_variation = validate_float(
             (glucose_stddev / average_glucose) * 100
             if average_glucose
@@ -64,7 +58,6 @@ class CGMSummaryStatsFetcher:
             gmi=gmi,
             gmi_mmol=gmi_mmol,
             glucose_variability=glucose_variability,
-            glycemic_estimate=glycemic_estimate,
             coefficient_of_variation=coefficient_of_variation,
             standard_deviation=standard_deviation,
             highest_glucose=highest_glucose,
