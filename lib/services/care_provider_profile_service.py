@@ -155,7 +155,7 @@ class CareProviderProfileService:
                     CareProviderModel.care_provider_id == care_provider_id
                 )
 
-            # Search filter (should come before other filters)
+            # Search filter
             if search:
                 search_pattern = f"%{search}%"
                 stmt = stmt.where(
