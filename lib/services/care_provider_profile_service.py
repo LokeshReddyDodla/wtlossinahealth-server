@@ -127,6 +127,7 @@ class CareProviderProfileService:
         care_provider_id: str,
         role: str,
         health_facility_id: str,
+        search: Optional[str] = None,
         age: Optional[List[str]] = None,
         gender: Optional[List[str]] = None,
         type: Optional[List[str]] = None,
@@ -152,6 +153,18 @@ class CareProviderProfileService:
             else:
                 stmt = stmt.join(PatientModel.care_providers).where(
                     CareProviderModel.care_provider_id == care_provider_id
+                )
+
+            # Search filter
+            if search:
+                search_pattern = f"%{search}%"
+                stmt = stmt.where(
+                    or_(
+                        PatientModel.first_name.ilike(search_pattern),
+                        PatientModel.last_name.ilike(search_pattern),
+                        PatientModel.email.ilike(search_pattern),
+                        PatientModel.phone_number.ilike(search_pattern),
+                    )
                 )
 
             # gender filter

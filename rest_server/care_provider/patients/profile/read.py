@@ -34,6 +34,7 @@ from .router import router
 
 @router.get("", response_model=SuccessResponse)
 async def list_patients(
+    search: Optional[str] = Query(None),
     age: Optional[List[str]] = Query(None),
     gender: Optional[List[str]] = Query(None),
     type: Optional[List[str]] = Query(None),
@@ -56,6 +57,7 @@ async def list_patients(
                 str(current_care_provider.care_provider_id),
                 str(current_care_provider.role).lower(),
                 str(current_care_provider.health_facility_id),
+                search=search,
                 age=age,
                 gender=gender,
                 type=type,
