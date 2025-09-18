@@ -1,4 +1,5 @@
-from fastapi import Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
@@ -33,6 +34,11 @@ from .router import router
 
 @router.get("", response_model=SuccessResponse)
 async def list_patients(
+    age: Optional[List[str]] = Query(None),
+    gender: Optional[List[str]] = Query(None),
+    type: Optional[List[str]] = Query(None),
+    connectedApps: Optional[List[str]] = Query(None),
+    package: Optional[List[str]] = Query(None),
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
@@ -50,8 +56,23 @@ async def list_patients(
                 str(current_care_provider.care_provider_id),
                 str(current_care_provider.role).lower(),
                 str(current_care_provider.health_facility_id),
+                age=age,
+                gender=gender,
+                type=type,
+                package=package,
+                connected_apps=connectedApps,
             )
         )
+
+        if type and "cgm" in type:
+            filtered_patients = []
+            for patient in patients:
+                cgm_reports = await cgm_report_service.fetch_reports(
+                    str(patient.patient_id)
+                )
+                if cgm_reports:
+                    filtered_patients.append(patient)
+            patients = filtered_patients
 
         user_ids = [str(p.patient_id) for p in patients]
         last_active_map = await user_device_service.get_last_active_map(
