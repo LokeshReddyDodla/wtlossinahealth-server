@@ -55,3 +55,8 @@ GeminiAIModelLiteral = Literal[
 PerplexityAIModelLiteral = Literal["sonar", "sonar-reasoning"]
 
 AIModelProviderLiteral = Literal["openai", "gemini", "perplexity"]
+
+
+ReportTypeLiteral = Literal[
+    "index", "laboratory", "radiology", "eye_or_ophthalmology", "other"
+]

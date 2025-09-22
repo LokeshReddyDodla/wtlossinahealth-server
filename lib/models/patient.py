@@ -162,6 +162,13 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    reports = relationship(
+        "PatientReport",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
     connected_apps = relationship(
         "PatientConnectedApp",
         uselist=False,
