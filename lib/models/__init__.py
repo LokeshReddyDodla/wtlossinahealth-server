@@ -47,3 +47,4 @@ from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
 from .user_activity_log import UserActivityLog
+from .patient_report import PatientReport

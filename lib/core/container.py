@@ -39,6 +39,7 @@ from lib.services.dashboard_metrics.patient_metrics_service import (
 from lib.services.dashboard_metrics.smbg_metrics_service import (
     SMBGMetricsService,
 )
+from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.health_facility_service import HealthFacilityService
@@ -55,6 +56,7 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -265,6 +267,22 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
+
+# 🔹 Patient Report Service
+container.register(
+    PatientReportService,
+    lambda: PatientReportService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        file_content_extractor_service=cast(
+            FileContentExtractorService,
+            container.resolve(FileContentExtractorService),
+        ),
+    ),
+)
+
 
 # 🔹 Meal Analysis Service
 container.register(
@@ -544,3 +562,7 @@ container.register(
         )
     ),
 )
+
+
+# 🔹 File Content Extractor Service
+container.register(FileContentExtractorService, FileContentExtractorService)
