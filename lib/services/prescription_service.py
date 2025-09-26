@@ -50,7 +50,7 @@ class PrescriptionService:
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="prescription",
-            selected_ai_model="gpt-4o-mini",
+            selected_ai_model="gpt-5-mini",
             ai_model_provider="openai",
         )
         self.token_usage_service = get_token_usage_service()

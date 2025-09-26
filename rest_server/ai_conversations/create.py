@@ -30,7 +30,7 @@ async def send_ai_conversation_patient_message(
     try:
         ai_conversation_service = AiConversationService(
             conversation_type=conversation_type,
-            selected_ai_model="gpt-4o-mini",  # sonar
+            selected_ai_model="gpt-5-mini",  # sonar
             ai_model_provider="openai",  # perplexity
         )
 

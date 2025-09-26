@@ -38,6 +38,7 @@ AiConversationTypeLiteral = Literal[
 ]
 
 OpenAIModelLiteral = Literal[
+    "gpt-5-mini",
     "gpt-4o",
     "gpt-4o-mini",
     "gpt-4-mini",
@@ -55,7 +56,6 @@ GeminiAIModelLiteral = Literal[
 PerplexityAIModelLiteral = Literal["sonar", "sonar-reasoning"]
 
 AIModelProviderLiteral = Literal["openai", "gemini", "perplexity"]
-
 
 ReportTypeLiteral = Literal[
     "index", "laboratory", "radiology", "eye_or_ophthalmology", "other"
