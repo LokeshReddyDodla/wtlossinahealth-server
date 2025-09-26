@@ -78,7 +78,7 @@ async def upload_reports(
 
         return SuccessResponse(
             message="Report upload successfully.",
-            data={"conversation_id": result.report_id + "-care-provider"},
+            data={"conversation_id": str(result.report_id) + "-care-provider"},
         )
 
     except Exception as e:
