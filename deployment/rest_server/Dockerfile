@@ -16,9 +16,14 @@ ENV PYTHONUNBUFFERED=1 \
 # prepend poetry and venv to path
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
-RUN apt-get update &&\
-    apt-get upgrade -y &&\
-    apt-get install -y curl build-essential
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    curl \
+    build-essential \
+    tesseract-ocr \
+    libtesseract-dev \
+    poppler-utils \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # install poetry - respects $POETRY_VERSION & $POETRY_HOME
 RUN curl -sSL https://install.python-poetry.org | python -
@@ -35,6 +40,7 @@ RUN $VENV_PATH/bin/pip install alembic
 
 COPY . /src
 WORKDIR /src
+
 
 # Set up entrypoint to run migrations before starting the server
 CMD ["sh", "-c", "alembic upgrade head && gunicorn --bind 0.0.0.0:8000 --timeout 300 --workers 2 --threads 8 app.main:socket_app -k uvicorn.workers.UvicornWorker"]
