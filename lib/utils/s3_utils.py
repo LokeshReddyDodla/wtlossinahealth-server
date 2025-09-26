@@ -55,7 +55,7 @@ def upload_file_to_s3(
             Body=file_bytes,
             ContentType=content_type,
         )
-        file_url = f"https://{bucket_name}.s3.amazonaws.com/{object_name}"
+        file_url = f"https://{bucket_name}/{object_name}"
         return file_url
     except ClientError as e:
         print(f"ClientError: {e}")

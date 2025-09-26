@@ -134,7 +134,7 @@ class PatientReportService:
 
             conversation_ids = {
                 "patient": f"{report.report_id}-patient",
-                "care_provider": f"{report.report_id}-care-provider",
+                "care_provider": f"{report.report_id}-{uploaded_by_id}",
             }
             messages = [
                 AiConversationMessageSchema(
