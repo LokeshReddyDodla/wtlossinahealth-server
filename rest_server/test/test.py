@@ -9,11 +9,21 @@ from fastapi import (
 import logging
 
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import (
+    get_patient_connected_app_service,
+)
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from lib.services.patient_connected_app_service import (
+    PatientConnectedAppService,
+)
+from lib.utils.http_exceptions import raise_http_exception
+from rest_server.response_models import SuccessResponse
+from fastapi import Depends, HTTPException, Query, Request, status
 
 
 router = APIRouter(prefix="/test")
@@ -84,3 +94,61 @@ async def patients_never_synced_libreview(
         )
 
     return {"patients": never_synced_patients}
+
+
+@router.delete(
+    "/libreview/cleanup-invalid",
+    response_model=SuccessResponse,
+)
+async def cleanup_invalid_libreview_connections(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    try:
+        result = await session.execute(
+            select(PatientConnectedApp).options(
+                selectinload(PatientConnectedApp.libreview),
+                selectinload(PatientConnectedApp.patient),
+            )
+        )
+        connected_apps = result.scalars().all()
+
+        removed = []
+        for app in connected_apps:
+            libreview = app.libreview
+            patient = app.patient
+            if libreview and str(libreview.libreview_id) == str(
+                patient.patient_id
+            ):
+                await session.delete(app)
+                removed.append(
+                    {
+                        "patient_id": str(patient.patient_id),
+                        "first_name": patient.first_name,
+                        "last_name": patient.last_name,
+                        "phone_number": patient.phone_number,
+                        "email": patient.email,
+                        "libreview_id": libreview.libreview_id,
+                    }
+                )
+
+        if not removed:
+            raise HTTPException(
+                status_code=404,
+                detail="No invalid LibreView connections found.",
+            )
+
+        await session.commit()
+
+        return SuccessResponse(
+            message=f"Removed {len(removed)} invalid LibreView connections.",
+            data={"removed_patients": removed},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
