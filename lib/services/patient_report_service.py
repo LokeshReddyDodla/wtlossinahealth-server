@@ -104,7 +104,7 @@ class PatientReportService:
                 bucket_name=self.s3_bucket_name,
                 file_name=file_name,
                 content_type=content_type,
-                folder_path=f"patients/{patient_id}/reports",
+                folder_path=f"patients/{patient_id}/reports/{report_type}",
             )
             if not file_url:
                 raise_http_exception(
