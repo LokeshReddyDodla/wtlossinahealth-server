@@ -154,14 +154,13 @@ class PatientReportService:
                 messages=messages
             )
 
-            for conv_type, conv_id in conversation_ids.items():
-                await self.ai_conversation_service.generate_response(
-                    patient_id=patient_id,
-                    user_id=uploaded_by_id,
-                    conversation_id=conv_id,
-                    human_input="Summarize this report",
-                    conversation_type="report",
-                )
+            await self.ai_conversation_service.generate_response(
+                patient_id=patient_id,
+                user_id=uploaded_by_id,
+                conversation_id=conversation_ids["care_provider"],
+                human_input="Summarize this report",
+                conversation_type="report",
+            )
 
             return report
         except Exception as e:
