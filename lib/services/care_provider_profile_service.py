@@ -130,7 +130,7 @@ class CareProviderProfileService:
         search: Optional[str] = None,
         age: Optional[List[str]] = None,
         gender: Optional[List[str]] = None,
-        type: Optional[List[str]] = None,
+        monitoringMethod: Optional[List[str]] = None,
         package: Optional[List[str]] = None,
         connected_apps: Optional[List[str]] = None,
         *,
@@ -221,10 +221,10 @@ class CareProviderProfileService:
                     stmt = stmt.where(or_(*age_group_conditions))
 
             # type filter (SMBG data check)
-            if type:
+            if monitoringMethod:
                 type_conditions = []
 
-                for data_type in type:
+                for data_type in monitoringMethod:
                     if data_type == "smbg":
                         type_conditions.append(
                             exists().where(
