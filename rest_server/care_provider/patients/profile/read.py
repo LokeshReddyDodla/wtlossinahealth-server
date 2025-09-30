@@ -37,7 +37,7 @@ async def list_patients(
     search: Optional[str] = Query(None),
     age: Optional[List[str]] = Query(None),
     gender: Optional[List[str]] = Query(None),
-    type: Optional[List[str]] = Query(None),
+    monitoringMethod: Optional[List[str]] = Query(None),
     connectedApps: Optional[List[str]] = Query(None),
     package: Optional[List[str]] = Query(None),
     care_provider_profile_service: CareProviderProfileService = Depends(
@@ -60,13 +60,13 @@ async def list_patients(
                 search=search,
                 age=age,
                 gender=gender,
-                type=type,
+                monitoringMethod=monitoringMethod,
                 package=package,
                 connected_apps=connectedApps,
             )
         )
 
-        if type and "cgm" in type:
+        if monitoringMethod and "cgm" in monitoringMethod:
             filtered_patients = []
             for patient in patients:
                 cgm_reports = await cgm_report_service.fetch_reports(
