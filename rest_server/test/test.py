@@ -1,3 +1,6 @@
+from datetime import datetime
+import json
+from typing import List, Optional
 from fastapi import (
     APIRouter,
     Depends,
@@ -10,9 +13,13 @@ import logging
 
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
+    get_cgm_report_vector_service,
     get_patient_connected_app_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.future import select
@@ -22,15 +29,17 @@ from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
 from fastapi import Depends, HTTPException, Query, Request, status
-
+from openai import AsyncOpenAI
 
 router = APIRouter(prefix="/test")
 
 logger = logging.getLogger("mongo_test")
 
 extractor = FileContentExtractorService()
+openai_client = AsyncOpenAI()
 
 
 @router.get(path="/mongodb", tags=["Test"])
@@ -152,3 +161,159 @@ async def cleanup_invalid_libreview_connections(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.get("/qdrant/cgm/{report_id}")
+async def test_qdrant_cgm(
+    report_id: str,
+    patient_id: str,
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
+    cgm_report_vector_service: CGMReportVectorService = Depends(
+        get_cgm_report_vector_service
+    ),
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    try:
+        report = await cgm_report_service.fetch_report(patient_id, report_id)
+        await cgm_report_vector_service.upsert_report(patient_id, report)
+        return SuccessResponse(
+            message="Report fetched successfully",
+            data=report,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/qdrant/search")
+async def search_qdrant_reports(
+    query: str = Query(..., description="Text query to search for"),
+    limit: int = Query(5, description="Number of results to return"),
+    data_types: Optional[List[str]] = Query(
+        None,
+        description="Filter by one or more data_type values, e.g. cgm_range_stats",
+    ),
+    cgm_report_vector_service: CGMReportVectorService = Depends(
+        get_cgm_report_vector_service
+    ),
+):
+    try:
+        query_embedding = await embed_text(query)
+
+        results = await cgm_report_vector_service.search_similar_reports(
+            query_embedding=query_embedding, limit=limit, data_types=data_types
+        )
+
+        return {"query": query, "results": results}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def nl_to_qdrant_filter(query: str) -> dict:
+    system_prompt = """
+    You are an intelligent assistant that converts any natural language query about glucose/CGM
+    events into a valid Qdrant filter JSON.
+
+    ⚠️ RULES:
+    - Supported keys: data_type, peak_glucose_level, lowest_glucose_level, start_time, end_time,
+    average_glucose, gmi, glucose_variability, standard_deviation, total_hyper_duration,
+    hyper_events_count, average_hyper_duration, total_hypo_duration, hypo_events_count,
+    average_hypo_duration.
+    - Always output valid ISO date strings (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
+    - If the user specifies only a month (e.g., "September"), assume the current year (2025).
+    - If the user says "events" without specifying hyper/hypo, include BOTH data_type="hyper_event" 
+    and data_type="hypo_event".
+    - Use "must" for required filters. If multiple possible values exist (like hyper/hypo), 
+    use "should" with "min_should" containing conditions and "min_count".
+    - Include as much filtering as possible based on the query.
+    - Output ONLY the filter object in JSON format.
+
+    Example:
+    Query: "Show events below 200 in September"
+    Output:
+    {
+    "should": [
+        {
+        "must": [
+            {"key": "data_type", "match": {"value": "hyper_event"}},
+            {"key": "peak_glucose_level", "range": {"lt": 200}}
+        ]
+        },
+        {
+        "must": [
+            {"key": "data_type", "match": {"value": "hypo_event"}},
+            {"key": "lowest_glucose_level", "range": {"lt": 200}}
+        ]
+        }
+    ],
+    "min_should": {
+        "conditions": [
+        {"key": "data_type", "match": {"value": "hyper_event"}},
+        {"key": "data_type", "match": {"value": "hypo_event"}}
+        ],
+        "min_count": 1
+    },
+    "must": [
+        {"key": "start_time", "range": {"gte": "2025-09-01"}},
+        {"key": "end_time", "range": {"lt": "2025-10-01"}}
+    ]
+    }
+    """
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",  # or gpt-4o for more accuracy
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query},
+        ],
+        response_format={"type": "json_object"},  # ensures clean JSON
+    )
+
+    content = response.choices[0].message.content
+    return json.loads(content)
+
+
+@router.get("/qdrant/nl_search")
+async def search_qdrant_nl(
+    query: str = Query(
+        ..., description="Natural language query to search for"
+    ),
+    limit: int = Query(5, description="Number of results to return"),
+    cgm_report_vector_service: CGMReportVectorService = Depends(
+        get_cgm_report_vector_service
+    ),
+):
+    try:
+        # Step 1: Get query embedding
+        query_embedding = await openai_client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query,
+        )
+        embedding = query_embedding.data[0].embedding
+
+        # Step 2: Convert natural language → Qdrant filter
+        filter_conditions = await nl_to_qdrant_filter(query)
+        print("==> filter_conditions: ", filter_conditions)
+
+        # Step 3: Perform search in Qdrant
+        results = await cgm_report_vector_service.search_similar_reports(
+            query_embedding=embedding,
+            limit=limit,
+            filter_conditions=filter_conditions,
+        )
+
+        return {
+            "query": query,
+            "filter": filter_conditions,
+            "results": results,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

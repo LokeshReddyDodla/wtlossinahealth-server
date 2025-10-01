@@ -11,6 +11,7 @@ from decouple import config
 # Services
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
+from lib.core.qdrant_store import QdrantStore
 from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
@@ -19,6 +20,7 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -82,6 +84,7 @@ container = Container()
 # 🔹 Core Dependencies
 container.register(PostgresStore, PostgresStore, scope=Scope.singleton)
 container.register(ClickHouseStore, ClickHouseStore, scope=Scope.singleton)
+container.register(QdrantStore, QdrantStore, scope=Scope.singleton)
 container.register(
     AsyncSession,
     factory=lambda: cast(
@@ -432,6 +435,14 @@ container.register(
         fitness_report_service=cast(
             FitnessReportService, container.resolve(FitnessReportService)
         ),
+    ),
+)
+
+# 🔹 CGM Report Vector Service
+container.register(
+    CGMReportVectorService,
+    lambda: CGMReportVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
 

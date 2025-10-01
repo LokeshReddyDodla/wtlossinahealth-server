@@ -9,6 +9,7 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -205,6 +206,12 @@ def get_cgm_report_service() -> CGMReportService:
     return cast(
         CGMReportService,
         container.resolve(CGMReportService),
+    )
+
+
+def get_cgm_report_vector_service() -> CGMReportVectorService:
+    return cast(
+        CGMReportVectorService, container.resolve(CGMReportVectorService)
     )
 
 
