@@ -475,6 +475,6 @@ class CGMReportVectorService:
             return await client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
-                limit=limit,
+                limit=1000,
                 query_filter=filter_conditions,
             )

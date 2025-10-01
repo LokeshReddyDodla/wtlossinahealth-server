@@ -180,7 +180,13 @@ async def test_qdrant_cgm(
 ):
     try:
         report = await cgm_report_service.fetch_report(patient_id, report_id)
-        await cgm_vector_service.upsert_report(patient_id, report)
+
+        if not report:
+            raise
+
+        await cgm_vector_service.upsert_report(
+            patient_id, report["overall"]["_id"], report["day_wise"]
+        )
         return SuccessResponse(
             message="Report fetched successfully",
             data=report,
@@ -222,58 +228,200 @@ async def search_qdrant_reports(
 
 
 async def nl_to_qdrant_filter(query: str) -> dict:
-    system_prompt = """
+    from datetime import datetime
+
+    system_prompt = f"""
     You are an intelligent assistant that converts any natural language query about glucose/CGM
-    events into a valid Qdrant filter JSON.
+    events or statistics into a valid Qdrant filter JSON.
 
     ⚠️ RULES:
-    - Supported keys: data_type, peak_glucose_level, lowest_glucose_level, start_time, end_time,
-    average_glucose, gmi, glucose_variability, standard_deviation, total_hyper_duration,
-    hyper_events_count, average_hyper_duration, total_hypo_duration, hypo_events_count,
-    average_hypo_duration.
-    - Always output valid ISO date strings (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS).
-    - If the user specifies only a month (e.g., "September"), assume the current year (2025).
-    - If the user says "events" without specifying hyper/hypo, include BOTH data_type="hyper_event" 
-    and data_type="hypo_event".
-    - Use "must" for required filters. If multiple possible values exist (like hyper/hypo), 
-    use "should" with "min_should" containing conditions and "min_count".
-    - Include as much filtering as possible based on the query.
-    - Output ONLY the filter object in JSON format.
+    - Supported keys: 
+    data_type,
+    # Summary stats
+    data.average_glucose, data.gmi, data.glucose_variability, data.standard_deviation, data.highest_glucose, data.highest_glucose_date,
+    data.lowest_glucose, data.lowest_glucose_date,
+    # Range stats
+    data.in_target_70_180, data.above_180_below_250, data.above_250, data.below_70_above_54, data.below_54,
+    # Hyper/hypo stats
+    data.total_hyper_duration, data.hyper_events_count, data.average_hyper_duration,
+    data.total_hypo_duration, data.hypo_events_count, data.average_hypo_duration,
+    # Rapid spike/drop stats
+    data.total_spike_duration, data.spike_events_count, data.average_spike_duration,
+    data.total_drop_duration, data.drop_events_count, data.average_drop_duration,
+    # Event fields
+    peak_glucose_level, lowest_glucose_level, initial_glucose_level,
+    start_time, end_time, duration, peak_glucose_time, lowest_glucose_time,
+    # AGP points
+    data.median, data.tenth_percentile, data.ninetieth_percentile, data.twenty_fifth_percentile, data.seventy_fifth_percentile, data.hour,
+    # Time period stats
+    data.out_of_range_percentage, from_time, to_time
 
-    Example:
+    - Supported data_type values: 
+    "cgm_range_stats", "cgm_summary_stats",
+    "hyper_stats", "hypo_stats",
+    "hyper_event", "hypo_event",
+    "rapid_spike_stats", "rapid_spike_event",
+    "rapid_drop_stats", "rapid_drop_event",
+    "time_period_stats", "agp_point".
+
+    - Time filtering:
+    • For all stats sections (summary, range, hyper/hypo stats, spike/drop stats): use "start_time" and "end_time" numeric epoch milliseconds.  
+    • For events (hyper_event, hypo_event, rapid_spike_event, rapid_drop_event): use "start_time" and "end_time" numeric epoch milliseconds.  
+    • For time_period_stats: use "from_time" and "to_time" numeric epoch milliseconds.
+    • Always output numeric ranges for date fields, but keep durations and other numeric metrics in their native units (minutes, counts, percentages, etc.).
+
+    - Durations such as total_hyper_duration, average_hyper_duration, total_hypo_duration, average_hypo_duration, total_spike_duration, average_spike_duration, total_drop_duration, average_drop_duration, and data.duration should always remain in minutes and NOT be converted to milliseconds.
+    - If the user specifies only a month (e.g., "September"), assume the current year ({datetime.now().year}).
+    - If the user says "events" without specifying hyper/hypo/spike/drop, include ALL event types
+    ("hyper_event", "hypo_event", "rapid_spike_event", "rapid_drop_event").  
+    - Use "must" for required filters. If multiple possible values exist (like hyper/hypo events), 
+    use "should" with "min_should" containing conditions and "min_count".  
+    - Include as much filtering as possible based on the query.  
+    - Output ONLY the filter object in JSON format.  
+
+    - Hour filtering:
+    • The field "data.hour" is stored as a string in the format "hh:mm AM/PM".
+    • When a user specifies an hour range (e.g., "6am–9am"), convert it to corresponding strings: "06:00 AM" to "09:00 AM".
+    • Use string comparison or exact matching for "data.hour".
+    
+    Example 1:
+    Query: "What was the average glucose level in September?"
+    Output:
+    {{
+    "must": [
+        {{"key": "data_type", "match": {{"value": "cgm_summary_stats"}}}},
+        {{"key": "start_time", "range": {{"gte": 1756684800000}}}},  
+        {{"key": "end_time", "range": {{"lt": 1759363200000}}}}
+    ]
+    }}
+
+    Example 2:
     Query: "Show events below 200 in September"
     Output:
-    {
+    {{
     "should": [
-        {
+        {{
         "must": [
-            {"key": "data_type", "match": {"value": "hyper_event"}},
-            {"key": "peak_glucose_level", "range": {"lt": 200}}
+            {{"key": "data_type", "match": {{"value": "hyper_event"}}}},
+            {{"key": "peak_glucose_level", "range": {{"lt": 200}}}}
         ]
-        },
-        {
+        }},
+        {{
         "must": [
-            {"key": "data_type", "match": {"value": "hypo_event"}},
-            {"key": "lowest_glucose_level", "range": {"lt": 200}}
+            {{"key": "data_type", "match": {{"value": "hypo_event"}}}},
+            {{"key": "lowest_glucose_level", "range": {{"lt": 200}}}}
         ]
-        }
+        }},
+        {{
+        "must": [
+            {{"key": "data_type", "match": {{"value": "rapid_spike_event"}}}},
+            {{"key": "peak_glucose_level", "range": {{"lt": 200}}}}
+        ]
+        }},
+        {{
+        "must": [
+            {{"key": "data_type", "match": {{"value": "rapid_drop_event"}}}},
+            {{"key": "lowest_glucose_level", "range": {{"lt": 200}}}}
+        ]
+        }}
     ],
-    "min_should": {
+    "min_should": {{
         "conditions": [
-        {"key": "data_type", "match": {"value": "hyper_event"}},
-        {"key": "data_type", "match": {"value": "hypo_event"}}
+        {{"key": "data_type", "match": {{"value": "hyper_event"}}}},
+        {{"key": "data_type", "match": {{"value": "hypo_event"}}}},
+        {{"key": "data_type", "match": {{"value": "rapid_spike_event"}}}},
+        {{"key": "data_type", "match": {{"value": "rapid_drop_event"}}}}
         ],
         "min_count": 1
-    },
+    }},
     "must": [
-        {"key": "start_time", "range": {"gte": "2025-09-01"}},
-        {"key": "end_time", "range": {"lt": "2025-10-01"}}
+        {{"key": "start_time", "range": {{"gte": 1756684800000}}}},
+        {{"key": "end_time", "range": {{"lt": 1759363200000}}}}
     ]
-    }
+    }}
+    
+    Example 3:
+    Query: "Compare weekdays vs weekends in September"
+    Note: since start_time and end_time are stored as numeric epoch milliseconds, the filter must correctly apply date ranges to represent weekdays and weekends.
+    Output:
+    {{
+    "should": [
+        {{
+        "must": [
+            {{"key": "data_type", "match": {{"value": "hyper_stats"}}}},
+            {{"key": "start_time", "range": {{"gte": 1756684800000, "lt": 1757203200000}}}}
+        ]
+        }},
+        {{
+        "must": [
+            {{"key": "data_type", "match": {{"value": "hyper_stats"}}}},
+            {{"key": "start_time", "range": {{"gte": 1757203200000, "lt": 1757721600000}}}}
+        ]
+        }}
+    ],
+    "min_should": {{
+        "conditions": [
+        {{"key": "data_type", "match": {{"value": "hyper_stats"}}}}
+        ],
+        "min_count": 1
+    }}
+    }}
+    
+    Example 4:
+    Query: "Which patient days had >2 hypo events?"
+    Output:
+    {{
+    "must": [
+        {{"key": "data_type", "match": {{"value": "hypo_stats"}}}},
+        {{"key": "data.hypo_events_count", "range": {{"gt": 2}}}}
+    ]
+    }}
+    
+    Example 5:
+    Query: "Did hypoglycemia frequency reduce after September 22?"
+    Note: "September 22" → "2025-09-22T00:00:00Z" → 1758499200000 milliseconds since epoch (UTC).
+    Output:
+    {{
+        "must": [
+            {{
+                "key": "data_type",
+                "match": {{"value": "hypo_stats"}}
+            }},
+            {{
+                "key": "start_time",
+                "range": {{"gte": 1758499200000}}
+            }}
+        ]
+    }}
+    
+    Example 6:
+    Query: "Show AGP points for 6am–9am in September."
+    Note: "6am–9am" → "06:00 AM" to "09:00 AM".
+    Output:
+    {{
+        "must": [
+            {{
+                "key": "data_type",
+                "match": {{"value": "agp_point"}}
+            }},
+            {{
+                "key": "hour",
+                "range": {{"gte": "06:00 AM", "lt": "09:00 AM"}}
+            }},
+            {{
+                "key": "start_time",
+                "range": {{"gte": 1756684800000}}
+            }},
+            {{
+                "key": "end_time",
+                "range": {{"lt": 1759363200000}}
+            }}
+        ]
+    }}
     """
 
     response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",  # or gpt-4o for more accuracy
+        model="gpt-4o",  # or gpt-4o for more accuracy
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},

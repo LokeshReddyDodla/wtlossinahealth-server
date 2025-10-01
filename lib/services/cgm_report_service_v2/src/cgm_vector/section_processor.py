@@ -51,9 +51,13 @@ class CGMSectionProcessor:
 
         # Create payload using section config keys
         payload = {
-            key: section_data.get(key)
-            for key in section_config.keys
-            if key in section_data
+            key: (
+                int(value.timestamp() * 1000)
+                if isinstance(value, datetime)
+                else value
+            )
+            for key, value in section_data.items()
+            if key in section_config.keys
         }
 
         return summary_text, payload

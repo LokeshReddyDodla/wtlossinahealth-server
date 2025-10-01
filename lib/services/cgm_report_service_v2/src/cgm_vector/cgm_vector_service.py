@@ -32,37 +32,19 @@ class CGMVectorService:
         self.processor = CGMSectionProcessor()
 
     async def upsert_report(
-        self,
-        patient_id: str,
-        report: Any,
+        self, patient_id: str, report_id: str, reports: List[Any]
     ):
         try:
-            report_id = report["overall"]["_id"]
-
             async with self.qdrant_store.get_client() as client:
                 points: list[PointStruct] = []
 
-                # Process all report periods
-                period_types = [ptype.value for ptype in ReportPeriodType]
-
-                for period_type in period_types:
-                    if period_type == "overall":
-                        period_points = await self._process_report_period(
-                            patient_id,
-                            report_id,
-                            report[period_type],
-                            period_type,
-                        )
-                        points.extend(period_points)
-                    else:
-                        for period_data in report[period_type]:
-                            period_points = await self._process_report_period(
-                                patient_id,
-                                report_id,
-                                period_data,
-                                period_type,
-                            )
-                            points.extend(period_points)
+                for report_data in reports:
+                    period_points = await self._process_report_period(
+                        patient_id,
+                        report_id,
+                        report_data,
+                    )
+                    points.extend(period_points)
 
                 # Upsert all points
                 if points:
@@ -77,7 +59,7 @@ class CGMVectorService:
 
         except Exception as e:
             logger.error(
-                f"❌ Failed to upsert CGM report {report.get('overall', {}).get('_id', 'unknown')} "
+                f"❌ Failed to upsert CGM report {report_id} "
                 f"for patient {patient_id}: {e}"
             )
             raise
@@ -93,12 +75,16 @@ class CGMVectorService:
         additional_payload: Optional[dict] = None,
     ) -> PointStruct:
         vector = await embed_text(text_repr)
+
+        start_time_ms = int(start_time.timestamp() * 1000)
+        end_time_ms = int(end_time.timestamp() * 1000)
+
         payload = {
             "patient_id": patient_id,
             "report_id": report_id,
             "data_type": data_type,
-            "start_time": start_time,
-            "end_time": end_time,
+            "start_time": start_time_ms,
+            "end_time": end_time_ms,
             "text_repr": text_repr,
         }
 
@@ -116,7 +102,6 @@ class CGMVectorService:
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
-        period_type: str = "overall",
     ) -> List[PointStruct]:
         """Process main statistical sections"""
         points: list[PointStruct] = []
@@ -139,13 +124,12 @@ class CGMVectorService:
             point = await self._create_point(
                 patient_id=patient_id,
                 report_id=report_id,
-                data_type=f"{period_type}_{section_name}",
+                data_type=f"{section_name}",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
                 additional_payload={
                     "data": section_payload,
-                    "period_type": period_type,
                 },
             )
             points.append(point)
@@ -157,7 +141,6 @@ class CGMVectorService:
         patient_id: str,
         report_id: str,
         report_data: dict,
-        period_type: str,
     ) -> List[PointStruct]:
         points: list[PointStruct] = []
 
@@ -186,13 +169,12 @@ class CGMVectorService:
                 point = await self._create_point(
                     patient_id=patient_id,
                     report_id=report_id,
-                    data_type=f"{period_type}_{event_data_type}",
+                    data_type=f"{event_data_type}",
                     text_repr=summary_text,
                     start_time=event["start_time"],
                     end_time=event["end_time"],
                     additional_payload={
                         "duration": event.get("duration"),
-                        "period_type": period_type,
                         **{
                             k: v
                             for k, v in event.items()
@@ -211,7 +193,6 @@ class CGMVectorService:
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
-        period_type: str = "overall",
     ) -> List[PointStruct]:
         """Process rapid spike/drop statistics"""
         points: list[PointStruct] = []
@@ -233,13 +214,12 @@ class CGMVectorService:
                 point = await self._create_point(
                     patient_id=patient_id,
                     report_id=report_id,
-                    data_type=f"{period_type}_{data_type}",
+                    data_type=f"{data_type}",
                     text_repr=summary_text,
                     start_time=start_time,
                     end_time=end_time,
                     additional_payload={
                         "data": section_payload,
-                        "period_type": period_type,
                     },
                 )
                 points.append(point)
@@ -253,7 +233,6 @@ class CGMVectorService:
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
-        period_type: str = "overall",
     ) -> List[PointStruct]:
         """Process time period statistics"""
         points: list[PointStruct] = []
@@ -267,14 +246,13 @@ class CGMVectorService:
             point = await self._create_point(
                 patient_id=patient_id,
                 report_id=report_id,
-                data_type=f"{period_type}_time_period_stats",
+                data_type=f"time_period_stats",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
                 additional_payload={
                     "time_period": period_name,
                     "data": period_data,
-                    "period_type": period_type,
                     "from_time": period_data.get("from_time"),
                     "to_time": period_data.get("to_time"),
                 },
@@ -290,7 +268,6 @@ class CGMVectorService:
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
-        period_type: str = "overall",
     ) -> List[PointStruct]:
         """Process AGP points"""
         points: list[PointStruct] = []
@@ -309,14 +286,13 @@ class CGMVectorService:
             point = await self._create_point(
                 patient_id=patient_id,
                 report_id=report_id,
-                data_type=f"{period_type}_agp_point",
+                data_type=f"agp_point",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
                 additional_payload={
                     "hour": agp_point.get("hour"),
                     "data": agp_point,
-                    "period_type": period_type,
                 },
             )
             points.append(point)
@@ -327,12 +303,11 @@ class CGMVectorService:
         self,
         patient_id: str,
         report_id: str,
-        period_data: dict,
-        period_type: str,
+        report_data: dict,
     ) -> List[PointStruct]:
         """Process a single report period"""
-        start_time = period_data["start_date"]
-        end_time = period_data["end_date"]
+        start_time = report_data["start_date"]
+        end_time = report_data["end_date"]
 
         points: list[PointStruct] = []
 
@@ -348,16 +323,17 @@ class CGMVectorService:
                 await method(
                     patient_id,
                     report_id,
-                    period_data,
+                    report_data,
                     start_time,
                     end_time,
-                    period_type,
                 )
             )
 
         points.extend(
             await self._process_events(
-                patient_id, report_id, period_data, period_type
+                patient_id,
+                report_id,
+                report_data,
             )
         )
 
