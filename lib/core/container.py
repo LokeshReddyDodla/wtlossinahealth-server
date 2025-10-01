@@ -77,6 +77,7 @@ from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 from lib.utils.smbg.processor import SMBGStatsProcessor
+from lib.services.cgm_report_service_v2.src.cgm_vector import CGMVectorService
 
 # Initialize Container
 container = Container()
@@ -442,6 +443,13 @@ container.register(
 container.register(
     CGMReportVectorService,
     lambda: CGMReportVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+container.register(
+    CGMVectorService,
+    lambda: CGMVectorService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )

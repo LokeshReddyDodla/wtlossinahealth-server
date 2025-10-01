@@ -15,10 +15,14 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_cgm_report_vector_service,
+    get_cgm_vector_service,
     get_patient_connected_app_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
+    CGMVectorService,
+)
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload, joinedload
@@ -171,11 +175,12 @@ async def test_qdrant_cgm(
     cgm_report_vector_service: CGMReportVectorService = Depends(
         get_cgm_report_vector_service
     ),
+    cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
     session: AsyncSession = Depends(get_postgres_session),
 ):
     try:
         report = await cgm_report_service.fetch_report(patient_id, report_id)
-        await cgm_report_vector_service.upsert_report(patient_id, report)
+        await cgm_vector_service.upsert_report(patient_id, report)
         return SuccessResponse(
             message="Report fetched successfully",
             data=report,

@@ -9,6 +9,9 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
+    CGMVectorService,
+)
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -213,6 +216,10 @@ def get_cgm_report_vector_service() -> CGMReportVectorService:
     return cast(
         CGMReportVectorService, container.resolve(CGMReportVectorService)
     )
+
+
+def get_cgm_vector_service() -> CGMVectorService:
+    return cast(CGMVectorService, container.resolve(CGMVectorService))
 
 
 def get_fitness_stats_processor() -> FitnessStatsProcessor:
