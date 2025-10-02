@@ -1,5 +1,4 @@
 from typing import Any, Dict
-
 import pandas as pd
 
 from lib.schemas.cgm_stats import (
@@ -14,7 +13,7 @@ def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
     data = clickhouse_store.client.execute(query)
     if not data:
         return pd.DataFrame()
-    df = pd.DataFrame(data, columns=["device_timestamp", "glucose"])
+    df = pd.DataFrame(data, columns=["device_timestamp", "glucose_mgdl"])
     df["device_timestamp"] = pd.to_datetime(df["device_timestamp"])
     return df
 
@@ -37,32 +36,32 @@ class CGMEventsProcessor:
         )
 
         for _, row in df.iterrows():
-            if (event_type == "hyper" and row["glucose"] > threshold) or (
-                event_type == "hypo" and row["glucose"] < threshold
+            glucose_value = row["glucose_mgdl"]
+
+            if (event_type == "hyper" and glucose_value > threshold) or (
+                event_type == "hypo" and glucose_value < threshold
             ):
                 if current_event is None:
                     current_event = {
                         "start_time": row["device_timestamp"],
-                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose": row[
-                            "glucose"
-                        ],
+                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl": glucose_value,
                     }
                 else:
                     current_event[
-                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose"
+                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                     ] = (
                         max(
                             current_event[
-                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose"
+                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                             ],
-                            row["glucose"],
+                            glucose_value,
                         )
                         if event_type == "hyper"
                         else min(
                             current_event[
-                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose"
+                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                             ],
-                            row["glucose"],
+                            glucose_value,
                         )
                     )
             else:
@@ -127,19 +126,26 @@ class CGMEventsProcessor:
                 df.iloc[i]["device_timestamp"]
                 - df.iloc[i - 1]["device_timestamp"]
             ).total_seconds() / 60
-            glucose_diff = df.iloc[i]["glucose"] - df.iloc[i - 1]["glucose"]
+            glucose_diff = (
+                df.iloc[i]["glucose_mgdl"] - df.iloc[i - 1]["glucose_mgdl"]
+            )
 
             if glucose_diff > 20 and time_diff <= 15:
                 if current_spike is None:
                     current_spike = {
                         "start_time": df.iloc[i - 1]["device_timestamp"],
-                        "initial_glucose": df.iloc[i - 1]["glucose"],
-                        "peak_glucose": df.iloc[i]["glucose"],
+                        "initial_glucose_mgdl": df.iloc[i - 1]["glucose_mgdl"],
+                        "peak_glucose_mgdl": df.iloc[i]["glucose_mgdl"],
                         "peak_glucose_time": df.iloc[i]["device_timestamp"],
                     }
                 else:
-                    if df.iloc[i]["glucose"] > current_spike["peak_glucose"]:
-                        current_spike["peak_glucose"] = df.iloc[i]["glucose"]
+                    if (
+                        df.iloc[i]["glucose_mgdl"]
+                        > current_spike["peak_glucose_mgdl"]
+                    ):
+                        current_spike["peak_glucose_mgdl"] = df.iloc[i][
+                            "glucose_mgdl"
+                        ]
                         current_spike["peak_glucose_time"] = df.iloc[i][
                             "device_timestamp"
                         ]
@@ -196,19 +202,26 @@ class CGMEventsProcessor:
                 df.iloc[i]["device_timestamp"]
                 - df.iloc[i - 1]["device_timestamp"]
             ).total_seconds() / 60
-            glucose_diff = df.iloc[i - 1]["glucose"] - df.iloc[i]["glucose"]
+            glucose_diff = (
+                df.iloc[i - 1]["glucose_mgdl"] - df.iloc[i]["glucose_mgdl"]
+            )
 
             if glucose_diff > 25 and time_diff <= 30:
                 if current_drop is None:
                     current_drop = {
                         "start_time": df.iloc[i - 1]["device_timestamp"],
-                        "initial_glucose": df.iloc[i - 1]["glucose"],
-                        "lowest_glucose": df.iloc[i]["glucose"],
+                        "initial_glucose_mgdl": df.iloc[i - 1]["glucose_mgdl"],
+                        "lowest_glucose_mgdl": df.iloc[i]["glucose_mgdl"],
                         "lowest_glucose_time": df.iloc[i]["device_timestamp"],
                     }
                 else:
-                    if df.iloc[i]["glucose"] < current_drop["lowest_glucose"]:
-                        current_drop["lowest_glucose"] = df.iloc[i]["glucose"]
+                    if (
+                        df.iloc[i]["glucose_mgdl"]
+                        < current_drop["lowest_glucose_mgdl"]
+                    ):
+                        current_drop["lowest_glucose_mgdl"] = df.iloc[i][
+                            "glucose_mgdl"
+                        ]
                         current_drop["lowest_glucose_time"] = df.iloc[i][
                             "device_timestamp"
                         ]

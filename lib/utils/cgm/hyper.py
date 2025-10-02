@@ -8,11 +8,11 @@ from lib.utils.cgm.events import execute_query
 
 def fetch_hyper_stats(
     clickhouse_store, patient_id, start_date_str, end_date_str
-):
+) -> Dict[str, Any]:
     query = f"""
     SELECT
         time AS device_timestamp,
-        glucose_level AS glucose
+        glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
@@ -25,8 +25,8 @@ def fetch_hyper_stats(
     df = execute_query(clickhouse_store, query)
     if df.empty:
         return {
-            "total_hyper_duration": 0,
-            "average_hyper_duration": 0,
+            "total_hyper_duration_minutes": 0,
+            "average_hyper_duration_minutes": 0,
             "hyper_events": [],
             "hyper_events_count": 0,
         }
@@ -39,16 +39,16 @@ def process_hyper_events(df: pd.DataFrame, threshold: int) -> Dict[str, Any]:
     current_hyper_event = None
 
     for _, row in df.iterrows():
-        if row["glucose"] > threshold:
+        if row["glucose_mgdl"] > threshold:
             if current_hyper_event is None:
                 current_hyper_event = {
                     "start_time": row["device_timestamp"],
-                    "peak_glucose": row["glucose"],
+                    "peak_glucose": row["glucose_mgdl"],
                 }
             else:
                 current_hyper_event["peak_glucose"] = max(
                     current_hyper_event["peak_glucose"],
-                    row["glucose"],
+                    row["glucose_mgdl"],
                 )
         else:
             if current_hyper_event is not None:
@@ -76,17 +76,17 @@ def process_hyper_events(df: pd.DataFrame, threshold: int) -> Dict[str, Any]:
             )
         )
 
-    total_hyper_duration = sum(
+    total_hyper_duration_minutes = sum(
         event.duration_minutes for event in hyper_events
     )
-    average_hyper_duration = (
-        total_hyper_duration / len(hyper_events) if hyper_events else 0
+    average_hyper_duration_minutes = (
+        total_hyper_duration_minutes / len(hyper_events) if hyper_events else 0
     )
     hyper_events_count = len(hyper_events)
 
     return {
-        "total_hyper_duration": total_hyper_duration,
-        "average_hyper_duration": average_hyper_duration,
+        "total_hyper_duration_minutes": total_hyper_duration_minutes,
+        "average_hyper_duration_minutes": average_hyper_duration_minutes,
         "hyper_events": hyper_events,
         "hyper_events_count": hyper_events_count,
     }

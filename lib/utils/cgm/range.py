@@ -51,13 +51,17 @@ class CGMRangeStatsFetcher:
         results = {}
         for key, query in queries.items():
             result = clickhouse_store.client.execute(query)
-            percentage = validate_float(result[0][2] if result else 0.0)
+            percentage = validate_float(
+                result[0][2] if result and len(result[0]) > 2 else 0.0
+            )
             results[key] = percentage
 
         return CGMRangeStats(
-            below_54=results["below_54"],
-            below_70_above_54=results["below_70_above_54"],
-            in_target_70_180=results["in_target_70_180"],
-            above_180_below_250=results["above_180_below_250"],
-            above_250=results["above_250"],
+            below_54_percent=results.get("below_54", 0.0),
+            below_70_above_54_percent=results.get("below_70_above_54", 0.0),
+            in_target_70_180_percent=results.get("in_target_70_180", 0.0),
+            above_180_below_250_percent=results.get(
+                "above_180_below_250", 0.0
+            ),
+            above_250_percent=results.get("above_250", 0.0),
         )

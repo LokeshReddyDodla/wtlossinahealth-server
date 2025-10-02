@@ -20,6 +20,13 @@ from lib.utils.cgm.range import CGMRangeStatsFetcher
 from lib.utils.cgm.summary import CGMSummaryStatsFetcher
 from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
 
+from typing import List, Optional, Dict
+import hashlib
+from datetime import datetime
+
+from lib.schemas.cgm_stats import CGMStats, CGMReading
+from lib.utils.cgm.events import execute_query
+
 
 class CGMReportType:
     DAILY = "daily"
@@ -32,8 +39,8 @@ class CGMStatsProcessor:
         self,
         clickhouse_store,
         meal_service,
-        fitness_stats_processor: FitnessStatsProcessor,
-        meal_report_service: MealReportService,
+        fitness_stats_processor,
+        meal_report_service,
     ):
         self.clickhouse_store = clickhouse_store
         self.meal_service = meal_service
@@ -53,10 +60,10 @@ class CGMStatsProcessor:
         if not data:
             return []
 
-        readings = [
-            CGMReading(device_timestamp=row[0], glucose=row[1]) for row in data
+        return [
+            CGMReading(device_timestamp=row[0], glucose_mgdl=row[1])
+            for row in data
         ]
-        return readings
 
     def get_hourly_avg_cgm_readings(
         self, patient_id: str, start_date_str: str, end_date_str: str
@@ -68,10 +75,10 @@ class CGMStatsProcessor:
         if not data:
             return []
 
-        grouped = [
-            CGMReading(device_timestamp=row[1], glucose=row[2]) for row in data
+        return [
+            CGMReading(device_timestamp=row[1], glucose_mgdl=row[2])
+            for row in data
         ]
-        return grouped
 
     def get_cgm_readings_around_meal(
         self,
@@ -80,7 +87,6 @@ class CGMStatsProcessor:
         before_minutes=15,
         after_minutes=90,
     ):
-        """Fetch cgm readings around the meal time."""
         query = generate_cgm_readings_around_meal_query(
             patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),

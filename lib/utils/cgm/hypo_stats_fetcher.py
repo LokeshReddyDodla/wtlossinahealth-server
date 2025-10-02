@@ -12,7 +12,7 @@ class HypoStatsFetcher(CGMEventsProcessor):
         query = f"""
         SELECT
             time AS device_timestamp,
-            glucose_level AS glucose
+            glucose_level AS glucose_mgdl
         FROM
             aihealth.cgm_data
         WHERE

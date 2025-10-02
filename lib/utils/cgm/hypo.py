@@ -8,11 +8,11 @@ from lib.utils.cgm.events import execute_query
 
 def fetch_hypo_stats(
     clickhouse_store, patient_id, start_date_str, end_date_str
-):
+) -> Dict[str, Any]:
     query = f"""
     SELECT
         time AS device_timestamp,
-        glucose_level AS glucose
+        glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
@@ -25,8 +25,8 @@ def fetch_hypo_stats(
     df = execute_query(clickhouse_store, query)
     if df.empty:
         return {
-            "total_hypo_duration": 0,
-            "average_hypo_duration": 0,
+            "total_hypo_duration_minutes": 0,
+            "average_hypo_duration_minutes": 0,
             "hypo_events": [],
             "hypo_events_count": 0,
         }
@@ -39,16 +39,16 @@ def process_hypo_events(df: pd.DataFrame, threshold: int) -> Dict[str, Any]:
     current_hypo_event = None
 
     for _, row in df.iterrows():
-        if row["glucose"] < threshold:
+        if row["glucose_mgdl"] < threshold:
             if current_hypo_event is None:
                 current_hypo_event = {
                     "start_time": row["device_timestamp"],
-                    "lowest_glucose": row["glucose"],
+                    "lowest_glucose_mgdl": row["glucose_mgdl"],
                 }
             else:
-                current_hypo_event["lowest_glucose"] = min(
-                    current_hypo_event["lowest_glucose"],
-                    row["glucose"],
+                current_hypo_event["lowest_glucose_mgdl"] = min(
+                    current_hypo_event["lowest_glucose_mgdl"],
+                    row["glucose_mgdl"],
                 )
         else:
             if current_hypo_event is not None:

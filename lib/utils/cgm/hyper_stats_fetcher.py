@@ -12,7 +12,7 @@ class HyperStatsFetcher(CGMEventsProcessor):
         query = f"""
         SELECT
             time AS device_timestamp,
-            glucose_level AS glucose
+            glucose_level AS glucose_mgdl
         FROM
             aihealth.cgm_data
         WHERE
@@ -22,6 +22,7 @@ class HyperStatsFetcher(CGMEventsProcessor):
         ORDER BY time
         """
         df = execute_query(clickhouse_store, query)
+
         if df.empty:
             return HyperStats(
                 total_hyper_duration_minutes=0,
