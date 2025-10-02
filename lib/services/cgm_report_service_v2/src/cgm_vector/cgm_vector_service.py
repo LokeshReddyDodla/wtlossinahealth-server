@@ -3,10 +3,10 @@ import logging
 from typing import Any, List, Optional
 import uuid
 from qdrant_client.models import PointStruct
+from openai import AsyncOpenAI
 
 from lib.core.qdrant_store import QdrantStore
 from lib.services.cgm_report_service_v2.src.cgm_vector.section_configs import (
-    ReportPeriodType,
     get_stats_section_names,
 )
 from lib.services.cgm_report_service_v2.src.cgm_vector.section_processor import (
@@ -16,6 +16,13 @@ from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import 
     CGMSectionTemplates,
 )
 from lib.utils.vector_utils import embed_text
+from qdrant_client.http.models import (
+    Filter,
+    FieldCondition,
+    MatchValue,
+    Condition,
+    MatchAny,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -30,18 +37,32 @@ class CGMVectorService:
         self.qdrant_store = qdrant_store
         self.collection_name = collection_name
         self.processor = CGMSectionProcessor()
+        self.openai_client = AsyncOpenAI()
+
+        self._patient_id = None
+        self._report_id = None
+        self._patient_age = None
+        self._patient_gender = None
 
     async def upsert_report(
-        self, patient_id: str, report_id: str, reports: List[Any]
+        self,
+        patient_id: str,
+        report_id: str,
+        reports: List[Any],
+        patient_age: int,
+        patient_gender: str,
     ):
+        self._patient_id = patient_id
+        self._report_id = report_id
+        self._patient_age = patient_age
+        self._patient_gender = patient_gender
+
         try:
             async with self.qdrant_store.get_client() as client:
                 points: list[PointStruct] = []
 
                 for report_data in reports:
                     period_points = await self._process_report_period(
-                        patient_id,
-                        report_id,
                         report_data,
                     )
                     points.extend(period_points)
@@ -54,51 +75,109 @@ class CGMVectorService:
                     )
 
             logger.info(
-                f"✅ Stored report {report_id} for patient {patient_id} in Qdrant with {len(points)} points"
+                f"✅ Stored report {self._report_id} for patient {self._patient_id} in Qdrant with {len(points)} points"
             )
 
         except Exception as e:
             logger.error(
-                f"❌ Failed to upsert CGM report {report_id} "
-                f"for patient {patient_id}: {e}"
+                f"❌ Failed to upsert CGM report {self._report_id} "
+                f"for patient {self._patient_id}: {e}"
             )
             raise
 
-    async def _create_point(
+        finally:
+            # Reset after use so we don’t leak values
+            self._patient_id = None
+            self._report_id = None
+            self._patient_age = None
+            self._patient_gender = None
+
+    def _bucket_time(self, hour: int) -> str:
+        if 6 <= hour < 12:
+            return "morning"
+        elif 12 <= hour < 18:
+            return "afternoon"
+        elif 18 <= hour < 24:
+            return "evening"
+        else:
+            return "night"
+
+    def _time_buckets_for_range(
+        self, start_time: datetime, end_time: datetime
+    ) -> list[str]:
+        buckets = set()
+
+        # If start and end are the same day
+        if start_time.date() == end_time.date():
+            for hour in range(start_time.hour, end_time.hour + 1):
+                buckets.add(self._bucket_time(hour))
+        else:
+            # If range spans multiple days → treat as "all_day"
+            buckets = {"all_day"}
+
+        return sorted(buckets)
+
+    def _create_point_info(
         self,
-        patient_id: str,
-        report_id: str,
         data_type: str,
         text_repr: str,
         start_time: datetime,
         end_time: datetime,
         additional_payload: Optional[dict] = None,
-    ) -> PointStruct:
-        vector = await embed_text(text_repr)
-
-        start_time_ms = int(start_time.timestamp() * 1000)
-        end_time_ms = int(end_time.timestamp() * 1000)
-
-        payload = {
-            "patient_id": patient_id,
-            "report_id": report_id,
+    ) -> dict:
+        return {
             "data_type": data_type,
-            "start_time": start_time_ms,
-            "end_time": end_time_ms,
             "text_repr": text_repr,
+            "start_time": start_time,
+            "end_time": end_time,
+            "additional_payload": additional_payload or {},
         }
 
-        if additional_payload:
-            payload.update(additional_payload)
+    async def _batch_create_points(
+        self,
+        point_infos: list[dict],
+    ) -> list[PointStruct]:
+        texts = [info["text_repr"] for info in point_infos]
 
-        return PointStruct(
-            id=str(uuid.uuid4()), vector=vector, payload=payload
+        response = await self.openai_client.embeddings.create(
+            model="text-embedding-3-small", input=texts
         )
+
+        points: list[PointStruct] = []
+        for i, info in enumerate(point_infos):
+            embedding = response.data[i].embedding
+            payload = {
+                "patient_id": self._patient_id,
+                "patient_age": self._patient_age,
+                "patient_gender": self._patient_gender,
+                "report_id": self._report_id,
+                "data_type": info["data_type"],
+                "text_repr": info["text_repr"],
+                "start_time": int(info["start_time"].timestamp() * 1000),
+                "end_time": int(info["end_time"].timestamp() * 1000),
+                "date": info["start_time"].date().isoformat(),
+                "day_of_week": info["start_time"].weekday(),
+                "is_weekend": info["start_time"].weekday() >= 5,
+                "week_number": info["start_time"].isocalendar()[1],
+                "month": info["start_time"].month,
+                "time_of_day_bucket": self._time_buckets_for_range(
+                    info["start_time"], info["end_time"]
+                ),
+            }
+
+            if "additional_payload" in info and info["additional_payload"]:
+                payload.update(info["additional_payload"])
+
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid4()), vector=embedding, payload=payload
+                )
+            )
+
+        return points
 
     async def _process_main_sections(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
@@ -113,7 +192,6 @@ class CGMVectorService:
 
             summary_text, section_payload = (
                 self.processor.generate_section_summary(
-                    patient_id,
                     section_name,
                     report_data[section_name],
                     start_time,
@@ -121,10 +199,8 @@ class CGMVectorService:
                 )
             )
 
-            point = await self._create_point(
-                patient_id=patient_id,
-                report_id=report_id,
-                data_type=f"{section_name}",
+            point = self._create_point_info(
+                data_type=section_name,
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
@@ -138,8 +214,6 @@ class CGMVectorService:
 
     async def _process_events(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
     ) -> List[PointStruct]:
         points: list[PointStruct] = []
@@ -159,22 +233,19 @@ class CGMVectorService:
 
             for event in events:
                 summary_text, _ = self.processor.generate_section_summary(
-                    patient_id,
                     event_data_type,
                     event,
                     event["start_time"],
                     event["end_time"],
                 )
 
-                point = await self._create_point(
-                    patient_id=patient_id,
-                    report_id=report_id,
+                point = self._create_point_info(
                     data_type=f"{event_data_type}",
                     text_repr=summary_text,
                     start_time=event["start_time"],
                     end_time=event["end_time"],
                     additional_payload={
-                        "duration": event.get("duration"),
+                        "duration_minutes": event.get("duration_minutes"),
                         **{
                             k: v
                             for k, v in event.items()
@@ -188,8 +259,6 @@ class CGMVectorService:
 
     async def _process_rapid_change_stats(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
@@ -207,13 +276,14 @@ class CGMVectorService:
             if stats_data:
                 summary_text, section_payload = (
                     self.processor.generate_section_summary(
-                        patient_id, data_type, stats_data, start_time, end_time
+                        data_type,
+                        stats_data,
+                        start_time,
+                        end_time,
                     )
                 )
 
-                point = await self._create_point(
-                    patient_id=patient_id,
-                    report_id=report_id,
+                point = self._create_point_info(
                     data_type=f"{data_type}",
                     text_repr=summary_text,
                     start_time=start_time,
@@ -228,8 +298,6 @@ class CGMVectorService:
 
     async def _process_time_period_stats(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
@@ -240,12 +308,13 @@ class CGMVectorService:
 
         for period_name, period_data in time_period_stats.items():
             summary_text = CGMSectionTemplates.time_period_stats(
-                patient_id, period_name, start_time, end_time, period_data
+                period_name,
+                start_time,
+                end_time,
+                period_data,
             )
 
-            point = await self._create_point(
-                patient_id=patient_id,
-                report_id=report_id,
+            point = self._create_point_info(
                 data_type=f"time_period_stats",
                 text_repr=summary_text,
                 start_time=start_time,
@@ -263,8 +332,6 @@ class CGMVectorService:
 
     async def _process_agp_points(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
         start_time: datetime,
         end_time: datetime,
@@ -280,18 +347,27 @@ class CGMVectorService:
 
         for agp_point in agp_points:
             summary_text = CGMSectionTemplates.agp_point(
-                patient_id, start_str, end_str, agp_point
+                start_str, end_str, agp_point
             )
 
-            point = await self._create_point(
-                patient_id=patient_id,
-                report_id=report_id,
+            hour_str = agp_point.get("hour")
+            hour_val = None
+            if hour_str:
+                try:
+                    dt = datetime.strptime(
+                        hour_str, "%I:%M %p"
+                    )  # parse 12-hr time
+                    hour_val = dt.hour
+                except ValueError:
+                    hour_val = None
+
+            point = self._create_point_info(
                 data_type=f"agp_point",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
                 additional_payload={
-                    "hour": agp_point.get("hour"),
+                    "hour": hour_val,
                     "data": agp_point,
                 },
             )
@@ -301,15 +377,13 @@ class CGMVectorService:
 
     async def _process_report_period(
         self,
-        patient_id: str,
-        report_id: str,
         report_data: dict,
     ) -> List[PointStruct]:
         """Process a single report period"""
         start_time = report_data["start_date"]
         end_time = report_data["end_date"]
 
-        points: list[PointStruct] = []
+        point_infos = []
 
         process_methods = [
             self._process_main_sections,
@@ -319,22 +393,70 @@ class CGMVectorService:
         ]
 
         for method in process_methods:
-            points.extend(
-                await method(
-                    patient_id,
-                    report_id,
-                    report_data,
-                    start_time,
-                    end_time,
-                )
+            infos = await method(report_data, start_time, end_time)
+            point_infos.extend(infos)
+
+        point_infos.extend(await self._process_events(report_data))
+
+        return await self._batch_create_points(point_infos)
+
+    async def search_similar_reports(
+        self,
+        query_embedding: list[float],
+        filter_conditions: Optional[Filter] = None,
+        limit: int = 5,
+        data_types: Optional[list[str]] = None,
+        score_threshold: Optional[float] = None,
+        patient_id: Optional[str] = None,
+    ):
+        """
+        Search for similar CGM reports using vector similarity.
+
+        Args:
+            query_embedding: The query vector
+            filter_conditions: Pre-built Qdrant filter (takes precedence)
+            limit: Maximum number of results to return
+            data_types: Filter by specific data types (e.g., ['hyper_event', 'cgm_summary_stats'])
+            score_threshold: Minimum similarity score (0-1)
+            patient_id: Filter by specific patient
+        """
+        async with self.qdrant_store.get_client() as client:
+            # Build filter conditions if not provided
+            if not filter_conditions:
+                conditions: List[Condition] = []
+
+                # Add data type filter
+                if data_types:
+                    conditions.append(
+                        FieldCondition(
+                            key="data_type",
+                            match=MatchAny(
+                                any=data_types
+                            ),  # More efficient than should
+                        )
+                    )
+
+                # Add patient filter if specified
+                if patient_id:
+                    conditions.append(
+                        FieldCondition(
+                            key="patient_id",
+                            match=MatchValue(value=patient_id),
+                        )
+                    )
+
+                # Only create Filter if we have conditions
+                if conditions:
+                    filter_conditions = Filter(must=conditions)
+
+            logger.debug(
+                f"Searching with filter: {filter_conditions}, limit: {limit}"
             )
 
-        points.extend(
-            await self._process_events(
-                patient_id,
-                report_id,
-                report_data,
+            return await client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=limit,
+                query_filter=filter_conditions,
+                score_threshold=score_threshold,
             )
-        )
-
-        return points
