@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import List
 
 import pandas as pd
-from numpy import NaN
 
 from lib.schemas.cgm_stats import AGPPoint, CGMSummaryStats
 from lib.utils.cgm.queries import (
@@ -91,11 +90,11 @@ class CGMSummaryStatsFetcher:
         agp_points = [
             AGPPoint(
                 hour=row[1],
-                tenth_percentile=row[2],
-                twenty_fifth_percentile=row[3],
+                percentile_10=row[2],
+                percentile_25=row[3],
                 median=row[4],
-                seventy_fifth_percentile=row[5],
-                ninetieth_percentile=row[6],
+                percentile_75=row[5],
+                percentile_90=row[6],
             )
             for row in agp_result
         ]

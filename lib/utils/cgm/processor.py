@@ -54,8 +54,7 @@ class CGMStatsProcessor:
             return []
 
         readings = [
-            CGMReading(Device_Timestamp=row[0], Glucose_Level=row[1])
-            for row in data
+            CGMReading(device_timestamp=row[0], glucose=row[1]) for row in data
         ]
         return readings
 
@@ -70,8 +69,7 @@ class CGMStatsProcessor:
             return []
 
         grouped = [
-            CGMReading(Device_Timestamp=row[1], Glucose_Level=row[2])
-            for row in data
+            CGMReading(device_timestamp=row[1], glucose=row[2]) for row in data
         ]
         return grouped
 

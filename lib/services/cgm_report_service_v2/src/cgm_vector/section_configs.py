@@ -50,9 +50,9 @@ CGM_SUMMARY_CONFIG = CGMSectionConfig(
 HYPER_STATS_CONFIG = CGMSectionConfig(
     name="hyper_stats",
     keys=[
-        "total_hyper_duration",
+        "total_hyper_duration_minutes",
         "hyper_events_count",
-        "average_hyper_duration",
+        "average_hyper_duration_minutes",
     ],
     template_method="hyper_stats",
     call_signature="stats",
@@ -61,9 +61,9 @@ HYPER_STATS_CONFIG = CGMSectionConfig(
 HYPO_STATS_CONFIG = CGMSectionConfig(
     name="hypo_stats",
     keys=[
-        "total_hypo_duration",
+        "total_hypo_duration_minutes",
         "hypo_events_count",
-        "average_hypo_duration",
+        "average_hypo_duration_minutes",
     ],
     template_method="hypo_stats",
     call_signature="stats",
@@ -72,8 +72,8 @@ HYPO_STATS_CONFIG = CGMSectionConfig(
 RAPID_SPIKE_STATS_CONFIG = CGMSectionConfig(
     name="rapid_spike_stats",
     keys=[
-        "total_spike_duration",
-        "average_spike_duration",
+        "total_spike_duration_minutes",
+        "average_spike_duration_minutes",
         "spike_events_count",
     ],
     template_method="rapid_spike_stats",
@@ -83,8 +83,8 @@ RAPID_SPIKE_STATS_CONFIG = CGMSectionConfig(
 RAPID_DROP_STATS_CONFIG = CGMSectionConfig(
     name="rapid_drop_stats",
     keys=[
-        "total_drop_duration",
-        "average_drop_duration",
+        "total_drop_duration_minutes",
+        "average_drop_duration_minutes",
         "drop_events_count",
     ],
     template_method="rapid_drop_stats",
@@ -94,14 +94,14 @@ RAPID_DROP_STATS_CONFIG = CGMSectionConfig(
 # Event configurations
 HYPER_EVENT_CONFIG = CGMSectionConfig(
     name="hyper_event",
-    keys=["start_time", "end_time", "duration", "peak_glucose_level"],
+    keys=["start_time", "end_time", "duration_minutes", "peak_glucose"],
     template_method="hyper_event",
     call_signature="event",
 )
 
 HYPO_EVENT_CONFIG = CGMSectionConfig(
     name="hypo_event",
-    keys=["start_time", "end_time", "duration", "lowest_glucose_level"],
+    keys=["start_time", "end_time", "duration_minutes", "lowest_glucose"],
     template_method="hypo_event",
     call_signature="event",
 )
@@ -111,9 +111,9 @@ RAPID_SPIKE_EVENT_CONFIG = CGMSectionConfig(
     keys=[
         "start_time",
         "end_time",
-        "duration",
-        "initial_glucose_level",
-        "peak_glucose_level",
+        "duration_minutes",
+        "initial_glucose",
+        "peak_glucose",
         "peak_glucose_time",
     ],
     template_method="rapid_spike_event",
@@ -125,9 +125,9 @@ RAPID_DROP_EVENT_CONFIG = CGMSectionConfig(
     keys=[
         "start_time",
         "end_time",
-        "duration",
-        "initial_glucose_level",
-        "lowest_glucose_level",
+        "duration_minutes",
+        "initial_glucose",
+        "lowest_glucose",
         "lowest_glucose_time",
     ],
     template_method="rapid_drop_event",

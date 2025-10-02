@@ -5,11 +5,11 @@ def generate_hourly_agp_points_cgm_query(
     SELECT
         toHour(time) AS hour_24,
         formatDateTime(time, '%I:00 %p') AS hour,
-        quantile(0.10)(glucose_level) AS tenth_percentile,
-        quantile(0.25)(glucose_level) AS twenty_fifth_percentile,
+        quantile(0.10)(glucose_level) AS percentile_10,
+        quantile(0.25)(glucose_level) AS percentile_25,
         quantile(0.50)(glucose_level) AS median,
-        quantile(0.75)(glucose_level) AS seventy_fifth_percentile,
-        quantile(0.90)(glucose_level) AS ninetieth_percentile
+        quantile(0.75)(glucose_level) AS percentile_75,
+        quantile(0.90)(glucose_level) AS percentile_90
     FROM
         aihealth.cgm_data
     WHERE
@@ -103,8 +103,8 @@ def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
 def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
     return f"""
     SELECT
-        time AS Device_Timestamp,
-        glucose_level AS Glucose_Level
+        time AS device_timestamp,
+        glucose_level AS glucose
     FROM
         aihealth.cgm_data
     WHERE

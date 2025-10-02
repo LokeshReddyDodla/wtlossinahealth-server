@@ -19,24 +19,24 @@ class CGMRangeStats(BaseModel):
 class CGMEvent(BaseModel):
     start_time: datetime
     end_time: datetime
-    duration: float
+    duration_minutes: float
 
 
 class HyperEvent(CGMEvent):
-    peak_glucose_level: float
+    peak_glucose: float
 
 
 class HypoEvent(CGMEvent):
-    lowest_glucose_level: float
+    lowest_glucose: float
 
 
 class AGPPoint(BaseModel):
     hour: str
     median: float
-    tenth_percentile: float
-    ninetieth_percentile: float
-    twenty_fifth_percentile: float
-    seventy_fifth_percentile: float
+    percentile_10: float
+    percentile_25: float
+    percentile_75: float
+    percentile_90: float
 
 
 class CGMSummaryStats(BaseModel):
@@ -56,15 +56,15 @@ class CGMSummaryStats(BaseModel):
 class RapidSpikeEvent(BaseModel):
     start_time: datetime
     end_time: datetime
-    initial_glucose_level: float
-    peak_glucose_level: float
+    initial_glucose: float
+    peak_glucose: float
     peak_glucose_time: datetime
-    duration: float
+    duration_minutes: float
 
 
 class RapidSpikeStats(BaseModel):
-    total_spike_duration: float
-    average_spike_duration: float
+    total_spike_duration_minutes: float
+    average_spike_duration_minutes: float
     spike_events_count: int
     spike_events: List[RapidSpikeEvent]
 
@@ -72,38 +72,38 @@ class RapidSpikeStats(BaseModel):
 class RapidDropEvent(BaseModel):
     start_time: datetime
     end_time: datetime
-    initial_glucose_level: float
-    lowest_glucose_level: float
+    initial_glucose: float
+    lowest_glucose: float
     lowest_glucose_time: datetime
-    duration: float
+    duration_minutes: float
 
 
 class RapidDropStats(BaseModel):
-    total_drop_duration: float
-    average_drop_duration: float
+    total_drop_duration_minutes: float
+    average_drop_duration_minutes: float
     drop_events_count: int
     drop_events: List[RapidDropEvent]
 
 
 class HyperStats(BaseModel):
-    total_hyper_duration: float
-    average_hyper_duration: float
+    total_hyper_duration_minutes: float
+    average_hyper_duration_minutes: float
     hyper_events_count: int
     hyper_events: List[HyperEvent]
     rapid_spike_stats: RapidSpikeStats
 
 
 class HypoStats(BaseModel):
-    total_hypo_duration: float
-    average_hypo_duration: float
+    total_hypo_duration_minutes: float
+    average_hypo_duration_minutes: float
     hypo_events_count: int
     hypo_events: List[HypoEvent]
     rapid_drop_stats: RapidDropStats
 
 
 class CGMReading(BaseModel):
-    Device_Timestamp: Union[datetime, str]
-    Glucose_Level: float
+    device_timestamp: Union[datetime, str]
+    glucose: float
 
 
 class CGMTimePeriodStats(BaseModel):
@@ -119,11 +119,13 @@ class CGMStats(BaseModel):
     start_date: datetime
     end_date: datetime
     report_type: str
+
     cgm_readings: Optional[List[CGMReading]] = None
     cgm_summary_stats: CGMSummaryStats
     cgm_range_stats: CGMRangeStats
     hyper_stats: Optional[HyperStats]
     hypo_stats: Optional[HypoStats]
     time_period_stats: Optional[Dict[str, CGMTimePeriodStats]]
+
     fitness_report: Optional[FitnessStats] = None
     meal_report_id: Optional[str] = None

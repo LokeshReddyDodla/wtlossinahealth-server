@@ -11,8 +11,8 @@ class HyperStatsFetcher(CGMEventsProcessor):
     ) -> HyperStats:
         query = f"""
         SELECT
-            time AS Device_Timestamp,
-            glucose_level AS Glucose_Level
+            time AS device_timestamp,
+            glucose_level AS glucose
         FROM
             aihealth.cgm_data
         WHERE
@@ -24,13 +24,13 @@ class HyperStatsFetcher(CGMEventsProcessor):
         df = execute_query(clickhouse_store, query)
         if df.empty:
             return HyperStats(
-                total_hyper_duration=0,
-                average_hyper_duration=0,
+                total_hyper_duration_minutes=0,
+                average_hyper_duration_minutes=0,
                 hyper_events_count=0,
                 hyper_events=[],
                 rapid_spike_stats=RapidSpikeStats(
-                    total_spike_duration=0,
-                    average_spike_duration=0,
+                    total_spike_duration_minutes=0,
+                    average_spike_duration_minutes=0,
                     spike_events_count=0,
                     spike_events=[],
                 ),
@@ -40,8 +40,12 @@ class HyperStatsFetcher(CGMEventsProcessor):
         rapid_spikes = self.process_rapid_spikes(df)
 
         return HyperStats(
-            total_hyper_duration=processed_events["total_hyper_duration"],
-            average_hyper_duration=processed_events["average_hyper_duration"],
+            total_hyper_duration_minutes=processed_events[
+                "total_hyper_duration_minutes"
+            ],
+            average_hyper_duration_minutes=processed_events[
+                "average_hyper_duration_minutes"
+            ],
             hyper_events_count=processed_events["hyper_events_count"],
             hyper_events=processed_events["hyper_events"],
             rapid_spike_stats=rapid_spikes,

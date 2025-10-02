@@ -11,8 +11,8 @@ def fetch_hyper_stats(
 ):
     query = f"""
     SELECT
-        time AS Device_Timestamp,
-        glucose_level AS Glucose_Level
+        time AS device_timestamp,
+        glucose_level AS glucose
     FROM
         aihealth.cgm_data
     WHERE
@@ -39,44 +39,46 @@ def process_hyper_events(df: pd.DataFrame, threshold: int) -> Dict[str, Any]:
     current_hyper_event = None
 
     for _, row in df.iterrows():
-        if row["Glucose_Level"] > threshold:
+        if row["glucose"] > threshold:
             if current_hyper_event is None:
                 current_hyper_event = {
-                    "start_time": row["Device_Timestamp"],
-                    "peak_glucose_level": row["Glucose_Level"],
+                    "start_time": row["device_timestamp"],
+                    "peak_glucose": row["glucose"],
                 }
             else:
-                current_hyper_event["peak_glucose_level"] = max(
-                    current_hyper_event["peak_glucose_level"],
-                    row["Glucose_Level"],
+                current_hyper_event["peak_glucose"] = max(
+                    current_hyper_event["peak_glucose"],
+                    row["glucose"],
                 )
         else:
             if current_hyper_event is not None:
-                duration = (
-                    row["Device_Timestamp"] - current_hyper_event["start_time"]
+                duration_minutes = (
+                    row["device_timestamp"] - current_hyper_event["start_time"]
                 ).total_seconds() / 60
                 hyper_events.append(
                     HyperEvent(
                         **current_hyper_event,
-                        end_time=row["Device_Timestamp"],
-                        duration=duration,
+                        end_time=row["device_timestamp"],
+                        duration_minutes=duration_minutes,
                     )
                 )
                 current_hyper_event = None
 
     if current_hyper_event is not None:
-        duration = (
-            df.iloc[-1]["Device_Timestamp"] - current_hyper_event["start_time"]
+        duration_minutes = (
+            df.iloc[-1]["device_timestamp"] - current_hyper_event["start_time"]
         ).total_seconds() / 60
         hyper_events.append(
             HyperEvent(
                 **current_hyper_event,
-                end_time=df.iloc[-1]["Device_Timestamp"],
-                duration=duration,
+                end_time=df.iloc[-1]["device_timestamp"],
+                duration_minutes=duration_minutes,
             )
         )
 
-    total_hyper_duration = sum(event.duration for event in hyper_events)
+    total_hyper_duration = sum(
+        event.duration_minutes for event in hyper_events
+    )
     average_hyper_duration = (
         total_hyper_duration / len(hyper_events) if hyper_events else 0
     )
