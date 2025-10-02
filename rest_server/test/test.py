@@ -17,11 +17,15 @@ from lib.dependencies.service_dependencies import (
     get_cgm_report_vector_service,
     get_cgm_vector_service,
     get_patient_connected_app_service,
+    get_patient_profile_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
     CGMVectorService,
+)
+from lib.services.cgm_report_service_v2.src.cgm_vector.temp import (
+    CGMSearchEngine,
 )
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
@@ -32,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
@@ -175,6 +180,9 @@ async def test_qdrant_cgm(
     cgm_report_vector_service: CGMReportVectorService = Depends(
         get_cgm_report_vector_service
     ),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
     cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
     session: AsyncSession = Depends(get_postgres_session),
 ):
@@ -184,8 +192,16 @@ async def test_qdrant_cgm(
         if not report:
             raise
 
+        patient_info = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, include_health_data=True
+        )
+
         await cgm_vector_service.upsert_report(
-            patient_id, report["overall"]["_id"], report["day_wise"]
+            patient_id,
+            report["overall"]["_id"],
+            report["day_wise"],
+            patient_info.age,
+            patient_info.gender,
         )
         return SuccessResponse(
             message="Report fetched successfully",
@@ -278,11 +294,6 @@ async def nl_to_qdrant_filter(query: str) -> dict:
     use "should" with "min_should" containing conditions and "min_count".  
     - Include as much filtering as possible based on the query.  
     - Output ONLY the filter object in JSON format.  
-
-    - Hour filtering:
-    • The field "data.hour" is stored as a string in the format "hh:mm AM/PM".
-    • When a user specifies an hour range (e.g., "6am–9am"), convert it to corresponding strings: "06:00 AM" to "09:00 AM".
-    • Use string comparison or exact matching for "data.hour".
     
     Example 1:
     Query: "What was the average glucose level in September?"
@@ -396,7 +407,7 @@ async def nl_to_qdrant_filter(query: str) -> dict:
     
     Example 6:
     Query: "Show AGP points for 6am–9am in September."
-    Note: "6am–9am" → "06:00 AM" to "09:00 AM".
+    Note: Hours are stored as integers (0–23), so 6am–9am → 6 to 9.
     Output:
     {{
         "must": [
@@ -406,7 +417,7 @@ async def nl_to_qdrant_filter(query: str) -> dict:
             }},
             {{
                 "key": "hour",
-                "range": {{"gte": "06:00 AM", "lt": "09:00 AM"}}
+                "range": {{"gte": 6, "lt": 9}}
             }},
             {{
                 "key": "start_time",
@@ -414,10 +425,13 @@ async def nl_to_qdrant_filter(query: str) -> dict:
             }},
             {{
                 "key": "end_time",
-                "range": {{"lt": 1759363200000}}
+                "range": {{"lt": 1759276800000}}
             }}
         ]
     }}
+
+
+    
     """
 
     response = await openai_client.chat.completions.create(
@@ -467,6 +481,26 @@ async def search_qdrant_nl(
             "filter": filter_conditions,
             "results": results,
         }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/qdrant/nl_search/v2")
+async def search_qdrant_nl(
+    query: str = Query(
+        ..., description="Natural language query to search for"
+    ),
+    limit: int = Query(5, description="Number of results to return"),
+    cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
+):
+    try:
+        search_engine = CGMSearchEngine(
+            openai_client=openai_client, vector_service=cgm_vector_service
+        )
+        result = await search_engine.search(query, limit)
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
