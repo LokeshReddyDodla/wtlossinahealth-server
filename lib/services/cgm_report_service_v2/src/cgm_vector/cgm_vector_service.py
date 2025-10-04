@@ -15,7 +15,6 @@ from lib.services.cgm_report_service_v2.src.cgm_vector.section_processor import 
 from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import (
     CGMSectionTemplates,
 )
-from lib.utils.vector_utils import embed_text
 from qdrant_client.http.models import (
     Filter,
     FieldCondition,
@@ -424,19 +423,18 @@ class CGMVectorService:
             List of matching reports.
         """
         async with self.qdrant_store.get_client() as client:
-            filter_conditions = filter_conditions or self._build_filter(
-                data_types, patient_id
+            default_filter = self._build_filter(data_types, patient_id)
+            merged_filter = self._merge_filters(
+                filter_conditions, default_filter
             )
 
-            logger.debug(
-                f"Searching with filter: {filter_conditions}, limit: {limit}"
-            )
+            print(f"Searching with filter: {merged_filter}, limit: {limit}")
 
             return await client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
                 limit=limit,
-                query_filter=filter_conditions,
+                query_filter=merged_filter,
                 score_threshold=score_threshold,
             )
 
@@ -460,6 +458,19 @@ class CGMVectorService:
             return Filter(must=conditions)
 
         return None
+
+    def _merge_filters(
+        self, base_filter: Optional[Filter], extra_filter: Optional[Filter]
+    ) -> Optional[Filter]:
+        if base_filter and extra_filter:
+            return Filter(
+                must=(base_filter.must or []) + (extra_filter.must or []),  # type: ignore
+                should=(base_filter.should or [])
+                + (extra_filter.should or []),  # type: ignore
+                must_not=(base_filter.must_not or [])
+                + (extra_filter.must_not or []),  # type: ignore
+            )
+        return base_filter or extra_filter
 
     @staticmethod
     def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
