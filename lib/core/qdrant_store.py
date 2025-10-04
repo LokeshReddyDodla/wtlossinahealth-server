@@ -1,10 +1,18 @@
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Dict, Optional
 
 from decouple import config
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import VectorParams, Distance
+from qdrant_client.models import (
+    VectorParams,
+    Distance,
+    HnswConfigDiff,
+    IntegerIndexParams,
+    KeywordIndexParams,
+    IntegerIndexType,
+    KeywordIndexType,
+)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +44,7 @@ class QdrantStore:
                 )
                 logger.info("✅ Qdrant connected")
                 await self.ensure_collection()
+                await self.ensure_payload_indices()
             except Exception as e:
                 logger.exception("❌ Failed to connect to Qdrant")
                 raise
@@ -59,7 +68,55 @@ class QdrantStore:
                     vectors_config=VectorParams(
                         size=1536, distance=Distance.COSINE
                     ),
+                    hnsw_config=HnswConfigDiff(m=32, ef_construct=120),
                 )
+
+    async def ensure_payload_indices(self):
+        """Creates payload indices for frequently filtered fields for optimization."""
+        if not self.client:
+            raise RuntimeError("Qdrant client not connected")
+
+        fields_to_index: Dict[str, IntegerIndexParams | KeywordIndexParams] = {
+            # Timestamps and Month use IntegerIndexParams
+            "start_time": IntegerIndexParams(
+                type=IntegerIndexType.INTEGER, lookup=False, range=True
+            ),
+            "end_time": IntegerIndexParams(
+                type=IntegerIndexType.INTEGER, lookup=False, range=True
+            ),
+            "month": IntegerIndexParams(
+                type=IntegerIndexType.INTEGER, lookup=True, range=False
+            ),
+            # Categorical fields use KeywordIndexParams
+            "data_type": KeywordIndexParams(type=KeywordIndexType.KEYWORD),
+            "time_of_day_bucket": KeywordIndexParams(
+                type=KeywordIndexType.KEYWORD
+            ),
+            "patient_id": KeywordIndexParams(
+                type=KeywordIndexType.KEYWORD, is_tenant=True
+            ),
+        }
+
+        async with self.get_client() as client:
+            for field_name, index_params in fields_to_index.items():
+                index_type_str = index_params.__class__.__name__.replace(
+                    "IndexParams", ""
+                )
+
+                try:
+                    await client.create_payload_index(
+                        collection_name=QDRANT_COLLECTION,
+                        field_name=field_name,
+                        field_schema=index_params,  # <-- Correctly assigned the class instance
+                    )
+                    logger.info(
+                        f"✅ Indexed payload field: {field_name} ({index_type_str})"
+                    )
+                except Exception as e:
+                    if "already exists" not in str(e):
+                        logger.warning(
+                            f"⚠️ Could not create index for {field_name}: {e}"
+                        )
 
     @asynccontextmanager
     async def get_client(self) -> AsyncGenerator[AsyncQdrantClient, None]:
