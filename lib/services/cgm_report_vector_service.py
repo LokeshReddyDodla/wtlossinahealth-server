@@ -12,6 +12,7 @@ from qdrant_client.http.models import (
     MatchValue,
     MinShould,
     Condition,
+    MatchAny,
 )
 
 
@@ -448,33 +449,61 @@ class CGMReportVectorService:
 
     async def search_similar_reports(
         self,
-        filter_conditions,
         query_embedding: list[float],
+        filter_conditions: Optional[Filter] = None,
         limit: int = 5,
         data_types: Optional[list[str]] = None,
+        score_threshold: Optional[float] = None,
+        patient_id: Optional[str] = None,
     ):
+        """
+        Search for similar CGM reports using vector similarity.
+
+        Args:
+            query_embedding: The query vector
+            filter_conditions: Pre-built Qdrant filter (takes precedence)
+            limit: Maximum number of results to return
+            data_types: Filter by specific data types (e.g., ['hyper_event', 'cgm_summary_stats'])
+            score_threshold: Minimum similarity score (0-1)
+            patient_id: Filter by specific patient
+        """
         async with self.qdrant_store.get_client() as client:
-            if not filter_conditions and data_types:
-                conditions: List[Condition] = cast(
-                    List[Condition],
-                    [
+            # Build filter conditions if not provided
+            if not filter_conditions:
+                conditions: List[Condition] = []
+
+                # Add data type filter
+                if data_types:
+                    conditions.append(
                         FieldCondition(
-                            key="data_type", match=MatchValue(value=data_type)
+                            key="data_type",
+                            match=MatchAny(
+                                any=data_types
+                            ),  # More efficient than should
                         )
-                        for data_type in data_types
-                    ],
-                )
+                    )
 
-                filter_conditions = Filter(
-                    should=conditions,
-                    min_should=MinShould(conditions=conditions, min_count=1),
-                )
+                # Add patient filter if specified
+                if patient_id:
+                    conditions.append(
+                        FieldCondition(
+                            key="patient_id",
+                            match=MatchValue(value=patient_id),
+                        )
+                    )
 
-            print("==> filter_conditions: ", filter_conditions)
+                # Only create Filter if we have conditions
+                if conditions:
+                    filter_conditions = Filter(must=conditions)
+
+            logger.debug(
+                f"Searching with filter: {filter_conditions}, limit: {limit}"
+            )
 
             return await client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
-                limit=1000,
+                limit=limit,
                 query_filter=filter_conditions,
+                score_threshold=score_threshold,
             )
