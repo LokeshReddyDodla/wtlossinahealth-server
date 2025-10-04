@@ -20,6 +20,9 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
+    CGMSearchEngine,
+)
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -451,6 +454,15 @@ container.register(
     CGMVectorService,
     lambda: CGMVectorService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+container.register(
+    CGMSearchEngine,
+    lambda: CGMSearchEngine(
+        vector_service=cast(
+            CGMVectorService, container.resolve(CGMVectorService)
+        )
     ),
 )
 

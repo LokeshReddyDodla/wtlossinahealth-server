@@ -124,7 +124,7 @@ class CGMVectorService:
         start_time: datetime,
         end_time: datetime,
         additional_payload: Optional[dict] = None,
-    ) -> dict:
+    ) -> Any:
         return {
             "data_type": data_type,
             "text_repr": text_repr,
@@ -404,50 +404,29 @@ class CGMVectorService:
         self,
         query_embedding: list[float],
         filter_conditions: Optional[Filter] = None,
-        limit: int = 5,
-        data_types: Optional[list[str]] = None,
+        limit: int = 500,
+        data_types: Optional[List[str]] = None,
         score_threshold: Optional[float] = None,
         patient_id: Optional[str] = None,
     ):
         """
-        Search for similar CGM reports using vector similarity.
+        Search for reports similar to a given embedding with optional filtering.
 
         Args:
-            query_embedding: The query vector
-            filter_conditions: Pre-built Qdrant filter (takes precedence)
-            limit: Maximum number of results to return
-            data_types: Filter by specific data types (e.g., ['hyper_event', 'cgm_summary_stats'])
-            score_threshold: Minimum similarity score (0-1)
-            patient_id: Filter by specific patient
+            query_embedding: Vector embedding for the query.
+            filter_conditions: Pre-built Qdrant filter conditions.
+            limit: Max number of results to return.
+            data_types: Optional list of data_type strings to filter by.
+            patient_id: Optional patient ID filter.
+            score_threshold: Minimum score for returned results.
+
+        Returns:
+            List of matching reports.
         """
         async with self.qdrant_store.get_client() as client:
-            # Build filter conditions if not provided
-            if not filter_conditions:
-                conditions: List[Condition] = []
-
-                # Add data type filter
-                if data_types:
-                    conditions.append(
-                        FieldCondition(
-                            key="data_type",
-                            match=MatchAny(
-                                any=data_types
-                            ),  # More efficient than should
-                        )
-                    )
-
-                # Add patient filter if specified
-                if patient_id:
-                    conditions.append(
-                        FieldCondition(
-                            key="patient_id",
-                            match=MatchValue(value=patient_id),
-                        )
-                    )
-
-                # Only create Filter if we have conditions
-                if conditions:
-                    filter_conditions = Filter(must=conditions)
+            filter_conditions = filter_conditions or self._build_filter(
+                data_types, patient_id
+            )
 
             logger.debug(
                 f"Searching with filter: {filter_conditions}, limit: {limit}"
@@ -460,3 +439,34 @@ class CGMVectorService:
                 query_filter=filter_conditions,
                 score_threshold=score_threshold,
             )
+
+    def _build_filter(
+        self,
+        data_types: Optional[List[str]],
+        patient_id: Optional[str],
+    ) -> Optional[Filter]:
+        """
+        Build a Qdrant Filter from optional data_types and patient_id.
+        """
+        conditions: List[Condition] = []
+
+        if data_types:
+            conditions.append(self._create_data_type_condition(data_types))
+
+        if patient_id:
+            conditions.append(self._create_patient_id_condition(patient_id))
+
+        if conditions:
+            return Filter(must=conditions)
+
+        return None
+
+    @staticmethod
+    def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
+        return FieldCondition(key="data_type", match=MatchAny(any=data_types))
+
+    @staticmethod
+    def _create_patient_id_condition(patient_id: str) -> FieldCondition:
+        return FieldCondition(
+            key="patient_id", match=MatchValue(value=patient_id)
+        )

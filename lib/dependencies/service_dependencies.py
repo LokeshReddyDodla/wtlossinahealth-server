@@ -9,6 +9,9 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
+from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
+    CGMSearchEngine,
+)
 from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
     CGMVectorService,
 )
@@ -216,6 +219,10 @@ def get_cgm_report_vector_service() -> CGMReportVectorService:
     return cast(
         CGMReportVectorService, container.resolve(CGMReportVectorService)
     )
+
+
+def get_cgm_search_engine_service() -> CGMSearchEngine:
+    return cast(CGMSearchEngine, container.resolve(CGMSearchEngine))
 
 
 def get_cgm_vector_service() -> CGMVectorService:
