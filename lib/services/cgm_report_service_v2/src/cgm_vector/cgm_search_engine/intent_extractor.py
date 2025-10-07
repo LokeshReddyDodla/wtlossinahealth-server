@@ -21,6 +21,8 @@ class IntentExtractor:
         try:
             intent = await self.client.chat.completions.create(
                 model="gpt-4o",
+                temperature=0,
+                top_p=1,
                 response_model=SearchIntent,
                 messages=[
                     {"role": "system", "content": system_prompt},

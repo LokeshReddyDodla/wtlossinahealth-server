@@ -69,13 +69,23 @@ class FilterBuilder:
     def _add_month_filter(
         intent: SearchIntent, conditions: List[QdrantFieldCondition]
     ):
-        if intent.month_filter is not None:
-            conditions.append(
-                QdrantFieldCondition(
-                    key="month",
-                    match=QdrantMatchValue(value=intent.month_filter),
+        if intent.month_filters:
+            # If only one month, match that directly
+            if len(intent.month_filters) == 1:
+                conditions.append(
+                    QdrantFieldCondition(
+                        key="month",
+                        match=QdrantMatchValue(value=intent.month_filters[0]),
+                    )
                 )
-            )
+            else:
+                # If multiple months, use MatchAny
+                conditions.append(
+                    QdrantFieldCondition(
+                        key="month",
+                        match=QdrantMatchAny(any=intent.month_filters),
+                    )
+                )
 
     @staticmethod
     def _add_date_range_filter(

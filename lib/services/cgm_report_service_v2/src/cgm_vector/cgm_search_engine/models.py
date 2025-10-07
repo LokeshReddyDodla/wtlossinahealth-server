@@ -49,14 +49,16 @@ class SearchIntent(BaseModel):
         None, description="Reformulated query for vector similarity search."
     )
 
-    month_filter: Optional[int] = Field(
+    month_filters: Optional[List[int]] = Field(
         None,
-        ge=1,
-        le=12,
-        description="The specific month number (1-12) mentioned in the query (e.g., 'September' is 9). Use this INSTEAD of date_range for month queries.",
+        description="List of month numbers (1-12) mentioned in the query, e.g. [8, 9] for 'August to September'. Use this instead of date_range for month-based comparisons.",
     )
 
     time_buckets: List[str] = Field(
         default_factory=list,
         description="One or more time_of_day_bucket values (morning, afternoon, evening, night)",
+    )
+
+    confidence: float = Field(
+        ..., description="Confidence score (0.0–1.0) of interpretation"
     )
