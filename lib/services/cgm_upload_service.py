@@ -73,9 +73,9 @@ class CGMUploadService:
                 data_points.append(
                     {
                         "patient_id": str(patient_id),
-                        "time": row["Device Timestamp"].strftime(
-                            "%Y-%m-%dT%H:%M:%S"
-                        ),
+                        "time": row[
+                            "Device Timestamp"
+                        ],  # .strftime("%Y-%m-%dT%H:%M:%S")
                         "glucose_level": glucose_level,
                         "record_type": record_type,
                     }

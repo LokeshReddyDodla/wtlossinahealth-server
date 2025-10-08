@@ -11,8 +11,8 @@ class HypoStatsFetcher(CGMEventsProcessor):
     ) -> HypoStats:
         query = f"""
         SELECT
-            time AS Device_Timestamp,
-            glucose_level AS Glucose_Level
+            time AS device_timestamp,
+            glucose_level AS glucose_mgdl
         FROM
             aihealth.cgm_data
         WHERE
@@ -24,13 +24,13 @@ class HypoStatsFetcher(CGMEventsProcessor):
         df = execute_query(clickhouse_store, query)
         if df.empty:
             return HypoStats(
-                total_hypo_duration=0,
-                average_hypo_duration=0,
+                total_hypo_duration_minutes=0,
+                average_hypo_duration_minutes=0,
                 hypo_events_count=0,
                 hypo_events=[],
                 rapid_drop_stats=RapidDropStats(
-                    total_drop_duration=0,
-                    average_drop_duration=0,
+                    total_drop_duration_minutes=0,
+                    average_drop_duration_minutes=0,
                     drop_events_count=0,
                     drop_events=[],
                 ),
@@ -40,8 +40,12 @@ class HypoStatsFetcher(CGMEventsProcessor):
         rapid_drops = self.process_rapid_drops(df)
 
         return HypoStats(
-            total_hypo_duration=processed_events["total_hypo_duration"],
-            average_hypo_duration=processed_events["average_hypo_duration"],
+            total_hypo_duration_minutes=processed_events[
+                "total_hypo_duration_minutes"
+            ],
+            average_hypo_duration_minutes=processed_events[
+                "average_hypo_duration_minutes"
+            ],
             hypo_events_count=processed_events["hypo_events_count"],
             hypo_events=processed_events["hypo_events"],
             rapid_drop_stats=rapid_drops,

@@ -8,11 +8,11 @@ from lib.utils.cgm.events import execute_query
 
 def fetch_hypo_stats(
     clickhouse_store, patient_id, start_date_str, end_date_str
-):
+) -> Dict[str, Any]:
     query = f"""
     SELECT
-        time AS Device_Timestamp,
-        glucose_level AS Glucose_Level
+        time AS device_timestamp,
+        glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
@@ -25,8 +25,8 @@ def fetch_hypo_stats(
     df = execute_query(clickhouse_store, query)
     if df.empty:
         return {
-            "total_hypo_duration": 0,
-            "average_hypo_duration": 0,
+            "total_hypo_duration_minutes": 0,
+            "average_hypo_duration_minutes": 0,
             "hypo_events": [],
             "hypo_events_count": 0,
         }
@@ -39,52 +39,54 @@ def process_hypo_events(df: pd.DataFrame, threshold: int) -> Dict[str, Any]:
     current_hypo_event = None
 
     for _, row in df.iterrows():
-        if row["Glucose_Level"] < threshold:
+        if row["glucose_mgdl"] < threshold:
             if current_hypo_event is None:
                 current_hypo_event = {
-                    "start_time": row["Device_Timestamp"],
-                    "lowest_glucose_level": row["Glucose_Level"],
+                    "start_time": row["device_timestamp"],
+                    "lowest_glucose_mgdl": row["glucose_mgdl"],
                 }
             else:
-                current_hypo_event["lowest_glucose_level"] = min(
-                    current_hypo_event["lowest_glucose_level"],
-                    row["Glucose_Level"],
+                current_hypo_event["lowest_glucose_mgdl"] = min(
+                    current_hypo_event["lowest_glucose_mgdl"],
+                    row["glucose_mgdl"],
                 )
         else:
             if current_hypo_event is not None:
-                duration = (
-                    row["Device_Timestamp"] - current_hypo_event["start_time"]
+                duration_minutes = (
+                    row["device_timestamp"] - current_hypo_event["start_time"]
                 ).total_seconds() / 60
                 hypo_events.append(
                     HypoEvent(
                         **current_hypo_event,
-                        end_time=row["Device_Timestamp"],
-                        duration=duration,
+                        end_time=row["device_timestamp"],
+                        duration_minutes=duration_minutes,
                     )
                 )
                 current_hypo_event = None
 
     if current_hypo_event is not None:
-        duration = (
-            df.iloc[-1]["Device_Timestamp"] - current_hypo_event["start_time"]
+        duration_minutes = (
+            df.iloc[-1]["device_timestamp"] - current_hypo_event["start_time"]
         ).total_seconds() / 60
         hypo_events.append(
             HypoEvent(
                 **current_hypo_event,
-                end_time=df.iloc[-1]["Device_Timestamp"],
-                duration=duration,
+                end_time=df.iloc[-1]["device_timestamp"],
+                duration_minutes=duration_minutes,
             )
         )
 
-    total_hypo_duration = sum(event.duration for event in hypo_events)
-    average_hypo_duration = (
-        total_hypo_duration / len(hypo_events) if hypo_events else 0
+    total_hypo_duration_minutes = sum(
+        event.duration_minutes for event in hypo_events
+    )
+    average_hypo_duration_minutes = (
+        total_hypo_duration_minutes / len(hypo_events) if hypo_events else 0
     )
     hypo_events_count = len(hypo_events)
 
     return {
-        "total_hypo_duration": total_hypo_duration,
-        "average_hypo_duration": average_hypo_duration,
+        "total_hypo_duration_minutes": total_hypo_duration_minutes,
+        "average_hypo_duration_minutes": average_hypo_duration_minutes,
         "hypo_events": hypo_events,
         "hypo_events_count": hypo_events_count,
     }
