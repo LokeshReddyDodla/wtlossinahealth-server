@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from typing import Any, Union
 
 from decouple import config
@@ -16,7 +17,9 @@ from lib.core.types import (
 )
 
 from lib.schemas.patient_prescription_analysis import (
-    PrescriptionAnalysisResponse,
+    PrescriptionAdviceResponse,
+    PrescriptionAnalysis,
+    PrescriptionStructureResponse,
 )
 from lib.services.token_usage_service import TokenUsageService
 from lib.utils.retry_utils import retry_request
@@ -52,16 +55,12 @@ class PrescriptionAnalysisService:
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
 
-        self.structured_model = self.chat_model.with_structured_output(
-            PrescriptionAnalysisResponse, include_raw=True
-        )
-
     async def analyze_prescription(
         self,
         image_url: str,
         user_id: str,
         user_type: ProfileTypeEnum,
-    ) -> PrescriptionAnalysisResponse:
+    ) -> PrescriptionAnalysis:
         system_prompt = [
             SystemMessage(
                 content=(
@@ -94,12 +93,13 @@ class PrescriptionAnalysisService:
         messages = system_prompt + human_messages
 
         ai_response: Any = retry_request(
-            self.structured_model.invoke, input=messages
+            self.chat_model.with_structured_output(
+                PrescriptionAnalysis, include_raw=True
+            ).invoke,
+            input=messages,
         )
 
-        parsed_response: PrescriptionAnalysisResponse = ai_response.get(
-            "parsed", {}
-        )
+        parsed_response: PrescriptionAnalysis = ai_response.get("parsed", {})
         usage_metadata = ai_response["raw"].usage_metadata
 
         if usage_metadata:
@@ -112,6 +112,120 @@ class PrescriptionAnalysisService:
                 model_used=self.selected_ai_model,
                 model_provider=self.ai_model_provider,
                 api_endpoint="/patient/prescription/analyze",
+            )  # type: ignore
+
+        return parsed_response
+
+    async def analyze_prescription_structure(
+        self,
+        image_url: str,
+        user_id: str,
+        user_type: ProfileTypeEnum,
+    ) -> PrescriptionStructureResponse:
+        system_prompt = [
+            SystemMessage(
+                content=(
+                    "You are a medical assistant AI. Extract structured prescription data from the image.\n"
+                    "Return:\n"
+                    "- Doctor name\n"
+                    "- Prescription date (format: YYYY-MM-DD)\n"
+                    "- Medicines with:\n"
+                    "  * Brand Name\n"
+                    "  * Generic Name\n"
+                    "  * Formulation (Tablet, Syrup, Injection, etc.)\n"
+                    "  * Strength (e.g., '500 mg', '5 mg/5 ml')\n"
+                    "  * Frequency (format: X-Y-Z, e.g., '1-0-1')\n"
+                    "  * Duration\n"
+                    "  * Before/After Food\n"
+                    "  * Route (Oral, Injection, etc.)\n"
+                    "  * Purpose\n"
+                    "  * Possible Side Effects\n"
+                    "  * Explanation\n"
+                    "Do NOT generate advice, summaries, or follow-up details.\n"
+                    "Always return consistent formats as described."
+                )
+            ),
+        ]
+
+        human_messages = [
+            HumanMessage(
+                content=[
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ]
+            )
+        ]
+
+        ai_response: Any = retry_request(
+            self.chat_model.with_structured_output(
+                PrescriptionStructureResponse, include_raw=True
+            ).invoke,
+            input=system_prompt + human_messages,
+        )
+
+        parsed_response: PrescriptionStructureResponse = ai_response.get(
+            "parsed", {}
+        )
+        parsed_response.prescription_file_url = image_url
+
+        usage_metadata = ai_response["raw"].usage_metadata
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=user_id,
+                user_type=user_type,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
+                api_endpoint="/care_provider/prescription/preview",
+            )  # type: ignore
+
+        return parsed_response
+
+    async def generate_prescription_summary(
+        self,
+        confirmed_prescription: PrescriptionStructureResponse,
+        user_id: str,
+        user_type: ProfileTypeEnum,
+    ) -> PrescriptionAdviceResponse:
+        system_prompt = [
+            SystemMessage(
+                content=(
+                    "You are a clinical assistant AI. Based on the final confirmed prescription details provided below, "
+                    "generate:\n"
+                    "1. A general advice section for the patient.\n"
+                    "2. Whether a follow-up is required (True/False).\n"
+                    "3. In how many days to follow up, if required.\n"
+                    "4. An overall summary encouraging adherence.\n"
+                    f"{AI_RESPONSE_SAFETY_DISCLAIMER}"
+                )
+            )
+        ]
+
+        human_messages = [
+            HumanMessage(content=json.dumps(confirmed_prescription.dict()))
+        ]
+
+        ai_response: Any = retry_request(
+            self.chat_model.with_structured_output(
+                PrescriptionAdviceResponse, include_raw=True
+            ).invoke,
+            input=system_prompt + human_messages,
+        )
+
+        parsed_response: PrescriptionAdviceResponse = ai_response.get(
+            "parsed", {}
+        )
+        usage_metadata = ai_response["raw"].usage_metadata
+
+        if usage_metadata:
+            await self.token_usage_service.log_usage(
+                user_id=user_id,
+                user_type=user_type,
+                input_tokens=usage_metadata["input_tokens"],
+                output_tokens=usage_metadata["output_tokens"],
+                model_used=self.selected_ai_model,
+                model_provider=self.ai_model_provider,
+                api_endpoint="/care_provider/prescription/confirm",
             )  # type: ignore
 
         return parsed_response
