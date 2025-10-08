@@ -1,4 +1,3 @@
-from datetime import datetime
 import json
 from typing import List, Optional
 from fastapi import (
@@ -15,18 +14,21 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_cgm_report_vector_service,
+    get_cgm_search_engine_service,
     get_cgm_vector_service,
-    get_patient_connected_app_service,
     get_patient_profile_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.services.cgm_report_service import CGMReportService
+
+
+from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
+    CGMSearchEngine,
+)
 from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
     CGMVectorService,
 )
-from lib.services.cgm_report_service_v2.src.cgm_vector.temp import (
-    CGMSearchEngine,
-)
+
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload, joinedload
@@ -467,13 +469,12 @@ async def search_qdrant_nl(
 
         # Step 2: Convert natural language → Qdrant filter
         filter_conditions = await nl_to_qdrant_filter(query)
-        print("==> filter_conditions: ", filter_conditions)
 
         # Step 3: Perform search in Qdrant
         results = await cgm_report_vector_service.search_similar_reports(
             query_embedding=embedding,
             limit=limit,
-            filter_conditions=filter_conditions,
+            filter_conditions=filter_conditions,  # type: ignore
         )
 
         return {
@@ -487,20 +488,18 @@ async def search_qdrant_nl(
 
 
 @router.get("/qdrant/nl_search/v2")
-async def search_qdrant_nl(
+async def search_qdrant_nl_v2(
     query: str = Query(
         ..., description="Natural language query to search for"
     ),
-    limit: int = Query(5, description="Number of results to return"),
-    cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
+    patient_id: Optional[str] = Query(None, description="Patient ID"),
+    limit: int = Query(500, description="Number of results to return"),
+    cgm_search_engine_service: CGMSearchEngine = Depends(
+        get_cgm_search_engine_service
+    ),
 ):
     try:
-        search_engine = CGMSearchEngine(
-            openai_client=openai_client, vector_service=cgm_vector_service
-        )
-        result = await search_engine.search(query, limit)
-
-        return result
+        return await cgm_search_engine_service.search(query, limit, patient_id)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
