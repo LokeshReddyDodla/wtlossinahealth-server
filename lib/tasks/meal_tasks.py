@@ -76,3 +76,30 @@ async def generate_meal_vector(
 
     except Exception as error:
         print(f"❌ Failed to generate Meal vector for {patient_id}: {error}")
+
+
+@shared_task
+async def process_meal_batch(batch: list[dict]):
+    try:
+        from lib.dependencies.service_dependencies import (
+            get_meal_vector_service,
+        )
+
+        vector_service = get_meal_vector_service()
+
+        for meal in batch:
+            patient = meal["patient"]
+            patient_id = meal["patient_id"]
+
+            await vector_service.upsert_meal(
+                patient_id,
+                meal["id"],
+                meal,
+                patient["age"],
+                patient["gender"],
+            )
+
+            print(f"✅ Stored meal {meal['id']} for patient {patient_id}")
+
+    except Exception as e:
+        print(f"❌ Error processing batch: {e}")
