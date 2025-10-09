@@ -93,7 +93,6 @@ class MealVectorService:
             "patient_gender": patient_gender,
             "meal_id": meal_id,
             "data_type": "meal",
-            "source": "meal",
             "start_time": int(dt.timestamp() * 1000),
             "end_time": int(dt.timestamp() * 1000),
             "date": meal.get("date"),
