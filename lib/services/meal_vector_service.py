@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 from qdrant_client.http.models import PointStruct
 from openai import AsyncOpenAI
 from lib.core.qdrant_store import QdrantStore
+from qdrant_client.models import PointIdsList
 
 logger = logging.getLogger(__name__)
 import hashlib
@@ -12,7 +13,12 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 
-from qdrant_client.http.models import PointStruct
+from qdrant_client.http.models import (
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+)
 from openai import AsyncOpenAI
 
 from lib.core.qdrant_store import QdrantStore
@@ -87,7 +93,6 @@ class MealVectorService:
             "patient_gender": patient_gender,
             "meal_id": meal_id,
             "data_type": "meal",
-            "source": "meal",
             "start_time": int(dt.timestamp() * 1000),
             "end_time": int(dt.timestamp() * 1000),
             "date": meal.get("date"),
@@ -185,3 +190,35 @@ class MealVectorService:
             return "evening"
         else:
             return "night"
+
+    async def delete_meal_vector(self, meal_id: str):
+        try:
+            point_id = self._generate_point_id(meal_id)
+            async with self.qdrant_store.get_client() as client:
+                await client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=PointIdsList(points=[point_id]),
+                )
+            logger.info(f"🗑️ Deleted vector for meal {meal_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to delete meal vector {meal_id}: {e}")
+
+    async def delete_meal_vectors_for_patient(self, patient_id: str):
+        try:
+            async with self.qdrant_store.get_client() as client:
+                await client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=Filter(
+                        must=[
+                            FieldCondition(
+                                key="patient_id",
+                                match=MatchValue(value=patient_id),
+                            )
+                        ]
+                    ),
+                )
+            logger.info(f"🧹 Deleted all vectors for patient {patient_id}")
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to delete meal vectors for patient {patient_id}: {e}"
+            )

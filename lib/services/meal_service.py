@@ -25,6 +25,7 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.meal_vector_service import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.tasks.meal_tasks import (
     generate_daily_meal_report,
@@ -66,6 +67,7 @@ class MealService:
         postgres_store: PostgresStore,
         meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
+        meal_vector_service: MealVectorService,
     ):
         from lib.dependencies.service_dependencies import (
             get_token_usage_service,
@@ -74,6 +76,7 @@ class MealService:
         self.postgres_store = postgres_store
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
+        self.meal_vector_service = meal_vector_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="meal",
             selected_ai_model="gpt-5-mini",
@@ -609,6 +612,9 @@ class MealService:
             # 🚀 Trigger Meal Report Generation after Deletion
             generate_daily_meal_report.delay(str(patient_id), meal_date)
 
+            # 🧹 Delete from vector DB too
+            await self.meal_vector_service.delete_meal_vector(str(meal_id))
+
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -628,6 +634,10 @@ class MealService:
                 )
             )
             await postgres_session.commit()
+
+            await self.meal_vector_service.delete_meal_vectors_for_patient(
+                patient_id
+            )
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()

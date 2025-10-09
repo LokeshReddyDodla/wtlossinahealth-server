@@ -317,6 +317,9 @@ container.register(
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
+        meal_vector_service=cast(
+            MealVectorService, container.resolve(MealVectorService)
+        ),
     ),
 )
 
