@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date
+from typing import Any, Dict
 
 from celery import shared_task
 
@@ -41,3 +42,37 @@ async def generate_daily_meal_report(
         print(
             f"❌ Failed to generate meal report for {patient_id} on {report_date}. Error: {error}"
         )
+
+
+@shared_task
+async def generate_meal_vector(
+    patient_id: str, meal_id: str, meal_data: dict[str, Any]
+):
+    try:
+        from lib.dependencies.service_dependencies import (
+            get_meal_vector_service,
+            get_patient_profile_service,
+        )
+
+        vector_service = get_meal_vector_service()
+        patient_service = get_patient_profile_service()
+
+        patient_profile = await patient_service.fetch_patient_profile(
+            patient_id
+        )
+        if not patient_profile:
+            print(f"⚠️ Patient profile not found for {patient_id}")
+            return
+
+        await vector_service.upsert_meal(
+            patient_id,
+            meal_id,
+            meal_data,
+            patient_profile.age,
+            patient_profile.gender,
+        )
+
+        print(f"✅ Successfully generated Meal vector for {patient_id}")
+
+    except Exception as error:
+        print(f"❌ Failed to generate Meal vector for {patient_id}: {error}")

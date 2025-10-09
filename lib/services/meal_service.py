@@ -26,7 +26,10 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 )
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.tasks.meal_tasks import generate_daily_meal_report
+from lib.tasks.meal_tasks import (
+    generate_daily_meal_report,
+    generate_meal_vector,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
@@ -260,11 +263,6 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            # 🚀 Trigger Meal Report Generation after Upload
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
-
-            return meal
-
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -272,6 +270,12 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
+
+        # Trigger async tasks outside transaction
+        self._trigger_meal_tasks(
+            str(patient_id), str(meal.id), meal.date, meal
+        )
+        return meal
 
     @with_postgres_session
     async def update_meal(
@@ -325,11 +329,6 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            # Trigger report generation
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
-
-            return meal
-
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -337,6 +336,12 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
+
+        # Trigger async tasks outside transaction
+        self._trigger_meal_tasks(
+            str(patient_id), str(meal.id), meal.date, meal
+        )
+        return meal
 
     @with_postgres_session
     async def analyze_or_reanalyze_meal(
@@ -413,7 +418,9 @@ class MealService:
             )
 
             # 🚀 Trigger Meal Report Generation after Analysis
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
+            self._trigger_meal_tasks(
+                str(patient_id), str(meal.id), meal.date, updated_meal
+            )
 
             return updated_meal
         except json.JSONDecodeError as e:
@@ -559,6 +566,23 @@ class MealService:
                 content="How can I assist you further regarding this meal?",
             ),
         ]
+
+    def _trigger_meal_tasks(
+        self,
+        patient_id: str,
+        meal_id: str,
+        meal_date: datetime,
+        meal_obj: PatientMealModel,
+    ):
+        try:
+            generate_daily_meal_report.delay(str(patient_id), meal_date)
+            generate_meal_vector.delay(
+                str(patient_id),
+                str(meal_id),
+                PatientMealSchema.from_orm(meal_obj).model_dump(),
+            )
+        except Exception as task_error:
+            print(f"⚠️ Failed to enqueue meal vector tasks: {task_error}")
 
     @with_postgres_session
     async def delete_meal(
