@@ -1,4 +1,5 @@
 import json
+from math import ceil
 from typing import List, Optional
 from fastapi import (
     APIRouter,
@@ -21,6 +22,7 @@ from lib.dependencies.service_dependencies import (
     get_qdrant_search_engine_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.schemas.patient import Patient
 from lib.schemas.patient_meal import PatientMeal
 from lib.services.cgm_report_service import CGMReportService
 
@@ -44,11 +46,15 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
+from lib.tasks.meal_tasks import generate_meal_vector, process_meal_batch
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
 from fastapi import Depends, HTTPException, Query, Request, status
 from openai import AsyncOpenAI
+from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
+from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 
 router = APIRouter(prefix="/test")
 
@@ -510,6 +516,62 @@ async def search_qdrant_nl_v2(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/qdrant/meal/all")
+async def enqueue_meal_vector_batches(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    BATCH_SIZE = 50
+    try:
+        query = (
+            select(PatientMealModel)
+            .options(
+                selectinload(PatientMealModel.patient),
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.macro_nutritional_values
+                ),
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.micro_nutritional_values
+                ),
+                selectinload(PatientMealModel.total_macro_nutritional_value),
+                selectinload(PatientMealModel.total_micro_nutritional_value),
+            )
+            .filter(PatientMealModel.analyzed == True)
+        )
+        result = await session.execute(query)
+        meals = result.scalars().all()
+
+        meals_data = [
+            {
+                **PatientMealSchema.model_validate(m).model_dump(mode="json"),
+                "patient": (
+                    Patient.model_validate(m.patient).model_dump(mode="json")
+                    if m.patient
+                    else None
+                ),
+            }
+            for m in meals
+        ]
+        total_batches = ceil(len(meals_data) / BATCH_SIZE)
+
+        for i in range(total_batches):
+            batch = meals_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+            process_meal_batch.delay(batch)
+
+        return {
+            "message": f"Enqueued {total_batches} batches for {len(meals_data)} meals."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 @router.get("/qdrant/meal/{meal_id}")
