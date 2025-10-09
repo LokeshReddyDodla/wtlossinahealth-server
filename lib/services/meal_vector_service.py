@@ -52,7 +52,7 @@ class MealVectorService:
                         collection_name=self.collection_name,
                         points=[
                             PointStruct(
-                                id=point["id"],
+                                id=point["meal_id"],
                                 vector=embedding,
                                 payload=point["payload"],
                             )
