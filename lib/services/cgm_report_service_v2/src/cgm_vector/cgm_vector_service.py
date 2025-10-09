@@ -153,6 +153,7 @@ class CGMVectorService:
                 "patient_gender": self._patient_gender,
                 "report_id": self._report_id,
                 "data_type": info["data_type"],
+                "source": "cgm",
                 "text_repr": info["text_repr"],
                 "start_time": int(info["start_time"].timestamp() * 1000),
                 "end_time": int(info["end_time"].timestamp() * 1000),

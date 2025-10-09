@@ -53,6 +53,16 @@ Your sole task is to map the user's natural language request to the provided Pyd
    - If the query might logically apply to multiple canonical types (e.g., “variability” could relate to both `cgm_summary_stats` and `cgm_range_stats`),
      include *all* relevant data_types to avoid missing data.
 
+9. **Source identification**
+   - Populate the `sources` list based on what kind of data the query is about.
+   - Use only the following canonical source names:
+     - "cgm" → Continuous Glucose Monitoring data
+     - "meal" → Meal photos, meal analysis, or nutrition data
+     - "smbg" → Fingerstick glucose readings
+     - "fitness" → Activity, steps, or exercise data
+     - "sleep" → Sleep-related data
+   - Always include at least one source. If multiple domains are mentioned (e.g., “after a meal and during sleep”), include both.
+   
 ---
 
 ### 📊 CANONICAL DATA TYPES AND FIELDS

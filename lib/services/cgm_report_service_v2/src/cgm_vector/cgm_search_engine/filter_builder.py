@@ -44,6 +44,7 @@ class FilterBuilder:
         must_conditions: List[QdrantFieldCondition] = []
 
         FilterBuilder._add_data_type_filter(intent, must_conditions)
+        FilterBuilder._add_source_filter(intent, must_conditions)
         FilterBuilder._add_month_filter(intent, must_conditions)
         FilterBuilder._add_date_range_filter(intent, must_conditions)
         FilterBuilder._add_time_filters(intent, must_conditions)
@@ -64,6 +65,26 @@ class FilterBuilder:
                     match=QdrantMatchAny(any=intent.data_types),
                 )
             )
+
+    @staticmethod
+    def _add_source_filter(
+        intent: SearchIntent, conditions: List[QdrantFieldCondition]
+    ):
+        if intent.sources:
+            if len(intent.sources) == 1:
+                conditions.append(
+                    QdrantFieldCondition(
+                        key="source",
+                        match=QdrantMatchValue(value=intent.sources[0]),
+                    )
+                )
+            else:
+                conditions.append(
+                    QdrantFieldCondition(
+                        key="source",
+                        match=QdrantMatchAny(any=intent.sources),
+                    )
+                )
 
     @staticmethod
     def _add_month_filter(
