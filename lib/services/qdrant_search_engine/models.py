@@ -34,6 +34,11 @@ class SearchIntent(BaseModel):
         description="List of exact 'data_type' values (e.g., ['cgm_summary_stats', 'hyper_event']).",
     )
 
+    # sources: List[str] = Field(
+    #     default_factory=list,
+    #     description="List of data sources referenced in the query (e.g., ['cgm', 'meal', 'fitness', 'sleep', 'smbg']).",
+    # )
+
     date_range: Optional[DateRange] = Field(
         None, description="The calculated main date range for the query."
     )

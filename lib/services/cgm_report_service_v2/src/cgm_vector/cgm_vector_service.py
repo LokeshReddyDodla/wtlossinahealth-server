@@ -1,4 +1,6 @@
 from datetime import datetime
+import hashlib
+import json
 import logging
 from typing import Any, List, Optional
 import uuid
@@ -15,13 +17,8 @@ from lib.services.cgm_report_service_v2.src.cgm_vector.section_processor import 
 from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import (
     CGMSectionTemplates,
 )
-from qdrant_client.http.models import (
-    Filter,
-    FieldCondition,
-    MatchValue,
-    Condition,
-    MatchAny,
-)
+
+from lib.utils.vector_utils import embed_text_batch
 
 
 logger = logging.getLogger(__name__)
@@ -138,19 +135,19 @@ class CGMVectorService:
     ) -> list[PointStruct]:
         texts = [info["text_repr"] for info in point_infos]
 
-        response = await self.openai_client.embeddings.create(
-            model="text-embedding-3-small", input=texts
-        )
+        embeddings = await embed_text_batch(texts)
 
         points: list[PointStruct] = []
         for i, info in enumerate(point_infos):
-            embedding = response.data[i].embedding
+            embedding = embeddings[i]
+
             payload = {
                 "patient_id": self._patient_id,
                 "patient_age": self._patient_age,
                 "patient_gender": self._patient_gender,
                 "report_id": self._report_id,
                 "data_type": info["data_type"],
+                "source": "cgm",
                 "text_repr": info["text_repr"],
                 "start_time": int(info["start_time"].timestamp() * 1000),
                 "end_time": int(info["end_time"].timestamp() * 1000),
@@ -169,7 +166,14 @@ class CGMVectorService:
 
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()), vector=embedding, payload=payload
+                    id=self._generate_point_id(
+                        info["data_type"],
+                        info["start_time"],
+                        info["end_time"],
+                        info.get("additional_payload"),
+                    ),
+                    vector=embedding,
+                    payload=payload,
                 )
             )
 
@@ -399,85 +403,33 @@ class CGMVectorService:
 
         return await self._batch_create_points(point_infos)
 
-    async def search_similar_reports(
+    def _generate_point_id(
         self,
-        query_embedding: list[float],
-        filter_conditions: Optional[Filter] = None,
-        limit: int = 500,
-        data_types: Optional[List[str]] = None,
-        score_threshold: Optional[float] = None,
-        patient_id: Optional[str] = None,
-    ):
-        """
-        Search for reports similar to a given embedding with optional filtering.
+        data_type: str,
+        start_time: datetime,
+        end_time: datetime,
+        additional_payload: Optional[dict] = None,
+    ) -> str:
+        base = f"{self._patient_id}-{self._report_id}-{data_type}-{start_time.isoformat()}-{end_time.isoformat()}"
 
-        Args:
-            query_embedding: Vector embedding for the query.
-            filter_conditions: Pre-built Qdrant filter conditions.
-            limit: Max number of results to return.
-            data_types: Optional list of data_type strings to filter by.
-            patient_id: Optional patient ID filter.
-            score_threshold: Minimum score for returned results.
-
-        Returns:
-            List of matching reports.
-        """
-        async with self.qdrant_store.get_client() as client:
-            default_filter = self._build_filter(data_types, patient_id)
-            merged_filter = self._merge_filters(
-                filter_conditions, default_filter
+        if data_type == "agp_point":
+            hour = (
+                additional_payload.get("hour") if additional_payload else None
             )
+            base += f"-hour_{hour}"
 
-            print(f"Searching with filter: {merged_filter}, limit: {limit}")
-
-            return await client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=limit,
-                query_filter=merged_filter,
-                score_threshold=score_threshold,
+        elif data_type == "time_period_stats":
+            period_name = (
+                additional_payload.get("time_period")
+                if additional_payload
+                else None
             )
+            base += f"-period_{period_name}"
 
-    def _build_filter(
-        self,
-        data_types: Optional[List[str]],
-        patient_id: Optional[str],
-    ) -> Optional[Filter]:
-        """
-        Build a Qdrant Filter from optional data_types and patient_id.
-        """
-        conditions: List[Condition] = []
+        elif data_type.endswith("_event"):
+            event_hash = hashlib.md5(
+                json.dumps(additional_payload, sort_keys=True).encode()
+            ).hexdigest()[:8]
+            base += f"-{event_hash}"
 
-        if data_types:
-            conditions.append(self._create_data_type_condition(data_types))
-
-        if patient_id:
-            conditions.append(self._create_patient_id_condition(patient_id))
-
-        if conditions:
-            return Filter(must=conditions)
-
-        return None
-
-    def _merge_filters(
-        self, base_filter: Optional[Filter], extra_filter: Optional[Filter]
-    ) -> Optional[Filter]:
-        if base_filter and extra_filter:
-            return Filter(
-                must=(base_filter.must or []) + (extra_filter.must or []),  # type: ignore
-                should=(base_filter.should or [])
-                + (extra_filter.should or []),  # type: ignore
-                must_not=(base_filter.must_not or [])
-                + (extra_filter.must_not or []),  # type: ignore
-            )
-        return base_filter or extra_filter
-
-    @staticmethod
-    def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
-        return FieldCondition(key="data_type", match=MatchAny(any=data_types))
-
-    @staticmethod
-    def _create_patient_id_condition(patient_id: str) -> FieldCondition:
-        return FieldCondition(
-            key="patient_id", match=MatchValue(value=patient_id)
-        )
+        return hashlib.md5(base.encode()).hexdigest()
