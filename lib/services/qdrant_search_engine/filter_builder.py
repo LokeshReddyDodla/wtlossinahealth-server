@@ -5,10 +5,7 @@ from qdrant_client.http.models import MatchValue as QdrantMatchValue
 from qdrant_client.http.models import MatchAny as QdrantMatchAny
 from qdrant_client.http.models import Filter as QdrantFilter
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.models import (
-    NumericRange,
-    SearchIntent,
-)
+from lib.services.qdrant_search_engine.models import NumericRange, SearchIntent
 
 
 def _pydantic_to_qdrant_condition(
@@ -41,10 +38,12 @@ class FilterBuilder:
         """
         Build a QdrantFilter from a SearchIntent.
         """
+        FilterBuilder.enforce_stats_events_rule(intent)
+
         must_conditions: List[QdrantFieldCondition] = []
 
         FilterBuilder._add_data_type_filter(intent, must_conditions)
-        FilterBuilder._add_source_filter(intent, must_conditions)
+        # FilterBuilder._add_source_filter(intent, must_conditions)
         FilterBuilder._add_month_filter(intent, must_conditions)
         FilterBuilder._add_date_range_filter(intent, must_conditions)
         FilterBuilder._add_time_filters(intent, must_conditions)
@@ -66,25 +65,25 @@ class FilterBuilder:
                 )
             )
 
-    @staticmethod
-    def _add_source_filter(
-        intent: SearchIntent, conditions: List[QdrantFieldCondition]
-    ):
-        if intent.sources:
-            if len(intent.sources) == 1:
-                conditions.append(
-                    QdrantFieldCondition(
-                        key="source",
-                        match=QdrantMatchValue(value=intent.sources[0]),
-                    )
-                )
-            else:
-                conditions.append(
-                    QdrantFieldCondition(
-                        key="source",
-                        match=QdrantMatchAny(any=intent.sources),
-                    )
-                )
+    # @staticmethod
+    # def _add_source_filter(
+    #     intent: SearchIntent, conditions: List[QdrantFieldCondition]
+    # ):
+    #     if intent.sources:
+    #         if len(intent.sources) == 1:
+    #             conditions.append(
+    #                 QdrantFieldCondition(
+    #                     key="source",
+    #                     match=QdrantMatchValue(value=intent.sources[0]),
+    #                 )
+    #             )
+    #         else:
+    #             conditions.append(
+    #                 QdrantFieldCondition(
+    #                     key="source",
+    #                     match=QdrantMatchAny(any=intent.sources),
+    #                 )
+    #             )
 
     @staticmethod
     def _add_month_filter(
@@ -163,3 +162,21 @@ class FilterBuilder:
                 conditions.append(
                     _pydantic_to_qdrant_condition(nf.key, nf.range_condition)
                 )
+
+    @staticmethod
+    def enforce_stats_events_rule(intent: SearchIntent):
+        dt_set = set(intent.data_types)
+
+        if any("hyper" in dt for dt in dt_set):
+            dt_set.update({"hyper_stats", "hyper_event"})
+
+        if any("hypo" in dt for dt in dt_set):
+            dt_set.update({"hypo_stats", "hypo_event"})
+
+        if any("rapid_spike" in dt for dt in dt_set):
+            dt_set.update({"rapid_spike_stats", "rapid_spike_event"})
+
+        if any("rapid_drop" in dt for dt in dt_set):
+            dt_set.update({"rapid_drop_stats", "rapid_drop_event"})
+
+        intent.data_types = list(dt_set)

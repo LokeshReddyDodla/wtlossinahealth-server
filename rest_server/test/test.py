@@ -14,17 +14,17 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_cgm_report_vector_service,
-    get_cgm_search_engine_service,
     get_cgm_vector_service,
+    get_meal_service,
+    get_meal_vector_service,
     get_patient_profile_service,
+    get_qdrant_search_engine_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.schemas.patient_meal import PatientMeal
 from lib.services.cgm_report_service import CGMReportService
 
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
-    CGMSearchEngine,
-)
 from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
     CGMVectorService,
 )
@@ -35,10 +35,15 @@ from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.services.meal_service import MealService
+from lib.services.meal_vector_service import MealVectorService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.qdrant_search_engine.qdrant_search_engine import (
+    QdrantSearchEngine,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
@@ -494,12 +499,62 @@ async def search_qdrant_nl_v2(
     ),
     patient_id: Optional[str] = Query(None, description="Patient ID"),
     limit: int = Query(500, description="Number of results to return"),
-    cgm_search_engine_service: CGMSearchEngine = Depends(
-        get_cgm_search_engine_service
+    qdrant_search_engine_service: QdrantSearchEngine = Depends(
+        get_qdrant_search_engine_service
     ),
 ):
     try:
-        return await cgm_search_engine_service.search(query, limit, patient_id)
+        return await qdrant_search_engine_service.search(
+            query, limit, patient_id
+        )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/qdrant/meal/{meal_id}")
+async def test_qdrant_meal(
+    meal_id: str,
+    patient_id: str,
+    meal_service: MealService = Depends(get_meal_service),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    meal_vector_service: MealVectorService = Depends(get_meal_vector_service),
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    try:
+        meal = await meal_service.fetch_meal(meal_id)
+
+        if not meal:
+            raise
+
+        patient_info = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, include_health_data=True
+        )
+
+        meal_schema = PatientMeal.from_orm(meal)
+        meal_dict = meal_schema.model_dump()
+
+        print("==> meal_dict: ", meal_dict)
+
+        result = await meal_vector_service.upsert_meal(
+            patient_id,
+            str(meal.id),
+            meal_dict,
+            patient_info.age,
+            patient_info.gender,
+        )
+        return SuccessResponse(
+            message="Meal report fetched successfully",
+            data=result,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )

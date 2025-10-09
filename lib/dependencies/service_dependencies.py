@@ -9,9 +9,7 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
-    CGMSearchEngine,
-)
+
 from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
     CGMVectorService,
 )
@@ -43,6 +41,7 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
+from lib.services.meal_vector_service import MealVectorService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -60,6 +59,9 @@ from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
 from lib.services.prescription_service import PrescriptionService
+from lib.services.qdrant_search_engine.qdrant_search_engine import (
+    QdrantSearchEngine,
+)
 from lib.services.sleep_report_service import SleepReportService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
@@ -221,12 +223,16 @@ def get_cgm_report_vector_service() -> CGMReportVectorService:
     )
 
 
-def get_cgm_search_engine_service() -> CGMSearchEngine:
-    return cast(CGMSearchEngine, container.resolve(CGMSearchEngine))
+def get_qdrant_search_engine_service() -> QdrantSearchEngine:
+    return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
 
 
 def get_cgm_vector_service() -> CGMVectorService:
     return cast(CGMVectorService, container.resolve(CGMVectorService))
+
+
+def get_meal_vector_service() -> MealVectorService:
+    return cast(MealVectorService, container.resolve(MealVectorService))
 
 
 def get_fitness_stats_processor() -> FitnessStatsProcessor:

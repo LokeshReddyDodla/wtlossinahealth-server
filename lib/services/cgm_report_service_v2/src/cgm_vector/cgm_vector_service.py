@@ -17,13 +17,8 @@ from lib.services.cgm_report_service_v2.src.cgm_vector.section_processor import 
 from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import (
     CGMSectionTemplates,
 )
-from qdrant_client.http.models import (
-    Filter,
-    FieldCondition,
-    MatchValue,
-    Condition,
-    MatchAny,
-)
+
+from lib.utils.vector_utils import embed_text_batch
 
 
 logger = logging.getLogger(__name__)
@@ -140,13 +135,12 @@ class CGMVectorService:
     ) -> list[PointStruct]:
         texts = [info["text_repr"] for info in point_infos]
 
-        response = await self.openai_client.embeddings.create(
-            model="text-embedding-3-small", input=texts
-        )
+        embeddings = await embed_text_batch(texts)
 
         points: list[PointStruct] = []
         for i, info in enumerate(point_infos):
-            embedding = response.data[i].embedding
+            embedding = embeddings[i]
+
             payload = {
                 "patient_id": self._patient_id,
                 "patient_age": self._patient_age,
@@ -409,79 +403,6 @@ class CGMVectorService:
 
         return await self._batch_create_points(point_infos)
 
-    async def search_similar_reports(
-        self,
-        query_embedding: list[float],
-        filter_conditions: Optional[Filter] = None,
-        limit: int = 500,
-        data_types: Optional[List[str]] = None,
-        score_threshold: Optional[float] = None,
-        patient_id: Optional[str] = None,
-    ):
-        """
-        Search for reports similar to a given embedding with optional filtering.
-
-        Args:
-            query_embedding: Vector embedding for the query.
-            filter_conditions: Pre-built Qdrant filter conditions.
-            limit: Max number of results to return.
-            data_types: Optional list of data_type strings to filter by.
-            patient_id: Optional patient ID filter.
-            score_threshold: Minimum score for returned results.
-
-        Returns:
-            List of matching reports.
-        """
-        async with self.qdrant_store.get_client() as client:
-            default_filter = self._build_filter(data_types, patient_id)
-            merged_filter = self._merge_filters(
-                filter_conditions, default_filter
-            )
-
-            print(f"Searching with filter: {merged_filter}, limit: {limit}")
-
-            return await client.search(
-                collection_name=self.collection_name,
-                query_vector=query_embedding,
-                limit=limit,
-                query_filter=merged_filter,
-                score_threshold=score_threshold,
-            )
-
-    def _build_filter(
-        self,
-        data_types: Optional[List[str]],
-        patient_id: Optional[str],
-    ) -> Optional[Filter]:
-        """
-        Build a Qdrant Filter from optional data_types and patient_id.
-        """
-        conditions: List[Condition] = []
-
-        if data_types:
-            conditions.append(self._create_data_type_condition(data_types))
-
-        if patient_id:
-            conditions.append(self._create_patient_id_condition(patient_id))
-
-        if conditions:
-            return Filter(must=conditions)
-
-        return None
-
-    def _merge_filters(
-        self, base_filter: Optional[Filter], extra_filter: Optional[Filter]
-    ) -> Optional[Filter]:
-        if base_filter and extra_filter:
-            return Filter(
-                must=(base_filter.must or []) + (extra_filter.must or []),  # type: ignore
-                should=(base_filter.should or [])
-                + (extra_filter.should or []),  # type: ignore
-                must_not=(base_filter.must_not or [])
-                + (extra_filter.must_not or []),  # type: ignore
-            )
-        return base_filter or extra_filter
-
     def _generate_point_id(
         self,
         data_type: str,
@@ -512,13 +433,3 @@ class CGMVectorService:
             base += f"-{event_hash}"
 
         return hashlib.md5(base.encode()).hexdigest()
-
-    @staticmethod
-    def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
-        return FieldCondition(key="data_type", match=MatchAny(any=data_types))
-
-    @staticmethod
-    def _create_patient_id_condition(patient_id: str) -> FieldCondition:
-        return FieldCondition(
-            key="patient_id", match=MatchValue(value=patient_id)
-        )

@@ -20,9 +20,7 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.cgm_report_service import CGMReportService
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_search_engine.cgm_search_engine import (
-    CGMSearchEngine,
-)
+
 from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -52,6 +50,7 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
+from lib.services.meal_vector_service import MealVectorService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -71,6 +70,9 @@ from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
 from lib.services.prescription_service import PrescriptionService
+from lib.services.qdrant_search_engine.qdrant_search_engine import (
+    QdrantSearchEngine,
+)
 from lib.services.sleep_report_service import SleepReportService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
@@ -458,11 +460,16 @@ container.register(
 )
 
 container.register(
-    CGMSearchEngine,
-    lambda: CGMSearchEngine(
-        vector_service=cast(
-            CGMVectorService, container.resolve(CGMVectorService)
-        )
+    QdrantSearchEngine,
+    lambda: QdrantSearchEngine(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+container.register(
+    MealVectorService,
+    lambda: MealVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
 
