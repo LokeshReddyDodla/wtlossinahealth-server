@@ -52,7 +52,7 @@ class MealVectorService:
                         collection_name=self.collection_name,
                         points=[
                             PointStruct(
-                                id=point["meal_id"],
+                                id=point["id"],
                                 vector=embedding,
                                 payload=point["payload"],
                             )
@@ -79,7 +79,7 @@ class MealVectorService:
         patient_gender: str,
     ) -> Dict[str, Any]:
         dt = datetime.fromisoformat(f"{meal.get('date')}T{meal.get('time')}")
-        uploaded_at_ms = int(meal.get("uploaded_at").timestamp() * 1000)  # type: ignore
+        uploaded_at_ms = int(datetime.fromisoformat(meal.get("uploaded_at")).timestamp() * 1000)  # type: ignore
 
         base_meta = {
             "patient_id": patient_id,

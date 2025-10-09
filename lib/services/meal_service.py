@@ -577,7 +577,7 @@ class MealService:
             generate_meal_vector.delay(
                 str(patient_id),
                 str(meal_id),
-                PatientMealSchema.from_orm(meal_obj).model_dump(),
+                PatientMealSchema.from_orm(meal_obj).model_dump(mode="json"),
             )
         except Exception as task_error:
             print(f"⚠️ Failed to enqueue meal vector tasks: {task_error}")
