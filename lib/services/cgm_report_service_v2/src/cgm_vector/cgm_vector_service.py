@@ -1,4 +1,6 @@
 from datetime import datetime
+import hashlib
+import json
 import logging
 from typing import Any, List, Optional
 import uuid
@@ -169,7 +171,14 @@ class CGMVectorService:
 
             points.append(
                 PointStruct(
-                    id=str(uuid.uuid4()), vector=embedding, payload=payload
+                    id=self._generate_point_id(
+                        info["data_type"],
+                        info["start_time"],
+                        info["end_time"],
+                        info.get("additional_payload"),
+                    ),
+                    vector=embedding,
+                    payload=payload,
                 )
             )
 
@@ -471,6 +480,37 @@ class CGMVectorService:
                 + (extra_filter.must_not or []),  # type: ignore
             )
         return base_filter or extra_filter
+
+    def _generate_point_id(
+        self,
+        data_type: str,
+        start_time: datetime,
+        end_time: datetime,
+        additional_payload: Optional[dict] = None,
+    ) -> str:
+        base = f"{self._patient_id}-{self._report_id}-{data_type}-{start_time.isoformat()}-{end_time.isoformat()}"
+
+        if data_type == "agp_point":
+            hour = (
+                additional_payload.get("hour") if additional_payload else None
+            )
+            base += f"-hour_{hour}"
+
+        elif data_type == "time_period_stats":
+            period_name = (
+                additional_payload.get("time_period")
+                if additional_payload
+                else None
+            )
+            base += f"-period_{period_name}"
+
+        elif data_type.endswith("_event"):
+            event_hash = hashlib.md5(
+                json.dumps(additional_payload, sort_keys=True).encode()
+            ).hexdigest()[:8]
+            base += f"-{event_hash}"
+
+        return hashlib.md5(base.encode()).hexdigest()
 
     @staticmethod
     def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
