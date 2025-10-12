@@ -40,7 +40,7 @@ class QdrantStore:
             )
             try:
                 self.client = AsyncQdrantClient(
-                    host=QDRANT_HOST, port=QDRANT_PORT
+                    host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
                 )
                 logger.info("✅ Qdrant connected")
                 await self.ensure_collection()
@@ -66,7 +66,7 @@ class QdrantStore:
                 await client.recreate_collection(
                     collection_name=QDRANT_COLLECTION,
                     vectors_config=VectorParams(
-                        size=1536, distance=Distance.COSINE
+                        size=3072, distance=Distance.COSINE
                     ),
                     hnsw_config=HnswConfigDiff(m=32, ef_construct=120),
                 )
@@ -127,6 +127,16 @@ class QdrantStore:
         except Exception as e:
             logger.exception(f"Qdrant client encountered an error: {e}")
             raise
+
+    async def upsert_points_chunked(
+        self, collection_name: str, points: list, chunk_size: int = 200
+    ):
+        async with self.get_client() as client:
+            for i in range(0, len(points), chunk_size):
+                chunk = points[i : i + chunk_size]
+                await client.upsert(
+                    collection_name=collection_name, points=chunk
+                )
 
     async def close(self):
         if self.client:

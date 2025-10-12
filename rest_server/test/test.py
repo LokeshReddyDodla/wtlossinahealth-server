@@ -38,7 +38,9 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.services.meal_service import MealService
-from lib.services.meal_vector_service import MealVectorService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )

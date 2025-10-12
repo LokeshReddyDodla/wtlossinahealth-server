@@ -3,7 +3,6 @@ import hashlib
 import json
 import logging
 from typing import Any, List, Optional
-import uuid
 from qdrant_client.models import PointStruct
 from openai import AsyncOpenAI
 
@@ -18,10 +17,13 @@ from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import 
     CGMSectionTemplates,
 )
 
-from lib.utils.vector_utils import embed_text_batch
+from lib.utils.vector_utils import embed_text_batch_safe
+from qdrant_client import AsyncQdrantClient
 
 
 logger = logging.getLogger(__name__)
+
+CHUNK_SIZE = 200
 
 
 class CGMVectorService:
@@ -54,21 +56,19 @@ class CGMVectorService:
         self._patient_gender = patient_gender
 
         try:
-            async with self.qdrant_store.get_client() as client:
-                points: list[PointStruct] = []
+            points: list[PointStruct] = []
 
-                for report_data in reports:
-                    period_points = await self._process_report_period(
-                        report_data,
-                    )
-                    points.extend(period_points)
+            for report_data in reports:
+                period_points = await self._process_report_period(
+                    report_data,
+                )
+                points.extend(period_points)
 
-                # Upsert all points
-                if points:
-                    await client.upsert(
-                        collection_name=self.collection_name,
-                        points=points,
-                    )
+            # Upsert all points
+            if points:
+                await self.qdrant_store.upsert_points_chunked(
+                    self.collection_name, points, CHUNK_SIZE
+                )
 
             logger.info(
                 f"✅ Stored report {self._report_id} for patient {self._patient_id} in Qdrant with {len(points)} points"
@@ -135,7 +135,7 @@ class CGMVectorService:
     ) -> list[PointStruct]:
         texts = [info["text_repr"] for info in point_infos]
 
-        embeddings = await embed_text_batch(texts)
+        embeddings = await embed_text_batch_safe(texts)
 
         points: list[PointStruct] = []
         for i, info in enumerate(point_infos):

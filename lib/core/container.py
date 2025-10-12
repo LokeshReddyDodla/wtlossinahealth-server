@@ -50,7 +50,9 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
-from lib.services.meal_vector_service import MealVectorService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,

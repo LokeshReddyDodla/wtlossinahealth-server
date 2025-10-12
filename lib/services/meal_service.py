@@ -25,7 +25,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.meal_analysis_service import MealAnalysisService
-from lib.services.meal_vector_service import MealVectorService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.tasks.meal_tasks import (
     generate_daily_meal_report,

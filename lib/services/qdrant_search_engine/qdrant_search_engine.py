@@ -45,6 +45,7 @@ class QdrantSearchEngine:
             limit=limit,
             filter_conditions=filter_conditions,
             patient_id=patient_id,
+            # score_threshold=0.6,
         )
 
         return {
