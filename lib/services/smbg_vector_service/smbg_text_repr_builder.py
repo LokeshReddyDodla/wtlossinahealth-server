@@ -8,7 +8,7 @@ class SMBGTextReprBuilder:
         glucose = reading.get("glucose_mgdl", 0)
         reading_type = (reading.get("type") or "unspecified").lower()
         reading_time = reading.get("reading_time")
-        notes = reading.get("notes", "").strip()
+        notes = (reading.get("notes") or "").strip()
         source = reading.get("source", "app")
 
         dt = None

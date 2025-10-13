@@ -55,6 +55,7 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.tasks.meal_tasks import generate_meal_vector, process_meal_batch
+from lib.tasks.other_tasks import process_smbg_batch
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
@@ -620,7 +621,7 @@ async def enqueue_smbg_vector_batches(
     BATCH_SIZE = 50
     try:
         query = select(PatientSMBG).options(
-            selectinload(PatientMealModel.patient),
+            selectinload(PatientSMBG.patient),
         )
         result = await session.execute(query)
         smbgs = result.scalars().all()
@@ -633,8 +634,8 @@ async def enqueue_smbg_vector_batches(
                 "notes": m.notes,
                 "uploaded_at": m.uploaded_at,
                 "source": m.source_name or "app",
-                "id": m.id,
-                "patient_id": m.patient_id,
+                "id": str(m.id),
+                "patient_id": str(m.patient_id),
                 "patient": (
                     Patient.model_validate(m.patient).model_dump(mode="json")
                     if m.patient
@@ -647,7 +648,7 @@ async def enqueue_smbg_vector_batches(
 
         for i in range(total_batches):
             batch = smbgs_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-            process_meal_batch.delay(batch)
+            process_smbg_batch.delay(batch)
 
         return {
             "message": f"Enqueued {total_batches} batches for {len(smbgs_data)} smbgs."
