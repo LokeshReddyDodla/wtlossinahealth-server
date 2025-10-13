@@ -151,6 +151,14 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - data.percentile_75_mgdl
   - data.percentile_90_mgdl
 
+- **smbg**
+  - hour
+  - glucose_mgdl
+  - reading_type
+  - reading_time
+  - source
+  - uploaded_at
+
 - **meal**
   - meal_type
   - meal_date

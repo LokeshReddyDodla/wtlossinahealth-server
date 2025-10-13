@@ -5,6 +5,9 @@ from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
+from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
+    AiConversationServiceV2,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -41,7 +44,9 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
-from lib.services.meal_vector_service import MealVectorService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -63,6 +68,9 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.smbg_vector_service.smbg_vector_service import (
+    SMBGVectorService,
+)
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -100,6 +108,12 @@ def get_chat_management_service() -> ChatManagementService:
 def get_ai_conversation_service() -> AiConversationService:
     return cast(
         AiConversationService, container.resolve(AiConversationService)
+    )
+
+
+def get_ai_conversation_service_v2() -> AiConversationServiceV2:
+    return cast(
+        AiConversationServiceV2, container.resolve(AiConversationServiceV2)
     )
 
 
@@ -223,18 +237,6 @@ def get_cgm_report_vector_service() -> CGMReportVectorService:
     )
 
 
-def get_qdrant_search_engine_service() -> QdrantSearchEngine:
-    return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
-
-
-def get_cgm_vector_service() -> CGMVectorService:
-    return cast(CGMVectorService, container.resolve(CGMVectorService))
-
-
-def get_meal_vector_service() -> MealVectorService:
-    return cast(MealVectorService, container.resolve(MealVectorService))
-
-
 def get_fitness_stats_processor() -> FitnessStatsProcessor:
     return cast(
         FitnessStatsProcessor,
@@ -293,6 +295,22 @@ def get_token_usage_service() -> TokenUsageService:
 
 def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
+
+
+def get_qdrant_search_engine() -> QdrantSearchEngine:
+    return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
+
+
+def get_cgm_vector_service() -> CGMVectorService:
+    return cast(CGMVectorService, container.resolve(CGMVectorService))
+
+
+def get_meal_vector_service() -> MealVectorService:
+    return cast(MealVectorService, container.resolve(MealVectorService))
+
+
+def get_smbg_vector_service() -> SMBGVectorService:
+    return cast(SMBGVectorService, container.resolve(SMBGVectorService))
 
 
 def get_ai_conversation_messages_collection():

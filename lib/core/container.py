@@ -16,6 +16,9 @@ from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
+from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
+    AiConversationServiceV2,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -50,7 +53,9 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.meal_report_service import MealReportService
 from lib.services.meal_service import MealService
-from lib.services.meal_vector_service import MealVectorService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -74,6 +79,9 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.services.sleep_report_service import SleepReportService
+from lib.services.smbg_vector_service.smbg_vector_service import (
+    SMBGVectorService,
+)
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -243,6 +251,9 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        smbg_vector_service=cast(
+            SMBGVectorService, container.resolve(SMBGVectorService)
         ),
     ),
 )
@@ -455,27 +466,6 @@ container.register(
     ),
 )
 
-container.register(
-    CGMVectorService,
-    lambda: CGMVectorService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
-    ),
-)
-
-container.register(
-    QdrantSearchEngine,
-    lambda: QdrantSearchEngine(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
-    ),
-)
-
-container.register(
-    MealVectorService,
-    lambda: MealVectorService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
-    ),
-)
-
 # 🔹 Fitness Upload Service
 container.register(
     FitnessUploadService,
@@ -541,6 +531,16 @@ container.register(
 # 🔹 Ai Conversation Service
 container.register(AiConversationService, AiConversationService)
 
+# 🔹 Ai Conversation Service V2
+container.register(
+    AiConversationServiceV2,
+    lambda: AiConversationServiceV2(
+        qdrant_search_engine=cast(
+            QdrantSearchEngine, container.resolve(QdrantSearchEngine)
+        )
+    ),
+)
+
 
 # 🔹 Ai Patient Token Usage Service
 container.register(
@@ -567,6 +567,39 @@ container.register(
         ),
     ),
 )
+
+# 🔹 CGM Vector Service
+container.register(
+    CGMVectorService,
+    lambda: CGMVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+# 🔹 Meal Vector Service
+container.register(
+    MealVectorService,
+    lambda: MealVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+# 🔹 SMBG Vector Service
+container.register(
+    SMBGVectorService,
+    lambda: SMBGVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+# 🔹 Qdrant Search Engine
+container.register(
+    QdrantSearchEngine,
+    lambda: QdrantSearchEngine(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
 
 # 🔹 Patient Metrics Service
 container.register(

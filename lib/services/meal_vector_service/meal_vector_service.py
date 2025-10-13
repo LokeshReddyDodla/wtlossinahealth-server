@@ -7,6 +7,10 @@ from openai import AsyncOpenAI
 from lib.core.qdrant_store import QdrantStore
 from qdrant_client.models import PointIdsList
 
+from lib.services.meal_vector_service.meal_text_repr_builder import (
+    MealTextReprBuilder,
+)
+
 logger = logging.getLogger(__name__)
 import hashlib
 import logging
@@ -85,7 +89,7 @@ class MealVectorService:
         patient_gender: str,
     ) -> Dict[str, Any]:
         dt = datetime.fromisoformat(f"{meal.get('date')}T{meal.get('time')}")
-        uploaded_at_ms = int(datetime.fromisoformat(meal.get("uploaded_at")).timestamp() * 1000)  # type: ignore
+        uploaded_at_ms = int(datetime.fromisoformat(str(meal.get("uploaded_at"))).timestamp() * 1000)  # type: ignore
 
         base_meta = {
             "patient_id": patient_id,
@@ -136,45 +140,9 @@ class MealVectorService:
             )
         base_meta["items"] = items
 
-        # Combine text for embedding
-        text_parts = [
-            f"Meal Name: {meal.get('name', '')} ({meal.get('type', '')})",
-            f"Description: {meal.get('description', '')}",
-            f"Tags: {', '.join(meal.get('tags', []))}",
-            f"Date & Time: {meal.get('date', '')} {meal.get('time', '')}",
-            f"Analyzed: {meal.get('analyzed', False)}",
-            f"Image URL: {meal.get('image_url', '')}",
-            "Nutrition Summary: "
-            + ", ".join(
-                [f"{k}: {v}" for k, v in {**macros, **micros}.items()]
-            ),
-        ]
+        combined_text = MealTextReprBuilder.build(meal)
+        base_meta["text_repr"] = combined_text
 
-        for idx, item in enumerate(items, start=1):
-            text_parts.append(
-                f"Food Item {idx}: {item.get('item_name', '')}. "
-                f"Serving: {item.get('serving_quantity', '')} {item.get('serving_unit', '')} "
-                f"({item.get('serving_size', '')}). "
-                "Macro Nutrition: "
-                + ", ".join(
-                    [
-                        f"{k}: {v}"
-                        for k, v in item.get(
-                            "macro_nutritional_values", {}
-                        ).items()
-                    ]
-                )
-                + ". Micro Nutrition: "
-                + ", ".join(
-                    [
-                        f"{k}: {v}"
-                        for k, v in item.get(
-                            "micro_nutritional_values", {}
-                        ).items()
-                    ]
-                )
-            )
-        combined_text = "\n".join(filter(None, text_parts))
         return {
             "id": self._generate_point_id(meal_id),
             "text": combined_text,

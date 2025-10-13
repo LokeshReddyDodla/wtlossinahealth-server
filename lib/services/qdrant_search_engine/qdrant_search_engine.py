@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -29,7 +29,7 @@ class QdrantSearchEngine:
 
     async def search(
         self, query: str, limit: int, patient_id: Optional[str] = None
-    ):
+    ) -> Dict[str, Any]:
         # Extract structured intent
         intent = await self.intent_extractor.extract(query)
 
@@ -45,6 +45,7 @@ class QdrantSearchEngine:
             limit=limit,
             filter_conditions=filter_conditions,
             patient_id=patient_id,
+            # score_threshold=0.6,
         )
 
         return {
