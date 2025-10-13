@@ -297,7 +297,7 @@ def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
 
 
-def get_qdrant_search_engine_service() -> QdrantSearchEngine:
+def get_qdrant_search_engine() -> QdrantSearchEngine:
     return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
 
 

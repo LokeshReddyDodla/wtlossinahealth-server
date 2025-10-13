@@ -11,19 +11,24 @@ from fastapi import (
 )
 import logging
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
+    get_ai_conversation_service_v2,
     get_cgm_report_service,
     get_cgm_report_vector_service,
     get_cgm_vector_service,
     get_meal_service,
     get_meal_vector_service,
     get_patient_profile_service,
-    get_qdrant_search_engine_service,
+    get_qdrant_search_engine,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient import Patient
 from lib.schemas.patient_meal import PatientMeal
+from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
+    AiConversationServiceV2,
+)
 from lib.services.cgm_report_service import CGMReportService
 
 
@@ -508,12 +513,43 @@ async def search_qdrant_nl_v2(
     patient_id: Optional[str] = Query(None, description="Patient ID"),
     limit: int = Query(500, description="Number of results to return"),
     qdrant_search_engine_service: QdrantSearchEngine = Depends(
-        get_qdrant_search_engine_service
+        get_qdrant_search_engine
     ),
 ):
     try:
         return await qdrant_search_engine_service.search(
             query, limit, patient_id
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ai/conversation/ask")
+async def search_qdrant_nl_v2(
+    query: str = Query(
+        ..., description="Natural language query to search for"
+    ),
+    patient_id: str = Query(None, description="Patient ID"),
+    care_provider_id: str = Query(None, description="CareProvider ID"),
+    ai_conversation_service_v2: AiConversationServiceV2 = Depends(
+        get_ai_conversation_service_v2
+    ),
+):
+    try:
+        ai_message_data = await ai_conversation_service_v2.generate_response(
+            patient_id,
+            care_provider_id,
+            ProfileTypeEnum.CARE_PROVIDER,
+            f"{patient_id}-{care_provider_id}",
+            query,
+        )
+
+        print("==> ai_message_data: ", ai_message_data)
+
+        return SuccessResponse(
+            message="AI response generated successfully.",
+            data=ai_message_data,
         )
 
     except Exception as e:

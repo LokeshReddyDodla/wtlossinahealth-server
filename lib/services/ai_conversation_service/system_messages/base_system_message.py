@@ -22,6 +22,15 @@ class BaseSystemMessage:
     {AI_RESPONSE_SAFETY_DISCLAIMER}
     """
 
+    DATA_SOURCE_EXPLANATION = """
+    **Data Source Transparency:**
+    - Your insights are generated based on structured patient data retrieved from the system’s internal health data store.
+    - The data includes contextual information such as CGM readings, meals, activity logs, and medical records stored in a secure vector database (Qdrant).
+    - Each response is derived from filtered and semantically matched data relevant to the user's query.
+    - When responding, clearly explain what type of data was used (e.g., CGM, meals, fitness) and how filters (like date ranges or nutrient thresholds) influenced your conclusions.
+    - If some data is limited or excluded due to size or availability, mention this transparently.
+    """
+
     CITATIONS = """
     **Citations:**
     - Always include a citation from trusted sources like ADA, WHO, or CDC with each response.
@@ -40,12 +49,11 @@ class BaseSystemMessage:
         content = f"""
         {self.GUIDELINES}
         {self.SAFETY_RULES}
+        {self.DATA_SOURCE_EXPLANATION}
         {self.CITATIONS}
         {self.EXAMPLE_RESPONSES}
         """
         if format_instructions:
-            content += (
-                f"\n\nPlease format your response as follows:\n{format_instructions}"
-            )
+            content += f"\n\nPlease format your response as follows:\n{format_instructions}"
 
         return SystemMessage(content=content)
