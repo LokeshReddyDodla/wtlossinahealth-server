@@ -24,6 +24,7 @@ from lib.dependencies.service_dependencies import (
     get_qdrant_search_engine,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.models.patient_smbg import PatientSMBG
 from lib.schemas.patient import Patient
 from lib.schemas.patient_meal import PatientMeal
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
@@ -599,6 +600,57 @@ async def enqueue_meal_vector_batches(
 
         return {
             "message": f"Enqueued {total_batches} batches for {len(meals_data)} meals."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/qdrant/smbg/all")
+async def enqueue_smbg_vector_batches(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    BATCH_SIZE = 50
+    try:
+        query = select(PatientSMBG).options(
+            selectinload(PatientMealModel.patient),
+        )
+        result = await session.execute(query)
+        smbgs = result.scalars().all()
+
+        smbgs_data = [
+            {
+                "glucose_mgdl": m.glucose_level,
+                "reading_time": m.reading_time,
+                "type": m.type,
+                "notes": m.notes,
+                "uploaded_at": m.uploaded_at,
+                "source": m.source_name or "app",
+                "id": m.id,
+                "patient_id": m.patient_id,
+                "patient": (
+                    Patient.model_validate(m.patient).model_dump(mode="json")
+                    if m.patient
+                    else None
+                ),
+            }
+            for m in smbgs
+        ]
+        total_batches = ceil(len(smbgs_data) / BATCH_SIZE)
+
+        for i in range(total_batches):
+            batch = smbgs_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+            process_meal_batch.delay(batch)
+
+        return {
+            "message": f"Enqueued {total_batches} batches for {len(smbgs_data)} smbgs."
         }
 
     except HTTPException:

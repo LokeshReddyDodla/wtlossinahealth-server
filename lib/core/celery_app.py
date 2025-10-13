@@ -63,5 +63,6 @@ from lib.tasks.meal_tasks import *
 from lib.tasks.sleep_tasks import *
 from lib.tasks.fcm_tasks import *
 from lib.tasks.libreview_tasks import *
+from lib.tasks.other_tasks import *
 from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
