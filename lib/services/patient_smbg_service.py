@@ -12,6 +12,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.smbg_vector_service.smbg_vector_service import (
+    SMBGVectorService,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -21,9 +24,11 @@ class PatientSmbgService:
         self,
         postgres_store: PostgresStore,
         patient_profile_service: PatientProfileService,
+        smbg_vector_service: SMBGVectorService,
     ):
         self.postgres_store = postgres_store
         self.patient_profile_service = patient_profile_service
+        self.smbg_vector_service = smbg_vector_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="smbg",
             selected_ai_model="gpt-5-mini",
@@ -70,6 +75,27 @@ class PatientSmbgService:
             postgres_session.add(new_smbg)
             await postgres_session.commit()
             await postgres_session.refresh(new_smbg)
+
+            patient_profile = (
+                await self.patient_profile_service.fetch_patient_profile(
+                    patient_id=patient_id, postgres_session=postgres_session
+                )
+            )
+
+            await self.smbg_vector_service.upsert_smbg(
+                patient_id=patient_id,
+                reading_id=str(new_smbg.id),
+                reading={
+                    "glucose_mgdl": new_smbg.glucose_level,
+                    "reading_time": new_smbg.reading_time.isoformat(),
+                    "type": new_smbg.type,
+                    "notes": new_smbg.notes,
+                    "uploaded_at": new_smbg.uploaded_at,
+                    "source": new_smbg.source_name or "app",
+                },
+                patient_age=patient_profile.age,
+                patient_gender=patient_profile.gender,
+            )
 
             ai_response_generated = await self._generate_ai_response(
                 patient_id,
