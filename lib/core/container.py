@@ -464,6 +464,7 @@ container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 

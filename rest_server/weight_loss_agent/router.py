@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status, HTTPException
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
@@ -105,6 +105,8 @@ async def enroll_patient(
             message="Patient enrolled successfully in weight loss program",
             data=enrollment,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -131,6 +133,8 @@ async def update_enrollment(
             message="Enrollment updated successfully",
             data=enrollment,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -162,6 +166,8 @@ async def get_patient_enrollment(
             message="Enrollment retrieved successfully",
             data=enrollment,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -197,11 +203,22 @@ async def upload_and_analyze_inbody_report(
                 message=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
             )
 
+        # Get patient_id from enrollment for logging
+        async with weight_loss_service.postgres_store.get_session() as session:
+            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found"
+                )
+            patient_id = str(enrollment.patient_id)
+
         # Process file and get AI analysis
         analysis_result = await weight_loss_service.process_and_analyze_inbody_report(
             enrollment_id=enrollment_id,
             report_file=report_file,
-            user_id="test-user"  # TODO: Use current_care_provider.care_provider_id for production
+            user_id=patient_id
         )
 
         return SuccessResponse(
@@ -209,6 +226,8 @@ async def upload_and_analyze_inbody_report(
             message="Inbody report analyzed and stored successfully. The report has been processed by AI and saved to the database. Note: AI summary will be available after database migration.",
             data=analysis_result,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -244,11 +263,22 @@ async def store_inbody_report_analysis(
                 data=analysis_data,
             )
 
+        # Get patient_id from enrollment for logging
+        async with weight_loss_service.postgres_store.get_session() as session:
+            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found"
+                )
+            patient_id = str(enrollment.patient_id)
+
         # Store the analysis results in database (retry if failed before)
         stored_result = await weight_loss_service.store_inbody_report_analysis(
             enrollment_id=enrollment_id,
             analysis_result=analysis_data,
-            user_id="test-user"  # TODO: Use current_care_provider.care_provider_id for production
+            user_id=patient_id
         )
 
         return SuccessResponse(
@@ -256,6 +286,8 @@ async def store_inbody_report_analysis(
             message="Inbody report analysis stored successfully",
             data=stored_result,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -289,6 +321,8 @@ async def get_weight_loss_progress(
             message="Progress report generated successfully",
             data=progress_data,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -322,108 +356,10 @@ async def analyze_weight_loss_progress(
             message="Analysis generated successfully",
             data=analysis,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
-
-
-@router.post(
-    "/enrollment/{enrollment_id}/inbody-report/{report_id}/process",
-    response_model=SuccessResponse[dict],
-    summary="Process inbody report",
-    description="Process uploaded inbody report image and extract measurements",
-)
-async def process_inbody_report(
-    enrollment_id: UUID,
-    report_id: UUID,
-    weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    current_care_provider: CareProvider = Depends(get_current_care_provider),
-):
-    """Process inbody report and extract measurements using AI"""
-
-    try:
-        # Get the report to access the image URL
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import InbodyReport
-            report = await session.get(InbodyReport, report_id)
-            if not report:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Inbody report not found"
-                )
-
-            # Get patient information
-            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
-            if not enrollment:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Enrollment not found"
-                )
-
-            patient = enrollment.patient
-
-        # Process the image to extract measurements
-        from lib.services.inbody_image_processing_service import InbodyImageProcessingService
-        from lib.services.health_indicator_analysis_service import HealthIndicatorAnalysisService
-
-        image_processor = InbodyImageProcessingService()
-        health_analyzer = HealthIndicatorAnalysisService(weight_loss_service.postgres_store)
-
-        measurements_data, confidence_score = await image_processor.process_inbody_image(
-            str(report.image_url)  # Convert Column to string
-        )
-
-        if not measurements_data:
-            raise_http_exception(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Unable to extract measurements from image. Please ensure the image is clear and contains valid inbody report data."
-            )
-
-        # Process measurements and create health indicators
-        processed_measurements, health_indicators = await weight_loss_service.process_inbody_image(
-            report_id, measurements_data
-        )
-
-        # Analyze health indicators with AI
-        if processed_measurements:
-            ai_health_indicators = await health_analyzer.analyze_health_indicators(
-                processed_measurements, patient
-            )
-            # Add AI-generated indicators to the list
-            health_indicators.extend(ai_health_indicators)
-
-        return SuccessResponse(
-            status="success",
-            message="Inbody report processed successfully",
-            data={
-                "measurements_processed": len(processed_measurements),
-                "health_indicators_found": len(health_indicators),
-                "extraction_confidence": confidence_score,
-                "abnormal_indicators": [
-                    {
-                        "name": indicator.indicator_name,
-                        "value": indicator.value,
-                        "unit": indicator.unit,
-                        "type": indicator.indicator_type,
-                        "level": indicator.abnormality_level,
-                        "explanation": indicator.analysis_explanation,
-                    }
-                    for indicator in health_indicators
-                    if indicator.is_abnormal  # type: ignore
-                ],
-                "normal_indicators": [
-                    {
-                        "name": indicator.indicator_name,
-                        "value": indicator.value,
-                        "unit": indicator.unit,
-                    }
-                    for indicator in health_indicators
-                    if not indicator.is_abnormal  # type: ignore
-                ],
-            },
-        )
-    except Exception as e:
-        raise_http_exception(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, message=f"Error processing inbody report: {str(e)}")
 
 
 @router.get(
@@ -442,6 +378,7 @@ async def get_inbody_reports(
 
     try:
         from sqlalchemy.orm import selectinload
+        from lib.models.weight_loss_agent import InbodyReport
 
         async with weight_loss_service.postgres_store.get_session() as session:
             from lib.models.weight_loss_agent import WeightLossAgentEnrollment
@@ -449,7 +386,10 @@ async def get_inbody_reports(
                 WeightLossAgentEnrollment,
                 enrollment_id,
                 options=[
-                    selectinload(WeightLossAgentEnrollment.inbody_reports),
+                    selectinload(WeightLossAgentEnrollment.inbody_reports)
+                    .selectinload(InbodyReport.measurements),
+                    selectinload(WeightLossAgentEnrollment.inbody_reports)
+                    .selectinload(InbodyReport.health_indicators),
                 ]
             )
 
@@ -464,6 +404,8 @@ async def get_inbody_reports(
                 message="Inbody reports retrieved successfully",
                 data=enrollment.inbody_reports,
             )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -505,6 +447,8 @@ async def get_health_indicators(
                 message="Health indicators retrieved successfully",
                 data=report.health_indicators,
             )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
 
@@ -513,22 +457,7 @@ async def get_health_indicators(
     "/enrollment/{enrollment_id}/chat",
     response_model=SuccessResponse[Dict],
     summary="Chat with weight loss agent",
-    description="""Chat with AI weight loss agent about progress, diet, fitness, and health metrics.
-
-    The chatbot has access to:
-    - Inbody report summaries and health indicators
-    - Daily meal data and calorie tracking
-    - Fitness activity data (steps, energy expenditure, workouts)
-    - Vital signs (weight, blood pressure)
-    - Progress tracking and goal analysis
-
-    Supports queries about:
-    - Weight loss progress and trends
-    - Dietary advice and meal planning
-    - Exercise recommendations
-    - Health metric interpretation
-    - Goal setting and achievement strategies
-    """,
+    description="Ask questions about weight loss progress and get AI-powered responses based on reports and data",
 )
 async def chat_with_weight_loss_agent(
     enrollment_id: UUID,
@@ -549,12 +478,22 @@ async def chat_with_weight_loss_agent(
                 message="Question is required"
             )
 
-        # Use the agentic flow by default to orchestrate intent analysis
-        response = await weight_loss_service.agentic_weight_loss_coach(
+        # Get patient_id from enrollment to use as user_id
+        async with weight_loss_service.postgres_store.get_session() as session:
+            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found"
+                )
+            patient_id = str(enrollment.patient_id)
+
+        response = await weight_loss_service.chat_with_weight_loss_agent(
             enrollment_id=enrollment_id,
-            user_input=user_question,
-            user_id="test-user",  # TODO: Use current_care_provider.care_provider_id for production
+            user_id=patient_id,  # Use patient_id from enrollment
             conversation_id=conversation_id,
+            user_question=user_question,
         )
 
         return SuccessResponse(
@@ -562,5 +501,7 @@ async def chat_with_weight_loss_agent(
             message="AI response generated successfully",
             data=response,
         )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))

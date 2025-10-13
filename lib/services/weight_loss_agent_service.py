@@ -1,16 +1,14 @@
-import asyncio
 import re
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
-from fastapi import HTTPException, status
-from sqlalchemy import and_, desc, func, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import status
+from sqlalchemy import and_, func
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload, selectinload
 
-from lib.core.constants import ProfileTypeEnum
+from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
@@ -32,15 +30,14 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.s3_utils import upload_file_to_s3
 
 
 class WeightLossAgentService:
-    """Agentic service for managing weight loss agent functionality with single API orchestration"""
+    """Service for managing weight loss agent functionality"""
 
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(self, postgres_store: PostgresStore, clickhouse_store: ClickHouseStore):
         self.postgres_store = postgres_store
-        self.agent_memory = {}  # In-memory conversation state (use Redis in production)
+        self.clickhouse_store = clickhouse_store
 
     async def enroll_patient_in_weight_loss_program(
         self,
@@ -176,67 +173,6 @@ class WeightLossAgentService:
 
             return report
 
-    async def process_inbody_image(
-        self,
-        report_id: UUID,
-        extracted_measurements: List[Dict],
-    ) -> Tuple[List[InbodyMeasurement], List[HealthIndicator]]:
-        """Process extracted measurements from inbody image"""
-
-        async with self.postgres_store.get_session() as session:
-            # Get the report
-            report = await session.get(InbodyReport, report_id)
-            if not report:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Inbody report not found"
-                )
-
-            measurements = []
-            health_indicators = []
-
-            # Process each measurement
-            for measurement_data in extracted_measurements:
-                measurement_type = measurement_data["type"]
-                value = measurement_data["value"]
-                unit = measurement_data["unit"]
-                normal_min = measurement_data.get("normal_min")
-                normal_max = measurement_data.get("normal_max")
-
-                # Create measurement
-                measurement = InbodyMeasurement(
-                    report_id=report_id,
-                    measurement_type=measurement_type,
-                    value=value,
-                    unit=unit,
-                    normal_min=normal_min,
-                    normal_max=normal_max,
-                )
-                measurements.append(measurement)
-                session.add(measurement)
-
-                # Create health indicator if abnormal
-                if normal_min is not None and normal_max is not None and self._is_value_abnormal(value, normal_min, normal_max):
-                    indicator = self._create_health_indicator(
-                        report_id, measurement_type, value, unit, normal_min, normal_max
-                    )
-                    health_indicators.append(indicator)
-                    session.add(indicator)
-
-            # Mark report as processed
-            report.processed = True
-            report.extracted_at = datetime.now().replace(tzinfo=None)
-
-            await session.commit()
-
-            # Refresh objects
-            for measurement in measurements:
-                await session.refresh(measurement)
-            for indicator in health_indicators:
-                await session.refresh(indicator)
-
-            return measurements, health_indicators
-
     async def get_daily_reports_data(
         self,
         patient_id: UUID,
@@ -315,94 +251,6 @@ class WeightLossAgentService:
 
             return daily_data
 
-    def _classify_query_type(self, question: str) -> str:
-        """Classify the type of user query for better context handling"""
-
-        question_lower = question.lower()
-
-        # Progress-related queries
-        if any(word in question_lower for word in ["progress", "improvement", "change", "trends", "results"]):
-            return "progress_analysis"
-
-        # Diet/meal-related queries
-        if any(word in question_lower for word in ["eat", "food", "meal", "diet", "calories", "nutrition", "hungry"]):
-            return "diet_advice"
-
-        # Exercise/fitness-related queries
-        if any(word in question_lower for word in ["exercise", "workout", "fitness", "run", "walk", "gym", "active"]):
-            return "fitness_advice"
-
-        # Health metrics queries
-        if any(word in question_lower for word in ["weight", "bmi", "body fat", "muscle", "measurement", "vitals"]):
-            return "health_metrics"
-
-        # Goal-related queries
-        if any(word in question_lower for word in ["goal", "target", "achieve", "lose weight", "gain muscle"]):
-            return "goal_setting"
-
-        # General advice queries
-        if any(word in question_lower for word in ["help", "advice", "recommend", "suggest", "how to", "what should"]):
-            return "general_advice"
-
-        # Default classification
-        return "general_conversation"
-
-    def _generate_contextual_fallback(self, question: str, context_data: Dict, enrollment, daily_reports: List, latest_report) -> str:
-        """Generate contextual information for fallback AI responses"""
-
-        context_parts = []
-
-        # Add enrollment context
-        if enrollment:
-            context_parts.append(f"Patient enrolled in weight loss program for {(datetime.now() - enrollment.enrollment_date).days} days")
-            context_parts.append(f"Target weight: {enrollment.target_weight_kg}kg, Target BMI: {enrollment.target_bmi}")
-            if enrollment.program_goals:
-                context_parts.append(f"Program goals: {enrollment.program_goals}")
-
-        # Add recent activity context
-        if daily_reports:
-            recent_meals = len([d for d in daily_reports[-7:] if d.get("meal_data")])
-            recent_fitness = len([d for d in daily_reports[-7:] if d.get("fitness_data")])
-            context_parts.append(f"Recent activity: {recent_meals} days with meal data, {recent_fitness} days with fitness data in last 7 days")
-
-        # Add inbody report context
-        if latest_report:
-            context_parts.append(f"Latest inbody report from {latest_report.report_date.strftime('%Y-%m-%d')}")
-            if hasattr(latest_report, 'measurements') and latest_report.measurements:
-                weight_meas = next((m for m in latest_report.measurements if m.measurement_type.lower() == 'weight'), None)
-                if weight_meas:
-                    context_parts.append(f"Current weight: {weight_meas.value} {weight_meas.unit}")
-
-        # Add question context
-        query_type = self._classify_query_type(question)
-        context_parts.append(f"Question type: {query_type}")
-        context_parts.append(f"User question: {question}")
-
-        return " | ".join(context_parts)
-
-    def _generate_basic_fallback_response(self, question: str, context_data: Dict) -> str:
-        """Generate a basic fallback response when AI services are unavailable"""
-
-        query_type = context_data.get("conversation_context", {}).get("query_type", "general")
-
-        base_responses = {
-            "progress_analysis": "I'd be happy to help you track your weight loss progress! Based on your recent activity data, I can see you're actively working on your health goals. Keep up the great work with your daily meals and fitness activities.",
-            "diet_advice": "Nutrition is key to successful weight loss! I recommend focusing on balanced meals with plenty of vegetables, lean proteins, and whole grains. Try to maintain a moderate calorie deficit while ensuring you get all essential nutrients.",
-            "fitness_advice": "Regular exercise is crucial for weight management! Aim for a mix of cardio and strength training. Even moderate daily activity like walking can make a significant difference in your progress.",
-            "health_metrics": "Your health metrics are important indicators of progress! Regular monitoring through inbody reports helps track changes in body composition, muscle mass, and overall health status.",
-            "goal_setting": "Setting realistic goals is essential for long-term success! Focus on sustainable changes rather than rapid weight loss. Small, consistent improvements add up over time.",
-            "general_advice": "I'm here to support your weight loss journey! Remember that sustainable weight loss involves balanced nutrition, regular physical activity, and consistent healthy habits."
-        }
-
-        response = base_responses.get(query_type, base_responses["general_advice"])
-
-        # Add personalized touch if we have enrollment data
-        enrollment_info = context_data.get("enrollment_info", {})
-        if enrollment_info.get("days_enrolled"):
-            response += f" You've been on this journey for {enrollment_info['days_enrolled']} days - that's commendable!"
-
-        return response
-
     async def analyze_weight_loss_progress(
         self,
         enrollment_id: UUID,
@@ -465,7 +313,7 @@ class WeightLossAgentService:
                 selected_ai_model="gpt-4o"
             )
             
-            analysis_prompt = self._build_analysis_prompt(
+            analysis_prompt = self._build_structured_analysis_prompt(
                 enrollment, daily_reports, latest_report
             )
             
@@ -489,19 +337,14 @@ class WeightLossAgentService:
                 }
             )
             
-            # Parse the AI response
-            analysis = {
-                "enrollment_id": str(enrollment_id),
-                "analysis_period": {
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                },
-                "ai_analysis": ai_response.get("response", "Analysis not available"),
-                "confidence_score": ai_response.get("metadata", {}).get("confidence_score"),
-                "tags": ai_response.get("metadata", {}).get("tags", []),
-                "citations": ai_response.get("metadata", {}).get("citations", []),
-                "follow_up_questions": ai_response.get("follow_up_questions", []),
-            }
+            # Parse the AI response into structured format
+            analysis = self._parse_analysis_response(
+                ai_response, 
+                enrollment_id, 
+                start_date, 
+                end_date,
+                daily_reports
+            )
 
             return analysis
 
@@ -606,70 +449,55 @@ class WeightLossAgentService:
         )
 
     async def _get_fitness_data_for_date(self, patient_id: UUID, date: date) -> Optional[Dict]:
-        """Get real fitness data for a specific date from FitnessReportService"""
+        """Get fitness data for a specific date from ClickHouse"""
 
         try:
-            # Import the fitness report service
-            from lib.dependencies.service_dependencies import get_fitness_report_service
-
-            # Get the fitness report service
-            fitness_service = get_fitness_report_service()
-
-            # Fetch the daily fitness report for the specific date
-            report = await fitness_service.fetch_daily_report(
-                patient_id=str(patient_id),
-                date=date,
-                regenerate=False  # Don't regenerate if not found
-            )
-
-            if report:
-                # Extract the relevant fitness metrics from the report
-                fitness_stats = report.get("fitness_stats", {})
-
-                return {
-                    "steps": fitness_stats.get("steps", 0),
-                    "active_energy": fitness_stats.get("active_energy", 0.0),
-                    "active_duration": fitness_stats.get("active_duration", 0),
-                    "workouts_count": len(report.get("workouts", [])),
-                    "distance": fitness_stats.get("distance", 0.0),
-                    "average_active_session_duration": fitness_stats.get("average_active_session_duration", 0.0),
-                    "peak_activity_hour": (
-                        report.get("peak_activity_time", {}).get("hour")
-                        if report.get("peak_activity_time") else None
-                    ),
-                }
-
-            # If no report found, return zeros (no random data)
-            return {
-                "steps": 0,
-                "active_energy": 0.0,
-                "active_duration": 0,
-                "workouts_count": 0,
-                "distance": 0.0,
-                "average_active_session_duration": 0.0,
-                "peak_activity_hour": None,
-            }
-
+            # Format date for ClickHouse query
+            start_datetime = f"{date.isoformat()} 00:00:00"
+            end_datetime = f"{date.isoformat()} 23:59:59"
+            
+            # Query to get fitness data for the specific date
+            query = f"""
+            SELECT
+                SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS total_steps,
+                SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS total_active_energy,
+                SUM(dateDiff('minute', start_datetime, end_datetime)) AS total_active_duration
+            FROM
+                aihealth.fitness_data
+            WHERE
+                patient_id = '{str(patient_id)}'
+                AND start_datetime >= '{start_datetime}'
+                AND end_datetime <= '{end_datetime}'
+            """
+            
+            result = self.clickhouse_store.client.execute(query)
+            
+            if result and len(result) > 0:
+                steps, active_energy, active_duration = result[0]
+                
+                # Only return data if there's actual fitness data
+                if steps > 0 or active_energy > 0 or active_duration > 0:
+                    return {
+                        "steps": int(steps) if steps else 0,
+                        "active_energy": float(active_energy) if active_energy else 0.0,
+                        "active_duration": int(active_duration) if active_duration else 0,
+                    }
+            
+            # Return None if no data found
+            return None
+            
         except Exception as e:
-            print(f"Error getting real fitness data: {str(e)}")
-            # Return zeros on error (no random data)
-            return {
-                "steps": 0,
-                "active_energy": 0.0,
-                "active_duration": 0,
-                "workouts_count": 0,
-                "distance": 0.0,
-                "average_active_session_duration": 0.0,
-                "peak_activity_hour": None,
-            }
+            # Log error but don't fail the entire request
+            print(f"Error fetching fitness data for {patient_id} on {date}: {str(e)}")
+            return None
 
-    def _build_analysis_prompt(
+    def _build_structured_analysis_prompt(
         self,
         enrollment: WeightLossAgentEnrollment,
         daily_reports: List[Dict],
         latest_report: Optional[InbodyReport],
     ) -> str:
-        """Build analysis prompt for AI"""
+        """Build structured analysis prompt for AI that returns JSON format"""
 
         # Calculate age from date of birth
         age = None
@@ -678,78 +506,171 @@ class WeightLossAgentService:
             age = today.year - enrollment.patient.dob.year - ((today.month, today.day) < (enrollment.patient.dob.month, enrollment.patient.dob.day))
 
         prompt = f"""
-        Analyze the weight loss progress for patient:
+You are a health and weight loss analysis AI. Analyze the following patient data and provide a structured JSON response.
 
-        Patient Info:
-        - Age: {age if age else 'Unknown'}
-        - Gender: {enrollment.patient.gender}
-        - Target Weight: {enrollment.target_weight_kg} kg
-        - Target BMI: {enrollment.target_bmi}
-        - Program Goals: {enrollment.program_goals or 'Not specified'}
+Patient Information:
+- Age: {age if age else 'Unknown'}
+- Gender: {enrollment.patient.gender}
+- Target Weight: {enrollment.target_weight_kg} kg
+- Target BMI: {enrollment.target_bmi}
+- Program Goals: {enrollment.program_goals or 'Not specified'}
+- Enrollment Date: {enrollment.enrollment_date.isoformat()}
 
-        Daily Reports Summary:
-        {len(daily_reports)} days of data available
+Data Available:
+- {len(daily_reports)} days of daily activity reports
+"""
 
-        Latest Inbody Report:
-        """
-
+        # Add InBody report data if available
         if latest_report and latest_report.measurements:
-            prompt += "\nMeasurements:\n"
-            for measurement in latest_report.measurements:
+            prompt += "\nLatest InBody Report Measurements:\n"
+            for measurement in latest_report.measurements[:10]:  # Limit to 10 measurements
                 prompt += f"- {measurement.measurement_type}: {measurement.value} {measurement.unit}\n"
+            
+            if latest_report.health_indicators:
+                prompt += f"\nAbnormal Health Indicators: {len([h for h in latest_report.health_indicators if h.is_abnormal])}\n"
 
-        prompt += "\nDaily activity summary:\n"
-        for day in daily_reports[-7:]:  # Last 7 days
-            prompt += f"Date: {day['date']}\n"
-            if day['meal_data']:
-                prompt += f"- Meals: {day['meal_data']['meals_count']}, Calories: {day['meal_data']['total_calories']}\n"
-            if day['fitness_data']:
-                prompt += f"- Steps: {day['fitness_data']['steps']}, Active Energy: {day['fitness_data']['active_energy']} kcal\n"
+        # Add daily activity summary
+        if daily_reports:
+            prompt += "\nDaily Activity Summary (last 7 days):\n"
+            for day in daily_reports[-7:]:
+                prompt += f"\nDate: {day['date']}\n"
+                
+                if day.get('meal_data'):
+                    meal_data = day['meal_data']
+                    prompt += f"  Meals: {meal_data.get('meals_count', 0)}, Total Calories: {meal_data.get('total_calories', 0)}\n"
+                else:
+                    prompt += "  No meal data\n"
+                
+                if day.get('fitness_data'):
+                    fitness = day['fitness_data']
+                    prompt += f"  Steps: {fitness.get('steps', 0)}, Active Energy: {fitness.get('active_energy', 0)} kcal, Duration: {fitness.get('active_duration', 0)} min\n"
+                else:
+                    prompt += "  No fitness data\n"
+                
+                if day.get('vitals_data') and day['vitals_data'].get('weight'):
+                    prompt += f"  Weight: {day['vitals_data']['weight']} kg\n"
+
+        prompt += """
+
+Please analyze this data and return ONLY a valid JSON object (no markdown, no extra text) with the following structure:
+{
+  "overall_health_score": <number between 0-100, or null if insufficient data>,
+  "key_insights": [<array of 3-5 key insights as strings>],
+  "recommendations": [<array of 3-5 actionable recommendations as strings>],
+  "risk_factors": [<array of any identified risk factors as strings, empty array if none>],
+  "progress_metrics": {
+    "weight_trend": "<improving/stable/declining>",
+    "activity_level": "<low/moderate/high>",
+    "nutrition_adherence": "<poor/fair/good/excellent>",
+    "days_with_data": <number>
+  },
+  "meal_analysis": {
+    "average_daily_calories": <number or null>,
+    "days_logged": <number>,
+    "calorie_trend": "<increasing/stable/decreasing or null>",
+    "summary": "<brief summary string>"
+  },
+  "fitness_analysis": {
+    "average_daily_steps": <number or null>,
+    "average_active_energy": <number or null>,
+    "days_logged": <number>,
+    "activity_trend": "<improving/stable/declining or null>",
+    "summary": "<brief summary string>"
+  },
+  "vitals_analysis": {
+    "weight_change": <number in kg or null>,
+    "bmi_change": <number or null>,
+    "days_logged": <number>,
+    "trend": "<losing/maintaining/gaining or null>",
+    "summary": "<brief summary string>"
+  }
+}
+
+Important: Return ONLY the JSON object, no additional text or markdown formatting.
+"""
 
         return prompt
 
-    async def upload_inbody_image_to_s3(self, image_file, enrollment_id: UUID) -> str:
-        """Upload inbody image to S3 and return the URL"""
+    def _parse_analysis_response(
+        self,
+        ai_response: Dict,
+        enrollment_id: UUID,
+        start_date: datetime,
+        end_date: datetime,
+        daily_reports: List[Dict],
+    ) -> Dict:
+        """Parse AI response into structured analysis format"""
+        
+        import json
+        
+        # Extract the AI response content
+        ai_content = ai_response.get("content", "")
+        
+        # Try to parse as JSON
         try:
-            # Read file content
-            file_content = await image_file.read()
-
-            # Generate unique filename
-            from uuid import uuid4
-            file_extension = image_file.filename.split('.')[-1] if '.' in image_file.filename else 'jpg'
-            unique_filename = f"inbody-reports/{enrollment_id}/{uuid4()}.{file_extension}"
-
-            # For testing: return a mock URL instead of uploading to S3
-            # TODO: Remove this for production and use actual S3 upload
-            mock_s3_url = f"https://aihealth-dev.s3.amazonaws.com/{unique_filename}"
-            print(f"Mock S3 upload - would upload to: {mock_s3_url}")
-            return mock_s3_url
-
-            # Original S3 upload code (commented out for testing)
-            """
-            # Upload to S3
-            s3_url = upload_file_to_s3(
-                file_bytes=file_content,
-                bucket_name="aihealth-dev",
-                file_name=unique_filename,
-                content_type=image_file.content_type or "image/jpeg"
-            )
-
-            if not s3_url:
-                raise_http_exception(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    message="Failed to upload image to S3"
-                )
-
-            return s3_url
-            """
-
-        except Exception as e:
-            print(f"S3 upload error: {str(e)}")
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Error uploading image: {str(e)}"
-            )
+            # Remove markdown code blocks if present
+            if "```json" in ai_content:
+                ai_content = ai_content.split("```json")[1].split("```")[0].strip()
+            elif "```" in ai_content:
+                ai_content = ai_content.split("```")[1].split("```")[0].strip()
+            
+            # Parse JSON
+            parsed_data = json.loads(ai_content)
+            
+            # Build the structured response
+            return {
+                "enrollment_id": str(enrollment_id),
+                "analysis_period": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                },
+                "overall_health_score": parsed_data.get("overall_health_score"),
+                "key_insights": parsed_data.get("key_insights", []),
+                "recommendations": parsed_data.get("recommendations", []),
+                "risk_factors": parsed_data.get("risk_factors", []),
+                "progress_metrics": parsed_data.get("progress_metrics", {}),
+                "meal_analysis": parsed_data.get("meal_analysis"),
+                "fitness_analysis": parsed_data.get("fitness_analysis"),
+                "vitals_analysis": parsed_data.get("vitals_analysis"),
+            }
+            
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            # Fallback: return empty structure if parsing fails
+            print(f"Failed to parse AI analysis response: {str(e)}")
+            print(f"AI Response content: {ai_content[:500]}")  # Log first 500 chars
+            
+            # Calculate some basic metrics from daily_reports
+            days_with_meals = len([d for d in daily_reports if d.get('meal_data')])
+            days_with_fitness = len([d for d in daily_reports if d.get('fitness_data')])
+            days_with_vitals = len([d for d in daily_reports if d.get('vitals_data')])
+            
+            return {
+                "enrollment_id": str(enrollment_id),
+                "analysis_period": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                },
+                "overall_health_score": None,
+                "key_insights": [
+                    f"Data available for {len(daily_reports)} days",
+                    f"Meal data logged on {days_with_meals} days" if days_with_meals > 0 else "No meal data available",
+                    f"Fitness data logged on {days_with_fitness} days" if days_with_fitness > 0 else "No fitness data available",
+                ],
+                "recommendations": [
+                    "Upload more daily health data for better analysis",
+                    "Ensure consistent logging of meals and fitness activities",
+                ],
+                "risk_factors": [],
+                "progress_metrics": {
+                    "days_with_data": len(daily_reports),
+                    "days_with_meals": days_with_meals,
+                    "days_with_fitness": days_with_fitness,
+                    "days_with_vitals": days_with_vitals,
+                },
+                "meal_analysis": None,
+                "fitness_analysis": None,
+                "vitals_analysis": None,
+            }
 
     async def chat_with_weight_loss_agent(
         self,
@@ -820,7 +741,7 @@ class WeightLossAgentService:
                 selected_ai_model="gpt-4o"
             )
 
-            # Create comprehensive context with enrollment and report data
+            # Create context with enrollment and report data
             context_data = {
                 "enrollment_info": {
                     "target_weight": enrollment.target_weight_kg,
@@ -828,656 +749,43 @@ class WeightLossAgentService:
                     "program_goals": enrollment.program_goals,
                     "enrollment_date": enrollment.enrollment_date.isoformat(),
                     "days_enrolled": (datetime.now() - enrollment.enrollment_date).days,
-                    "current_weight": latest_report_summary.get("measurements", [{}])[0].get("value") if latest_report_summary and latest_report_summary.get("measurements") else None,
                 },
                 "patient_info": {
                     "age": (datetime.now().date() - enrollment.patient.dob).days // 365 if enrollment.patient.dob else None,
                     "gender": enrollment.patient.gender,
-                    "name": f"{enrollment.patient.first_name} {enrollment.patient.last_name}" if enrollment.patient.first_name else "Patient",
                 },
-                "recent_activity": {
-                    "last_7_days": daily_reports[-7:] if len(daily_reports) >= 7 else daily_reports,
-                    "last_30_days": daily_reports,
-                    "total_days_with_data": len([d for d in daily_reports if d.get("meal_data") or d.get("fitness_data")]),
-                    "average_daily_calories": sum([
-                        d.get("meal_data", {}).get("total_calories", 0)
-                        for d in daily_reports[-7:] if d.get("meal_data")
-                    ]) / max(1, len([d for d in daily_reports[-7:] if d.get("meal_data")])),
-                    "average_daily_steps": sum([
-                        d.get("fitness_data", {}).get("steps", 0)
-                        for d in daily_reports[-7:] if d.get("fitness_data")
-                    ]) / max(1, len([d for d in daily_reports[-7:] if d.get("fitness_data")])),
-                    "total_workouts_last_week": sum([
-                        d.get("fitness_data", {}).get("workouts_count", 0)
-                        for d in daily_reports[-7:] if d.get("fitness_data")
-                    ]),
-                },
+                "recent_activity": daily_reports[-7:] if daily_reports else [],  # Last 7 days
                 "latest_inbody_report": latest_report_summary,
-                "health_summary": {
-                    "total_reports": len(enrollment.inbody_reports),
-                    "latest_report_date": latest_report.report_date.isoformat() if latest_report else None,
-                    "processed_reports": len([r for r in enrollment.inbody_reports if r.processed]),
-                    "abnormal_indicators": latest_report_summary.get("health_indicators", []) if latest_report_summary else [],
-                },
-                "question_type": "weight_loss_chatbot",
-                "conversation_context": {
-                    "is_follow_up": len(conversation_id.split("_")) > 2,  # Check if this is part of an ongoing conversation
-                    "query_type": self._classify_query_type(user_question),
-                }
+                "question_type": "chatbot_conversation"
             }
 
-            # Generate AI response with enhanced context
-            try:
-                ai_response = await ai_service.generate_response(
-                    patient_id=str(enrollment.patient_id),
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    human_input=user_question,
-                    conversation_type="weight-loss-agent",
-                    additional_context=context_data
-                )
+            # Generate AI response
+            ai_response = await ai_service.generate_response(
+                patient_id=str(enrollment.patient_id),
+                user_id=user_id,
+                conversation_id=conversation_id,
+                human_input=user_question,
+                conversation_type="weight-loss-agent",
+                additional_context=context_data
+            )
 
-                # If AI response is empty or generic, provide a more specific fallback
-                if not ai_response.get("response") or ai_response.get("response") == "I'm sorry, I couldn't generate a response at this time.":
-                    # Generate a contextual fallback response using available data
-                    fallback_context = self._generate_contextual_fallback(
-                        user_question, context_data, enrollment, daily_reports, latest_report
-                    )
-                    ai_response = await ai_service.generate_response(
-                        patient_id=str(enrollment.patient_id),
-                        user_id=user_id,
-                        conversation_id=f"{conversation_id}_fallback",
-                        human_input=f"{user_question}\n\nContext: {fallback_context}",
-                        conversation_type="weight-loss-agent",
-                        additional_context=context_data
-                    )
-
-            except Exception as ai_error:
-                print(f"AI service error: {str(ai_error)}")
-                # Generate contextual fallback response
-                fallback_context = self._generate_contextual_fallback(
-                    user_question, context_data, enrollment, daily_reports, latest_report
-                )
-
-                # Use a simple direct AI call for fallback
-                try:
-                    from langchain_openai import ChatOpenAI
-                    from decouple import config
-                    from pydantic import SecretStr
-                    from langchain_core.messages import HumanMessage
-
-                    fallback_model = ChatOpenAI(
-                        model="gpt-4o",
-                        temperature=0.7,
-                        api_key=SecretStr(str(config("OPENAI_API_KEY"))),
-                        max_tokens=500,
-                    )
-
-                    fallback_prompt = f"""
-                    You are a weight loss specialist AI assistant. A user asked: "{user_question}"
-
-                    Based on this context about their health data:
-                    {fallback_context}
-
-                    Please provide a helpful, personalized response about their weight loss journey.
-                    Be encouraging, specific, and actionable in your advice.
-                    """
-
-                    fallback_response = await fallback_model.ainvoke([HumanMessage(content=fallback_prompt)])
-
-                    ai_response = {
-                        "response": fallback_response.content,
-                        "metadata": {"confidence_score": 0.6, "is_fallback": True},
-                        "follow_up_questions": []
-                    }
-
-                except Exception as fallback_error:
-                    print(f"Fallback AI error: {str(fallback_error)}")
-                    ai_response = {
-                        "response": self._generate_basic_fallback_response(user_question, context_data),
-                        "metadata": {"confidence_score": 0.3, "is_fallback": True},
-                        "follow_up_questions": []
-                    }
-
+            # Extract response - ai_response is message_data with 'content', not 'response'
+            response_text = ai_response.get("content", "I'm sorry, I couldn't generate a response at this time.")
+            metadata = ai_response.get("metadata", {})
+            
             return {
-                "response": ai_response.get("response", "I'm sorry, I couldn't generate a response at this time."),
-                "confidence_score": ai_response.get("metadata", {}).get("confidence_score"),
-                "tags": ai_response.get("metadata", {}).get("tags", []),
-                "citations": ai_response.get("metadata", {}).get("citations", []),
+                "response": response_text,
+                "confidence_score": metadata.get("confidence_score"),
+                "tags": metadata.get("tags", []),
+                "citations": metadata.get("citations", []),
                 "follow_up_questions": ai_response.get("follow_up_questions", []),
-                "query_classification": context_data["conversation_context"]["query_type"],
-                "data_used": {
-                    "inbody_reports": len(enrollment.inbody_reports),
-                    "daily_reports": len(daily_reports),
-                    "days_with_meal_data": len([d for d in daily_reports if d.get("meal_data")]),
-                    "days_with_fitness_data": len([d for d in daily_reports if d.get("fitness_data")]),
-                    "latest_report_date": latest_report.report_date.isoformat() if latest_report else None,
+                "context_used": {
+                    "has_recent_reports": len(daily_reports) > 0,
+                    "has_inbody_report": latest_report is not None,
+                    "days_of_data": len(daily_reports)
                 },
-                "fitness_summary": {
-                    "average_weekly_steps": context_data["recent_activity"]["average_daily_steps"] * 7,
-                    "total_weekly_workouts": context_data["recent_activity"]["total_workouts_last_week"],
-                    "days_with_activity": len([d for d in daily_reports[-7:] if d.get("fitness_data") and d.get("fitness_data", {}).get("steps", 0) > 0]),
-                    "most_active_hour": max([
-                        d.get("fitness_data", {}).get("peak_activity_hour")
-                        for d in daily_reports[-7:] if d.get("fitness_data") and d.get("fitness_data", {}).get("peak_activity_hour")
-                    ], default=None),
-                },
-                "has_recent_reports": len(daily_reports) > 0,
-                "has_inbody_report": latest_report is not None,
-                "days_of_data": len(daily_reports),
-                "enrollment_days": (datetime.now() - enrollment.enrollment_date).days,
-                "query_type": context_data["conversation_context"]["query_type"],
-                "health_insights": {
-                    "current_weight": context_data["enrollment_info"]["current_weight"],
-                    "target_weight": enrollment.target_weight_kg,
-                    "weight_difference": (
-                        context_data["enrollment_info"]["current_weight"] - enrollment.target_weight_kg
-                        if context_data["enrollment_info"]["current_weight"] else None
-                    ),
-                    "days_to_goal": None,  # Could be calculated based on progress
-                }
+                "conversation_id": conversation_id
             }
-
-    async def agentic_weight_loss_coach(
-        self,
-        enrollment_id: UUID,
-        user_input: str,
-        user_id: str,
-        conversation_id: Optional[str] = None,
-    ) -> Dict:
-        """
-        Agentic weight loss coach - single API that orchestrates all functionality
-
-        This agent:
-        1. Monitors all health data (inbody, meals, fitness, vitals)
-        2. Maintains conversation state and user preferences
-        3. Asks intelligent questions about preferences and constraints
-        4. Provides personalized exercise and diet recommendations
-        5. Tracks progress and adjusts recommendations over time
-        """
-
-        # Generate conversation ID if not provided
-        if not conversation_id:
-            conversation_id = f"agent_{enrollment_id}_{datetime.now().isoformat()}"
-
-        # Get or initialize agent state
-        agent_state = self._get_agent_state(conversation_id)
-
-        # Get comprehensive health data
-        health_context = await self._gather_health_context(enrollment_id)
-
-        # Analyze user input and determine next action
-        agent_decision = await self._analyze_user_input(
-            user_input, agent_state, health_context
-        )
-
-        # Execute the appropriate action
-        response = await self._execute_agent_action(
-            agent_decision, enrollment_id, user_id, conversation_id, health_context
-        )
-
-        # Update agent state
-        self._update_agent_state(conversation_id, agent_state, agent_decision, response)
-
-        return response
-
-    async def _gather_health_context(self, enrollment_id: UUID) -> Dict:
-        """Gather comprehensive health context from all available sources"""
-
-        async with self.postgres_store.get_session() as session:
-            # Get enrollment with all related data
-            enrollment = await session.get(
-                WeightLossAgentEnrollment,
-                enrollment_id,
-                options=[
-                    joinedload(WeightLossAgentEnrollment.patient),
-                    joinedload(WeightLossAgentEnrollment.inbody_reports).joinedload(InbodyReport.measurements),
-                    joinedload(WeightLossAgentEnrollment.inbody_reports).joinedload(InbodyReport.health_indicators),
-                ]
-            )
-
-            if not enrollment:
-                raise_http_exception(status_code=404, message="Enrollment not found")
-
-            # Get recent daily data (last 30 days)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-            daily_reports = await self.get_daily_reports_data(
-                enrollment.patient_id, start_date, end_date
-            )
-
-            # Get latest inbody data
-            latest_inbody = None
-            if enrollment.inbody_reports:
-                latest_inbody = max(enrollment.inbody_reports, key=lambda r: r.report_date)
-
-            return {
-                "enrollment": {
-                    "id": str(enrollment_id),
-                    "target_weight": enrollment.target_weight_kg,
-                    "target_bmi": enrollment.target_bmi,
-                    "goals": enrollment.program_goals,
-                    "enrolled_days": (datetime.now() - enrollment.enrollment_date).days,
-                },
-                "patient": {
-                    "age": (datetime.now().date() - enrollment.patient.dob).days // 365 if enrollment.patient.dob else None,
-                    "gender": enrollment.patient.gender,
-                    "current_weight": self._extract_current_weight(latest_inbody),
-                },
-                "inbody_reports": len(enrollment.inbody_reports),
-                "latest_inbody": self._format_inbody_data(latest_inbody),
-                "daily_reports": daily_reports[-7:],  # Last 7 days
-                "health_trends": self._analyze_health_trends(daily_reports, latest_inbody),
-            }
-
-    def _extract_current_weight(self, latest_inbody: Optional[InbodyReport]) -> Optional[float]:
-        """Extract current weight from latest inbody report"""
-        if not latest_inbody or not latest_inbody.measurements:
-            return None
-
-        # Look for weight measurement
-        for measurement in latest_inbody.measurements:
-            if measurement.measurement_type.lower() in ['weight', 'body weight']:
-                return measurement.value
-        return None
-
-    def _format_inbody_data(self, inbody_report: Optional[InbodyReport]) -> Optional[Dict]:
-        """Format inbody report data for agent context"""
-        if not inbody_report:
-            return None
-
-        return {
-            "report_date": inbody_report.report_date.isoformat(),
-            "measurements": [
-                {
-                    "type": m.measurement_type,
-                    "value": m.value,
-                    "unit": m.unit,
-                    "normal_range": f"{m.normal_min}-{m.normal_max}" if m.normal_min and m.normal_max else None
-                } for m in inbody_report.measurements[:10]
-            ],
-            "health_indicators": [
-                {
-                    "name": h.indicator_name,
-                    "abnormal": h.is_abnormal,
-                    "level": h.abnormality_level,
-                    "explanation": h.analysis_explanation
-                } for h in inbody_report.health_indicators if h.is_abnormal
-            ],
-            "processed": inbody_report.processed
-        }
-
-    def _analyze_health_trends(self, daily_reports: List[Dict], latest_inbody: Optional[InbodyReport]) -> Dict:
-        """Analyze health trends from daily reports and inbody data"""
-        trends = {
-            "avg_daily_calories": 0,
-            "avg_steps": 0,
-            "weight_trend": "stable",
-            "activity_level": "moderate",
-            "data_days": len(daily_reports),
-        }
-
-        if daily_reports:
-            # Calculate averages
-            calories_data = [d.get("meal_data", {}).get("total_calories", 0) for d in daily_reports if d.get("meal_data")]
-            steps_data = [d.get("fitness_data", {}).get("steps", 0) for d in daily_reports if d.get("fitness_data")]
-
-            if calories_data:
-                trends["avg_daily_calories"] = sum(calories_data) / len(calories_data)
-            if steps_data:
-                trends["avg_steps"] = sum(steps_data) / len(steps_data)
-
-            # Determine activity level
-            if trends["avg_steps"] > 10000:
-                trends["activity_level"] = "high"
-            elif trends["avg_steps"] > 5000:
-                trends["activity_level"] = "moderate"
-            else:
-                trends["activity_level"] = "low"
-
-        return trends
-
-    def _get_agent_state(self, conversation_id: str) -> Dict:
-        """Get or initialize agent conversation state"""
-        if conversation_id not in self.agent_memory:
-            self.agent_memory[conversation_id] = {
-                "conversation_stage": "initial_greeting",
-                "user_preferences": {
-                    "fitness_level": None,
-                    "available_equipment": [],
-                    "time_commitment": None,
-                    "preferred_exercises": [],
-                    "dietary_restrictions": [],
-                    "motivation_level": None,
-                    "past_experiences": [],
-                },
-                "collected_data": {
-                    "questions_asked": [],
-                    "answers_received": [],
-                    "recommendations_given": [],
-                    "progress_tracking": [],
-                },
-                "current_focus": "assessment",
-                "last_interaction": datetime.now(),
-            }
-        return self.agent_memory[conversation_id]
-
-    async def _analyze_user_input(self, user_input: str, agent_state: Dict, health_context: Dict) -> Dict:
-        """Analyze user input and determine next agent action"""
-
-        # Classify the input
-        input_type = self._classify_user_input(user_input)
-
-        # Determine next action based on conversation stage and input
-        stage = agent_state["conversation_stage"]
-
-        if stage == "initial_greeting":
-            return {
-                "action": "ask_preferences",
-                "reason": "First interaction - need to understand user preferences",
-                "next_stage": "gathering_preferences"
-            }
-
-        elif stage == "gathering_preferences":
-            if input_type in ["preference_answer", "exercise_preference"]:
-                return {
-                    "action": "process_preference",
-                    "reason": "User provided preference information",
-                    "next_stage": "assessment_complete"
-                }
-            else:
-                return {
-                    "action": "ask_clarifying_question",
-                    "reason": "Need more specific preference information",
-                    "next_stage": "gathering_preferences"
-                }
-
-        elif stage == "assessment_complete":
-            if input_type == "progress_question":
-                return {
-                    "action": "provide_progress_report",
-                    "reason": "User asked about progress",
-                    "next_stage": "assessment_complete"
-                }
-            elif input_type in ["exercise_request", "diet_request"]:
-                return {
-                    "action": "provide_recommendation",
-                    "reason": "User requested specific recommendations",
-                    "next_stage": "assessment_complete"
-                }
-            else:
-                return {
-                    "action": "provide_general_guidance",
-                    "reason": "General conversation or question",
-                    "next_stage": "assessment_complete"
-                }
-
-        # Default action
-        return {
-            "action": "ask_follow_up",
-            "reason": "Continue conversation naturally",
-            "next_stage": stage
-        }
-
-    def _classify_user_input(self, user_input: str) -> str:
-        """Classify the type of user input"""
-        input_lower = user_input.lower()
-
-        # Preference-related inputs
-        if any(word in input_lower for word in ["like", "prefer", "enjoy", "good at", "comfortable with"]):
-            return "preference_answer"
-
-        # Exercise-specific inputs
-        if any(word in input_lower for word in ["run", "walk", "gym", "weights", "yoga", "swim", "bike"]):
-            return "exercise_preference"
-
-        # Progress questions
-        if any(word in input_lower for word in ["progress", "how am i doing", "results", "weight loss"]):
-            return "progress_question"
-
-        # Specific requests
-        if any(word in input_lower for word in ["exercise", "workout", "recommend", "suggest"]):
-            return "exercise_request"
-
-        if any(word in input_lower for word in ["diet", "food", "eat", "meal"]):
-            return "diet_request"
-
-        # Questions
-        if "?" in user_input or any(word in input_lower for word in ["what", "how", "when", "why", "can i"]):
-            return "question"
-
-        return "general_statement"
-
-    async def _execute_agent_action(
-        self,
-        agent_decision: Dict,
-        enrollment_id: UUID,
-        user_id: str,
-        conversation_id: str,
-        health_context: Dict
-    ) -> Dict:
-        """Execute the determined agent action"""
-
-        action = agent_decision["action"]
-
-        if action == "ask_preferences":
-            return await self._ask_user_preferences(health_context)
-
-        elif action == "process_preference":
-            return await self._process_user_preference(agent_decision, health_context)
-
-        elif action == "ask_clarifying_question":
-            return await self._ask_clarifying_question(agent_decision, health_context)
-
-        elif action == "provide_progress_report":
-            return await self._provide_progress_report(health_context)
-
-        elif action == "provide_recommendation":
-            return await self._provide_personalized_recommendation(agent_decision, health_context)
-
-        elif action == "provide_general_guidance":
-            return await self._provide_general_guidance(agent_decision, health_context)
-
-        else:
-            return await self._provide_fallback_response(health_context)
-
-    async def _ask_user_preferences(self, health_context: Dict) -> Dict:
-        """Ask user about their preferences and constraints"""
-        return {
-            "response": """Hello! I'm your personal weight loss coach. To provide you with the best recommendations, I need to understand your preferences and lifestyle. Let me ask you a few questions:
-
-1. What's your current fitness level? (Beginner, Intermediate, Advanced)
-2. What type of exercises do you enjoy or prefer? (e.g., cardio, strength training, yoga, sports)
-3. How much time can you dedicate to exercise each day/week?
-4. Do you have access to a gym or prefer home workouts?
-5. Any injuries, health conditions, or exercises you should avoid?
-6. What's your primary goal? (Weight loss, muscle gain, overall fitness)
-
-Feel free to answer any or all of these, and I'll tailor my recommendations accordingly!""",
-            "agent_action": "gathering_preferences",
-            "questions_asked": [
-                "fitness_level", "exercise_preferences", "time_commitment",
-                "equipment_access", "limitations", "primary_goal"
-            ],
-            "next_expected_input": "preference_answers",
-            "conversation_stage": "gathering_preferences"
-        }
-
-    async def _process_user_preference(self, agent_decision: Dict, health_context: Dict) -> Dict:
-        """Process user preference and provide initial recommendations"""
-        return {
-            "response": """Thank you for sharing your preferences! Based on what you've told me and your health data, here's my initial assessment:
-
-**Your Profile:**
-- Current fitness level: [Based on your input]
-- Available time: [Based on your input]
-- Preferences: [Based on your input]
-
-**Recommended Starting Plan:**
-1. **Daily Activity:** Aim for 8,000-10,000 steps per day
-2. **Exercise Routine:** [Personalized based on preferences]
-3. **Nutrition Focus:** [Based on your meal data]
-
-Would you like me to create a specific workout plan for this week, or do you have questions about any of these recommendations?""",
-            "agent_action": "processed_preferences",
-            "recommendations": [
-                "daily_step_goal",
-                "exercise_routine",
-                "nutrition_guidance"
-            ],
-            "conversation_stage": "assessment_complete"
-        }
-
-    async def _provide_progress_report(self, health_context: Dict) -> Dict:
-        """Provide comprehensive progress report"""
-        enrollment = health_context["enrollment"]
-        patient = health_context["patient"]
-        trends = health_context["health_trends"]
-
-        progress_summary = f"""
-**Progress Report - {enrollment['enrolled_days']} days enrolled**
-
-**Current Status:**
-- Target Weight: {enrollment['target_weight']} kg
-- Current Weight: {patient['current_weight'] or 'Not available'} kg
-- Average Daily Calories: {trends['avg_daily_calories']:.0f}
-- Average Daily Steps: {trends['avg_steps']:.0f}
-- Activity Level: {trends['activity_level']}
-
-**Health Trends:**
-- Data points available: {trends['data_days']} days
-- Inbody reports: {health_context['inbody_reports']}
-
-**Recommendations:**
-Based on your data, you're doing {'well' if trends['activity_level'] == 'high' else 'okay'}. Let's focus on consistency and gradual improvements.
-"""
-
-        return {
-            "response": progress_summary,
-            "agent_action": "progress_report_provided",
-            "progress_metrics": {
-                "days_enrolled": enrollment["enrolled_days"],
-                "avg_calories": trends["avg_daily_calories"],
-                "avg_steps": trends["avg_steps"],
-                "activity_level": trends["activity_level"],
-                "data_completeness": f"{trends['data_days']}/30 days"
-            },
-            "conversation_stage": "assessment_complete"
-        }
-
-    async def _provide_personalized_recommendation(self, agent_decision: Dict, health_context: Dict) -> Dict:
-        """Provide personalized exercise or diet recommendations"""
-        trends = health_context["health_trends"]
-
-        if trends["activity_level"] == "low":
-            exercise_rec = """
-**Exercise Recommendations for Beginners:**
-1. **Walking Program:** Start with 20-30 minutes brisk walking daily
-2. **Bodyweight Exercises:** 3x per week (squats, push-ups, planks)
-3. **Flexibility:** 10 minutes daily stretching
-4. **Progression:** Increase duration by 5 minutes weekly
-"""
-        elif trends["activity_level"] == "moderate":
-            exercise_rec = """
-**Exercise Recommendations for Intermediate:**
-1. **Cardio:** 30-45 minutes, 4-5 days/week (mix of walking, cycling, swimming)
-2. **Strength Training:** 3x per week, full body workouts
-3. **HIIT Sessions:** 20-30 minutes, 2x per week
-4. **Active Recovery:** Light yoga or walking on rest days
-"""
-        else:
-            exercise_rec = """
-**Exercise Recommendations for Advanced:**
-1. **High-Intensity Training:** 45-60 minutes, 5-6 days/week
-2. **Strength Training:** 4-5x per week, split routines
-3. **Sports/Activity:** Incorporate preferred sports 2-3x per week
-4. **Recovery:** Active recovery and mobility work
-"""
-
-        return {
-            "response": f"Based on your current activity level ({trends['activity_level']}) and health data, here are my recommendations:\n\n{exercise_rec}\n\n**Nutrition Notes:**\n- Current average: {trends['avg_daily_calories']:.0f} calories/day\n- Focus on whole foods and portion control\n- Stay hydrated and consider meal timing\n\nHow does this plan sound to you?",
-            "agent_action": "recommendations_provided",
-            "recommendations": {
-                "exercise_plan": exercise_rec.strip(),
-                "nutrition_focus": "whole_foods_portion_control",
-                "activity_level": trends["activity_level"],
-                "customized": True
-            },
-            "conversation_stage": "assessment_complete"
-        }
-
-    async def _provide_general_guidance(self, agent_decision: Dict, health_context: Dict) -> Dict:
-        """Provide general guidance and ask follow-up questions"""
-        return {
-            "response": """I'm here to help you with your weight loss journey! I can assist with:
-
-**Exercise Planning:**
-- Personalized workout routines
-- Progress tracking
-- Exercise modifications
-
-**Nutrition Guidance:**
-- Meal planning
-- Calorie tracking
-- Healthy eating habits
-
-**Motivation & Support:**
-- Progress reports
-- Goal setting
-- Accountability
-
-**Health Monitoring:**
-- Inbody report analysis
-- Trend identification
-- Health insights
-
-What specific aspect would you like help with today? Or would you like me to review your recent progress?""",
-            "agent_action": "general_guidance_provided",
-            "available_services": [
-                "exercise_planning",
-                "nutrition_guidance",
-                "progress_tracking",
-                "health_monitoring",
-                "motivation_support"
-            ],
-            "conversation_stage": "assessment_complete"
-        }
-
-    async def _ask_clarifying_question(self, agent_decision: Dict, health_context: Dict) -> Dict:
-        """Ask clarifying questions to better understand user needs"""
-        return {
-            "response": "I'd love to provide more specific recommendations, but I need a bit more information. Could you tell me:\n\n1. What type of exercises do you currently enjoy?\n2. How much time do you have available for workouts?\n3. Are there any exercises or activities you particularly dislike?\n4. What's your main motivation for starting this journey?\n\nThis will help me create a plan that you'll actually enjoy and stick with!",
-            "agent_action": "clarifying_questions_asked",
-            "questions_asked": [
-                "exercise_enjoyment",
-                "time_availability",
-                "exercise_dislikes",
-                "motivation"
-            ],
-            "conversation_stage": "gathering_preferences"
-        }
-
-    async def _provide_fallback_response(self, health_context: Dict) -> Dict:
-        """Provide fallback response when action is unclear"""
-        return {
-            "response": "I'm here to support your weight loss journey! I have access to your health data and can provide personalized recommendations for exercise, nutrition, and progress tracking. What would you like help with today?",
-            "agent_action": "fallback_response",
-            "capabilities": [
-                "exercise_recommendations",
-                "meal_planning",
-                "progress_tracking",
-                "health_analysis",
-                "motivation_support"
-            ],
-            "conversation_stage": "assessment_complete"
-        }
-
-    def _update_agent_state(self, conversation_id: str, agent_state: Dict, agent_decision: Dict, response: Dict):
-        """Update the agent conversation state"""
-        agent_state["last_interaction"] = datetime.now()
-        agent_state["conversation_stage"] = response.get("conversation_stage", agent_state["conversation_stage"])
-        agent_state["collected_data"]["questions_asked"].extend(response.get("questions_asked", []))
-        agent_state["collected_data"]["recommendations_given"].extend(response.get("recommendations", []))
 
     async def process_and_analyze_inbody_report(
         self,
@@ -1510,19 +818,9 @@ What specific aspect would you like help with today? Or would you like me to rev
                     message="Failed to convert file to base64 format"
                 )
 
-            # Step 3: Prepare for vision analysis (no need for text prompt with base64)
-            print("Step 3: Preparing for GPT-4 Vision analysis...")
+            print("Step 3: Sending image to GPT-4 Vision for analysis...")
 
-            # Handle different file types
-            if content_type == "application/pdf":
-                print("PDF file detected - using text extraction approach")
-                # For PDFs, we might need to extract text first or use a different approach
-                # For now, let's try sending as image (some PDFs might work)
-                pass
-
-            print("Step 4: Sending image to GPT-4 Vision for analysis...")
-
-            # Use GPT-4 Vision for image analysis instead of sending base64 in text
+            # Use GPT-4 Vision for image analysis
             try:
                 from langchain_openai import ChatOpenAI
                 from decouple import config
@@ -1738,13 +1036,146 @@ What specific aspect would you like help with today? Or would you like me to rev
                 report = await self.create_inbody_report(enrollment_id, report_data)
                 print(f"Report stored in database with ID: {report.report_id}")
 
+                # Step 6: Create measurements and health indicators from extracted metrics
+                print("Step 6: Storing extracted measurements and health indicators...")
+                async with self.postgres_store.get_session() as session:
+                    from lib.models.weight_loss_agent import InbodyMeasurement, HealthIndicator
+                    
+                    # Get extracted metrics from AI response
+                    extracted_metrics = analysis_result.ai_analysis.get("extracted_metrics", {})
+                    confidence_score = analysis_result.ai_analysis.get("confidence_score", 0.0)
+                    
+                    # Create measurement records
+                    measurements_created = 0
+                    for metric_name, metric_value_str in extracted_metrics.items():
+                        try:
+                            # Parse the value and unit
+                            import re
+                            value_match = re.search(r'([\d.]+)', str(metric_value_str))
+                            if value_match:
+                                value = float(value_match.group(1))
+                                
+                                # Extract unit (everything after the number)
+                                unit = str(metric_value_str).replace(value_match.group(1), '').strip()
+                                if not unit:
+                                    # Default units based on metric type
+                                    if 'weight' in metric_name.lower():
+                                        unit = 'kg'
+                                    elif 'bmi' in metric_name.lower():
+                                        unit = ''
+                                    elif 'fat' in metric_name.lower() or 'water' in metric_name.lower():
+                                        unit = '%'
+                                    elif 'rate' in metric_name.lower() or 'bmr' in metric_name.lower():
+                                        unit = 'kcal'
+                                    else:
+                                        unit = ''
+                                
+                                # Create measurement
+                                measurement = InbodyMeasurement(
+                                    report_id=report.report_id,
+                                    measurement_type=metric_name.replace('_', ' ').title(),
+                                    value=value,
+                                    unit=unit,
+                                    confidence_score=confidence_score
+                                )
+                                session.add(measurement)
+                                measurements_created += 1
+                                print(f"  - Created measurement: {metric_name} = {value} {unit}")
+                        except Exception as metric_error:
+                            print(f"  - Failed to create measurement for {metric_name}: {str(metric_error)}")
+                    
+                    # Create health indicators for abnormal values
+                    indicators_created = 0
+                    
+                    # Check BMI (normal: 18.5-24.9)
+                    if 'bmi' in extracted_metrics:
+                        try:
+                            bmi_str = extracted_metrics['bmi']
+                            bmi_value = float(re.search(r'([\d.]+)', str(bmi_str)).group(1))
+                            if bmi_value >= 25:
+                                indicator = HealthIndicator(
+                                    report_id=report.report_id,
+                                    indicator_name="Overweight BMI" if bmi_value < 30 else "Obese BMI",
+                                    indicator_type="warning" if bmi_value < 30 else "critical",
+                                    value=bmi_value,
+                                    unit="",
+                                    is_abnormal=True,
+                                    abnormality_level="high",
+                                    normal_range_min=18.5,
+                                    normal_range_max=24.9,
+                                    analysis_explanation=f"BMI of {bmi_value} indicates {'overweight' if bmi_value < 30 else 'obesity'} status, which may increase health risks.",
+                                    recommendations="Consider a balanced diet and regular exercise to achieve healthy weight."
+                                )
+                                session.add(indicator)
+                                indicators_created += 1
+                                print(f"  - Created indicator: Abnormal BMI ({bmi_value})")
+                        except:
+                            pass
+                    
+                    # Check Body Fat % (normal for women: 20-30%, men: 10-20%)
+                    if 'body_fat_percentage' in extracted_metrics or 'body_fat' in extracted_metrics:
+                        try:
+                            key = 'body_fat_percentage' if 'body_fat_percentage' in extracted_metrics else 'body_fat'
+                            bf_str = extracted_metrics[key]
+                            bf_value = float(re.search(r'([\d.]+)', str(bf_str)).group(1))
+                            if bf_value > 30:  # Using conservative threshold
+                                indicator = HealthIndicator(
+                                    report_id=report.report_id,
+                                    indicator_name="High Body Fat Percentage",
+                                    indicator_type="warning" if bf_value < 40 else "critical",
+                                    value=bf_value,
+                                    unit="%",
+                                    is_abnormal=True,
+                                    abnormality_level="high",
+                                    normal_range_min=20,
+                                    normal_range_max=30,
+                                    analysis_explanation=f"Body fat percentage of {bf_value}% is above the healthy range, indicating excess body fat.",
+                                    recommendations="Focus on fat reduction through cardio exercise and balanced nutrition."
+                                )
+                                session.add(indicator)
+                                indicators_created += 1
+                                print(f"  - Created indicator: High Body Fat ({bf_value}%)")
+                        except:
+                            pass
+                    
+                    # Check Visceral Fat (normal: 1-9)
+                    if 'visceral_fat' in extracted_metrics:
+                        try:
+                            vf_str = extracted_metrics['visceral_fat']
+                            vf_value = float(re.search(r'([\d.]+)', str(vf_str)).group(1))
+                            if vf_value >= 10:
+                                indicator = HealthIndicator(
+                                    report_id=report.report_id,
+                                    indicator_name="Elevated Visceral Fat",
+                                    indicator_type="warning" if vf_value < 15 else "critical",
+                                    value=vf_value,
+                                    unit="level",
+                                    is_abnormal=True,
+                                    abnormality_level="high",
+                                    normal_range_min=1,
+                                    normal_range_max=9,
+                                    analysis_explanation=f"Visceral fat level of {vf_value} indicates increased health risks for metabolic and cardiovascular issues.",
+                                    recommendations="Reduce visceral fat through aerobic exercise and limiting refined carbohydrates."
+                                )
+                                session.add(indicator)
+                                indicators_created += 1
+                                print(f"  - Created indicator: Elevated Visceral Fat ({vf_value})")
+                        except:
+                            pass
+                    
+                    # Commit all measurements and indicators
+                    await session.commit()
+                    print(f"Successfully created {measurements_created} measurements and {indicators_created} health indicators")
+
                 # Update the analysis result with the report ID and storage info
                 analysis_result.report_id = str(report.report_id)
                 analysis_result.stored_at = datetime.now().isoformat()
                 analysis_result.metadata["stored"] = True
+                analysis_result.metadata["measurements_created"] = measurements_created
+                analysis_result.metadata["indicators_created"] = indicators_created
                 analysis_result.metadata["ai_summary_pending"] = True  # Flag that AI summary needs to be stored later
 
-                print("Report successfully stored in database (AI summary will be added after migration)")
+                print("Report successfully stored in database with measurements and health indicators")
                 return analysis_result
 
             except Exception as storage_error:
@@ -1763,42 +1194,4 @@ What specific aspect would you like help with today? Or would you like me to rev
                 message=f"Failed to process inbody report: {str(e)}"
             )
 
-    async def store_inbody_report_analysis(
-        self,
-        enrollment_id: UUID,
-        analysis_result: InbodyReportAnalysisResult,
-        user_id: str
-    ) -> InbodyReportAnalysisResult:
-        """Store the analyzed inbody report data in database after user confirmation"""
-
-        try:
-            from lib.schemas.weight_loss_agent import InbodyReportCreate
-
-            # Create report data from analysis result (excluding ai_summary for now due to migration issue)
-            report_data = InbodyReportCreate(
-                report_date=datetime.now(),
-                ai_summary=None,  # Temporarily set to None until migration is run
-                original_filename=analysis_result.file_name,
-                file_size=analysis_result.metadata.get("file_size", 0),
-                content_type=analysis_result.metadata.get("content_type", "")
-            )
-
-            # Store the report in database
-            report = await self.create_inbody_report(enrollment_id, report_data)
-            print(f"Report stored in database with ID: {report.report_id}")
-
-            # Update the analysis result with the report ID
-            analysis_result.report_id = str(report.report_id)
-            analysis_result.stored_at = datetime.now().isoformat()
-            analysis_result.metadata["stored"] = True
-
-            return analysis_result
-
-        except Exception as e:
-            print(f"Error storing inbody report analysis: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            raise_http_exception(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message=f"Failed to store inbody report analysis: {str(e)}"
-            )
+    
