@@ -81,7 +81,7 @@ class MealService:
         self.meal_vector_service = meal_vector_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="meal",
-            selected_ai_model="gpt-5-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
         self.token_usage_service = get_token_usage_service()

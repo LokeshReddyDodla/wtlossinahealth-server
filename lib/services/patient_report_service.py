@@ -34,7 +34,7 @@ class PatientReportService:
         self.s3_bucket_name = "user-assets.aihealth.clinic"
         self.ai_conversation_service = AiConversationService(
             conversation_type="report",
-            selected_ai_model="gpt-5-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
 

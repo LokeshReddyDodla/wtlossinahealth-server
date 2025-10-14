@@ -38,14 +38,11 @@ AiConversationTypeLiteral = Literal[
 ]
 
 OpenAIModelLiteral = Literal[
-    "gpt-5-mini",
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-mini",
-    "gpt-3.5-turbo",
-    "davinci",
-    "o3-mini",
-    "o1-mini",
+    "gpt-5-mini",  # Best for reliability + reasoning
+    "gpt-4o",  # For multimodal (text + image)
+    "gpt-4o-mini",  # For speed + cost balance
+    "o3-mini",  # Optional: experimental or reasoning-heavy tasks
+    "gpt-4.1-mini",
 ]
 
 GeminiAIModelLiteral = Literal[
