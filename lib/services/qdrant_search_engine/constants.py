@@ -183,3 +183,22 @@ Never deviate from these canonical types or fields. When uncertain, err on the s
 After generating the structured intent, assign a confidence score (0–1) based on how well the query matches known data types and filter logic.
 Use ≥0.9 only if highly confident that all filters and data_types are correct.
 """
+
+
+SYSTEM_PROMPT_CONTEXTUAL_TEMPLATE = """
+You are an AI assistant that extracts structured search intents from natural language queries.
+
+The user’s recent search intents are shown below in chronological order (newest last):
+{context_json}
+
+Use this context to understand what the user might be referring to.
+If the new query seems like a follow-up, maintain continuity with the previous topics,
+data types, and filters unless the user explicitly changes them.
+
+For example:
+- If previous queries mentioned 'meals' and the new one says 'in August', assume it's still about meals.
+- If the user adds new data types (like 'CGM'), merge them with prior ones.
+- Be consistent and complete in your extracted intent — no missing fields.
+
+Return a complete, standalone SearchIntent for the new query.
+"""

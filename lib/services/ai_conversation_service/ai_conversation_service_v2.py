@@ -290,7 +290,10 @@ class AiConversationServiceV2:
         messages += history
 
         patient_data = await self.qdrant_search_engine.search(
-            human_input, 100, patient_id=patient_id
+            human_input,
+            100,
+            patient_id=patient_id,
+            conversation_id=conversation_id,
         )
         filter = patient_data["filter_applied"]
         filter_text = json.dumps(filter, ensure_ascii=False, indent=2)

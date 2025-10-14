@@ -75,6 +75,7 @@ from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
 from lib.services.prescription_service import PrescriptionService
+from lib.services.qdrant_search_engine.intent_cache import IntentCache
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -171,6 +172,7 @@ for namespace in [
     "user_otp",
     "user_sessions",
     "libreview_sync",
+    "ai_conversation_intent_context",
 ]:
     container.register(
         namespace,
@@ -592,11 +594,21 @@ container.register(
     ),
 )
 
+container.register(
+    IntentCache,
+    lambda: IntentCache(
+        intent_cache_store=cast(
+            CacheStore, container.resolve("ai_conversation_intent_context")
+        )
+    ),
+)
+
 # 🔹 Qdrant Search Engine
 container.register(
     QdrantSearchEngine,
     lambda: QdrantSearchEngine(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        intent_cache=cast(IntentCache, container.resolve(IntentCache)),
     ),
 )
 
