@@ -322,18 +322,19 @@ class AiConversationServiceV2:
         )
 
         try:
-            # ai_response: Any = retry_request(
-            #     self.structured_model.invoke,
-            #     input=filtered_messages,
-            # )
-            ai_response: Any = self.structured_model.invoke(
-                input=filtered_messages
+            ai_response: Any = retry_request(
+                self.structured_model.invoke,
+                input=filtered_messages,
             )
+            # ai_response: Any = self.structured_model.invoke(
+            #     input=filtered_messages
+            # )
 
             parsed_response: AIResponse = ai_response.get("parsed", {})
-            follow_up_questions = await self.generate_followup_questions(
-                parsed_response.response
-            )
+            # follow_up_questions = await self.generate_followup_questions(
+            #     parsed_response.response
+            # )
+            follow_up_questions = None
 
             ai_message_data = await self.add_message_to_conversation(
                 user_id,
