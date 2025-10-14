@@ -71,7 +71,7 @@ class AiConversationServiceV2:
         ai_model_provider: AIModelProviderLiteral = "openai",
         selected_ai_model: Union[
             OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
-        ] = "gpt-4o",
+        ] = "gpt-4.1-mini",
     ):
         from lib.dependencies.service_dependencies import (
             get_ai_conversation_messages_collection,

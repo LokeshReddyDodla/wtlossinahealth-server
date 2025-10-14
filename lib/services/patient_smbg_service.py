@@ -31,7 +31,7 @@ class PatientSmbgService:
         self.smbg_vector_service = smbg_vector_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="smbg",
-            selected_ai_model="gpt-5-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
 
