@@ -11,3 +11,6 @@ def initialize_caches(app):
     app.state.address_mapping_store = CacheStore(namespace="address_mapping")
     app.state.fitness_sync_store = CacheStore(namespace="fitness_sync")
     app.state.libreview_sync_store = CacheStore(namespace="libreview_sync")
+    app.state.ai_conversation_intent_context_store = CacheStore(
+        namespace="ai_conversation_intent_context"
+    )

@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 
 
 from lib.services.qdrant_search_engine.filter_builder import FilterBuilder
+from lib.services.qdrant_search_engine.intent_cache import IntentCache
 from lib.services.qdrant_search_engine.intent_extractor import IntentExtractor
 from lib.utils.vector_utils import embed_text
 from qdrant_client.http.models import (
@@ -20,18 +21,36 @@ class QdrantSearchEngine:
     def __init__(
         self,
         qdrant_store: QdrantStore,
+        intent_cache: IntentCache,
         collection_name: str = "patient_data",
     ):
         self.openai_client = AsyncOpenAI()
         self.qdrant_store = qdrant_store
+        self.intent_cache = intent_cache
         self.collection_name = collection_name
         self.intent_extractor = IntentExtractor(self.openai_client)
 
     async def search(
-        self, query: str, limit: int, patient_id: Optional[str] = None
+        self,
+        query: str,
+        limit: int,
+        conversation_id: Optional[str] = None,
+        patient_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        # Extract structured intent
-        intent = await self.intent_extractor.extract(query)
+
+        # Fetch context intents (if conversation_id is provided)
+        context_intents = []
+        if conversation_id:
+            context_intents = self.intent_cache.get_recent_intents(
+                conversation_id
+            )
+
+        # Extract structured intent (context-aware if any)
+        intent = await self.intent_extractor.extract(query, context_intents)
+
+        # Save this intent for continuity
+        if conversation_id:
+            self.intent_cache.push_intent(conversation_id, intent)
 
         # Build Qdrant filter conditions
         filter_conditions = FilterBuilder.build(intent)
