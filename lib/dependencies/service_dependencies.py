@@ -56,6 +56,9 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
@@ -311,6 +314,13 @@ def get_meal_vector_service() -> MealVectorService:
 
 def get_smbg_vector_service() -> SMBGVectorService:
     return cast(SMBGVectorService, container.resolve(SMBGVectorService))
+
+
+def get_patient_profile_vector_service() -> PatientProfileVectorService:
+    return cast(
+        PatientProfileVectorService,
+        container.resolve(PatientProfileVectorService),
+    )
 
 
 def get_ai_conversation_messages_collection():

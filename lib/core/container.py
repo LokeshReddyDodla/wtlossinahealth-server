@@ -65,6 +65,9 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
@@ -594,6 +597,16 @@ container.register(
     ),
 )
 
+# 🔹 Patient Profile Vector Service
+container.register(
+    PatientProfileVectorService,
+    lambda: PatientProfileVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
+# 🔹 Intent Cache
 container.register(
     IntentCache,
     lambda: IntentCache(
