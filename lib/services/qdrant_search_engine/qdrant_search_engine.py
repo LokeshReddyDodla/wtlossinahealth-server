@@ -35,25 +35,30 @@ class QdrantSearchEngine:
         query: str,
         limit: int,
         conversation_id: Optional[str] = None,
-        patient_id: Optional[str] = None,
+        patient_ids: Optional[List[str]] = None,
+        data_types: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
 
-        # Fetch context intents (if conversation_id is provided)
+        # Get previous intents for continuity
         context_intents = []
         if conversation_id:
             context_intents = self.intent_cache.get_recent_intents(
                 conversation_id
             )
 
-        # Extract structured intent (context-aware if any)
+        # Extract intent
         intent = await self.intent_extractor.extract(query, context_intents)
 
-        # Save this intent for continuity
+        # Cache intent
         if conversation_id:
             self.intent_cache.push_intent(conversation_id, intent)
 
-        # Build Qdrant filter conditions
-        filter_conditions = FilterBuilder.build(intent)
+        # Build filters
+        intent_filter = FilterBuilder.build(intent)
+        extra_filter = self._build_filter(
+            data_types=data_types, patient_ids=patient_ids
+        )
+        merged_filter = self._merge_filters(intent_filter, extra_filter)
 
         # Generate embedding for semantic search
         embedding = await embed_text(query)
@@ -62,14 +67,13 @@ class QdrantSearchEngine:
         results = await self.search_similar_reports(
             query_embedding=embedding,
             limit=limit,
-            filter_conditions=filter_conditions,
-            patient_id=patient_id,
+            filter_conditions=merged_filter,
             # score_threshold=0.6,
         )
 
         return {
             "query": query,
-            "filter_applied": self._serialize_filter(filter_conditions),
+            "filter_applied": self._serialize_filter(merged_filter),
             "results": results,
             "intent": intent.model_dump_json(),
         }
@@ -85,9 +89,7 @@ class QdrantSearchEngine:
         query_embedding: list[float],
         filter_conditions: Optional[Filter] = None,
         limit: int = 500,
-        data_types: Optional[List[str]] = None,
         score_threshold: Optional[float] = None,
-        patient_id: Optional[str] = None,
     ):
         """
         Search for reports similar to a given embedding with optional filtering.
@@ -104,25 +106,22 @@ class QdrantSearchEngine:
             List of matching reports.
         """
         async with self.qdrant_store.get_client() as client:
-            default_filter = self._build_filter(data_types, patient_id)
-            merged_filter = self._merge_filters(
-                filter_conditions, default_filter
+            print(
+                f"Searching with filter: {filter_conditions}, limit: {limit}"
             )
-
-            print(f"Searching with filter: {merged_filter}, limit: {limit}")
 
             return await client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
                 limit=limit,
-                query_filter=merged_filter,
+                query_filter=filter_conditions,
                 score_threshold=score_threshold,
             )
 
     def _build_filter(
         self,
         data_types: Optional[List[str]],
-        patient_id: Optional[str],
+        patient_ids: Optional[List[str]] = None,
     ) -> Optional[Filter]:
         """
         Build a Qdrant Filter from optional data_types and patient_id.
@@ -130,15 +129,27 @@ class QdrantSearchEngine:
         conditions: List[Condition] = []
 
         if data_types:
-            conditions.append(self._create_data_type_condition(data_types))
+            conditions.append(
+                FieldCondition(key="data_type", match=MatchAny(any=data_types))
+            )
 
-        if patient_id:
-            conditions.append(self._create_patient_id_condition(patient_id))
+        if patient_ids:
+            # supports one or many patient IDs
+            if len(patient_ids) == 1:
+                conditions.append(
+                    FieldCondition(
+                        key="patient_id",
+                        match=MatchValue(value=patient_ids[0]),
+                    )
+                )
+            else:
+                conditions.append(
+                    FieldCondition(
+                        key="patient_id", match=MatchAny(any=patient_ids)
+                    )
+                )
 
-        if conditions:
-            return Filter(must=conditions)
-
-        return None
+        return Filter(must=conditions) if conditions else None
 
     def _merge_filters(
         self, base_filter: Optional[Filter], extra_filter: Optional[Filter]
@@ -152,13 +163,3 @@ class QdrantSearchEngine:
                 + (extra_filter.must_not or []),  # type: ignore
             )
         return base_filter or extra_filter
-
-    @staticmethod
-    def _create_data_type_condition(data_types: List[str]) -> FieldCondition:
-        return FieldCondition(key="data_type", match=MatchAny(any=data_types))
-
-    @staticmethod
-    def _create_patient_id_condition(patient_id: str) -> FieldCondition:
-        return FieldCondition(
-            key="patient_id", match=MatchValue(value=patient_id)
-        )
