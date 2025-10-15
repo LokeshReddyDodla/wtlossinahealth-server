@@ -41,6 +41,9 @@ async def startup_event() -> None:
     # Create tables
     await create_db_and_tables()
 
+    # connect qdrant
+    await app.state.qdrant_store.connect()
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
@@ -49,6 +52,7 @@ async def shutdown_event() -> None:
     """
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
+    await app.state.qdrant_store.close()
 
 
 socket_app = ASGIApp(sio, other_asgi_app=app, socketio_path="/ws")

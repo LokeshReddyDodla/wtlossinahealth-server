@@ -1,14 +1,23 @@
 from typing import List, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import datetime
+
+from typing import Optional, List
+from uuid import UUID
+from datetime import datetime
+from pydantic import BaseModel
 
 
 class PatientPrescriptionMedicineSchema(BaseModel):
-    name: str
-    dosage: str
+    brand_name: Optional[str]
+    generic_name: Optional[str]
+    formulation: Optional[str]
+    strength: Optional[str]
     frequency: Optional[str]
     duration: Optional[str]
+    before_after_food: Optional[str]
+    route: Optional[str]
     purpose: Optional[str]
     possible_side_effects: Optional[List[str]]
     instructions: Optional[str]
@@ -49,3 +58,15 @@ class PatientPrescriptionRead(PatientPrescriptionBase):
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        state = obj._sa_instance_state
+
+        kwargs = {
+            name: getattr(obj, name)
+            for name in cls.model_fields
+            if name in state.dict or name not in state.unloaded
+        }
+
+        return cls(**kwargs)

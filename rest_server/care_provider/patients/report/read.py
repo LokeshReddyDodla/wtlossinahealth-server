@@ -1,5 +1,6 @@
 import traceback
 from datetime import date, datetime
+from typing import Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
@@ -9,12 +10,15 @@ from lib.dependencies.service_dependencies import (
     get_fitness_stats_processor,
     get_meal_report_service,
     get_patient_profile_service,
+    get_patient_report_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CorePatientProfile
+from lib.schemas.patient_report import PatientReport
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.meal_report_service import MealReportService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_report_service import PatientReportService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -26,20 +30,23 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get(
-    "/fitness",
-    response_model=SuccessResponse,
-)
-async def fetch_patient_fitness_report(
+@router.get("")
+async def get_patient_reports(
     request: Request,
-    patient_id: str = Query(...),
-    start_date: datetime = Query(...),
-    end_date: datetime = Query(...),
-    fitness_processor: FitnessStatsProcessor = Depends(
-        get_fitness_stats_processor
+    patient_id: str,
+    report_type: Optional[str] = Query(
+        None, description="Filter by report type"
     ),
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
+    uploaded_by_type: Optional[str] = Query(
+        None, description="Filter by uploader type (patient or care provider)"
+    ),
+    order: Optional[str] = Query(
+        "asc", description="asc or desc by creation date"
+    ),
+    limit: Optional[int] = Query(None, description="Limit number of results"),
+    offset: int = Query(0, description="Offset for pagination"),
+    patient_report_service: PatientReportService = Depends(
+        get_patient_report_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -48,39 +55,23 @@ async def fetch_patient_fitness_report(
     ),
 ):
     try:
-        # Fetch patient info
-        patient_info = await patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, include_health_data=True
-        )
-
-        report = fitness_processor.generate_report(
-            patient_id,
-            start_date,
-            end_date,
-            include_overall=True,
-            include_week_wise=True,
-            include_day_wise=True,
+        reports = await patient_report_service.fetch_patient_reports(
+            patient_id=patient_id,
+            report_type=report_type,
+            uploaded_by_type=uploaded_by_type,
+            order=order,
+            limit=limit,
+            offset=offset,
         )
 
         return SuccessResponse(
-            message="Report generated successfully",
-            data={
-                "patient_info": CorePatientProfile.from_orm(patient_info),
-                "report": report,
-            },
+            message="Patient reports fetched successfully",
+            data=[PatientReport.from_orm(r) for r in reports],
         )
+
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        error_message = f"Exception occurred: {str(e)}"
-        traceback_message = traceback.format_exc()
-        print("🚀 ~ error_message:", error_message)
-        print("🚀 ~ traceback_message:", traceback_message)
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
-            detail=str(e),
-        )
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Internal Server Error",

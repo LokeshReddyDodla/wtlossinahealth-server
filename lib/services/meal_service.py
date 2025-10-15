@@ -25,8 +25,14 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.meal_vector_service.meal_vector_service import (
+    MealVectorService,
+)
 from lib.services.patient_profile_service import PatientProfileService
-from lib.tasks.meal_tasks import generate_daily_meal_report
+from lib.tasks.meal_tasks import (
+    generate_daily_meal_report,
+    generate_meal_vector,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
@@ -63,6 +69,7 @@ class MealService:
         postgres_store: PostgresStore,
         meal_analysis_service: MealAnalysisService,
         patient_profile_service: PatientProfileService,
+        meal_vector_service: MealVectorService,
     ):
         from lib.dependencies.service_dependencies import (
             get_token_usage_service,
@@ -71,9 +78,10 @@ class MealService:
         self.postgres_store = postgres_store
         self.meal_analysis_service = meal_analysis_service
         self.patient_profile_service = patient_profile_service
+        self.meal_vector_service = meal_vector_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="meal",
-            selected_ai_model="gpt-4o-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
         self.token_usage_service = get_token_usage_service()
@@ -367,6 +375,9 @@ class MealService:
 
             # Analyze or reanalyze the meal using the MealAnalysisService
             if update_fields:
+                if "description" in update_fields:
+                    meal.description = update_fields["description"]
+
                 parsed_ai_response = (
                     await self.meal_analysis_service.reanalyze_meal(
                         patient_id, meal_orm.model_dump(), update_fields
@@ -409,8 +420,10 @@ class MealService:
                 messages=message_sequence,
             )
 
-            # 🚀 Trigger Meal Report Generation after Analysis
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
+            # 🚀 Trigger Meal tasks after Analysis
+            self._trigger_meal_tasks(
+                str(patient_id), str(meal_id), meal.date, updated_meal
+            )
 
             return updated_meal
         except json.JSONDecodeError as e:
@@ -557,6 +570,23 @@ class MealService:
             ),
         ]
 
+    def _trigger_meal_tasks(
+        self,
+        patient_id: str,
+        meal_id: str,
+        meal_date: datetime,
+        meal_obj: PatientMealModel,
+    ):
+        try:
+            generate_daily_meal_report.delay(str(patient_id), meal_date)
+            generate_meal_vector.delay(
+                str(patient_id),
+                str(meal_id),
+                PatientMealSchema.from_orm(meal_obj).model_dump(mode="json"),
+            )
+        except Exception as task_error:
+            print(f"⚠️ Failed to enqueue meal vector tasks: {task_error}")
+
     @with_postgres_session
     async def delete_meal(
         self, meal_id: UUID, patient_id: str, *, postgres_session: AsyncSession
@@ -584,6 +614,9 @@ class MealService:
             # 🚀 Trigger Meal Report Generation after Deletion
             generate_daily_meal_report.delay(str(patient_id), meal_date)
 
+            # 🧹 Delete from vector DB too
+            await self.meal_vector_service.delete_meal_vector(str(meal_id))
+
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -603,6 +636,10 @@ class MealService:
                 )
             )
             await postgres_session.commit()
+
+            await self.meal_vector_service.delete_meal_vectors_for_patient(
+                patient_id
+            )
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()

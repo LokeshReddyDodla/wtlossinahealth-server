@@ -52,3 +52,5 @@ from .weight_loss_agent import (
     InbodyReport,
     WeightLossAgentEnrollment,
 )
+from .user_activity_log import UserActivityLog
+from .patient_report import PatientReport

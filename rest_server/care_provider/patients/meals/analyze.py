@@ -3,15 +3,20 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import (get_meal_service,
-                                                   get_meal_stats_processor)
+from lib.dependencies.service_dependencies import (
+    get_meal_service,
+    get_meal_stats_processor,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal_service import MealService
-from lib.utils.care_provider_permissions import (CareProviderFeature,
-                                                 CareProviderPermissionAction)
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.meals.diet_recommendations import get_diet_recommendations
 from lib.utils.meals.processor import MealStatsProcessor
 from rest_server.patients.meals.api_schema import PatientMealAnalysis
 from rest_server.response_models import SuccessResponse
@@ -20,10 +25,10 @@ from .router import router
 
 
 @router.post(
-    path="/analyze",
+    path="/{meal_id}/analyze",
     response_model=SuccessResponse,
 )
-async def analyze_meal_api(
+async def analyze_meal(
     request: Request,
     meal_id: str,
     patient_id: str,
@@ -34,13 +39,11 @@ async def analyze_meal_api(
         get_meal_stats_processor
     ),
     current_care_provider: CareProviderModel = Depends(
-    get_current_care_provider(
-        CareProviderPermissionAction.CREATE, CareProviderFeature.REPORTS
-    ))
+        get_current_care_provider(
+            CareProviderPermissionAction.CREATE, CareProviderFeature.REPORTS
+        )
+    ),
 ):
-    """
-    Analyze Meal API
-    """
     try:
         analyzed_meal = await meal_service.analyze_or_reanalyze_meal(
             meal_id=meal_id,
@@ -52,7 +55,7 @@ async def analyze_meal_api(
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
 
         diet_recommendations_data = (
-            await meal_stats_processor.get_diet_recommendations(
+            await meal_stats_processor.get_diet_recommendation(
                 str(patient_id), meal_data.uploaded_at
             )
         )

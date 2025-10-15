@@ -21,7 +21,8 @@ from lib.schemas.ai_conversation_schemas import (
     AiConversationMessage as AiConversationMessageSchema,
 )
 from lib.schemas.patient_prescription_analysis import (
-    PrescriptionAnalysisResponse,
+    PrescriptionAnalysis,
+    PrescriptionStructureResponse,
 )
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
@@ -50,7 +51,7 @@ class PrescriptionService:
         self.patient_profile_service = patient_profile_service
         self.ai_conversation_service = AiConversationService(
             conversation_type="prescription",
-            selected_ai_model="gpt-4o-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
         self.token_usage_service = get_token_usage_service()
@@ -192,11 +193,69 @@ class PrescriptionService:
             )
 
     @with_postgres_session
+    async def confirm_prescription_analysis(
+        self,
+        patient_id: str,
+        confirmed_prescription: PrescriptionStructureResponse,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientPrescriptionModel:
+        try:
+            # Step 1 — Generate summary
+            summary_response = await self.prescription_analysis_service.generate_prescription_summary(
+                confirmed_prescription=confirmed_prescription,
+                user_id=patient_id,
+                user_type=ProfileTypeEnum.PATIENT,
+            )
+
+            # Step 2 — Save prescription
+            saved_prescription = await self.save_prescription_analysis(
+                patient_id,
+                confirmed_prescription.prescription_file_url,
+                PrescriptionAnalysis(
+                    **confirmed_prescription.dict(), **summary_response.dict()
+                ),
+                postgres_session=postgres_session,
+            )
+
+            # Step 3 — Refetch prescription
+            refetched_prescription = await self.fetch_prescription(
+                str(saved_prescription.prescription_id)
+            )
+
+            # Step 3 — Generate conversation flow
+            message_sequence = self._generate_conversation_flow(
+                patient_id,
+                refetched_prescription,
+            )
+
+            # Pass the message sequence to AiConversationService
+            await self.ai_conversation_service.add_multiple_messages_to_conversation(
+                messages=message_sequence,
+            )
+
+            return refetched_prescription
+        except json.JSONDecodeError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Invalid JSON",
+                detail=str(e),
+            )
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
     async def save_prescription_analysis(
         self,
         patient_id: UUID,
         prescription_file_url: str,
-        analysis_data: PrescriptionAnalysisResponse,
+        analysis_data: PrescriptionAnalysis,
         *,
         postgres_session: AsyncSession,
     ) -> PatientPrescriptionModel:
@@ -216,13 +275,17 @@ class PrescriptionService:
         # Create medicine records
         prescription.medicines = [
             PatientPrescriptionMedicine(
-                name=medicine.name,
-                dosage=medicine.dosage,
+                brand_name=medicine.brand_name,
+                generic_name=medicine.generic_name,
+                formulation=medicine.formulation,
+                strength=medicine.strength,
                 frequency=medicine.frequency,
                 duration=medicine.duration,
+                before_after_food=medicine.before_after_food,
+                route=medicine.route,
+                instructions=medicine.instructions,
                 purpose=medicine.purpose,
                 possible_side_effects=medicine.possible_side_effects,
-                instructions=medicine.instructions,
                 explanation=medicine.explanation,
             )
             for medicine in analysis_data.medicines
@@ -250,13 +313,48 @@ class PrescriptionService:
         # List of medicines in Markdown format
         medicines_md = "\n\n💊 Medicines Prescribed:\n"
         for med in prescription_data.medicines:
-            med_line = f"- **{med.name}**: {med.dosage}"
+            med_line = "- "
+
+            # Brand name / generic name
+            if med.brand_name:
+                med_line += f"**{med.brand_name}**"
+            elif med.generic_name:
+                med_line += f"**{med.generic_name}**"
+            else:
+                med_line += "**Unnamed Medicine**"
+
+            # Formulation and strength
+            details = []
+            if med.formulation:
+                details.append(med.formulation)
+            if med.strength:
+                details.append(med.strength)
+            if details:
+                med_line += f" ({', '.join(details)})"
+
+            # Frequency and duration
             if med.frequency:
                 med_line += f", {med.frequency}"
             if med.duration:
                 med_line += f", {med.duration}"
+
+            # Before/After food and route
+            extra_details = []
+            if med.before_after_food:
+                extra_details.append(med.before_after_food)
+            if med.route:
+                extra_details.append(med.route)
+            if extra_details:
+                med_line += f" — {'; '.join(extra_details)}"
+
+            # Purpose
             if med.purpose:
                 med_line += f" (_{med.purpose}_)"
+
+            # Instructions
+            if med.instructions:
+                med_line += f"\n    📌 Instructions: {med.instructions}"
+
             medicines_md += f"{med_line}\n"
 
         return [

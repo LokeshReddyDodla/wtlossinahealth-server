@@ -68,7 +68,7 @@ async def create_package(
         )
 
 
-@router.post("/assign-care-provider", response_model=SuccessResponse)
+@router.post("/{package_id}/care-providers", response_model=SuccessResponse)
 async def assign_care_provider_to_package(
     package_id: str,
     care_provider_id: str,
@@ -105,7 +105,7 @@ async def assign_care_provider_to_package(
         )
 
 
-@router.post("/assignment", response_model=SuccessResponse)
+@router.post("/{package_id}/patients", response_model=SuccessResponse)
 async def create_package_assignment(
     assignment_data: PatientPackageAssignmentCreate,
     patient_package_assignment_service: PatientPackageAssignmentService = Depends(

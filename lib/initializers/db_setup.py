@@ -2,6 +2,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import Base, PostgresStore, engine
 from lib.initializers.weight_loss_agent_setup import initialize_weight_loss_agent_data
+from lib.core.qdrant_store import QdrantStore
 
 
 async def create_db_and_tables():
@@ -12,10 +13,12 @@ async def create_db_and_tables():
     clickhouse_store = ClickHouseStore()
     clickhouse_store.create_all_tables()
 
+
 def initialize_databases(app):
     app.state.postgres_store = PostgresStore()
     app.state.mongo_store = MongoStore()
     app.state.clickhouse_store = ClickHouseStore()
+    app.state.qdrant_store = QdrantStore()
 
     # Initialize weight loss agent data
     import asyncio

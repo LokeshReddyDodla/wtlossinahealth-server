@@ -16,15 +16,30 @@ from lib.models.token_usage_log import TokenUsageLog
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 PRICING = {
+    "gpt-5-mini": {
+        "input": 0.25 / 1_000_000,  # $0.20 per 1M input tokens (example)
+        "cached_input": 0.025 / 1_000_000,
+        "output": 2.00 / 1_000_000,
+    },
     "gpt-4o": {
         "input": 2.50 / 1_000_000,  # $2.50 per 1M input tokens
         "cached_input": 1.25 / 1_000_000,  # $1.25 per 1M cached input tokens
         "output": 10.00 / 1_000_000,  # $10.00 per 1M output tokens
     },
     "gpt-4o-mini": {
-        "input": 0.150 / 1_000_000,  # $0.150 per 1M input tokens
+        "input": 0.15 / 1_000_000,  # $0.150 per 1M input tokens
         "cached_input": 0.075 / 1_000_000,  # $0.075 per 1M cached input tokens
-        "output": 0.600 / 1_000_000,  # $0.600 per 1M output tokens
+        "output": 0.60 / 1_000_000,  # $0.600 per 1M output tokens
+    },
+    "gpt-4.1-mini": {  # Alias / legacy compatibility
+        "input": 0.40 / 1_000_000,
+        "cached_input": 0.10 / 1_000_000,
+        "output": 1.60 / 1_000_000,
+    },
+    "o3-mini": {  # Experimental reasoning-light
+        "input": 1.10 / 1_000_000,
+        "cached_input": 0.55 / 1_000_000,
+        "output": 4.40 / 1_000_000,
     },
     "gemini-1.5-flash": {
         "input": 0.075 / 1_000_000,  # $0.075 per 1M input tokens

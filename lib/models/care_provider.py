@@ -1,14 +1,24 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (JSON, UUID, Boolean, Column, DateTime, Enum,
-                        ForeignKey, String)
+from sqlalchemy import (
+    JSON,
+    UUID,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+)
 from sqlalchemy.orm import relationship
 
 from lib.core.constants import CareProviderStatus
 from lib.models import Base
-from lib.models.associations import (package_care_provider_association,
-                                     patient_care_provider_association)
+from lib.models.associations import (
+    package_care_provider_association,
+    patient_care_provider_association,
+)
 
 
 class CareProvider(Base):
@@ -34,7 +44,9 @@ class CareProvider(Base):
     profile_picture = Column(String, nullable=True)
     phone_number = Column(String, unique=True, index=True)
     email = Column(String, nullable=False, unique=True)
-    role = Column(String, nullable=False)  # e.g., Doctor, Nurse, Dietitian, etc.
+    role = Column(
+        String, nullable=False
+    )  # e.g., Doctor, Nurse, Dietitian, etc.
     hashed_password = Column(String, nullable=True)
 
     # Medical Info
@@ -49,7 +61,9 @@ class CareProvider(Base):
         comment="Current status of the care provider",
     )
     permissions = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
+    created_at = Column(
+        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
+    )
     updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
@@ -69,7 +83,9 @@ class CareProvider(Base):
     # Foreign Keys
     health_facility_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("health_facilities.health_facility_id", ondelete="SET NULL"),
+        ForeignKey(
+            "health_facilities.health_facility_id", ondelete="SET NULL"
+        ),
     )
     health_facility = relationship(
         "HealthFacility", back_populates="care_providers", passive_deletes=True
@@ -103,7 +119,6 @@ class CareProvider(Base):
         back_populates="enrolled_by",
         cascade="all, delete-orphan",
     )
-
     @property
     def is_admin(self):
         return str(self.role).lower() == "admin"

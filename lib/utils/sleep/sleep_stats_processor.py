@@ -33,7 +33,7 @@ class SleepStatsProcessor:
         self.postgres_store = postgres_store
         self.ai_conversation_service = AiConversationService(
             conversation_type="sleep",
-            selected_ai_model="gpt-4o-mini",
+            selected_ai_model="gpt-4.1-mini",
             ai_model_provider="openai",
         )
 

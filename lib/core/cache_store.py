@@ -22,6 +22,14 @@ class CacheStore:
 
         self.__client: redis.Redis = redis_client
 
+    def _get_client(self) -> redis.Redis:
+        """Protected method to access client safely"""
+        return self.__client
+
+    def _get_namespace(self) -> str:
+        """Protected method to access namespace safely"""
+        return self.__namespace
+
     def is_connected(self) -> bool:
         return self.__client.ping()
 

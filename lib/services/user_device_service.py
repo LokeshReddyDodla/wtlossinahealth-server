@@ -1,6 +1,8 @@
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -20,6 +22,64 @@ class UserDeviceService:
         postgres_store: PostgresStore,
     ):
         self.postgres_store = postgres_store
+
+    @with_postgres_session
+    async def get_user_last_active_at(
+        self,
+        user_id: UUID,
+        profile_type: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> Optional[datetime]:
+        try:
+            stmt = select(UserDeviceModel.last_active_at).where(
+                UserDeviceModel.user_id == user_id
+            )
+            if profile_type:
+                stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
+
+            stmt = stmt.order_by(UserDeviceModel.last_active_at.desc()).limit(
+                1
+            )
+
+            result = await postgres_session.execute(stmt)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            print(f"Failed to fetch last_active_at: {str(e)}")
+            raise
+
+    @with_postgres_session
+    async def get_last_active_map(
+        self,
+        user_ids: list[str],
+        profile_type: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> dict[str, datetime]:
+        try:
+            stmt = (
+                select(
+                    UserDeviceModel.user_id,
+                    func.max(UserDeviceModel.last_active_at),
+                )
+                .where(
+                    UserDeviceModel.user_id.in_(user_ids),
+                    UserDeviceModel.profile_type == profile_type,
+                )
+                .group_by(UserDeviceModel.user_id)
+            )
+            rows = await postgres_session.execute(stmt)
+
+            return {
+                str(user_id): last_active
+                for user_id, last_active in rows.all()
+            }
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            print(f"Failed to fetch last active map: {str(e)}")
+            raise
 
     @with_postgres_session
     async def create_user_device(
@@ -50,13 +110,8 @@ class UserDeviceService:
     ) -> list[UserDeviceModel]:
         """Retrieve all devices associated with a user."""
         try:
-            stmt = (
-                select(UserDeviceModel)
-                .where(UserDeviceModel.user_id == user_id)
-                .options(
-                    selectinload(UserDeviceModel.patient),
-                    selectinload(UserDeviceModel.care_provider),
-                )
+            stmt = select(UserDeviceModel).where(
+                UserDeviceModel.user_id == user_id,
             )
             if profile_type is not None:
                 stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
@@ -156,13 +211,6 @@ class UserDeviceService:
                 "longitude": longitude,
                 "location_name": location_name,
             }
-
-            if profile_type == ProfileTypeEnum.PATIENT.value:
-                user_device_data["patient_id"] = user_id
-            elif profile_type == ProfileTypeEnum.CARE_PROVIDER.value:
-                user_device_data["care_provider_id"] = user_id
-            else:
-                raise ValueError(f"Invalid profile_type: {profile_type}")
 
             # Retrieve devices to check if the device already exists
             existing_devices = await self.get_user_devices(

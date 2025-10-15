@@ -235,6 +235,43 @@ class CGMReportService:
             )
             return None
 
+    async def fetch_day_wise_reports(
+        self, patient_id: str, start_date: datetime, end_date: datetime
+    ) -> list[dict]:
+        try:
+            pipeline = [
+                {
+                    "$match": {
+                        "patient_id": patient_id,
+                        "report_type": "daily",
+                        "start_date": {"$gte": start_date},
+                        "end_date": {"$lte": end_date},
+                    }
+                },
+                {
+                    "$project": {
+                        "meal_report_id": 0,
+                        "fitness_report_id": 0,
+                    }
+                },
+            ]
+
+            cursor = self.cgm_report_collection.aggregate(pipeline)
+            day_wise_reports = await cursor.to_list(length=None)
+
+            if not day_wise_reports:
+                logging.warning(
+                    f"⚠️ No day_wise CGM reports found for {patient_id} ({start_date} - {end_date})"
+                )
+
+            return day_wise_reports
+
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch day_wise CGM reports for {patient_id}. Error: {error}"
+            )
+            return []
+
     def _trigger_report_generation(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ):
@@ -371,5 +408,6 @@ class CGMReportService:
         if ops:
             await self.cgm_report_collection.bulk_write(ops)
             print(f"✅ Bulk saved {len(ops)} CGM reports for {patient_id}")
+            return report_id
         else:
             print("⚠️ No CGM reports to save.")

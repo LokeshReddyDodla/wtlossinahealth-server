@@ -29,13 +29,29 @@ class PatientPrescriptionMedicine(Base):
         nullable=False,
     )
 
-    name = Column(String, nullable=False)
-    dosage = Column(String, nullable=False)
-    frequency = Column(String, nullable=True)
-    duration = Column(String, nullable=True)
+    # Core Medicine Info
+    brand_name = Column(String, nullable=True)  # e.g., "Glycomet"
+    generic_name = Column(String, nullable=True)  # e.g., "Metformin"
+    formulation = Column(
+        String, nullable=True
+    )  # e.g., "Tablet", "Syrup", "Injection"
+    strength = Column(String, nullable=True)  # e.g., "500 mg", "5 mg/5 ml"
+
+    # Prescription Details
+    frequency = Column(String, nullable=True)  # e.g., "1-0-1", "SOS"
+    duration = Column(String, nullable=True)  # e.g., "5 Days", "2 Weeks"
+    before_after_food = Column(
+        String, nullable=True
+    )  # e.g., "Before food", "After food"
+    route = Column(String, nullable=True)  # e.g., "Oral", "IV", "Topical"
+    instructions = Column(
+        Text, nullable=True
+    )  # Any extra freeform instructions
+
+    # Optional Clinical Context
     purpose = Column(Text, nullable=True)
     possible_side_effects = Column(JSONB, nullable=True)
-    instructions = Column(Text, nullable=True)
+
     explanation = Column(Text, nullable=False)
 
     prescription = relationship(

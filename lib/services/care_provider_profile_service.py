@@ -1,10 +1,11 @@
+from datetime import datetime
 import random
 import re
 import string
 from typing import Dict, List, Optional, Set
 
 from fastapi import status
-from sqlalchemy import exists
+from sqlalchemy import and_, exists, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -15,9 +16,11 @@ from lib.core.constants import EmitMessageKeyEnum
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
+from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_package_assignment import (
     PatientPackageAssignment as PatientPackageAssignmentModel,
 )
+from lib.models.patient_smbg import PatientSMBG
 from lib.schemas.care_provider import (
     CareProviderCreate,
     CareProviderUpdate,
@@ -32,6 +35,7 @@ from lib.utils.care_provider_permissions import (
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.utils.security import hash_password, verify_password
+from dateutil.relativedelta import relativedelta
 
 
 class CareProviderProfileService:
@@ -62,7 +66,7 @@ class CareProviderProfileService:
         care_provider_id: str,
         detailed: Optional[bool] = False,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> CareProviderModel:
         try:
             stmt = select(CareProviderModel).where(
@@ -75,7 +79,6 @@ class CareProviderProfileService:
                     selectinload(CareProviderModel.patients),
                     selectinload(CareProviderModel.packages),
                     selectinload(CareProviderModel.created_packages),
-                    selectinload(CareProviderModel.user_devices),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -124,64 +127,157 @@ class CareProviderProfileService:
         care_provider_id: str,
         role: str,
         health_facility_id: str,
+        search: Optional[str] = None,
+        age: Optional[List[str]] = None,
+        gender: Optional[List[str]] = None,
+        monitoringMethod: Optional[List[str]] = None,
+        package: Optional[List[str]] = None,
+        connected_apps: Optional[List[str]] = None,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> List[PatientModel]:
         try:
+            stmt = select(PatientModel).options(
+                selectinload(PatientModel.health_facility),
+                selectinload(PatientModel.care_providers),
+                selectinload(PatientModel.package_assignments).options(
+                    selectinload(PatientPackageAssignmentModel.package)
+                ),
+            )
+
+            # Facility scope (for admin role)
             if role == "admin" and health_facility_id:
-                stmt = (
-                    select(PatientModel)
-                    .where(
-                        PatientModel.health_facility_id == health_facility_id
-                    )
-                    .options(
-                        selectinload(PatientModel.health_facility),
-                        selectinload(PatientModel.care_providers),
-                        selectinload(PatientModel.package_assignments).options(
-                            selectinload(PatientPackageAssignmentModel.package)
-                        ),
-                        selectinload(PatientModel.user_devices),
-                    )
-                    .order_by(PatientModel.created_at.desc())
+                stmt = stmt.where(
+                    PatientModel.health_facility_id == health_facility_id
                 )
-                result = await postgres_session.execute(stmt)
-                return list(result.scalars().all())
             else:
-                stmt = (
-                    select(CareProviderModel)
-                    .where(
-                        CareProviderModel.care_provider_id == care_provider_id
+                stmt = stmt.join(PatientModel.care_providers).where(
+                    CareProviderModel.care_provider_id == care_provider_id
+                )
+
+            # Search filter
+            if search:
+                search_pattern = f"%{search}%"
+                stmt = stmt.where(
+                    or_(
+                        PatientModel.first_name.ilike(search_pattern),
+                        PatientModel.last_name.ilike(search_pattern),
+                        PatientModel.email.ilike(search_pattern),
+                        PatientModel.phone_number.ilike(search_pattern),
                     )
-                    .options(
-                        selectinload(CareProviderModel.patients).options(
-                            selectinload(PatientModel.health_facility),
-                            selectinload(PatientModel.care_providers),
-                            selectinload(
-                                PatientModel.package_assignments
-                            ).options(
-                                selectinload(
-                                    PatientPackageAssignmentModel.package
-                                )
-                            ),
-                            selectinload(PatientModel.user_devices),
+                )
+
+            # gender filter
+            if gender:
+                stmt = stmt.where(PatientModel.gender.in_(gender))
+
+            # age filter (convert ranges → DOB)
+            if age:
+                age_group_conditions = []
+                today = datetime.today().date()
+
+                for group in age:
+                    if group == "under18":
+                        cutoff_18 = today - relativedelta(years=18)
+                        age_group_conditions.append(
+                            PatientModel.dob > cutoff_18
+                        )
+
+                    elif group == "18-25":
+                        cutoff_25 = today - relativedelta(years=25)
+                        cutoff_18 = today - relativedelta(years=18)
+                        age_group_conditions.append(
+                            PatientModel.dob.between(cutoff_25, cutoff_18)
+                        )
+
+                    elif group == "26-35":
+                        cutoff_35 = today - relativedelta(years=35)
+                        cutoff_26 = today - relativedelta(years=26)
+                        age_group_conditions.append(
+                            PatientModel.dob.between(cutoff_35, cutoff_26)
+                        )
+
+                    elif group == "36-45":
+                        cutoff_45 = today - relativedelta(years=45)
+                        cutoff_36 = today - relativedelta(years=36)
+                        age_group_conditions.append(
+                            PatientModel.dob.between(cutoff_45, cutoff_36)
+                        )
+
+                    elif group == "46-60":
+                        cutoff_60 = today - relativedelta(years=60)
+                        cutoff_46 = today - relativedelta(years=46)
+                        age_group_conditions.append(
+                            PatientModel.dob.between(cutoff_60, cutoff_46)
+                        )
+
+                    elif group == "60+":
+                        cutoff_60 = today - relativedelta(years=60)
+                        age_group_conditions.append(
+                            PatientModel.dob <= cutoff_60
+                        )
+
+                if age_group_conditions:
+                    stmt = stmt.where(or_(*age_group_conditions))
+
+            # type filter (SMBG data check)
+            if monitoringMethod:
+                type_conditions = []
+
+                for data_type in monitoringMethod:
+                    if data_type == "smbg":
+                        type_conditions.append(
+                            exists().where(
+                                PatientSMBG.patient_id
+                                == PatientModel.patient_id
+                            )
+                        )
+                    elif data_type == "cgm":
+                        # Check if patient has any CGM data (if you have a CGM model)
+                        # type_conditions.append(...)
+                        pass
+
+                if type_conditions:
+                    stmt = stmt.where(or_(*type_conditions))
+
+            # package filter
+            if package:
+                if "on-package" in package:
+                    stmt = stmt.where(
+                        exists().where(
+                            PatientPackageAssignmentModel.patient_id
+                            == PatientModel.patient_id
                         )
                     )
-                )
-
-                result = await postgres_session.execute(stmt)
-                care_provider = result.scalars().first()
-
-                if not care_provider:
-                    raise_http_exception(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        message="Care provider patients not found.",
+                if "no-package" in package:
+                    stmt = stmt.where(
+                        ~exists().where(
+                            PatientPackageAssignmentModel.patient_id
+                            == PatientModel.patient_id
+                        )
                     )
 
-                care_provider.patients.sort(
-                    key=lambda patient: patient.created_at, reverse=True
-                )
+            # connected apps filter (e.g., libreview)
+            if connected_apps:
+                stmt = stmt.outerjoin(PatientModel.connected_apps)
 
-                return care_provider.patients
+                app_conditions = []
+
+                for app in connected_apps:
+                    if app == "libreview":
+                        app_conditions.append(
+                            PatientConnectedApp.libreview != None
+                        )
+
+                if app_conditions:
+                    stmt = stmt.where(or_(*app_conditions))
+
+            stmt = stmt.order_by(PatientModel.created_at.desc())
+
+            result = await postgres_session.execute(stmt)
+            patients = list(result.scalars().all())
+
+            return patients
 
         except SQLAlchemyError as e:
             raise_http_exception(
@@ -278,7 +374,7 @@ class CareProviderProfileService:
         care_provider_data: CareProviderCreate,
         health_facility_id: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> (
         CareProviderModel
     ):  # TODO: fix validation on invalid health_facility id
@@ -322,7 +418,7 @@ class CareProviderProfileService:
         care_provider_id: str,
         updates: CareProviderUpdate,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> CareProviderModel:
         try:
             care_provider_profile = await self.fetch_care_provider(
@@ -420,7 +516,7 @@ class CareProviderProfileService:
         care_provider_id: str,
         raw_password: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> CareProviderModel:
         try:
             care_provider_profile = await self.fetch_care_provider(
@@ -504,7 +600,7 @@ class CareProviderProfileService:
         care_provider_id: str,
         permissions_update: Dict[str, PermissionActionSchema],
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> CareProviderModel:
         try:
             care_provider = await self.fetch_care_provider(

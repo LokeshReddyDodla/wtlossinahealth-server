@@ -6,6 +6,7 @@ from lib.core.mongo_store import MongoStore
 import structlog
 
 from lib.core.cache_store import CacheStore
+from lib.core.qdrant_store import QdrantStore
 
 
 @dataclass
@@ -35,3 +36,4 @@ class Context:
     postgres_store: asyncpg.pool.Pool
     mongo_store: MongoStore
     clickhouse_store: ClickHouseStore
+    qdrant_store: QdrantStore

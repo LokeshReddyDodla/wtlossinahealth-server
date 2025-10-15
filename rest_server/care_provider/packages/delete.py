@@ -21,7 +21,7 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.delete("", response_model=SuccessResponse)
+@router.delete("/{package_id}", response_model=SuccessResponse)
 async def delete_package(
     package_id: str,
     package_service: PackageService = Depends(get_package_service),
@@ -51,7 +51,10 @@ async def delete_package(
         )
 
 
-@router.delete("/remove-care-provider", response_model=SuccessResponse)
+@router.delete(
+    "/{package_id}/care-providers/{care_provider_id}",
+    response_model=SuccessResponse,
+)
 async def remove_care_provider_from_package(
     package_id: str,
     care_provider_id: str,
@@ -83,7 +86,9 @@ async def remove_care_provider_from_package(
         )
 
 
-@router.delete("/remove-patient", response_model=SuccessResponse)
+@router.delete(
+    "/{package_id}/patients/{patient_id}", response_model=SuccessResponse
+)
 async def remove_patient_from_package(
     package_id: str,
     patient_id: str,
@@ -113,7 +118,9 @@ async def remove_patient_from_package(
         )
 
 
-@router.delete("/assignment", response_model=SuccessResponse)
+@router.delete(
+    "/{package_id}/patients/{assignment_id}", response_model=SuccessResponse
+)
 async def delete_package_assignment(
     assignment_id: str,
     patient_package_assignment_service: PatientPackageAssignmentService = Depends(

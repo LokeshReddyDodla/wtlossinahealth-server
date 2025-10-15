@@ -1,11 +1,14 @@
-from fastapi import Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import Depends, HTTPException, Query, status
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
     get_care_provider_profile_service,
     get_cgm_report_service,
     get_chat_management_service,
     get_patient_profile_service,
+    get_user_device_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CompletePatientProfile
@@ -15,6 +18,7 @@ from lib.services.care_provider_profile_service import (
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -29,11 +33,18 @@ from .router import router
 
 
 @router.get("", response_model=SuccessResponse)
-async def get_patients(
+async def list_patients(
+    search: Optional[str] = Query(None),
+    age: Optional[List[str]] = Query(None),
+    gender: Optional[List[str]] = Query(None),
+    monitoringMethod: Optional[List[str]] = Query(None),
+    connectedApps: Optional[List[str]] = Query(None),
+    package: Optional[List[str]] = Query(None),
     care_provider_profile_service: CareProviderProfileService = Depends(
         get_care_provider_profile_service
     ),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.READ, CareProviderFeature.PATIENTS
@@ -46,7 +57,29 @@ async def get_patients(
                 str(current_care_provider.care_provider_id),
                 str(current_care_provider.role).lower(),
                 str(current_care_provider.health_facility_id),
+                search=search,
+                age=age,
+                gender=gender,
+                monitoringMethod=monitoringMethod,
+                package=package,
+                connected_apps=connectedApps,
             )
+        )
+
+        if monitoringMethod and "cgm" in monitoringMethod:
+            filtered_patients = []
+            for patient in patients:
+                cgm_reports = await cgm_report_service.fetch_reports(
+                    str(patient.patient_id)
+                )
+                if cgm_reports:
+                    filtered_patients.append(patient)
+            patients = filtered_patients
+
+        user_ids = [str(p.patient_id) for p in patients]
+        last_active_map = await user_device_service.get_last_active_map(
+            user_ids=user_ids,
+            profile_type=ProfileTypeEnum.PATIENT.value,
         )
 
         updated_patients = []
@@ -58,6 +91,7 @@ async def get_patients(
             updated_patient = {
                 **CareProviderPatients.from_orm(patient).model_dump(),
                 "reports": {"cgm": cgm_reports},
+                "last_active_at": last_active_map.get(str(patient.patient_id)),
             }
             updated_patients.append(updated_patient)
 
@@ -75,7 +109,7 @@ async def get_patients(
         )
 
 
-@router.get("/profile", response_model=SuccessResponse)
+@router.get("/{patient_id}", response_model=SuccessResponse)
 async def get_patient_profile(
     patient_id: str,
     detailed: bool = False,
@@ -84,6 +118,7 @@ async def get_patient_profile(
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
     chat_management_service: ChatManagementService = Depends(
         get_chat_management_service
     ),
@@ -108,12 +143,18 @@ async def get_patient_profile(
 
         cgm_reports = await cgm_report_service.fetch_reports(patient_id)
 
+        last_active_at = await user_device_service.get_user_last_active_at(
+            user_id=patient_id,
+            profile_type=ProfileTypeEnum.PATIENT.value,
+        )
+
         return SuccessResponse(
             message="Patient profile fetched successfully",
             data={
                 **CompletePatientProfile.from_orm(profile).model_dump(),
                 "direct_chat_id": direct_chat,
                 "reports": {"cgm": cgm_reports},
+                "last_active_at": last_active_at,
             },
         )
     except HTTPException as e:

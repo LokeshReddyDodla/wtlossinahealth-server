@@ -23,6 +23,7 @@ from lib.models import Base
 from lib.models.associations import patient_care_provider_association
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_permission import PatientPermission
+from lib.models.user_device import UserDevice
 from lib.services.chat.chat_management_service import ChatManagementService
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import object_session
@@ -161,6 +162,13 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
+    reports = relationship(
+        "PatientReport",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
+
     connected_apps = relationship(
         "PatientConnectedApp",
         uselist=False,
@@ -218,23 +226,6 @@ class Patient(Base):
                 and pa.start_date <= today <= pa.end_date
             ),
             None,
-        )
-
-    @property
-    def last_active_at(self, allow_lazy=False):
-        if not allow_lazy and "user_devices" not in self.__dict__:
-            return None
-
-        if not self.user_devices:
-            return None
-
-        return max(
-            (
-                device.last_active_at
-                for device in self.user_devices
-                if device.last_active_at
-            ),
-            default=None,
         )
 
     @hybrid_property

@@ -11,11 +11,9 @@ from lib.dependencies.service_dependencies import (
 from lib.models.patient import Patient
 from lib.schemas.patient_prescription import PatientPrescriptionRead
 from lib.schemas.patient_prescription_analysis import (
-    PrescriptionAnalysisResponse,
+    PrescriptionAnalysis,
 )
-from lib.services.prescription_analysis_service import (
-    PrescriptionAnalysisService,
-)
+
 from lib.services.prescription_service import PrescriptionService
 from lib.utils.http_exceptions import raise_http_exception
 

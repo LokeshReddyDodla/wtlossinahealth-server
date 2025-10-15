@@ -1,15 +1,18 @@
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_patient_profile_service,
+    get_user_device_service,
 )
 from lib.models.patient import Patient
 from lib.schemas.patient import CompletePatientProfile
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -25,6 +28,7 @@ async def get_patient_details(
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service
     ),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
@@ -40,11 +44,17 @@ async def get_patient_details(
             str(current_patient.patient_id)
         )
 
+        last_active_at = await user_device_service.get_user_last_active_at(
+            user_id=str(current_patient.patient_id),
+            profile_type=ProfileTypeEnum.PATIENT.value,
+        )
+
         return SuccessResponse(
             message="Patient data fetched successfully.",
             data={
                 **CompletePatientProfile.from_orm(result).model_dump(),
                 "reports": {"cgm": cgm_reports},
+                "last_active_at": last_active_at,
             },
         )
     except HTTPException as http_exc:

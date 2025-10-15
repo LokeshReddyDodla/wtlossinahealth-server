@@ -30,6 +30,7 @@ async def create_context(request: Request, call_next):
         postgres_store=request.app.state.postgres_store,
         mongo_store=request.app.state.mongo_store,
         clickhouse_store=request.app.state.clickhouse_store,
+        qdrant_store=request.app.state.qdrant_store,
     )
 
     # Bind vars to structlog logger

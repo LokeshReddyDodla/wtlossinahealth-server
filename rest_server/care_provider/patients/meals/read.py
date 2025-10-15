@@ -1,14 +1,20 @@
-from datetime import date
+from datetime import date, datetime
+from enum import Enum
+from typing import Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
+    get_meal_metrics_service,
     get_meal_report_service,
     get_patient_profile_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CorePatientProfile
+from lib.services.dashboard_metrics.meal_metrics_service import (
+    MealMetricsService,
+)
 from lib.services.meal_report_service import MealReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
@@ -16,16 +22,19 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from rest_server.care_provider.patients.meals.api_schema import (
+    PatientMealSchema,
+)
 from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
 
-@router.get("/report/day")
+@router.get("/reports/day/{date}")
 async def get_day_meal_report(
     request: Request,
-    patient_id: str = Query(...),
-    date: date = Query(...),
+    patient_id: str,
+    date: date,
     regenerate: bool = Query(False),
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     current_care_provider: CareProviderModel = Depends(
@@ -58,12 +67,12 @@ async def get_day_meal_report(
         )
 
 
-@router.get("/report/range")
+@router.get("/reports/range")
 async def get_meal_reports_in_range(
     request: Request,
-    patient_id: str = Query(...),
-    start_date: date = Query(...),
-    end_date: date = Query(...),
+    patient_id: str,
+    start_date: date,
+    end_date: date,
     meal_report_service: MealReportService = Depends(get_meal_report_service),
     patient_profile_service: PatientProfileService = Depends(
         get_patient_profile_service

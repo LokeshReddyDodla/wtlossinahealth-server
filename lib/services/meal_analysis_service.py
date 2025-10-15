@@ -156,6 +156,8 @@ class MealAnalysisService:
                     "You are an AI focused on reanalyzing meal data. "
                     "Use the provided meal details and updated serving fields "
                     "to adjust the nutritional analysis and feedback.\n\n"
+                    "If there are conflicts between original details and updated details, "
+                    "ALWAYS prioritize updated details (especially the description). "
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
@@ -173,7 +175,7 @@ class MealAnalysisService:
         if update_fields:
             human_messages.append(
                 HumanMessage(
-                    content=f"Updated Serving Details:\n```json\n{update_fields}\n```"
+                    content=f"Updated Meal Details:\n```json\n{update_fields}\n```"
                 )
             )
 

@@ -42,7 +42,6 @@ class PatientBase(BaseModel):
     phone_number: str
     is_verified: Optional[bool] = False
     locale: Optional[str] = None
-    last_active_at: Optional[Any] = None
 
 
 class PatientCreate(PatientBase):

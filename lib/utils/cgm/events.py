@@ -1,5 +1,4 @@
 from typing import Any, Dict
-
 import pandas as pd
 
 from lib.schemas.cgm_stats import (
@@ -14,8 +13,8 @@ def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
     data = clickhouse_store.client.execute(query)
     if not data:
         return pd.DataFrame()
-    df = pd.DataFrame(data, columns=["Device_Timestamp", "Glucose_Level"])
-    df["Device_Timestamp"] = pd.to_datetime(df["Device_Timestamp"])
+    df = pd.DataFrame(data, columns=["device_timestamp", "glucose_mgdl"])
+    df["device_timestamp"] = pd.to_datetime(df["device_timestamp"])
     return df
 
 
@@ -37,79 +36,83 @@ class CGMEventsProcessor:
         )
 
         for _, row in df.iterrows():
-            if (
-                event_type == "hyper" and row["Glucose_Level"] > threshold
-            ) or (event_type == "hypo" and row["Glucose_Level"] < threshold):
+            glucose_value = row["glucose_mgdl"]
+
+            if (event_type == "hyper" and glucose_value > threshold) or (
+                event_type == "hypo" and glucose_value < threshold
+            ):
                 if current_event is None:
                     current_event = {
-                        "start_time": row["Device_Timestamp"],
-                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_level": row[
-                            "Glucose_Level"
-                        ],
+                        "start_time": row["device_timestamp"],
+                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl": glucose_value,
                     }
                 else:
                     current_event[
-                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_level"
+                        f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                     ] = (
                         max(
                             current_event[
-                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_level"
+                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                             ],
-                            row["Glucose_Level"],
+                            glucose_value,
                         )
                         if event_type == "hyper"
                         else min(
                             current_event[
-                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_level"
+                                f"{'peak' if event_type == 'hyper' else 'lowest'}_glucose_mgdl"
                             ],
-                            row["Glucose_Level"],
+                            glucose_value,
                         )
                     )
             else:
                 if current_event is not None:
-                    duration = (
-                        row["Device_Timestamp"] - current_event["start_time"]
+                    duration_minutes = (
+                        row["device_timestamp"] - current_event["start_time"]
                     ).total_seconds() / 60
                     events.append(
                         HyperEvent(
                             **current_event,
-                            end_time=row["Device_Timestamp"],
-                            duration=duration,
+                            end_time=row["device_timestamp"],
+                            duration_minutes=duration_minutes,
                         )
                         if event_type == "hyper"
                         else HypoEvent(
                             **current_event,
-                            end_time=row["Device_Timestamp"],
-                            duration=duration,
+                            end_time=row["device_timestamp"],
+                            duration_minutes=duration_minutes,
                         )
                     )
                     current_event = None
 
         if current_event is not None:
-            duration = (
-                df.iloc[-1]["Device_Timestamp"] - current_event["start_time"]
+            duration_minutes = (
+                df.iloc[-1]["device_timestamp"] - current_event["start_time"]
             ).total_seconds() / 60
             events.append(
                 HyperEvent(
                     **current_event,
-                    end_time=df.iloc[-1]["Device_Timestamp"],
-                    duration=duration,
+                    end_time=df.iloc[-1]["device_timestamp"],
+                    duration_minutes=duration_minutes,
                 )
                 if event_type == "hyper"
                 else HypoEvent(
                     **current_event,
-                    end_time=df.iloc[-1]["Device_Timestamp"],
-                    duration=duration,
+                    end_time=df.iloc[-1]["device_timestamp"],
+                    duration_minutes=duration_minutes,
                 )
             )
 
-        total_duration = sum(event.duration for event in events)
-        average_duration = total_duration / len(events) if events else 0
+        total_duration_minutes = sum(
+            event.duration_minutes for event in events
+        )
+        average_duration_minutes = (
+            total_duration_minutes / len(events) if events else 0
+        )
         events_count = len(events)
 
         return {
-            f"total_{event_type}_duration": total_duration,
-            f"average_{event_type}_duration": average_duration,
+            f"total_{event_type}_duration_minutes": total_duration_minutes,
+            f"average_{event_type}_duration_minutes": average_duration_minutes,
             f"{event_type}_events": events,
             f"{event_type}_events_count": events_count,
         }
@@ -120,72 +123,72 @@ class CGMEventsProcessor:
 
         for i in range(1, len(df)):
             time_diff = (
-                df.iloc[i]["Device_Timestamp"]
-                - df.iloc[i - 1]["Device_Timestamp"]
+                df.iloc[i]["device_timestamp"]
+                - df.iloc[i - 1]["device_timestamp"]
             ).total_seconds() / 60
             glucose_diff = (
-                df.iloc[i]["Glucose_Level"] - df.iloc[i - 1]["Glucose_Level"]
+                df.iloc[i]["glucose_mgdl"] - df.iloc[i - 1]["glucose_mgdl"]
             )
 
             if glucose_diff > 20 and time_diff <= 15:
                 if current_spike is None:
                     current_spike = {
-                        "start_time": df.iloc[i - 1]["Device_Timestamp"],
-                        "initial_glucose_level": df.iloc[i - 1][
-                            "Glucose_Level"
-                        ],
-                        "peak_glucose_level": df.iloc[i]["Glucose_Level"],
-                        "peak_glucose_time": df.iloc[i]["Device_Timestamp"],
+                        "start_time": df.iloc[i - 1]["device_timestamp"],
+                        "initial_glucose_mgdl": df.iloc[i - 1]["glucose_mgdl"],
+                        "peak_glucose_mgdl": df.iloc[i]["glucose_mgdl"],
+                        "peak_glucose_time": df.iloc[i]["device_timestamp"],
                     }
                 else:
                     if (
-                        df.iloc[i]["Glucose_Level"]
-                        > current_spike["peak_glucose_level"]
+                        df.iloc[i]["glucose_mgdl"]
+                        > current_spike["peak_glucose_mgdl"]
                     ):
-                        current_spike["peak_glucose_level"] = df.iloc[i][
-                            "Glucose_Level"
+                        current_spike["peak_glucose_mgdl"] = df.iloc[i][
+                            "glucose_mgdl"
                         ]
                         current_spike["peak_glucose_time"] = df.iloc[i][
-                            "Device_Timestamp"
+                            "device_timestamp"
                         ]
             else:
                 if current_spike is not None:
-                    duration = (
-                        df.iloc[i - 1]["Device_Timestamp"]
+                    duration_minutes = (
+                        df.iloc[i - 1]["device_timestamp"]
                         - current_spike["start_time"]
                     ).total_seconds() / 60
-                    if duration >= 60:
+                    if duration_minutes >= 60:
                         spikes.append(
                             {
                                 **current_spike,
-                                "end_time": df.iloc[i - 1]["Device_Timestamp"],
-                                "duration": duration,
+                                "end_time": df.iloc[i - 1]["device_timestamp"],
+                                "duration_minutes": duration_minutes,
                             }
                         )
                     current_spike = None
 
         if current_spike is not None:
-            duration = (
-                df.iloc[-1]["Device_Timestamp"] - current_spike["start_time"]
+            duration_minutes = (
+                df.iloc[-1]["device_timestamp"] - current_spike["start_time"]
             ).total_seconds() / 60
-            if duration >= 60:
+            if duration_minutes >= 60:
                 spikes.append(
                     {
                         **current_spike,
-                        "end_time": df.iloc[-1]["Device_Timestamp"],
-                        "duration": duration,
+                        "end_time": df.iloc[-1]["device_timestamp"],
+                        "duration_minutes": duration_minutes,
                     }
                 )
 
-        total_spike_duration = sum(spike["duration"] for spike in spikes)
-        average_spike_duration = (
-            total_spike_duration / len(spikes) if spikes else 0
+        total_spike_duration_minutes = sum(
+            spike["duration_minutes"] for spike in spikes
+        )
+        average_spike_duration_minutes = (
+            total_spike_duration_minutes / len(spikes) if spikes else 0
         )
         spikes_count = len(spikes)
 
         return RapidSpikeStats(
-            total_spike_duration=total_spike_duration,
-            average_spike_duration=average_spike_duration,
+            total_spike_duration_minutes=total_spike_duration_minutes,
+            average_spike_duration_minutes=average_spike_duration_minutes,
             spike_events=spikes,
             spike_events_count=spikes_count,
         )
@@ -196,72 +199,72 @@ class CGMEventsProcessor:
 
         for i in range(1, len(df)):
             time_diff = (
-                df.iloc[i]["Device_Timestamp"]
-                - df.iloc[i - 1]["Device_Timestamp"]
+                df.iloc[i]["device_timestamp"]
+                - df.iloc[i - 1]["device_timestamp"]
             ).total_seconds() / 60
             glucose_diff = (
-                df.iloc[i - 1]["Glucose_Level"] - df.iloc[i]["Glucose_Level"]
+                df.iloc[i - 1]["glucose_mgdl"] - df.iloc[i]["glucose_mgdl"]
             )
 
             if glucose_diff > 25 and time_diff <= 30:
                 if current_drop is None:
                     current_drop = {
-                        "start_time": df.iloc[i - 1]["Device_Timestamp"],
-                        "initial_glucose_level": df.iloc[i - 1][
-                            "Glucose_Level"
-                        ],
-                        "lowest_glucose_level": df.iloc[i]["Glucose_Level"],
-                        "lowest_glucose_time": df.iloc[i]["Device_Timestamp"],
+                        "start_time": df.iloc[i - 1]["device_timestamp"],
+                        "initial_glucose_mgdl": df.iloc[i - 1]["glucose_mgdl"],
+                        "lowest_glucose_mgdl": df.iloc[i]["glucose_mgdl"],
+                        "lowest_glucose_time": df.iloc[i]["device_timestamp"],
                     }
                 else:
                     if (
-                        df.iloc[i]["Glucose_Level"]
-                        < current_drop["lowest_glucose_level"]
+                        df.iloc[i]["glucose_mgdl"]
+                        < current_drop["lowest_glucose_mgdl"]
                     ):
-                        current_drop["lowest_glucose_level"] = df.iloc[i][
-                            "Glucose_Level"
+                        current_drop["lowest_glucose_mgdl"] = df.iloc[i][
+                            "glucose_mgdl"
                         ]
                         current_drop["lowest_glucose_time"] = df.iloc[i][
-                            "Device_Timestamp"
+                            "device_timestamp"
                         ]
             else:
                 if current_drop is not None:
-                    duration = (
-                        df.iloc[i - 1]["Device_Timestamp"]
+                    duration_minutes = (
+                        df.iloc[i - 1]["device_timestamp"]
                         - current_drop["start_time"]
                     ).total_seconds() / 60
-                    if duration >= 30:
+                    if duration_minutes >= 30:
                         drops.append(
                             {
                                 **current_drop,
-                                "end_time": df.iloc[i - 1]["Device_Timestamp"],
-                                "duration": duration,
+                                "end_time": df.iloc[i - 1]["device_timestamp"],
+                                "duration_minutes": duration_minutes,
                             }
                         )
                     current_drop = None
 
         if current_drop is not None:
-            duration = (
-                df.iloc[-1]["Device_Timestamp"] - current_drop["start_time"]
+            duration_minutes = (
+                df.iloc[-1]["device_timestamp"] - current_drop["start_time"]
             ).total_seconds() / 60
-            if duration >= 30:
+            if duration_minutes >= 30:
                 drops.append(
                     {
                         **current_drop,
-                        "end_time": df.iloc[-1]["Device_Timestamp"],
-                        "duration": duration,
+                        "end_time": df.iloc[-1]["device_timestamp"],
+                        "duration_minutes": duration_minutes,
                     }
                 )
 
-        total_drop_duration = sum(drop["duration"] for drop in drops)
-        average_drop_duration = (
-            total_drop_duration / len(drops) if drops else 0
+        total_drop_duration_minutes = sum(
+            drop["duration_minutes"] for drop in drops
+        )
+        average_drop_duration_minutes = (
+            total_drop_duration_minutes / len(drops) if drops else 0
         )
         drops_count = len(drops)
 
         return RapidDropStats(
-            total_drop_duration=total_drop_duration,
-            average_drop_duration=average_drop_duration,
+            total_drop_duration_minutes=total_drop_duration_minutes,
+            average_drop_duration_minutes=average_drop_duration_minutes,
             drop_events=drops,
             drop_events_count=drops_count,
         )

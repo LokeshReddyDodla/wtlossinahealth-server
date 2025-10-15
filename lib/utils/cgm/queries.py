@@ -5,15 +5,16 @@ def generate_hourly_agp_points_cgm_query(
     SELECT
         toHour(time) AS hour_24,
         formatDateTime(time, '%I:00 %p') AS hour,
-        quantile(0.10)(glucose_level) AS tenth_percentile,
-        quantile(0.25)(glucose_level) AS twenty_fifth_percentile,
+        quantile(0.10)(glucose_level) AS percentile_10,
+        quantile(0.25)(glucose_level) AS percentile_25,
         quantile(0.50)(glucose_level) AS median,
-        quantile(0.75)(glucose_level) AS seventy_fifth_percentile,
-        quantile(0.90)(glucose_level) AS ninetieth_percentile
+        quantile(0.75)(glucose_level) AS percentile_75,
+        quantile(0.90)(glucose_level) AS percentile_90
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY hour_24, hour
@@ -33,6 +34,7 @@ def generate_cgm_range_coverage_query(
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     """
@@ -41,16 +43,17 @@ def generate_cgm_range_coverage_query(
 def generate_summary_stats_cgm_query(patient_id, start_date, end_date):
     return f"""
     SELECT
-        AVG(glucose_level) AS average_glucose,
-        STDDEV_SAMP(glucose_level) AS glucose_stddev,
-        MAX(glucose_level) AS highest_glucose,
+        AVG(glucose_level) AS average_glucose_mgdl,
+        STDDEV_SAMP(glucose_level) AS glucose_stddev_mgdl,
+        MAX(glucose_level) AS highest_glucose_mgdl,
         argMax(time, glucose_level) AS highest_glucose_date,
-        MIN(glucose_level) AS lowest_glucose,
+        MIN(glucose_level) AS lowest_glucose_mgdl,
         argMin(time, glucose_level) AS lowest_glucose_date
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     """
@@ -80,14 +83,15 @@ def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
             WHEN formatDateTime(time, '%H:%M') BETWEEN '18:00' AND '23:59' THEN '23:59:59'
             ELSE NULL
         END AS to_time,
-        AVG(glucose_level) AS avg_sugar,
-        MAX(glucose_level) AS highest_sugar,
-        MIN(glucose_level) AS lowest_sugar,
+        AVG(glucose_level) AS avg_glucose_mgdl,
+        MAX(glucose_level) AS highest_glucose_mgdl,
+        MIN(glucose_level) AS lowest_glucose_mgdl,
         SUM(CASE WHEN glucose_level < 70 OR glucose_level > 180 THEN 1 ELSE 0 END) / COUNT(*) * 100 AS out_of_range_percentage
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time IS NOT NULL
         AND time >= '{start_date}'
         AND time <= '{end_date}'
@@ -99,12 +103,13 @@ def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
 def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
     return f"""
     SELECT
-        time AS Device_Timestamp,
-        glucose_level AS Glucose_Level
+        time AS device_timestamp,
+        glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     ORDER BY time
@@ -116,11 +121,12 @@ def generate_hourly_avg_cgm_query(patient_id, start_date, end_date):
     SELECT
         toHour(time) AS hour_24,
         formatDateTime(time, '%I:00 %p') AS hour,
-        avg(glucose_level) AS avg_glucose_level
+        avg(glucose_level) AS avg_glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY hour_24, hour
@@ -132,11 +138,12 @@ def generate_daily_avg_cgm_query(patient_id, start_date, end_date):
     return f"""
     SELECT
         toDate(time) AS date,
-        AVG(glucose_level) AS average_glucose
+        AVG(glucose_level) AS average_glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time >= '{start_date}'
         AND time <= '{end_date}'
     GROUP BY date
@@ -150,11 +157,12 @@ def generate_cgm_readings_around_meal_query(
     return f"""
     SELECT
         time AS reading_time,
-        glucose_level AS glucose_level
+        glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
         patient_id = '{patient_id}'
+        AND record_type = 'historic'
         AND time BETWEEN 
             toDateTime('{meal_time}') - INTERVAL {before_minutes} MINUTE
             AND 

@@ -10,9 +10,13 @@ FitnessReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 SleepReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 
 
-FCMNotificationChannelKeyLiteral = Literal["fitness_sync", "chat_messages", "other"]
+FCMNotificationChannelKeyLiteral = Literal[
+    "fitness_sync", "chat_messages", "other"
+]
 
-FCMNotificationGroupKeyLiteral = Literal["fitness_group", "chat_group", "other_group"]
+FCMNotificationGroupKeyLiteral = Literal[
+    "fitness_group", "chat_group", "other_group"
+]
 
 AiConversationRoleLiteral = Literal["system", "human", "ai"]
 
@@ -29,18 +33,17 @@ AiConversationTypeLiteral = Literal[
     "sleep",
     "health-tip",
     "other",
+    "patient",
     "care-provider",
     "weight-loss-agent",
 ]
 
 OpenAIModelLiteral = Literal[
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-mini",
-    "gpt-3.5-turbo",
-    "davinci",
-    "o3-mini",
-    "o1-mini",
+    "gpt-5-mini",  # Best for reliability + reasoning
+    "gpt-4o",  # For multimodal (text + image)
+    "gpt-4o-mini",  # For speed + cost balance
+    "o3-mini",  # Optional: experimental or reasoning-heavy tasks
+    "gpt-4.1-mini",
 ]
 
 GeminiAIModelLiteral = Literal[
@@ -51,3 +54,7 @@ GeminiAIModelLiteral = Literal[
 PerplexityAIModelLiteral = Literal["sonar", "sonar-reasoning"]
 
 AIModelProviderLiteral = Literal["openai", "gemini", "perplexity"]
+
+ReportTypeLiteral = Literal[
+    "index", "laboratory", "radiology", "eye_or_ophthalmology", "other"
+]

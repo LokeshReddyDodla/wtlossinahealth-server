@@ -118,7 +118,6 @@ class PatientProfileService:
                         selectinload(PatientPackageAssignmentModel.package)
                     ),
                     joinedload(PatientModel.health_facility),
-                    joinedload(PatientModel.user_devices),
                 )
             )
 

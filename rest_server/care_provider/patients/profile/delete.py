@@ -19,7 +19,10 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.delete("/remove", response_model=SuccessResponse)
+@router.delete(
+    "/{patient_id}/care-providers/{care_provider_id}",
+    response_model=SuccessResponse,
+)
 async def remove_care_provider_from_patient(
     patient_id: str,
     care_provider_id: str,
