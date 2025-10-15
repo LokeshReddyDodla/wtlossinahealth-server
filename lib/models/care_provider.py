@@ -108,11 +108,7 @@ class CareProvider(Base):
         cascade="all, delete-orphan",
     )  # Packages created by this care provider
 
-    user_devices = relationship(
-        "UserDevice",
-        back_populates="care_provider",
-        cascade="all, delete-orphan",
-    )
+    
 
     weight_loss_enrollments = relationship(
         "WeightLossAgentEnrollment",

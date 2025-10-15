@@ -2,7 +2,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore, engine
 from lib.models import Base
-from lib.initializers.weight_loss_agent_setup import initialize_weight_loss_agent_data
+
 from lib.core.qdrant_store import QdrantStore
 
 

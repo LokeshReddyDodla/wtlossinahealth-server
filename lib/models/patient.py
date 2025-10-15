@@ -203,9 +203,7 @@ class Patient(Base):
         back_populates="patients",
     )
 
-    user_devices = relationship(
-        "UserDevice", back_populates="patient", cascade="all, delete-orphan"
-    )
+   
 
     weight_loss_enrollment = relationship(
         "WeightLossAgentEnrollment",
