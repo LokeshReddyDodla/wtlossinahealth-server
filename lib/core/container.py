@@ -216,6 +216,10 @@ container.register(
         chat_management_service=cast(
             ChatManagementService, container.resolve(ChatManagementService)
         ),
+        profile_vector_service=cast(
+            PatientProfileVectorService,
+            container.resolve(PatientProfileVectorService),
+        ),
     ),
 )
 

@@ -4,6 +4,14 @@ from typing import Any, Dict
 class PatientProfileTextReprBuilder:
     @staticmethod
     def build(profile: Dict[str, Any]) -> str:
+        profile = profile or {}
+
+        def safe_dict(value):
+            return value if isinstance(value, dict) else {}
+
+        def safe_list(value):
+            return value if isinstance(value, list) else []
+
         first_name = profile.get("first_name", "")
         last_name = profile.get("last_name", "")
         name = f"{first_name} {last_name}".strip()
@@ -18,60 +26,64 @@ class PatientProfileTextReprBuilder:
             else "unknown BMI"
         )
 
-        activity_level = profile.get("daily_activity", {}).get(
-            "activity_level", "unspecified"
-        )
+        daily_activity = safe_dict(profile.get("daily_activity"))
+        activity_level = daily_activity.get("activity_level", "unspecified")
 
         # Allergies
-        food_allergies = [
-            a.get("allergy_name") for a in profile.get("food_allergies", [])
-        ]
-        drug_allergies = [
-            a.get("allergy_name") for a in profile.get("drug_allergies", [])
-        ]
+        food_allergies = safe_list(profile.get("food_allergies"))
+        drug_allergies = safe_list(profile.get("drug_allergies"))
 
-        # Alcohol & Smoking
-        alcohol = profile.get("alcohol_consumption", {})
+        food_allergies = [a.get("allergy_name") for a in food_allergies]
+        drug_allergies = [a.get("allergy_name") for a in drug_allergies]
+
+        # Alcohol
+        alcohol = safe_dict(profile.get("alcohol_consumption"))
         alcohol_consume = alcohol.get("consume_alcohol", False)
         alcohol_types = alcohol.get("type_of_alcohol", [])
+        if isinstance(alcohol_types, str):
+            alcohol_types = [alcohol_types]
 
-        smoking = profile.get("smoking_habit", {})
+        # Smoking
+        smoking = safe_dict(profile.get("smoking_habit"))
         smoking_habit = smoking.get("smoke_status", False)
         years_of_smoking = smoking.get("years_of_smoking", 0)
         cigarettes_per_day = smoking.get("cigarettes_per_day", 0)
 
         # Diet & Eating
-        eating = profile.get("eating_habit", {})
-        diet_pref = eating.get("diet_preferences", {}).get(
-            "preference", "unspecified"
-        )
-        cuisine_pref = eating.get("cuisine_preferences", [])
+        eating = safe_dict(profile.get("eating_habit"))
+        diet_pref_value = eating.get("diet_preferences")
+        if isinstance(diet_pref_value, dict):
+            diet_pref = diet_pref_value.get("preference", "unspecified")
+        else:
+            diet_pref = "unspecified"
+
+        cuisine_pref = safe_list(eating.get("cuisine_preferences"))
         meals_per_day = eating.get("meals_per_day", 0)
         snacks_count = eating.get("snacks_count", 0)
         meal_timings = [
-            m.get("meal_type") for m in eating.get("meal_timings", [])
+            m.get("meal_type") for m in safe_list(eating.get("meal_timings"))
         ]
 
         # Sleep
-        sleep = profile.get("sleep_habit", {})
+        sleep = safe_dict(profile.get("sleep_habit"))
         sleep_quality = sleep.get("sleep_quality", "unspecified")
         wake_up_fresh = sleep.get("wake_up_fresh", False)
         drowsy_day = sleep.get("drowsy_day", False)
 
         # Diabetes
-        diabetic = profile.get("diabetic_history", {})
+        diabetic = safe_dict(profile.get("diabetic_history"))
         diabetes_type = diabetic.get("type_of_diabetes", "unspecified")
         years_with_diabetes = diabetic.get("years_with_diabetes", 0)
         is_pregnant = diabetic.get("is_pregnant", False)
 
         # Family & Medical
-        family_histories = profile.get("family_diabetic_histories", [])
+        family_histories = safe_list(profile.get("family_diabetic_histories"))
         family_info = ", ".join(
             f"{f.get('family_member')} ({f.get('years_with_diabetes', '?')} yrs)"
             for f in family_histories
         )
 
-        medical_histories = profile.get("medical_histories", [])
+        medical_histories = safe_list(profile.get("medical_histories"))
         medical_info = ", ".join(
             f"{m.get('condition')} ({m.get('duration_years', '?')} yrs)"
             for m in medical_histories

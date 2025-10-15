@@ -59,7 +59,7 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.tasks.meal_tasks import generate_meal_vector, process_meal_batch
-from lib.tasks.other_tasks import process_smbg_batch
+from lib.tasks.other_tasks import process_profile_batch, process_smbg_batch
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.vector_utils import embed_text
 from rest_server.response_models import SuccessResponse
@@ -68,6 +68,10 @@ from openai import AsyncOpenAI
 from lib.models.patient_meal import PatientMeal as PatientMealModel
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
+from lib.models.patient import Patient as PatientModel
+from lib.models.patient_eating_habit import (
+    PatientEatingHabit as PatientEatingHabitModel,
+)
 
 router = APIRouter(prefix="/test")
 
@@ -532,7 +536,7 @@ async def search_qdrant_nl_v2(
 
 
 @router.get("/ai/conversation/ask")
-async def search_qdrant_nl_v2(
+async def search_qdrant_nl_v2_ask(
     query: str = Query(
         ..., description="Natural language query to search for"
     ),
@@ -656,6 +660,58 @@ async def enqueue_smbg_vector_batches(
 
         return {
             "message": f"Enqueued {total_batches} batches for {len(smbgs_data)} smbgs."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/qdrant/patient/all")
+async def enqueue_patient_vector_batches(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    BATCH_SIZE = 50
+    try:
+        query = select(PatientModel).options(
+            selectinload(PatientModel.daily_activity),
+            selectinload(PatientModel.food_allergies),
+            selectinload(PatientModel.drug_allergies),
+            selectinload(PatientModel.alcohol_consumption),
+            selectinload(PatientModel.smoking_habit),
+            selectinload(PatientModel.sleep_habit),
+            selectinload(PatientModel.eating_habit).selectinload(
+                PatientEatingHabitModel.meal_timings
+            ),
+            selectinload(PatientModel.eating_habit).selectinload(
+                PatientEatingHabitModel.diet_preferences
+            ),
+            selectinload(PatientModel.diabetic_history),
+            selectinload(PatientModel.family_diabetic_histories),
+            selectinload(PatientModel.medical_histories),
+            selectinload(PatientModel.current_medication),
+        )
+        result = await session.execute(query)
+        profiles = result.scalars().all()
+
+        profiles_data = [
+            CorePatientProfile.from_orm(m).model_dump(mode="json")
+            for m in profiles
+        ]
+        total_batches = ceil(len(profiles_data) / BATCH_SIZE)
+
+        for i in range(total_batches):
+            batch = profiles_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+            process_profile_batch.delay(batch)
+
+        return {
+            "message": f"Enqueued {total_batches} batches for {len(profiles_data)} profiles."
         }
 
     except HTTPException:

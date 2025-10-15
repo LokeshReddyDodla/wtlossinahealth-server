@@ -58,6 +58,14 @@ class PatientProfileVectorService:
         self,
         profile_data: Dict[str, Any],
     ) -> Dict[str, Any]:
+        profile_data = profile_data or {}
+
+        def safe_dict(value):
+            return value if isinstance(value, dict) else {}
+
+        def safe_list(value):
+            return value if isinstance(value, list) else []
+
         patient_id = profile_data.get("patient_id")
         first_name = profile_data.get("first_name", "")
         last_name = profile_data.get("last_name", "")
@@ -73,48 +81,47 @@ class PatientProfileVectorService:
         )
 
         # Daily activity
-        activity_level = profile_data.get("daily_activity", {}).get(
-            "activity_level"
-        )
+        daily_activity = safe_dict(profile_data.get("daily_activity"))
+        activity_level = daily_activity.get("activity_level")
 
         # Allergies
-        food_allergies = [
-            a.get("allergy_name")
-            for a in profile_data.get("food_allergies", [])
-        ]
-        drug_allergies = [
-            a.get("allergy_name")
-            for a in profile_data.get("drug_allergies", [])
-        ]
+        food_allergies = safe_list(profile_data.get("food_allergies"))
+        drug_allergies = safe_list(profile_data.get("drug_allergies"))
+
+        food_allergies = [a.get("allergy_name") for a in food_allergies]
+        drug_allergies = [a.get("allergy_name") for a in drug_allergies]
 
         # Alcohol
-        alcohol = profile_data.get("alcohol_consumption", {})
+        alcohol = safe_dict(profile_data.get("alcohol_consumption"))
         alcohol_consumption = alcohol.get("consume_alcohol", False)
         alcohol_frequency = alcohol.get("frequency", "")
         alcohol_quantity = alcohol.get("quantity", "")
         alcohol_types = alcohol.get("type_of_alcohol", [])
+        if isinstance(alcohol_types, str):
+            alcohol_types = [alcohol_types]
 
         # Smoking
-        smoking = profile_data.get("smoking_habit", {})
+        smoking = safe_dict(profile_data.get("smoking_habit"))
         smoking_habit = smoking.get("smoke_status", False)
         years_of_smoking = smoking.get("years_of_smoking", 0)
         cigarettes_per_day = smoking.get("cigarettes_per_day", 0)
         quit_years_ago = smoking.get("quit_years_ago", 0)
 
         # Eating habits
-        eating = profile_data.get("eating_habit", {})
+        eating = safe_dict(profile_data.get("eating_habit"))
         snacks_count = eating.get("snacks_count", 0)
         meals_per_day = eating.get("meals_per_day", 0)
         meal_timings = [
-            m.get("meal_type") for m in eating.get("meal_timings", [])
+            m.get("meal_type") for m in safe_list(eating.get("meal_timings"))
         ]
-        cuisine_preferences = eating.get("cuisine_preferences", [])
-        diet_preference = eating.get("diet_preferences", {}).get(
-            "preference", ""
-        )
+        cuisine_preferences = safe_list(eating.get("cuisine_preferences"))
+        diet_preference = ""
+        diet_pref_value = eating.get("diet_preferences")
+        if isinstance(diet_pref_value, dict):
+            diet_preference = diet_pref_value.get("preference", "")
 
         # Sleep
-        sleep = profile_data.get("sleep_habit", {})
+        sleep = safe_dict(profile_data.get("sleep_habit"))
         sleep_quality = sleep.get("sleep_quality", "")
         wake_up_fresh = sleep.get("wake_up_fresh", False)
         drowsy_day = sleep.get("drowsy_day", False)
@@ -123,14 +130,16 @@ class PatientProfileVectorService:
         bed_time = sleep.get("bed_time", "")
 
         # Diabetes history
-        diabetic = profile_data.get("diabetic_history", {})
+        diabetic = safe_dict(profile_data.get("diabetic_history"))
         type_of_diabetes = diabetic.get("type_of_diabetes", "")
         years_with_diabetes = diabetic.get("years_with_diabetes", 0)
         is_pregnant = diabetic.get("is_pregnant", False)
         pregnancy_weeks = diabetic.get("pregnancy_weeks", 0)
 
         # Family history
-        family_histories = profile_data.get("family_diabetic_histories", [])
+        family_histories = safe_list(
+            profile_data.get("family_diabetic_histories")
+        )
         family_diabetic_members = [
             f.get("family_member") for f in family_histories
         ]
@@ -139,7 +148,7 @@ class PatientProfileVectorService:
         ]
 
         # Medical histories
-        medical_histories = profile_data.get("medical_histories", [])
+        medical_histories = safe_list(profile_data.get("medical_histories"))
         medical_conditions = [m.get("condition") for m in medical_histories]
         medical_conditions_years = [
             m.get("duration_years") for m in medical_histories
