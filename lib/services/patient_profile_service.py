@@ -402,6 +402,7 @@ class PatientProfileService:
                     PatientFoodAllergyModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -425,6 +426,7 @@ class PatientProfileService:
                     PatientMealTimingModel,
                     "eating_habit_id",
                     patient_profile.eating_habit.eating_habit_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -511,6 +513,7 @@ class PatientProfileService:
                     PatientDrugAllergyModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -521,6 +524,7 @@ class PatientProfileService:
                     PatientFamilyDiabeticHistoryModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -531,6 +535,7 @@ class PatientProfileService:
                     PatientMedicalHistoryModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 

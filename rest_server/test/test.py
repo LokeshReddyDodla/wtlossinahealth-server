@@ -21,11 +21,12 @@ from lib.dependencies.service_dependencies import (
     get_meal_service,
     get_meal_vector_service,
     get_patient_profile_service,
+    get_patient_profile_vector_service,
     get_qdrant_search_engine,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_smbg import PatientSMBG
-from lib.schemas.patient import Patient
+from lib.schemas.patient import CorePatientProfile, Patient
 from lib.schemas.patient_meal import PatientMeal
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
@@ -51,6 +52,9 @@ from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -701,6 +705,40 @@ async def test_qdrant_meal(
         return SuccessResponse(
             message="Meal report fetched successfully",
             data=result,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/patient/{patient_id}")
+async def test_patient_profile(
+    patient_id: str,
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    patient_profile_vector_service: PatientProfileVectorService = Depends(
+        get_patient_profile_vector_service
+    ),
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    try:
+        patient_info = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, detailed=True
+        )
+
+        await patient_profile_vector_service.upsert_profile(
+            CorePatientProfile.from_orm(patient_info).model_dump()
+        )
+
+        return SuccessResponse(
+            message="Done",
         )
     except HTTPException:
         raise
