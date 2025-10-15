@@ -21,7 +21,5 @@ def initialize_databases(app):
     app.state.clickhouse_store = ClickHouseStore()
     app.state.qdrant_store = QdrantStore()
 
-    # Initialize weight loss agent data
-    import asyncio
-    postgres_store = app.state.postgres_store
-    asyncio.create_task(initialize_weight_loss_agent_data(postgres_store))
+   
+    
