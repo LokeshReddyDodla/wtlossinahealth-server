@@ -29,3 +29,23 @@ async def process_smbg_batch(batch: list[dict]):
 
     except Exception as e:
         print(f"❌ Error processing batch: {e}")
+
+
+@shared_task
+async def process_profile_batch(batch: list[dict]):
+    try:
+        from lib.dependencies.service_dependencies import (
+            get_patient_profile_vector_service,
+        )
+
+        vector_service = get_patient_profile_vector_service()
+
+        for profile in batch:
+            await vector_service.upsert_profile(
+                profile,
+            )
+
+            print(f"✅ Stored Profile for patient {profile['patient_id']}")
+
+    except Exception as e:
+        print(f"❌ Error processing batch: {e}")

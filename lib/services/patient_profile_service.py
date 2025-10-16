@@ -53,7 +53,11 @@ from lib.models.patient_sleep_habit import (
 from lib.models.patient_smoking_habit import (
     PatientSmokingHabit as PatientSmokingHabitModel,
 )
-from lib.schemas.patient import Patient as PatientSchema, PatientCreate
+from lib.schemas.patient import (
+    CorePatientProfile,
+    Patient as PatientSchema,
+    PatientCreate,
+)
 from lib.schemas.patient import PatientUpdate
 from lib.schemas.patient_alcohol_consumption import (
     PatientAlcoholConsumptionCreate,
@@ -81,6 +85,9 @@ from lib.services.care_provider_profile_service import (
 from lib.services.chat.chat_exceptions import ChatCreationError
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -92,11 +99,13 @@ class PatientProfileService:
         care_provider_service: CareProviderProfileService,
         chat_notification_service: ChatNotificationService,
         chat_management_service: ChatManagementService,
+        profile_vector_service: PatientProfileVectorService,
     ):
         self.postgres_store = postgres_store
         self.care_provider_service = care_provider_service
         self.chat_notification_service = chat_notification_service
         self.chat_management_service = chat_management_service
+        self.profile_vector_service = profile_vector_service
 
     @with_postgres_session
     async def fetch_patient_profile(
@@ -319,6 +328,11 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
+            await self.profile_vector_service.upsert_profile(
+                CorePatientProfile.from_orm(updated_patient).model_dump(
+                    mode="json"
+                )
+            )
             return updated_patient
 
         except IntegrityError as e:
@@ -402,6 +416,7 @@ class PatientProfileService:
                     PatientFoodAllergyModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -425,6 +440,7 @@ class PatientProfileService:
                     PatientMealTimingModel,
                     "eating_habit_id",
                     patient_profile.eating_habit.eating_habit_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -450,6 +466,11 @@ class PatientProfileService:
 
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
+            )
+            await self.profile_vector_service.upsert_profile(
+                CorePatientProfile.from_orm(updated_patient).model_dump(
+                    mode="json"
+                )
             )
             return updated_patient
 
@@ -511,6 +532,7 @@ class PatientProfileService:
                     PatientDrugAllergyModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -521,6 +543,7 @@ class PatientProfileService:
                     PatientFamilyDiabeticHistoryModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -531,6 +554,7 @@ class PatientProfileService:
                     PatientMedicalHistoryModel,
                     "patient_id",
                     patient_id,
+                    postgres_session=postgres_session,
                 )
             )
 
@@ -547,7 +571,11 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
-
+            await self.profile_vector_service.upsert_profile(
+                CorePatientProfile.from_orm(updated_patient).model_dump(
+                    mode="json"
+                )
+            )
             return updated_patient
 
         except IntegrityError as e:

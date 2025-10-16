@@ -10,6 +10,7 @@ services:
       - aihealth-postgres
       - aihealth-mongo
       - aihealth-clickhouse
+      - aihealth-qdrant
     restart: no
     ports:
       - 8000:8000
@@ -126,16 +127,19 @@ services:
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
-    image: clickhouse/clickhouse-server:latest
-    restart: unless-stopped
+    image: clickhouse/clickhouse-server:25.8
+    restart: no
     ports:
       - 8123:8123 # HTTP interface
       - 9000:9000 # Native client
     environment:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_MAX_THREADS=4
+      - CLICKHOUSE_BACKGROUND_POOL_SIZE=2
+      - CLICKHOUSE_BACKGROUND_MERGE_POOL_SIZE=2
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_data_1:/var/lib/clickhouse
 
   aihealth-nginx:
     container_name: aihealth-nginx
@@ -150,6 +154,19 @@ services:
       - aihealth-api
     volumes:
       - ssl_certs:/etc/ssl
+
+  aihealth-qdrant:
+    container_name: aihealth-qdrant
+    image: qdrant/qdrant:v1.11.0
+    restart: unless-stopped
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__SERVICE__HTTP_PORT: 6333
 
   pgadmin:
     image: dpage/pgadmin4
@@ -302,7 +319,8 @@ volumes:
   redis_data:
   postgres_data:
   mongo_data:
-  clickhouse_data:
+  clickhouse_data_1:
+  qdrant_data:
   ssl_certs:
   redisinsight_data:
   cloudbeaver_workspace:
