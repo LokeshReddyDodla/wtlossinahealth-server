@@ -8,6 +8,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -298,6 +301,12 @@ def get_token_usage_service() -> TokenUsageService:
 
 def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
+
+
+def get_ai_conversation_service_v1() -> AIConversationServiceV1:
+    return cast(
+        AIConversationServiceV1, container.resolve(AIConversationServiceV1)
+    )
 
 
 def get_qdrant_search_engine() -> QdrantSearchEngine:

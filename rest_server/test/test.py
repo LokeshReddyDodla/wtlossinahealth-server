@@ -3,6 +3,7 @@ from math import ceil
 from typing import List, Optional
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     File,
     HTTPException,
@@ -14,6 +15,7 @@ import logging
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
+    get_ai_conversation_service_v1,
     get_ai_conversation_service_v2,
     get_cgm_report_service,
     get_cgm_report_vector_service,
@@ -30,6 +32,9 @@ from lib.schemas.patient import CorePatientProfile, Patient
 from lib.schemas.patient_meal import PatientMeal
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
+)
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AiConversationServiceV1,
 )
 from lib.services.cgm_report_service import CGMReportService
 
@@ -773,29 +778,24 @@ async def test_qdrant_meal(
         )
 
 
-@router.get("/patient/{patient_id}")
-async def test_patient_profile(
-    patient_id: str,
-    patient_profile_service: PatientProfileService = Depends(
-        get_patient_profile_service
-    ),
-    patient_profile_vector_service: PatientProfileVectorService = Depends(
-        get_patient_profile_vector_service
+@router.post("/ai/ask")
+async def test_ai_conversation_service_v1(
+    user_id: str = Query(...),
+    user_type: ProfileTypeEnum = Query(...),
+    conversation_id: str = Query(...),
+    human_input: str = Query(...),
+    patient_ids: List[str] = Body(...),
+    ai_conversation_service_v1: AiConversationServiceV1 = Depends(
+        get_ai_conversation_service_v1
     ),
     session: AsyncSession = Depends(get_postgres_session),
 ):
     try:
-        patient_info = await patient_profile_service.fetch_patient_profile(
-            patient_id=patient_id, detailed=True
+        result = await ai_conversation_service_v1.generate_response(
+            patient_ids, user_id, user_type, conversation_id, human_input
         )
 
-        await patient_profile_vector_service.upsert_profile(
-            CorePatientProfile.from_orm(patient_info).model_dump()
-        )
-
-        return SuccessResponse(
-            message="Done",
-        )
+        return SuccessResponse(message="Voila", data=result)
     except HTTPException:
         raise
     except Exception as e:

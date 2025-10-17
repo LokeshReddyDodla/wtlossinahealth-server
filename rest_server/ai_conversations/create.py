@@ -1,11 +1,14 @@
-from typing import Any, Optional
+from typing import Any, List, Optional
 from fastapi import Body, Depends, HTTPException, Request, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.types import AiConversationTypeLiteral
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_qdrant_search_engine
+from lib.dependencies.service_dependencies import (
+    get_ai_conversation_service_v1,
+    get_qdrant_search_engine,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -13,6 +16,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 )
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
+)
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
 )
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
@@ -99,6 +105,49 @@ async def send_ai_conversation_careprovider_message(
 
         return SuccessResponse(
             message="AI response generated successfully.",
+            data=ai_message_data,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to generate AI response.",
+            detail=str(e),
+        )
+
+
+@router.post(
+    "/care-provider/ai/conversation/ask", response_model=SuccessResponse
+)
+async def ask_ai_in_careprovider_conversation(
+    request: Request,
+    patient_ids: List[str],
+    conversation_id: str,
+    human_input: str,
+    ai_conversation_service_v1: AIConversationServiceV1 = Depends(
+        get_ai_conversation_service_v1
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.CREATE,
+            CareProviderFeature.AI_CHATS,
+        )
+    ),
+):
+    try:
+
+        # Generate response from the AI model
+        ai_message_data = await ai_conversation_service_v1.generate_response(
+            patient_ids=patient_ids,
+            user_id=str(current_care_provider.care_provider_id),
+            user_type=ProfileTypeEnum.CARE_PROVIDER,
+            conversation_id=conversation_id,
+            human_input=human_input,
+        )
+
+        return SuccessResponse(
+            message="AI conversation response generated successfully.",
             data=ai_message_data,
         )
     except HTTPException as e:
