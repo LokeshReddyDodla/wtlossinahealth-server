@@ -192,7 +192,11 @@ class PatientProfileService:
 
     @with_postgres_session
     async def fetch_patient_profiles(
-        self, patient_ids: List[str], *, postgres_session: AsyncSession
+        self,
+        patient_ids: List[str],
+        detailed: bool = False,
+        *,
+        postgres_session: AsyncSession,
     ) -> Dict[str, PatientModel]:
         try:
             stmt = (
@@ -202,6 +206,33 @@ class PatientProfileService:
                     selectinload(PatientModel.care_providers),
                 )
             )
+
+            if detailed:
+                stmt = stmt.options(
+                    selectinload(PatientModel.daily_activity),
+                    selectinload(PatientModel.food_allergies),
+                    selectinload(PatientModel.drug_allergies),
+                    selectinload(PatientModel.alcohol_consumption),
+                    selectinload(PatientModel.smoking_habit),
+                    selectinload(PatientModel.sleep_habit),
+                    selectinload(PatientModel.eating_habit).selectinload(
+                        PatientEatingHabitModel.meal_timings
+                    ),
+                    selectinload(PatientModel.eating_habit).selectinload(
+                        PatientEatingHabitModel.diet_preferences
+                    ),
+                    selectinload(PatientModel.patient_plans).selectinload(
+                        PatientPlanModel.diet_plan
+                    ),
+                    selectinload(PatientModel.patient_plans).selectinload(
+                        PatientPlanModel.fitness_plan
+                    ),
+                    selectinload(PatientModel.diabetic_history),
+                    selectinload(PatientModel.family_diabetic_histories),
+                    selectinload(PatientModel.medical_histories),
+                    selectinload(PatientModel.current_medication),
+                )
+
             result = await postgres_session.execute(stmt)
             profiles = result.scalars().all()
 

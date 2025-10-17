@@ -34,13 +34,13 @@ class CacheStore:
         return self.__client.ping()
 
     def get_key(self, key: str) -> Optional[bytes]:
-        key = f"{self.__namespace}_{key.strip()}"
+        key = f"{self.__namespace}:{key.strip()}"
         return self.__client.get(key)
 
     def set_key(
         self, key: str, value: str, expire: Optional[Union[int, None]] = 300
     ) -> Optional[bool]:
-        key = f"{self.__namespace}_{key.strip()}"
+        key = f"{self.__namespace}:{key.strip()}"
         if expire is None:
             expire = 300
         elif not isinstance(expire, int):
@@ -48,14 +48,14 @@ class CacheStore:
         return self.__client.setex(name=key, value=value, time=expire)
 
     def delete_key(self, key: str) -> Optional[int]:
-        key = f"{self.__namespace}_{key.strip()}"
+        key = f"{self.__namespace}:{key.strip()}"
         return self.__client.delete(key)
 
     def get_keys_with_prefix(self, prefix: str) -> List[str]:
         """
         Retrieves all keys that start with the specified prefix.
         """
-        full_prefix = f"{self.__namespace}_{prefix}*"
+        full_prefix = f"{self.__namespace}:{prefix}*"
         keys = []
         cursor = 0
         while True:
