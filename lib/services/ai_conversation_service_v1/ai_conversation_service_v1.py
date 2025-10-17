@@ -100,8 +100,8 @@ class AiConversationServiceV1:
         self.context_batcher = AIConversationContextBatcher(
             context_builder=context_builder,
             model_name=selected_ai_model,
-            max_tokens=12000,
-            patient_batch_size=1,
+            max_tokens=48000,
+            patient_batch_size=10,
         )
 
         self.token_usage_service = get_token_usage_service()

@@ -34,7 +34,7 @@ class AIConversationContextBuilder:
         # Search vector DB
         qdrant_data = await self.qdrant_search_engine.search(
             human_input,
-            100,
+            999,
             patient_ids=patient_ids,
             conversation_id=conversation_id,
         )

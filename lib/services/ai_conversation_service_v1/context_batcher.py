@@ -12,8 +12,8 @@ class AIConversationContextBatcher:
         self,
         context_builder: AIConversationContextBuilder,
         model_name: str = "gpt-4.1-mini",
-        max_tokens: int = 12000,  # model limit buffer (keep under 128k for gpt-4o)
-        patient_batch_size: int = 50,
+        max_tokens: int = 48000,  # model limit buffer (keep under 128k for gpt-4o)
+        patient_batch_size: int = 10,
     ):
         self.context_builder = context_builder
         self.model_name = model_name
