@@ -153,7 +153,7 @@ async def get_patient_enrollment(
     """Get patient's weight loss enrollment"""
 
     try:
-        enrollment = await weight_loss_service.get_patient_enrollment(patient_id)
+        enrollment = await weight_loss_service.get_patient_enrollment_by_patient_id(patient_id)
 
         if not enrollment:
             raise_http_exception(
@@ -203,16 +203,14 @@ async def upload_and_analyze_inbody_report(
                 message=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
             )
 
-        # Get patient_id from enrollment for logging
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
-            if not enrollment:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Enrollment not found"
-                )
-            patient_id = str(enrollment.patient_id)
+        # Get patient_id from enrollment (MongoDB)
+        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
+        if not enrollment:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Enrollment not found"
+            )
+        patient_id = enrollment.get("patient_id")
 
         # Process file and get AI analysis
         analysis_result = await weight_loss_service.process_and_analyze_inbody_report(
@@ -263,29 +261,27 @@ async def store_inbody_report_analysis(
                 data=analysis_data,
             )
 
-        # Get patient_id from enrollment for logging
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
-            if not enrollment:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Enrollment not found"
-                )
-            patient_id = str(enrollment.patient_id)
+        # Get patient_id from enrollment (MongoDB)
+        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
+        if not enrollment:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Enrollment not found"
+            )
+        patient_id = enrollment.get("patient_id")
 
-        # Store the analysis results in database (retry if failed before)
-        stored_result = await weight_loss_service.store_inbody_report_analysis(
-            enrollment_id=enrollment_id,
-            analysis_result=analysis_data,
-            user_id=patient_id
+        # Note: This endpoint is deprecated as reports are auto-stored on upload
+        # The store_inbody_report_analysis method no longer exists in the service
+        raise_http_exception(
+            status_code=status.HTTP_410_GONE,
+            message="This endpoint is deprecated. Reports are automatically stored when uploaded."
         )
 
-        return SuccessResponse(
-            status="success",
-            message="Inbody report analysis stored successfully",
-            data=stored_result,
-        )
+        # return SuccessResponse(
+        #     status="success",
+        #     message="Inbody report analysis stored successfully",
+        #     data={},
+        # )
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -377,33 +373,52 @@ async def get_inbody_reports(
     """Get all inbody reports for an enrollment"""
 
     try:
-        from sqlalchemy.orm import selectinload
-        from lib.models.weight_loss_agent import InbodyReport
-
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
-            enrollment = await session.get(
-                WeightLossAgentEnrollment,
-                enrollment_id,
-                options=[
-                    selectinload(WeightLossAgentEnrollment.inbody_reports)
-                    .selectinload(InbodyReport.measurements),
-                    selectinload(WeightLossAgentEnrollment.inbody_reports)
-                    .selectinload(InbodyReport.health_indicators),
-                ]
+        # Get enrollment from MongoDB
+        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
+        if not enrollment:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Enrollment not found"
             )
+        
+        # Get all reports for this enrollment from MongoDB
+        reports_cursor = weight_loss_service.reports_collection.find({
+            "enrollment_id": str(enrollment_id)
+        }).sort("report_date", -1)
+        
+        reports = await reports_cursor.to_list(length=None)
+        
+        # Transform reports to match the schema
+        from uuid import uuid4
+        for report in reports:
+            if "_id" in report:
+                del report["_id"]
+            
+            # Add missing fields to measurements
+            if "measurements" in report:
+                for measurement in report["measurements"]:
+                    if "measurement_id" not in measurement:
+                        measurement["measurement_id"] = str(uuid4())
+                    if "report_id" not in measurement:
+                        measurement["report_id"] = report.get("report_id")
+                    if "created_at" not in measurement:
+                        measurement["created_at"] = report.get("created_at")
+            
+            # Add missing fields to health_indicators
+            if "health_indicators" in report:
+                for indicator in report["health_indicators"]:
+                    if "indicator_id" not in indicator:
+                        indicator["indicator_id"] = str(uuid4())
+                    if "report_id" not in indicator:
+                        indicator["report_id"] = report.get("report_id")
+                    if "created_at" not in indicator:
+                        indicator["created_at"] = report.get("created_at")
 
-            if not enrollment:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Enrollment not found"
-                )
-
-            return SuccessResponse(
-                status="success",
-                message="Inbody reports retrieved successfully",
-                data=enrollment.inbody_reports,
-            )
+        return SuccessResponse(
+            status="success",
+            message="Inbody reports retrieved successfully",
+            data=reports,
+        )
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -426,27 +441,35 @@ async def get_health_indicators(
     """Get health indicators for an inbody report"""
 
     try:
-        from sqlalchemy.orm import selectinload
+        # Get report from MongoDB
+        report = await weight_loss_service.reports_collection.find_one({
+            "report_id": str(report_id)
+        })
 
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import InbodyReport
-            report = await session.get(
-                InbodyReport,
-                report_id,
-                options=[selectinload(InbodyReport.health_indicators)]
+        if not report:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Inbody report not found"
             )
 
-            if not report:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Inbody report not found"
-                )
+        # Extract health indicators (embedded in report)
+        health_indicators = report.get("health_indicators", [])
+        
+        # Add missing fields to match schema
+        from uuid import uuid4
+        for indicator in health_indicators:
+            if "indicator_id" not in indicator:
+                indicator["indicator_id"] = str(uuid4())
+            if "report_id" not in indicator:
+                indicator["report_id"] = report.get("report_id")
+            if "created_at" not in indicator:
+                indicator["created_at"] = report.get("created_at")
 
-            return SuccessResponse(
-                status="success",
-                message="Health indicators retrieved successfully",
-                data=report.health_indicators,
-            )
+        return SuccessResponse(
+            status="success",
+            message="Health indicators retrieved successfully",
+            data=health_indicators,
+        )
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -478,16 +501,14 @@ async def chat_with_weight_loss_agent(
                 message="Question is required"
             )
 
-        # Get patient_id from enrollment to use as user_id
-        async with weight_loss_service.postgres_store.get_session() as session:
-            from lib.models.weight_loss_agent import WeightLossAgentEnrollment
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
-            if not enrollment:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Enrollment not found"
-                )
-            patient_id = str(enrollment.patient_id)
+        # Get patient_id from enrollment (MongoDB)
+        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
+        if not enrollment:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Enrollment not found"
+            )
+        patient_id = enrollment.get("patient_id")
 
         response = await weight_loss_service.chat_with_weight_loss_agent(
             enrollment_id=enrollment_id,

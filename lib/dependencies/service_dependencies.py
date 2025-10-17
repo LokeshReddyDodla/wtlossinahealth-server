@@ -336,6 +336,22 @@ def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
 
 
+def get_weight_loss_enrollments_collection():
+    return container.resolve("weight_loss_enrollments_collection")
+
+
+def get_inbody_reports_collection():
+    return container.resolve("inbody_reports_collection")
+
+
+def get_weight_loss_interactions_collection():
+    return container.resolve("weight_loss_interactions_collection")
+
+
+def get_weight_loss_progress_analyses_collection():
+    return container.resolve("weight_loss_progress_analyses_collection")
+
+
 def get_patient_metrics_service() -> PatientMetricsService:
     return cast(
         PatientMetricsService, container.resolve(PatientMetricsService)

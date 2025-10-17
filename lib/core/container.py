@@ -160,6 +160,35 @@ container.register(
     ).get_collection("chats"),
     scope=Scope.singleton,
 )
+# Weight Loss Agent Collections
+container.register(
+    "weight_loss_enrollments_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weight_loss_enrollments"),
+    scope=Scope.singleton,
+)
+container.register(
+    "inbody_reports_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("inbody_reports"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weight_loss_interactions_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weight_loss_interactions"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weight_loss_progress_analyses_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weight_loss_progress_analyses"),
+    scope=Scope.singleton,
+)
 
 
 container.register(
@@ -523,12 +552,16 @@ container.register(
     ),
 )
 
-# 🔹 Weight Loss Agent Service
+# 🔹 Weight Loss Agent Service (MongoDB)
 container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+        enrollments_collection=container.resolve("weight_loss_enrollments_collection"),
+        reports_collection=container.resolve("inbody_reports_collection"),
+        interactions_collection=container.resolve("weight_loss_interactions_collection"),
+        progress_analyses_collection=container.resolve("weight_loss_progress_analyses_collection"),
     ),
 )
 
