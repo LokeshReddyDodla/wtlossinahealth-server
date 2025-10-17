@@ -66,7 +66,7 @@ from lib.schemas.ai_conversation_schemas import (
 from lib.utils.http_exceptions import raise_http_exception
 
 
-class AiConversationServiceV1:
+class AIConversationServiceV1:
     MAX_MODEL_TOKENS = 128_000  # adjust per model (e.g., 128k for GPT-4.1)
     SAFE_LIMIT = int(MAX_MODEL_TOKENS * 0.8)
 

@@ -9,7 +9,7 @@ from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
 from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AiConversationServiceV1,
+    AIConversationServiceV1,
 )
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
@@ -303,9 +303,9 @@ def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
 
 
-def get_ai_conversation_service_v1() -> AiConversationServiceV1:
+def get_ai_conversation_service_v1() -> AIConversationServiceV1:
     return cast(
-        AiConversationServiceV1, container.resolve(AiConversationServiceV1)
+        AIConversationServiceV1, container.resolve(AIConversationServiceV1)
     )
 
 

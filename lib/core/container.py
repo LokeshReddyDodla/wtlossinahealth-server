@@ -20,7 +20,7 @@ from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
 from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AiConversationServiceV1,
+    AIConversationServiceV1,
 )
 from lib.services.ai_conversation_service_v1.context_builder import (
     AIConversationContextBuilder,
@@ -641,8 +641,8 @@ container.register(
 
 # 🔹 AI Conversation V1
 container.register(
-    AiConversationServiceV1,
-    lambda: AiConversationServiceV1(
+    AIConversationServiceV1,
+    lambda: AIConversationServiceV1(
         context_builder=cast(
             AIConversationContextBuilder,
             container.resolve(AIConversationContextBuilder),
