@@ -216,6 +216,8 @@ class AiConversationServiceV1:
     ):
 
         try:
+            # patient_ids = [f"patient-{i}" for i in range(1, 250)]  # example
+
             # await self.add_message_to_conversation(
             #     user_id,
             #     user_type,
@@ -224,8 +226,6 @@ class AiConversationServiceV1:
             #     "human",
             #     human_input,
             # )
-
-            # patient_ids = [f"patient-{i}" for i in range(1, 250)]  # example
 
             final_texts: List[str] = []
             citations_dict: dict = {}

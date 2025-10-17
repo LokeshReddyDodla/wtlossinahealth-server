@@ -41,7 +41,7 @@ class AIConversationContextBuilder:
 
         # Resolve missing profiles (cache or DB)
         resolved_context = await self.context_resolver.resolve_context(
-            qdrant_results=qdrant_data["results"],
+            qdrant_results=qdrant_data["results"], patient_ids=patient_ids
         )
 
         # Extract payloads only

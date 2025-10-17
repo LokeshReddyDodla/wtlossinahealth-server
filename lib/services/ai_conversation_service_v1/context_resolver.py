@@ -18,8 +18,9 @@ class AIConversationContextResolver:
     async def resolve_context(
         self,
         qdrant_results: list[ScoredPoint],
+        patient_ids: Optional[list[str]] = None,
     ) -> Dict[str, Any]:
-        patient_ids: Set[str] = set()
+        qdrant_patient_ids: set[str] = set()
         profiles_found: Set[str] = set()
 
         # Phase 1: Collect patient IDs
@@ -28,12 +29,17 @@ class AIConversationContextResolver:
             patient_id = payload.get("patient_id")
             if not patient_id:
                 continue
-            patient_ids.add(patient_id)
+            qdrant_patient_ids.add(patient_id)
             if payload.get("data_type") == "profile":
                 profiles_found.add(patient_id)
 
         # Phase 2: Find missing profile IDs
-        missing_profiles = list(patient_ids - profiles_found)
+        if patient_ids:
+            all_patient_ids = set(patient_ids) | qdrant_patient_ids
+        else:
+            all_patient_ids = qdrant_patient_ids
+
+        missing_profiles = list(all_patient_ids - profiles_found)
         resolved_profiles: Dict[str, Any] = {}
 
         if missing_profiles:
@@ -42,7 +48,7 @@ class AIConversationContextResolver:
             )
 
         return {
-            "patient_ids": list(patient_ids),
+            "patient_ids": list(all_patient_ids),
             "profiles_found": list(profiles_found),
             "profiles_added": resolved_profiles,
         }
