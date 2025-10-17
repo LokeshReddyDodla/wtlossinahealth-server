@@ -33,9 +33,7 @@ from lib.schemas.patient_meal import PatientMeal
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
-from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AiConversationServiceV1,
-)
+
 from lib.services.cgm_report_service import CGMReportService
 
 
