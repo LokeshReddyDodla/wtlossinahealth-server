@@ -34,6 +34,9 @@ from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
 
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
+)
 from lib.services.cgm_report_service import CGMReportService
 
 
@@ -783,7 +786,7 @@ async def test_ai_conversation_service_v1(
     conversation_id: str = Query(...),
     human_input: str = Query(...),
     patient_ids: List[str] = Body(...),
-    ai_conversation_service_v1: AiConversationServiceV1 = Depends(
+    ai_conversation_service_v1: AIConversationServiceV1 = Depends(
         get_ai_conversation_service_v1
     ),
     session: AsyncSession = Depends(get_postgres_session),
