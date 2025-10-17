@@ -1,6 +1,7 @@
+from collections import defaultdict
 import json
 import math
-from typing import Dict, Type, Union
+from typing import Dict, Set, Type, Union
 
 from langchain_openai import ChatOpenAI
 from tiktoken import encoding_for_model
@@ -95,6 +96,12 @@ class AiConversationServiceV1:
         )
 
         self.context_builder = context_builder
+        self.context_batcher = AIConversationContextBatcher(
+            context_builder=context_builder,
+            model_name=selected_ai_model,
+            max_tokens=12000,
+            patient_batch_size=1,
+        )
 
         self.token_usage_service = get_token_usage_service()
         self.ai_messages_collection = get_ai_conversation_messages_collection()
@@ -199,110 +206,6 @@ class AiConversationServiceV1:
             for msg in messages
         ]
 
-    def estimate_token_count(
-        self, data: Any, model: str = "gpt-4o-mini"
-    ) -> int:
-        if not data:
-            return 0
-
-        if isinstance(data, (dict, list)):
-            text = json.dumps(data, ensure_ascii=False)
-        else:
-            text = str(data)
-
-        try:
-            encoding = tiktoken.encoding_for_model(model)
-            return len(encoding.encode(text))
-        except Exception:
-            return math.ceil(
-                len(text) / 4
-            )  # fallback rough estimate: ~4 chars per token
-
-    def _chunk_context_items(
-        self, items: List[Any], chunk_size: int = 5
-    ) -> List[List[Any]]:
-        return [
-            items[i : i + chunk_size] for i in range(0, len(items), chunk_size)
-        ]
-
-    async def _prepare_hybrid_batches(
-        self, patient_context_map: Dict[str, List[Dict]]
-    ) -> List[List[Dict[str, List[Dict]]]]:
-        """
-        Build dynamic batches across patients, and chunk within if a single patient's context is too big.
-        """
-        batches = []
-        current_batch = []
-        current_tokens = 0
-
-        for patient_id, context_items in patient_context_map.items():
-            tokens_for_patient = self.estimate_token_count(context_items)
-
-            # case 1: a single patient's context is too big — chunk within
-            if tokens_for_patient > self.SAFE_LIMIT:
-                chunks = self._chunk_context_items(context_items, chunk_size=5)
-                for chunk in chunks:
-                    sub_tokens = self.estimate_token_count(chunk)
-                    if current_tokens + sub_tokens > self.SAFE_LIMIT:
-                        batches.append(current_batch)
-                        current_batch = []
-                        current_tokens = 0
-                    current_batch.append({patient_id: chunk})
-                    current_tokens += sub_tokens
-
-            # case 2: normal patient — add normally
-            else:
-                if current_tokens + tokens_for_patient > self.SAFE_LIMIT:
-                    batches.append(current_batch)
-                    current_batch = []
-                    current_tokens = 0
-                current_batch.append({patient_id: context_items})
-                current_tokens += tokens_for_patient
-
-        if current_batch:
-            batches.append(current_batch)
-
-        return batches
-
-    async def _generate_batched_response(
-        self,
-        batches: List[List[Dict[str, List[Dict]]]],
-        human_input: str,
-        conversation_id: str,
-    ) -> List[Dict]:
-        all_responses = []
-
-        for batch_index, batch in enumerate(batches, start=1):
-            batch_context_items = []
-            for patient_chunk in batch:
-                for _, context_items in patient_chunk.items():
-                    batch_context_items.extend(context_items)
-
-            # Build message chain
-            context_payload_text = "\n".join(
-                json.dumps(item, ensure_ascii=False)
-                for item in batch_context_items
-            )
-            messages = [
-                self.system_message,
-                SystemMessage(
-                    content=f"Context batch #{batch_index}:\n{context_payload_text}"
-                ),
-                HumanMessage(content=human_input),
-            ]
-
-            try:
-                ai_response = self.structured_model.invoke(input=messages)
-                parsed_response = ai_response.get("parsed", {})
-                all_responses.append(parsed_response)
-                print(
-                    f"✅ Processed batch {batch_index} with {len(batch_context_items)} context items."
-                )
-            except Exception as e:
-                print(f"⚠️ Error in batch {batch_index}: {e}")
-
-        return all_responses
-
     async def generate_response(
         self,
         patient_ids: List[str],
@@ -313,114 +216,87 @@ class AiConversationServiceV1:
     ):
 
         try:
-            batcher = AIConversationContextBatcher(
-                model_name="gpt-4o-mini",
-                max_tokens=12000,
-                patient_batch_size=50,
-            )
-            patient_ids = [f"patient-{i}" for i in range(1, 250)]  # example
+            # await self.add_message_to_conversation(
+            #     user_id,
+            #     user_type,
+            #     conversation_id,
+            #     "care-provider",
+            #     "human",
+            #     human_input,
+            # )
 
-            async for batch in batcher.generate_batches(patient_ids):
-                print(
-                    f"🧩 Batch (IDs={len(batch['batch_patient_ids'])}) | Tokens={batch['token_count']}"
+            # patient_ids = [f"patient-{i}" for i in range(1, 250)]  # example
+
+            final_texts: List[str] = []
+            citations_dict: dict = {}
+            all_tags: Set[str] = set()
+            total_usage = defaultdict(int)
+            final_responses: List[dict] = []
+
+            async for batch in self.context_batcher.generate_batches(
+                patient_ids, conversation_id, human_input
+            ):
+                batch_context = batch["context"]
+                batch_ids = batch["batch_patient_ids"]
+
+                messages = [
+                    self.system_message,
+                    SystemMessage(content=batch_context),
+                    HumanMessage(content=human_input),
+                ]
+
+                ai_response: Any = self.structured_model.invoke(input=messages)
+                parsed: AIResponse = ai_response.get("parsed", {})
+
+                usage_metadata = ai_response["raw"].usage_metadata
+
+                final_responses.append(
+                    {
+                        "batch_patient_ids": batch_ids,
+                        "response_text": parsed.response,
+                        "citations": parsed.citations,
+                        "confidence_score": parsed.confidence_score,
+                        "tags": parsed.tags,
+                        "token_usage": usage_metadata,
+                    }
                 )
-                print(batch["context"][:200], "...\n")
 
-        # # Save the human message
-        # await self.add_message_to_conversation(
-        #     user_id,
-        #     user_type,
-        #     conversation_id,
-        #     "care-provider",
-        #     "human",
-        #     human_input,
-        # )
+            print("==> final_responses: ", final_responses)
 
-        # # Start message chain
-        # messages: list[Any] = [self.system_message]
+            for response in final_responses:
+                final_texts.append(response.get("response_text", ""))
+                all_tags.update(response.get("tags") or [])
 
-        # # Build context
-        # context_data = await self.context_builder.build_context(
-        #     patient_ids=patient_ids,
-        #     conversation_id=conversation_id,
-        #     human_input=human_input,
-        #     include_history=True,
-        # )
+                for c in response.get("citations") or []:
+                    if getattr(c, "url", None) and c.url not in citations_dict:
+                        citations_dict[c.url] = c
 
-        # context_items = context_data.get("context_items", [])
-        # filter_applied = context_data.get("filter_applied", {})
-        # recent_messages = context_data.get("conversation", {}).get(
-        #     "recent", []
-        # )
+                usage = response.get("token_usage", {})
+                total_usage["input_tokens"] += usage.get("input_tokens", 0)
+                total_usage["output_tokens"] += usage.get("output_tokens", 0)
+                total_usage["cached_input_tokens"] += usage.get(
+                    "cached_input_tokens", 0
+                )
 
-        # # Add context payloads as one big system message
-        # context_payload_text = "\n".join(
-        #     json.dumps(item, ensure_ascii=False) for item in context_items
-        # )
-        # messages.append(
-        #     SystemMessage(
-        #         content=f"Context data:\n{context_payload_text}\nFilters applied: {json.dumps(filter_applied, ensure_ascii=False)}"
-        #     )
-        # )
+            print("==> combined_text: ", "\n\n".join(final_texts))
+            print("==> total_token_usage: ", dict(total_usage))
+            print("==> citations: ", citations_dict)
+            print("==> all_tags: ", list(all_tags))
 
-        # # Add conversation history
-        # messages.extend(self._process_messages(recent_messages))
-
-        # # Add current human input
-        # messages.append(HumanMessage(content=human_input))
-
-        # # enforce alternation if you want to ensure clean format
-        # messages = (
-        #     self._enforce_alternation(messages)
-        #     if self.ai_model_provider == "perplexity"
-        #     else messages
-        # )
-
-        # tokens = self.estimate_token_count(messages)
-        # print(f"Estimated tokens: {tokens}")
-
-        # try:
-        #     # ai_response: Any = retry_request(
-        #     #     self.structured_model.invoke,
-        #     #     input=filtered_messages,
-        #     # )
-        #     ai_response: Any = self.structured_model.invoke(input=messages)
-        #     parsed_response: AIResponse = ai_response.get("parsed", {})
-        #     follow_up_questions = None
-
-        #     ai_message_data = await self.add_message_to_conversation(
-        #         user_id,
-        #         user_type,
-        #         conversation_id,
-        #         "care-provider",
-        #         "ai",
-        #         parsed_response.response,
-        #         message_type="markdown",
-        #         follow_up_questions=follow_up_questions,
-        #         metadata={
-        #             "citations": parsed_response.citations,
-        #             "confidence_score": parsed_response.confidence_score,
-        #             "tags": parsed_response.tags,
-        #         },
-        #     )
-
-        #     usage_metadata = ai_response["raw"].usage_metadata
-        #     print("==> usage_metadata:", usage_metadata)
-        #     if usage_metadata:
-        #         await self.token_usage_service.log_usage(
-        #             user_id=user_id,
-        #             user_type=user_type,
-        #             input_tokens=usage_metadata["input_tokens"],
-        #             output_tokens=usage_metadata["output_tokens"],
-        #             cached_input_tokens=usage_metadata.get(
-        #                 "cached_input_tokens"
-        #             ),
-        #             model_used=self.selected_ai_model,
-        #             model_provider=self.ai_model_provider,
-        #             api_endpoint="/ai-conversation/respond",
-        #         )  # type: ignore
-
-        #     return ai_message_data
+            # ai_message_data = await self.add_message_to_conversation(
+            #     user_id,
+            #     user_type,
+            #     conversation_id,
+            #     "care-provider",
+            #     "ai",
+            #     final_response,
+            #     message_type="markdown",
+            #     metadata={
+            #         "citations": parsed_response.citations,
+            #         "confidence_score": parsed_response.confidence_score,
+            #         "tags": parsed_response.tags,
+            #     },
+            # )
 
         except Exception as e:
             print(f"Error generating AI response: {str(e)}")

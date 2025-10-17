@@ -9,7 +9,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
 
 class AIConversationContextBuilder:
@@ -57,8 +56,6 @@ class AIConversationContextBuilder:
                 {**profile, "data_type": "profile", "source": "db_cache"}
             )
 
-        print("==> payload_items: ", payload_items)
-
         conversation_history = []
 
         if include_history:
@@ -71,8 +68,6 @@ class AIConversationContextBuilder:
                 # "summary": summary,
                 "recent": recent_messages,
             }
-
-        print("==> conversation_history: ", conversation_history)
 
         return {
             "context_items": payload_items,
