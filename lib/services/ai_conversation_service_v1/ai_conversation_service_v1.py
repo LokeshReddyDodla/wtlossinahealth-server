@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import math
+import pprint
 from typing import Dict, Set, Type, Union
 
 from langchain_openai import ChatOpenAI
@@ -28,7 +29,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_perplexity import ChatPerplexity
 from pydantic import SecretStr
-from lib.schemas.ai_conversation_schemas import AIResponse
+from lib.schemas.ai_conversation_schemas import AIResponse, Citation
 from lib.services.ai_conversation_service_v1.context_batcher import (
     AIConversationContextBatcher,
 )
@@ -192,20 +193,6 @@ class AiConversationServiceV1:
                 filtered.append(msg)
         return filtered
 
-    def _process_messages(self, messages: List[Dict]) -> List[Any]:
-        return [
-            (
-                SystemMessage(content=msg["content"])
-                if msg["role"] == "system"
-                else (
-                    HumanMessage(content=msg["content"])
-                    if msg["role"] == "human"
-                    else AIMessage(content=msg["content"])
-                )
-            )
-            for msg in messages
-        ]
-
     async def generate_response(
         self,
         patient_ids: List[str],
@@ -214,24 +201,21 @@ class AiConversationServiceV1:
         conversation_id: str,
         human_input: str,
     ):
-
         try:
-            # patient_ids = [f"patient-{i}" for i in range(1, 250)]  # example
+            await self.add_message_to_conversation(
+                user_id,
+                user_type,
+                conversation_id,
+                "care-provider",
+                "human",
+                human_input,
+            )
 
-            # await self.add_message_to_conversation(
-            #     user_id,
-            #     user_type,
-            #     conversation_id,
-            #     "care-provider",
-            #     "human",
-            #     human_input,
-            # )
-
-            final_texts: List[str] = []
-            citations_dict: dict = {}
-            all_tags: Set[str] = set()
-            total_usage = defaultdict(int)
-            final_responses: List[dict] = []
+            combined_texts: List[str] = []
+            unique_citations: dict[str, Citation] = {}
+            aggregated_tags: set[str] = set()
+            total_token_usage = defaultdict(int)
+            all_batch_responses: list[dict] = []
 
             async for batch in self.context_batcher.generate_batches(
                 patient_ids, conversation_id, human_input
@@ -245,12 +229,14 @@ class AiConversationServiceV1:
                     HumanMessage(content=human_input),
                 ]
 
+                if self.ai_model_provider == "perplexity":
+                    messages = self._enforce_alternation(messages)
+
                 ai_response: Any = self.structured_model.invoke(input=messages)
                 parsed: AIResponse = ai_response.get("parsed", {})
-
                 usage_metadata = ai_response["raw"].usage_metadata
 
-                final_responses.append(
+                all_batch_responses.append(
                     {
                         "batch_patient_ids": batch_ids,
                         "response_text": parsed.response,
@@ -261,43 +247,60 @@ class AiConversationServiceV1:
                     }
                 )
 
-            print("==> final_responses: ", final_responses)
+            print(all_batch_responses)
 
-            for response in final_responses:
-                final_texts.append(response.get("response_text", ""))
-                all_tags.update(response.get("tags") or [])
+            for batch_response in all_batch_responses:
+                combined_texts.append(batch_response.get("response_text", ""))
+                aggregated_tags.update(batch_response.get("tags") or [])
 
-                for c in response.get("citations") or []:
-                    if getattr(c, "url", None) and c.url not in citations_dict:
-                        citations_dict[c.url] = c
+                for citation in batch_response.get("citations") or []:
+                    if (
+                        getattr(citation, "url", None)
+                        and citation.url not in unique_citations
+                    ):
+                        unique_citations[citation.url] = citation
 
-                usage = response.get("token_usage", {})
-                total_usage["input_tokens"] += usage.get("input_tokens", 0)
-                total_usage["output_tokens"] += usage.get("output_tokens", 0)
-                total_usage["cached_input_tokens"] += usage.get(
+                usage = batch_response.get("token_usage", {})
+                total_token_usage["input_tokens"] += usage.get(
+                    "input_tokens", 0
+                )
+                total_token_usage["output_tokens"] += usage.get(
+                    "output_tokens", 0
+                )
+                total_token_usage["cached_input_tokens"] += usage.get(
                     "cached_input_tokens", 0
                 )
 
-            print("==> combined_text: ", "\n\n".join(final_texts))
-            print("==> total_token_usage: ", dict(total_usage))
-            print("==> citations: ", citations_dict)
-            print("==> all_tags: ", list(all_tags))
+            ai_message_data = await self.add_message_to_conversation(
+                user_id=user_id,
+                user_type=user_type,
+                conversation_id=conversation_id,
+                conversation_type="care-provider",
+                role="ai",
+                content="\n\n".join(combined_texts),
+                message_type="markdown",
+                metadata={
+                    "citations": list(unique_citations.values()),
+                    "confidence_score": None,  # optional aggregate could go here
+                    "tags": list(aggregated_tags),
+                },
+            )
 
-            # ai_message_data = await self.add_message_to_conversation(
-            #     user_id,
-            #     user_type,
-            #     conversation_id,
-            #     "care-provider",
-            #     "ai",
-            #     final_response,
-            #     message_type="markdown",
-            #     metadata={
-            #         "citations": parsed_response.citations,
-            #         "confidence_score": parsed_response.confidence_score,
-            #         "tags": parsed_response.tags,
-            #     },
-            # )
+            if total_token_usage:
+                await self.token_usage_service.log_usage(
+                    user_id=user_id,
+                    user_type=user_type,
+                    input_tokens=total_token_usage["input_tokens"],
+                    output_tokens=total_token_usage["output_tokens"],
+                    cached_input_tokens=total_token_usage.get(
+                        "cached_input_tokens"
+                    ),
+                    model_used=self.selected_ai_model,
+                    model_provider=self.ai_model_provider,
+                    api_endpoint="/ai-conversation/respond",
+                )  # type: ignore
 
+            return ai_message_data
         except Exception as e:
             print(f"Error generating AI response: {str(e)}")
             raise_http_exception(
