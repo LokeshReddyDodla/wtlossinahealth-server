@@ -297,7 +297,7 @@ class AIConversationServiceV1:
                     ),
                     model_used=self.selected_ai_model,
                     model_provider=self.ai_model_provider,
-                    api_endpoint="/ai-conversation/respond",
+                    api_endpoint="/care-provider/ai/conversation/ask",
                 )  # type: ignore
 
             return ai_message_data
