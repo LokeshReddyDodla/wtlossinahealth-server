@@ -83,6 +83,7 @@ class AIConversationContextBatcher:
                 yield {
                     "batch_patient_ids": batch_ids,
                     "context": full_context,
+                    "context_items": context_items,
                     "token_count": total_tokens,
                 }
             else:
@@ -97,6 +98,7 @@ class AIConversationContextBatcher:
                         yield {
                             "batch_patient_ids": batch_ids,
                             "context": "\n\n".join(current_chunk),
+                            "context_items": context_items,
                             "token_count": current_tokens,
                         }
                         current_chunk = [line]
@@ -110,5 +112,6 @@ class AIConversationContextBatcher:
                     yield {
                         "batch_patient_ids": batch_ids,
                         "context": "\n\n".join(current_chunk),
+                        "context_items": context_items,
                         "token_count": current_tokens,
                     }
