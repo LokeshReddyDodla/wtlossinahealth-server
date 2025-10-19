@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List
 
 from lib.core.mongo_store import MongoStore
@@ -9,6 +10,8 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AIConversationContextBuilder:
@@ -39,6 +42,12 @@ class AIConversationContextBuilder:
             conversation_id=conversation_id,
         )
 
+        results_count = len(qdrant_data.get("results", []))
+        logger.info(
+            f"[AIConversationContextBuilder] Qdrant returned {results_count} results "
+            f"for conversation_id={conversation_id}, patient_ids={patient_ids}"
+        )
+
         # Resolve missing profiles (cache or DB)
         resolved_context = await self.context_resolver.resolve_context(
             qdrant_results=qdrant_data["results"], patient_ids=patient_ids
@@ -56,7 +65,7 @@ class AIConversationContextBuilder:
                 {**profile, "data_type": "profile", "source": "db_cache"}
             )
 
-        conversation_history = []
+        conversation_history = {}
 
         if include_history:
             recent_messages = await self._get_recent_messages(

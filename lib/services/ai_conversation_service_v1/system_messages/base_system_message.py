@@ -32,6 +32,14 @@ class BaseSystemMessage:
     - If some data appears missing, outdated, or incomplete, explicitly mention it and recommend verifying recent entries or consulting a clinician.
     """
 
+    DATA_PRESENCE_RULE = """
+    **Data Presence Rule:**
+    - Only provide insights if structured patient data is available.
+    - If no relevant data is found for the patient(s), respond **exactly**:
+    "No patient data available to provide insights at this time."
+    - Do not infer, generalize, or create hypothetical examples.
+    """
+
     REASONING_AND_INSIGHT_STYLE = """
     **Reasoning and Insight Style:**
     - When correlating multiple data factors, briefly summarize your reasoning.
@@ -68,6 +76,7 @@ class BaseSystemMessage:
             self.GUIDELINES,
             self.SAFETY_RULES,
             self.DATA_SOURCE_EXPLANATION,
+            self.DATA_PRESENCE_RULE,
             self.REASONING_AND_INSIGHT_STYLE,
             self.CITATIONS,
             self.FORMAT_INSTRUCTIONS,

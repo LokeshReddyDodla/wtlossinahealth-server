@@ -81,7 +81,16 @@ Your sole task is to map the user's natural language request to the provided Pyd
    - Do NOT include any other data types (like "meal" or "fitness") unless explicitly mentioned in the query.
 
 
-12. **Context Independence**
+12. **Global / Summary Query Rule**
+    - If the query asks for general summaries, patterns, or "common issues" across patients
+      (e.g., “summarize overall issues”, “overview of all patients”, “general report”, “common health problems”),
+      include **all major domains** in `data_types`:
+      ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats",
+       "rapid_spike_stats", "rapid_drop_stats", "smbg", "meal", "fitness", "sleep", "profile"].
+    - These queries are holistic and not domain-specific, so avoid restricting to only CGM or any single type.
+
+
+13. **Context Independence**
     - Always extract the intent based solely on the current user query,
       unless explicitly instructed to use prior context by a contextual prompt.
     - Never assume continuity or merge previous filters or data types

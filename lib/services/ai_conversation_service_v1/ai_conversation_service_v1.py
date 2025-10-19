@@ -211,17 +211,25 @@ class AIConversationServiceV1:
                 human_input,
             )
 
-            combined_texts: List[str] = []
-            unique_citations: dict[str, Citation] = {}
-            aggregated_tags: set[str] = set()
-            total_token_usage = defaultdict(int)
             all_batch_responses: list[dict] = []
+            total_token_usage = defaultdict(int)
 
+            # ---- Generate batches ----
             async for batch in self.context_batcher.generate_batches(
-                patient_ids, conversation_id, human_input
+                patient_ids,
+                conversation_id,
+                human_input,
+                include_history=True,
             ):
-                batch_context = batch["context"]
                 batch_ids = batch["batch_patient_ids"]
+                batch_context = batch["context"]
+
+                # Skip if batch has no real context
+                if not batch_context.strip() or not batch["context_items"]:
+                    print(
+                        f"Skipping batch {batch_ids} — no real data available"
+                    )
+                    continue
 
                 messages = [
                     self.system_message,
@@ -234,7 +242,7 @@ class AIConversationServiceV1:
 
                 ai_response: Any = self.structured_model.invoke(input=messages)
                 parsed: AIResponse = ai_response.get("parsed", {})
-                usage_metadata = ai_response["raw"].usage_metadata
+                usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
 
                 all_batch_responses.append(
                     {
@@ -243,49 +251,59 @@ class AIConversationServiceV1:
                         "citations": parsed.citations,
                         "confidence_score": parsed.confidence_score,
                         "tags": parsed.tags,
-                        "token_usage": usage_metadata,
+                        "token_usage": usage,
                     }
                 )
 
+                # Accumulate token usage
+                self._accumulate_usage(total_token_usage, usage)
+
             print(all_batch_responses)
 
-            for batch_response in all_batch_responses:
-                combined_texts.append(batch_response.get("response_text", ""))
-                aggregated_tags.update(batch_response.get("tags") or [])
+            if all_batch_responses:
+                # ---- Only summarize if multiple batches ----
+                if len(all_batch_responses) > 1:
+                    summarized: Any = await self._summarize_batches(
+                        all_batch_responses, human_input
+                    )
+                    summary_parsed: AIResponse = summarized.get("parsed", {})
+                    summary_usage = getattr(summarized["raw"], "usage_metadata", {}) or {}  # type: ignore
 
-                for citation in batch_response.get("citations") or []:
-                    if (
-                        getattr(citation, "url", None)
-                        and citation.url not in unique_citations
-                    ):
-                        unique_citations[citation.url] = citation
+                    # Accumulate summary token usage
+                    self._accumulate_usage(total_token_usage, summary_usage)
+                else:
+                    batch = all_batch_responses[0]
+                    summary_parsed = AIResponse(
+                        response=batch["response_text"],
+                        citations=batch.get("citations", []),
+                        confidence_score=batch.get("confidence_score"),
+                        tags=batch.get("tags", []),
+                    )
+            else:
+                summary_parsed = AIResponse(
+                    response="No patient data available to provide insights at this time.",
+                    citations=[],
+                    confidence_score=None,
+                    tags=[],
+                )
 
-                usage = batch_response.get("token_usage", {})
-                total_token_usage["input_tokens"] += usage.get(
-                    "input_tokens", 0
-                )
-                total_token_usage["output_tokens"] += usage.get(
-                    "output_tokens", 0
-                )
-                total_token_usage["cached_input_tokens"] += usage.get(
-                    "cached_input_tokens", 0
-                )
-
+            # ---- Save AI message ----
             ai_message_data = await self.add_message_to_conversation(
                 user_id=user_id,
                 user_type=user_type,
                 conversation_id=conversation_id,
                 conversation_type="care-provider",
                 role="ai",
-                content="\n\n".join(combined_texts),
+                content=summary_parsed.response,
                 message_type="markdown",
                 metadata={
-                    "citations": list(unique_citations.values()),
-                    "confidence_score": None,  # optional aggregate could go here
-                    "tags": list(aggregated_tags),
+                    "citations": summary_parsed.citations,
+                    "confidence_score": summary_parsed.confidence_score,
+                    "tags": summary_parsed.tags,
                 },
             )
 
+            # ---- Log total token usage ----
             if total_token_usage:
                 await self.token_usage_service.log_usage(
                     user_id=user_id,
@@ -302,9 +320,54 @@ class AIConversationServiceV1:
 
             return ai_message_data
         except Exception as e:
-            print(f"Error generating AI response: {str(e)}")
+            print(
+                f"[AIConversationServiceV1] Error generating AI response: {e}"
+            )
             raise_http_exception(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "Failed to generate AI response.",
                 detail=str(e),
             )
+
+    async def _summarize_batches(
+        self, batch_responses: list[dict], human_input: str
+    ):
+        combined_texts = []
+        for i, b in enumerate(batch_responses):
+            text = b.get("response_text", "")
+            combined_texts.append(f"### Batch {i+1}\n{text}")
+
+        merged_batches_text = "\n\n".join(combined_texts)
+
+        summarization_system_prompt = """
+        You are a medical data summarizer.
+        You will receive multiple AI-generated batch analyses about different groups of patients.
+
+        Your task:
+        - Merge overlapping or repetitive insights.
+        - Keep all critical, unique information.
+        - Summarize overall patterns, trends, and common issues across patients.
+        - Maintain clinical accuracy, empathy, and Markdown formatting.
+        - Produce the final structured response using the same schema (AIResponse).
+        - Include combined citations and relevant tags.
+        - End with: "Please consult a healthcare professional for personalized advice."
+        """
+
+        messages = [
+            SystemMessage(content=summarization_system_prompt),
+            SystemMessage(content=f"User query: {human_input}"),
+            SystemMessage(
+                content=f"Batch responses:\n\n{merged_batches_text}"
+            ),
+        ]
+
+        summarized_ai_response = self.structured_model.invoke(input=messages)
+
+        return summarized_ai_response
+
+    def _accumulate_usage(self, total_usage: dict, usage: dict):
+        total_usage["input_tokens"] += usage.get("input_tokens", 0)
+        total_usage["output_tokens"] += usage.get("output_tokens", 0)
+        total_usage["cached_input_tokens"] += usage.get(
+            "cached_input_tokens", 0
+        )
