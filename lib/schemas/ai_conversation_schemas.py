@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -39,9 +39,13 @@ class AiConversationMessage(BaseModel):
 
 
 class Citation(BaseModel):
-    title: Optional[str] = Field(default=None, description="Title of the source")
+    title: Optional[str] = Field(
+        default=None, description="Title of the source"
+    )
     url: str = Field(..., description="Direct link to the source")
-    source: Optional[str] = Field(default=None, description="Organization/author")
+    source: Optional[str] = Field(
+        default=None, description="Organization/author"
+    )
 
 
 class AIResponse(BaseModel):
@@ -58,3 +62,6 @@ class AIResponse(BaseModel):
         default=None,
         description="Tags/categories for the response (e.g., 'diet', 'exercise').",
     )
+
+
+# ----------------------------------------------------------------------------------
