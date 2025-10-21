@@ -37,7 +37,7 @@ class AIConversationContextBuilder:
         # Search vector DB
         qdrant_data = await self.qdrant_search_engine.search(
             human_input,
-            999,
+            1999,
             patient_ids=patient_ids,
             conversation_id=conversation_id,
         )
@@ -90,9 +90,9 @@ class AIConversationContextBuilder:
         filters: Any = {"conversation_id": conversation_id}
         pipeline = [
             {"$match": filters},
-            {"$sort": {"timestamp": -1}},
+            {"$sort": {"created_at": -1}},
             {"$limit": limit},
-            {"$sort": {"timestamp": 1}},
+            {"$sort": {"created_at": 1}},
             {"$addFields": {"_id": {"$toString": "$_id"}}},
         ]
 

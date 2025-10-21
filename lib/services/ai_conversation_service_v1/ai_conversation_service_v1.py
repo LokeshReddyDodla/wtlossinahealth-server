@@ -1,35 +1,33 @@
 from collections import defaultdict
-import json
-import math
-import pprint
-from typing import Dict, Set, Type, Union
+import time
+from typing import Dict, Union
 
 from langchain_openai import ChatOpenAI
-from tiktoken import encoding_for_model
-import tiktoken
-from lib.core.constants import ProfileTypeEnum
+
 from lib.core.types import (
     AIModelProviderLiteral,
-    AiConversationMessageTypeLiteral,
-    AiConversationRoleLiteral,
-    AiConversationTypeLiteral,
     GeminiAIModelLiteral,
     OpenAIModelLiteral,
     PerplexityAIModelLiteral,
 )
-from typing import Any, Dict, List, Literal, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Union
 from fastapi import status
 
 
 from decouple import config
 
 from langchain.output_parsers import PydanticOutputParser
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.schema import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from langchain_perplexity import ChatPerplexity
-from pydantic import SecretStr
-from lib.schemas.ai_conversation_schemas import AIResponse, Citation
+from pydantic import SecretStr, ValidationError
+from lib.schemas.ai_conversation_schemas import AIResponse
+from lib.schemas.ai_conversation_v1_schemas import (
+    MessageStatusLiteral,
+    MessageTypeLiteral,
+    RoleLiteral,
+    SenderTypeLiteral,
+)
 from lib.services.ai_conversation_service_v1.context_batcher import (
     AIConversationContextBatcher,
 )
@@ -39,56 +37,23 @@ from lib.services.ai_conversation_service_v1.context_builder import (
 from lib.services.ai_conversation_service_v1.system_messages.base_system_message import (
     BaseSystemMessage,
 )
-from lib.services.ai_conversation_service_v1.system_messages.care_provider_system_message import (
-    CareProviderSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.health_tip_system_message import (
-    HealthTipSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.meal_system_message import (
-    MealSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.prescription_system_message import (
-    PrescriptionSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.report_system_message import (
-    ReportSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.sleep_system_message import (
-    SleepSystemMessage,
-)
-from lib.services.ai_conversation_service_v1.system_messages.smbg_system_message import (
-    SMBGSystemMessage,
-)
-from lib.schemas.ai_conversation_schemas import (
-    AiConversationMessage as AiConversationMessageSchema,
+from lib.schemas.ai_conversation_v1_schemas import (
+    AiConversationMessageV1 as AiConversationMessageV1Schema,
 )
 from lib.utils.http_exceptions import raise_http_exception
 
 
 class AIConversationServiceV1:
     MAX_MODEL_TOKENS = 128_000  # adjust per model (e.g., 128k for GPT-4.1)
-    SAFE_LIMIT = int(MAX_MODEL_TOKENS * 0.8)
-
-    _SYSTEM_MESSAGE_MAP: Dict[
-        AiConversationTypeLiteral, Type[BaseSystemMessage]
-    ] = {
-        "meal": MealSystemMessage,
-        "smbg": SMBGSystemMessage,
-        "sleep": SleepSystemMessage,
-        "prescription": PrescriptionSystemMessage,
-        "report": ReportSystemMessage,
-        "health-tip": HealthTipSystemMessage,
-        "care-provider": CareProviderSystemMessage,
-    }
+    SAFE_LIMIT = int(MAX_MODEL_TOKENS * 0.5)
+    PATIENT_BATCH_SIZE = 10
 
     def __init__(
         self,
         context_builder: AIConversationContextBuilder,
-        conversation_type: AiConversationTypeLiteral = "other",
         ai_model_provider: AIModelProviderLiteral = "openai",
         selected_ai_model: Union[
-            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
+            OpenAIModelLiteral, GeminiAIModelLiteral
         ] = "gpt-4.1-mini",
     ):
         from lib.dependencies.service_dependencies import (
@@ -100,8 +65,8 @@ class AIConversationServiceV1:
         self.context_batcher = AIConversationContextBatcher(
             context_builder=context_builder,
             model_name=selected_ai_model,
-            max_tokens=48000,
-            patient_batch_size=10,
+            max_tokens=self.SAFE_LIMIT,
+            patient_batch_size=self.PATIENT_BATCH_SIZE,
         )
 
         self.token_usage_service = get_token_usage_service()
@@ -118,13 +83,6 @@ class AIConversationServiceV1:
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
-        elif ai_model_provider == "perplexity":
-            self.chat_model = ChatPerplexity(
-                api_key=SecretStr(str(config("PERPLEXITY_API_KEY"))),
-                model=self.selected_ai_model,
-                temperature=0.5,
-                timeout=200,
-            )
         else:
             self.chat_model = ChatGoogleGenerativeAI(
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
@@ -138,77 +96,103 @@ class AIConversationServiceV1:
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
         )
-        self.system_message = self._get_initial_system_message(
-            conversation_type, format_instructions
+        self.system_message = BaseSystemMessage().get_system_message(
+            format_instructions=format_instructions
         )
-
-    def _get_initial_system_message(
-        self,
-        conversation_type: AiConversationTypeLiteral,
-        format_instructions: Optional[str] = None,
-    ) -> SystemMessage:
-        return self._SYSTEM_MESSAGE_MAP.get(
-            conversation_type, BaseSystemMessage
-        )().get_system_message(format_instructions=format_instructions)
 
     async def add_message_to_conversation(
         self,
-        user_id: str,
-        user_type: ProfileTypeEnum,
+        sender_id: str,
+        sender_type: SenderTypeLiteral,
         conversation_id: str,
-        conversation_type: AiConversationTypeLiteral,
-        role: AiConversationRoleLiteral,
+        conversation_type: str,
+        role: RoleLiteral,
         content: str,
-        message_type: AiConversationMessageTypeLiteral = "text",
-        exclude_from_frontend: bool = False,
+        message_type: MessageTypeLiteral = "text",
+        hidden_from_ui: bool = False,
         follow_up_questions: Optional[List[str]] = None,
         metadata: Optional[Dict] = None,
+        status: MessageStatusLiteral = "pending",
+        error_message: Optional[str] = None,
+        model: Optional[str] = None,
+        token_usage: Optional[Dict[str, int]] = None,
+        latency_ms: Optional[int] = None,
     ):
-        message_data = AiConversationMessageSchema(
-            user_id=user_id,
-            user_type=user_type,
-            conversation_id=conversation_id,
-            conversation_type=conversation_type,
-            role=role,
-            content=content,
-            message_type=message_type,
-            exclude_from_frontend=exclude_from_frontend,
-            follow_up_questions=follow_up_questions,
-            metadata=metadata,
-        ).model_dump()
+        try:
+            message_data = AiConversationMessageV1Schema(
+                sender_id=sender_id,
+                sender_type=sender_type,
+                conversation_id=conversation_id,
+                conversation_type=conversation_type,
+                role=role,
+                content=content,
+                message_type=message_type,
+                hidden_from_ui=hidden_from_ui,
+                follow_up_questions=follow_up_questions,
+                metadata=metadata,
+                status=status,
+                error_message=error_message,
+                model=model,
+                token_usage=token_usage,
+                latency_ms=latency_ms,
+            ).model_dump()
 
-        result = await self.ai_messages_collection.insert_one(message_data)  # type: ignore
-        message_data["_id"] = str(result.inserted_id)
-        return message_data
+            result = await self.ai_messages_collection.insert_one(message_data)  # type: ignore
+            message_data["_id"] = str(result.inserted_id)
+            return message_data
 
-    def _enforce_alternation(self, messages: list) -> list:
-        filtered = [messages[0]]  # Keep system message
-        for msg in messages[1:]:
-            if not filtered:
-                filtered.append(msg)
-                continue
+        except ValidationError as e:
+            print(f"[AIConversationServiceV1] Validation error: {e}")
+            raise
+        except Exception as e:
+            print(f"[AIConversationServiceV1] Failed to insert message: {e}")
+            raise
 
-            last_type = filtered[-1].type
-            if msg.type != last_type:  # Only add if alternates
-                filtered.append(msg)
-        return filtered
+    async def fetch_conversation_messages(
+        self,
+        conversation_id: str,
+        hidden_only: Optional[bool] = False,
+        limit: Optional[int] = 100,
+        offset: Optional[int] = 0,
+    ) -> List[Any]:
+        filters: Any = {"conversation_id": conversation_id}
+
+        if hidden_only:
+            filters["hidden_from_ui"] = True
+
+        pipeline = [
+            {"$match": filters},
+            {"$sort": {"created_at": 1}},
+            {"$skip": offset},
+            {"$limit": limit},
+            {"$addFields": {"_id": {"$toString": "$_id"}}},
+        ]
+
+        messages_cursor = self.ai_messages_collection.aggregate(pipeline)  # type: ignore
+        return await messages_cursor.to_list(length=None)
 
     async def generate_response(
         self,
         patient_ids: List[str],
-        user_id: str,
-        user_type: ProfileTypeEnum,
+        sender_id: str,
+        sender_type: SenderTypeLiteral,
         conversation_id: str,
         human_input: str,
+        api_endpoint: str,
     ):
+        start_time = time.monotonic()
+        ai_message_data = None
+
         try:
+            # Log user message
             await self.add_message_to_conversation(
-                user_id,
-                user_type,
-                conversation_id,
-                "care-provider",
-                "human",
-                human_input,
+                sender_id=sender_id,
+                sender_type=sender_type,
+                conversation_id=conversation_id,
+                conversation_type="care-provider",
+                role="human",
+                content=human_input,
+                status="success",
             )
 
             all_batch_responses: list[dict] = []
@@ -237,9 +221,6 @@ class AIConversationServiceV1:
                     HumanMessage(content=human_input),
                 ]
 
-                if self.ai_model_provider == "perplexity":
-                    messages = self._enforce_alternation(messages)
-
                 ai_response: Any = self.structured_model.invoke(input=messages)
                 parsed: AIResponse = ai_response.get("parsed", {})
                 usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
@@ -260,6 +241,7 @@ class AIConversationServiceV1:
 
             print(all_batch_responses)
 
+            # Summarize or fallback
             if all_batch_responses:
                 # ---- Only summarize if multiple batches ----
                 if len(all_batch_responses) > 1:
@@ -287,10 +269,12 @@ class AIConversationServiceV1:
                     tags=[],
                 )
 
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+
             # ---- Save AI message ----
             ai_message_data = await self.add_message_to_conversation(
-                user_id=user_id,
-                user_type=user_type,
+                sender_id="system",
+                sender_type="ai",
                 conversation_id=conversation_id,
                 conversation_type="care-provider",
                 role="ai",
@@ -301,13 +285,17 @@ class AIConversationServiceV1:
                     "confidence_score": summary_parsed.confidence_score,
                     "tags": summary_parsed.tags,
                 },
+                status="success",
+                model=self.selected_ai_model,
+                token_usage=total_token_usage,
+                latency_ms=latency_ms,
             )
 
             # ---- Log total token usage ----
             if total_token_usage:
                 await self.token_usage_service.log_usage(
-                    user_id=user_id,
-                    user_type=user_type,
+                    user_id=sender_id,
+                    user_type=sender_type,
                     input_tokens=total_token_usage["input_tokens"],
                     output_tokens=total_token_usage["output_tokens"],
                     cached_input_tokens=total_token_usage.get(
@@ -315,7 +303,7 @@ class AIConversationServiceV1:
                     ),
                     model_used=self.selected_ai_model,
                     model_provider=self.ai_model_provider,
-                    api_endpoint="/care-provider/ai/conversation/ask",
+                    api_endpoint=api_endpoint,
                 )  # type: ignore
 
             return ai_message_data
@@ -323,6 +311,23 @@ class AIConversationServiceV1:
             print(
                 f"[AIConversationServiceV1] Error generating AI response: {e}"
             )
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+
+            # 🧨 Save failed AI message
+            await self.add_message_to_conversation(
+                sender_id="system",
+                sender_type="ai",
+                conversation_id=conversation_id,
+                conversation_type="care-provider",
+                role="ai",
+                content="Failed to generate AI response.",
+                status="failed",
+                error_message=str(e),
+                model=self.selected_ai_model,
+                latency_ms=latency_ms,
+                hidden_from_ui=True,
+            )
+
             raise_http_exception(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "Failed to generate AI response.",
