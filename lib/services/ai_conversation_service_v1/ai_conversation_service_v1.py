@@ -4,6 +4,7 @@ from typing import Dict, Union
 
 from langchain_openai import ChatOpenAI
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.types import (
     AIModelProviderLiteral,
     GeminiAIModelLiteral,
@@ -189,7 +190,7 @@ class AIConversationServiceV1:
                 sender_id=sender_id,
                 sender_type=sender_type,
                 conversation_id=conversation_id,
-                conversation_type="care-provider",
+                conversation_type="care_provider",
                 role="human",
                 content=human_input,
                 status="success",
@@ -250,8 +251,6 @@ class AIConversationServiceV1:
                     )
                     summary_parsed: AIResponse = summarized.get("parsed", {})
                     summary_usage = getattr(summarized["raw"], "usage_metadata", {}) or {}  # type: ignore
-
-                    # Accumulate summary token usage
                     self._accumulate_usage(total_token_usage, summary_usage)
                 else:
                     batch = all_batch_responses[0]
@@ -276,7 +275,7 @@ class AIConversationServiceV1:
                 sender_id="system",
                 sender_type="ai",
                 conversation_id=conversation_id,
-                conversation_type="care-provider",
+                conversation_type="care_provider",
                 role="ai",
                 content=summary_parsed.response,
                 message_type="markdown",
@@ -295,7 +294,7 @@ class AIConversationServiceV1:
             if total_token_usage:
                 await self.token_usage_service.log_usage(
                     user_id=sender_id,
-                    user_type=sender_type,
+                    user_type=ProfileTypeEnum.CARE_PROVIDER,
                     input_tokens=total_token_usage["input_tokens"],
                     output_tokens=total_token_usage["output_tokens"],
                     cached_input_tokens=total_token_usage.get(
@@ -318,7 +317,7 @@ class AIConversationServiceV1:
                 sender_id="system",
                 sender_type="ai",
                 conversation_id=conversation_id,
-                conversation_type="care-provider",
+                conversation_type="care_provider",
                 role="ai",
                 content="Failed to generate AI response.",
                 status="failed",
