@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 
 
-
-from rest_server.ai_conversations.router import \
-    router as ai_conversations_router
+from rest_server.ai_conversations.router import (
+    router as ai_conversations_router,
+)
+from rest_server.ai.router import router as ai_router
 from rest_server.auth import auth
 from rest_server.care_provider.router import router as care_providers_router
 from rest_server.chats.router import router as chats_router
@@ -62,6 +63,7 @@ def import_routes(app: FastAPI) -> None:
     # Ai Conversation
     ###########################################################################
     app.include_router(ai_conversations_router)
+    app.include_router(ai_router)
 
     ###########################################################################
     # File Upload

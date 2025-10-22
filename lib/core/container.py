@@ -19,6 +19,15 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
+)
+from lib.services.ai_conversation_service_v1.context_builder import (
+    AIConversationContextBuilder,
+)
+from lib.services.ai_conversation_service_v1.context_resolver import (
+    AIConversationContextResolver,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -65,6 +74,9 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
@@ -198,13 +210,14 @@ container.register(
 )
 
 
-# CacheStores
+# CacheStore
 for namespace in [
     "fitness_sync",
     "user_otp",
-    "user_sessions",
+    "user_session",
     "libreview_sync",
     "ai_conversation_intent_context",
+    "patient_profile",
 ]:
     container.register(
         namespace,
@@ -244,6 +257,10 @@ container.register(
         ),
         chat_management_service=cast(
             ChatManagementService, container.resolve(ChatManagementService)
+        ),
+        profile_vector_service=cast(
+            PatientProfileVectorService,
+            container.resolve(PatientProfileVectorService),
         ),
     ),
 )
@@ -639,6 +656,16 @@ container.register(
     ),
 )
 
+# 🔹 Patient Profile Vector Service
+container.register(
+    PatientProfileVectorService,
+    lambda: PatientProfileVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
+# 🔹 Intent Cache
 container.register(
     IntentCache,
     lambda: IntentCache(
@@ -654,6 +681,51 @@ container.register(
     lambda: QdrantSearchEngine(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
         intent_cache=cast(IntentCache, container.resolve(IntentCache)),
+    ),
+)
+
+# 🔹 AI Conversation V1
+container.register(
+    AIConversationServiceV1,
+    lambda: AIConversationServiceV1(
+        context_builder=cast(
+            AIConversationContextBuilder,
+            container.resolve(AIConversationContextBuilder),
+        )
+    ),
+)
+
+# 🔹 AI Conversation Context Builder
+container.register(
+    AIConversationContextBuilder,
+    lambda: AIConversationContextBuilder(
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        ai_messages_collection=cast(
+            MongoStore,
+            container.resolve("ai_conversation_messages_collection"),
+        ),
+        qdrant_search_engine=cast(
+            QdrantSearchEngine, container.resolve(QdrantSearchEngine)
+        ),
+        context_resolver=cast(
+            AIConversationContextResolver,
+            container.resolve(AIConversationContextResolver),
+        ),
+    ),
+)
+
+# 🔹 AI Conversation Context Resolver
+container.register(
+    AIConversationContextResolver,
+    lambda: AIConversationContextResolver(
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        patient_profile_store=cast(
+            CacheStore, container.resolve("patient_profile")
+        ),
     ),
 )
 

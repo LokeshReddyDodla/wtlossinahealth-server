@@ -8,6 +8,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
 )
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -56,6 +59,9 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
+    PatientProfileVectorService,
+)
 from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
@@ -300,6 +306,12 @@ def get_libreview_service() -> LibreViewService:
     return cast(LibreViewService, container.resolve(LibreViewService))
 
 
+def get_ai_conversation_service_v1() -> AIConversationServiceV1:
+    return cast(
+        AIConversationServiceV1, container.resolve(AIConversationServiceV1)
+    )
+
+
 def get_qdrant_search_engine() -> QdrantSearchEngine:
     return cast(QdrantSearchEngine, container.resolve(QdrantSearchEngine))
 
@@ -314,6 +326,13 @@ def get_meal_vector_service() -> MealVectorService:
 
 def get_smbg_vector_service() -> SMBGVectorService:
     return cast(SMBGVectorService, container.resolve(SMBGVectorService))
+
+
+def get_patient_profile_vector_service() -> PatientProfileVectorService:
+    return cast(
+        PatientProfileVectorService,
+        container.resolve(PatientProfileVectorService),
+    )
 
 
 def get_ai_conversation_messages_collection():

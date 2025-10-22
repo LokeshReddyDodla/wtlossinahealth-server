@@ -1,11 +1,14 @@
-from typing import Any, Optional
+from typing import Any, List, Optional
 from fastapi import Body, Depends, HTTPException, Request, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.types import AiConversationTypeLiteral
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_qdrant_search_engine
+from lib.dependencies.service_dependencies import (
+    get_ai_conversation_service_v1,
+    get_qdrant_search_engine,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -13,6 +16,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 )
 from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
     AiConversationServiceV2,
+)
+from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
+    AIConversationServiceV1,
 )
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
@@ -95,52 +101,6 @@ async def send_ai_conversation_careprovider_message(
             conversation_type=conversation_type,
             human_input=human_input,
             additional_context=additional_context,
-        )
-
-        return SuccessResponse(
-            message="AI response generated successfully.",
-            data=ai_message_data,
-        )
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Failed to generate AI response.",
-            detail=str(e),
-        )
-
-
-@router.post("/care-provider/respond/v2", response_model=SuccessResponse)
-async def send_ai_conversation_careprovider_message(
-    request: Request,
-    patient_id: str,
-    conversation_id: str,
-    human_input: str,
-    qdrant_service_engine: QdrantSearchEngine = Depends(
-        get_qdrant_search_engine
-    ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.CREATE,
-            CareProviderFeature.AI_CHATS,
-        )
-    ),
-):
-    try:
-        ai_conversation_service = AiConversationServiceV2(
-            qdrant_search_engine=qdrant_service_engine,
-            selected_ai_model="gpt-4o-mini",
-            ai_model_provider="openai",
-        )
-
-        # Generate response from the AI model
-        ai_message_data = await ai_conversation_service.generate_response(
-            patient_id=patient_id,
-            user_id=str(current_care_provider.care_provider_id),
-            user_type=ProfileTypeEnum.CARE_PROVIDER,
-            conversation_id=conversation_id,
-            human_input=human_input,
         )
 
         return SuccessResponse(
