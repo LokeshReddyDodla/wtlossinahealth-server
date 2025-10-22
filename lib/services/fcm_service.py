@@ -1,7 +1,5 @@
 from typing import Optional, cast
 from uuid import UUID
-import os
-import logging
 
 import firebase_admin
 from decouple import config
@@ -19,17 +17,14 @@ from lib.core.types import (
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.json_utils import ensure_string_values
 
-logger = logging.getLogger(__name__)
-
 
 class FCMService:
     def __init__(
         self,
         project: FCMProjectEnum = FCMProjectEnum.PATIENT_APP,
     ):
-        self.json_key_path = config("FCM_JSON_KEY_PATH", default=None)
+        self.json_key_path = config("FCM_JSON_KEY_PATH")
         self.project_id = project.value
-        self.fcm_enabled = False
         self._initialize_firebase()
 
     def _load_credentials(self, json_key_path: str):
@@ -42,23 +37,9 @@ class FCMService:
 
     def _initialize_firebase(self):
         """Initialize the Firebase app using the service account JSON key."""
-        if not self.json_key_path:
-            logger.warning("FCM_JSON_KEY_PATH not configured. FCM notifications disabled.")
-            return
-        
-        if not os.path.exists(self.json_key_path):
-            logger.warning(f"FCM credentials file not found: {self.json_key_path}. FCM notifications disabled.")
-            return
-        
-        try:
-            if not firebase_admin._apps:
-                cred = credentials.Certificate(self.json_key_path)
-                firebase_admin.initialize_app(cred)
-            self.fcm_enabled = True
-            logger.info("FCM initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize FCM: {str(e)}. FCM notifications disabled.")
-            self.fcm_enabled = False
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(self.json_key_path)
+            firebase_admin.initialize_app(cred)
 
     async def send_fcm_notification(
         self,
@@ -70,17 +51,12 @@ class FCMService:
         group_key: FCMNotificationGroupKeyLiteral = "other_group",
     ):
         """Send an FCM notification to a single device using firebase-admin."""
-        if not self.fcm_enabled:
-            logger.warning(f"FCM not enabled. Skipping notification: {title}")
-            return None
-        
         message = self._build_message(
             fcm_token, title, body, channel_key, group_key, data=data
         )
         try:
             response = messaging.send(message)
             print(f"Notification sent to {fcm_token}. Response: {response}")
-            return response
         except Exception as e:
             print(
                 f"Failed to send notification to {fcm_token}. Error: {str(e)}"
@@ -138,10 +114,6 @@ class FCMService:
         data: Optional[dict] = {},
     ):
         """Send a batch of FCM notifications to all devices of a user."""
-        
-        if not self.fcm_enabled:
-            logger.warning(f"FCM not enabled. Skipping notification to user {user_id}: {title}")
-            return
 
         try:
             user_device_service = UserDeviceService(
