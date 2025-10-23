@@ -11,7 +11,6 @@ services:
       - aihealth-mongo
       - aihealth-clickhouse
       - aihealth-qdrant
-    restart: no
     ports:
       - 8000:8000
     environment:
@@ -33,16 +32,24 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
-
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
       # - ./src:/src # for dev use only
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
 
   aihealth-celery:
     container_name: aihealth-celery
     image: aihealth-api:latest
-    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --pool=custom --loglevel=info
+    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --pool=custom --loglevel=info --concurrency=2
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
@@ -59,6 +66,11 @@ services:
       - aihealth-api
     restart: unless-stopped
     user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1.5G
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat
@@ -74,22 +86,30 @@ services:
       - aihealth-redis
       - aihealth-api
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 512M
 
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
     command:
       - "-- requirepass ${REDIS_PASSWORD}"
-    restart: no
     ports:
       - 6379:6379
     volumes:
       - redis_data:/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   aihealth-postgres:
     container_name: aihealth-postgres
     image: postgres:16.4-alpine
-    restart: no
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -98,11 +118,15 @@ services:
       - 5432:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   aihealth-mongo:
     container_name: aihealth-mongo
     image: mongo:latest
-    restart: no
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
@@ -113,6 +137,7 @@ services:
     volumes:
       - mongo_data:/data/db
       - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
+    restart: unless-stopped
     command:
       [
         "mongod",
@@ -135,17 +160,21 @@ services:
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
     image: clickhouse/clickhouse-server:latest
-    restart: unless-stopped
     ports:
       - 8123:8123 # HTTP interface
       - 9000:9000 # Native client
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.7"
+          memory: 1.5G
 
   aihealth-qdrant:
     container_name: aihealth-qdrant
     image: qdrant/qdrant:v1.11.0
-    restart: unless-stopped
     ports:
       - "6333:6333" # REST API
       - "6334:6334" # gRPC
@@ -154,6 +183,13 @@ services:
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
       QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__MAX_WORKERS: 2
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.7"
+          memory: 1.5G
 
   aihealth-nginx:
     container_name: aihealth-nginx
