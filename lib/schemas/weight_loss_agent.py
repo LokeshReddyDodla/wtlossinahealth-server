@@ -208,3 +208,17 @@ class InbodyReportAnalysisResult(BaseModel):
                 "stored_at": "2024-01-01T12:00:05"
             }
         }
+
+
+class ChatRequest(BaseModel):
+    """Schema for chat requests to the weight loss agent"""
+    question: str = Field(..., description="User's question or message", min_length=1)
+    conversation_id: Optional[str] = Field(None, description="Optional conversation ID for maintaining context")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question": "How is my weight loss progress this week?",
+                "conversation_id": "chat_123"
+            }
+        }

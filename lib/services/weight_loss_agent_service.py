@@ -746,7 +746,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
         # Get patient info from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            patient = await session.get(Patient, UUID(enrollment["patient_id"]))
+            result = await session.execute(
+                select(Patient).where(Patient.id == UUID(enrollment["patient_id"]))
+            )
+            patient = result.scalar_one_or_none()
 
         # Get recent daily reports (last 30 days)
         end_date = datetime.now()
