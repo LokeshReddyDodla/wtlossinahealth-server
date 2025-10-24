@@ -1257,6 +1257,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                         "$set": {
                             "measurements": measurements,
                             "health_indicators": health_indicators,
+                            "processed": True,  # Mark report as processed
+                            "measurements_count": measurements_created,
+                            "abnormal_indicators_count": indicators_created,
+                            "extraction_confidence": confidence_score,
                             "updated_at": datetime.now()
                         }
                     }

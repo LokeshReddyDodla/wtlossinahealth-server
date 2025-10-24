@@ -112,6 +112,8 @@ class InbodyReport(InbodyReportBase):
     extraction_confidence: Optional[float] = None
     processed: bool = False
     created_at: datetime
+    measurements_count: Optional[int] = 0
+    abnormal_indicators_count: Optional[int] = 0
     measurements: List[InbodyMeasurement] = Field(default_factory=list)
     health_indicators: List[HealthIndicator] = Field(default_factory=list)
 
