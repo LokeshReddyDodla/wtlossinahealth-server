@@ -86,6 +86,9 @@ from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 from lib.utils.smbg.processor import SMBGStatsProcessor
 
+# Weight Loss Agent Service
+from lib.services.weight_loss_agent_service import WeightLossAgentService
+
 
 def get_libreview_sync_queue() -> SQSService:
     return cast(SQSService, container.resolve("libreview_sync_queue"))
@@ -352,6 +355,22 @@ def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
 
 
+def get_weight_loss_enrollments_collection():
+    return container.resolve("weight_loss_enrollments_collection")
+
+
+def get_inbody_reports_collection():
+    return container.resolve("inbody_reports_collection")
+
+
+def get_weight_loss_interactions_collection():
+    return container.resolve("weight_loss_interactions_collection")
+
+
+def get_weight_loss_progress_analyses_collection():
+    return container.resolve("weight_loss_progress_analyses_collection")
+
+
 def get_patient_metrics_service() -> PatientMetricsService:
     return cast(
         PatientMetricsService, container.resolve(PatientMetricsService)
@@ -373,6 +392,12 @@ def get_cgm_metrics_service() -> CGMMetricsService:
 def get_fitness_metrics_service() -> FitnessMetricsService:
     return cast(
         FitnessMetricsService, container.resolve(FitnessMetricsService)
+    )
+
+
+def get_weight_loss_agent_service() -> WeightLossAgentService:
+    return cast(
+        WeightLossAgentService, container.resolve(WeightLossAgentService)
     )
 
 

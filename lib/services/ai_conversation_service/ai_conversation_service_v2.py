@@ -49,6 +49,7 @@ from .system_messages.prescription_system_message import (
 from .system_messages.report_system_message import ReportSystemMessage
 from .system_messages.sleep_system_message import SleepSystemMessage
 from .system_messages.smbg_system_message import SMBGSystemMessage
+from .system_messages.weight_loss_agent_system_message import WeightLossAgentSystemMessage
 
 
 class AiConversationServiceV2:
@@ -62,6 +63,7 @@ class AiConversationServiceV2:
         "report": ReportSystemMessage,
         "health-tip": HealthTipSystemMessage,
         "care-provider": CareProviderSystemMessage,
+        "weight-loss-agent": WeightLossAgentSystemMessage,  # Add this
     }
 
     def __init__(

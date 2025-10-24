@@ -1,6 +1,8 @@
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
-from lib.core.postgres_store import Base, PostgresStore, engine
+from lib.core.postgres_store import PostgresStore, engine
+from lib.models import Base
+
 from lib.core.qdrant_store import QdrantStore
 
 
@@ -18,3 +20,6 @@ def initialize_databases(app):
     app.state.mongo_store = MongoStore()
     app.state.clickhouse_store = ClickHouseStore()
     app.state.qdrant_store = QdrantStore()
+
+   
+    
