@@ -58,14 +58,14 @@ async def generate_cgm_report(
             print(f"❌ Failed to save CGM reports for {patient_id}")
             return
 
-        day_wise_reports = await service.fetch_day_wise_reports(
-            patient_id, start_date, end_date
-        )
-        if not day_wise_reports:
-            print(f"⚠️ No day-wise CGM reports found for {patient_id}")
-            return
+        # day_wise_reports = await service.fetch_day_wise_reports(
+        #     patient_id, start_date, end_date
+        # )
+        # if not day_wise_reports:
+        #     print(f"⚠️ No day-wise CGM reports found for {patient_id}")
+        #     return
 
-        generate_cgm_vector.delay(patient_id, report_id, day_wise_reports)
+        # generate_cgm_vector.delay(patient_id, report_id, day_wise_reports)
 
         print(
             f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
