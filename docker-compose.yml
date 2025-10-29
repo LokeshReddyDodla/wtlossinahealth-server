@@ -166,11 +166,11 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "0.7"
-          memory: 1.5G
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "0.7"
+    #       memory: 1.5G
 
   aihealth-qdrant:
     container_name: aihealth-qdrant
