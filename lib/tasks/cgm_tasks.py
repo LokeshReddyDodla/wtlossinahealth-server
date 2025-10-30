@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from lib.models.patient import Patient
 
 
-@shared_task(queue="long_running", rate_limit="20/m")
+@shared_task(rate_limit="20/m")
 def generate_cgm_reports_for_patient(
     patient_id: str, periods: List[Tuple[str, str]]
 ):
@@ -32,7 +32,7 @@ def generate_cgm_reports_for_patient(
         )
 
 
-@shared_task(queue="long_running", rate_limit="30/m")
+@shared_task(rate_limit="30/m")
 async def generate_cgm_report(
     patient_id: str,
     start_date: datetime,
@@ -73,7 +73,7 @@ async def generate_cgm_report(
         )
 
 
-@shared_task(queue="long_running", rate_limit="5/m")
+@shared_task(rate_limit="5/m")
 async def sync_all_daily_cgm_reports():
 
     from lib.dependencies.service_dependencies import (
@@ -93,7 +93,6 @@ async def sync_all_daily_cgm_reports():
         last_synced = cache_store.get_key(patient_id)
 
         start_date = last_synced or patient.created_at
-        print("==> start_date: ", start_date)
         end_date = datetime.now()
 
         task_manager.trigger_task_once(
@@ -105,11 +104,11 @@ async def sync_all_daily_cgm_reports():
                 start_date,
                 end_date,
             ],
-            task_id=f"cgm_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
         )
 
 
-@shared_task(queue="long_running", rate_limit="20/m")
+@shared_task(rate_limit="20/m")
 async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
     try:
         from lib.dependencies.service_dependencies import (
@@ -141,14 +140,14 @@ async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
                 start_date,
                 end_date,
             ],
-            task_id=f"cgm_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
         )
 
     except Exception as error:
         print(f"❌ Failed to generate CGM vector for {patient_id}: {error}")
 
 
-@shared_task(queue="long_running", rate_limit="10/m")
+@shared_task(rate_limit="10/m")
 async def sync_daily_cgm_reports_for_patient(
     patient_id: str,
     patient_age: int,

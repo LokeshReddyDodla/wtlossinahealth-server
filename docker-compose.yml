@@ -46,8 +46,8 @@ services:
           cpus: "1.0"
           memory: 1G
 
-  aihealth-celery-default:
-    container_name: aihealth-celery-default
+  aihealth-celery:
+    container_name: aihealth-celery
     image: aihealth-api:latest
     command: >
       /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
@@ -66,31 +66,6 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-api
-    restart: unless-stopped
-    user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1.5G
-
-  aihealth-celery-long:
-    container_name: aihealth-celery-long
-    image: aihealth-api:latest
-    command: >
-      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
-      --pool=custom 
-      --concurrency=4 
-      --heartbeat-interval=10
-      -Q long_running
-      --loglevel=info
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
-    volumes:
-      - celery_logs:/var/log/celery
-      - celery_data:/var/lib/celery
     restart: unless-stopped
     user: "1000:1000"
     deploy:
