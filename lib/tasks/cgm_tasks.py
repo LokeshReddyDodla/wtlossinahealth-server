@@ -2,9 +2,12 @@ from datetime import datetime
 from typing import List, Tuple
 
 from celery import shared_task
+from sqlalchemy.future import select
+
+from lib.models.patient import Patient
 
 
-@shared_task
+@shared_task(rate_limit="20/m")
 def generate_cgm_reports_for_patient(
     patient_id: str, periods: List[Tuple[str, str]]
 ):
@@ -29,7 +32,7 @@ def generate_cgm_reports_for_patient(
         )
 
 
-@shared_task
+@shared_task(rate_limit="30/m")
 async def generate_cgm_report(
     patient_id: str,
     start_date: datetime,
@@ -58,14 +61,7 @@ async def generate_cgm_report(
             print(f"❌ Failed to save CGM reports for {patient_id}")
             return
 
-        # day_wise_reports = await service.fetch_day_wise_reports(
-        #     patient_id, start_date, end_date
-        # )
-        # if not day_wise_reports:
-        #     print(f"⚠️ No day-wise CGM reports found for {patient_id}")
-        #     return
-
-        # generate_cgm_vector.delay(patient_id, report_id, day_wise_reports)
+        sync_daily_cgm_reports_for_single_patient.delay(patient_id)  # type: ignore
 
         print(
             f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
@@ -77,32 +73,114 @@ async def generate_cgm_report(
         )
 
 
-@shared_task
-async def generate_cgm_vector(patient_id, report_id, day_wise_reports):
+@shared_task(rate_limit="5/m")
+async def sync_all_daily_cgm_reports():
+
+    from lib.dependencies.service_dependencies import (
+        get_cgm_qdrant_sync_cache_store,
+        get_libreview_service,
+        get_celery_task_manager,
+    )
+
+    libreview_service = get_libreview_service()
+    cache_store = get_cgm_qdrant_sync_cache_store()
+    task_manager = get_celery_task_manager()
+
+    patients = await libreview_service.get_patients_with_libreview()  # type: ignore
+
+    for patient in patients:
+        patient_id = str(patient.patient_id)
+        last_synced = cache_store.get_key(patient_id)
+
+        start_date = last_synced or patient.created_at
+        end_date = datetime.now()
+
+        task_manager.trigger_task_once(
+            "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
+            args=[
+                patient_id,
+                patient.age,
+                patient.gender,
+                start_date,
+                end_date,
+            ],
+            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+        )
+
+
+@shared_task(rate_limit="20/m")
+async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
     try:
         from lib.dependencies.service_dependencies import (
-            get_cgm_vector_service,
+            get_celery_task_manager,
             get_patient_profile_service,
+            get_cgm_qdrant_sync_cache_store,
         )
 
-        vector_service = get_cgm_vector_service()
         patient_service = get_patient_profile_service()
+        cache_store = get_cgm_qdrant_sync_cache_store()
+        task_manager = get_celery_task_manager()
 
-        patient_profile = await patient_service.fetch_patient_profile(
-            patient_id
-        )
-        if not patient_profile:
+        patient = await patient_service.fetch_patient_profile(patient_id)
+        if not patient:
             print(f"⚠️ Patient profile not found for {patient_id}")
             return
 
-        await vector_service.upsert_report(
-            patient_id,
-            report_id,
-            day_wise_reports,
-            patient_profile.age,
-            patient_profile.gender,
+        last_synced = cache_store.get_key(patient_id)
+
+        start_date = last_synced or patient.created_at
+        end_date = datetime.now()
+
+        task_manager.trigger_task_once(
+            "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
+            args=[
+                patient_id,
+                patient.age,
+                patient.gender,
+                start_date,
+                end_date,
+            ],
+            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
         )
-        print(f"✅ Successfully generated CGM vector for {patient_id}")
 
     except Exception as error:
         print(f"❌ Failed to generate CGM vector for {patient_id}: {error}")
+
+
+@shared_task(rate_limit="10/m")
+async def sync_daily_cgm_reports_for_patient(
+    patient_id: str,
+    patient_age: int,
+    patient_gender: str,
+    start_date: datetime,
+    end_date: datetime,
+):
+    from lib.dependencies.service_dependencies import (
+        get_cgm_report_service,
+        get_cgm_vector_service,
+        get_cgm_qdrant_sync_cache_store,
+    )
+
+    report_service = get_cgm_report_service()
+    vector_service = get_cgm_vector_service()
+    cache_store = get_cgm_qdrant_sync_cache_store()
+
+    reports = await report_service.fetch_day_wise_reports(
+        patient_id=patient_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if not reports:
+        print(f"⚠️ No new daily reports to sync for {patient_id}")
+        return
+
+    await vector_service.upsert_report(
+        patient_id,
+        reports,
+        patient_age,
+        patient_gender,
+    )
+
+    cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
+    print(f"✅ Synced {len(reports)} daily reports to Qdrant for {patient_id}")

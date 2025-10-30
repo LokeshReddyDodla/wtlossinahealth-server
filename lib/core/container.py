@@ -103,7 +103,7 @@ from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 from lib.utils.smbg.processor import SMBGStatsProcessor
-from lib.services.cgm_report_service_v2.src.cgm_vector import CGMVectorService
+from lib.services.cgm_vector_service import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
@@ -218,6 +218,7 @@ for namespace in [
     "libreview_sync",
     "ai_conversation_intent_context",
     "patient_profile",
+    "cgm_qdrant_sync",
 ]:
     container.register(
         namespace,

@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import date, datetime, time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats
 from lib.utils.cgm.processor import CGMReportType
