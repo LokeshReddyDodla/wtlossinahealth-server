@@ -1,5 +1,6 @@
 from typing import cast
 
+from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -16,7 +17,7 @@ from lib.services.care_provider_profile_service import (
 )
 from lib.services.cgm_report_service import CGMReportService
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
+from lib.services.cgm_vector_service import (
     CGMVectorService,
 )
 from lib.services.cgm_report_vector_service import CGMReportVectorService
@@ -381,3 +382,7 @@ def get_file_content_extractor_service() -> FileContentExtractorService:
         FileContentExtractorService,
         container.resolve(FileContentExtractorService),
     )
+
+
+def get_cgm_qdrant_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("cgm_qdrant_sync"))

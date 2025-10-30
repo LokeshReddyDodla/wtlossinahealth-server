@@ -40,7 +40,7 @@ from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
 from lib.services.cgm_report_service import CGMReportService
 
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
+from lib.services.cgm_vector_service import (
     CGMVectorService,
 )
 
