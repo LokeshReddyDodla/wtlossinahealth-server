@@ -90,10 +90,10 @@ async def sync_all_daily_cgm_reports():
 
     for patient in patients:
         patient_id = str(patient.patient_id)
-        last_synced = cache_store.get_key(patient_id)
 
-        start_date = last_synced or patient.created_at
-        end_date = datetime.now()
+        start_date, end_date = _get_sync_dates(
+            cache_store, patient_id, patient.created_at
+        )
 
         task_manager.trigger_task_once(
             "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
@@ -126,10 +126,9 @@ async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
             print(f"⚠️ Patient profile not found for {patient_id}")
             return
 
-        last_synced = cache_store.get_key(patient_id)
-
-        start_date = last_synced or patient.created_at
-        end_date = datetime.now()
+        start_date, end_date = _get_sync_dates(
+            cache_store, patient_id, patient.created_at
+        )
 
         task_manager.trigger_task_once(
             "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
@@ -184,3 +183,23 @@ async def sync_daily_cgm_reports_for_patient(
 
     cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
     print(f"✅ Synced {len(reports)} daily reports to Qdrant for {patient_id}")
+
+
+def _get_sync_dates(
+    cache_store, patient_id: str, patient_created_at: datetime
+) -> tuple[datetime, datetime]:
+    last_synced = cache_store.get_key(patient_id)
+
+    if last_synced:
+        try:
+            if isinstance(last_synced, bytes):
+                last_synced = datetime.fromisoformat(last_synced.decode())
+            elif isinstance(last_synced, str):
+                last_synced = datetime.fromisoformat(last_synced)
+        except Exception:
+            last_synced = None
+
+    start_date = last_synced or patient_created_at
+    end_date = datetime.now()
+
+    return start_date, end_date
