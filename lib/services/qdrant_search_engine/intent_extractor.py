@@ -23,6 +23,7 @@ class IntentExtractor:
     ) -> SearchIntent:
         current_date = datetime.now(timezone.utc).isoformat()
 
+        print("==> context_intents: ", context_intents)
         if context_intents:
             # Serialize context for the LLM
             context_json = json.dumps(
