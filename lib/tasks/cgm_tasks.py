@@ -61,7 +61,7 @@ async def generate_cgm_report(
             print(f"❌ Failed to save CGM reports for {patient_id}")
             return
 
-        sync_daily_cgm_reports_for_single_patient.delay(patient_id)  # type: ignore
+        # sync_daily_cgm_reports_for_single_patient.delay(patient_id)  # type: ignore
 
         print(
             f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
