@@ -1,7 +1,7 @@
 from celery import shared_task
 
 
-@shared_task
+@shared_task(queue="default")
 async def process_smbg_batch(batch: list[dict]):
     try:
         from lib.dependencies.service_dependencies import (
@@ -31,7 +31,7 @@ async def process_smbg_batch(batch: list[dict]):
         print(f"❌ Error processing batch: {e}")
 
 
-@shared_task
+@shared_task(queue="default")
 async def process_profile_batch(batch: list[dict]):
     try:
         from lib.dependencies.service_dependencies import (

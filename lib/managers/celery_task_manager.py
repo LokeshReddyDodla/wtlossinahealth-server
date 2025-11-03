@@ -1,3 +1,4 @@
+from typing import Optional
 from celery import Celery
 
 
@@ -35,13 +36,20 @@ class CeleryTaskManager:
         return False
 
     def trigger_task_once(
-        self, task_name: str, args: list, task_id: str, **kwargs
+        self,
+        task_name: str,
+        args: list,
+        task_id: str,
+        queue: Optional[str] = None,
+        **kwargs,
     ):
         """
         Trigger a task only if it's not already in the queue or running.
         """
         if not self.is_task_in_queue_or_running(task_id):
-            self.app.send_task(task_name, args=args, task_id=task_id, **kwargs)
+            self.app.send_task(
+                task_name, args=args, task_id=task_id, queue=queue, **kwargs
+            )
             print(f"🚀 Task '{task_name}' triggered with ID: {task_id}")
         else:
             print(
