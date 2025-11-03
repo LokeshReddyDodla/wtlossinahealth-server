@@ -6,7 +6,7 @@ from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.fitness.processor import FitnessReportType
 
 
-@shared_task
+@shared_task(queue="default")
 def generate_fitness_reports_for_patient(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
@@ -36,7 +36,7 @@ def generate_fitness_reports_for_patient(
         )
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
@@ -73,7 +73,7 @@ async def generate_fitness_report_for_month(
         )
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_fitness_report(
     patient_id: str,
     start_date: datetime,

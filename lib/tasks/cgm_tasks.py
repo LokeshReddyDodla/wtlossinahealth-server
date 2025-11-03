@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from lib.models.patient import Patient
 
 
-@shared_task(rate_limit="20/m")
+@shared_task(queue="cgm_reports", rate_limit="20/m")
 def generate_cgm_reports_for_patient(
     patient_id: str, periods: List[Tuple[str, str]]
 ):
@@ -20,6 +20,7 @@ def generate_cgm_reports_for_patient(
                 "lib.tasks.cgm_tasks.generate_cgm_report",
                 args=[patient_id, start_date, end_date],
                 task_id=f"{patient_id}_{start_date}_{end_date}",
+                queue="cgm_reports",
             )
 
             print(
@@ -32,7 +33,7 @@ def generate_cgm_reports_for_patient(
         )
 
 
-@shared_task(rate_limit="30/m")
+@shared_task(queue="cgm_reports", rate_limit="30/m")
 async def generate_cgm_report(
     patient_id: str,
     start_date: datetime,
@@ -73,7 +74,7 @@ async def generate_cgm_report(
         )
 
 
-@shared_task(rate_limit="5/m")
+@shared_task(queue="cgm_reports", rate_limit="5/m")
 async def sync_all_daily_cgm_reports():
 
     from lib.dependencies.service_dependencies import (
@@ -105,10 +106,11 @@ async def sync_all_daily_cgm_reports():
                 end_date,
             ],
             task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            queue="cgm_reports",
         )
 
 
-@shared_task(rate_limit="20/m")
+@shared_task(queue="cgm_reports", rate_limit="20/m")
 async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
     try:
         from lib.dependencies.service_dependencies import (
@@ -140,13 +142,14 @@ async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
                 end_date,
             ],
             task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            queue="cgm_reports",
         )
 
     except Exception as error:
         print(f"❌ Failed to generate CGM vector for {patient_id}: {error}")
 
 
-@shared_task(rate_limit="10/m")
+@shared_task(queue="cgm_reports", rate_limit="10/m")
 async def sync_daily_cgm_reports_for_patient(
     patient_id: str,
     patient_age: int,

@@ -9,7 +9,7 @@ from lib.services.libreview_service import LibreViewService
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, queue="default")
 async def sync_all_libreview(self):
     try:
         result = await _sync_all_libreview_async()

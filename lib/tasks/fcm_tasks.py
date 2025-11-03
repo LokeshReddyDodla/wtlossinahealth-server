@@ -1,7 +1,7 @@
 from celery import shared_task
 
 
-@shared_task
+@shared_task(queue="default")
 async def send_fcm_notification_task(participants, notification_info: dict):
 
     from lib.services.fcm_service import FCMService
