@@ -2,13 +2,10 @@ from datetime import datetime
 from typing import List, Tuple
 
 from celery import shared_task
-from sqlalchemy.future import select
-
-from lib.models.patient import Patient
 
 
 @shared_task(queue="cgm_reports", rate_limit="20/m")
-def generate_cgm_reports_for_patient(
+def trigger_cgm_report_generation_for_periods(
     patient_id: str, periods: List[Tuple[str, str]]
 ):
     from lib.dependencies.service_dependencies import get_celery_task_manager
@@ -17,7 +14,7 @@ def generate_cgm_reports_for_patient(
         task_manager = get_celery_task_manager()
         for start_date, end_date in reversed(periods):
             task_manager.trigger_task_once(
-                "lib.tasks.cgm_tasks.generate_cgm_report",
+                "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
                 task_id=f"{patient_id}_{start_date}_{end_date}",
                 queue="cgm_reports",
@@ -34,7 +31,7 @@ def generate_cgm_reports_for_patient(
 
 
 @shared_task(queue="cgm_reports", rate_limit="30/m")
-async def generate_cgm_report(
+async def generate_and_store_cgm_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
@@ -43,10 +40,12 @@ async def generate_cgm_report(
         from lib.dependencies.service_dependencies import (
             get_cgm_report_service,
             get_cgm_stats_processor,
+            get_cgm_sync_cache_store,
         )
 
         processor = get_cgm_stats_processor()
         service = get_cgm_report_service()
+        cache_store = get_cgm_sync_cache_store()
 
         reports = await processor.generate_report(
             patient_id, start_date, end_date
@@ -62,8 +61,9 @@ async def generate_cgm_report(
             print(f"❌ Failed to save CGM reports for {patient_id}")
             return
 
-        # sync_daily_cgm_reports_for_single_patient.delay(patient_id)  # type: ignore
+        # trigger_cgm_vector_upsert_for_patient.delay(patient_id)  # type: ignore
 
+        cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
         print(
             f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
         )
@@ -75,7 +75,7 @@ async def generate_cgm_report(
 
 
 @shared_task(queue="cgm_reports", rate_limit="5/m")
-async def sync_all_daily_cgm_reports():
+async def trigger_cgm_vector_upsert_for_all_patients():
 
     from lib.dependencies.service_dependencies import (
         get_cgm_qdrant_sync_cache_store,
@@ -97,7 +97,7 @@ async def sync_all_daily_cgm_reports():
         )
 
         task_manager.trigger_task_once(
-            "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
+            "lib.tasks.cgm_tasks.sync_patient_daily_cgm_reports_to_vector_store",
             args=[
                 patient_id,
                 patient.age,
@@ -111,7 +111,7 @@ async def sync_all_daily_cgm_reports():
 
 
 @shared_task(queue="cgm_reports", rate_limit="20/m")
-async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
+async def trigger_cgm_vector_upsert_for_patient(patient_id: str):
     try:
         from lib.dependencies.service_dependencies import (
             get_celery_task_manager,
@@ -133,7 +133,7 @@ async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
         )
 
         task_manager.trigger_task_once(
-            "lib.tasks.cgm_tasks.sync_daily_cgm_reports_for_patient",
+            "lib.tasks.cgm_tasks.sync_patient_daily_cgm_reports_to_vector_store",
             args=[
                 patient_id,
                 patient.age,
@@ -150,7 +150,7 @@ async def sync_daily_cgm_reports_for_single_patient(patient_id: str):
 
 
 @shared_task(queue="cgm_reports", rate_limit="10/m")
-async def sync_daily_cgm_reports_for_patient(
+async def sync_patient_daily_cgm_reports_to_vector_store(
     patient_id: str,
     patient_age: int,
     patient_gender: str,

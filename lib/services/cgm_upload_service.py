@@ -7,7 +7,7 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.patient_connected_app import PatientConnectedApp
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.tasks.cgm_tasks import generate_cgm_reports_for_patient
+from lib.tasks.cgm_tasks import trigger_cgm_report_generation_for_periods
 from lib.utils.cgm_utils import CGMDataUtils
 from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.future import select
@@ -120,7 +120,9 @@ class CGMUploadService:
                 connected_app.libreview.last_sync_timestamp = datetime.now()
                 await postgres_session.commit()
 
-            generate_cgm_reports_for_patient.delay(patient_id, report_periods)
+            trigger_cgm_report_generation_for_periods.delay(
+                patient_id, report_periods
+            )
 
         except Exception as e:
             raise_http_exception(
