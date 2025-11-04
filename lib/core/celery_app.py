@@ -21,14 +21,16 @@ celery.conf.update(
     beat_schedule={
         "sync-libreview-every-2-hours": {
             "task": "lib.tasks.libreview_tasks.sync_all_libreview",
-            "schedule": crontab(
-                minute="0", hour="10,13,16"
-            ),  # 10AM-4PM every 3h
-            # "schedule": crontab(
-            #     minute="0", hour="*/2"
-            # ),  # Every 2 hours at :00
+            "schedule": crontab(minute="0", hour="16"),  # 4:00 PM every day
             "options": {
-                "expires": 30 * 60,  # 30 minutes expiration
+                "expires": 60 * 60,  # 1 hour expiration
+            },
+        },
+        "trigger-cgm-vector-upsert-daily": {
+            "task": "lib.tasks.cgm_tasks.trigger_cgm_vector_upsert_for_all_patients",
+            "schedule": crontab(minute="0", hour="1"),  # 1:00 AM every day
+            "options": {
+                "expires": 60 * 60,  # 1 hour expiration
             },
         },
         "meal-reminder-breakfast": {

@@ -282,7 +282,7 @@ class CGMReportService:
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
-                "lib.tasks.cgm_tasks.generate_cgm_report",
+                "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
                 task_id=f"{patient_id}_{start_date}_{end_date}",
             )
