@@ -31,6 +31,7 @@ celery.conf.update(
             "schedule": crontab(minute="0", hour="1"),  # 1:00 AM every day
             "options": {
                 "expires": 60 * 60,  # 1 hour expiration
+                "queue": "cgm_reports",
             },
         },
         "meal-reminder-breakfast": {
