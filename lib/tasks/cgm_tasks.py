@@ -8,20 +8,42 @@ from celery import shared_task
 def trigger_cgm_report_generation_for_periods(
     patient_id: str, periods: List[Tuple[str, str]]
 ):
-    from lib.dependencies.service_dependencies import get_celery_task_manager
+    from lib.dependencies.service_dependencies import (
+        get_celery_task_manager,
+        get_cgm_sync_cache_store,
+    )
 
     try:
         task_manager = get_celery_task_manager()
-        for start_date, end_date in reversed(periods):
+        cache_store = get_cgm_sync_cache_store()
+
+        last_synced_str = cache_store.get_key(patient_id)
+        last_synced = (
+            datetime.fromisoformat(last_synced_str.decode())
+            if last_synced_str
+            else None
+        )
+
+        for start_date_str, end_date_str in reversed(periods):
+            start_date = datetime.fromisoformat(start_date_str)
+            end_date = datetime.fromisoformat(end_date_str)
+
+            # Skip if this period is older or equal to last sync
+            if last_synced and end_date <= last_synced:
+                print(
+                    f"⏭️ Skipping CGM report for {patient_id} ({start_date_str} - {end_date_str}) since it's already synced up to {last_synced.isoformat()}."
+                )
+                continue
+
             task_manager.trigger_task_once(
                 "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
-                task_id=f"{patient_id}_{start_date}_{end_date}",
+                task_id=f"{patient_id}_{start_date_str}_{end_date_str}",
                 queue="cgm_reports",
             )
 
             print(
-                f"✅ Triggered CGM report task for {patient_id} ({start_date} - {end_date})"
+                f"✅ Triggered CGM report task for {patient_id} ({start_date_str} - {end_date_str})"
             )
 
     except Exception as e:
