@@ -1,5 +1,5 @@
 import json
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional
 import tiktoken
 
 from lib.services.ai_conversation_service_v1.context_builder import (
@@ -34,6 +34,7 @@ class AIConversationContextBatcher:
         conversation_id: str,
         human_input: str,
         include_history: bool = True,
+        report_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Dynamically yields safe, token-limited context batches.
@@ -49,6 +50,7 @@ class AIConversationContextBatcher:
             # Build full context for this patient batch
             context_data = await self.context_builder.build_context(
                 patient_ids=batch_ids,
+                report_id=report_id,
                 conversation_id=conversation_id,
                 human_input=human_input,
                 include_history=include_history,

@@ -180,6 +180,7 @@ class AIConversationServiceV1:
         conversation_id: str,
         human_input: str,
         api_endpoint: str,
+        report_id: Optional[str] = None,
     ):
         start_time = time.monotonic()
         ai_message_data = None
@@ -205,6 +206,7 @@ class AIConversationServiceV1:
                 conversation_id,
                 human_input,
                 include_history=True,
+                report_id=report_id,
             ):
                 batch_ids = batch["batch_patient_ids"]
                 batch_context = batch["context"]

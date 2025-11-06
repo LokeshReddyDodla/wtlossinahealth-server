@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from lib.core.mongo_store import MongoStore
 from lib.schemas.patient import CorePatientProfile as CorePatientProfileSchema
@@ -33,12 +33,14 @@ class AIConversationContextBuilder:
         conversation_id: str,
         human_input: str,
         include_history: bool = True,
+        report_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Search vector DB
         qdrant_data = await self.qdrant_search_engine.search(
             human_input,
             1999,
             patient_ids=patient_ids,
+            report_id=report_id,
             conversation_id=conversation_id,
         )
 
