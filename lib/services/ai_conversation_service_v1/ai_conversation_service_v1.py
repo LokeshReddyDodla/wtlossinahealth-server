@@ -42,6 +42,7 @@ from lib.schemas.ai_conversation_v1_schemas import (
     AiConversationMessageV1 as AiConversationMessageV1Schema,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from bson import ObjectId
 
 
 class AIConversationServiceV1:
@@ -168,7 +169,7 @@ class AIConversationServiceV1:
             {"$limit": limit},
             {"$addFields": {"_id": {"$toString": "$_id"}}},
             {
-                "$addFields": {
+                "$set": {
                     "metadata": {
                         "citations": {"$ifNull": ["$metadata.citations", []]},
                         "confidence_score": "$metadata.confidence_score",
@@ -180,6 +181,16 @@ class AIConversationServiceV1:
 
         messages_cursor = self.ai_messages_collection.aggregate(pipeline)  # type: ignore
         return await messages_cursor.to_list(length=None)
+
+    async def fetch_message_by_id(
+        self, message_id: str
+    ) -> Optional[Dict[str, Any]]:
+        message = await self.ai_messages_collection.find_one(  # type: ignore
+            {"_id": ObjectId(message_id)}
+        )
+        if message:
+            message["_id"] = str(message["_id"])
+        return message
 
     async def generate_response(
         self,
