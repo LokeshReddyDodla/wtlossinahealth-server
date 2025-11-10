@@ -83,8 +83,12 @@ async def export_full_conversation_download(
             )
         )
 
+        encoded_messages = [jsonable_encoder(message) for message in messages]
+
         # Convert to JSON bytes
-        json_bytes = io.BytesIO(json.dumps(messages, indent=2).encode("utf-8"))
+        json_bytes = io.BytesIO(
+            json.dumps(encoded_messages, indent=2).encode("utf-8")
+        )
 
         return StreamingResponse(
             json_bytes,
