@@ -205,6 +205,8 @@ async def sync_patient_daily_cgm_reports_to_vector_store(
     vector_service = get_cgm_vector_service()
     cache_store = get_cgm_qdrant_sync_cache_store()
 
+    last_synced = _parse_datetime(cache_store.get_key(patient_id))
+
     reports = await report_service.fetch_day_wise_reports(
         patient_id=patient_id,
         start_date=start_date,
@@ -222,7 +224,8 @@ async def sync_patient_daily_cgm_reports_to_vector_store(
         patient_gender,
     )
 
-    cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
+    latest_processed = max(end_date, last_synced or end_date)
+    cache_store.set_key(patient_id, latest_processed.isoformat(), expire=None)
     print(f"✅ Synced {len(reports)} daily reports to Qdrant for {patient_id}")
 
 
