@@ -167,6 +167,15 @@ class AIConversationServiceV1:
             {"$skip": offset},
             {"$limit": limit},
             {"$addFields": {"_id": {"$toString": "$_id"}}},
+            {
+                "$addFields": {
+                    "metadata": {
+                        "citations": {"$ifNull": ["$metadata.citations", []]},
+                        "confidence_score": "$metadata.confidence_score",
+                        "tags": {"$ifNull": ["$metadata.tags", []]},
+                    }
+                }
+            },
         ]
 
         messages_cursor = self.ai_messages_collection.aggregate(pipeline)  # type: ignore
