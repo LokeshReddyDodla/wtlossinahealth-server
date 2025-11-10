@@ -22,6 +22,10 @@ def trigger_cgm_report_generation_for_periods(
         last_synced = _parse_datetime(last_synced_str)
 
         for start_date_str, end_date_str in reversed(periods):
+            print("==> start_date_str: ", start_date_str)
+            print("==> start_date_str -> type: ", type(start_date_str))
+            print("==> end_date_str: ", end_date_str)
+            print("==> end_date_str -> type: ", type(end_date_str))
             start_date = datetime.fromisoformat(start_date_str)
             end_date = datetime.fromisoformat(end_date_str)
 
