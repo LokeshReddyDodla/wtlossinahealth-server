@@ -223,11 +223,15 @@ def _parse_datetime(value):
     if not value:
         return None
     try:
+        if isinstance(value, datetime):
+            return value
         if isinstance(value, bytes):
             value = value.decode()
-        return datetime.fromisoformat(value)
+        if isinstance(value, str):
+            return datetime.fromisoformat(value)
     except Exception:
-        return None
+        pass
+    return None
 
 
 def _get_sync_dates(
