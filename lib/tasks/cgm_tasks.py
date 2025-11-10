@@ -1,4 +1,5 @@
 from datetime import datetime
+import traceback
 from typing import List, Tuple
 
 from celery import shared_task
@@ -43,6 +44,8 @@ def trigger_cgm_report_generation_for_periods(
             )
 
     except Exception as e:
+        traceback_message = traceback.format_exc()
+        print("🚀 ~ traceback_message:", traceback_message)
         print(
             f"❌ Failed to generate CGM reports for {patient_id}. Error: {e}"
         )
