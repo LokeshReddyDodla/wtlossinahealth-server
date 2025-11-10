@@ -77,6 +77,7 @@ async def generate_and_store_cgm_report(
         processor = get_cgm_stats_processor()
         service = get_cgm_report_service()
         cache_store = get_cgm_sync_cache_store()
+        last_synced = _parse_datetime(cache_store.get_key(patient_id))
 
         reports = await processor.generate_report(
             patient_id, start_date, end_date
@@ -94,7 +95,13 @@ async def generate_and_store_cgm_report(
 
         # trigger_cgm_vector_upsert_for_patient.delay(patient_id)  # type: ignore
 
-        cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
+        latest_processed = max(end_date, last_synced or end_date)
+        cache_store.set_key(
+            patient_id,
+            latest_processed.isoformat(),
+            expire=None,
+        )
+
         print(
             f"✅ Successfully generated CGM report for {patient_id} from {start_date} to {end_date}."
         )
