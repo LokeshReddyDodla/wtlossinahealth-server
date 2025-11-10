@@ -231,6 +231,8 @@ class AIConversationServiceV1:
                 all_batch_responses.append(
                     {
                         "batch_patient_ids": batch_ids,
+                        "context": batch_context,
+                        "context_items": batch.get("context_items", []),
                         "response_text": parsed.response,
                         "citations": parsed.citations,
                         "confidence_score": parsed.confidence_score,
@@ -282,9 +284,40 @@ class AIConversationServiceV1:
                 content=summary_parsed.response,
                 message_type="markdown",
                 metadata={
+                    "patient_ids": patient_ids,
+                    "batched_contexts": [
+                        {
+                            "batch_patient_ids": b["batch_patient_ids"],
+                            "context": b["context"],
+                            "context_items": b.get("context_items", []),
+                            "response_text": b["response_text"],
+                            "citations": b.get("citations", []),
+                            "confidence_score": b.get("confidence_score"),
+                            "tags": b.get("tags", []),
+                            "token_usage": b.get("token_usage", {}),
+                        }
+                        for b in all_batch_responses
+                    ],
                     "citations": summary_parsed.citations,
                     "confidence_score": summary_parsed.confidence_score,
                     "tags": summary_parsed.tags,
+                    "total_batches": len(all_batch_responses),
+                    "total_input_tokens": total_token_usage.get(
+                        "input_tokens", 0
+                    ),
+                    "total_output_tokens": total_token_usage.get(
+                        "output_tokens", 0
+                    ),
+                    "total_cached_input_tokens": total_token_usage.get(
+                        "cached_input_tokens", 0
+                    ),
+                    "latency_ms": latency_ms,
+                    "model_info": {
+                        "model": self.selected_ai_model,
+                        "provider": self.ai_model_provider,
+                        "api_endpoint": api_endpoint,
+                    },
+                    "human_input": human_input,
                 },
                 status="success",
                 model=self.selected_ai_model,
