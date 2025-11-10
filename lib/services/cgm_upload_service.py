@@ -34,7 +34,7 @@ class CGMUploadService:
         patient_id: str,
         file_contents: bytes,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ):
         try:
             # Decode and read the CSV file
@@ -61,12 +61,15 @@ class CGMUploadService:
             # Prepare new data
             data_points = []
             for _, row in df.iterrows():
+                glucose_val = None
+                record_type = None
+
                 if pd.notna(row["Scan Glucose mg/dL"]):
                     record_type = "scan"
-                    glucose_level = int(row["Scan Glucose mg/dL"])
+                    glucose_val = int(row["Scan Glucose mg/dL"])
                 elif pd.notna(row["Historic Glucose mg/dL"]):
                     record_type = "historic"
-                    glucose_level = int(row["Historic Glucose mg/dL"])
+                    glucose_val = int(row["Historic Glucose mg/dL"])
                 else:
                     continue
 
@@ -76,7 +79,7 @@ class CGMUploadService:
                         "time": row[
                             "Device Timestamp"
                         ],  # .strftime("%Y-%m-%dT%H:%M:%S")
-                        "glucose_level": glucose_level,
+                        "glucose_level": glucose_val,
                         "record_type": record_type,
                     }
                 )
@@ -85,8 +88,8 @@ class CGMUploadService:
             # cgm_report_periods = cgm_data_utils.generate_all_report_periods(df)
             # print("==> cgm_report_periods: ", cgm_report_periods)
 
-            gen = SensorLifecycleReportGenerator(df)
-            reports = gen.generate_reports()
+            generator = SensorLifecycleReportGenerator(df)
+            reports = generator.generate_reports()
             report_periods: List[Tuple[datetime, datetime]] = [
                 (
                     r["start"],
@@ -106,7 +109,7 @@ class CGMUploadService:
             #         round(r["coverage"], 2),
             #     )
 
-            # Write data to ClickHouse
+            # Insert into ClickHouse
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
             # Update last_sync_timestamp for the connected app if it exists
@@ -122,6 +125,11 @@ class CGMUploadService:
 
             trigger_cgm_report_generation_for_periods.delay(
                 patient_id, report_periods
+            )
+
+            print(
+                f"✅ Uploaded CGM data for {patient_id} "
+                f"({len(data_points)} records, {len(report_periods)} periods)."
             )
 
         except Exception as e:

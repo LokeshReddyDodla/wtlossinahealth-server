@@ -7,7 +7,7 @@ from celery import shared_task
 
 @shared_task(queue="cgm_reports", rate_limit="20/m")
 def trigger_cgm_report_generation_for_periods(
-    patient_id: str, periods: List[Tuple[str, str]]
+    patient_id: str, periods: List[Tuple[datetime, datetime]]
 ):
     from lib.dependencies.service_dependencies import (
         get_celery_task_manager,
@@ -18,33 +18,39 @@ def trigger_cgm_report_generation_for_periods(
         task_manager = get_celery_task_manager()
         cache_store = get_cgm_sync_cache_store()
 
-        last_synced_str = cache_store.get_key(patient_id)
-        last_synced = _parse_datetime(last_synced_str)
+        last_synced = _parse_datetime(cache_store.get_key(patient_id))
+        if last_synced:
+            print(
+                f"🕒 Last synced for {patient_id}: {last_synced.isoformat()}"
+            )
 
-        for start_date_str, end_date_str in reversed(periods):
-            print("==> start_date_str: ", start_date_str)
-            print("==> start_date_str -> type: ", type(start_date_str))
-            print("==> end_date_str: ", end_date_str)
-            print("==> end_date_str -> type: ", type(end_date_str))
-            start_date = datetime.fromisoformat(start_date_str)
-            end_date = datetime.fromisoformat(end_date_str)
+        for start_raw, end_raw in reversed(periods):
+            start_date = _parse_datetime(start_raw)
+            end_date = _parse_datetime(end_raw)
+
+            if not start_date or not end_date:
+                print(f"⚠️ Skipping invalid period: {start_raw} - {end_raw}")
+                continue
 
             # Skip if this period is older or equal to last sync
             if last_synced and end_date <= last_synced:
                 print(
-                    f"⏭️ Skipping CGM report for {patient_id} ({start_date_str} - {end_date_str}) since it's already synced up to {last_synced.isoformat()}."
+                    f"⏭️ Skipping CGM report for {patient_id} "
+                    f"({start_date.isoformat()} - {end_date.isoformat()}) "
+                    f"since already synced up to {last_synced.isoformat()}."
                 )
                 continue
 
             task_manager.trigger_task_once(
                 "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
-                task_id=f"{patient_id}_{start_date_str}_{end_date_str}",
+                task_id=f"{patient_id}_{start_date.isoformat()}_{end_date.isoformat()}",
                 queue="cgm_reports",
             )
 
             print(
-                f"✅ Triggered CGM report task for {patient_id} ({start_date_str} - {end_date_str})"
+                f"✅ Triggered CGM report for {patient_id} "
+                f"({start_date.isoformat()} - {end_date.isoformat()})"
             )
 
     except Exception as e:
