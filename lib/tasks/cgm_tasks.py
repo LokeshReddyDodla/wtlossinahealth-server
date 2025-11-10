@@ -18,11 +18,7 @@ def trigger_cgm_report_generation_for_periods(
         cache_store = get_cgm_sync_cache_store()
 
         last_synced_str = cache_store.get_key(patient_id)
-        last_synced = (
-            datetime.fromisoformat(last_synced_str.decode())
-            if last_synced_str
-            else None
-        )
+        last_synced = _parse_datetime(last_synced_str)
 
         for start_date_str, end_date_str in reversed(periods):
             start_date = datetime.fromisoformat(start_date_str)
@@ -208,6 +204,17 @@ async def sync_patient_daily_cgm_reports_to_vector_store(
 
     cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
     print(f"✅ Synced {len(reports)} daily reports to Qdrant for {patient_id}")
+
+
+def _parse_datetime(value):
+    if not value:
+        return None
+    try:
+        if isinstance(value, bytes):
+            value = value.decode()
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
 
 
 def _get_sync_dates(
