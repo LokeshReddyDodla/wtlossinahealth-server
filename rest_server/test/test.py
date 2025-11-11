@@ -18,7 +18,6 @@ from lib.dependencies.service_dependencies import (
     get_ai_conversation_service_v1,
     get_ai_conversation_service_v2,
     get_cgm_report_service,
-    get_cgm_report_vector_service,
     get_cgm_vector_service,
     get_meal_service,
     get_meal_vector_service,
@@ -44,7 +43,6 @@ from lib.services.cgm_vector_service import (
     CGMVectorService,
 )
 
-from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.future import select
