@@ -20,7 +20,6 @@ from lib.services.cgm_report_service import CGMReportService
 from lib.services.cgm_vector_service import (
     CGMVectorService,
 )
-from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -55,6 +54,7 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -224,6 +224,12 @@ def get_patient_report_service() -> PatientReportService:
     return cast(PatientReportService, container.resolve(PatientReportService))
 
 
+def get_patient_document_service() -> PatientDocumentService:
+    return cast(
+        PatientDocumentService, container.resolve(PatientDocumentService)
+    )
+
+
 def get_cgm_service() -> CGMUploadService:
     return cast(
         CGMUploadService,
@@ -235,12 +241,6 @@ def get_cgm_report_service() -> CGMReportService:
     return cast(
         CGMReportService,
         container.resolve(CGMReportService),
-    )
-
-
-def get_cgm_report_vector_service() -> CGMReportVectorService:
-    return cast(
-        CGMReportVectorService, container.resolve(CGMReportVectorService)
     )
 
 
@@ -351,6 +351,10 @@ def get_meal_report_collection():
 
 def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
+
+
+def get_patient_documents_collection():
+    return container.resolve("patient_documents")
 
 
 def get_patient_metrics_service() -> PatientMetricsService:

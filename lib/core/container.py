@@ -33,7 +33,6 @@ from lib.services.care_provider_profile_service import (
 )
 from lib.services.cgm_report_service import CGMReportService
 
-from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -69,6 +68,7 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -167,6 +167,13 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("chats"),
+    scope=Scope.singleton,
+)
+container.register(
+    "patient_documents",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("patient_documents"),
     scope=Scope.singleton,
 )
 
@@ -324,6 +331,25 @@ container.register(
     ),
 )
 
+# 🔹 Patient Document Service
+container.register(
+    PatientDocumentService,
+    lambda: PatientDocumentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        file_content_extractor_service=cast(
+            FileContentExtractorService,
+            container.resolve(FileContentExtractorService),
+        ),
+        patient_document_collection=cast(
+            MongoStore, container.resolve("patient_documents")
+        ),
+    ),
+)
+
 
 # 🔹 Meal Analysis Service
 container.register(
@@ -476,14 +502,6 @@ container.register(
         fitness_report_service=cast(
             FitnessReportService, container.resolve(FitnessReportService)
         ),
-    ),
-)
-
-# 🔹 CGM Report Vector Service
-container.register(
-    CGMReportVectorService,
-    lambda: CGMReportVectorService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
 

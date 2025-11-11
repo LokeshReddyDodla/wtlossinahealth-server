@@ -5,10 +5,12 @@ from lib.core.types import ReportTypeLiteral
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
     get_cgm_service,
+    get_patient_document_service,
     get_patient_report_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.services.cgm_upload_service import CGMUploadService
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_report_service import PatientReportService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -36,7 +38,7 @@ async def upload_libreview_csv(
         await cgm_upload_service.parse_and_upload_libreview_raw_csv_data(
             patient_id=patient_id,
             file_contents=await file.read(),
-        )
+        )  # type: ignore
 
         return SuccessResponse(
             message="CGM data uploaded and stored successfully."
@@ -81,6 +83,45 @@ async def upload_reports(
             data={
                 "conversation_id": f"{result.report_id}-{current_care_provider.care_provider_id}"
             },
+        )
+
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.post("/documents", response_model=SuccessResponse)
+async def upload_documents(
+    request: Request,
+    patient_id: str,
+    report_type: ReportTypeLiteral,
+    file: UploadFile = File(...),
+    patient_document_service: PatientDocumentService = Depends(
+        get_patient_document_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.UPDATE, CareProviderFeature.PATIENTS
+        )
+    ),
+):
+    try:
+        result = await patient_document_service.upload_patient_document(
+            patient_id=patient_id,
+            file_bytes=await file.read(),
+            file_name=file.filename,
+            content_type=file.content_type,
+            report_type=report_type,
+            uploaded_by_id=str(current_care_provider.care_provider_id),
+            uploaded_by_type=ProfileTypeEnum.CARE_PROVIDER.value,
+        )  # type: ignore
+
+        return SuccessResponse(
+            message="Report upload successfully.",
+            data=result,
         )
 
     except Exception as e:
