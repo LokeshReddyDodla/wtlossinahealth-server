@@ -37,6 +37,9 @@ class SMBGStatsProcessor:
         *,
         postgres_session,
     ):
+        start_date = datetime.combine(start_date.date(), datetime.min.time())
+        end_date = datetime.combine(end_date.date(), datetime.max.time())
+
         # fetch SMBGs in range
         result = await postgres_session.execute(
             select(PatientSMBG)
