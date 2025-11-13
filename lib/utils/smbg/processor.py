@@ -244,17 +244,25 @@ class SMBGStatsProcessor:
 
         for r in records:
             hour = r.reading_time.hour
+            assigned = False
 
             for meal, (start, end) in WINDOWS.items():
-                if start <= hour <= end:
+                if start < end:
+                    in_window = start <= hour < end
+                else:
+                    in_window = hour >= start or hour < end
+
+                if in_window:
                     if r.type in ("before_meal", "pre_meal"):
                         buckets[f"pre_{meal}"].append(r)
                     elif r.type in ("after_meal", "post_meal"):
                         buckets[f"post_{meal}"].append(r)
                     else:
                         buckets["random"].append(r)
+                    assigned = True
                     break
-            else:
+
+            if not assigned:
                 buckets["other"].append(r)
 
         return buckets
