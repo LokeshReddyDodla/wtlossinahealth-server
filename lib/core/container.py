@@ -177,6 +177,8 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("patient_documents"),
+)
+
 # Weight Loss Agent Collections
 container.register(
     "weight_loss_enrollments_collection",
@@ -592,11 +594,19 @@ container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-        enrollments_collection=container.resolve("weight_loss_enrollments_collection"),
+        clickhouse_store=cast(
+            ClickHouseStore, container.resolve(ClickHouseStore)
+        ),
+        enrollments_collection=container.resolve(
+            "weight_loss_enrollments_collection"
+        ),
         reports_collection=container.resolve("inbody_reports_collection"),
-        interactions_collection=container.resolve("weight_loss_interactions_collection"),
-        progress_analyses_collection=container.resolve("weight_loss_progress_analyses_collection"),
+        interactions_collection=container.resolve(
+            "weight_loss_interactions_collection"
+        ),
+        progress_analyses_collection=container.resolve(
+            "weight_loss_progress_analyses_collection"
+        ),
     ),
 )
 
