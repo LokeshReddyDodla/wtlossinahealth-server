@@ -9,9 +9,9 @@ from lib.utils.date.periods import WeekWisePeriod
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 WINDOWS = {
-    "breakfast": (5, 11),  # 05:00–10:59
-    "lunch": (12, 16),  # 12:00–15:59
-    "dinner": (19, 23),  # 19:00–22:59
+    "breakfast": (4, 11),  # 04:00–10:59
+    "lunch": (11, 16),  # 11:00–15:59
+    "dinner": (17, 3),  # 17:00–03:59
 }
 
 

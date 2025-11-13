@@ -1,8 +1,10 @@
 import calendar
 from datetime import datetime, timedelta
-from typing import Dict, List
+import re
+from typing import Dict, List, Optional
 
 import pandas as pd
+from dateutil import parser
 
 
 def split_into_days(
@@ -122,3 +124,32 @@ def get_months_between_dates(
             months.append((year, month))  # Store as (year, month)
 
     return months
+
+
+def extract_date_from_text(text: str) -> Optional[datetime]:
+    """
+    Attempt to extract date and time from text.
+    Handles formats like:
+    - 2025-09-21
+    - 21/09/2025
+    - 21 Sep 2025
+    - Dated: 09/21/25
+    - 14:20, 2:20 PM, 09:35:28
+    Returns datetime object or None if not found.
+    """
+    # date patterns (with optional time after the date)
+    date_patterns = [
+        r"(\d{4}[-/]\d{2}[-/]\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)",  # 2025-09-21 or 2025-09-21 14:20
+        r"(\d{2}[-/]\d{2}[-/]\d{4}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?)",  # 21-09-2025 14:20
+        r"(\d{1,2}\s*[A-Za-z]{3,9}\s*\d{2,4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?)",  # 21 Sep 2025 2:20 PM
+    ]
+
+    for pattern in date_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                return parser.parse(match.group(1), fuzzy=True)
+            except Exception:
+                continue
+
+    return None
