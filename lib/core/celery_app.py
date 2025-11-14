@@ -19,9 +19,11 @@ celery.conf.update(
     enable_utc=True,
     broker_connection_retry_on_startup=True,
     beat_schedule={
-        "sync-libreview-every-2-hours": {
+        "sync-libreview-daily": {
             "task": "lib.tasks.libreview_tasks.sync_all_libreview",
-            "schedule": crontab(minute="0", hour="16"),  # 4:00 PM every day
+            "schedule": crontab(
+                minute="0", hour="8,11,18"
+            ),  # Runs at 8:00, 11:00, and 18:00
             "options": {
                 "expires": 60 * 60,  # 1 hour expiration
             },
