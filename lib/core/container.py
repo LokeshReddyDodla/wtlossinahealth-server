@@ -597,15 +597,19 @@ container.register(
         clickhouse_store=cast(
             ClickHouseStore, container.resolve(ClickHouseStore)
         ),
-        enrollments_collection=container.resolve(
-            "weight_loss_enrollments_collection"
+        enrollments_collection=cast(
+            MongoStore, container.resolve("weight_loss_enrollments_collection")
         ),
-        reports_collection=container.resolve("inbody_reports_collection"),
-        interactions_collection=container.resolve(
-            "weight_loss_interactions_collection"
+        reports_collection=cast(
+            MongoStore, container.resolve("inbody_reports_collection")
         ),
-        progress_analyses_collection=container.resolve(
-            "weight_loss_progress_analyses_collection"
+        interactions_collection=cast(
+            MongoStore,
+            container.resolve("weight_loss_interactions_collection"),
+        ),
+        progress_analyses_collection=cast(
+            MongoStore,
+            container.resolve("weight_loss_progress_analyses_collection"),
         ),
     ),
 )
