@@ -186,7 +186,7 @@ class AIConversationServiceV1:
         self, message_id: str
     ) -> Optional[Dict[str, Any]]:
         message = await self.ai_messages_collection.find_one(  # type: ignore
-            {"_id": ObjectId(message_id)}
+            {"_id": message_id}
         )
         if message:
             message["_id"] = str(message["_id"])
