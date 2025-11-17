@@ -285,6 +285,7 @@ class CGMReportService:
                 "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
                 task_id=f"{patient_id}_{start_date}_{end_date}",
+                queue="cgm_reports",
             )
 
             print(
