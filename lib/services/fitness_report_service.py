@@ -160,6 +160,7 @@ class FitnessReportService:
                 "lib.tasks.fitness_tasks.generate_fitness_report",
                 args=[patient_id, start_date, end_date, report_type],
                 task_id=f"{patient_id}_{start_date}_{end_date}_{report_type}",
+                queue="default",
             )
 
             print(

@@ -140,6 +140,7 @@ class SleepReportService:
                 "lib.tasks.sleep_tasks.generate_sleep_report",
                 args=[patient_id, start_date, end_date, report_type],
                 task_id=f"{patient_id}_{start_date}_{end_date}_{report_type}",
+                queue="default",
             )
 
             print(

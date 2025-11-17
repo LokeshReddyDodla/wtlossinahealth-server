@@ -27,6 +27,7 @@ def generate_fitness_reports_for_patient(
                     month_end_date,
                 ],
                 task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{FitnessReportType.MONTHLY}",
+                queue="default",
             )
 
         print(f"Generated fitness report for patient: {patient_id}")
