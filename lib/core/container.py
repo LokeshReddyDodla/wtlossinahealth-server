@@ -77,7 +77,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
-from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -348,20 +347,6 @@ container.register(
     ),
 )
 
-# 🔹 Patient Report Service
-container.register(
-    PatientReportService,
-    lambda: PatientReportService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        file_content_extractor_service=cast(
-            FileContentExtractorService,
-            container.resolve(FileContentExtractorService),
-        ),
-    ),
-)
 
 # 🔹 Patient Document Service
 container.register(
