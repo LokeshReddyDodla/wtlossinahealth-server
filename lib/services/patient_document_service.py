@@ -1,7 +1,9 @@
+import asyncio
 from datetime import datetime
 import hashlib
-from typing import Optional
+from typing import List, Optional
 
+from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
 from lib.core.mongo_store import MongoStore
@@ -81,6 +83,55 @@ class PatientDocumentService:
             del doc["_id"]
 
         return docs
+
+    async def upload_multiple_documents(
+        self,
+        patient_id: str,
+        files: List[UploadFile],
+        document_type: DocumentTypeLiteral,
+        uploaded_by_id: str,
+        uploaded_by_type: ProfileTypeEnum,
+    ):
+        tasks = []
+
+        for f in files:
+            file_bytes = await f.read()
+            tasks.append(
+                self.upload_patient_document(
+                    patient_id=patient_id,
+                    file_bytes=file_bytes,
+                    file_name=f.filename,  # type: ignore
+                    content_type=f.content_type,  # type: ignore
+                    document_type=document_type,
+                    uploaded_by_id=uploaded_by_id,
+                    uploaded_by_type=uploaded_by_type,
+                )
+            )
+
+        # Run uploads in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Convert exceptions into readable errors instead of crashing the whole batch
+        final = []
+        for index, r in enumerate(results):
+            if isinstance(r, Exception):
+                final.append(
+                    {
+                        "file_name": files[index].filename,
+                        "status": "failed",
+                        "error": str(r),
+                    }
+                )
+            else:
+                final.append(
+                    {
+                        "file_name": files[index].filename,
+                        "status": "success",
+                        "document_id": r,
+                    }
+                )
+
+        return final
 
     async def upload_patient_document(
         self,

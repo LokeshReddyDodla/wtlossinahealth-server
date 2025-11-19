@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import Depends, File, Query, Request, UploadFile, status
 
 from lib.core.constants import ProfileTypeEnum
@@ -55,7 +56,7 @@ async def upload_documents(
     request: Request,
     patient_id: str,
     document_type: DocumentTypeLiteral,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     patient_document_service: PatientDocumentService = Depends(
         get_patient_document_service
     ),
@@ -66,11 +67,9 @@ async def upload_documents(
     ),
 ):
     try:
-        result = await patient_document_service.upload_patient_document(
+        result = await patient_document_service.upload_multiple_documents(
             patient_id=patient_id,
-            file_bytes=await file.read(),
-            file_name=file.filename,  # type: ignore
-            content_type=file.content_type,  # type: ignore
+            files=files,
             document_type=document_type,
             uploaded_by_id=str(current_care_provider.care_provider_id),
             uploaded_by_type=ProfileTypeEnum.CARE_PROVIDER.value,  # type: ignore
