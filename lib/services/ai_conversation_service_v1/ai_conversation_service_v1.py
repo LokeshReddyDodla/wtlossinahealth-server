@@ -264,8 +264,6 @@ class AIConversationServiceV1:
                 # Accumulate token usage
                 self._accumulate_usage(total_token_usage, usage)
 
-            print(all_batch_responses)
-
             # Summarize or fallback
             if all_batch_responses:
                 # ---- Only summarize if multiple batches ----
