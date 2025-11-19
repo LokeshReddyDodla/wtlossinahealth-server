@@ -58,3 +58,5 @@ AIModelProviderLiteral = Literal["openai", "gemini", "perplexity"]
 ReportTypeLiteral = Literal[
     "index", "laboratory", "radiology", "eye_or_ophthalmology", "other"
 ]
+
+DocumentTypeLiteral = Literal["report", "prescription", "other"]

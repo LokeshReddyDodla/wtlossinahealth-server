@@ -63,7 +63,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
-from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -223,10 +222,6 @@ def get_patient_package_assignment_service() -> (
     )
 
 
-def get_patient_report_service() -> PatientReportService:
-    return cast(PatientReportService, container.resolve(PatientReportService))
-
-
 def get_patient_document_service() -> PatientDocumentService:
     return cast(
         PatientDocumentService, container.resolve(PatientDocumentService)
@@ -358,6 +353,8 @@ def get_sleep_report_collection():
 
 def get_patient_documents_collection():
     return container.resolve("patient_documents")
+
+
 def get_weight_loss_enrollments_collection():
     return container.resolve("weight_loss_enrollments_collection")
 
