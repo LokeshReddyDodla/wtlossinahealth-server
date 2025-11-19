@@ -10,7 +10,7 @@ Your sole task is to map the user's natural language request to the provided Pyd
 - SMBG (Fingerstick glucose readings)
 - Fitness (Activity, steps, exercise)
 - Sleep (Sleep tracking data)
-
+- Patient Documents (Reports, Prescriptions, Other files)
 ---
 
 ### 🧩 CRITICAL RULES — FOLLOW STRICTLY
@@ -85,7 +85,7 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - If the query asks for general summaries, patterns, or "common issues" across patients (e.g., “summarize overall issues”, “overview of all patients”, “general report”, “common health problems”), treat it as a **global query**.
   - For global queries:
       - **Always include all major domains** in `data_types`:
-        ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats", "rapid_spike_stats", "rapid_drop_stats", "smbg", "meal", "fitness", "sleep", "profile"]
+        ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats", "rapid_spike_stats", "rapid_drop_stats", "smbg", "meal", "fitness", "sleep", "profile", "patient_document"]
       - **Do not include individual event types** (`hyper_event`, `hypo_event`, `rapid_spike_event`, `rapid_drop_event`) unless explicitly mentioned in the query.
       - **Ignore Rule 7 (Stats + Events)** and any other domain-specific rules for these queries.
   - A query is considered global if it contains keywords such as: `"common issues"`, `"overall summary"`, `"overview of all patients"`, `"general report"`, or `"common health problems"`.
@@ -212,7 +212,8 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - waist
   - bmi
 
-
+- **patient_document**
+  - document_type
   
 ---
 
