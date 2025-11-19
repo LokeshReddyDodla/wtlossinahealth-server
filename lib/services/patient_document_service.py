@@ -1,12 +1,13 @@
 from datetime import datetime
 import hashlib
+from typing import Optional
 
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
-from lib.core.types import ReportTypeLiteral
+from lib.core.types import DocumentTypeLiteral
 
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.patient_profile_service import PatientProfileService
@@ -41,18 +42,55 @@ class PatientDocumentService:
         self.s3_bucket_name = "user-assets.aihealth.clinic"
         self.qdrant_collection_name = "patient_data"
 
-    @with_postgres_session
+    async def fetch_patient_documents(
+        self,
+        patient_id: str,
+        document_type: Optional[str] = None,
+        uploaded_by_type: Optional[str] = None,
+        order: Optional[str] = "asc",
+        limit: Optional[int] = 20,
+        offset: int = 0,
+    ):
+        query: dict = {"patient_id": patient_id}
+
+        if document_type:
+            query["category"] = document_type
+
+        if uploaded_by_type:
+            query["metadata.uploaded_by.type"] = uploaded_by_type
+
+        sort_order = 1 if order == "asc" else -1
+
+        projection = {
+            "text_raw": 0,
+            "summary_text": 0,
+            "text_repr": 0,
+        }
+
+        cursor = (
+            self.patient_document_collection.find(query, projection)  # type: ignore
+            .sort("metadata.created_at", sort_order)
+            .skip(offset)
+            .limit(limit)
+        )
+
+        docs = await cursor.to_list(length=limit)
+
+        for doc in docs:
+            doc["id"] = str(doc["_id"])
+            del doc["_id"]
+
+        return docs
+
     async def upload_patient_document(
         self,
         patient_id: str,
         file_bytes: bytes,
         file_name: str,
         content_type: str,
-        report_type: ReportTypeLiteral,
+        document_type: DocumentTypeLiteral,
         uploaded_by_id: str,
         uploaded_by_type: ProfileTypeEnum,
-        *,
-        postgres_session: AsyncSession,
     ):
         try:
             # Upload file to S3
@@ -61,7 +99,7 @@ class PatientDocumentService:
                 bucket_name=self.s3_bucket_name,
                 file_name=file_name,
                 content_type=content_type,
-                folder_path=f"patients/{patient_id}/reports/{report_type}",
+                folder_path=f"patients/{patient_id}/documents/{document_type}",
             )
             if not file_url:
                 raise_http_exception(
@@ -93,7 +131,7 @@ class PatientDocumentService:
                 file_url,
                 content_type,
                 file_name,
-                report_type,
+                document_type,
                 extracted_text,
                 summary_text,
                 text_repr,
@@ -116,7 +154,7 @@ class PatientDocumentService:
                 file_url,
                 file_name,
                 content_type,
-                report_type,
+                document_type,
                 summary_text,
                 text_repr,
                 uploaded_by_id,
@@ -184,7 +222,7 @@ class PatientDocumentService:
         file_url: str,
         content_type: str,
         file_name: str,
-        report_type: str,
+        document_type: str,
         extracted_text: str,
         summary_text: str,
         text_repr: str,
@@ -201,7 +239,7 @@ class PatientDocumentService:
                 "name": file_name,
                 "uploaded_at": now,
             },
-            "category": report_type,
+            "category": document_type,
             "text_raw": extracted_text,
             "summary_text": summary_text,
             "text_repr": text_repr,
@@ -222,7 +260,7 @@ class PatientDocumentService:
         file_url: str,
         file_name: str,
         file_content_type: str,
-        report_type: str,
+        document_type: str,
         summary_text: str,
         text_repr: str,
         uploaded_by_id: str,
@@ -236,7 +274,7 @@ class PatientDocumentService:
             "patient_gender": profile.gender,
             "document_id": document_id,
             "data_type": "patient_document",
-            "report_type": report_type,
+            "document_type": document_type,
             "file_name": file_name,
             "file_url": file_url,
             "uploaded_by_type": uploaded_by_type,
