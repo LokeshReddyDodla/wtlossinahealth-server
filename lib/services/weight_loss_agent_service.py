@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import status
@@ -11,9 +11,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 from lib.core.clickhouse_store import ClickHouseStore
-from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
-from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_meal import PatientMeal
 from lib.models.patient_vital import PatientVital
@@ -26,27 +24,51 @@ from lib.schemas.weight_loss_agent import (
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
+from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.patient_profile_service import PatientProfileService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
+from lib.models.weight_loss_agent import WeightLossAgentEnrollment
 from lib.utils.http_exceptions import raise_http_exception
 
 
 class WeightLossAgentService:
     """Service for managing weight loss agent functionality using MongoDB"""
 
+    CONFIRMATION_THRESHOLD = 0.85
+
     def __init__(
         self, 
         postgres_store: PostgresStore, 
         clickhouse_store: ClickHouseStore,
-        enrollments_collection: AsyncIOMotorCollection,
         reports_collection: AsyncIOMotorCollection,
         interactions_collection: AsyncIOMotorCollection,
         progress_analyses_collection: AsyncIOMotorCollection,
+        patient_profile_service: PatientProfileService,
+        care_provider_profile_service: CareProviderProfileService,
+        analytics_service: Optional[AnalyticsService] = None,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
-        self.enrollments_collection = enrollments_collection
         self.reports_collection = reports_collection
         self.interactions_collection = interactions_collection
         self.progress_analyses_collection = progress_analyses_collection
+        self.patient_profile_service = patient_profile_service
+        self.care_provider_profile_service = care_provider_profile_service
+        self.analytics_service = analytics_service
+
+    def _serialize_enrollment(self, enrollment: WeightLossAgentEnrollment) -> Dict[str, Any]:
+        return {
+            "enrollment_id": str(enrollment.enrollment_id),
+            "patient_id": str(enrollment.patient_id),
+            "enrolled_by_care_provider_id": str(enrollment.enrolled_by_care_provider_id),
+            "enrollment_date": enrollment.enrollment_date,
+            "is_active": enrollment.is_active,
+            "program_goals": enrollment.program_goals,
+            "target_weight_kg": enrollment.target_weight_kg,
+            "target_bmi": enrollment.target_bmi,
+            "created_at": enrollment.created_at,
+            "updated_at": enrollment.updated_at,
+        }
 
     async def enroll_patient_in_weight_loss_program(
         self,
@@ -54,62 +76,52 @@ class WeightLossAgentService:
     ) -> Dict:
         """Enroll a patient in the weight loss program (doctor only) - stores in MongoDB"""
 
-        async with self.postgres_store.get_session() as session:
-            # Verify the care provider is a doctor (still in PostgreSQL)
-            care_provider = await session.get(CareProvider, enrollment_data.enrolled_by_care_provider_id)
-            if not care_provider:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Care provider not found"
-                )
-
-            if str(care_provider.role).lower() != "doctor":
-                raise_http_exception(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    message="Only doctors can enroll patients in weight loss program"
-                )
-
-            # Verify patient exists (still in PostgreSQL)
-            patient = await session.get(Patient, enrollment_data.patient_id)
-            if not patient:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Patient not found"
-                )
-
-        # Check if patient already has an active enrollment (in MongoDB)
-        existing_enrollment = await self.enrollments_collection.find_one({
-            "patient_id": str(enrollment_data.patient_id),
-            "is_active": True
-        })
-
-        if existing_enrollment:
+        # Ensure care provider exists and is a doctor via profile service
+        care_provider = await self.care_provider_profile_service.fetch_care_provider(
+            str(enrollment_data.enrolled_by_care_provider_id)
+        )
+        if str(care_provider.role).lower() != "doctor":
             raise_http_exception(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Patient is already enrolled in weight loss program"
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Only doctors can enroll patients in weight loss program"
             )
 
-        # Create enrollment document for MongoDB
-        enrollment_doc = {
-            "enrollment_id": str(uuid4()),
-            "patient_id": str(enrollment_data.patient_id),
-            "enrolled_by_care_provider_id": str(enrollment_data.enrolled_by_care_provider_id),
-            "enrollment_date": datetime.now(),
-            "is_active": True,
-            "program_goals": enrollment_data.program_goals,
-            "target_weight_kg": enrollment_data.target_weight_kg,
-            "target_bmi": enrollment_data.target_bmi,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
+        # Ensure patient exists via profile service (raises if missing)
+        await self.patient_profile_service.fetch_patient_profile(
+            str(enrollment_data.patient_id)
+        )
 
-        # Insert into MongoDB
-        await self.enrollments_collection.insert_one(enrollment_doc)
-        
-        # Remove MongoDB _id for response
-        enrollment_doc.pop("_id", None)
-        
-        return enrollment_doc
+        async with self.postgres_store.get_session() as session:
+            # Re-check within same transaction for existing enrollment and persistence
+
+            existing = await session.execute(
+                select(WeightLossAgentEnrollment).where(
+                    WeightLossAgentEnrollment.patient_id == enrollment_data.patient_id,
+                    WeightLossAgentEnrollment.is_active.is_(True),
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Patient is already enrolled in weight loss program"
+                )
+
+            enrollment = WeightLossAgentEnrollment(
+                patient_id=enrollment_data.patient_id,
+                enrolled_by_care_provider_id=enrollment_data.enrolled_by_care_provider_id,
+                enrollment_date=datetime.now(),
+                is_active=True,
+                program_goals=enrollment_data.program_goals,
+                target_weight_kg=enrollment_data.target_weight_kg,
+                target_bmi=enrollment_data.target_bmi,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+            session.add(enrollment)
+            await session.commit()
+            await session.refresh(enrollment)
+
+            return self._serialize_enrollment(enrollment)
 
     async def update_patient_enrollment(
         self,
@@ -119,60 +131,46 @@ class WeightLossAgentService:
         """Update patient enrollment details - MongoDB"""
 
         # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-        
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found"
-            )
+        async with self.postgres_store.get_session() as session:
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found"
+                )
 
-        # Prepare update dict
-        update_dict = update_data.dict(exclude_unset=True)
-        update_dict["updated_at"] = datetime.now()
+            update_dict = update_data.dict(exclude_unset=True)
+            for field, value in update_dict.items():
+                setattr(enrollment, field, value)
+            enrollment.updated_at = datetime.now()
+            await session.commit()
+            await session.refresh(enrollment)
 
-        # Update in MongoDB
-        await self.enrollments_collection.update_one(
-            {"enrollment_id": str(enrollment_id)},
-            {"$set": update_dict}
-        )
-
-        # Get updated enrollment
-        updated_enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-        updated_enrollment.pop("_id", None)
-        
-        return updated_enrollment
+            return self._serialize_enrollment(enrollment)
 
     async def get_patient_enrollment(self, enrollment_id: UUID) -> Optional[Dict]:
         """Get patient's weight loss enrollment by enrollment_id - MongoDB"""
 
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-        
-        if enrollment:
-            enrollment.pop("_id", None)
-            return enrollment
-        
-        return None
+        async with self.postgres_store.get_session() as session:
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            if enrollment:
+                return self._serialize_enrollment(enrollment)
+            return None
 
     async def get_patient_enrollment_by_patient_id(self, patient_id: UUID) -> Optional[Dict]:
         """Get patient's active weight loss enrollment by patient_id - MongoDB"""
 
-        enrollment = await self.enrollments_collection.find_one({
-            "patient_id": str(patient_id),
-            "is_active": True
-        })
-        
-        if enrollment:
-            enrollment.pop("_id", None)
-            return enrollment
-        
-        return None
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(WeightLossAgentEnrollment).where(
+                    WeightLossAgentEnrollment.patient_id == patient_id,
+                    WeightLossAgentEnrollment.is_active.is_(True),
+                )
+            )
+            enrollment = result.scalar_one_or_none()
+            if enrollment:
+                return self._serialize_enrollment(enrollment)
+            return None
 
     async def create_inbody_report(
         self,
@@ -182,12 +180,8 @@ class WeightLossAgentService:
         """Create a new inbody report - MongoDB"""
 
         # Verify enrollment exists and is active (in MongoDB)
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id),
-            "is_active": True
-        })
-        
-        if not enrollment:
+        enrollment = await self.get_patient_enrollment(enrollment_id)
+        if not enrollment or not enrollment.get("is_active"):
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Active enrollment not found"
@@ -310,10 +304,7 @@ class WeightLossAgentService:
             end_date = datetime.now()
 
         # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-
+        enrollment = await self.get_patient_enrollment(enrollment_id)
         if not enrollment:
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -434,10 +425,7 @@ class WeightLossAgentService:
             end_date = datetime.now()
 
         # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-
+        enrollment = await self.get_patient_enrollment(enrollment_id)
         if not enrollment:
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -734,10 +722,7 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         """Handle chatbot conversations about weight loss progress and reports - MongoDB"""
         
         # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one({
-            "enrollment_id": str(enrollment_id)
-        })
-
+        enrollment = await self.get_patient_enrollment(enrollment_id)
         if not enrollment:
             raise_http_exception(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -747,7 +732,7 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         # Get patient info from PostgreSQL
         async with self.postgres_store.get_session() as session:
             result = await session.execute(
-                select(Patient).where(Patient.id == UUID(enrollment["patient_id"]))
+                select(Patient).where(Patient.patient_id == UUID(enrollment["patient_id"]))
             )
             patient = result.scalar_one_or_none()
 
@@ -1082,6 +1067,13 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     "metadata": {"confidence_score": 0.0}
                 }
 
+            normalized_payload = self._build_normalized_inbody_payload(
+                ai_response.get("metadata", {}).get("extracted_metrics", {}),
+                ai_response.get("metadata", {}).get("confidence_score", 0.0),
+                file_name=file_name,
+                content_type=content_type,
+            )
+
             # Return AI response immediately without storing in database yet
             analysis_result = InbodyReportAnalysisResult(
                 file_name=file_name,
@@ -1094,12 +1086,18 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     "risk_factors": ai_response.get("metadata", {}).get("risk_factors", []),
                     "structured": True if ai_response.get("metadata", {}).get("confidence_score", 0.0) > 0 else False
                 },
+                values=normalized_payload["values"],
+                derived=normalized_payload["derived"],
+                parse_confidence=normalized_payload["parse_confidence"],
+                confirmation_needed=normalized_payload["confirmation_needed"],
+                provenance=normalized_payload["provenance"],
                 metadata={
                     "content_type": content_type,
                     "file_size": len(file_content),
                     "enrollment_id": str(enrollment_id),
                     "original_filename": file_name,
-                    "ready_for_storage": True  # Flag indicating analysis is complete and ready to store
+                    "ready_for_storage": True,  # Flag indicating analysis is complete and ready to store
+                    "confirmation_needed": normalized_payload["confirmation_needed"],
                 }
             )
 
@@ -1264,6 +1262,11 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                             "measurements_count": measurements_created,
                             "abnormal_indicators_count": indicators_created,
                             "extraction_confidence": confidence_score,
+                            "values": normalized_payload["values"],
+                            "derived": normalized_payload["derived"],
+                            "parse_confidence": normalized_payload["parse_confidence"],
+                            "provenance": normalized_payload["provenance"],
+                            "confirmation_needed": normalized_payload["confirmation_needed"],
                             "updated_at": datetime.now()
                         }
                     }
@@ -1277,6 +1280,13 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 analysis_result.metadata["measurements_created"] = measurements_created
                 analysis_result.metadata["indicators_created"] = indicators_created
                 analysis_result.metadata["ai_summary_pending"] = True  # Flag that AI summary needs to be stored later
+                analysis_result.metadata["confirmation_needed"] = normalized_payload["confirmation_needed"]
+
+                await self._emit_inbody_events(
+                    user_id=user_id,
+                    report_id=report_id,
+                    normalized_payload=normalized_payload,
+                )
 
                 print("Report successfully stored in database with measurements and health indicators")
                 return analysis_result
@@ -1297,4 +1307,137 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 message=f"Failed to process inbody report: {str(e)}"
             )
 
+    def _build_normalized_inbody_payload(
+        self,
+        extracted_metrics: Dict[str, Any],
+        confidence_score: float,
+        file_name: str,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        values: Dict[str, float] = {}
+        derived: Dict[str, float] = {}
+        parse_confidence: Dict[str, float] = {}
+        confirmation_needed: List[str] = []
+        field_scores: Dict[str, float] = {}
+
+        def register_field(field_key: str, raw_value: Optional[str], unit_type: str = "scalar"):
+            if not raw_value:
+                return
+            numeric = self._parse_numeric_value(raw_value)
+            if numeric is None:
+                return
+            if unit_type == "mass":
+                numeric = self._convert_mass_to_kg(numeric, raw_value)
+            elif unit_type == "percent":
+                numeric = max(0.0, min(100.0, numeric))
+            values[field_key] = round(numeric, 2)
+            score = self._score_field_confidence(confidence_score, raw_value)
+            field_scores[field_key] = score
+            parse_confidence[field_key] = score
+            if score < self.CONFIRMATION_THRESHOLD and field_key not in confirmation_needed:
+                confirmation_needed.append(field_key)
+
+        register_field("weight_kg", extracted_metrics.get("weight"), "mass")
+        register_field("target_weight_kg", extracted_metrics.get("target_weight"), "mass")
+        register_field("body_fat_percent", extracted_metrics.get("body_fat_percentage"), "percent")
+        register_field("skeletal_muscle_mass_kg", extracted_metrics.get("muscle_mass"), "mass")
+        register_field("body_water_percent", extracted_metrics.get("body_water"), "percent")
+        register_field("visceral_fat_level", extracted_metrics.get("visceral_fat"))
+        register_field("basal_metabolic_rate_kcal", extracted_metrics.get("basal_metabolic_rate"))
+        register_field("bmi", extracted_metrics.get("bmi"))
+
+        weight = values.get("weight_kg")
+        weight_score = field_scores.get("weight_kg", confidence_score)
+        body_fat_pct = values.get("body_fat_percent")
+        fat_score = field_scores.get("body_fat_percent", confidence_score)
+
+        if weight is not None and body_fat_pct is not None:
+            fat_mass = round(weight * (body_fat_pct / 100), 2)
+            derived["fat_mass_kg"] = fat_mass
+            combined_score = min(weight_score, fat_score)
+            parse_confidence["fat_mass_kg"] = combined_score
+            if combined_score < self.CONFIRMATION_THRESHOLD:
+                confirmation_needed.append("fat_mass_kg")
+
+            lean_mass = round(max(weight - fat_mass, 0), 2)
+            derived["lean_mass_kg"] = lean_mass
+            parse_confidence["lean_mass_kg"] = combined_score
+            if combined_score < self.CONFIRMATION_THRESHOLD:
+                confirmation_needed.append("lean_mass_kg")
+
+        if weight is not None:
+            hydration_oz = round((weight * 35) / 29.574, 2)
+            derived["hydration_oz_target"] = hydration_oz
+            parse_confidence["hydration_oz_target"] = weight_score
+            if weight_score < self.CONFIRMATION_THRESHOLD:
+                confirmation_needed.append("hydration_oz_target")
+
+        provenance = {
+            "file_id": str(uuid4()),
+            "ocr_engine": "gpt-4o",
+            "template": "inbody_v1",
+            "source_file": file_name,
+            "content_type": content_type,
+        }
+
+        return {
+            "values": values,
+            "derived": derived,
+            "parse_confidence": {k: round(v, 2) for k, v in parse_confidence.items()},
+            "confirmation_needed": sorted(set(confirmation_needed)),
+            "provenance": provenance,
+        }
+
+    def _parse_numeric_value(self, raw_value: Optional[str]) -> Optional[float]:
+        if raw_value is None:
+            return None
+        match = re.search(r"-?\\d+(?:\\.\\d+)?", str(raw_value))
+        if not match:
+            return None
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+
+    def _convert_mass_to_kg(self, value: float, raw_value: Optional[str]) -> float:
+        raw = str(raw_value).lower() if raw_value else ""
+        if "lb" in raw or "pound" in raw:
+            return round(value * 0.453592, 2)
+        return round(value, 2)
+
+    def _score_field_confidence(self, base_confidence: float, raw_value: Optional[str]) -> float:
+        if not raw_value:
+            return 0.0
+        digits_present = any(char.isdigit() for char in str(raw_value))
+        adjustment = 0.05 if digits_present else -0.1
+        score = max(0.2, min(0.99, base_confidence + adjustment - 0.05))
+        return round(score, 2)
+
+    async def _emit_inbody_events(
+        self,
+        user_id: str,
+        report_id: str,
+        normalized_payload: Dict[str, Any],
+    ) -> None:
+        if not self.analytics_service:
+            return
+
+        await self.analytics_service.emit_event(
+            event_type="inbody_uploaded",
+            user_id=user_id,
+            payload={
+                "report_id": report_id,
+                "confidence": normalized_payload["parse_confidence"].get(
+                    "weight_kg", 0.0
+                ),
+            },
+        )
+
+        for field in normalized_payload["confirmation_needed"]:
+            await self.analytics_service.emit_event(
+                event_type="parser_low_conf_field",
+                user_id=user_id,
+                payload={"report_id": report_id, "field": field},
+                severity="warning",
+            )
     

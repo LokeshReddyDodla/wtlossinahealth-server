@@ -46,11 +46,6 @@ from .patient_vital import PatientVital
 from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
-from .weight_loss_agent import (
-    HealthIndicator,
-    InbodyMeasurement,
-    InbodyReport,
-    WeightLossAgentEnrollment,
-)
+from .weight_loss_agent import WeightLossAgentEnrollment
 from .user_activity_log import UserActivityLog
 from .patient_report import PatientReport

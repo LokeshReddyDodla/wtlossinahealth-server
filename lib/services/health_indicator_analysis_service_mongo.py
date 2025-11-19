@@ -19,10 +19,8 @@ class HealthIndicatorAnalysisService:
     def __init__(
         self,
         reports_collection: AsyncIOMotorCollection,
-        enrollments_collection: AsyncIOMotorCollection
     ):
         self.reports_collection = reports_collection
-        self.enrollments_collection = enrollments_collection
 
     async def analyze_health_indicators(
         self,
