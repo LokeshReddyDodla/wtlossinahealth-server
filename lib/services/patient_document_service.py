@@ -126,7 +126,7 @@ class PatientDocumentService:
 
             await self._upsert_to_qdrant(payload, text_repr, document_id)
 
-            return {"status": "success"}
+            return document_id
 
         except Exception as e:
             raise_http_exception(
