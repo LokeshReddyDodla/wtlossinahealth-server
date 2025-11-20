@@ -231,6 +231,16 @@ async def sync_patient_daily_fitness_reports_to_vector_store(
     print(f"✅ Synced {len(reports)} daily reports to Qdrant for {patient_id}")
 
 
+@shared_task(queue="vector_sync", rate_limit="30/m")
+def trigger_fitness_batch_sync(patient_ids: list[str]):
+    from lib.tasks.fitness_tasks import (
+        trigger_fitness_vector_upsert_for_patient,
+    )
+
+    for pid in patient_ids:
+        trigger_fitness_vector_upsert_for_patient.delay(pid)  # type: ignore
+
+
 def _parse_datetime(value):
     if not value:
         return None
