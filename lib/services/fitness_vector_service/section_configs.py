@@ -20,6 +20,7 @@ FITNESS_OVERVIEW_CONFIG = FitnessSectionConfig(
         "average_active_session_duration",
         "peak_hour",
         "peak_steps",
+        "peak_active_energy",
     ],
     template_method="fitness_overview",
 )
@@ -30,9 +31,15 @@ ACTIVITY_DISTRIBUTION_CONFIG = FitnessSectionConfig(
         "morning_steps",
         "afternoon_steps",
         "evening_steps",
+        "night_steps",
         "morning_duration",
         "afternoon_duration",
         "evening_duration",
+        "night_duration",
+        "morning_energy",
+        "afternoon_energy",
+        "evening_energy",
+        "night_energy",
     ],
     template_method="fitness_activity_distribution",
 )
