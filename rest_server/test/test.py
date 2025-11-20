@@ -752,7 +752,7 @@ async def enqueue_fitness_vector_batches(
 
         for i in range(total_batches):
             batch = patients[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-            patient_ids = [p.patient_id for p in batch]
+            patient_ids = [str(p.patient_id) for p in batch]
             trigger_fitness_batch_sync.delay(patient_ids)
 
         return {
