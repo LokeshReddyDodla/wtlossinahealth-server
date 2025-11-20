@@ -106,28 +106,37 @@ class FitnessVectorService:
         for name, config in STATS_CONFIGS.items():
             if name == "fitness_overview":
                 section_data = {
-                    "steps": report_data["steps"],
-                    "active_duration": report_data["active_duration"],
-                    "active_energy": report_data["active_energy"],
-                    "average_active_session_duration": report_data[
-                        "average_active_session_duration"
-                    ],
-                    "peak_hour": report_data["peak_activity_time"]["hour"],
-                    "peak_steps": report_data["peak_activity_time"][
-                        "max_steps"
-                    ],
+                    "steps": report_data.get("steps", 0),
+                    "active_duration": report_data.get("active_duration", 0),
+                    "active_energy": report_data.get("active_energy", 0.0),
+                    "average_active_session_duration": report_data.get(
+                        "average_active_session_duration", 0.0
+                    ),
+                    "peak_hour": report_data.get("peak_activity_time", {}).get(
+                        "hour"
+                    ),
+                    "peak_steps": report_data.get(
+                        "peak_activity_time", {}
+                    ).get("max_steps", 0),
+                    "peak_active_energy": report_data.get(
+                        "peak_activity_time", {}
+                    ).get("max_active_energy", 0.0),
                 }
 
             elif name == "fitness_activity_distribution":
-                dist = report_data["activity_distribution"]
-                section_data = {
-                    "morning_steps": dist["Morning"]["steps"],
-                    "morning_duration": dist["Morning"]["active_duration"],
-                    "afternoon_steps": dist["Afternoon"]["steps"],
-                    "afternoon_duration": dist["Afternoon"]["active_duration"],
-                    "evening_steps": dist["Evening"]["steps"],
-                    "evening_duration": dist["Evening"]["active_duration"],
-                }
+                dist = report_data.get("activity_distribution", {})
+                section_data = {}
+                for period in ["Morning", "Afternoon", "Evening", "Night"]:
+                    period_data = dist.get(period, {})
+                    section_data[f"{period.lower()}_steps"] = period_data.get(
+                        "steps", 0
+                    )
+                    section_data[f"{period.lower()}_duration"] = (
+                        period_data.get("active_duration", 0)
+                    )
+                    section_data[f"{period.lower()}_energy"] = period_data.get(
+                        "active_energy", 0.0
+                    )
 
             else:
                 continue
