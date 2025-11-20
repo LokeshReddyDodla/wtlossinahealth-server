@@ -29,9 +29,17 @@ class FitnessReportService:
             return None
 
     async def fetch_daily_reports_in_range(
-        self, patient_id: str, start_date: date, end_date: date
+        self,
+        patient_id: str,
+        start_date: date,
+        end_date: date,
+        include_id: bool = False,
     ):
         try:
+            projection = {}
+            if not include_id:
+                projection["_id"] = 0
+
             reports = (
                 await self.fitness_report_collection.find(
                     {
@@ -40,7 +48,7 @@ class FitnessReportService:
                         "start_date": {"$gte": start_date},
                         "end_date": {"$lte": end_date},
                     },
-                    {"_id": 0},
+                    projection,
                 )
                 .sort("start_date", 1)
                 .to_list(length=None)

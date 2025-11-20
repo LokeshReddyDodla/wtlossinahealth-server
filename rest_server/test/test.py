@@ -19,6 +19,8 @@ from lib.dependencies.service_dependencies import (
     get_ai_conversation_service_v2,
     get_cgm_report_service,
     get_cgm_vector_service,
+    get_fitness_report_service,
+    get_fitness_vector_service,
     get_meal_service,
     get_meal_vector_service,
     get_patient_profile_service,
@@ -48,6 +50,10 @@ from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.services.fitness_report_service import FitnessReportService
+from lib.services.fitness_vector_service.fitness_vector_service import (
+    FitnessVectorService,
+)
 from lib.services.meal_service import MealService
 from lib.services.meal_vector_service.meal_vector_service import (
     MealVectorService,
@@ -61,6 +67,10 @@ from lib.services.patient_profile_vector_service.patient_profile_vector_service 
 )
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
+)
+from lib.tasks.fitness_tasks import (
+    trigger_fitness_batch_sync,
+    trigger_fitness_vector_upsert_for_patient,
 )
 from lib.tasks.meal_tasks import generate_meal_vector, process_meal_batch
 from lib.tasks.other_tasks import process_profile_batch, process_smbg_batch
@@ -728,6 +738,36 @@ async def test_api(request: Request):
 #         )
 
 
+@router.get("/qdrant/fitness/all")
+async def enqueue_fitness_vector_batches(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    BATCH_SIZE = 50
+    try:
+        patients = (await session.execute(select(Patient))).scalars().all()
+        total_patients = len(patients)
+        total_batches = ceil(total_patients / BATCH_SIZE)
+
+        for i in range(total_batches):
+            batch = patients[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+            patient_ids = [p.patient_id for p in batch]
+            trigger_fitness_batch_sync.delay(patient_ids)
+
+        return {
+            "message": f"Enqueued {total_batches} batches for {total_patients} patients."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
 # @router.get("/qdrant/meal/{meal_id}")
 # async def test_qdrant_meal(
 #     meal_id: str,
@@ -763,6 +803,56 @@ async def test_api(request: Request):
 #         )
 #         return SuccessResponse(
 #             message="Meal report fetched successfully",
+#             data=result,
+#         )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await session.rollback()
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Internal Server Error",
+#             detail=str(e),
+#         )
+
+
+# @router.get("/qdrant/fitness/{fitness_report_id}")
+# async def test_qdrant_meal(
+#     fitness_report_id: str,
+#     patient_id: str,
+#     fitness_report_service: FitnessReportService = Depends(
+#         get_fitness_report_service
+#     ),
+#     patient_profile_service: PatientProfileService = Depends(
+#         get_patient_profile_service
+#     ),
+#     fitness_vector_service: FitnessVectorService = Depends(
+#         get_fitness_vector_service
+#     ),
+#     session: AsyncSession = Depends(get_postgres_session),
+# ):
+#     try:
+#         report = await fitness_report_service.fetch_report_by_id(
+#             fitness_report_id
+#         )
+
+#         if not report:
+#             raise
+
+#         print("==> report: ", report)
+
+#         patient_info = await patient_profile_service.fetch_patient_profile(
+#             patient_id=patient_id, include_health_data=True
+#         )
+
+#         result = await fitness_vector_service.upsert_report(
+#             patient_id,
+#             [report],
+#             patient_info.age,
+#             patient_info.gender,
+#         )
+#         return SuccessResponse(
+#             message="Fitness report saved successfully",
 #             data=result,
 #         )
 #     except HTTPException:

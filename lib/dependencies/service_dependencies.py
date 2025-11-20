@@ -419,5 +419,9 @@ def get_cgm_qdrant_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_qdrant_sync"))
 
 
+def get_fitness_qdrant_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("fitness_qdrant_sync"))
+
+
 def get_cgm_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_sync"))

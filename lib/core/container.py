@@ -228,6 +228,7 @@ for namespace in [
     "ai_conversation_intent_context",
     "patient_profile",
     "cgm_qdrant_sync",
+    "fitness_qdrant_sync",
     "cgm_sync",
 ]:
     container.register(

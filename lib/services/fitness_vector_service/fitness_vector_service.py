@@ -38,6 +38,9 @@ class FitnessVectorService:
         try:
             points = []
             for report in reports:
+                if self._is_empty_report(report):
+                    continue
+
                 period_points = await self._process_report_period(
                     patient_id=patient_id,
                     report_id=report["_id"],
@@ -273,3 +276,11 @@ class FitnessVectorService:
             base += f"-hour_{hour}"
 
         return hashlib.md5(base.encode()).hexdigest()
+
+    def _is_empty_report(self, report):
+        return (
+            report.get("steps", 0) <= 0
+            and report.get("active_duration", 0) <= 0
+            and report.get("active_energy", 0) <= 0
+            and not report.get("inactive_periods")
+        )
