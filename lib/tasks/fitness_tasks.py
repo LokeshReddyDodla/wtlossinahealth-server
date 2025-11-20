@@ -7,7 +7,7 @@ from lib.utils.fitness.processor import FitnessReportType
 
 
 @shared_task(queue="default")
-def generate_fitness_reports_for_patient(
+def trigger_fitness_report_generation_for_patient(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     from lib.dependencies.service_dependencies import get_celery_task_manager
@@ -16,29 +16,34 @@ def generate_fitness_reports_for_patient(
         task_manager = get_celery_task_manager()
         months_between = get_months_between_dates(start_date, end_date)
 
+        print(f"🏃 Triggering fitness reports for patient: {patient_id}")
+
         for year, month in reversed(months_between):
-            month_start_date, month_end_date = get_month_start_end(year, month)
+            month_start, month_end = get_month_start_end(year, month)
 
             task_manager.trigger_task_once(
-                "lib.tasks.fitness_tasks.generate_fitness_report_for_month",
+                "lib.tasks.fitness_tasks.generate_and_store_fitness_report_for_month",
                 args=[
                     patient_id,
-                    month_start_date,
-                    month_end_date,
+                    month_start,
+                    month_end,
                 ],
-                task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{FitnessReportType.MONTHLY}",
+                task_id=f"{patient_id}_{month_start}_{month_end}_{FitnessReportType.MONTHLY}",
                 queue="default",
             )
 
-        print(f"Generated fitness report for patient: {patient_id}")
+        print(
+            f"📅 Queued monthly fitness report for {patient_id} "
+            f"({month_start.isoformat()} - {month_end.isoformat()})"
+        )
     except Exception as e:
         print(
-            f"Failed to generate fitness report for {patient_id}. Error: {e}"
+            f"❌ Failed triggering fitness reports for {patient_id}. Error: {e}"
         )
 
 
 @shared_task(queue="default")
-async def generate_fitness_report_for_month(
+async def generate_and_store_fitness_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
     try:
@@ -66,16 +71,18 @@ async def generate_fitness_report_for_month(
         await service.save_reports_bulk(patient_id, reports)
 
         print(
-            f"✅ Generated fitness report for {patient_id} from {start_date}-{end_date}"
+            f"✅ Monthly fitness report saved for {patient_id} "
+            f"({start_date.isoformat()} – {end_date.isoformat()})"
         )
     except Exception as e:
         print(
-            f"❌ Failed to generate fitness report for {patient_id} from {start_date}-{end_date}. Error: {e}"
+            f"❌ Failed monthly fitness report for {patient_id} "
+            f"({start_date.isoformat()} – {end_date.isoformat()}). Error: {e}"
         )
 
 
 @shared_task(queue="default")
-async def generate_fitness_report(
+async def generate_and_store_fitness_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
@@ -107,10 +114,11 @@ async def generate_fitness_report(
         await service.save_reports_bulk(patient_id, reports)
 
         print(
-            f"✅ Generated {report_type} fitness report for {patient_id} from {start_date} to {end_date}"
+            f"✅ Generated {report_type} fitness report for {patient_id} "
+            f"({start_date.isoformat()} – {end_date.isoformat()})"
         )
-
     except Exception as e:
         print(
-            f"❌ Failed to generate {report_type} report for {patient_id} from {start_date} to {end_date}. Error: {e}"
+            f"❌ Failed {report_type} fitness report for {patient_id} "
+            f"({start_date.isoformat()} – {end_date.isoformat()}). Error: {e}"
         )

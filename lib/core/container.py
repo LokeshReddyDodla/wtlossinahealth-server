@@ -56,6 +56,9 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
+from lib.services.fitness_vector_service.fitness_vector_service import (
+    FitnessVectorService,
+)
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -656,6 +659,15 @@ container.register(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
+
+# 🔹 Fitness Vector Service
+container.register(
+    FitnessVectorService,
+    lambda: FitnessVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
 
 # 🔹 Meal Vector Service
 container.register(
