@@ -48,7 +48,6 @@ class CGMVectorService:
             points: list[PointStruct] = []
 
             for report_data in reports:
-
                 period_points = await self._process_report_period(
                     patient_id=patient_id,
                     patient_age=patient_age,

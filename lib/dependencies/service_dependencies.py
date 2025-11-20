@@ -42,6 +42,9 @@ from lib.services.dashboard_metrics.patient_metrics_service import (
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
+from lib.services.fitness_vector_service.fitness_vector_service import (
+    FitnessVectorService,
+)
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -316,6 +319,10 @@ def get_cgm_vector_service() -> CGMVectorService:
     return cast(CGMVectorService, container.resolve(CGMVectorService))
 
 
+def get_fitness_vector_service() -> FitnessVectorService:
+    return cast(FitnessVectorService, container.resolve(FitnessVectorService))
+
+
 def get_meal_vector_service() -> MealVectorService:
     return cast(MealVectorService, container.resolve(MealVectorService))
 
@@ -410,6 +417,10 @@ def get_file_content_extractor_service() -> FileContentExtractorService:
 
 def get_cgm_qdrant_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_qdrant_sync"))
+
+
+def get_fitness_qdrant_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("fitness_qdrant_sync"))
 
 
 def get_cgm_sync_cache_store() -> CacheStore:

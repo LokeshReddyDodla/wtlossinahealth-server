@@ -112,7 +112,7 @@ async def generate_and_store_cgm_report(
         )
 
 
-@shared_task(queue="cgm_reports", rate_limit="5/m")
+@shared_task(queue="vector_sync", rate_limit="5/m")
 async def trigger_cgm_vector_upsert_for_all_patients():
 
     from lib.dependencies.service_dependencies import (
@@ -144,11 +144,11 @@ async def trigger_cgm_vector_upsert_for_all_patients():
                 end_date,
             ],
             task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
-            queue="cgm_reports",
+            queue="vector_sync",
         )
 
 
-@shared_task(queue="cgm_reports", rate_limit="20/m")
+@shared_task(queue="vector_sync", rate_limit="20/m")
 async def trigger_cgm_vector_upsert_for_patient(patient_id: str):
     try:
         from lib.dependencies.service_dependencies import (
@@ -180,14 +180,14 @@ async def trigger_cgm_vector_upsert_for_patient(patient_id: str):
                 end_date,
             ],
             task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
-            queue="cgm_reports",
+            queue="vector_sync",
         )
 
     except Exception as error:
         print(f"❌ Failed to generate CGM vector for {patient_id}: {error}")
 
 
-@shared_task(queue="cgm_reports", rate_limit="10/m")
+@shared_task(queue="vector_sync", rate_limit="10/m")
 async def sync_patient_daily_cgm_reports_to_vector_store(
     patient_id: str,
     patient_age: int,
