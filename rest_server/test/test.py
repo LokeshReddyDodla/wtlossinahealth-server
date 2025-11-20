@@ -744,7 +744,9 @@ async def enqueue_fitness_vector_batches(
 ):
     BATCH_SIZE = 50
     try:
-        patients = (await session.execute(select(Patient))).scalars().all()
+        patients = (
+            (await session.execute(select(PatientModel))).scalars().all()
+        )
         total_patients = len(patients)
         total_batches = ceil(total_patients / BATCH_SIZE)
 
