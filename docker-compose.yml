@@ -124,10 +124,10 @@ services:
     restart: unless-stopped
     user: "1000:1000"
     deploy:
-    resources:
-      limits:
-        cpus: "2.0"
-        memory: 1.5G
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1.5G
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat
