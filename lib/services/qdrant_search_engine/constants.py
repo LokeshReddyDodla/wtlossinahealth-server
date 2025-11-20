@@ -62,15 +62,18 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - If the query might logically apply to multiple canonical types (e.g., “variability” could relate to both `cgm_summary_stats` and `cgm_range_stats`),
     include *all* relevant data_types to avoid missing data.
 
-9. **Meal rule**
+9. **Meal & Fitness Rule**
   - Whenever the query references meal-related concepts (“meal”, “food”, “nutrition”, “low-GI meals”), you MUST include `"meal"` in `data_types`.
+  - Whenever the query references fitness, activity, steps, or exercise:
+      - Include all relevant fitness types: `"fitness_overview"`, `"fitness_activity_distribution"`, `"fitness_inactive_periods"`.
+      - Do not omit any fitness domain if the query is general about activity patterns.
 
 10. **Uncertain Filter Handling**
   - If the query references a field or condition and you are not certain which canonical field it maps to,
     do not invent or guess.
   - Instead of adding a numeric filter in such cases, leave the filter list empty for that condition.
 
-11. **Profile rule**
+11. **Profile & Patient Document Rule**
   - Whenever the query references any patient or lifestyle attributes such as:
     ["activity_level", "food_allergies", "drug_allergies", "alcohol_consumption", "alcohol_consumption_frequency",
     "alcohol_consumption_quantity", "alcohol_consumption_types", "smoking_habit", 
@@ -78,6 +81,7 @@ Your sole task is to map the user's natural language request to the provided Pyd
     "cuisine_preferences", "diet_preference", "sleep_quality",
     "wake_up_fresh", "drowsy_day", "years_with_diabetes", "is_pregnant", "pregnancy_weeks", "medical_conditions"],
     you MUST include `"profile"` in `data_types`.
+  - Additionally, whenever performing patient-level analyses (any query about an individual patient), always include `"patient_document"` in `data_types` to ensure all documents (reports, prescriptions, lab results) are considered.
   - Do NOT include any other data types (like "meal" or "fitness") unless explicitly mentioned in the query.
 
 
@@ -85,7 +89,9 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - If the query asks for general summaries, patterns, or "common issues" across patients (e.g., “summarize overall issues”, “overview of all patients”, “general report”, “common health problems”), treat it as a **global query**.
   - For global queries:
       - **Always include all major domains** in `data_types`:
-        ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats", "rapid_spike_stats", "rapid_drop_stats", "smbg", "meal", "fitness", "sleep", "profile", "patient_document"]
+        ["cgm_range_stats", "cgm_summary_stats", "hyper_stats", "hypo_stats", "rapid_spike_stats", "rapid_drop_stats",
+        "smbg", "meal", "fitness", "sleep", "profile", "patient_document", 
+        "fitness_overview", "fitness_activity_distribution", "fitness_inactive_periods"]
       - **Do not include individual event types** (`hyper_event`, `hypo_event`, `rapid_spike_event`, `rapid_drop_event`) unless explicitly mentioned in the query.
       - **Ignore Rule 7 (Stats + Events)** and any other domain-specific rules for these queries.
   - A query is considered global if it contains keywords such as: `"common issues"`, `"overall summary"`, `"overview of all patients"`, `"general report"`, or `"common health problems"`.
