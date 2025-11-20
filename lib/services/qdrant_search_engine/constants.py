@@ -200,7 +200,34 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - nutrition.zinc
   - nutrition.magnesium
   
-  
+- **fitness_overview**
+  - steps
+  - active_duration
+  - active_energy
+  - average_active_session_duration
+  - peak_hour
+  - peak_steps
+  - peak_active_energy
+
+- **fitness_activity_distribution**
+  - morning_steps
+  - afternoon_steps
+  - evening_steps
+  - night_steps
+  - morning_duration
+  - afternoon_duration
+  - evening_duration
+  - night_duration
+  - morning_energy
+  - afternoon_energy
+  - evening_energy
+  - night_energy
+
+- **fitness_inactive_periods**
+  - start_time
+  - end_time
+  - inactive_duration
+
 - **profile**
   - patient_id
   - first_name

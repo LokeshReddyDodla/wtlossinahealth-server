@@ -49,7 +49,7 @@ ACTIVITY_DISTRIBUTION_CONFIG = FitnessSectionConfig(
 INACTIVE_PERIOD_CONFIG = FitnessSectionConfig(
     name="fitness_inactive_periods",
     keys=["start_time", "end_time", "inactive_duration"],
-    template_method="inactive_period",
+    template_method="fitness_inactive_period",
     call_signature="event",
     data_key="fitness_inactive_periods",
 )
