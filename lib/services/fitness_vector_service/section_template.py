@@ -23,7 +23,7 @@ class FitnessSectionTemplates:
         )
 
     @staticmethod
-    def inactive_period(event: dict) -> str:
+    def fitness_inactive_period(event: dict) -> str:
         return (
             f"Inactive period: {event.get('inactive_duration')} minutes "
             f"from {event['start_time']} to {event['end_time']}."
