@@ -738,36 +738,36 @@ async def test_api(request: Request):
 #         )
 
 
-@router.get("/qdrant/fitness/all")
-async def enqueue_fitness_vector_batches(
-    session: AsyncSession = Depends(get_postgres_session),
-):
-    BATCH_SIZE = 50
-    try:
-        patients = (
-            (await session.execute(select(PatientModel))).scalars().all()
-        )
-        total_patients = len(patients)
-        total_batches = ceil(total_patients / BATCH_SIZE)
+# @router.get("/qdrant/fitness/all")
+# async def enqueue_fitness_vector_batches(
+#     session: AsyncSession = Depends(get_postgres_session),
+# ):
+#     BATCH_SIZE = 50
+#     try:
+#         patients = (
+#             (await session.execute(select(PatientModel))).scalars().all()
+#         )
+#         total_patients = len(patients)
+#         total_batches = ceil(total_patients / BATCH_SIZE)
 
-        for i in range(total_batches):
-            batch = patients[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-            patient_ids = [str(p.patient_id) for p in batch]
-            trigger_fitness_batch_sync.delay(patient_ids)
+#         for i in range(total_batches):
+#             batch = patients[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+#             patient_ids = [str(p.patient_id) for p in batch]
+#             trigger_fitness_batch_sync.delay(patient_ids)
 
-        return {
-            "message": f"Enqueued {total_batches} batches for {total_patients} patients."
-        }
+#         return {
+#             "message": f"Enqueued {total_batches} batches for {total_patients} patients."
+#         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        await session.rollback()
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
-            detail=str(e),
-        )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await session.rollback()
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Internal Server Error",
+#             detail=str(e),
+#         )
 
 
 # @router.get("/qdrant/meal/{meal_id}")
