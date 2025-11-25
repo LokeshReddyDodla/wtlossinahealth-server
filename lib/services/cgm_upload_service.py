@@ -1,6 +1,7 @@
 from datetime import datetime
-from io import StringIO
+from io import BytesIO, StringIO
 from typing import List, Tuple
+import zipfile
 
 import pandas as pd
 from lib.core.postgres_store import PostgresStore
@@ -17,6 +18,7 @@ from lib.utils.libre_view_sensor_report_generator import (
     SensorLifecycleReportGenerator,
 )
 from lib.utils.postgres_session_decorator import with_postgres_session
+from xlrd.biffh import XLRDError
 
 
 class CGMUploadService:
@@ -55,7 +57,11 @@ class CGMUploadService:
 
             # Delete existing CGM data in the range
             self.clickhouse_store.delete_existing_cgm_data(
-                "aihealth.cgm_data", patient_id, start_time, end_time
+                "aihealth.cgm_data",
+                patient_id,
+                start_time,
+                end_time,
+                "libreview",
             )
 
             # Prepare new data
@@ -81,6 +87,7 @@ class CGMUploadService:
                         ],  # .strftime("%Y-%m-%dT%H:%M:%S")
                         "glucose_level": glucose_val,
                         "record_type": record_type,
+                        "source": "libreview",
                     }
                 )
 
@@ -125,7 +132,7 @@ class CGMUploadService:
 
             trigger_cgm_report_generation_for_periods.delay(
                 patient_id, report_periods
-            )
+            )  # type: ignore
 
             print(
                 f"✅ Uploaded CGM data for {patient_id} "
@@ -136,5 +143,130 @@ class CGMUploadService:
             raise_http_exception(
                 status_code=500,
                 message="Failed to upload CGM data",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def parse_and_upload_sinocare_excel_data(
+        self,
+        patient_id: str,
+        file_contents: bytes,
+        *,
+        postgres_session: AsyncSession,
+    ):
+        try:
+            # Read Excel or CSV
+            try:
+                df_raw = pd.read_excel(
+                    BytesIO(file_contents), engine="xlrd", skiprows=3
+                )
+            except (zipfile.BadZipFile, XLRDError):
+                df_raw = pd.read_csv(BytesIO(file_contents), skiprows=3)
+
+            # Normalize column names
+            df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
+
+            # Ensure required columns exist
+            required_cols = ["s/n", "time point", "value", "units"]
+            if not set(required_cols).issubset(df_raw.columns):
+                raise ValueError(
+                    "Sinocare Excel does not contain the expected columns"
+                )
+
+            df = df_raw[required_cols].copy()
+
+            # Convert timestamp
+            df["timestamp"] = pd.to_datetime(
+                df["time point"], errors="coerce"
+            ).dt.tz_localize(None)
+            df = df.dropna(subset=["timestamp"])
+
+            # Normalize units
+            df["units"] = df["units"].str.strip().str.lower()
+
+            # Convert to mg/dL dynamically
+            def convert_to_mgdl(value, unit):
+                try:
+                    val = float(value)
+                except Exception:
+                    return None
+                if unit in ["mmol/l", "mmol"]:
+                    return round(val * 18)
+                elif unit in ["mg/dl", "mg"]:
+                    return round(val)
+                return None
+
+            df["glucose_mgdl"] = df.apply(
+                lambda row: convert_to_mgdl(row["value"], row["units"]), axis=1  # type: ignore
+            )  # type: ignore
+            df = df.dropna(subset=["glucose_mgdl"])
+            df["glucose_mgdl"] = df["glucose_mgdl"].astype(int)
+
+            # Determine deletion window
+            start_time = df["timestamp"].min()
+            end_time = df["timestamp"].max()
+
+            # Delete existing records
+            self.clickhouse_store.delete_existing_cgm_data(
+                "aihealth.cgm_data",
+                patient_id,
+                start_time,
+                end_time,
+                "sinocare",
+            )
+
+            # Prepare ClickHouse data
+            data_points = []
+            for _, row in df.iterrows():
+                data_points.append(
+                    {
+                        "patient_id": str(patient_id),
+                        "time": row["timestamp"],
+                        "glucose_level": row["glucose_mgdl"],
+                        "record_type": "historic",
+                        "source": "sinocare",
+                    }
+                )
+
+            # Insert new readings
+            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+
+            # Generate lifecycle report
+            lifecycle_df = pd.DataFrame(
+                {
+                    "Device Timestamp": df["timestamp"],
+                    "Historic Glucose mg/dL": df["glucose_mgdl"],
+                }
+            )
+
+            generator = SensorLifecycleReportGenerator(lifecycle_df)
+            reports = generator.generate_reports()
+            report_periods = [(r["start"], r["end"]) for r in reports]
+
+            # Update last sync
+            connected_app_result = await postgres_session.execute(
+                select(PatientConnectedApp)
+                .where(PatientConnectedApp.patient_id == patient_id)
+                .options(selectinload(PatientConnectedApp.sinocare))
+            )
+            connected_app = connected_app_result.scalars().first()
+            if connected_app and connected_app.sinocare:
+                connected_app.sinocare.last_sync_timestamp = datetime.now()
+                await postgres_session.commit()
+
+            # Trigger async CGM report generation
+            trigger_cgm_report_generation_for_periods.delay(
+                patient_id, report_periods
+            )
+
+            print(
+                f"✅ Uploaded Sinocare data for {patient_id} "
+                f"({len(data_points)} records, {len(report_periods)} periods)"
+            )
+
+        except Exception as e:
+            raise_http_exception(
+                status_code=500,
+                message="Failed to upload Sinocare Excel CGM data",
                 detail=str(e),
             )

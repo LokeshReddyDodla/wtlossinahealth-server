@@ -22,6 +22,23 @@ class PatientLibreView(PatientLibreViewBase):
         from_attributes = True
 
 
+class PatientSinocareBase(BaseModel):
+    sinocare_id: str
+
+
+class PatientSinocareCreate(PatientSinocareBase):
+    pass
+
+
+class PatientSinocare(PatientSinocareBase):
+    id: UUID
+    last_sync_timestamp: Optional[datetime] = None
+    connected_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class PatientOtherAppBase(BaseModel):
     other_app_id: str
     additional_field: Optional[str] = None
@@ -59,6 +76,7 @@ class PatientConnectedApp(PatientConnectedAppBase):
 
     id: UUID
     libreview: Optional[PatientLibreView] = None
+    sinocare: Optional[PatientSinocare] = None
     other_app: Optional[PatientOtherApp] = None
     # patient: Optional[PatientSchema] = None
 

@@ -169,6 +169,9 @@ class PatientProfileService:
                         PatientConnectedApp.libreview
                     ),
                     joinedload(PatientModel.connected_apps).joinedload(
+                        PatientConnectedApp.sinocare
+                    ),
+                    joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
                 )
