@@ -18,6 +18,9 @@ class PatientConnectedApp(Base):
     libreview = relationship(
         "PatientLibreView", back_populates="connected_app", uselist=False
     )
+    sinocare = relationship(
+        "PatientSinocare", back_populates="connected_app", uselist=False
+    )
     other_app = relationship(
         "PatientOtherApp", back_populates="connected_app", uselist=False
     )
@@ -38,6 +41,26 @@ class PatientLibreView(Base):
 
     connected_app = relationship(
         "PatientConnectedApp", back_populates="libreview"
+    )
+
+
+class PatientSinocare(Base):
+    __tablename__ = "patient_sinocare"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    connected_app_id = Column(
+        UUID(as_uuid=True), ForeignKey("patient_connected_apps.id")
+    )
+    sinocare_id = Column(
+        String, nullable=False
+    )  # could be device serial or user ID
+    last_sync_timestamp = Column(DateTime, nullable=True)
+    connected_at = Column(
+        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
+    )
+
+    connected_app = relationship(
+        "PatientConnectedApp", back_populates="sinocare", uselist=False
     )
 
 

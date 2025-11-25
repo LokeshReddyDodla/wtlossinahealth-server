@@ -269,6 +269,11 @@ class CareProviderProfileService:
                             PatientConnectedApp.libreview != None
                         )
 
+                    if app == "sinocare":
+                        app_conditions.append(
+                            PatientConnectedApp.sinocare != None
+                        )
+
                 if app_conditions:
                     stmt = stmt.where(or_(*app_conditions))
 

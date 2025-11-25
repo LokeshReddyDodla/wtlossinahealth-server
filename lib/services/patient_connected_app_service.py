@@ -14,6 +14,9 @@ from lib.models.patient_connected_app import (
 from lib.models.patient_connected_app import (
     PatientLibreView as PatientLibreViewModel,
 )
+from lib.models.patient_connected_app import (
+    PatientSinocare as PatientSinocareModel,
+)
 from lib.schemas.patient_connected_app import PatientLibreViewCreate
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -34,7 +37,10 @@ class PatientConnectedAppService:
             result = await postgres_session.execute(
                 select(PatientConnectedAppModel)
                 .where(PatientConnectedAppModel.patient_id == patient_id)
-                .options(selectinload(PatientConnectedAppModel.libreview))
+                .options(
+                    selectinload(PatientConnectedAppModel.libreview),
+                    selectinload(PatientConnectedAppModel.sinocare),
+                )
             )
 
             connected_app = result.scalars().first()
@@ -71,6 +77,29 @@ class PatientConnectedAppService:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Failed to retrieve all connected apps with LibreView data.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def get_all_connected_apps_with_sinocare(
+        self, *, postgres_session: AsyncSession
+    ) -> List[PatientConnectedAppModel]:
+        try:
+            result = await postgres_session.execute(
+                select(PatientConnectedAppModel)
+                .where(PatientConnectedAppModel.sinocare != None)
+                .options(
+                    selectinload(PatientConnectedAppModel.sinocare),
+                    selectinload(PatientConnectedAppModel.patient),
+                )
+            )
+
+            connected_apps = list(result.scalars().all())
+            return connected_apps
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Failed to retrieve all connected apps with sinocare data.",
                 detail=str(e),
             )
 
@@ -123,6 +152,54 @@ class PatientConnectedAppService:
             )
 
     @with_postgres_session
+    async def add_or_update_sinocare(
+        self,
+        patient_id: str,
+        sinocare_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientSinocareModel:
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientSinocareModel).where(
+                    PatientSinocareModel.connected_app_id == connected_app.id,
+                )
+            )
+            existing_sinocare: Any = result.scalars().first()
+
+            if existing_sinocare:
+                # Update existing sinocare record
+                existing_sinocare.sinocare_id = sinocare_id
+                existing_sinocare.last_sync_timestamp = None
+
+                await postgres_session.commit()
+                await postgres_session.refresh(existing_sinocare)
+                return existing_sinocare
+            else:
+                # Create new sinocare record
+                new_sinocare = PatientSinocareModel(
+                    connected_app_id=connected_app.id,
+                    sinocare_id=sinocare_id,
+                )
+
+                postgres_session.add(new_sinocare)
+                await postgres_session.commit()
+                await postgres_session.refresh(new_sinocare)
+                return new_sinocare
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to add or update sinocare data for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
     async def remove_libreview(
         self,
         patient_id: str,
@@ -158,5 +235,42 @@ class PatientConnectedAppService:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 message=f"Failed to unlink LibreView for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def remove_sinocare(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientSinocareModel).where(
+                    PatientSinocareModel.connected_app_id == connected_app.id,
+                )
+            )
+            sinocare: Optional[PatientSinocareModel] = result.scalars().first()
+
+            if not sinocare:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No Sinocare account found for patient ID '{patient_id}'.",
+                )
+
+            await postgres_session.delete(sinocare)
+            await postgres_session.commit()
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to unlink sinocare for patient ID '{patient_id}'.",
                 detail=str(e),
             )
