@@ -33,7 +33,8 @@ class ClickHouseStore:
             patient_id String,
             time DateTime,
             glucose_level Float32,
-            record_type String
+            record_type String,
+            source String DEFAULT 'unknown'
         ) ENGINE = MergeTree()
         ORDER BY (patient_id, time);
         """
@@ -62,12 +63,10 @@ class ClickHouseStore:
     def write_data(self, table_name, data):
         if not data:
             return
-        columns = ", ".join(data[0].keys())
-        values = ", ".join(
-            f"({', '.join(map(repr, record.values()))})" for record in data
-        )
-        query = f"INSERT INTO {table_name} ({columns}) VALUES {values}"
-        self.client.execute(query)
+        columns = list(data[0].keys())
+        values = [tuple(record[c] for c in columns) for record in data]
+        query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES"
+        self.client.execute(query, values)
 
     def delete_existing_cgm_data(
         self,
@@ -75,9 +74,12 @@ class ClickHouseStore:
         patient_id: str,
         start_time: datetime,
         end_time: datetime,
+        source: Optional[str] = None,
     ):
+        source_condition = f"AND source = '{source}'" if source else ""
         query = f"""
         ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND time BETWEEN '{start_time}' AND '{end_time}'
+        {source_condition}
         """
         self.client.execute(query)
 
