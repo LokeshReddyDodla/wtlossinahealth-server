@@ -86,6 +86,7 @@ class AIConversationContextBatcher:
                     "batch_patient_ids": batch_ids,
                     "context": full_context,
                     "context_items": context_items,
+                    "filter_applied": filter_applied,
                     "token_count": total_tokens,
                 }
             else:
@@ -101,6 +102,7 @@ class AIConversationContextBatcher:
                             "batch_patient_ids": batch_ids,
                             "context": "\n\n".join(current_chunk),
                             "context_items": context_items,
+                            "filter_applied": filter_applied,
                             "token_count": current_tokens,
                         }
                         current_chunk = [line]
@@ -115,5 +117,6 @@ class AIConversationContextBatcher:
                         "batch_patient_ids": batch_ids,
                         "context": "\n\n".join(current_chunk),
                         "context_items": context_items,
+                        "filter_applied": filter_applied,
                         "token_count": current_tokens,
                     }
