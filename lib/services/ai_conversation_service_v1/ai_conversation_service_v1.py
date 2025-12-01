@@ -88,13 +88,13 @@ class AIConversationServiceV1:
         if provider == "openai":
             self.chat_model = ChatOpenAI(
                 model=model,
-                # temperature=0.5,
+                temperature=1,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
         elif provider == "gemini":
             self.chat_model = ChatGoogleGenerativeAI(
                 model=model,
-                # temperature=0.5,
+                temperature=1,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
         else:
