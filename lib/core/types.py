@@ -39,6 +39,8 @@ AiConversationTypeLiteral = Literal[
 ]
 
 OpenAIModelLiteral = Literal[
+    "gpt-5.1",
+    "gpt-5",
     "gpt-5-mini",  # Best for reliability + reasoning
     "gpt-4o",  # For multimodal (text + image)
     "gpt-4o-mini",  # For speed + cost balance
@@ -49,6 +51,10 @@ OpenAIModelLiteral = Literal[
 GeminiAIModelLiteral = Literal[
     "gemini-1.5-flash",
     "gemini-2.0-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-3-pro-preview",
 ]
 
 PerplexityAIModelLiteral = Literal["sonar", "sonar-reasoning"]
