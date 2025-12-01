@@ -1,7 +1,5 @@
 from collections import defaultdict
 import time
-from typing import Dict, Union
-
 from langchain_openai import ChatOpenAI
 
 from lib.core.constants import ProfileTypeEnum
@@ -79,7 +77,7 @@ class AIConversationServiceV1:
     def _setup_model(
         self,
         model: Union[
-            str | OpenAIModelLiteral, GeminiAIModelLiteral
+            str, OpenAIModelLiteral, GeminiAIModelLiteral
         ] = "gpt-4.1-mini",
         provider: AIModelProviderLiteral = "openai",
     ):
