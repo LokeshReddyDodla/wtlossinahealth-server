@@ -138,12 +138,12 @@ class FitnessUploadService:
                 "source_platform": item.source_platform,
                 "unit": item.unit,
                 "value": float(item.value),
-                "start_datetime": parse(item.start_datetime)
-                .replace(tzinfo=None)
-                .strftime("%Y-%m-%dT%H:%M:%S"),
-                "end_datetime": parse(item.end_datetime)
-                .replace(tzinfo=None)
-                .strftime("%Y-%m-%dT%H:%M:%S"),
+                "start_datetime": parse(item.start_datetime).replace(
+                    tzinfo=None
+                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
+                "end_datetime": parse(item.end_datetime).replace(
+                    tzinfo=None
+                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
             }
             for item in fitness_data.steps + fitness_data.active_energy_burned
         ]
