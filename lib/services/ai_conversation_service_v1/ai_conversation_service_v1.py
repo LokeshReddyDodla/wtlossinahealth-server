@@ -74,30 +74,43 @@ class AIConversationServiceV1:
         self.token_usage_service = get_token_usage_service()
         self.ai_messages_collection = get_ai_conversation_messages_collection()
 
-        self.selected_ai_model: Union[
-            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
-        ] = selected_ai_model
-        self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
+        self._setup_model(model=selected_ai_model, provider=ai_model_provider)
 
-        if ai_model_provider == "openai":
+    def _setup_model(
+        self,
+        model: Union[
+            str | OpenAIModelLiteral, GeminiAIModelLiteral
+        ] = "gpt-4.1-mini",
+        provider: AIModelProviderLiteral = "openai",
+    ):
+        self.selected_ai_model = model
+        self.ai_model_provider: AIModelProviderLiteral = provider
+
+        # ---- Provider Selection ----
+        if provider == "openai":
             self.chat_model = ChatOpenAI(
-                model=self.selected_ai_model,  # type: ignore
+                model=model,
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
-        else:
+        elif provider == "gemini":
             self.chat_model = ChatGoogleGenerativeAI(
-                api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
-                model=self.selected_ai_model,
+                model=model,
                 temperature=0.5,
+                api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
+        else:
+            raise ValueError(f"Unknown AI provider: {provider}")
 
+        # ---- Structured Output ----
         self.output_parser = PydanticOutputParser(pydantic_object=AIResponse)
         format_instructions = self.output_parser.get_format_instructions()
 
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
         )
+
+        # ---- System Message ----
         self.system_message = BaseSystemMessage().get_system_message(
             format_instructions=format_instructions
         )
@@ -201,9 +214,16 @@ class AIConversationServiceV1:
         human_input: str,
         api_endpoint: str,
         report_id: Optional[str] = None,
+        model: Optional[str] = None,
     ):
         start_time = time.monotonic()
         ai_message_data = None
+
+        if model:
+            self._setup_model(
+                model=model,
+                provider=self.ai_model_provider,
+            )
 
         try:
             # Log user message

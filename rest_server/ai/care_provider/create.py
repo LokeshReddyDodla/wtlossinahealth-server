@@ -27,6 +27,7 @@ async def ask_ai_in_careprovider_conversation(
     conversation_id: str,
     human_input: str,
     report_id: Optional[str] = None,
+    ai_model: Optional[str] = None,
     ai_conversation_service_v1: AIConversationServiceV1 = Depends(
         get_ai_conversation_service_v1
     ),
@@ -46,6 +47,7 @@ async def ask_ai_in_careprovider_conversation(
             conversation_id=conversation_id,
             human_input=human_input,
             api_endpoint=request.url.path,
+            model=ai_model,
         )
 
         return SuccessResponse(
