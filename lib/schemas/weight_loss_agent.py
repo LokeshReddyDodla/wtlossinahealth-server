@@ -181,6 +181,37 @@ class InbodyReportAnalysisResult(InbodyNormalizedFields):
         }
 
 
+class WeightLossEnrollmentBase(BaseModel):
+    patient_id: UUID
+    enrolled_by_care_provider_id: UUID
+    program_goals: Optional[str] = None
+    target_weight_kg: Optional[float] = None
+    target_bmi: Optional[float] = None
+
+
+class WeightLossEnrollmentCreate(WeightLossEnrollmentBase):
+    """Payload to create a weight loss enrollment."""
+
+
+class WeightLossEnrollmentUpdate(BaseModel):
+    """Fields that can be updated on an enrollment."""
+    program_goals: Optional[str] = None
+    target_weight_kg: Optional[float] = None
+    target_bmi: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
+class WeightLossEnrollment(WeightLossEnrollmentBase):
+    enrollment_id: UUID
+    enrollment_date: datetime
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class ChatRequest(BaseModel):
     """Schema for chat requests to the weight loss agent"""
     question: str = Field(..., description="User's question or message", min_length=1)

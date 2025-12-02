@@ -7,7 +7,6 @@ from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
 from google.oauth2 import service_account
 
-from lib.core.container import container
 from lib.core.constants import FCMProjectEnum
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
@@ -116,6 +115,9 @@ class FCMService:
         """Send a batch of FCM notifications to all devices of a user."""
 
         try:
+            # Lazy import to avoid circular dependency
+            from lib.core.container import container
+            
             user_device_service = UserDeviceService(
                 postgres_store=cast(
                     PostgresStore, container.resolve(PostgresStore)

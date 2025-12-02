@@ -53,6 +53,10 @@ celery.conf.update(
             "task": "lib.tasks.meal_reminder.general_check_task.check_missed_meals_streaks",
             "schedule": crontab(hour="9", minute="15"),  # Once every morning
         },
+        "weightloss-agent-daily-cycle": {
+            "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
+            "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
+        },
     },
 )
 
@@ -66,3 +70,4 @@ from lib.tasks.libreview_tasks import *
 from lib.tasks.other_tasks import *
 from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
+from lib.tasks.weightloss_agent.agentic_orchestrator import *

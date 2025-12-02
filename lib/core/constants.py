@@ -1,5 +1,7 @@
 from enum import Enum
 
+API_RESPONSE_VERSION = "2025.03"
+
 
 class ProfileTypeEnum(Enum):
     PATIENT = "patient"

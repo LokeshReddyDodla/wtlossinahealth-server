@@ -95,7 +95,7 @@ from lib.services.sleep_report_service import SleepReportService
 from lib.services.smbg_vector_service.smbg_vector_service import (
     SMBGVectorService,
 )
-
+from lib.services.smbg_agent_service import SMBGAgentService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -108,7 +108,26 @@ from lib.services.cgm_report_service_v2.src.cgm_vector import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
-
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
+from lib.services.weightloss_agent.intake_service import IntakeService
+from lib.services.weightloss_agent.safety_rules_service import (
+    SafetyRulesService,
+)
+from lib.services.weightloss_agent.plan_composer_service import (
+    PlanComposerService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
+from lib.services.weightloss_agent.glp1_symptoms_service import (
+    Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.exercise_recommendation_service import (
+    ExerciseRecommendationService,
+)
+from lib.services.weightloss_agent.agentic_orchestrator import (
+    AgenticOrchestrator,
+)
 
 # Initialize Container
 container = Container()
@@ -194,6 +213,64 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("weight_loss_progress_analyses"),
+    scope=Scope.singleton,
+)
+
+# Intake + patient app collections
+container.register(
+    "exercise_preferences_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("exercise_preferences"),
+    scope=Scope.singleton,
+)
+container.register(
+    "fitness_screen_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("fitness_screen"),
+    scope=Scope.singleton,
+)
+container.register(
+    "willingness_commitment_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("willingness_commitment"),
+    scope=Scope.singleton,
+)
+container.register(
+    "plan_snapshots_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("plan_snapshots"),
+    scope=Scope.singleton,
+)
+container.register(
+    "suggestion_cards_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("suggestion_cards"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weekly_symptoms_glp1_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weekly_symptoms_glp1"),
+    scope=Scope.singleton,
+)
+container.register(
+    "audit_traces_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("audit_traces"),
+    scope=Scope.singleton,
+)
+container.register(
+    "analytics_events_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("analytics_events"),
     scope=Scope.singleton,
 )
 
@@ -459,7 +536,18 @@ container.register(
     ),
 )
 
+# 🔹 SMBG Agent Service
+def _create_smbg_agent_service():
+    from lib.services.fcm_service import FCMService
+    return SMBGAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=container.resolve(PatientProfileService),
+        meal_report_service=container.resolve(MealReportService),
+        fitness_report_service=container.resolve(FitnessReportService),
+        fcm_service=FCMService(),
+    )
 
+container.register(SMBGAgentService, _create_smbg_agent_service)
 
 # 🔹 Sleep Stats Processor
 container.register(
@@ -585,9 +673,130 @@ container.register(
             CareProviderProfileService,
             container.resolve(CareProviderProfileService),
         ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
+# 🔹 Analytics Service
+container.register(
+    AnalyticsService,
+    lambda: AnalyticsService(
+        analytics_events_collection=container.resolve(
+            "analytics_events_collection"
+        ),
+        audit_traces_collection=container.resolve("audit_traces_collection"),
+    ),
+)
+
+# 🔹 Intake Service
+container.register(
+    IntakeService,
+    lambda: IntakeService(
+        exercise_preferences_collection=container.resolve(
+            "exercise_preferences_collection"
+        ),
+        fitness_screen_collection=container.resolve(
+            "fitness_screen_collection"
+        ),
+        willingness_commitment_collection=container.resolve(
+            "willingness_commitment_collection"
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Safety Rules Service
+container.register(
+    SafetyRulesService,
+    lambda: SafetyRulesService(
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Exercise Recommendation Service
+container.register(
+    ExerciseRecommendationService,
+    lambda: ExerciseRecommendationService(
+        ai_conversation_service=AiConversationService(
+            conversation_type="weight-loss-agent",
+            ai_model_provider="openai",
+            selected_ai_model="gpt-4o",
+        )
+    ),
+)
+
+# 🔹 Plan Composer Service
+container.register(
+    PlanComposerService,
+    lambda: PlanComposerService(
+        plan_snapshots_collection=container.resolve(
+            "plan_snapshots_collection"
+        ),
+        inbody_reports_collection=container.resolve(
+            "inbody_reports_collection"
+        ),
+        intake_service=cast(IntakeService, container.resolve(IntakeService)),
+        safety_rules_service=cast(
+            SafetyRulesService, container.resolve(SafetyRulesService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        exercise_recommendation_service=cast(
+            ExerciseRecommendationService,
+            container.resolve(ExerciseRecommendationService),
+        ),
+    ),
+)
+
+# 🔹 Coach Messenger Service
+container.register(
+    CoachMessengerService,
+    lambda: CoachMessengerService(
+        suggestion_cards_collection=container.resolve(
+            "suggestion_cards_collection"
+        ),
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 GLP-1 Symptoms Service
+container.register(
+    Glp1SymptomsService,
+    lambda: Glp1SymptomsService(
+        weekly_symptoms_collection=container.resolve(
+            "weekly_symptoms_glp1_collection"
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Agentic Orchestrator
+container.register(
+    AgenticOrchestrator,
+    lambda: AgenticOrchestrator(
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        coach_messenger_service=cast(
+            CoachMessengerService, container.resolve(CoachMessengerService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
 
 
 # 🔹 CGM Upload Service
