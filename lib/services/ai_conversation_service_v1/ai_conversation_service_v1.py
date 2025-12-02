@@ -72,33 +72,33 @@ class AIConversationServiceV1:
         self.token_usage_service = get_token_usage_service()
         self.ai_messages_collection = get_ai_conversation_messages_collection()
 
-        self._setup_model(model=selected_ai_model, provider=ai_model_provider)
+        # self._setup_model(model=selected_ai_model)
 
     def _setup_model(
         self,
         model: Union[
             str, OpenAIModelLiteral, GeminiAIModelLiteral
         ] = "gpt-4.1-mini",
-        provider: AIModelProviderLiteral = "openai",
     ):
         self.selected_ai_model = model
-        self.ai_model_provider: AIModelProviderLiteral = provider
 
         # ---- Provider Selection ----
-        if provider == "openai":
+        if model in OpenAIModelLiteral.__args__:
+            self.ai_model_provider = "openai"
             self.chat_model = ChatOpenAI(
                 model=model,
                 temperature=1,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
-        elif provider == "gemini":
+        elif model in GeminiAIModelLiteral.__args__:
+            self.ai_model_provider = "gemini"
             self.chat_model = ChatGoogleGenerativeAI(
                 model=model,
                 temperature=1,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
         else:
-            raise ValueError(f"Unknown AI provider: {provider}")
+            raise ValueError(f"Unknown model: {model}")
 
         # ---- Structured Output ----
         self.output_parser = PydanticOutputParser(pydantic_object=AIResponse)
@@ -212,7 +212,7 @@ class AIConversationServiceV1:
         human_input: str,
         api_endpoint: str,
         report_id: Optional[str] = None,
-        model: Optional[str] = None,
+        model: Optional[str] = "gpt-4.1-mini",
     ):
         start_time = time.monotonic()
         ai_message_data = None
@@ -220,7 +220,6 @@ class AIConversationServiceV1:
         if model:
             self._setup_model(
                 model=model,
-                provider=self.ai_model_provider,
             )
 
         try:
