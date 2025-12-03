@@ -5,7 +5,7 @@ from typing import Any, Dict
 from celery import shared_task
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_daily_meal_report(
     patient_id: str,
     report_date: date,
@@ -44,7 +44,7 @@ async def generate_daily_meal_report(
         )
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_meal_vector(
     patient_id: str, meal_id: str, meal_data: dict[str, Any]
 ):
@@ -78,7 +78,7 @@ async def generate_meal_vector(
         print(f"❌ Failed to generate Meal vector for {patient_id}: {error}")
 
 
-@shared_task
+@shared_task(queue="default")
 async def process_meal_batch(batch: list[dict]):
     try:
         from lib.dependencies.service_dependencies import (

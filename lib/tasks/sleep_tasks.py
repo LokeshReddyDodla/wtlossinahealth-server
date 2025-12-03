@@ -7,7 +7,7 @@ from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.sleep.sleep_stats_processor import SleepReportType
 
 
-@shared_task
+@shared_task(queue="default")
 def generate_sleep_reports_for_patient(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
@@ -28,6 +28,7 @@ def generate_sleep_reports_for_patient(
                     month_end_date,
                 ],
                 task_id=f"{patient_id}_{month_start_date}_{month_end_date}_{SleepReportType.MONTHLY}",
+                queue="default",
             )
 
         print(f"Generated sleep report for patient: {patient_id}")
@@ -35,7 +36,7 @@ def generate_sleep_reports_for_patient(
         print(f"Failed to generate sleep report for {patient_id}. Error: {e}")
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_sleep_report_for_month(
     patient_id: str, start_date: datetime, end_date: datetime
 ):
@@ -71,7 +72,7 @@ async def generate_sleep_report_for_month(
         )
 
 
-@shared_task
+@shared_task(queue="default")
 async def generate_sleep_report(
     patient_id: str,
     start_date: datetime,

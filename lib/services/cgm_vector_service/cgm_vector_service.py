@@ -7,13 +7,13 @@ from qdrant_client.models import PointStruct
 from openai import AsyncOpenAI
 
 from lib.core.qdrant_store import QdrantStore
-from lib.services.cgm_report_service_v2.src.cgm_vector.section_configs import (
+from lib.services.cgm_vector_service.section_configs import (
     get_stats_section_names,
 )
-from lib.services.cgm_report_service_v2.src.cgm_vector.section_processor import (
+from lib.services.cgm_vector_service.section_processor import (
     CGMSectionProcessor,
 )
-from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import (
+from lib.services.cgm_vector_service.section_templates import (
     CGMSectionTemplates,
 )
 
@@ -37,30 +37,23 @@ class CGMVectorService:
         self.processor = CGMSectionProcessor()
         self.openai_client = AsyncOpenAI()
 
-        self._patient_id = None
-        self._report_id = None
-        self._patient_age = None
-        self._patient_gender = None
-
     async def upsert_report(
         self,
         patient_id: str,
-        report_id: str,
         reports: List[Any],
         patient_age: int,
         patient_gender: str,
     ):
-        self._patient_id = patient_id
-        self._report_id = report_id
-        self._patient_age = patient_age
-        self._patient_gender = patient_gender
-
         try:
             points: list[PointStruct] = []
 
             for report_data in reports:
                 period_points = await self._process_report_period(
-                    report_data,
+                    patient_id=patient_id,
+                    patient_age=patient_age,
+                    patient_gender=patient_gender,
+                    report_id=report_data["_id"],
+                    report_data=report_data,
                 )
                 points.extend(period_points)
 
@@ -71,22 +64,15 @@ class CGMVectorService:
                 )
 
             logger.info(
-                f"✅ Stored report {self._report_id} for patient {self._patient_id} in Qdrant with {len(points)} points"
+                f"✅ Stored report for patient {patient_id} in Qdrant with {len(points)} points"
             )
 
         except Exception as e:
             logger.error(
-                f"❌ Failed to upsert CGM report {self._report_id} "
-                f"for patient {self._patient_id}: {e}"
+                f"❌ Failed to upsert CGM report "
+                f"for patient {patient_id}: {e}"
             )
             raise
-
-        finally:
-            # Reset after use so we don’t leak values
-            self._patient_id = None
-            self._report_id = None
-            self._patient_age = None
-            self._patient_gender = None
 
     def _bucket_time(self, hour: int) -> str:
         if 6 <= hour < 12:
@@ -131,6 +117,10 @@ class CGMVectorService:
 
     async def _batch_create_points(
         self,
+        patient_id: str,
+        report_id: str,
+        patient_age: int,
+        patient_gender: str,
         point_infos: list[dict],
     ) -> list[PointStruct]:
         texts = [info["text_repr"] for info in point_infos]
@@ -142,10 +132,10 @@ class CGMVectorService:
             embedding = embeddings[i]
 
             payload = {
-                "patient_id": self._patient_id,
-                "patient_age": self._patient_age,
-                "patient_gender": self._patient_gender,
-                "report_id": self._report_id,
+                "patient_id": patient_id,
+                "patient_age": patient_age,
+                "patient_gender": patient_gender,
+                "report_id": report_id,
                 "data_type": info["data_type"],
                 "text_repr": info["text_repr"],
                 "start_time": int(info["start_time"].timestamp() * 1000),
@@ -166,6 +156,8 @@ class CGMVectorService:
             points.append(
                 PointStruct(
                     id=self._generate_point_id(
+                        patient_id,
+                        report_id,
                         info["data_type"],
                         info["start_time"],
                         info["end_time"],
@@ -379,6 +371,10 @@ class CGMVectorService:
 
     async def _process_report_period(
         self,
+        patient_id: str,
+        report_id: str,
+        patient_age: int,
+        patient_gender: str,
         report_data: dict,
     ) -> List[PointStruct]:
         """Process a single report period"""
@@ -400,16 +396,20 @@ class CGMVectorService:
 
         point_infos.extend(await self._process_events(report_data))
 
-        return await self._batch_create_points(point_infos)
+        return await self._batch_create_points(
+            patient_id, report_id, patient_age, patient_gender, point_infos
+        )
 
     def _generate_point_id(
         self,
+        patient_id: str,
+        report_id: str,
         data_type: str,
         start_time: datetime,
         end_time: datetime,
         additional_payload: Optional[dict] = None,
     ) -> str:
-        base = f"{self._patient_id}-{self._report_id}-{data_type}-{start_time.isoformat()}-{end_time.isoformat()}"
+        base = f"{patient_id}-{report_id}-{data_type}-{start_time.isoformat()}-{end_time.isoformat()}"
 
         if data_type == "agp_point":
             hour = (

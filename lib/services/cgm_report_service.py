@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import date, datetime, time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats
 from lib.utils.cgm.processor import CGMReportType
@@ -282,9 +282,10 @@ class CGMReportService:
 
             task_manager = get_celery_task_manager()
             task_manager.trigger_task_once(
-                "lib.tasks.cgm_tasks.generate_cgm_report",
+                "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
                 args=[patient_id, start_date, end_date],
                 task_id=f"{patient_id}_{start_date}_{end_date}",
+                queue="cgm_reports",
             )
 
             print(

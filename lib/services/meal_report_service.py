@@ -85,6 +85,7 @@ class MealReportService:
                 "lib.tasks.meal_tasks.generate_daily_meal_report",
                 args=[patient_id, report_date],
                 task_id=f"{patient_id}_{report_date}",
+                queue="default",
             )
             print(
                 f"🚀 Triggered daily report generation for {patient_id} on {report_date}"

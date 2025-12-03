@@ -8,7 +8,9 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
-from lib.tasks.fitness_tasks import generate_fitness_reports_for_patient
+from lib.tasks.fitness_tasks import (
+    trigger_fitness_report_generation_for_patient,
+)
 from lib.tasks.sleep_tasks import generate_sleep_reports_for_patient
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
@@ -49,7 +51,7 @@ class FitnessUploadService:
         await postgres_session.commit()
 
         # Trigger report generation asynchronously
-        generate_fitness_reports_for_patient.delay(
+        trigger_fitness_report_generation_for_patient.delay(
             patient_id, start_datetime, end_datetime
         )
 
@@ -136,12 +138,12 @@ class FitnessUploadService:
                 "source_platform": item.source_platform,
                 "unit": item.unit,
                 "value": float(item.value),
-                "start_datetime": parse(item.start_datetime)
-                .replace(tzinfo=None)
-                .strftime("%Y-%m-%dT%H:%M:%S"),
-                "end_datetime": parse(item.end_datetime)
-                .replace(tzinfo=None)
-                .strftime("%Y-%m-%dT%H:%M:%S"),
+                "start_datetime": parse(item.start_datetime).replace(
+                    tzinfo=None
+                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
+                "end_datetime": parse(item.end_datetime).replace(
+                    tzinfo=None
+                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
             }
             for item in fitness_data.steps + fitness_data.active_energy_burned
         ]

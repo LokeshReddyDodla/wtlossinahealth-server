@@ -9,9 +9,9 @@ from lib.utils.date.periods import WeekWisePeriod
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 WINDOWS = {
-    "breakfast": (5, 11),  # 05:00–10:59
-    "lunch": (12, 16),  # 12:00–15:59
-    "dinner": (19, 23),  # 19:00–22:59
+    "breakfast": (4, 11),  # 04:00–10:59
+    "lunch": (11, 16),  # 11:00–15:59
+    "dinner": (17, 3),  # 17:00–03:59
 }
 
 
@@ -37,6 +37,9 @@ class SMBGStatsProcessor:
         *,
         postgres_session,
     ):
+        start_date = datetime.combine(start_date.date(), datetime.min.time())
+        end_date = datetime.combine(end_date.date(), datetime.max.time())
+
         # fetch SMBGs in range
         result = await postgres_session.execute(
             select(PatientSMBG)
@@ -241,17 +244,25 @@ class SMBGStatsProcessor:
 
         for r in records:
             hour = r.reading_time.hour
+            assigned = False
 
             for meal, (start, end) in WINDOWS.items():
-                if start <= hour <= end:
+                if start < end:
+                    in_window = start <= hour < end
+                else:
+                    in_window = hour >= start or hour < end
+
+                if in_window:
                     if r.type in ("before_meal", "pre_meal"):
                         buckets[f"pre_{meal}"].append(r)
                     elif r.type in ("after_meal", "post_meal"):
                         buckets[f"post_{meal}"].append(r)
                     else:
                         buckets["random"].append(r)
+                    assigned = True
                     break
-            else:
+
+            if not assigned:
                 buckets["other"].append(r)
 
         return buckets

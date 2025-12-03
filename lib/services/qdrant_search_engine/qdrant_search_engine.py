@@ -36,6 +36,7 @@ class QdrantSearchEngine:
         limit: int,
         conversation_id: Optional[str] = None,
         patient_ids: Optional[List[str]] = None,
+        report_id: Optional[str] = None,
         data_types: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
 
@@ -56,7 +57,7 @@ class QdrantSearchEngine:
         # Build filters
         intent_filter = FilterBuilder.build(intent)
         extra_filter = self._build_filter(
-            data_types=data_types, patient_ids=patient_ids
+            data_types=data_types, patient_ids=patient_ids, report_id=report_id
         )
         merged_filter = self._merge_filters(intent_filter, extra_filter)
 
@@ -122,6 +123,7 @@ class QdrantSearchEngine:
         self,
         data_types: Optional[List[str]],
         patient_ids: Optional[List[str]] = None,
+        report_id: Optional[str] = None,
     ) -> Optional[Filter]:
         """
         Build a Qdrant Filter from optional data_types and patient_id.
@@ -148,6 +150,13 @@ class QdrantSearchEngine:
                         key="patient_id", match=MatchAny(any=patient_ids)
                     )
                 )
+
+        if report_id:
+            conditions.append(
+                FieldCondition(
+                    key="report_id", match=MatchValue(value=report_id)
+                )
+            )
 
         return Filter(must=conditions) if conditions else None
 

@@ -1,10 +1,10 @@
 from typing import Tuple, Dict
 from datetime import datetime
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.section_configs import (
+from lib.services.cgm_vector_service.section_configs import (
     get_section_config,
 )
-from lib.services.cgm_report_service_v2.src.cgm_vector.section_templates import (
+from lib.services.cgm_vector_service.section_templates import (
     CGMSectionTemplates,
 )
 

@@ -1,5 +1,6 @@
 from typing import cast
 
+from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -16,10 +17,9 @@ from lib.services.care_provider_profile_service import (
 )
 from lib.services.cgm_report_service import CGMReportService
 
-from lib.services.cgm_report_service_v2.src.cgm_vector.cgm_vector_service import (
+from lib.services.cgm_vector_service import (
     CGMVectorService,
 )
-from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -42,6 +42,9 @@ from lib.services.dashboard_metrics.patient_metrics_service import (
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
+from lib.services.fitness_vector_service.fitness_vector_service import (
+    FitnessVectorService,
+)
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -54,6 +57,7 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -62,7 +66,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
-from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -258,8 +261,10 @@ def get_patient_package_assignment_service() -> (
     )
 
 
-def get_patient_report_service() -> PatientReportService:
-    return cast(PatientReportService, container.resolve(PatientReportService))
+def get_patient_document_service() -> PatientDocumentService:
+    return cast(
+        PatientDocumentService, container.resolve(PatientDocumentService)
+    )
 
 
 def get_cgm_service() -> CGMUploadService:
@@ -273,12 +278,6 @@ def get_cgm_report_service() -> CGMReportService:
     return cast(
         CGMReportService,
         container.resolve(CGMReportService),
-    )
-
-
-def get_cgm_report_vector_service() -> CGMReportVectorService:
-    return cast(
-        CGMReportVectorService, container.resolve(CGMReportVectorService)
     )
 
 
@@ -360,6 +359,10 @@ def get_cgm_vector_service() -> CGMVectorService:
     return cast(CGMVectorService, container.resolve(CGMVectorService))
 
 
+def get_fitness_vector_service() -> FitnessVectorService:
+    return cast(FitnessVectorService, container.resolve(FitnessVectorService))
+
+
 def get_meal_vector_service() -> MealVectorService:
     return cast(MealVectorService, container.resolve(MealVectorService))
 
@@ -393,6 +396,14 @@ def get_meal_report_collection():
 
 def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
+
+
+def get_patient_documents_collection():
+    return container.resolve("patient_documents")
+
+
+def get_weight_loss_enrollments_collection():
+    return container.resolve("weight_loss_enrollments_collection")
 
 
 def get_inbody_reports_collection():
@@ -442,3 +453,15 @@ def get_file_content_extractor_service() -> FileContentExtractorService:
         FileContentExtractorService,
         container.resolve(FileContentExtractorService),
     )
+
+
+def get_cgm_qdrant_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("cgm_qdrant_sync"))
+
+
+def get_fitness_qdrant_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("fitness_qdrant_sync"))
+
+
+def get_cgm_sync_cache_store() -> CacheStore:
+    return cast(CacheStore, container.resolve("cgm_sync"))

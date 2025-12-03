@@ -33,7 +33,6 @@ from lib.services.care_provider_profile_service import (
 )
 from lib.services.cgm_report_service import CGMReportService
 
-from lib.services.cgm_report_vector_service import CGMReportVectorService
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
@@ -57,6 +56,9 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
+from lib.services.fitness_vector_service.fitness_vector_service import (
+    FitnessVectorService,
+)
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
@@ -69,6 +71,7 @@ from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -77,7 +80,6 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
-from lib.services.patient_report_service import PatientReportService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -104,7 +106,7 @@ from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
 from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
 from lib.utils.smbg.processor import SMBGStatsProcessor
-from lib.services.cgm_report_service_v2.src.cgm_vector import CGMVectorService
+from lib.services.cgm_vector_service import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
@@ -193,6 +195,13 @@ container.register(
     ).get_collection("chats"),
     scope=Scope.singleton,
 )
+container.register(
+    "patient_documents",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("patient_documents"),
+)
+
 # Weight Loss Agent Collections
 container.register(
     "inbody_reports_collection",
@@ -290,6 +299,9 @@ for namespace in [
     "libreview_sync",
     "ai_conversation_intent_context",
     "patient_profile",
+    "cgm_qdrant_sync",
+    "fitness_qdrant_sync",
+    "cgm_sync",
 ]:
     container.register(
         namespace,
@@ -414,17 +426,22 @@ container.register(
     ),
 )
 
-# 🔹 Patient Report Service
+
+# 🔹 Patient Document Service
 container.register(
-    PatientReportService,
-    lambda: PatientReportService(
+    PatientDocumentService,
+    lambda: PatientDocumentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
         file_content_extractor_service=cast(
             FileContentExtractorService,
             container.resolve(FileContentExtractorService),
+        ),
+        patient_document_collection=cast(
+            MongoStore, container.resolve("patient_documents")
         ),
     ),
 )
@@ -597,14 +614,6 @@ container.register(
     ),
 )
 
-# 🔹 CGM Report Vector Service
-container.register(
-    CGMReportVectorService,
-    lambda: CGMReportVectorService(
-        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
-    ),
-)
-
 # 🔹 Fitness Upload Service
 container.register(
     FitnessUploadService,
@@ -662,138 +671,22 @@ container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-        reports_collection=container.resolve("inbody_reports_collection"),
-        interactions_collection=container.resolve("weight_loss_interactions_collection"),
-        progress_analyses_collection=container.resolve("weight_loss_progress_analyses_collection"),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
+        clickhouse_store=cast(
+            ClickHouseStore, container.resolve(ClickHouseStore)
         ),
-        care_provider_profile_service=cast(
-            CareProviderProfileService,
-            container.resolve(CareProviderProfileService),
+        enrollments_collection=cast(
+            MongoStore, container.resolve("weight_loss_enrollments_collection")
         ),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
-    ),
-)
-
-# 🔹 Analytics Service
-container.register(
-    AnalyticsService,
-    lambda: AnalyticsService(
-        analytics_events_collection=container.resolve(
-            "analytics_events_collection"
+        reports_collection=cast(
+            MongoStore, container.resolve("inbody_reports_collection")
         ),
-        audit_traces_collection=container.resolve("audit_traces_collection"),
-    ),
-)
-
-# 🔹 Intake Service
-container.register(
-    IntakeService,
-    lambda: IntakeService(
-        exercise_preferences_collection=container.resolve(
-            "exercise_preferences_collection"
+        interactions_collection=cast(
+            MongoStore,
+            container.resolve("weight_loss_interactions_collection"),
         ),
-        fitness_screen_collection=container.resolve(
-            "fitness_screen_collection"
-        ),
-        willingness_commitment_collection=container.resolve(
-            "willingness_commitment_collection"
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-    ),
-)
-
-# 🔹 Safety Rules Service
-container.register(
-    SafetyRulesService,
-    lambda: SafetyRulesService(
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-    ),
-)
-
-# 🔹 Exercise Recommendation Service
-container.register(
-    ExerciseRecommendationService,
-    lambda: ExerciseRecommendationService(
-        ai_conversation_service=AiConversationService(
-            conversation_type="weight-loss-agent",
-            ai_model_provider="openai",
-            selected_ai_model="gpt-4o",
-        )
-    ),
-)
-
-# 🔹 Plan Composer Service
-container.register(
-    PlanComposerService,
-    lambda: PlanComposerService(
-        plan_snapshots_collection=container.resolve(
-            "plan_snapshots_collection"
-        ),
-        inbody_reports_collection=container.resolve(
-            "inbody_reports_collection"
-        ),
-        intake_service=cast(IntakeService, container.resolve(IntakeService)),
-        safety_rules_service=cast(
-            SafetyRulesService, container.resolve(SafetyRulesService)
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-        exercise_recommendation_service=cast(
-            ExerciseRecommendationService,
-            container.resolve(ExerciseRecommendationService),
-        ),
-    ),
-)
-
-# 🔹 Coach Messenger Service
-container.register(
-    CoachMessengerService,
-    lambda: CoachMessengerService(
-        suggestion_cards_collection=container.resolve(
-            "suggestion_cards_collection"
-        ),
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-    ),
-)
-
-# 🔹 GLP-1 Symptoms Service
-container.register(
-    Glp1SymptomsService,
-    lambda: Glp1SymptomsService(
-        weekly_symptoms_collection=container.resolve(
-            "weekly_symptoms_glp1_collection"
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-    ),
-)
-
-# 🔹 Agentic Orchestrator
-container.register(
-    AgenticOrchestrator,
-    lambda: AgenticOrchestrator(
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        coach_messenger_service=cast(
-            CoachMessengerService, container.resolve(CoachMessengerService)
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
+        progress_analyses_collection=cast(
+            MongoStore,
+            container.resolve("weight_loss_progress_analyses_collection"),
         ),
     ),
 )
@@ -855,6 +748,15 @@ container.register(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
+
+# 🔹 Fitness Vector Service
+container.register(
+    FitnessVectorService,
+    lambda: FitnessVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
 
 # 🔹 Meal Vector Service
 container.register(

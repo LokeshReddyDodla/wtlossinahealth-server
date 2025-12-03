@@ -1,4 +1,6 @@
-from typing import List
+import io
+import json
+from typing import List, Optional
 from fastapi import Depends, HTTPException, Request, status
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import (
@@ -15,6 +17,7 @@ from lib.utils.care_provider_permissions import (
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 from .router import router
+from fastapi.responses import JSONResponse, StreamingResponse
 
 
 @router.post("/ask", response_model=SuccessResponse)
@@ -23,6 +26,8 @@ async def ask_ai_in_careprovider_conversation(
     patient_ids: List[str],
     conversation_id: str,
     human_input: str,
+    report_id: Optional[str] = None,
+    model: Optional[str] = None,
     ai_conversation_service_v1: AIConversationServiceV1 = Depends(
         get_ai_conversation_service_v1
     ),
@@ -37,10 +42,12 @@ async def ask_ai_in_careprovider_conversation(
         ai_message_data = await ai_conversation_service_v1.generate_response(
             patient_ids=patient_ids,
             sender_id=str(current_care_provider.care_provider_id),
+            report_id=report_id,
             sender_type="care_provider",
             conversation_id=conversation_id,
             human_input=human_input,
             api_endpoint=request.url.path,
+            model=model,
         )
 
         return SuccessResponse(

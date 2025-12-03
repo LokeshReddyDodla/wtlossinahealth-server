@@ -12,6 +12,7 @@ from .patient_alcohol_consumption import PatientAlcoholConsumption
 from .patient_connected_app import (
     PatientConnectedApp,
     PatientLibreView,
+    PatientSinocare,
     PatientOtherApp,
 )
 from .patient_current_medication import PatientCurrentMedication

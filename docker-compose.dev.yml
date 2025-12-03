@@ -38,10 +38,12 @@ services:
       - alembic_data:/src/alembic/versions
       - .:/src # for dev use only
 
-  aihealth-celery:
-    container_name: aihealth-celery
+  aihealth-celery-default:
+    container_name: aihealth-celery-default
     image: aihealth-api:latest
-    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker --pool=custom --loglevel=info
+    command: >
+      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
+      --pool=custom --loglevel=info --concurrency=4 -Q default
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
@@ -53,6 +55,51 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+    volumes:
+      - celery_logs:/var/log/celery
+      - celery_data:/var/lib/celery
+    depends_on:
+      - aihealth-redis
+      - aihealth-api
+    restart: unless-stopped
+    # user: "1000:1000"
+
+  aihealth-celery-reports:
+    container_name: aihealth-celery-reports
+    image: aihealth-api:latest
+    command: >
+      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
+      --pool=custom --loglevel=info --concurrency=4 -Q cgm_reports
+      --max-tasks-per-child=20
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+    volumes:
+      - celery_logs:/var/log/celery
+      - celery_data:/var/lib/celery
+    depends_on:
+      - aihealth-redis
+      - aihealth-api
+    restart: unless-stopped
+    # user: "1000:1000"
+
+  aihealth-celery-vectors:
+    container_name: aihealth-celery-vectors
+    image: aihealth-api:latest
+    command: >
+      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
+      --pool=custom --loglevel=info --concurrency=2 -Q vector_sync
+      --max-tasks-per-child=10
+    environment:
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
     volumes:
       - celery_logs:/var/log/celery
@@ -144,7 +191,7 @@ services:
       - CLICKHOUSE_BACKGROUND_POOL_SIZE=2
       - CLICKHOUSE_BACKGROUND_MERGE_POOL_SIZE=2
     volumes:
-      - clickhouse_data_1:/var/lib/clickhouse
+      - clickhouse_data:/var/lib/clickhouse
 
   aihealth-nginx:
     container_name: aihealth-nginx
@@ -253,15 +300,15 @@ services:
     volumes:
       - ./cloudflared:/etc/cloudflared
 
-  meal_analysis_service:
-    build:
-      context: ./lib/services/meal_analysis_service
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    restart: unless-stopped
+  # meal_analysis_service:
+  #   build:
+  #     context: ./lib/services/meal_analysis_service
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8001:8000"
+  #   environment:
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #   restart: unless-stopped
 
   loki:
     image: grafana/loki:2.9.4
@@ -279,28 +326,12 @@ services:
           cpus: "0.5"
           memory: 512M
 
-  aihealth-qdrant:
-    container_name: aihealth-qdrant
-    image: qdrant/qdrant:v1.11.0
-    restart: unless-stopped
-    ports:
-      - "6333:6333" # REST API
-      - "6334:6334" # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__GRPC_PORT: 6334
-      QDRANT__SERVICE__HTTP_PORT: 6333
-
-  
   promtail:
     image: grafana/promtail:2.9.4
     container_name: promtail
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock
-      - api_logs:/var/log/api
-      - celery_logs:/var/log/celery
       - ./promtail-config.yaml:/etc/promtail/config.yml
     command:
       - "-config.file=/etc/promtail/config.yml"
@@ -338,7 +369,7 @@ volumes:
   redis_data:
   postgres_data:
   mongo_data:
-  clickhouse_data_1:
+  clickhouse_data:
   qdrant_data:
   ssl_certs:
   redisinsight_data:
@@ -350,7 +381,6 @@ volumes:
   celery_beat_logs:
   loki_data:
   grafana_data:
-  qdrant_data:
 
 networks:
   shared_network:

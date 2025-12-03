@@ -1,7 +1,5 @@
 from collections import defaultdict
 import time
-from typing import Dict, Union
-
 from langchain_openai import ChatOpenAI
 
 from lib.core.constants import ProfileTypeEnum
@@ -42,6 +40,7 @@ from lib.schemas.ai_conversation_v1_schemas import (
     AiConversationMessageV1 as AiConversationMessageV1Schema,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from bson import ObjectId
 
 
 class AIConversationServiceV1:
@@ -73,30 +72,43 @@ class AIConversationServiceV1:
         self.token_usage_service = get_token_usage_service()
         self.ai_messages_collection = get_ai_conversation_messages_collection()
 
-        self.selected_ai_model: Union[
-            OpenAIModelLiteral, GeminiAIModelLiteral, PerplexityAIModelLiteral
-        ] = selected_ai_model
-        self.ai_model_provider: AIModelProviderLiteral = ai_model_provider
+        # self._setup_model(model=selected_ai_model)
 
-        if ai_model_provider == "openai":
+    def _setup_model(
+        self,
+        model: Union[
+            str, OpenAIModelLiteral, GeminiAIModelLiteral
+        ] = "gpt-4.1-mini",
+    ):
+        self.selected_ai_model = model
+
+        # ---- Provider Selection ----
+        if model in OpenAIModelLiteral.__args__:
+            self.ai_model_provider = "openai"
             self.chat_model = ChatOpenAI(
-                model=self.selected_ai_model,  # type: ignore
-                temperature=0.5,
+                model=model,
+                temperature=1,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
-        else:
+        elif model in GeminiAIModelLiteral.__args__:
+            self.ai_model_provider = "gemini"
             self.chat_model = ChatGoogleGenerativeAI(
+                model=model,
+                temperature=1,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
-                model=self.selected_ai_model,
-                temperature=0.5,
             )
+        else:
+            raise ValueError(f"Unknown model: {model}")
 
+        # ---- Structured Output ----
         self.output_parser = PydanticOutputParser(pydantic_object=AIResponse)
         format_instructions = self.output_parser.get_format_instructions()
 
         self.structured_model = self.chat_model.with_structured_output(
             AIResponse, include_raw=True
         )
+
+        # ---- System Message ----
         self.system_message = BaseSystemMessage().get_system_message(
             format_instructions=format_instructions
         )
@@ -167,10 +179,29 @@ class AIConversationServiceV1:
             {"$skip": offset},
             {"$limit": limit},
             {"$addFields": {"_id": {"$toString": "$_id"}}},
+            {
+                "$set": {
+                    "metadata": {
+                        "citations": {"$ifNull": ["$metadata.citations", []]},
+                        "confidence_score": "$metadata.confidence_score",
+                        "tags": {"$ifNull": ["$metadata.tags", []]},
+                    }
+                }
+            },
         ]
 
         messages_cursor = self.ai_messages_collection.aggregate(pipeline)  # type: ignore
         return await messages_cursor.to_list(length=None)
+
+    async def fetch_message_by_id(
+        self, message_id: str
+    ) -> Optional[Dict[str, Any]]:
+        message = await self.ai_messages_collection.find_one(  # type: ignore
+            {"id": message_id}
+        )
+        if message:
+            message["_id"] = str(message["_id"])
+        return message
 
     async def generate_response(
         self,
@@ -180,9 +211,16 @@ class AIConversationServiceV1:
         conversation_id: str,
         human_input: str,
         api_endpoint: str,
+        report_id: Optional[str] = None,
+        model: Optional[str] = "gpt-4.1-mini",
     ):
         start_time = time.monotonic()
         ai_message_data = None
+
+        if model:
+            self._setup_model(
+                model=model,
+            )
 
         try:
             # Log user message
@@ -205,6 +243,7 @@ class AIConversationServiceV1:
                 conversation_id,
                 human_input,
                 include_history=True,
+                report_id=report_id,
             ):
                 batch_ids = batch["batch_patient_ids"]
                 batch_context = batch["context"]
@@ -229,6 +268,9 @@ class AIConversationServiceV1:
                 all_batch_responses.append(
                     {
                         "batch_patient_ids": batch_ids,
+                        "context": batch_context,
+                        "context_items": batch.get("context_items", []),
+                        "filter_applied": batch.get("filter_applied", {}),
                         "response_text": parsed.response,
                         "citations": parsed.citations,
                         "confidence_score": parsed.confidence_score,
@@ -239,8 +281,6 @@ class AIConversationServiceV1:
 
                 # Accumulate token usage
                 self._accumulate_usage(total_token_usage, usage)
-
-            print(all_batch_responses)
 
             # Summarize or fallback
             if all_batch_responses:
@@ -280,9 +320,41 @@ class AIConversationServiceV1:
                 content=summary_parsed.response,
                 message_type="markdown",
                 metadata={
+                    "patient_ids": patient_ids,
+                    "batched_contexts": [
+                        {
+                            "batch_patient_ids": b["batch_patient_ids"],
+                            "context": b["context"],
+                            "context_items": b.get("context_items", []),
+                            "filter_applied": b.get("filter_applied", {}),
+                            "response_text": b["response_text"],
+                            "citations": b.get("citations", []),
+                            "confidence_score": b.get("confidence_score"),
+                            "tags": b.get("tags", []),
+                            "token_usage": b.get("token_usage", {}),
+                        }
+                        for b in all_batch_responses
+                    ],
                     "citations": summary_parsed.citations,
                     "confidence_score": summary_parsed.confidence_score,
                     "tags": summary_parsed.tags,
+                    "total_batches": len(all_batch_responses),
+                    "total_input_tokens": total_token_usage.get(
+                        "input_tokens", 0
+                    ),
+                    "total_output_tokens": total_token_usage.get(
+                        "output_tokens", 0
+                    ),
+                    "total_cached_input_tokens": total_token_usage.get(
+                        "cached_input_tokens", 0
+                    ),
+                    "latency_ms": latency_ms,
+                    "model_info": {
+                        "model": self.selected_ai_model,
+                        "provider": self.ai_model_provider,
+                        "api_endpoint": api_endpoint,
+                    },
+                    "human_input": human_input,
                 },
                 status="success",
                 model=self.selected_ai_model,
