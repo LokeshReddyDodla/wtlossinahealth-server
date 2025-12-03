@@ -97,6 +97,7 @@ from lib.services.sleep_report_service import SleepReportService
 from lib.services.smbg_vector_service.smbg_vector_service import (
     SMBGVectorService,
 )
+from lib.services.smbg_agent_service import SMBGAgentService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -109,6 +110,26 @@ from lib.services.cgm_vector_service import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
+from lib.services.weightloss_agent.intake_service import IntakeService
+from lib.services.weightloss_agent.safety_rules_service import (
+    SafetyRulesService,
+)
+from lib.services.weightloss_agent.plan_composer_service import (
+    PlanComposerService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
+from lib.services.weightloss_agent.glp1_symptoms_service import (
+    Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.exercise_recommendation_service import (
+    ExerciseRecommendationService,
+)
+from lib.services.weightloss_agent.agentic_orchestrator import (
+    AgenticOrchestrator,
+)
 
 # Initialize Container
 container = Container()
@@ -183,13 +204,6 @@ container.register(
 
 # Weight Loss Agent Collections
 container.register(
-    "weight_loss_enrollments_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("weight_loss_enrollments"),
-    scope=Scope.singleton,
-)
-container.register(
     "inbody_reports_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
@@ -208,6 +222,64 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("weight_loss_progress_analyses"),
+    scope=Scope.singleton,
+)
+
+# Intake + patient app collections
+container.register(
+    "exercise_preferences_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("exercise_preferences"),
+    scope=Scope.singleton,
+)
+container.register(
+    "fitness_screen_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("fitness_screen"),
+    scope=Scope.singleton,
+)
+container.register(
+    "willingness_commitment_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("willingness_commitment"),
+    scope=Scope.singleton,
+)
+container.register(
+    "plan_snapshots_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("plan_snapshots"),
+    scope=Scope.singleton,
+)
+container.register(
+    "suggestion_cards_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("suggestion_cards"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weekly_symptoms_glp1_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weekly_symptoms_glp1"),
+    scope=Scope.singleton,
+)
+container.register(
+    "audit_traces_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("audit_traces"),
+    scope=Scope.singleton,
+)
+container.register(
+    "analytics_events_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("analytics_events"),
     scope=Scope.singleton,
 )
 
@@ -317,6 +389,9 @@ container.register(
         ),
         smbg_vector_service=cast(
             SMBGVectorService, container.resolve(SMBGVectorService)
+        ),
+        smbg_agent_service=cast(
+            SMBGAgentService, container.resolve(SMBGAgentService)
         ),
     ),
 )
@@ -477,6 +552,19 @@ container.register(
         meal_stats_processor=container.resolve(MealStatsProcessor),
     ),
 )
+
+# 🔹 SMBG Agent Service
+def _create_smbg_agent_service():
+    from lib.services.fcm_service import FCMService
+    return SMBGAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=container.resolve(PatientProfileService),
+        meal_report_service=container.resolve(MealReportService),
+        fitness_report_service=container.resolve(FitnessReportService),
+        fcm_service=FCMService(),
+    )
+
+container.register(SMBGAgentService, _create_smbg_agent_service)
 
 # 🔹 Sleep Stats Processor
 container.register(

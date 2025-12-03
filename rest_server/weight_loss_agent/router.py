@@ -10,6 +10,7 @@ from lib.dependencies.service_dependencies import get_weight_loss_agent_service
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.schemas.weight_loss_agent import (
+    ChatRequest,
     HealthIndicator,
     InbodyReport,
     InbodyReportAnalysisResult,
@@ -484,7 +485,7 @@ async def get_health_indicators(
 )
 async def chat_with_weight_loss_agent(
     enrollment_id: UUID,
-    chat_request: Dict[str, str],
+    chat_request: ChatRequest,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
     # TODO: Uncomment for production - care provider auth required
     # current_care_provider: CareProvider = Depends(get_current_care_provider),
@@ -492,8 +493,8 @@ async def chat_with_weight_loss_agent(
     """Chat with AI weight loss agent about progress and reports"""
 
     try:
-        user_question = chat_request.get("question", "").strip()
-        conversation_id = chat_request.get("conversation_id", f"chat_{enrollment_id}_{datetime.now().isoformat()}")
+        user_question = chat_request.question.strip()
+        conversation_id = chat_request.conversation_id or f"chat_{enrollment_id}_{datetime.now().isoformat()}"
 
         if not user_question:
             raise_http_exception(

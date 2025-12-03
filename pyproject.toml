@@ -28,7 +28,7 @@ pillow = "^10.3.0"
 requests = "^2.31.0"
 tiktoken = "^0.7.0"
 motor = "^3.5.0"
-sqlalchemy = "^2.0.31"
+sqlalchemy = {version = "^2.0.31", extras = ["postgresql_asyncpg"]}
 alembic = "^1.13.2"
 watchdog = "^4.0.1"
 psycopg2-binary = "^2.9.10"

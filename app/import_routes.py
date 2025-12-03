@@ -17,6 +17,11 @@ from rest_server.admin.router import router as admin_router
 from rest_server.weight_loss_agent.router import router as weight_loss_agent_router
 from rest_server.system_management import reload_cache
 from rest_server.test import test
+from rest_server.intake.router import router as intake_router
+from rest_server.safety.router import router as safety_router
+from rest_server.plan.router import router as plan_router
+from rest_server.coach.router import router as coach_router
+from rest_server.symptoms.router import router as symptoms_router
 
 
 def import_routes(app: FastAPI) -> None:
@@ -74,6 +79,15 @@ def import_routes(app: FastAPI) -> None:
     # Patient
     ###########################################################################
     app.include_router(patients_router)
+
+    ###########################################################################
+    # Patient App + Weightloss Agent Features
+    ###########################################################################
+    app.include_router(intake_router)
+    app.include_router(safety_router)
+    app.include_router(plan_router)
+    app.include_router(coach_router)
+    app.include_router(symptoms_router)
 
     ###########################################################################
     # Weight Loss Agent
