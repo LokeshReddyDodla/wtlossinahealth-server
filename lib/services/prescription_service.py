@@ -224,15 +224,15 @@ class PrescriptionService:
             )
 
             # Step 3 — Generate conversation flow
-            message_sequence = self._generate_conversation_flow(
-                patient_id,
-                refetched_prescription,
-            )
+            # message_sequence = self._generate_conversation_flow(
+            #     patient_id,
+            #     refetched_prescription,
+            # )
 
-            # Pass the message sequence to AiConversationService
-            await self.ai_conversation_service.add_multiple_messages_to_conversation(
-                messages=message_sequence,
-            )
+            # # Pass the message sequence to AiConversationService
+            # await self.ai_conversation_service.add_multiple_messages_to_conversation(
+            #     messages=message_sequence,
+            # )
 
             return refetched_prescription
         except json.JSONDecodeError as e:
@@ -282,10 +282,10 @@ class PrescriptionService:
                 frequency=medicine.frequency,
                 duration=medicine.duration,
                 before_after_food=medicine.before_after_food,
-                route=medicine.route,
+                # route=medicine.route,
                 instructions=medicine.instructions,
-                purpose=medicine.purpose,
-                possible_side_effects=medicine.possible_side_effects,
+                # purpose=medicine.purpose,
+                # possible_side_effects=medicine.possible_side_effects,
                 explanation=medicine.explanation,
             )
             for medicine in analysis_data.medicines

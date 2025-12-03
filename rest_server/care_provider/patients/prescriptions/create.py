@@ -1,17 +1,28 @@
 from typing import Optional
 
-from fastapi import Body, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    Body,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
+    get_patient_document_service,
     get_prescription_analysis_service,
     get_prescription_service,
 )
 from lib.schemas.patient_prescription_analysis import (
     PrescriptionStructureResponse,
 )
+from lib.services.patient_document_service import PatientDocumentService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
@@ -40,7 +51,7 @@ async def preview_patient_prescriptions(
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
-            CareProviderPermissionAction.READ,
+            CareProviderPermissionAction.CREATE,
             CareProviderFeature.REPORTS,
         )
     ),
@@ -82,8 +93,12 @@ async def summary_patient_prescriptions(
     request: Request,
     patient_id: str,
     confirmed_prescription: PrescriptionStructureResponse,
+    file: UploadFile = File(...),
     prescription_service: PrescriptionService = Depends(
         get_prescription_service
+    ),
+    patient_document_service: PatientDocumentService = Depends(
+        get_patient_document_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -100,9 +115,17 @@ async def summary_patient_prescriptions(
             )  # type: ignore
         )
 
+        result = await patient_document_service.upload_multiple_documents(
+            patient_id=patient_id,
+            files=[file],
+            document_type="prescription",
+            uploaded_by_id=str(current_care_provider.care_provider_id),
+            uploaded_by_type=ProfileTypeEnum.CARE_PROVIDER.value,  # type: ignore
+        )
+
         return SuccessResponse(
-            message="Prescription summary generated and confirmed successfully",
-            data={"conversation_id": saved_prescription.prescription_id},
+            message="Prescription confirmed successfully",
+            data=saved_prescription,
         )
 
     except Exception as e:

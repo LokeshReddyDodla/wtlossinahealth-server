@@ -29,24 +29,24 @@ class PrescriptionMedicine(BaseModel):
     )
     before_after_food: Optional[str] = Field(
         default=None,
-        description="Whether to take before or after food (e.g., 'Before food', 'After food')",
+        description="Whether to take before or after food (e.g., 'before_food', 'after_food')",
     )
-    route: Optional[str] = Field(
-        default=None,
-        description="Route of administration (e.g., 'Oral', 'IV', 'Topical')",
-    )
+    # route: Optional[str] = Field(
+    #     default=None,
+    #     description="Route of administration (e.g., 'Oral', 'IV', 'Topical')",
+    # )
     instructions: Optional[str] = Field(
         default=None,
         description="Additional instructions (e.g., 'Shake well before use', 'Take with water')",
     )
-    purpose: Optional[str] = Field(
-        default=None,
-        description="Purpose or reason for taking the medicine (e.g., 'For fever reduction')",
-    )
-    possible_side_effects: Optional[List[str]] = Field(
-        default=None,
-        description="Possible side effects (e.g., ['Drowsiness', 'Nausea'])",
-    )
+    # purpose: Optional[str] = Field(
+    #     default=None,
+    #     description="Purpose or reason for taking the medicine (e.g., 'For fever reduction')",
+    # )
+    # possible_side_effects: Optional[List[str]] = Field(
+    #     default=None,
+    #     description="Possible side effects (e.g., ['Drowsiness', 'Nausea'])",
+    # )
     explanation: str = Field(
         description="A brief explanation about what the medicine does and how to take it safely"
     )
