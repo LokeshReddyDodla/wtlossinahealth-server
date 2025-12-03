@@ -143,8 +143,3 @@ deployment/volumes
 mongodb-keyfile
 /tmp
 fcm-notification-sender-key.json
-
-# SMBG Agent files (local only)
-lib/services/smbg_agent_service.py
-tests/test_smbg_agent_service.py
-rest_server/patients/smbgs/ai/
