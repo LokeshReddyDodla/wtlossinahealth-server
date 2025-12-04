@@ -223,6 +223,14 @@ container.register(
     ).get_collection("weight_loss_progress_analyses"),
     scope=Scope.singleton,
 )
+container.register(
+    "weight_loss_enrollments_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("weight_loss_enrollments_collection"),
+    scope=Scope.singleton,
+)
+
 
 # Intake + patient app collections
 container.register(
@@ -671,6 +679,16 @@ container.register(
         progress_analyses_collection=cast(
             MongoStore,
             container.resolve("weight_loss_progress_analyses_collection"),
+        ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        care_provider_profile_service=cast(
+            CareProviderProfileService,
+            container.resolve(CareProviderProfileService),
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
         ),
     ),
 )
