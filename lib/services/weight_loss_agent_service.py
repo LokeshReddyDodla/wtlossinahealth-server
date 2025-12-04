@@ -11,7 +11,9 @@ from sqlalchemy.orm import joinedload, selectinload
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 from lib.core.clickhouse_store import ClickHouseStore
+from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
+from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.models.patient_meal import PatientMeal
 from lib.models.patient_vital import PatientVital
@@ -24,7 +26,9 @@ from lib.schemas.weight_loss_agent import (
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.models.weight_loss_agent import WeightLossAgentEnrollment
@@ -44,6 +48,9 @@ class WeightLossAgentService:
         reports_collection: MongoStore,
         interactions_collection: MongoStore,
         progress_analyses_collection: MongoStore,
+        patient_profile_service: PatientProfileService,
+        care_provider_profile_service: CareProviderProfileService,
+        analytics_service: AnalyticsService,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
@@ -54,11 +61,15 @@ class WeightLossAgentService:
         self.care_provider_profile_service = care_provider_profile_service
         self.analytics_service = analytics_service
 
-    def _serialize_enrollment(self, enrollment: WeightLossAgentEnrollment) -> Dict[str, Any]:
+    def _serialize_enrollment(
+        self, enrollment: WeightLossAgentEnrollment
+    ) -> Dict[str, Any]:
         return {
             "enrollment_id": str(enrollment.enrollment_id),
             "patient_id": str(enrollment.patient_id),
-            "enrolled_by_care_provider_id": str(enrollment.enrolled_by_care_provider_id),
+            "enrolled_by_care_provider_id": str(
+                enrollment.enrolled_by_care_provider_id
+            ),
             "enrollment_date": enrollment.enrollment_date,
             "is_active": enrollment.is_active,
             "program_goals": enrollment.program_goals,
@@ -75,13 +86,15 @@ class WeightLossAgentService:
         """Enroll a patient in the weight loss program (doctor only) - stores in MongoDB"""
 
         # Ensure care provider exists and is a doctor via profile service
-        care_provider = await self.care_provider_profile_service.fetch_care_provider(
-            str(enrollment_data.enrolled_by_care_provider_id)
+        care_provider = (
+            await self.care_provider_profile_service.fetch_care_provider(
+                str(enrollment_data.enrolled_by_care_provider_id)
+            )
         )
         if str(care_provider.role).lower() != "doctor":
             raise_http_exception(
                 status_code=status.HTTP_403_FORBIDDEN,
-                message="Only doctors can enroll patients in weight loss program"
+                message="Only doctors can enroll patients in weight loss program",
             )
 
         # Ensure patient exists via profile service (raises if missing)
@@ -104,12 +117,6 @@ class WeightLossAgentService:
                 raise_http_exception(
                     status_code=status.HTTP_403_FORBIDDEN,
                     message="Only doctors can enroll patients in weight loss program",
-                )
-            )
-            if existing.scalar_one_or_none():
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Patient not found",
                 )
 
         # Check if patient already has an active enrollment (in MongoDB)
@@ -495,7 +502,7 @@ class WeightLossAgentService:
             enrollment_id,
             start_date,
             end_date,
-            len(daily_reports),
+            daily_reports,
         )
 
         # Store the progress analysis in MongoDB
@@ -1120,7 +1127,6 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     model="gpt-4o",  # GPT-4o has vision capabilities
                     temperature=0.3,
                     api_key=SecretStr(str(config("OPENAI_API_KEY"))),
-                    max_tokens=2000,  # Limit output tokens
                 )
 
                 # Create message with image URL for vision analysis

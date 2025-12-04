@@ -389,7 +389,6 @@ container.register(
         smbg_vector_service=cast(
             SMBGVectorService, container.resolve(SMBGVectorService)
         ),
-        
     ),
 )
 
@@ -549,7 +548,6 @@ container.register(
         meal_stats_processor=container.resolve(MealStatsProcessor),
     ),
 )
-
 
 
 # 🔹 Sleep Stats Processor

@@ -15,6 +15,7 @@ from lib.core.types import (
 )
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.json_utils import ensure_string_values
+from lib.core.container import container
 
 
 class FCMService:
@@ -115,9 +116,6 @@ class FCMService:
         """Send a batch of FCM notifications to all devices of a user."""
 
         try:
-            # Lazy import to avoid circular dependency
-            from lib.core.container import container
-            
             user_device_service = UserDeviceService(
                 postgres_store=cast(
                     PostgresStore, container.resolve(PostgresStore)
