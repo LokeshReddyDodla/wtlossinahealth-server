@@ -7,7 +7,6 @@ from fastapi.encoders import jsonable_encoder
 from firebase_admin import credentials, messaging
 from google.oauth2 import service_account
 
-from lib.core.container import container
 from lib.core.constants import FCMProjectEnum
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
@@ -16,6 +15,7 @@ from lib.core.types import (
 )
 from lib.services.user_device_service import UserDeviceService
 from lib.utils.json_utils import ensure_string_values
+from lib.core.container import container
 
 
 class FCMService:

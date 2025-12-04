@@ -91,6 +91,23 @@ from lib.utils.smbg.processor import SMBGStatsProcessor
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
+from lib.services.weightloss_agent.intake_service import IntakeService
+from lib.services.weightloss_agent.safety_rules_service import (
+    SafetyRulesService,
+)
+from lib.services.weightloss_agent.plan_composer_service import (
+    PlanComposerService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
+from lib.services.weightloss_agent.glp1_symptoms_service import (
+    Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.agentic_orchestrator import (
+    AgenticOrchestrator,
+)
 
 
 def get_libreview_sync_queue() -> SQSService:
@@ -200,6 +217,36 @@ def get_meal_service() -> MealService:
 
 def get_prescription_service() -> PrescriptionService:
     return cast(PrescriptionService, container.resolve(PrescriptionService))
+
+
+def get_weightloss_analytics_service() -> AnalyticsService:
+    return cast(AnalyticsService, container.resolve(AnalyticsService))
+
+
+def get_intake_service() -> IntakeService:
+    return cast(IntakeService, container.resolve(IntakeService))
+
+
+def get_safety_rules_service() -> SafetyRulesService:
+    return cast(SafetyRulesService, container.resolve(SafetyRulesService))
+
+
+def get_plan_composer_service() -> PlanComposerService:
+    return cast(PlanComposerService, container.resolve(PlanComposerService))
+
+
+def get_coach_messenger_service() -> CoachMessengerService:
+    return cast(
+        CoachMessengerService, container.resolve(CoachMessengerService)
+    )
+
+
+def get_glp1_symptoms_service() -> Glp1SymptomsService:
+    return cast(Glp1SymptomsService, container.resolve(Glp1SymptomsService))
+
+
+def get_agentic_orchestrator_service() -> AgenticOrchestrator:
+    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
 
 
 def get_prescription_analysis_service() -> PrescriptionAnalysisService:

@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import status
@@ -26,11 +26,19 @@ from lib.schemas.weight_loss_agent import (
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
+from lib.services.care_provider_profile_service import (
+    CareProviderProfileService,
+)
+from lib.services.patient_profile_service import PatientProfileService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
+from lib.models.weight_loss_agent import WeightLossAgentEnrollment
 from lib.utils.http_exceptions import raise_http_exception
 
 
 class WeightLossAgentService:
     """Service for managing weight loss agent functionality using MongoDB"""
+
+    CONFIRMATION_THRESHOLD = 0.85
 
     def __init__(
         self,
@@ -40,19 +48,59 @@ class WeightLossAgentService:
         reports_collection: MongoStore,
         interactions_collection: MongoStore,
         progress_analyses_collection: MongoStore,
+        patient_profile_service: PatientProfileService,
+        care_provider_profile_service: CareProviderProfileService,
+        analytics_service: AnalyticsService,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
-        self.enrollments_collection = enrollments_collection
         self.reports_collection = reports_collection
         self.interactions_collection = interactions_collection
         self.progress_analyses_collection = progress_analyses_collection
+        self.patient_profile_service = patient_profile_service
+        self.care_provider_profile_service = care_provider_profile_service
+        self.analytics_service = analytics_service
+
+    def _serialize_enrollment(
+        self, enrollment: WeightLossAgentEnrollment
+    ) -> Dict[str, Any]:
+        return {
+            "enrollment_id": str(enrollment.enrollment_id),
+            "patient_id": str(enrollment.patient_id),
+            "enrolled_by_care_provider_id": str(
+                enrollment.enrolled_by_care_provider_id
+            ),
+            "enrollment_date": enrollment.enrollment_date,
+            "is_active": enrollment.is_active,
+            "program_goals": enrollment.program_goals,
+            "target_weight_kg": enrollment.target_weight_kg,
+            "target_bmi": enrollment.target_bmi,
+            "created_at": enrollment.created_at,
+            "updated_at": enrollment.updated_at,
+        }
 
     async def enroll_patient_in_weight_loss_program(
         self,
         enrollment_data: WeightLossEnrollmentCreate,
     ) -> Dict:
         """Enroll a patient in the weight loss program (doctor only) - stores in MongoDB"""
+
+        # Ensure care provider exists and is a doctor via profile service
+        care_provider = (
+            await self.care_provider_profile_service.fetch_care_provider(
+                str(enrollment_data.enrolled_by_care_provider_id)
+            )
+        )
+        if str(care_provider.role).lower() != "doctor":
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Only doctors can enroll patients in weight loss program",
+            )
+
+        # Ensure patient exists via profile service (raises if missing)
+        await self.patient_profile_service.fetch_patient_profile(
+            str(enrollment_data.patient_id)
+        )
 
         async with self.postgres_store.get_session() as session:
             # Verify the care provider is a doctor (still in PostgreSQL)
@@ -71,14 +119,6 @@ class WeightLossAgentService:
                     message="Only doctors can enroll patients in weight loss program",
                 )
 
-            # Verify patient exists (still in PostgreSQL)
-            patient = await session.get(Patient, enrollment_data.patient_id)
-            if not patient:
-                raise_http_exception(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    message="Patient not found",
-                )
-
         # Check if patient already has an active enrollment (in MongoDB)
         existing_enrollment = await self.enrollments_collection.find_one(  # type: ignore
             {"patient_id": str(enrollment_data.patient_id), "is_active": True}
@@ -89,6 +129,9 @@ class WeightLossAgentService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="Patient is already enrolled in weight loss program",
             )
+            session.add(enrollment)
+            await session.commit()
+            await session.refresh(enrollment)
 
         # Create enrollment document for MongoDB
         enrollment_doc = {
@@ -132,9 +175,12 @@ class WeightLossAgentService:
                 message="Enrollment not found",
             )
 
-        # Prepare update dict
-        update_dict = update_data.dict(exclude_unset=True)
-        update_dict["updated_at"] = datetime.now()
+            update_dict = update_data.dict(exclude_unset=True)
+            for field, value in update_dict.items():
+                setattr(enrollment, field, value)
+            enrollment.updated_at = datetime.now()
+            await session.commit()
+            await session.refresh(enrollment)
 
         # Update in MongoDB
         await self.enrollments_collection.update_one(
@@ -456,7 +502,7 @@ class WeightLossAgentService:
             enrollment_id,
             start_date,
             end_date,
-            len(daily_reports),
+            daily_reports,
         )
 
         # Store the progress analysis in MongoDB
@@ -1081,7 +1127,6 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     model="gpt-4o",  # GPT-4o has vision capabilities
                     temperature=0.3,
                     api_key=SecretStr(str(config("OPENAI_API_KEY"))),
-                    max_tokens=2000,  # Limit output tokens
                 )
 
                 # Create message with image URL for vision analysis
@@ -1313,6 +1358,13 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     "metadata": {"confidence_score": 0.0},
                 }
 
+            normalized_payload = self._build_normalized_inbody_payload(
+                ai_response.get("metadata", {}).get("extracted_metrics", {}),
+                ai_response.get("metadata", {}).get("confidence_score", 0.0),
+                file_name=file_name,
+                content_type=content_type,
+            )
+
             # Return AI response immediately without storing in database yet
             analysis_result = InbodyReportAnalysisResult(
                 file_name=file_name,
@@ -1343,6 +1395,11 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                         else False
                     ),
                 },
+                values=normalized_payload["values"],
+                derived=normalized_payload["derived"],
+                parse_confidence=normalized_payload["parse_confidence"],
+                confirmation_needed=normalized_payload["confirmation_needed"],
+                provenance=normalized_payload["provenance"],
                 metadata={
                     "content_type": content_type,
                     "file_size": len(file_content),

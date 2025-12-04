@@ -1,50 +1,11 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import UploadFile
 from pydantic import BaseModel, Field
 
 
-class WeightLossEnrollmentBase(BaseModel):
-    patient_id: UUID = Field(..., description="Unique identifier of the patient")
-    program_goals: str = Field(..., description="Patient's weight loss goals and objectives", min_length=1, max_length=500)
-    target_weight_kg: float = Field(..., description="Target weight in kilograms", gt=0, le=500)
-    target_bmi: float = Field(..., description="Target BMI value", gt=0, le=50)
-
-
-class WeightLossEnrollmentCreate(WeightLossEnrollmentBase):
-    enrolled_by_care_provider_id: UUID = Field(..., description="Care provider who is enrolling the patient")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "patient_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                "program_goals": "Lose 10kg in 3 months through healthy diet and exercise",
-                "target_weight_kg": 70.5,
-                "target_bmi": 24.0,
-                "enrolled_by_care_provider_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-            }
-        }
-
-
-class WeightLossEnrollmentUpdate(BaseModel):
-    is_active: Optional[bool] = Field(None, description="Whether the enrollment is active")
-    program_goals: Optional[str] = Field(None, description="Updated weight loss goals", min_length=1, max_length=500)
-    target_weight_kg: Optional[float] = Field(None, description="Updated target weight in kilograms", gt=0, le=500)
-    target_bmi: Optional[float] = Field(None, description="Updated target BMI value", gt=0, le=50)
-
-
-class WeightLossEnrollment(WeightLossEnrollmentBase):
-    enrollment_id: UUID
-    enrolled_by_care_provider_id: UUID
-    enrollment_date: datetime
-    is_active: bool
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 class InbodyMeasurementBase(BaseModel):
@@ -87,6 +48,14 @@ class HealthIndicator(HealthIndicatorBase):
         from_attributes = True
 
 
+class InbodyNormalizedFields(BaseModel):
+    values: Dict[str, float] = Field(default_factory=dict)
+    derived: Dict[str, float] = Field(default_factory=dict)
+    parse_confidence: Dict[str, float] = Field(default_factory=dict)
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+    confirmation_needed: List[str] = Field(default_factory=list)
+
+
 class InbodyReportBase(BaseModel):
     report_date: datetime
     ai_summary: Optional[str] = None
@@ -95,7 +64,7 @@ class InbodyReportBase(BaseModel):
     content_type: Optional[str] = None
 
 
-class InbodyReportCreate(InbodyReportBase):
+class InbodyReportCreate(InbodyReportBase, InbodyNormalizedFields):
     pass
 
 
@@ -105,7 +74,7 @@ class InbodyReportUpload(BaseModel):
     image_url: Optional[str] = None
 
 
-class InbodyReport(InbodyReportBase):
+class InbodyReport(InbodyReportBase, InbodyNormalizedFields):
     report_id: UUID
     enrollment_id: UUID
     extracted_at: datetime
@@ -121,7 +90,7 @@ class InbodyReport(InbodyReportBase):
         from_attributes = True
 
 
-class InbodyReportSummary(BaseModel):
+class InbodyReportSummary(InbodyNormalizedFields):
     report_id: UUID
     report_date: datetime
     processed: bool
@@ -130,6 +99,8 @@ class InbodyReportSummary(BaseModel):
     measurements_count: int = 0
     ai_summary: Optional[str] = None
     original_filename: Optional[str] = None
+    measurements: List[InbodyMeasurement] = Field(default_factory=list)
+    health_indicators: List[HealthIndicator] = Field(default_factory=list)
 
 
 
@@ -143,7 +114,7 @@ class DailyReportData(BaseModel):
 
 
 class WeightLossProgressReport(BaseModel):
-    enrollment_id: UUID
+    
     patient_id: UUID
     patient_name: str
     enrollment_date: datetime
@@ -156,7 +127,7 @@ class WeightLossProgressReport(BaseModel):
 
 
 class WeightLossAgentAnalysisRequest(BaseModel):
-    enrollment_id: UUID
+    patient_id: UUID
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     include_meal_analysis: bool = True
@@ -177,7 +148,7 @@ class WeightLossAgentAnalysisResponse(BaseModel):
     vitals_analysis: Optional[dict] = None
 
 
-class InbodyReportAnalysisResult(BaseModel):
+class InbodyReportAnalysisResult(InbodyNormalizedFields):
     """Schema for the result returned from AI analysis of inbody report"""
     file_name: str
     processed_at: str
@@ -206,5 +177,50 @@ class InbodyReportAnalysisResult(BaseModel):
                 },
                 "report_id": "123e4567-e89b-12d3-a456-426614174001",
                 "stored_at": "2024-01-01T12:00:05"
+            }
+        }
+
+
+class WeightLossEnrollmentBase(BaseModel):
+    patient_id: UUID
+    enrolled_by_care_provider_id: UUID
+    program_goals: Optional[str] = None
+    target_weight_kg: Optional[float] = None
+    target_bmi: Optional[float] = None
+
+
+class WeightLossEnrollmentCreate(WeightLossEnrollmentBase):
+    """Payload to create a weight loss enrollment."""
+
+
+class WeightLossEnrollmentUpdate(BaseModel):
+    """Fields that can be updated on an enrollment."""
+    program_goals: Optional[str] = None
+    target_weight_kg: Optional[float] = None
+    target_bmi: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
+class WeightLossEnrollment(WeightLossEnrollmentBase):
+    enrollment_id: UUID
+    enrollment_date: datetime
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChatRequest(BaseModel):
+    """Schema for chat requests to the weight loss agent"""
+    question: str = Field(..., description="User's question or message", min_length=1)
+    conversation_id: Optional[str] = Field(None, description="Optional conversation ID for maintaining context")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question": "How is my weight loss progress this week?",
+                "conversation_id": "chat_123"
             }
         }
