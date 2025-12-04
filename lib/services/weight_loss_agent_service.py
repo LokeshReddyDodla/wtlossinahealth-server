@@ -6,9 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import status
 from sqlalchemy import and_, func
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload, selectinload
 
-from motor.motor_asyncio import AsyncIOMotorCollection
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
@@ -36,7 +34,7 @@ from lib.utils.http_exceptions import raise_http_exception
 
 
 class WeightLossAgentService:
-    """Service for managing weight loss agent functionality using MongoDB"""
+    """Service for managing weight loss agent functionality"""
 
     CONFIRMATION_THRESHOLD = 0.85
 
@@ -82,7 +80,7 @@ class WeightLossAgentService:
         self,
         enrollment_data: WeightLossEnrollmentCreate,
     ) -> Dict:
-        """Enroll a patient in the weight loss program (doctor only) - stores in MongoDB"""
+        """Enroll a patient in the weight loss program (doctor only) - stores in PostgreSQL"""
 
         # Ensure care provider exists and is a doctor via profile service
         care_provider = (
@@ -102,7 +100,7 @@ class WeightLossAgentService:
         )
 
         async with self.postgres_store.get_session() as session:
-            # Verify the care provider is a doctor (still in PostgreSQL)
+            # Verify the care provider is a doctor
             care_provider = await session.get(
                 CareProvider, enrollment_data.enrolled_by_care_provider_id
             )
@@ -118,111 +116,102 @@ class WeightLossAgentService:
                     message="Only doctors can enroll patients in weight loss program",
                 )
 
-        # Check if patient already has an active enrollment (in MongoDB)
-        existing_enrollment = await self.enrollments_collection.find_one(  # type: ignore
-            {"patient_id": str(enrollment_data.patient_id), "is_active": True}
-        )
+            # Check if patient already has an active enrollment in PostgreSQL
+            existing_enrollment_result = await session.execute(
+                select(WeightLossAgentEnrollment).where(
+                    and_(
+                        WeightLossAgentEnrollment.patient_id == enrollment_data.patient_id,
+                        WeightLossAgentEnrollment.is_active == True
+                    )
+                )
+            )
+            existing_enrollment = existing_enrollment_result.scalar_one_or_none()
 
-        if existing_enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Patient is already enrolled in weight loss program",
+            if existing_enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Patient is already enrolled in weight loss program",
+                )
+
+            # Create new enrollment in PostgreSQL
+            enrollment = WeightLossAgentEnrollment(
+                patient_id=enrollment_data.patient_id,
+                enrolled_by_care_provider_id=enrollment_data.enrolled_by_care_provider_id,
+                enrollment_date=datetime.now(),
+                is_active=True,
+                program_goals=enrollment_data.program_goals,
+                target_weight_kg=enrollment_data.target_weight_kg,
+                target_bmi=enrollment_data.target_bmi,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
             )
             session.add(enrollment)
             await session.commit()
             await session.refresh(enrollment)
 
-        # Create enrollment document for MongoDB
-        enrollment_doc = {
-            "enrollment_id": str(uuid4()),
-            "patient_id": str(enrollment_data.patient_id),
-            "enrolled_by_care_provider_id": str(
-                enrollment_data.enrolled_by_care_provider_id
-            ),
-            "enrollment_date": datetime.now(),
-            "is_active": True,
-            "program_goals": enrollment_data.program_goals,
-            "target_weight_kg": enrollment_data.target_weight_kg,
-            "target_bmi": enrollment_data.target_bmi,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-        }
-
-        # Insert into MongoDB
-        await self.enrollments_collection.insert_one(enrollment_doc)  # type: ignore
-
-        # Remove MongoDB _id for response
-        enrollment_doc.pop("_id", None)
-
-        return enrollment_doc
+            return self._serialize_enrollment(enrollment)
 
     async def update_patient_enrollment(
         self,
         enrollment_id: UUID,
         update_data: WeightLossEnrollmentUpdate,
     ) -> Dict:
-        """Update patient enrollment details - MongoDB"""
+        """Update patient enrollment details - PostgreSQL"""
 
-        # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one(  # type: ignore
-            {"enrollment_id": str(enrollment_id)}
-        )
+        async with self.postgres_store.get_session() as session:
+            # Get enrollment from PostgreSQL
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
 
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found",
-            )
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found",
+                )
 
-            update_dict = update_data.dict(exclude_unset=True)
+            # Update fields
+            update_dict = update_data.model_dump(exclude_unset=True)
             for field, value in update_dict.items():
                 setattr(enrollment, field, value)
             enrollment.updated_at = datetime.now()
+            
             await session.commit()
             await session.refresh(enrollment)
 
-        # Update in MongoDB
-        await self.enrollments_collection.update_one(
-            {"enrollment_id": str(enrollment_id)}, {"$set": update_dict}
-        )
-
-        # Get updated enrollment
-        updated_enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id)}
-        )
-        updated_enrollment.pop("_id", None)
-
-        return updated_enrollment
+            return self._serialize_enrollment(enrollment)
 
     async def get_patient_enrollment(
         self, enrollment_id: UUID
     ) -> Optional[Dict]:
-        """Get patient's weight loss enrollment by enrollment_id - MongoDB"""
+        """Get patient's weight loss enrollment by enrollment_id - PostgreSQL"""
 
-        enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id)}
-        )
+        async with self.postgres_store.get_session() as session:
+            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
 
-        if enrollment:
-            enrollment.pop("_id", None)
-            return enrollment
+            if enrollment:
+                return self._serialize_enrollment(enrollment)
 
-        return None
+            return None
 
     async def get_patient_enrollment_by_patient_id(
         self, patient_id: UUID
     ) -> Optional[Dict]:
-        """Get patient's active weight loss enrollment by patient_id - MongoDB"""
+        """Get patient's active weight loss enrollment by patient_id - PostgreSQL"""
 
-        enrollment = await self.enrollments_collection.find_one(
-            {"patient_id": str(patient_id), "is_active": True}
-        )
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(WeightLossAgentEnrollment).where(
+                    and_(
+                        WeightLossAgentEnrollment.patient_id == patient_id,
+                        WeightLossAgentEnrollment.is_active == True
+                    )
+                )
+            )
+            enrollment = result.scalar_one_or_none()
 
-        if enrollment:
-            enrollment.pop("_id", None)
-            return enrollment
+            if enrollment:
+                return self._serialize_enrollment(enrollment)
 
-        return None
+            return None
 
     async def create_inbody_report(
         self,
@@ -231,22 +220,31 @@ class WeightLossAgentService:
     ) -> Dict:
         """Create a new inbody report - MongoDB"""
 
-        # Verify enrollment exists and is active (in MongoDB)
-        enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id), "is_active": True}
-        )
-
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Active enrollment not found",
+        # Verify enrollment exists and is active (in PostgreSQL)
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(WeightLossAgentEnrollment).where(
+                    and_(
+                        WeightLossAgentEnrollment.enrollment_id == enrollment_id,
+                        WeightLossAgentEnrollment.is_active == True
+                    )
+                )
             )
+            enrollment = result.scalar_one_or_none()
+
+            if not enrollment:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Active enrollment not found",
+                )
+
+            patient_id = str(enrollment.patient_id)
 
         # Create inbody report document
         report_doc = {
             "report_id": str(uuid4()),
             "enrollment_id": str(enrollment_id),
-            "patient_id": enrollment["patient_id"],
+            "patient_id": patient_id,
             "ai_summary": report_data.ai_summary,
             "original_filename": report_data.original_filename,
             "file_size": report_data.file_size,
@@ -388,29 +386,28 @@ class WeightLossAgentService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> Dict:
-        """Analyze weight loss progress using AI - MongoDB"""
+        """Analyze weight loss progress using AI - PostgreSQL for enrollment"""
 
         if not start_date:
             start_date = datetime.now() - timedelta(days=30)
         if not end_date:
             end_date = datetime.now()
 
-        # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id)}
-        )
-
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found",
-            )
-
-        # Get patient info from PostgreSQL
+        # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            patient = await session.get(
-                Patient, UUID(enrollment["patient_id"])
-            )
+            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+
+            if not enrollment_obj:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found",
+                )
+
+            # Get patient info
+            patient = await session.get(Patient, enrollment_obj.patient_id)
+            
+            # Convert enrollment to dict for compatibility
+            enrollment = self._serialize_enrollment(enrollment_obj)
             enrollment["patient"] = patient
 
         # Get daily reports data
@@ -535,29 +532,28 @@ class WeightLossAgentService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> Dict:
-        """Get comprehensive weight loss progress data - MongoDB"""
+        """Get comprehensive weight loss progress data - PostgreSQL for enrollment"""
 
         if not start_date:
             start_date = datetime.now() - timedelta(days=30)
         if not end_date:
             end_date = datetime.now()
 
-        # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id)}
-        )
-
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found",
-            )
-
-        # Get patient info from PostgreSQL
+        # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            patient = await session.get(
-                Patient, UUID(enrollment["patient_id"])
-            )
+            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+
+            if not enrollment_obj:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found",
+                )
+
+            # Get patient info
+            patient = await session.get(Patient, enrollment_obj.patient_id)
+            
+            # Convert enrollment to dict for compatibility
+            enrollment = self._serialize_enrollment(enrollment_obj)
 
         # Get daily reports
         daily_reports = await self.get_daily_reports_data(
@@ -901,31 +897,32 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
         conversation_id: str,
         user_question: str,
     ) -> Dict:
-        """Handle chatbot conversations about weight loss progress and reports - MongoDB"""
+        """Handle chatbot conversations about weight loss progress and reports - PostgreSQL for enrollment"""
 
-        # Get enrollment from MongoDB
-        enrollment = await self.enrollments_collection.find_one(
-            {"enrollment_id": str(enrollment_id)}
-        )
-
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found",
-            )
-
-        # Get patient info from PostgreSQL
+        # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            patient = await session.get(
-                Patient, UUID(enrollment["patient_id"])
-            )
+            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+
+            if not enrollment_obj:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Enrollment not found",
+                )
+
+            # Get patient info
+            patient = await session.get(Patient, enrollment_obj.patient_id)
+            
+            patient_id = enrollment_obj.patient_id
+            
+            # Convert enrollment to dict for compatibility
+            enrollment = self._serialize_enrollment(enrollment_obj)
 
         # Get recent daily reports (last 30 days)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=30)
 
         daily_reports = await self.get_daily_reports_data(
-            UUID(enrollment["patient_id"]), start_date, end_date
+            patient_id, start_date, end_date
         )
 
         # Get latest inbody report from MongoDB
