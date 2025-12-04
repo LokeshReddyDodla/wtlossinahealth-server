@@ -653,6 +653,18 @@ container.register(
 
 # 🔹 Weight Loss Agent Service (MongoDB)
 container.register(
+    AnalyticsService,
+    lambda: AnalyticsService(
+        audit_traces_collection=cast(
+            MongoStore, container.resolve("audit_traces_collection")
+        ),
+        analytics_events_collection=cast(
+            MongoStore, container.resolve("analytics_events_collection")
+        ),
+    ),
+)
+
+container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
