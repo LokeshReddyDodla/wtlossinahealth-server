@@ -80,7 +80,6 @@ from lib.services.sleep_report_service import SleepReportService
 from lib.services.smbg_vector_service.smbg_vector_service import (
     SMBGVectorService,
 )
-from lib.services.smbg_agent_service import SMBGAgentService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
