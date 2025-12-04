@@ -80,7 +80,6 @@ from lib.services.sleep_report_service import SleepReportService
 from lib.services.smbg_vector_service.smbg_vector_service import (
     SMBGVectorService,
 )
-from lib.services.smbg_agent_service import SMBGAgentService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -94,11 +93,21 @@ from lib.utils.smbg.processor import SMBGStatsProcessor
 from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
-from lib.services.weightloss_agent.safety_rules_service import SafetyRulesService
-from lib.services.weightloss_agent.plan_composer_service import PlanComposerService
-from lib.services.weightloss_agent.coach_messenger_service import CoachMessengerService
-from lib.services.weightloss_agent.glp1_symptoms_service import Glp1SymptomsService
-from lib.services.weightloss_agent.agentic_orchestrator import AgenticOrchestrator
+from lib.services.weightloss_agent.safety_rules_service import (
+    SafetyRulesService,
+)
+from lib.services.weightloss_agent.plan_composer_service import (
+    PlanComposerService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
+from lib.services.weightloss_agent.glp1_symptoms_service import (
+    Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.agentic_orchestrator import (
+    AgenticOrchestrator,
+)
 
 
 def get_libreview_sync_queue() -> SQSService:
@@ -227,7 +236,9 @@ def get_plan_composer_service() -> PlanComposerService:
 
 
 def get_coach_messenger_service() -> CoachMessengerService:
-    return cast(CoachMessengerService, container.resolve(CoachMessengerService))
+    return cast(
+        CoachMessengerService, container.resolve(CoachMessengerService)
+    )
 
 
 def get_glp1_symptoms_service() -> Glp1SymptomsService:
@@ -317,10 +328,6 @@ def get_meal_report_service() -> MealReportService:
 
 def get_smbg_stats_processor() -> SMBGStatsProcessor:
     return cast(SMBGStatsProcessor, container.resolve(SMBGStatsProcessor))
-
-
-def get_smbg_agent_service() -> SMBGAgentService:
-    return cast(SMBGAgentService, container.resolve(SMBGAgentService))
 
 
 def get_fitness_upload_service() -> FitnessUploadService:

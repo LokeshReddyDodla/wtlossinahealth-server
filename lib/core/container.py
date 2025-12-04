@@ -97,7 +97,6 @@ from lib.services.sleep_report_service import SleepReportService
 from lib.services.smbg_vector_service.smbg_vector_service import (
     SMBGVectorService,
 )
-from lib.services.smbg_agent_service import SMBGAgentService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -390,9 +389,6 @@ container.register(
         smbg_vector_service=cast(
             SMBGVectorService, container.resolve(SMBGVectorService)
         ),
-        smbg_agent_service=cast(
-            SMBGAgentService, container.resolve(SMBGAgentService)
-        ),
     ),
 )
 
@@ -553,18 +549,6 @@ container.register(
     ),
 )
 
-# 🔹 SMBG Agent Service
-def _create_smbg_agent_service():
-    from lib.services.fcm_service import FCMService
-    return SMBGAgentService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=container.resolve(PatientProfileService),
-        meal_report_service=container.resolve(MealReportService),
-        fitness_report_service=container.resolve(FitnessReportService),
-        fcm_service=FCMService(),
-    )
-
-container.register(SMBGAgentService, _create_smbg_agent_service)
 
 # 🔹 Sleep Stats Processor
 container.register(
