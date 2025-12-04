@@ -100,6 +100,7 @@ from lib.services.smbg_vector_service.smbg_vector_service import (
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
@@ -109,7 +110,6 @@ from lib.services.cgm_vector_service import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
-from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.safety_rules_service import (
     SafetyRulesService,
@@ -223,6 +223,7 @@ container.register(
     ).get_collection("weight_loss_progress_analyses"),
     scope=Scope.singleton,
 )
+
 
 # Intake + patient app collections
 container.register(
@@ -652,14 +653,23 @@ container.register(
 
 # 🔹 Weight Loss Agent Service (MongoDB)
 container.register(
+    AnalyticsService,
+    lambda: AnalyticsService(
+        audit_traces_collection=cast(
+            MongoStore, container.resolve("audit_traces_collection")
+        ),
+        analytics_events_collection=cast(
+            MongoStore, container.resolve("analytics_events_collection")
+        ),
+    ),
+)
+
+container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=cast(
             ClickHouseStore, container.resolve(ClickHouseStore)
-        ),
-        enrollments_collection=cast(
-            MongoStore, container.resolve("weight_loss_enrollments_collection")
         ),
         reports_collection=cast(
             MongoStore, container.resolve("inbody_reports_collection")
@@ -671,6 +681,16 @@ container.register(
         progress_analyses_collection=cast(
             MongoStore,
             container.resolve("weight_loss_progress_analyses_collection"),
+        ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        care_provider_profile_service=cast(
+            CareProviderProfileService,
+            container.resolve(CareProviderProfileService),
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
         ),
     ),
 )

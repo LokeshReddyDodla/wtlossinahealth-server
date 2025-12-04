@@ -6,9 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import status
 from sqlalchemy import and_, func
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload, selectinload
 
-from motor.motor_asyncio import AsyncIOMotorCollection
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
@@ -44,7 +42,6 @@ class WeightLossAgentService:
         self,
         postgres_store: PostgresStore,
         clickhouse_store: ClickHouseStore,
-        enrollments_collection: MongoStore,
         reports_collection: MongoStore,
         interactions_collection: MongoStore,
         progress_analyses_collection: MongoStore,

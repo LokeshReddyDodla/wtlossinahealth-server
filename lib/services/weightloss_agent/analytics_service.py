@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from motor.motor_asyncio import AsyncIOMotorCollection
+from lib.core.mongo_store import MongoStore
 
 
 class AnalyticsService:
@@ -16,8 +16,8 @@ class AnalyticsService:
 
     def __init__(
         self,
-        analytics_events_collection: AsyncIOMotorCollection,
-        audit_traces_collection: AsyncIOMotorCollection,
+        analytics_events_collection: MongoStore,
+        audit_traces_collection: MongoStore,
     ) -> None:
         self.analytics_events_collection = analytics_events_collection
         self.audit_traces_collection = audit_traces_collection
