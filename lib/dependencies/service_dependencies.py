@@ -409,10 +409,6 @@ def get_patient_documents_collection():
     return container.resolve("patient_documents")
 
 
-def get_weight_loss_enrollments_collection():
-    return container.resolve("weight_loss_enrollments_collection")
-
-
 def get_inbody_reports_collection():
     return container.resolve("inbody_reports_collection")
 

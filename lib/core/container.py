@@ -100,6 +100,7 @@ from lib.services.smbg_vector_service.smbg_vector_service import (
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
+from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
@@ -109,7 +110,6 @@ from lib.services.cgm_vector_service import CGMVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
-from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.safety_rules_service import (
     SafetyRulesService,
@@ -221,13 +221,6 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("weight_loss_progress_analyses"),
-    scope=Scope.singleton,
-)
-container.register(
-    "weight_loss_enrollments_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("weight_loss_enrollments_collection"),
     scope=Scope.singleton,
 )
 
