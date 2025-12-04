@@ -44,7 +44,6 @@ class WeightLossAgentService:
         self,
         postgres_store: PostgresStore,
         clickhouse_store: ClickHouseStore,
-        enrollments_collection: MongoStore,
         reports_collection: MongoStore,
         interactions_collection: MongoStore,
         progress_analyses_collection: MongoStore,

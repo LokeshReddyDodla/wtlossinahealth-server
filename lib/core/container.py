@@ -659,9 +659,6 @@ container.register(
         clickhouse_store=cast(
             ClickHouseStore, container.resolve(ClickHouseStore)
         ),
-        enrollments_collection=cast(
-            MongoStore, container.resolve("weight_loss_enrollments_collection")
-        ),
         reports_collection=cast(
             MongoStore, container.resolve("inbody_reports_collection")
         ),
