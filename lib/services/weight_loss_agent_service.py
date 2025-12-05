@@ -625,6 +625,73 @@ class WeightLossAgentService:
 
         return value < normal_min or value > normal_max
 
+    def _build_normalized_inbody_payload(
+        self,
+        extracted_metrics: Dict[str, Any],
+        confidence_score: float,
+        file_name: str = "",
+        content_type: str = "",
+    ) -> Dict[str, Any]:
+        """Build normalized payload for InbodyReportAnalysisResult from extracted metrics"""
+        
+        values = {}
+        derived = {}
+        parse_confidence = {}
+        confirmation_needed = []
+        
+        # Map extracted metrics to normalized values
+        metric_mappings = {
+            "weight": "weight_kg",
+            "bmi": "bmi",
+            "body_fat_percentage": "body_fat_percent",
+            "body_fat": "body_fat_percent",
+            "muscle_mass": "muscle_mass_kg",
+            "body_water": "body_water_percent",
+            "visceral_fat": "visceral_fat_level",
+            "basal_metabolic_rate": "bmr_kcal",
+            "target_weight": "target_weight_kg",
+        }
+        
+        for original_key, normalized_key in metric_mappings.items():
+            if original_key in extracted_metrics:
+                try:
+                    # Extract numeric value from string like "75.5 kg" or "25.3%"
+                    value_str = str(extracted_metrics[original_key])
+                    import re
+                    match = re.search(r"([\d.]+)", value_str)
+                    if match:
+                        values[normalized_key] = float(match.group(1))
+                        parse_confidence[normalized_key] = confidence_score
+                        
+                        # Flag values that need confirmation if confidence is low
+                        if confidence_score < self.CONFIRMATION_THRESHOLD:
+                            confirmation_needed.append(normalized_key)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Calculate derived metrics if we have the necessary values
+        if "weight_kg" in values and "bmi" in values:
+            # Height can be derived from weight and BMI: height_m = sqrt(weight_kg / bmi)
+            try:
+                height_m = (values["weight_kg"] / values["bmi"]) ** 0.5
+                derived["height_m"] = round(height_m, 2)
+                derived["height_cm"] = round(height_m * 100, 1)
+            except (ZeroDivisionError, ValueError):
+                pass
+        
+        return {
+            "values": values,
+            "derived": derived,
+            "parse_confidence": parse_confidence,
+            "confirmation_needed": confirmation_needed,
+            "provenance": {
+                "source": "ai_vision_extraction",
+                "file_name": file_name,
+                "content_type": content_type,
+                "extraction_method": "gpt-4o-vision",
+            },
+        }
+
     async def _get_fitness_data_for_date(
         self, patient_id: UUID, date: date
     ) -> Optional[Dict]:
