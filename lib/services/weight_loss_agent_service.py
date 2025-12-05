@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import status
 from sqlalchemy import and_, func
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload, joinedload
 
 
 from lib.core.clickhouse_store import ClickHouseStore
@@ -120,12 +121,15 @@ class WeightLossAgentService:
             existing_enrollment_result = await session.execute(
                 select(WeightLossAgentEnrollment).where(
                     and_(
-                        WeightLossAgentEnrollment.patient_id == enrollment_data.patient_id,
-                        WeightLossAgentEnrollment.is_active == True
+                        WeightLossAgentEnrollment.patient_id
+                        == enrollment_data.patient_id,
+                        WeightLossAgentEnrollment.is_active == True,
                     )
                 )
             )
-            existing_enrollment = existing_enrollment_result.scalar_one_or_none()
+            existing_enrollment = (
+                existing_enrollment_result.scalar_one_or_none()
+            )
 
             if existing_enrollment:
                 raise_http_exception(
@@ -160,7 +164,9 @@ class WeightLossAgentService:
 
         async with self.postgres_store.get_session() as session:
             # Get enrollment from PostgreSQL
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            enrollment = await session.get(
+                WeightLossAgentEnrollment, enrollment_id
+            )
 
             if not enrollment:
                 raise_http_exception(
@@ -173,7 +179,7 @@ class WeightLossAgentService:
             for field, value in update_dict.items():
                 setattr(enrollment, field, value)
             enrollment.updated_at = datetime.now()
-            
+
             await session.commit()
             await session.refresh(enrollment)
 
@@ -185,7 +191,9 @@ class WeightLossAgentService:
         """Get patient's weight loss enrollment by enrollment_id - PostgreSQL"""
 
         async with self.postgres_store.get_session() as session:
-            enrollment = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            enrollment = await session.get(
+                WeightLossAgentEnrollment, enrollment_id
+            )
 
             if enrollment:
                 return self._serialize_enrollment(enrollment)
@@ -202,7 +210,7 @@ class WeightLossAgentService:
                 select(WeightLossAgentEnrollment).where(
                     and_(
                         WeightLossAgentEnrollment.patient_id == patient_id,
-                        WeightLossAgentEnrollment.is_active == True
+                        WeightLossAgentEnrollment.is_active == True,
                     )
                 )
             )
@@ -225,8 +233,9 @@ class WeightLossAgentService:
             result = await session.execute(
                 select(WeightLossAgentEnrollment).where(
                     and_(
-                        WeightLossAgentEnrollment.enrollment_id == enrollment_id,
-                        WeightLossAgentEnrollment.is_active == True
+                        WeightLossAgentEnrollment.enrollment_id
+                        == enrollment_id,
+                        WeightLossAgentEnrollment.is_active == True,
                     )
                 )
             )
@@ -285,7 +294,17 @@ class WeightLossAgentService:
 
                 # Get meals for the day
                 meals_result = await session.execute(
-                    select(PatientMeal).where(
+                    select(PatientMeal)
+                    .options(
+                        selectinload(
+                            PatientMeal.total_macro_nutritional_value
+                        ),
+                        selectinload(
+                            PatientMeal.total_micro_nutritional_value
+                        ),
+                        selectinload(PatientMeal.items),
+                    )
+                    .where(
                         and_(
                             PatientMeal.patient_id == patient_id,
                             func.date(PatientMeal.date) == current_date,
@@ -395,7 +414,9 @@ class WeightLossAgentService:
 
         # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            enrollment_obj = await session.get(
+                WeightLossAgentEnrollment, enrollment_id
+            )
 
             if not enrollment_obj:
                 raise_http_exception(
@@ -405,7 +426,7 @@ class WeightLossAgentService:
 
             # Get patient info
             patient = await session.get(Patient, enrollment_obj.patient_id)
-            
+
             # Convert enrollment to dict for compatibility
             enrollment = self._serialize_enrollment(enrollment_obj)
             enrollment["patient"] = patient
@@ -541,7 +562,9 @@ class WeightLossAgentService:
 
         # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            enrollment_obj = await session.get(
+                WeightLossAgentEnrollment, enrollment_id
+            )
 
             if not enrollment_obj:
                 raise_http_exception(
@@ -551,7 +574,7 @@ class WeightLossAgentService:
 
             # Get patient info
             patient = await session.get(Patient, enrollment_obj.patient_id)
-            
+
             # Convert enrollment to dict for compatibility
             enrollment = self._serialize_enrollment(enrollment_obj)
 
@@ -901,7 +924,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
         # Get enrollment from PostgreSQL
         async with self.postgres_store.get_session() as session:
-            enrollment_obj = await session.get(WeightLossAgentEnrollment, enrollment_id)
+            enrollment_obj = await session.get(
+                WeightLossAgentEnrollment, enrollment_id
+            )
 
             if not enrollment_obj:
                 raise_http_exception(
@@ -911,9 +936,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
             # Get patient info
             patient = await session.get(Patient, enrollment_obj.patient_id)
-            
+
             patient_id = enrollment_obj.patient_id
-            
+
             # Convert enrollment to dict for compatibility
             enrollment = self._serialize_enrollment(enrollment_obj)
 
