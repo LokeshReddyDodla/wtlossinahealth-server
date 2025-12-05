@@ -85,7 +85,7 @@ class WillingnessCommitmentCreate(BaseModel):
         examples=["precontemplation", "contemplation", "preparation", "action"],
     )
     commitment_score: int = Field(..., ge=1, le=5)
-    weekly_minutes_promised: int = Field(..., ge=30, le=900)
+    weekly_minutes_promised: int = Field(..., ge=1, le=900)
     motivator_statement: Optional[str] = None
     limiting_factors: List[str] = Field(default_factory=list)
     accountability_preferences: List[str] = Field(default_factory=list)

@@ -664,6 +664,116 @@ container.register(
     ),
 )
 
+# 🔹 Intake Service
+container.register(
+    IntakeService,
+    lambda: IntakeService(
+        exercise_preferences_collection=container.resolve(
+            "exercise_preferences_collection"
+        ),
+        fitness_screen_collection=container.resolve(
+            "fitness_screen_collection"
+        ),
+        willingness_commitment_collection=container.resolve(
+            "willingness_commitment_collection"
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Safety Rules Service
+container.register(
+    SafetyRulesService,
+    lambda: SafetyRulesService(
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Exercise Recommendation Service
+container.register(
+    ExerciseRecommendationService,
+    lambda: ExerciseRecommendationService(
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
+        ),
+    ),
+)
+
+# 🔹 Plan Composer Service
+container.register(
+    PlanComposerService,
+    lambda: PlanComposerService(
+        plan_snapshots_collection=container.resolve(
+            "plan_snapshots_collection"
+        ),
+        inbody_reports_collection=container.resolve(
+            "inbody_reports_collection"
+        ),
+        intake_service=cast(
+            IntakeService, container.resolve(IntakeService)
+        ),
+        safety_rules_service=cast(
+            SafetyRulesService, container.resolve(SafetyRulesService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        exercise_recommendation_service=cast(
+            ExerciseRecommendationService,
+            container.resolve(ExerciseRecommendationService),
+        ),
+    ),
+)
+
+# 🔹 Coach Messenger Service
+container.register(
+    CoachMessengerService,
+    lambda: CoachMessengerService(
+        suggestion_cards_collection=container.resolve(
+            "suggestion_cards_collection"
+        ),
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 GLP-1 Symptoms Service
+container.register(
+    Glp1SymptomsService,
+    lambda: Glp1SymptomsService(
+        weekly_symptoms_collection=container.resolve(
+            "weekly_symptoms_glp1_collection"
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 Agentic Orchestrator
+container.register(
+    AgenticOrchestrator,
+    lambda: AgenticOrchestrator(
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        coach_messenger_service=cast(
+            CoachMessengerService, container.resolve(CoachMessengerService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
 container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
