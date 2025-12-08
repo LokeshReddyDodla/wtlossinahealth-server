@@ -3,6 +3,7 @@ import json
 from typing import Any, Union
 
 from decouple import config
+from fastapi import File, UploadFile
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -22,7 +23,9 @@ from lib.schemas.patient_prescription_analysis import (
     PrescriptionStructureResponse,
 )
 from lib.services.token_usage_service import TokenUsageService
+from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.retry_utils import retry_request
+from lib.utils.s3_utils import upload_file_to_s3
 
 
 class PrescriptionAnalysisService:
@@ -54,6 +57,8 @@ class PrescriptionAnalysisService:
                 temperature=0.4,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
+
+        self.s3_bucket_name = "user-assets.aihealth.clinic"
 
     async def analyze_prescription(
         self,
@@ -118,10 +123,24 @@ class PrescriptionAnalysisService:
 
     async def analyze_prescription_structure(
         self,
-        image_url: str,
+        file: UploadFile,
         user_id: str,
         user_type: ProfileTypeEnum,
     ) -> PrescriptionStructureResponse:
+        # Upload file to S3
+        file_url = upload_file_to_s3(
+            file_bytes=await file.read(),
+            bucket_name=self.s3_bucket_name,
+            file_name=file.filename,  # type: ignore
+            content_type=file.content_type,  # type: ignore
+            folder_path=f"patients/{user_id}/documents/prescription",
+        )
+        if not file_url:
+            raise_http_exception(
+                status_code=400,
+                message="Failed to upload file to S3",
+            )
+
         system_prompt = [
             SystemMessage(
                 content=(
@@ -149,9 +168,7 @@ class PrescriptionAnalysisService:
 
         human_messages = [
             HumanMessage(
-                content=[
-                    {"type": "image_url", "image_url": {"url": image_url}}
-                ]
+                content=[{"type": "image_url", "image_url": {"url": file_url}}]
             )
         ]
 
@@ -165,7 +182,7 @@ class PrescriptionAnalysisService:
         parsed_response: PrescriptionStructureResponse = ai_response.get(
             "parsed", {}
         )
-        parsed_response.prescription_file_url = image_url
+        parsed_response.prescription_file_url = file_url
 
         usage_metadata = ai_response["raw"].usage_metadata
         if usage_metadata:
