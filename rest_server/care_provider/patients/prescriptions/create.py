@@ -45,7 +45,7 @@ from .router import router
 async def preview_patient_prescriptions(
     request: Request,
     patient_id: str,
-    image_url: str = Body(..., embed=True),
+    file: UploadFile = File(...),
     prescription_analysis_service: PrescriptionAnalysisService = Depends(
         get_prescription_analysis_service
     ),
@@ -60,7 +60,7 @@ async def preview_patient_prescriptions(
     try:
         parsed_ai_response = (
             await prescription_analysis_service.analyze_prescription_structure(
-                image_url=image_url,
+                file=file,
                 user_id=patient_id,
                 user_type=ProfileTypeEnum.PATIENT,
             )
