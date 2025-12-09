@@ -416,7 +416,7 @@ class AIConversationServiceV1:
         # Model call
         invoke_start = time.monotonic()
         try:
-            ai_response = await self.structured_model.invoke(messages)  # type: ignore
+            ai_response = self.structured_model.invoke(messages)  # type: ignore
         except Exception as e:
             print(f"[ERROR] model invoke failed for batch {batch_ids}: {e}")
             log_time(f"batch {batch_ids} invoke_failed", invoke_start)
