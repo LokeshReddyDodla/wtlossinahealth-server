@@ -411,6 +411,10 @@ class AIConversationServiceV1:
             SystemMessage(content=batch_context),
             HumanMessage(content=human_input),
         ]
+        print(
+            f"[DEBUG] messages length for batch {batch_ids}: {len(messages)}"
+        )
+        print(f"[DEBUG] first message: {messages[0].content[:500]}")
         log_time(f"prepare messages for batch {batch_ids}", message_start)
 
         # Model call
