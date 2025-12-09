@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+import json
 import time
 from langchain_openai import ChatOpenAI
 
@@ -394,6 +395,11 @@ class AIConversationServiceV1:
         print(f"\n--- PROCESSING BATCH {batch_ids} ---")
 
         batch_context = batch["context"]
+        context_bytes = len(batch_context.encode("utf-8"))
+        context_mb = context_bytes / (1024 * 1024)
+        print(
+            f"[DEBUG] batch {batch_ids} context size: {context_bytes} bytes (~{context_mb:.2f} MB)"
+        )
 
         if not batch_context.strip() or not batch.get("context_items"):
             print(f"[SKIP] empty context for batch {batch_ids}")
@@ -411,16 +417,22 @@ class AIConversationServiceV1:
             SystemMessage(content=batch_context),
             HumanMessage(content=human_input),
         ]
-        print(
-            f"[DEBUG] messages length for batch {batch_ids}: {len(messages)}"
+        msg_json = json.dumps(
+            [m.dict() if hasattr(m, "dict") else m.__dict__ for m in messages]
         )
-        print(f"[DEBUG] first message: {messages[0].content[:500]}")
+        msg_size_mb = len(msg_json.encode("utf-8")) / (1024 * 1024)
+        print(f"[DEBUG] batch {batch_ids} messages size: {msg_size_mb:.2f} MB")
         log_time(f"prepare messages for batch {batch_ids}", message_start)
 
         # Model call
         invoke_start = time.monotonic()
         try:
+            http_start = time.monotonic()
             ai_response = self.structured_model.invoke(messages)  # type: ignore
+            http_end = time.monotonic()
+            print(
+                f"[DEBUG] network + OpenAI time: {http_end - http_start:.2f}s"
+            )
         except Exception as e:
             print(f"[ERROR] model invoke failed for batch {batch_ids}: {e}")
             log_time(f"batch {batch_ids} invoke_failed", invoke_start)
