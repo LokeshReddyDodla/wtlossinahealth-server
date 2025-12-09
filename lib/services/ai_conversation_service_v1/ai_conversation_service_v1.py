@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 import time
 from langchain_openai import ChatOpenAI
@@ -234,66 +235,44 @@ class AIConversationServiceV1:
                 status="success",
             )
 
-            all_batch_responses: list[dict] = []
             total_token_usage = defaultdict(int)
 
-            # ---- Generate batches ----
-            async for batch in self.context_batcher.generate_batches(
-                patient_ids,
-                conversation_id,
-                human_input,
-                include_history=True,
-                report_id=report_id,
-            ):
-                batch_ids = batch["batch_patient_ids"]
-                batch_context = batch["context"]
-
-                # Skip if batch has no real context
-                if not batch_context.strip() or not batch["context_items"]:
-                    print(
-                        f"Skipping batch {batch_ids} — no real data available"
-                    )
-                    continue
-
-                messages = [
-                    self.system_message,
-                    SystemMessage(content=batch_context),
-                    HumanMessage(content=human_input),
-                ]
-
-                ai_response: Any = self.structured_model.invoke(input=messages)
-                parsed: AIResponse = ai_response.get("parsed", {})
-                usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
-
-                all_batch_responses.append(
-                    {
-                        "batch_patient_ids": batch_ids,
-                        "context": batch_context,
-                        "context_items": batch.get("context_items", []),
-                        "filter_applied": batch.get("filter_applied", {}),
-                        "response_text": parsed.response,
-                        "citations": parsed.citations,
-                        "confidence_score": parsed.confidence_score,
-                        "tags": parsed.tags,
-                        "token_usage": usage,
-                    }
+            # ---- Generate ALL batches eagerly ----
+            batches = [
+                batch
+                async for batch in self.context_batcher.generate_batches(
+                    patient_ids,
+                    conversation_id,
+                    human_input,
+                    include_history=True,
+                    report_id=report_id,
                 )
+            ]
 
-                # Accumulate token usage
-                self._accumulate_usage(total_token_usage, usage)
+            # ---- Process all batches in PARALLEL ----
+            batch_results = await asyncio.gather(
+                *[self._process_single_batch(b, human_input) for b in batches]
+            )
 
-            # Summarize or fallback
-            if all_batch_responses:
-                # ---- Only summarize if multiple batches ----
-                if len(all_batch_responses) > 1:
+            # ---- Filter out skipped or failed batches ----
+            usable_batches = [b for b in batch_results if not b["skip"]]
+
+            # ---- Accumulate token usage ----
+            for b in usable_batches:
+                self._accumulate_usage(total_token_usage, b["token_usage"])
+
+            # ---- Summarize or fallback ----c
+            if usable_batches:
+                # If multiple batches → summarize
+                if len(usable_batches) > 1:
                     summarized: Any = await self._summarize_batches(
-                        all_batch_responses, human_input
+                        usable_batches, human_input
                     )
                     summary_parsed: AIResponse = summarized.get("parsed", {})
                     summary_usage = getattr(summarized["raw"], "usage_metadata", {}) or {}  # type: ignore
                     self._accumulate_usage(total_token_usage, summary_usage)
                 else:
-                    batch = all_batch_responses[0]
+                    batch = usable_batches[0]
                     summary_parsed = AIResponse(
                         response=batch["response_text"],
                         citations=batch.get("citations", []),
@@ -301,6 +280,7 @@ class AIConversationServiceV1:
                         tags=batch.get("tags", []),
                     )
             else:
+                # No usable batches
                 summary_parsed = AIResponse(
                     response="No patient data available to provide insights at this time.",
                     citations=[],
@@ -310,7 +290,7 @@ class AIConversationServiceV1:
 
             latency_ms = int((time.monotonic() - start_time) * 1000)
 
-            # ---- Save AI message ----
+            # ---- Save AI final message ----
             ai_message_data = await self.add_message_to_conversation(
                 sender_id="system",
                 sender_type="ai",
@@ -321,30 +301,13 @@ class AIConversationServiceV1:
                 message_type="markdown",
                 metadata={
                     "patient_ids": patient_ids,
-                    "batched_contexts": [
-                        {
-                            "batch_patient_ids": b["batch_patient_ids"],
-                            "context": b["context"],
-                            "context_items": b.get("context_items", []),
-                            "filter_applied": b.get("filter_applied", {}),
-                            "response_text": b["response_text"],
-                            "citations": b.get("citations", []),
-                            "confidence_score": b.get("confidence_score"),
-                            "tags": b.get("tags", []),
-                            "token_usage": b.get("token_usage", {}),
-                        }
-                        for b in all_batch_responses
-                    ],
+                    "batched_contexts": usable_batches,
                     "citations": summary_parsed.citations,
                     "confidence_score": summary_parsed.confidence_score,
                     "tags": summary_parsed.tags,
-                    "total_batches": len(all_batch_responses),
-                    "total_input_tokens": total_token_usage.get(
-                        "input_tokens", 0
-                    ),
-                    "total_output_tokens": total_token_usage.get(
-                        "output_tokens", 0
-                    ),
+                    "total_batches": len(usable_batches),
+                    "total_input_tokens": total_token_usage["input_tokens"],
+                    "total_output_tokens": total_token_usage["output_tokens"],
                     "total_cached_input_tokens": total_token_usage.get(
                         "cached_input_tokens", 0
                     ),
@@ -362,7 +325,7 @@ class AIConversationServiceV1:
                 latency_ms=latency_ms,
             )
 
-            # ---- Log total token usage ----
+            # ---- Log token usage ----
             if total_token_usage:
                 await self.token_usage_service.log_usage(
                     user_id=sender_id,
@@ -404,6 +367,50 @@ class AIConversationServiceV1:
                 "Failed to generate AI response.",
                 detail=str(e),
             )
+
+    async def _process_single_batch(self, batch, human_input):
+        batch_ids = batch["batch_patient_ids"]
+        batch_context = batch["context"]
+
+        # Skip empty context safely
+        if not batch_context.strip() or not batch.get("context_items"):
+            print(f"Skipping batch {batch_ids} — no real data available")
+            return {
+                "skip": True,
+                "batch_patient_ids": batch_ids,
+                "reason": "empty_context",
+            }
+
+        messages = [
+            self.system_message,
+            SystemMessage(content=batch_context),
+            HumanMessage(content=human_input),
+        ]
+
+        try:
+            ai_response = await self.structured_model.invoke(messages)  # type: ignore
+        except Exception as e:
+            return {
+                "skip": True,
+                "batch_patient_ids": batch_ids,
+                "reason": f"invoke_failed: {e}",
+            }
+
+        parsed = ai_response.get("parsed", {})
+        usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
+
+        return {
+            "skip": False,
+            "batch_patient_ids": batch_ids,
+            "context": batch_context,
+            "context_items": batch.get("context_items", []),
+            "filter_applied": batch.get("filter_applied", {}),
+            "response_text": parsed.response,
+            "citations": parsed.citations,
+            "confidence_score": parsed.confidence_score,
+            "tags": parsed.tags,
+            "token_usage": usage,
+        }
 
     async def _summarize_batches(
         self, batch_responses: list[dict], human_input: str
