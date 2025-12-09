@@ -395,11 +395,6 @@ class AIConversationServiceV1:
         print(f"\n--- PROCESSING BATCH {batch_ids} ---")
 
         batch_context = batch["context"]
-        context_bytes = len(batch_context.encode("utf-8"))
-        context_mb = context_bytes / (1024 * 1024)
-        print(
-            f"[DEBUG] batch {batch_ids} context size: {context_bytes} bytes (~{context_mb:.2f} MB)"
-        )
 
         if not batch_context.strip() or not batch.get("context_items"):
             print(f"[SKIP] empty context for batch {batch_ids}")
@@ -410,29 +405,37 @@ class AIConversationServiceV1:
                 "reason": "empty_context",
             }
 
-        # Prepare messages
-        message_start = time.monotonic()
+        # -------------------- Serialize messages --------------------
+        serialize_start = time.monotonic()
         messages = [
             self.system_message,
             SystemMessage(content=batch_context),
             HumanMessage(content=human_input),
         ]
-        msg_json = json.dumps(
-            [m.dict() if hasattr(m, "dict") else m.__dict__ for m in messages]
+        try:
+            messages_json = json.dumps(
+                [m.__dict__ if hasattr(m, "__dict__") else m for m in messages]
+            )
+        except Exception as e:
+            print(f"[ERROR] serialization failed for batch {batch_ids}: {e}")
+            log_time(
+                f"batch {batch_ids} serialization_failed", serialize_start
+            )
+            return {
+                "skip": True,
+                "batch_patient_ids": batch_ids,
+                "reason": f"serialization_failed: {e}",
+            }
+        serialize_end = time.monotonic()
+        print(
+            f"[DEBUG] batch {batch_ids} messages size: {len(messages_json)/1024/1024:.2f} MB"
         )
-        msg_size_mb = len(msg_json.encode("utf-8")) / (1024 * 1024)
-        print(f"[DEBUG] batch {batch_ids} messages size: {msg_size_mb:.2f} MB")
-        log_time(f"prepare messages for batch {batch_ids}", message_start)
+        log_time(f"serialize messages for batch {batch_ids}", serialize_start)
 
-        # Model call
+        # -------------------- Model call --------------------
         invoke_start = time.monotonic()
         try:
-            http_start = time.monotonic()
             ai_response = self.structured_model.invoke(messages)  # type: ignore
-            http_end = time.monotonic()
-            print(
-                f"[DEBUG] network + OpenAI time: {http_end - http_start:.2f}s"
-            )
         except Exception as e:
             print(f"[ERROR] model invoke failed for batch {batch_ids}: {e}")
             log_time(f"batch {batch_ids} invoke_failed", invoke_start)
@@ -441,13 +444,14 @@ class AIConversationServiceV1:
                 "batch_patient_ids": batch_ids,
                 "reason": f"invoke_failed: {e}",
             }
+        invoke_end = time.monotonic()
+        log_time(f"network+OpenAI for batch {batch_ids}", invoke_start)
 
-        log_time(f"model call for batch {batch_ids}", invoke_start)
-
-        # Parse results
+        # -------------------- Parse results --------------------
         parse_start = time.monotonic()
         parsed = ai_response.get("parsed", {})
-        usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
+        usage = getattr(ai_response.get("raw", {}), "usage_metadata", {}) or {}
+        parse_end = time.monotonic()
         log_time(f"parse results for batch {batch_ids}", parse_start)
 
         log_time(f"TOTAL batch {batch_ids}", batch_start)
@@ -463,6 +467,12 @@ class AIConversationServiceV1:
             "confidence_score": parsed.confidence_score,
             "tags": parsed.tags,
             "token_usage": usage,
+            "timings": {
+                "serialize_s": serialize_end - serialize_start,
+                "network_OpenAI_s": invoke_end - invoke_start,
+                "parse_s": parse_end - parse_start,
+                "total_s": time.monotonic() - batch_start,
+            },
         }
 
     async def _summarize_batches(
