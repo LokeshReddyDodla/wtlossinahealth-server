@@ -44,6 +44,10 @@ from lib.utils.http_exceptions import raise_http_exception
 from bson import ObjectId
 
 
+def log_time(label, start):
+    print(f"[TIMING] {label}: {int((time.monotonic() - start) * 1000)} ms")
+
+
 class AIConversationServiceV1:
     MAX_MODEL_TOKENS = 128_000  # adjust per model (e.g., 128k for GPT-4.1)
     SAFE_LIMIT = int(MAX_MODEL_TOKENS * 0.5)
@@ -215,16 +219,19 @@ class AIConversationServiceV1:
         report_id: Optional[str] = None,
         model: Optional[str] = "gpt-4.1-mini",
     ):
-        start_time = time.monotonic()
+        total_start = time.monotonic()
         ai_message_data = None
 
+        print("\n========== AI RESPONSE START ==========")
+
         if model:
-            self._setup_model(
-                model=model,
-            )
+            t = time.monotonic()
+            self._setup_model(model=model)
+            log_time("setup_model()", t)
 
         try:
-            # Log user message
+            # Log human message
+            t = time.monotonic()
             await self.add_message_to_conversation(
                 sender_id=sender_id,
                 sender_type=sender_type,
@@ -234,10 +241,12 @@ class AIConversationServiceV1:
                 content=human_input,
                 status="success",
             )
+            log_time("add_message_to_conversation(human)", t)
 
             total_token_usage = defaultdict(int)
 
             # ---- Generate ALL batches eagerly ----
+            t = time.monotonic()
             batches = [
                 batch
                 async for batch in self.context_batcher.generate_batches(
@@ -248,28 +257,39 @@ class AIConversationServiceV1:
                     report_id=report_id,
                 )
             ]
+            log_time("generate_batches()", t)
+            print(f"[INFO] Total batches generated: {len(batches)}")
 
             # ---- Process all batches in PARALLEL ----
+            t = time.monotonic()
             batch_results = await asyncio.gather(
                 *[self._process_single_batch(b, human_input) for b in batches]
             )
+            log_time("parallel batch processing", t)
 
-            # ---- Filter out skipped or failed batches ----
+            # ---- Filter ----
             usable_batches = [b for b in batch_results if not b["skip"]]
+            print(f"[INFO] Usable batches: {len(usable_batches)}")
 
-            # ---- Accumulate token usage ----
+            # ---- Accumulate usage ----
+            t = time.monotonic()
             for b in usable_batches:
                 self._accumulate_usage(total_token_usage, b["token_usage"])
+            log_time("accumulate_usage()", t)
 
-            # ---- Summarize or fallback ----c
+            # ---- Summarize or fallback ----
             if usable_batches:
-                # If multiple batches → summarize
                 if len(usable_batches) > 1:
+                    t = time.monotonic()
                     summarized: Any = await self._summarize_batches(
                         usable_batches, human_input
                     )
-                    summary_parsed: AIResponse = summarized.get("parsed", {})
-                    summary_usage = getattr(summarized["raw"], "usage_metadata", {}) or {}  # type: ignore
+                    log_time("_summarize_batches()", t)
+
+                    summary_parsed = summarized.get("parsed", {})
+                    summary_usage = (
+                        getattr(summarized["raw"], "usage_metadata", {}) or {}
+                    )
                     self._accumulate_usage(total_token_usage, summary_usage)
                 else:
                     batch = usable_batches[0]
@@ -280,17 +300,17 @@ class AIConversationServiceV1:
                         tags=batch.get("tags", []),
                     )
             else:
-                # No usable batches
                 summary_parsed = AIResponse(
-                    response="No patient data available to provide insights at this time.",
+                    response="No patient data available.",
                     citations=[],
                     confidence_score=None,
                     tags=[],
                 )
 
-            latency_ms = int((time.monotonic() - start_time) * 1000)
+            latency_ms = int((time.monotonic() - total_start) * 1000)
 
             # ---- Save AI final message ----
+            t = time.monotonic()
             ai_message_data = await self.add_message_to_conversation(
                 sender_id="system",
                 sender_type="ai",
@@ -324,9 +344,11 @@ class AIConversationServiceV1:
                 token_usage=total_token_usage,
                 latency_ms=latency_ms,
             )
+            log_time("add_message_to_conversation(ai)", t)
 
             # ---- Log token usage ----
             if total_token_usage:
+                t = time.monotonic()
                 await self.token_usage_service.log_usage(
                     user_id=sender_id,
                     user_type=ProfileTypeEnum.CARE_PROVIDER,
@@ -339,15 +361,17 @@ class AIConversationServiceV1:
                     model_provider=self.ai_model_provider,
                     api_endpoint=api_endpoint,
                 )  # type: ignore
+                log_time("token_usage_service.log_usage()", t)
+
+            log_time("TOTAL generate_response()", total_start)
+            print("========== AI RESPONSE END ==========\n")
 
             return ai_message_data
-        except Exception as e:
-            print(
-                f"[AIConversationServiceV1] Error generating AI response: {e}"
-            )
-            latency_ms = int((time.monotonic() - start_time) * 1000)
 
-            # 🧨 Save failed AI message
+        except Exception as e:
+            print(f"[ERROR] generate_response failed: {e}")
+
+            latency_ms = int((time.monotonic() - total_start) * 1000)
             await self.add_message_to_conversation(
                 sender_id="system",
                 sender_type="ai",
@@ -361,43 +385,56 @@ class AIConversationServiceV1:
                 latency_ms=latency_ms,
                 hidden_from_ui=True,
             )
-
-            raise_http_exception(
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                "Failed to generate AI response.",
-                detail=str(e),
-            )
+            raise
 
     async def _process_single_batch(self, batch, human_input):
+        batch_start = time.monotonic()
         batch_ids = batch["batch_patient_ids"]
+
+        print(f"\n--- PROCESSING BATCH {batch_ids} ---")
+
         batch_context = batch["context"]
 
-        # Skip empty context safely
         if not batch_context.strip() or not batch.get("context_items"):
-            print(f"Skipping batch {batch_ids} — no real data available")
+            print(f"[SKIP] empty context for batch {batch_ids}")
+            log_time(f"batch {batch_ids} (skipped)", batch_start)
             return {
                 "skip": True,
                 "batch_patient_ids": batch_ids,
                 "reason": "empty_context",
             }
 
+        # Prepare messages
+        message_start = time.monotonic()
         messages = [
             self.system_message,
             SystemMessage(content=batch_context),
             HumanMessage(content=human_input),
         ]
+        log_time(f"prepare messages for batch {batch_ids}", message_start)
 
+        # Model call
+        invoke_start = time.monotonic()
         try:
             ai_response = await self.structured_model.invoke(messages)  # type: ignore
         except Exception as e:
+            print(f"[ERROR] model invoke failed for batch {batch_ids}: {e}")
+            log_time(f"batch {batch_ids} invoke_failed", invoke_start)
             return {
                 "skip": True,
                 "batch_patient_ids": batch_ids,
                 "reason": f"invoke_failed: {e}",
             }
 
+        log_time(f"model call for batch {batch_ids}", invoke_start)
+
+        # Parse results
+        parse_start = time.monotonic()
         parsed = ai_response.get("parsed", {})
         usage = getattr(ai_response["raw"], "usage_metadata", {}) or {}
+        log_time(f"parse results for batch {batch_ids}", parse_start)
+
+        log_time(f"TOTAL batch {batch_ids}", batch_start)
 
         return {
             "skip": False,
