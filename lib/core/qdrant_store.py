@@ -31,27 +31,34 @@ class QdrantStore:
         return cls._instance
 
     def __init__(self):
-        self.client: AsyncQdrantClient | None = None
+        # Qdrant client
+        self.client: Optional[AsyncQdrantClient] = None
+        self._indices_created: bool = False
+        self._collection_ready: bool = False
 
     async def connect(self):
-        if not self.client:
-            logger.info(
-                f"🔌 Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}"
+        """Connects to Qdrant. Only once per server lifetime."""
+        if self.client:
+            return  # already connected
+
+        logger.info(f"🔌 Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
+        try:
+            self.client = AsyncQdrantClient(
+                host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
             )
-            try:
-                self.client = AsyncQdrantClient(
-                    host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
-                )
-                logger.info("✅ Qdrant connected")
-                await self.ensure_collection()
-                await self.ensure_payload_indices()
-            except Exception as e:
-                logger.exception("❌ Failed to connect to Qdrant")
-                raise
+            logger.info("✅ Qdrant connected")
+
+            # Ensure collection & indices only once at startup
+            await self.ensure_collection()
+            await self.ensure_payload_indices()
+        except Exception as e:
+            logger.exception("❌ Failed to connect to Qdrant")
+            raise
 
     async def ensure_collection(self):
-        if not self.client:
-            raise RuntimeError("Qdrant client not connected")
+        """Ensures collection exists. Runs once at startup."""
+        if self._collection_ready:
+            return
 
         async with self.get_client() as client:
             try:
@@ -70,14 +77,14 @@ class QdrantStore:
                     ),
                     hnsw_config=HnswConfigDiff(m=32, ef_construct=120),
                 )
+        self._collection_ready = True
 
     async def ensure_payload_indices(self):
-        """Creates payload indices for frequently filtered fields for optimization."""
-        if not self.client:
-            raise RuntimeError("Qdrant client not connected")
+        """Creates payload indices. Only once at startup."""
+        if self._indices_created:
+            return
 
         fields_to_index: Dict[str, IntegerIndexParams | KeywordIndexParams] = {
-            # Timestamps and Month use IntegerIndexParams
             "start_time": IntegerIndexParams(
                 type=IntegerIndexType.INTEGER, lookup=False, range=True
             ),
@@ -87,7 +94,6 @@ class QdrantStore:
             "month": IntegerIndexParams(
                 type=IntegerIndexType.INTEGER, lookup=True, range=False
             ),
-            # Categorical fields use KeywordIndexParams
             "data_type": KeywordIndexParams(type=KeywordIndexType.KEYWORD),
             "time_of_day_bucket": KeywordIndexParams(
                 type=KeywordIndexType.KEYWORD
@@ -102,12 +108,11 @@ class QdrantStore:
                 index_type_str = index_params.__class__.__name__.replace(
                     "IndexParams", ""
                 )
-
                 try:
                     await client.create_payload_index(
                         collection_name=QDRANT_COLLECTION,
                         field_name=field_name,
-                        field_schema=index_params,  # <-- Correctly assigned the class instance
+                        field_schema=index_params,
                     )
                     logger.info(
                         f"✅ Indexed payload field: {field_name} ({index_type_str})"
@@ -117,6 +122,8 @@ class QdrantStore:
                         logger.warning(
                             f"⚠️ Could not create index for {field_name}: {e}"
                         )
+
+        self._indices_created = True
 
     @asynccontextmanager
     async def get_client(self) -> AsyncGenerator[AsyncQdrantClient, None]:
@@ -131,6 +138,7 @@ class QdrantStore:
     async def upsert_points_chunked(
         self, collection_name: str, points: list, chunk_size: int = 200
     ):
+        """Efficiently upserts points in chunks."""
         async with self.get_client() as client:
             for i in range(0, len(points), chunk_size):
                 chunk = points[i : i + chunk_size]
@@ -139,6 +147,7 @@ class QdrantStore:
                 )
 
     async def close(self):
+        """Closes Qdrant client (usually only on server shutdown)."""
         if self.client:
             await self.client.close()
             self.client = None
