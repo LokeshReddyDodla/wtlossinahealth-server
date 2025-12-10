@@ -50,17 +50,16 @@ def log_time(label, start):
 
 
 class AIConversationServiceV1:
-    MAX_MODEL_TOKENS = 128_000  # adjust per model (e.g., 128k for GPT-4.1)
-    SAFE_LIMIT = int(MAX_MODEL_TOKENS * 0.5)
+    MAX_MODEL_TOKENS = 400_000
+    SAFE_LIMIT = 16_000
     PATIENT_BATCH_SIZE = 10
 
     def __init__(
         self,
         context_builder: AIConversationContextBuilder,
-        ai_model_provider: AIModelProviderLiteral = "openai",
         selected_ai_model: Union[
             OpenAIModelLiteral, GeminiAIModelLiteral
-        ] = "gpt-4.1-mini",
+        ] = "gpt-4o-mini",
     ):
         from lib.dependencies.service_dependencies import (
             get_token_usage_service,
@@ -84,7 +83,7 @@ class AIConversationServiceV1:
         self,
         model: Union[
             str, OpenAIModelLiteral, GeminiAIModelLiteral
-        ] = "gpt-4.1-mini",
+        ] = "gpt-4o-mini",
     ):
         self.selected_ai_model = model
 
@@ -218,7 +217,7 @@ class AIConversationServiceV1:
         human_input: str,
         api_endpoint: str,
         report_id: Optional[str] = None,
-        model: Optional[str] = "gpt-4.1-mini",
+        model: Optional[str] = "gpt-4o-mini",
     ):
         total_start = time.monotonic()
         ai_message_data = None
@@ -455,7 +454,7 @@ class AIConversationServiceV1:
         log_time(f"parse results for batch {batch_ids}", parse_start)
 
         log_time(f"TOTAL batch {batch_ids}", batch_start)
-
+        # isresponse generated flag or something
         return {
             "skip": False,
             "batch_patient_ids": batch_ids,
