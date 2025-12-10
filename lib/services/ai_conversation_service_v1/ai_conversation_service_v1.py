@@ -51,7 +51,7 @@ def log_time(label, start):
 
 class AIConversationServiceV1:
     MAX_MODEL_TOKENS = 400_000
-    SAFE_LIMIT = 16_000
+    SAFE_LIMIT = 8_000
     PATIENT_BATCH_SIZE = 10
 
     def __init__(
