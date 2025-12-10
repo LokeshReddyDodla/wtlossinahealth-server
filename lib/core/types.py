@@ -41,6 +41,7 @@ AiConversationTypeLiteral = Literal[
 OpenAIModelLiteral = Literal[
     "gpt-5.1",
     "gpt-5",
+    "gpt-5-nano",
     "gpt-5-mini",  # Best for reliability + reasoning
     "gpt-4o",  # For multimodal (text + image)
     "gpt-4o-mini",  # For speed + cost balance
