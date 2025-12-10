@@ -232,15 +232,16 @@ class AIConversationServiceV1:
         try:
             # Log human message
             t = time.monotonic()
-            await self.add_message_to_conversation(
+            human_msg = await self.add_message_to_conversation(
                 sender_id=sender_id,
                 sender_type=sender_type,
                 conversation_id=conversation_id,
                 conversation_type="care_provider",
                 role="human",
                 content=human_input,
-                status="success",
+                status="pending",
             )
+            human_msg_id = human_msg["_id"]
             log_time("add_message_to_conversation(human)", t)
 
             total_token_usage = defaultdict(int)
@@ -311,6 +312,13 @@ class AIConversationServiceV1:
 
             # ---- Save AI final message ----
             t = time.monotonic()
+
+            # mark human as success
+            await self.ai_messages_collection.update_one(
+                {"_id": human_msg_id}, {"$set": {"status": "success"}}
+            )
+
+            # create AI response message
             ai_message_data = await self.add_message_to_conversation(
                 sender_id="system",
                 sender_type="ai",
@@ -372,18 +380,15 @@ class AIConversationServiceV1:
             print(f"[ERROR] generate_response failed: {e}")
 
             latency_ms = int((time.monotonic() - total_start) * 1000)
-            await self.add_message_to_conversation(
-                sender_id="system",
-                sender_type="ai",
-                conversation_id=conversation_id,
-                conversation_type="care_provider",
-                role="ai",
-                content="Failed to generate AI response.",
-                status="failed",
-                error_message=str(e),
-                model=self.selected_ai_model,
-                latency_ms=latency_ms,
-                hidden_from_ui=True,
+            await self.ai_messages_collection.update_one(
+                {"_id": human_msg_id},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "error_message": str(e),
+                        "latency_ms": latency_ms,
+                    }
+                },
             )
             raise
 
