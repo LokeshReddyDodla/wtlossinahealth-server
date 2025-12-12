@@ -93,7 +93,6 @@ async def summary_patient_prescriptions(
     request: Request,
     patient_id: str,
     confirmed_prescription: PrescriptionStructureResponse,
-    file: UploadFile = File(...),
     prescription_service: PrescriptionService = Depends(
         get_prescription_service
     ),
@@ -115,13 +114,13 @@ async def summary_patient_prescriptions(
             )  # type: ignore
         )
 
-        result = await patient_document_service.upload_multiple_documents(
-            patient_id=patient_id,
-            files=[file],
-            document_type="prescription",
-            uploaded_by_id=str(current_care_provider.care_provider_id),
-            uploaded_by_type=ProfileTypeEnum.CARE_PROVIDER.value,  # type: ignore
-        )
+        # result = await patient_document_service.upload_multiple_documents(
+        #     patient_id=patient_id,
+        #     files=[file],
+        #     document_type="prescription",
+        #     uploaded_by_id=str(current_care_provider.care_provider_id),
+        #     uploaded_by_type=ProfileTypeEnum.CARE_PROVIDER.value,  # type: ignore
+        # )
 
         return SuccessResponse(
             message="Prescription confirmed successfully",
