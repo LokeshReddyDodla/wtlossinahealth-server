@@ -123,8 +123,7 @@ async def summary_patient_prescriptions(
         # )
 
         return SuccessResponse(
-            message="Prescription confirmed successfully",
-            data=saved_prescription,
+            message="Prescription saved successfully",
         )
 
     except Exception as e:
