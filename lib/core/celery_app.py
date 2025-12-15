@@ -61,6 +61,10 @@ celery.conf.update(
             "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
             "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
         },
+        "patient-daily-summaries": {
+            "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",
+            "schedule": crontab(hour="3", minute="0"),  # 3:00 AM IST daily
+        },
     },
 )
 
@@ -75,3 +79,4 @@ from lib.tasks.other_tasks import *
 from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
 from lib.tasks.weightloss_agent.agentic_orchestrator import *
+from lib.tasks.patient_summary_tasks import *
