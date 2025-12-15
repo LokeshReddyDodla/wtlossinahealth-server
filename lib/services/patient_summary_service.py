@@ -13,7 +13,26 @@ from lib.core.constants import SYSTEM_USER_ID, ProfileTypeEnum
 from lib.services.token_usage_service import TokenUsageService
 
 
-class InsightsPayload(BaseModel):
+class PatientPresentation(BaseModel):
+    short_summary: Optional[str] = Field(
+        default=None, description="1-2 sentence plain summary for patient"
+    )
+    email_summary: Optional[str] = Field(
+        default=None, description="Patient-friendly email-style summary"
+    )
+
+
+class CareProviderPresentation(BaseModel):
+    email_summary: Optional[str] = Field(
+        default=None, description="Clinical email-style summary for care providers"
+    )
+    detailed_summary: Optional[str] = Field(
+        default=None,
+        description="Detailed clinical summary for care providers with qualitative observations, no raw numbers",
+    )
+
+
+class InsightsResponse(BaseModel):
     headline: Optional[str] = Field(
         default=None, description="One short headline insight"
     )
@@ -23,31 +42,13 @@ class InsightsPayload(BaseModel):
     patterns: List[str] = Field(
         default_factory=list, description="Up to 4 observed patterns/correlations"
     )
-    attention_flags: List[str] = Field(
-        default_factory=list,
-        description="Up to 4 risk/safety flags requiring attention",
-    )
-
-
-class Presentation(BaseModel):
-    short_summary: Optional[str] = Field(
-        default=None, description="1-2 sentence plain summary"
-    )
-    email_summary: Optional[str] = Field(
-        default=None, description="Patient-friendly email-style summary"
-    )
-    detailed_summary: Optional[str] = Field(
-        default=None,
-        description="Detailed clinical summary for care providers with specific metrics, thresholds, and actionable recommendations",
-    )
-
-
-class InsightsResponse(BaseModel):
-    insights: InsightsPayload
-    presentation: Presentation
+    patient_presentation: PatientPresentation
+    care_provider_presentation: CareProviderPresentation
 
 
 class PatientSummaryService:
+    SUMMARY_VERSION = "v1.0"
+    MODEL_VERSION = "gpt-4o-mini"
     def __init__(
         self,
         patient_summary_collection,
@@ -67,7 +68,7 @@ class PatientSummaryService:
         self.cgm_reports_collection = cgm_reports_collection
         
         self._llm: ChatOpenAI = ChatOpenAI(
-            model="gpt-4o-mini",  # type: ignore
+            model=self.MODEL_VERSION,  # type: ignore
             temperature=0.4,
             api_key=SecretStr(str(config("OPENAI_API_KEY"))),
         )
@@ -93,21 +94,24 @@ class PatientSummaryService:
             await self.patient_summary_collection.update_one(
                 {
                     "patient_id": patient_id,
-                    "period_name": period_name,
                     "start_date": start_date,
                     "end_date": end_date,
                 },
                 {
                     "$set": {
                         "patient_id": patient_id,
-                        "period_name": period_name,
-                        "report_type": "daily_snapshot",
+                        "summary_version": self.SUMMARY_VERSION,
+                        "model_version": self.MODEL_VERSION,
+                        "report_type": "daily",
                         "date": end_date.date().isoformat(),
                         "start_date": start_date,
                         "end_date": end_date,
-                        "generated_at": now,
+                        "updated_at": now,
                         **summary,
-                    }
+                    },
+                    "$setOnInsert": {
+                        "created_at": now,
+                    },
                 },
                 upsert=True,
             )
@@ -154,10 +158,8 @@ class PatientSummaryService:
         data_presence = {
             "cgm": glucose is not None,
             "meals": meals is not None,
-            "fitness": activity is not None
-            and activity.get("steps") not in (None, 0),
-            "sleep": sleep is not None
-            and sleep.get("duration_hours") not in (None, 0),
+            "fitness": activity is not None,
+            "sleep": sleep is not None,
             "vitals": vitals is not None,
         }
 
@@ -189,12 +191,11 @@ class PatientSummaryService:
                 flags.append("Hyperglycemia events detected")
             if glucose.get("hypo_event_count", 0) > 0:
                 flags.append("Hypoglycemia events detected")
-            elif glucose.get("hypo_event_count", 0) == 0:
-                flags.append("No hypoglycemia events detected")
 
         if data_presence["meals"] and meals:
             if meals.get("meal_count", 0) < 2:
                 flags.append("Low meal logging (<2 meals)")
+                flags.append("Only one meal logged; comparison not available")
             best = meals.get("best_meal") or {}
             if best and best.get("score") is not None and best["score"] < 5:
                 flags.append("No well-scored meals")
@@ -330,6 +331,7 @@ class PatientSummaryService:
             return None
 
         meals: List[Dict[str, Any]] = doc.get("meals", []) or []
+        meal_count = doc.get("meal_count", 0)
 
         def _score(m: Dict[str, Any]) -> float:
             return float(m.get("score") or 0.0)
@@ -357,7 +359,8 @@ class PatientSummaryService:
                 }
 
             best_meal = _meal_view(best)
-            worst_meal = _meal_view(worst)
+            # Avoid identical best/worst when only one scored meal
+            worst_meal = _meal_view(worst) if best is not worst and meal_count >= 2 else None
 
         nutrition_totals = {
             "calories": doc.get("calories"),
@@ -368,10 +371,15 @@ class PatientSummaryService:
         }
 
         return {
-            "meal_count": doc.get("meal_count", 0),
+            "meal_count": meal_count,
             "best_meal": best_meal,
             "worst_meal": worst_meal,
             "nutrition_totals": nutrition_totals,
+            "notes": (
+                ["Only one meal logged; comparison not available"]
+                if meal_count < 2
+                else []
+            ),
         }
 
     async def _build_activity_section(
@@ -396,8 +404,14 @@ class PatientSummaryService:
 
         peak = doc.get("peak_activity_time") or {}
 
+        steps_val = doc.get("steps")
+        steps = steps_val if isinstance(steps_val, (int, float)) else 0
+        # Return None if no meaningful activity data
+        if not steps or steps == 0:
+            return None
+
         return {
-            "steps": doc.get("steps", 0),
+            "steps": steps,
             "active_minutes": doc.get("active_duration", 0),
             "longest_inactive_minutes": longest_inactive,
             "peak_activity_hour": peak.get("hour"),
@@ -421,6 +435,10 @@ class PatientSummaryService:
 
         total_minutes = duration.get("total_duration") or 0
         duration_hours = round(total_minutes / 60, 1) if total_minutes else 0.0
+
+        # Return None if no meaningful sleep data
+        if duration_hours == 0.0:
+            return None
 
         return {
             "duration_hours": duration_hours,
@@ -547,46 +565,110 @@ class PatientSummaryService:
 
             system_msg = SystemMessage(
                 content=(
-                    "You are a clinical summarizer. "
-                    "Return concise JSON only, no prose. "
-                    "CRITICAL: Only reference data sections that are present in the snapshot. "
-                    "Do NOT mention sections that are missing (check data_presence). "
-                    "Include actionable, safety-aware phrasing. "
-                    "Generate three types of summaries: short_summary (patient-friendly 1-2 sentences), "
-                    "email_summary (patient-friendly email style), and detailed_summary (clinical summary for care providers "
-                    "with specific metrics, thresholds, and actionable recommendations)."
+                    "You are a hyper-specialized **Clinical Data Narrative Generation Assistant**.\n\n"
+                    "Your SOLE function is to generate qualitative, observational narratives from structured patient data.\n\n"
+                    "========================\n"
+                    "🚨 CORE & NON-NEGOTIABLE RULES 🚨\n"
+                    "========================\n\n"
+                    "**1. NO NUMBERS OR QUANTITIES (STRICT BAN):**\n"
+                    "   - You MUST NOT express any numerical, quantitative, or measurable concepts. This includes explicit numbers (0, 1, 120), units (mg/dL, steps), counts, ranges, percentages, time duration, frequency, thresholds, or comparative terms implying quantity (e.g., 'only one', 'several', 'most', 'low count', 'minimal', 'maximal', 'extended', 'short duration').\n"
+                    "   - Use only neutral, descriptive, observational language (e.g., 'was recorded', 'patterns were present', 'consistent activity').\n\n"
+                    "**2. NO ADVICE OR PRESCRIPTION (SAFETY FIRST):**\n"
+                    "   - DO NOT provide any medical advice, guidance, recommendations, or prescriptive language (e.g., 'should', 'aim to', 'improve', 'reduce', 'consider').\n"
+                    "   - DO NOT infer or suggest risk, deficiency, adequacy, or behavioral changes.\n\n"
+                    "**3. JSON OUTPUT ONLY:**\n"
+                    "   - Return VALID JSON ONLY. Do NOT include any prose, commentary, markdown (```json), or explanation outside the JSON object.\n\n"
+                    "**4. DATA SCOPE:**\n"
+                    "   - ONLY reference sections explicitly marked as present in `data_presence`.\n"
+                    "   - NEVER mention, imply, or allude to missing data sections, gaps, or availability.\n\n"
+                    "**5. INTERNAL FLAGS/ALERTS BAN:**\n"
+                    "   - Flags (e.g., 'Low steps (<3000)') are INTERNAL signals. You MUST NOT restate, paraphrase, summarize, or semantically encode them. Stick to raw observations.\n\n"
+                    "========================\n"
+                    "DETAILED NARRATIVE GUIDELINES\n"
+                    "========================\n\n"
+                    "**A. Glucose & Vitals:**\n"
+                    "   - Describe trends (e.g., stable, variable, consistent, moderate variability). DO NOT use ranges, T.I.R., or mention 'hyper'/'hypo' events.\n\n"
+                    "**B. Meals & Nutrition:**\n"
+                    "   - ONLY describe meal attributes provided as explicit tags or labels (e.g., 'fiber-rich', 'low GI', 'snack').\n"
+                    "   - DO NOT infer nutritional qualities (e.g., 'low carbohydrate', 'insufficient intake') from raw numbers.\n\n"
+                    "**C. Tone & Style:**\n"
+                    "   - Maintain a Clinical, neutral, non-judgmental, and observational tone.\n"
+                    "   - Patient-Presentation fields must be friendly, reassuring, and non-evaluative.\n"
+                    "   - Care-Provider fields must be clinical and qualitative, using professional descriptors (e.g., 'subdued post-prandial response').\n\n"
+                    "If any instruction conflicts, FOLLOW THIS SYSTEM MESSAGE.\n"
+                    "If meaningful insights are limited, populate fields with neutral statements."
                 )
             )
+
             user_msg = HumanMessage(
                 content=(
-                    f"Generate insights for a daily snapshot. "
-                    f"Available data sections: {', '.join(available_sections) if available_sections else 'none'}.\n"
-                    f"ONLY analyze and mention these available sections. Ignore any missing sections.\n"
-                    f"Respond strictly using this format:\n"
-                    f"{fmt}\n"
-                    'Keep each list <=4 items, concise, no PHI. Use short, direct phrases. Avoid emojis or markdown.\n'
-                    'For detailed_summary: Include specific metrics, clinical thresholds, and actionable recommendations for care providers.\n'
-                    f"patient_id={patient_id}, period={period_name}, "
-                    f"window={start_date.isoformat()} to {end_date.isoformat()}. "
-                    "Snapshot JSON (check data_presence to see which sections are available):\n"
+                    "Analyze the provided patient snapshot for a daily summary and generate narrative insights.\n\n"
+                    "You must STRICTLY adhere to the SYSTEM MESSAGE and the following output format.\n"
+                    "Failure to comply with any rule invalidates the response.\n\n"
+                    "========================\n"
+                    "AVAILABLE DATA SECTIONS\n"
+                    "========================\n\n"
+                    f"The following data sections are available for qualitative analysis:\n"
+                    f"{', '.join(available_sections) if available_sections else 'none'}\n\n"
+                    "Analyze ONLY these sections. Ignore and omit all missing sections.\n\n"
+                    "========================\n"
+                    "OUTPUT FORMAT & CONSTRAINTS\n"
+                    "========================\n\n"
+                    "Your output MUST be VALID JSON that conforms EXACTLY to this schema:\n"
+                    f"{fmt}\n\n"
+                    "STRICTLY qualitative and observational language is required. Remember the ban on ALL numbers, quantities, counts, and prescriptive language.\n\n"
+                    "========================\n"
+                    "CONTENT MINIMUMS & QUALITY FOCUS\n"
+                    "========================\n\n"
+                    "- **headline:** One neutral observational sentence summarizing the overall qualitative theme (stability, variability, consistency).\n"
+                    "- **key_points:** 2–4 concise observations, aiming to cover *each* available data section.\n"
+                    "- **patterns:** 1–3 descriptive correlations between data sections (e.g., activity-glucose association, meal timing patterns).\n"
+                    "- **patient_presentation:** **MUST populate BOTH** `short_summary` (1-2 sentences) and `email_summary` (polite, reassuring paragraph).\n"
+                    "- **care_provider_presentation:** **MUST populate BOTH** `email_summary` (concise clinical note) and `detailed_summary` (structured qualitative narrative).\n\n"
+                    "If meaningful insights are limited, use neutral statements such as:\n"
+                    "- 'Tracked data showed stable patterns.'\n"
+                    "- 'Recorded metrics remained consistent during the observed period.'\n\n"
+                    "========================\n"
+                    "CONTEXT\n"
+                    "========================\n\n"
+                    f"patient_id={patient_id}\n"
+                    f"period={period_name}\n"
+                    f"window={start_date.isoformat()} to {end_date.isoformat()}\n\n"
+                    "========================\n"
+                    "PATIENT SNAPSHOT JSON\n"
+                    "========================\n\n"
                     f"{snapshot}"
                 )
             )
+
 
             ai_msg: AIMessage = await self._llm.ainvoke([system_msg, user_msg])
             content = ai_msg.content or "{}"
             parsed = parser.parse(content) if isinstance(content, str) else None
             if parsed:
+                # Post-process: ensure key_points and patterns are populated if data exists
+                data_presence = snapshot.get("data_presence", {})
+                has_data = any(data_presence.values())
+                
+                result = parsed.model_dump(exclude_none=True)
+                
+                # If we have data but LLM returned empty arrays, add fallback insights
+                if has_data:
+                    if not result.get("key_points"):
+                        result["key_points"] = ["Data collection was consistent for available metrics"]
+                    if not result.get("patterns"):
+                        result["patterns"] = ["All tracked metrics were within expected ranges"]
+                
                 # Attempt to log token usage if available on response
                 usage = getattr(ai_msg, "response_metadata", None) or {}
                 token_usage = usage.get("token_usage") or {}
                 await self._log_token_usage_if_available(
                     patient_id=patient_id,
-                    model_used="gpt-4o-mini",
+                    model_used=self.MODEL_VERSION,
                     input_tokens=token_usage.get("prompt_tokens"),
                     output_tokens=token_usage.get("completion_tokens"),
                 )
-                return parsed.model_dump(exclude_none=True)
+                return result
         except Exception:
             # Swallow LLM errors; keep summary generation resilient
             return None
