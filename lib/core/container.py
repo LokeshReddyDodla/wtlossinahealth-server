@@ -84,6 +84,7 @@ from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary_service import PatientSummaryService
+from lib.services.active_patient_service import ActivePatientService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -989,6 +990,14 @@ container.register(
 container.register(
     PatientMetricsService,
     lambda: PatientMetricsService(),
+)
+
+# 🔹 Active Patient Service
+container.register(
+    ActivePatientService,
+    lambda: ActivePatientService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
 )
 
 # 🔹 Meal Metrics Service

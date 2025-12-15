@@ -70,6 +70,7 @@ from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary_service import PatientSummaryService
+from lib.services.active_patient_service import ActivePatientService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
@@ -199,6 +200,13 @@ def get_patient_summary_service() -> PatientSummaryService:
     return cast(
         PatientSummaryService,
         container.resolve(PatientSummaryService),
+    )
+
+
+def get_active_patient_service() -> ActivePatientService:
+    return cast(
+        ActivePatientService,
+        container.resolve(ActivePatientService),
     )
 
 
