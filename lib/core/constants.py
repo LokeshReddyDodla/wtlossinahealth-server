@@ -1,4 +1,5 @@
 from enum import Enum
+from uuid import UUID
 
 API_RESPONSE_VERSION = "2025.03"
 
@@ -45,3 +46,6 @@ AI_RESPONSE_SAFETY_DISCLAIMER = """
 6. If a question requires clinical judgment, respond with: "Please consult your doctor for personalized medical advice."
 7. When uncertain or data is insufficient, clearly say so and encourage the user to seek professional input.
 """
+
+
+SYSTEM_USER_ID = UUID("00000000-0000-0000-0000-000000000000")
