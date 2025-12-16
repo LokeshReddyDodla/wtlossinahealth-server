@@ -47,6 +47,7 @@ class PatientSummaryService:
         patient_id: str,
         target_date: date,
         regenerated_by: RegeneratedBy = RegeneratedBy.SYSTEM,
+        forced: bool = False,
     ) -> None:
 
         start_date = datetime.combine(
@@ -56,7 +57,7 @@ class PatientSummaryService:
             target_date, datetime.max.time(), tzinfo=None
         )
 
-        now = datetime.utcnow()
+        now = datetime.now()
 
         # Check if summary already exists
         existing_summary = await self.patient_summary_collection.find_one(
@@ -68,6 +69,15 @@ class PatientSummaryService:
         )
 
         existing_meta = (existing_summary or {}).get("summary_meta", {})
+
+        # 🚨 Guard: prevent regenerating finalized summaries unless forced
+        if existing_summary and not forced:
+            existing_state = existing_meta.get("state")
+            if existing_state == SummaryState.FINALIZED.value:
+                raise RuntimeError(
+                    f"Cannot regenerate finalized summary for {patient_id} on {target_date}. "
+                    "Set forced=True to override."
+                )
 
         # 🚨 Guard: user can only generate if summary is STALE
         if regenerated_by == RegeneratedBy.USER:
