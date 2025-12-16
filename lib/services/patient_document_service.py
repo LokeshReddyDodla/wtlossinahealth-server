@@ -2,7 +2,9 @@ import asyncio
 from datetime import datetime
 import hashlib
 from typing import List, Optional
+from uuid import uuid4
 
+from bson import ObjectId
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
@@ -13,6 +15,16 @@ from lib.core.types import DocumentTypeLiteral
 
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
+)
+from lib.schemas.patient_document import (
+    PatientDocumentChatRequest,
+    PatientDocumentChatResponse,
+    PatientDocumentSummaryDocument,
+    PatientDocumentSummaryRequest,
+    PatientDocumentSummaryResponse,
+)
 from lib.utils.date_utils import extract_date_from_text
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -26,6 +38,8 @@ from lib.utils.vector_utils import embed_text
 
 
 class PatientDocumentService:
+    MAX_RESEARCH_DOCUMENTS = 10
+
     def __init__(
         self,
         postgres_store: PostgresStore,
@@ -83,6 +97,103 @@ class PatientDocumentService:
             del doc["_id"]
 
         return docs
+
+    async def generate_research_summary(
+        self,
+        patient_id: str,
+        care_provider_id: str,
+        request: PatientDocumentSummaryRequest,
+    ) -> PatientDocumentSummaryResponse:
+        documents = await self._fetch_documents_by_ids(
+            patient_id, request.document_ids
+        )
+        summary_docs = [
+            self._to_summary_document(doc) for doc in documents
+        ]
+        conversation_id = (
+            request.conversation_id
+            if request.conversation_id
+            else f"patient-docs-{patient_id}-{uuid4()}"
+        )
+
+        ai_service = AiConversationService(
+            conversation_type="care-provider",
+            ai_model_provider="openai",
+            selected_ai_model="gpt-4o",
+        )
+
+        human_input = (
+            "Provide a clinical research summary for the selected patient documents. "
+            "Highlight diagnoses, abnormal values, medications, and follow-up actions."
+        )
+        if request.question:
+            human_input += f"\nDoctor question: {request.question}"
+
+        ai_response = await ai_service.generate_response(
+            patient_id=patient_id,
+            user_id=care_provider_id,
+            conversation_id=conversation_id,
+            human_input=human_input,
+            conversation_type="care-provider",
+            additional_context=self._build_research_context(summary_docs),
+        )
+
+        summary_text = ai_response.get(
+            "content", "Unable to generate a summary at this time."
+        )
+        follow_up_questions = ai_response.get("follow_up_questions", []) or []
+
+        return PatientDocumentSummaryResponse(
+            conversation_id=conversation_id,
+            summary=summary_text,
+            follow_up_questions=follow_up_questions,
+            source_documents=summary_docs,
+        )
+
+    async def chat_about_documents(
+        self,
+        patient_id: str,
+        care_provider_id: str,
+        request: PatientDocumentChatRequest,
+    ) -> PatientDocumentChatResponse:
+        documents = await self._fetch_documents_by_ids(
+            patient_id, request.document_ids
+        )
+        summary_docs = [
+            self._to_summary_document(doc) for doc in documents
+        ]
+        conversation_id = (
+            request.conversation_id
+            if request.conversation_id
+            else f"patient-docs-chat-{patient_id}-{uuid4()}"
+        )
+
+        ai_service = AiConversationService(
+            conversation_type="care-provider",
+            ai_model_provider="openai",
+            selected_ai_model="gpt-4o",
+        )
+
+        ai_response = await ai_service.generate_response(
+            patient_id=patient_id,
+            user_id=care_provider_id,
+            conversation_id=conversation_id,
+            human_input=request.question,
+            conversation_type="care-provider",
+            additional_context=self._build_research_context(summary_docs),
+        )
+
+        answer_text = ai_response.get(
+            "content", "I'm unable to answer that at the moment."
+        )
+        follow_up_questions = ai_response.get("follow_up_questions", []) or []
+
+        return PatientDocumentChatResponse(
+            conversation_id=conversation_id,
+            answer=answer_text,
+            follow_up_questions=follow_up_questions,
+            source_documents=summary_docs,
+        )
 
     async def upload_multiple_documents(
         self,
@@ -222,6 +333,88 @@ class PatientDocumentService:
                 status_code=500,
                 message="Failed to upload patient report",
             )
+
+    async def _fetch_documents_by_ids(
+        self, patient_id: str, document_ids: List[str]
+    ) -> List[dict]:
+        normalized_ids = self._validate_document_ids(document_ids)
+
+        object_ids = [ObjectId(doc_id) for doc_id in normalized_ids]
+        cursor = self.patient_document_collection.find(  # type: ignore
+            {"patient_id": patient_id, "_id": {"$in": object_ids}}
+        )
+        docs = await cursor.to_list(length=len(object_ids))
+
+        docs_by_id = {str(doc["_id"]): doc for doc in docs}
+        missing = [doc_id for doc_id in normalized_ids if doc_id not in docs_by_id]
+        if missing:
+            raise_http_exception(
+                status_code=404,
+                message="One or more documents were not found for the patient",
+                detail={"missing_document_ids": missing},
+            )
+
+        return [docs_by_id[doc_id] for doc_id in normalized_ids]
+
+    def _validate_document_ids(self, document_ids: List[str]) -> List[str]:
+        if not document_ids:
+            raise_http_exception(
+                status_code=400,
+                message="At least one document must be selected",
+            )
+
+        if len(document_ids) > self.MAX_RESEARCH_DOCUMENTS:
+            raise_http_exception(
+                status_code=400,
+                message=(
+                    f"A maximum of {self.MAX_RESEARCH_DOCUMENTS} documents can be processed at once"
+                ),
+            )
+
+        normalized_ids: List[str] = []
+        for doc_id in document_ids:
+            if not ObjectId.is_valid(doc_id):
+                raise_http_exception(
+                    status_code=400,
+                    message=f"Invalid document ID: {doc_id}",
+                )
+            normalized_ids.append(str(doc_id))
+
+        return normalized_ids
+
+    def _to_summary_document(self, doc: dict) -> PatientDocumentSummaryDocument:
+        metadata = doc.get("metadata", {}) or {}
+        uploaded_info = metadata.get("uploaded_by", {}) or {}
+        file_info = doc.get("file", {}) or {}
+
+        summary_text = (doc.get("summary_text") or doc.get("text_raw") or "").strip()
+        if len(summary_text) > 4000:
+            summary_text = summary_text[:4000] + "..."
+
+        preview = summary_text[:280]
+        if len(summary_text) > 280:
+            preview += "..."
+
+        return PatientDocumentSummaryDocument(
+            document_id=str(doc.get("_id")),
+            file_name=file_info.get("name"),
+            file_url=file_info.get("url"),
+            mime_type=file_info.get("type"),
+            category=doc.get("category"),
+            document_date=metadata.get("document_date"),
+            uploaded_at=file_info.get("uploaded_at"),
+            uploaded_by_type=uploaded_info.get("type"),
+            summary_preview=preview,
+            summary_text=summary_text,
+        )
+
+    def _build_research_context(
+        self, documents: List[PatientDocumentSummaryDocument]
+    ) -> dict:
+        return {
+            "context_type": "patient_document_research",
+            "documents": [doc.model_dump() for doc in documents],
+        }
 
     async def _summarize_document(self, text: str) -> str:
         summary_prompt = f"""
