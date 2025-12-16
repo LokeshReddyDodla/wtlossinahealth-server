@@ -763,3 +763,19 @@ class PatientSummaryService:
         )
         
         return summary
+
+    async def fetch_summary_by_date(
+        self, patient_id: str, target_date: date
+    ) -> Optional[Dict[str, Any]]:
+        start_date = datetime.combine(target_date, datetime.min.time(), tzinfo=None)
+        end_date = datetime.combine(target_date, datetime.max.time(), tzinfo=None)
+        
+        summary = await self.patient_summary_collection.find_one(
+            {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
+        
+        return summary

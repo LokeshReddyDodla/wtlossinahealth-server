@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import date
 from fastapi import Depends, HTTPException, Query, status
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder
@@ -17,7 +18,7 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
-@router.get("/{patient_id}", response_model=SuccessResponse)
+@router.get("", response_model=SuccessResponse)
 async def get_patient_summary(
     patient_id: str,
     period: str = Query(
@@ -82,6 +83,49 @@ async def get_patient_summary(
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Failed to fetch patient summary",
+            detail=str(e),
+        )
+
+
+@router.get("/by-date", response_model=SuccessResponse)
+async def get_patient_summary_by_date(
+    patient_id: str,
+    date: date = Query(..., description="Date to fetch summary for (YYYY-MM-DD)"),
+    patient_summary_service: PatientSummaryService = Depends(
+        get_patient_summary_service
+    ),
+    current_care_provider: CareProviderModel = Depends(
+        get_current_care_provider(
+            CareProviderPermissionAction.READ, CareProviderFeature.PATIENTS
+        )
+    ),
+):
+    try:
+        summary = await patient_summary_service.fetch_summary_by_date(
+            patient_id=patient_id, target_date=date
+        )
+
+        if summary is None:
+            return SuccessResponse(
+                message=f"No summary found for date: {date}",
+                data=None,
+            )
+
+        summary_dict = jsonable_encoder(
+            summary, custom_encoder={ObjectId: str}
+        )
+
+        return SuccessResponse(
+            message=f"Patient summary fetched successfully for date: {date}",
+            data=summary_dict,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to fetch patient summary by date",
             detail=str(e),
         )
 
