@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import status
 
 from lib.core.constants import ProfileTypeEnum
+from lib.core.postgres_store import PostgresStore
 from lib.models.user_activity_log import UserActivityLog
 from lib.models.patient import Patient
 from lib.utils.http_exceptions import raise_http_exception
@@ -13,6 +14,12 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class ActivePatientService:
+    def __init__(
+            self,
+            postgres_store: PostgresStore,
+        ):
+        self.postgres_store = postgres_store
+
     @with_postgres_session
     async def get_active_patients(
         self, days: int, *, postgres_session: AsyncSession
@@ -22,7 +29,9 @@ class ActivePatientService:
                 raise ValueError("days must be non-negative")
 
             # Calculate the cutoff datetime (days ago from now)
-            cutoff_datetime = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_datetime = (
+                    datetime.now() - timedelta(days=days)
+                ).replace(tzinfo=None)
 
             stmt = (
                 select(distinct(UserActivityLog.user_id))
