@@ -56,7 +56,7 @@ class PatientSummaryService:
             target_date, datetime.max.time(), tzinfo=None
         )
 
-        now = datetime.utcnow()
+        now = datetime.now()
 
         # Check if summary already exists
         existing_summary = await self.patient_summary_collection.find_one(
