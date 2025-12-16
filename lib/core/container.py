@@ -83,7 +83,7 @@ from lib.services.patient_profile_vector_service.patient_profile_vector_service 
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
-from lib.services.patient_summary_service import PatientSummaryService
+from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 
 # Processors
