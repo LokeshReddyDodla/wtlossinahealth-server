@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
@@ -701,3 +701,81 @@ class PatientSummaryService:
         except Exception:
             # Do not fail the flow if logging fails
             return
+
+    def _period_name_to_dates(
+        self, period_name: str, reference_dt: Optional[datetime] = None
+    ) -> Tuple[datetime, datetime]:
+        now = reference_dt or datetime.now()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        
+        period_name_upper = period_name.upper()
+        
+        if period_name_upper == "YESTERDAY":
+            start_date, end_date = yesterday, yesterday
+        
+        elif period_name_upper == "THIS_WEEK":
+            week_start = yesterday - timedelta(days=yesterday.weekday())
+            start_date, end_date = week_start, yesterday
+        
+        elif period_name_upper == "LAST_WEEK":
+            week_start = yesterday - timedelta(days=yesterday.weekday())
+            last_week_end = week_start - timedelta(days=1)
+            last_week_start = last_week_end - timedelta(days=last_week_end.weekday())
+            start_date, end_date = last_week_start, last_week_end
+        
+        elif period_name_upper == "THIS_MONTH":
+            month_start = yesterday.replace(day=1)
+            start_date, end_date = month_start, yesterday
+        
+        elif period_name_upper == "LAST_MONTH":
+            this_month_start = yesterday.replace(day=1)
+            last_month_end = this_month_start - timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1)
+            start_date, end_date = last_month_start, last_month_end
+        
+        elif period_name_upper == "LAST_30_DAYS":
+            start_date = yesterday - timedelta(days=29)  # 30 days inclusive
+            end_date = yesterday
+        
+        elif period_name_upper == "LAST_90_DAYS":
+            start_date = yesterday - timedelta(days=89)  # 90 days inclusive
+            end_date = yesterday
+        
+        else:
+            raise ValueError(f"Unsupported period name: {period_name}")
+        
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=None)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=None)
+        return start_dt, end_dt
+
+    async def fetch_summary_by_period(
+        self, patient_id: str, period_name: str
+    ) -> Optional[Dict[str, Any]]:
+        start_date, end_date = self._period_name_to_dates(period_name)
+        
+        summary = await self.patient_summary_collection.find_one(
+            {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
+        
+        return summary
+
+    async def fetch_summary_by_date(
+        self, patient_id: str, target_date: date
+    ) -> Optional[Dict[str, Any]]:
+        start_date = datetime.combine(target_date, datetime.min.time(), tzinfo=None)
+        end_date = datetime.combine(target_date, datetime.max.time(), tzinfo=None)
+        
+        summary = await self.patient_summary_collection.find_one(
+            {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
+        
+        return summary
