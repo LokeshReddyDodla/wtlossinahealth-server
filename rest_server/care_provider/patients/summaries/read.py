@@ -11,7 +11,7 @@ from lib.dependencies.auth.care_provider_auth import (
 )
 from lib.dependencies.service_dependencies import get_patient_summary_service
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.services.patient_summary_service import PatientSummaryService
+from lib.services.patient_summary import PatientSummaryService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

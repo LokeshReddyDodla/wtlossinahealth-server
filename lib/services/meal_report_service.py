@@ -4,8 +4,29 @@ from datetime import date, datetime
 
 
 class MealReportService:
-    def __init__(self, meal_report_collection):
+    def __init__(self, meal_report_collection, patient_summary_service=None):
         self.meal_report_collection = meal_report_collection
+        self.patient_summary_service = patient_summary_service
+
+    async def _mark_summaries_stale(
+        self, patient_id: str, report_date: date
+    ) -> None:
+        if not self.patient_summary_service:
+            return
+
+        try:
+            from lib.services.patient_summary.enum import StaleReason
+
+            await self.patient_summary_service.mark_summaries_as_stale(
+                patient_id=patient_id,
+                target_date=report_date,
+                stale_reason=StaleReason.DATA_UPDATED,
+            )
+        except Exception as e:
+            # Don't fail the save operation if marking stale fails
+            logging.warning(
+                f"Failed to mark summaries as stale for {patient_id}: {e}"
+            )
 
     async def fetch_report_by_id(self, report_id: str):
         try:
@@ -123,6 +144,18 @@ class MealReportService:
 
             print(
                 f"✅ Saved/Updated daily report for {patient_id} on {report['date']}"
+            )
+
+            # Mark affected summaries as stale
+            # Parse date from string if needed
+            report_date = (
+                datetime.fromisoformat(report["date"]).date()
+                if isinstance(report["date"], str)
+                else report["date"]
+            )
+            await self._mark_summaries_stale(
+                patient_id=patient_id,
+                report_date=report_date,
             )
 
         except Exception as error:

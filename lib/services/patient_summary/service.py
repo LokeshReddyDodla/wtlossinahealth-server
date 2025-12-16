@@ -1,54 +1,23 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Tuple
 
 from decouple import config
 from langchain.output_parsers import PydanticOutputParser
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import SecretStr
 from sqlalchemy import func, select
 
 from lib.core.constants import SYSTEM_USER_ID, ProfileTypeEnum
+from lib.services.patient_summary.enum import StaleReason, SummaryState, RegeneratedBy
 from lib.services.token_usage_service import TokenUsageService
-
-
-class PatientPresentation(BaseModel):
-    short_summary: Optional[str] = Field(
-        default=None, description="1-2 sentence plain summary for patient"
-    )
-    email_summary: Optional[str] = Field(
-        default=None, description="Patient-friendly email-style summary"
-    )
-
-
-class CareProviderPresentation(BaseModel):
-    email_summary: Optional[str] = Field(
-        default=None, description="Clinical email-style summary for care providers"
-    )
-    detailed_summary: Optional[str] = Field(
-        default=None,
-        description="Detailed clinical summary for care providers with qualitative observations, no raw numbers",
-    )
-
-
-class InsightsResponse(BaseModel):
-    headline: Optional[str] = Field(
-        default=None, description="One short headline insight"
-    )
-    key_points: List[str] = Field(
-        default_factory=list, description="Up to 4 bullet key points"
-    )
-    patterns: List[str] = Field(
-        default_factory=list, description="Up to 4 observed patterns/correlations"
-    )
-    patient_presentation: PatientPresentation
-    care_provider_presentation: CareProviderPresentation
+from lib.services.patient_summary.models import InsightsResponse
 
 
 class PatientSummaryService:
     SUMMARY_VERSION = "v1.0"
     MODEL_VERSION = "gpt-4o-mini"
+
     def __init__(
         self,
         patient_summary_collection,
@@ -66,55 +35,99 @@ class PatientSummaryService:
         self.sleep_reports_collection = sleep_reports_collection
         self.meal_reports_collection = meal_reports_collection
         self.cgm_reports_collection = cgm_reports_collection
-        
+
         self._llm: ChatOpenAI = ChatOpenAI(
             model=self.MODEL_VERSION,  # type: ignore
             temperature=0.4,
             api_key=SecretStr(str(config("OPENAI_API_KEY"))),
         )
 
-    async def summarize_periods(
+    async def generate_daily_summary(
         self,
         patient_id: str,
-        periods: Iterable[Tuple[str, datetime, datetime]],
+        target_date: date,
+        regenerated_by: RegeneratedBy = RegeneratedBy.SYSTEM,
     ) -> None:
-        """
-        Upserts rich summary documents for each requested period.
 
-        For now this is optimized for *daily* windows (e.g. yesterday),
-        but it will also work for longer ranges by aggregating over the
-        full [start_date, end_date] window.
-        """
+        start_date = datetime.combine(
+            target_date, datetime.min.time(), tzinfo=None
+        )
+        end_date = datetime.combine(
+            target_date, datetime.max.time(), tzinfo=None
+        )
 
         now = datetime.utcnow()
-        for period_name, start_date, end_date in periods:
-            summary = await self._build_summary_snapshot(
-                patient_id, period_name, start_date, end_date
-            )
-            await self.patient_summary_collection.update_one(
-                {
+
+        # Check if summary already exists
+        existing_summary = await self.patient_summary_collection.find_one(
+            {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
+
+        existing_meta = (existing_summary or {}).get("summary_meta", {})
+
+        # 🚨 Guard: user can only generate if summary is STALE
+        if regenerated_by == RegeneratedBy.USER:
+            if not existing_meta:
+                raise RuntimeError(
+                    "User cannot generate summary before system job runs"
+                )
+
+            existing_state = existing_meta.get("state")
+            if existing_state != SummaryState.STALE.value:
+                raise RuntimeError(
+                    f"Cannot regenerate summary from state '{existing_state}'"
+                )
+
+        # Build the summary snapshot
+        summary = await self._build_summary_snapshot(
+            patient_id, "daily", start_date, end_date
+        )
+        
+        summary_meta = {
+            "state": SummaryState.FINALIZED.value,
+            "generated_at": now,
+            "finalized_at": now if regenerated_by == RegeneratedBy.SYSTEM else None,
+            "data_last_updated_at": existing_meta.get(
+                "data_last_updated_at", now
+            ),
+            "regenerated_at": (
+                now
+                if regenerated_by == RegeneratedBy.USER
+                else existing_meta.get("regenerated_at")
+            ),
+            "regenerated_by": regenerated_by.value,
+            "stale_reason": (
+                None
+                if regenerated_by == RegeneratedBy.SYSTEM
+                else existing_meta.get("stale_reason")
+            ),
+        }
+
+        await self.patient_summary_collection.update_one(
+            {
+                "patient_id": patient_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            {
+                "$set": {
                     "patient_id": patient_id,
+                    "summary_version": self.SUMMARY_VERSION,
+                    "model_version": self.MODEL_VERSION,
+                    "report_type": "daily",
+                    "date": target_date.isoformat(),
                     "start_date": start_date,
                     "end_date": end_date,
+                    "summary_meta": summary_meta,
+                    **summary,
                 },
-                {
-                    "$set": {
-                        "patient_id": patient_id,
-                        "summary_version": self.SUMMARY_VERSION,
-                        "model_version": self.MODEL_VERSION,
-                        "report_type": "daily",
-                        "date": end_date.date().isoformat(),
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "updated_at": now,
-                        **summary,
-                    },
-                    "$setOnInsert": {
-                        "created_at": now,
-                    },
-                },
-                upsert=True,
-            )
+            },
+            upsert=True,
+        )
 
     async def _build_summary_snapshot(
         self,
@@ -181,11 +194,15 @@ class PatientSummaryService:
         if data_presence["cgm"] and glucose:
             if glucose.get("tir_pct") is not None and glucose["tir_pct"] < 70:
                 flags.append("Low time-in-range (<70%)")
-            if glucose.get("avg_mgdl") is not None and glucose["avg_mgdl"] > 180:
+            if (
+                glucose.get("avg_mgdl") is not None
+                and glucose["avg_mgdl"] > 180
+            ):
                 flags.append("High average glucose (>180 mg/dL)")
-            if glucose.get("variability_pct") is not None and glucose[
-                "variability_pct"
-            ] > 36:
+            if (
+                glucose.get("variability_pct") is not None
+                and glucose["variability_pct"] > 36
+            ):
                 flags.append("High glucose variability (>36%)")
             if glucose.get("hyper_event_count", 0) > 0:
                 flags.append("Hyperglycemia events detected")
@@ -200,9 +217,11 @@ class PatientSummaryService:
             if best and best.get("score") is not None and best["score"] < 5:
                 flags.append("No well-scored meals")
             totals = meals.get("nutrition_totals") or {}
-            if totals and totals.get("protein_g") is not None and totals[
-                "protein_g"
-            ] < 50:
+            if (
+                totals
+                and totals.get("protein_g") is not None
+                and totals["protein_g"] < 50
+            ):
                 flags.append("Low protein intake (<50g)")
 
         if data_presence["fitness"] and activity:
@@ -214,13 +233,15 @@ class PatientSummaryService:
                 flags.append("Prolonged inactivity (>3h)")
 
         if data_presence["sleep"] and sleep:
-            if sleep.get("duration_hours") is not None and sleep[
-                "duration_hours"
-            ] < 6:
+            if (
+                sleep.get("duration_hours") is not None
+                and sleep["duration_hours"] < 6
+            ):
                 flags.append("Short sleep (<6h)")
-            if sleep.get("efficiency_pct") is not None and sleep[
-                "efficiency_pct"
-            ] < 75:
+            if (
+                sleep.get("efficiency_pct") is not None
+                and sleep["efficiency_pct"] < 75
+            ):
                 flags.append("Low sleep efficiency (<75%)")
 
         if data_presence["vitals"] and vitals:
@@ -283,13 +304,11 @@ class PatientSummaryService:
 
         # Derive TIR, above, below
         tir = ranges.get("in_target_70_180_percent", 0.0)
-        below = (
-            (ranges.get("below_54_percent", 0.0))
-            + (ranges.get("below_70_above_54_percent", 0.0))
+        below = (ranges.get("below_54_percent", 0.0)) + (
+            ranges.get("below_70_above_54_percent", 0.0)
         )
-        above = (
-            (ranges.get("above_180_below_250_percent", 0.0))
-            + (ranges.get("above_250_percent", 0.0))
+        above = (ranges.get("above_180_below_250_percent", 0.0)) + (
+            ranges.get("above_250_percent", 0.0)
         )
 
         best_period = None
@@ -346,9 +365,9 @@ class PatientSummaryService:
             def _meal_view(m: Dict[str, Any]) -> Dict[str, Any]:
                 macro = m.get("total_macro_nutritional_value", {}) or {}
                 return {
-                    "meal_id": str(m.get("id"))
-                    if m.get("id") is not None
-                    else None,
+                    "meal_id": (
+                        str(m.get("id")) if m.get("id") is not None else None
+                    ),
                     "name": m.get("name"),
                     "type": m.get("type"),
                     "score": m.get("score"),
@@ -360,7 +379,11 @@ class PatientSummaryService:
 
             best_meal = _meal_view(best)
             # Avoid identical best/worst when only one scored meal
-            worst_meal = _meal_view(worst) if best is not worst and meal_count >= 2 else None
+            worst_meal = (
+                _meal_view(worst)
+                if best is not worst and meal_count >= 2
+                else None
+            )
 
         nutrition_totals = {
             "calories": doc.get("calories"),
@@ -399,7 +422,8 @@ class PatientSummaryService:
             doc.get("inactive_periods", []) or []
         )
         longest_inactive = max(
-            (p.get("inactive_duration", 0) for p in inactive_periods), default=0
+            (p.get("inactive_duration", 0) for p in inactive_periods),
+            default=0,
         )
 
         peak = doc.get("peak_activity_time") or {}
@@ -641,24 +665,29 @@ class PatientSummaryService:
                 )
             )
 
-
             ai_msg: AIMessage = await self._llm.ainvoke([system_msg, user_msg])
             content = ai_msg.content or "{}"
-            parsed = parser.parse(content) if isinstance(content, str) else None
+            parsed = (
+                parser.parse(content) if isinstance(content, str) else None
+            )
             if parsed:
                 # Post-process: ensure key_points and patterns are populated if data exists
                 data_presence = snapshot.get("data_presence", {})
                 has_data = any(data_presence.values())
-                
+
                 result = parsed.model_dump(exclude_none=True)
-                
+
                 # If we have data but LLM returned empty arrays, add fallback insights
                 if has_data:
                     if not result.get("key_points"):
-                        result["key_points"] = ["Data collection was consistent for available metrics"]
+                        result["key_points"] = [
+                            "Data collection was consistent for available metrics"
+                        ]
                     if not result.get("patterns"):
-                        result["patterns"] = ["All tracked metrics were within expected ranges"]
-                
+                        result["patterns"] = [
+                            "All tracked metrics were within expected ranges"
+                        ]
+
                 # Attempt to log token usage if available on response
                 usage = getattr(ai_msg, "response_metadata", None) or {}
                 token_usage = usage.get("token_usage") or {}
@@ -708,44 +737,48 @@ class PatientSummaryService:
         now = reference_dt or datetime.now()
         today = now.date()
         yesterday = today - timedelta(days=1)
-        
+
         period_name_upper = period_name.upper()
-        
+
         if period_name_upper == "YESTERDAY":
             start_date, end_date = yesterday, yesterday
-        
+
         elif period_name_upper == "THIS_WEEK":
             week_start = yesterday - timedelta(days=yesterday.weekday())
             start_date, end_date = week_start, yesterday
-        
+
         elif period_name_upper == "LAST_WEEK":
             week_start = yesterday - timedelta(days=yesterday.weekday())
             last_week_end = week_start - timedelta(days=1)
-            last_week_start = last_week_end - timedelta(days=last_week_end.weekday())
+            last_week_start = last_week_end - timedelta(
+                days=last_week_end.weekday()
+            )
             start_date, end_date = last_week_start, last_week_end
-        
+
         elif period_name_upper == "THIS_MONTH":
             month_start = yesterday.replace(day=1)
             start_date, end_date = month_start, yesterday
-        
+
         elif period_name_upper == "LAST_MONTH":
             this_month_start = yesterday.replace(day=1)
             last_month_end = this_month_start - timedelta(days=1)
             last_month_start = last_month_end.replace(day=1)
             start_date, end_date = last_month_start, last_month_end
-        
+
         elif period_name_upper == "LAST_30_DAYS":
             start_date = yesterday - timedelta(days=29)  # 30 days inclusive
             end_date = yesterday
-        
+
         elif period_name_upper == "LAST_90_DAYS":
             start_date = yesterday - timedelta(days=89)  # 90 days inclusive
             end_date = yesterday
-        
+
         else:
             raise ValueError(f"Unsupported period name: {period_name}")
-        
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=None)
+
+        start_dt = datetime.combine(
+            start_date, datetime.min.time(), tzinfo=None
+        )
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=None)
         return start_dt, end_dt
 
@@ -753,7 +786,7 @@ class PatientSummaryService:
         self, patient_id: str, period_name: str
     ) -> Optional[Dict[str, Any]]:
         start_date, end_date = self._period_name_to_dates(period_name)
-        
+
         summary = await self.patient_summary_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -761,15 +794,19 @@ class PatientSummaryService:
                 "end_date": end_date,
             }
         )
-        
+
         return summary
 
     async def fetch_summary_by_date(
         self, patient_id: str, target_date: date
     ) -> Optional[Dict[str, Any]]:
-        start_date = datetime.combine(target_date, datetime.min.time(), tzinfo=None)
-        end_date = datetime.combine(target_date, datetime.max.time(), tzinfo=None)
-        
+        start_date = datetime.combine(
+            target_date, datetime.min.time(), tzinfo=None
+        )
+        end_date = datetime.combine(
+            target_date, datetime.max.time(), tzinfo=None
+        )
+
         summary = await self.patient_summary_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -777,5 +814,48 @@ class PatientSummaryService:
                 "end_date": end_date,
             }
         )
-        
+
         return summary
+
+    async def mark_summaries_as_stale(
+        self,
+        patient_id: str,
+        target_date: Optional[date] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        stale_reason: StaleReason = StaleReason.DATA_UPDATED,
+    ) -> None:
+
+        if target_date is None and (start_date is None or end_date is None):
+            raise ValueError(
+                "Either target_date OR both start_date and end_date must be provided"
+            )
+
+        now = datetime.now()
+
+        if target_date is not None:
+            start_date = datetime.combine(target_date, datetime.min.time())
+            end_date = datetime.combine(target_date, datetime.max.time())
+
+        query = {
+            "patient_id": patient_id,
+            "start_date": {"$lte": end_date},
+            "end_date": {"$gte": start_date},
+            "summary_meta.state": SummaryState.FINALIZED.value,
+        }
+
+        await self.patient_summary_collection.update_many(
+            query,
+            {
+                "$set": {
+                    "summary_meta.state": SummaryState.STALE.value,
+                    "summary_meta.data_last_updated_at": now,
+                    "summary_meta.stale_reason": stale_reason.value,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "summary_meta.regenerated_at": "",
+                    "summary_meta.regenerated_by": "",
+                },
+            },
+        )

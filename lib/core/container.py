@@ -83,7 +83,7 @@ from lib.services.patient_profile_vector_service.patient_profile_vector_service 
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
-from lib.services.patient_summary_service import PatientSummaryService
+from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 
 # Processors
@@ -410,6 +410,9 @@ container.register(
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -572,7 +575,10 @@ container.register(
 container.register(
     SleepReportService,
     lambda: SleepReportService(
-        sleep_report_collection=container.resolve("sleep_report_collection")
+        sleep_report_collection=container.resolve("sleep_report_collection"),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -582,7 +588,10 @@ container.register(
     lambda: FitnessReportService(
         fitness_report_collection=container.resolve(
             "fitness_report_collection"
-        )
+        ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -590,7 +599,10 @@ container.register(
 container.register(
     MealReportService,
     lambda: MealReportService(
-        meal_report_collection=container.resolve("meal_report_collection")
+        meal_report_collection=container.resolve("meal_report_collection"),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -604,6 +616,9 @@ container.register(
         ),
         fitness_report_service=cast(
             FitnessReportService, container.resolve(FitnessReportService)
+        ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
         ),
     ),
 )
