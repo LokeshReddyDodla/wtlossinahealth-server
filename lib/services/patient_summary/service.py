@@ -12,6 +12,7 @@ from lib.core.constants import SYSTEM_USER_ID, ProfileTypeEnum
 from lib.services.patient_summary.enum import StaleReason, SummaryState, RegeneratedBy
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.patient_summary.models import InsightsResponse
+from lib.utils.timezone import get_ist_day_bounds, get_ist_now
 
 
 class PatientSummaryService:
@@ -50,14 +51,8 @@ class PatientSummaryService:
         forced: bool = False,
     ) -> None:
 
-        start_date = datetime.combine(
-            target_date, datetime.min.time(), tzinfo=None
-        )
-        end_date = datetime.combine(
-            target_date, datetime.max.time(), tzinfo=None
-        )
-
-        now = datetime.now()
+        start_date, end_date = get_ist_day_bounds(target_date)
+        now = get_ist_now()
 
         # Check if summary already exists
         existing_summary = await self.patient_summary_collection.find_one(
