@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from celery import shared_task
 
 from lib.services.patient_summary.enum import RegeneratedBy
+from lib.utils.timezone import get_ist_now
 
 
 @shared_task(queue="default")
@@ -15,7 +16,7 @@ async def generate_yesterdays_daily_summary(patient_id: str) -> None:
         )
 
         service = get_patient_summary_service()
-        target_date = (datetime.now() - timedelta(days=1)).date()
+        target_date = (get_ist_now() - timedelta(days=1)).date()
 
         await service.generate_daily_summary(
             patient_id=patient_id,
