@@ -17,6 +17,7 @@ async def generate_yesterdays_daily_summary(patient_id: str) -> None:
 
         service = get_patient_summary_service()
         target_date = (get_ist_now() - timedelta(days=1)).date()
+        print(f"==> target_date: {target_date}")
 
         await service.generate_daily_summary(
             patient_id=patient_id,
