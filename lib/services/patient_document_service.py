@@ -1,15 +1,13 @@
 import asyncio
 from datetime import datetime
 import hashlib
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import uuid4
 
 from bson import ObjectId
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
-from lib.core.mongo_store import MongoStore
-from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
 from lib.core.types import DocumentTypeLiteral
 
@@ -18,18 +16,15 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
-from lib.schemas.patient_document import (
-    PatientDocumentChatRequest,
-    PatientDocumentChatResponse,
-    PatientDocumentSummaryDocument,
-    PatientDocumentSummaryRequest,
-    PatientDocumentSummaryResponse,
+from lib.schemas.patient_document_research import (
+    PatientDocumentResearchChatRequest,
+    PatientDocumentResearchChatResponse,
+    PatientDocumentResearchDocument,
+    PatientDocumentResearchSummaryRequest,
+    PatientDocumentResearchSummaryResponse,
 )
 from lib.utils.date_utils import extract_date_from_text
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from lib.utils.s3_utils import upload_file_to_s3
 
 from qdrant_client.http.models import PointStruct
@@ -42,17 +37,19 @@ class PatientDocumentService:
 
     def __init__(
         self,
-        postgres_store: PostgresStore,
         qdrant_store: QdrantStore,
         file_content_extractor_service: FileContentExtractorService,
         patient_profile_service: PatientProfileService,
-        patient_document_collection: MongoStore,
+        patient_document_collection: Any,
+        patient_document_summary_interactions_collection: Any,
     ):
-        self.postgres_store = postgres_store
         self.qdrant_store = qdrant_store
         self.patient_profile_service = patient_profile_service
         self.file_content_extractor_service = file_content_extractor_service
         self.patient_document_collection = patient_document_collection
+        self.patient_document_summary_interactions_collection = (
+            patient_document_summary_interactions_collection
+        )
 
         self.openai_client = AsyncOpenAI()
         self.s3_bucket_name = "user-assets.aihealth.clinic"
@@ -102,8 +99,8 @@ class PatientDocumentService:
         self,
         patient_id: str,
         care_provider_id: str,
-        request: PatientDocumentSummaryRequest,
-    ) -> PatientDocumentSummaryResponse:
+        request: PatientDocumentResearchSummaryRequest,
+    ) -> PatientDocumentResearchSummaryResponse:
         documents = await self._fetch_documents_by_ids(
             patient_id, request.document_ids
         )
@@ -135,7 +132,10 @@ class PatientDocumentService:
             conversation_id=conversation_id,
             human_input=human_input,
             conversation_type="care-provider",
-            additional_context=self._build_research_context(summary_docs),
+            additional_context=self._build_patient_document_context(
+                documents=summary_docs,
+                context_type="patient_document_research",
+            ),
         )
 
         summary_text = ai_response.get(
@@ -143,7 +143,19 @@ class PatientDocumentService:
         )
         follow_up_questions = ai_response.get("follow_up_questions", []) or []
 
-        return PatientDocumentSummaryResponse(
+        await self._record_patient_document_interaction(
+            interaction_type="patient_document_research",
+            patient_id=patient_id,
+            care_provider_id=care_provider_id,
+            conversation_id=conversation_id,
+            document_ids=request.document_ids,
+            question=request.question,
+            response_text=summary_text,
+            follow_up_questions=follow_up_questions,
+            source_documents=summary_docs,
+        )
+
+        return PatientDocumentResearchSummaryResponse(
             conversation_id=conversation_id,
             summary=summary_text,
             follow_up_questions=follow_up_questions,
@@ -154,8 +166,8 @@ class PatientDocumentService:
         self,
         patient_id: str,
         care_provider_id: str,
-        request: PatientDocumentChatRequest,
-    ) -> PatientDocumentChatResponse:
+        request: PatientDocumentResearchChatRequest,
+    ) -> PatientDocumentResearchChatResponse:
         documents = await self._fetch_documents_by_ids(
             patient_id, request.document_ids
         )
@@ -180,7 +192,10 @@ class PatientDocumentService:
             conversation_id=conversation_id,
             human_input=request.question,
             conversation_type="care-provider",
-            additional_context=self._build_research_context(summary_docs),
+            additional_context=self._build_patient_document_context(
+                documents=summary_docs,
+                context_type="patient_document_chat",
+            ),
         )
 
         answer_text = ai_response.get(
@@ -188,7 +203,19 @@ class PatientDocumentService:
         )
         follow_up_questions = ai_response.get("follow_up_questions", []) or []
 
-        return PatientDocumentChatResponse(
+        await self._record_patient_document_interaction(
+            interaction_type="patient_document_chat",
+            patient_id=patient_id,
+            care_provider_id=care_provider_id,
+            conversation_id=conversation_id,
+            document_ids=request.document_ids,
+            question=request.question,
+            response_text=answer_text,
+            follow_up_questions=follow_up_questions,
+            source_documents=summary_docs,
+        )
+
+        return PatientDocumentResearchChatResponse(
             conversation_id=conversation_id,
             answer=answer_text,
             follow_up_questions=follow_up_questions,
@@ -382,7 +409,7 @@ class PatientDocumentService:
 
         return normalized_ids
 
-    def _to_summary_document(self, doc: dict) -> PatientDocumentSummaryDocument:
+    def _to_summary_document(self, doc: dict) -> PatientDocumentResearchDocument:
         metadata = doc.get("metadata", {}) or {}
         uploaded_info = metadata.get("uploaded_by", {}) or {}
         file_info = doc.get("file", {}) or {}
@@ -395,7 +422,7 @@ class PatientDocumentService:
         if len(summary_text) > 280:
             preview += "..."
 
-        return PatientDocumentSummaryDocument(
+        return PatientDocumentResearchDocument(
             document_id=str(doc.get("_id")),
             file_name=file_info.get("name"),
             file_url=file_info.get("url"),
@@ -408,11 +435,13 @@ class PatientDocumentService:
             summary_text=summary_text,
         )
 
-    def _build_research_context(
-        self, documents: List[PatientDocumentSummaryDocument]
+    def _build_patient_document_context(
+        self,
+        documents: List[PatientDocumentResearchDocument],
+        context_type: str,
     ) -> dict:
         return {
-            "context_type": "patient_document_research",
+            "context_type": context_type,
             "documents": [doc.model_dump() for doc in documents],
         }
 
@@ -562,6 +591,37 @@ class PatientDocumentService:
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content.strip()  # type: ignore
+
+    async def _record_patient_document_interaction(
+        self,
+        interaction_type: str,
+        patient_id: str,
+        care_provider_id: str,
+        conversation_id: str,
+        document_ids: List[str],
+        question: Optional[str],
+        response_text: str,
+        follow_up_questions: List[str],
+        source_documents: List[PatientDocumentResearchDocument],
+    ):
+        interaction_doc = {
+            "patient_id": patient_id,
+            "care_provider_id": care_provider_id,
+            "conversation_id": conversation_id,
+            "interaction_type": interaction_type,
+            "document_ids": document_ids,
+            "question": question,
+            "response": response_text,
+            "follow_up_questions": follow_up_questions,
+            "source_documents": [
+                doc.model_dump() for doc in source_documents
+            ],
+            "created_at": datetime.now(),
+        }
+
+        await self.patient_document_summary_interactions_collection.insert_one(  # type: ignore
+            interaction_doc
+        )
 
     def _bucket_time(self, hour: int) -> str:
         if 6 <= hour < 12:

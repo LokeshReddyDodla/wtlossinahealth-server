@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class PatientDocumentListItem(BaseModel):
+class PatientDocumentResearchListItem(BaseModel):
     document_id: str
     file_name: Optional[str] = None
     file_url: Optional[str] = None
@@ -16,11 +16,11 @@ class PatientDocumentListItem(BaseModel):
     summary_preview: Optional[str] = None
 
 
-class PatientDocumentSummaryDocument(PatientDocumentListItem):
+class PatientDocumentResearchDocument(PatientDocumentResearchListItem):
     summary_text: Optional[str] = None
 
 
-class PatientDocumentSummaryRequest(BaseModel):
+class PatientDocumentResearchSummaryRequest(BaseModel):
     document_ids: List[str] = Field(
         ...,
         min_length=1,
@@ -36,16 +36,16 @@ class PatientDocumentSummaryRequest(BaseModel):
     )
 
 
-class PatientDocumentSummaryResponse(BaseModel):
+class PatientDocumentResearchSummaryResponse(BaseModel):
     conversation_id: str
     summary: str
     follow_up_questions: List[str] = Field(default_factory=list)
-    source_documents: List[PatientDocumentSummaryDocument] = Field(
+    source_documents: List[PatientDocumentResearchDocument] = Field(
         default_factory=list
     )
 
 
-class PatientDocumentChatRequest(BaseModel):
+class PatientDocumentResearchChatRequest(BaseModel):
     document_ids: List[str] = Field(
         ...,
         min_length=1,
@@ -58,10 +58,10 @@ class PatientDocumentChatRequest(BaseModel):
     )
 
 
-class PatientDocumentChatResponse(BaseModel):
+class PatientDocumentResearchChatResponse(BaseModel):
     conversation_id: str
     answer: str
     follow_up_questions: List[str] = Field(default_factory=list)
-    source_documents: List[PatientDocumentSummaryDocument] = Field(
+    source_documents: List[PatientDocumentResearchDocument] = Field(
         default_factory=list
     )

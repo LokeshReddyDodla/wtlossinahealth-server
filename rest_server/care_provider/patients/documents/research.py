@@ -3,11 +3,11 @@ from fastapi import Depends, HTTPException, status
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import get_patient_document_service
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.patient_document import (
-    PatientDocumentChatRequest,
-    PatientDocumentChatResponse,
-    PatientDocumentSummaryRequest,
-    PatientDocumentSummaryResponse,
+from lib.schemas.patient_document_research import (
+    PatientDocumentResearchChatRequest,
+    PatientDocumentResearchChatResponse,
+    PatientDocumentResearchSummaryRequest,
+    PatientDocumentResearchSummaryResponse,
 )
 from lib.services.patient_document_service import PatientDocumentService
 from lib.utils.care_provider_permissions import (
@@ -22,7 +22,7 @@ from .router import router
 
 @router.post(
     "/research/summary",
-    response_model=SuccessResponse[PatientDocumentSummaryResponse],
+    response_model=SuccessResponse[PatientDocumentResearchSummaryResponse],
     summary="Generate research summary",
     description=(
         "Combine selected patient documents into an AI-generated research summary and start a conversation context."
@@ -30,7 +30,7 @@ from .router import router
 )
 async def summarize_patient_documents_for_research(
     patient_id: str,
-    request: PatientDocumentSummaryRequest,
+    request: PatientDocumentResearchSummaryRequest,
     patient_document_service: PatientDocumentService = Depends(
         get_patient_document_service
     ),
@@ -63,13 +63,13 @@ async def summarize_patient_documents_for_research(
 
 @router.post(
     "/research/chat",
-    response_model=SuccessResponse[PatientDocumentChatResponse],
+    response_model=SuccessResponse[PatientDocumentResearchChatResponse],
     summary="Ask questions about selected documents",
     description="Ask follow-up questions about the previously summarized patient documents.",
 )
 async def chat_about_patient_documents(
     patient_id: str,
-    request: PatientDocumentChatRequest,
+    request: PatientDocumentResearchChatRequest,
     patient_document_service: PatientDocumentService = Depends(
         get_patient_document_service
     ),

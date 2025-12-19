@@ -200,27 +200,34 @@ container.register(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("patient_documents"),
 )
+container.register(
+    "patient_document_summary_interactions_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("patient_document_summary_interactions"),
+    scope=Scope.singleton,
+)
 
 # Weight Loss Agent Collections
 container.register(
     "inbody_reports_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("inbody_reports"),
+    ).get_collection("wtloss_inbody_reports"),
     scope=Scope.singleton,
 )
 container.register(
     "weight_loss_interactions_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("weight_loss_interactions"),
+    ).get_collection("wtloss_weight_loss_interactions"),
     scope=Scope.singleton,
 )
 container.register(
     "weight_loss_progress_analyses_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("weight_loss_progress_analyses"),
+    ).get_collection("wtloss_weight_loss_progress_analyses"),
     scope=Scope.singleton,
 )
 
@@ -230,56 +237,56 @@ container.register(
     "exercise_preferences_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("exercise_preferences"),
+    ).get_collection("wtloss_exercise_preferences"),
     scope=Scope.singleton,
 )
 container.register(
     "fitness_screen_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("fitness_screen"),
+    ).get_collection("wtloss_fitness_screen"),
     scope=Scope.singleton,
 )
 container.register(
     "willingness_commitment_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("willingness_commitment"),
+    ).get_collection("wtloss_willingness_commitment"),
     scope=Scope.singleton,
 )
 container.register(
     "plan_snapshots_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("plan_snapshots"),
+    ).get_collection("wtloss_plan_snapshots"),
     scope=Scope.singleton,
 )
 container.register(
     "suggestion_cards_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("suggestion_cards"),
+    ).get_collection("wtloss_suggestion_cards"),
     scope=Scope.singleton,
 )
 container.register(
     "weekly_symptoms_glp1_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("weekly_symptoms_glp1"),
+    ).get_collection("wtloss_weekly_symptoms_glp1"),
     scope=Scope.singleton,
 )
 container.register(
     "audit_traces_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("audit_traces"),
+    ).get_collection("wtloss_audit_traces"),
     scope=Scope.singleton,
 )
 container.register(
     "analytics_events_collection",
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
-    ).get_collection("analytics_events"),
+    ).get_collection("wtloss_analytics_events"),
     scope=Scope.singleton,
 )
 
@@ -428,7 +435,6 @@ container.register(
 container.register(
     PatientDocumentService,
     lambda: PatientDocumentService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
@@ -439,6 +445,12 @@ container.register(
         ),
         patient_document_collection=cast(
             MongoStore, container.resolve("patient_documents")
+        ),
+        patient_document_summary_interactions_collection=cast(
+            MongoStore,
+            container.resolve(
+                "patient_document_summary_interactions_collection"
+            ),
         ),
     ),
 )
