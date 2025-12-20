@@ -869,3 +869,13 @@ class PatientSummaryService:
                 },
             },
         )
+
+    async def get_stale_summaries(self) -> List[Dict[str, Any]]:
+        query = {
+            "summary_meta.state": SummaryState.STALE.value,
+        }
+        
+        cursor = self.patient_summary_collection.find(query)
+        summaries = await cursor.to_list(length=None)
+        
+        return summaries

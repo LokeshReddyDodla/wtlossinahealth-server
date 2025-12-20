@@ -65,6 +65,15 @@ celery.conf.update(
             "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",
             "schedule": crontab(hour="3", minute="0"),  # 3:00 AM IST daily
         },
+        "regenerate-stale-summaries": {
+            "task": "lib.tasks.patient_summary_tasks.regenerate_stale_summaries",
+            "schedule": crontab(
+                hour="0,3,6,9,12,15,18,21", minute="0"
+            ),  # Every 3 hours at :00
+            "options": {
+                "expires": 60 * 60 * 2,  # 2 hours expiration
+            },
+        },
     },
 )
 
