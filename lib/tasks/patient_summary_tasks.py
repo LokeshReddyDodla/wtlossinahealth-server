@@ -113,3 +113,61 @@ async def generate_summaries_for_date(
         )
     except Exception as e:
         print(f"❌ Failed to schedule summaries for date {date_str}: {e}")
+
+
+@shared_task(queue="default")
+async def regenerate_stale_summaries() -> None:
+    try:
+        from lib.dependencies.service_dependencies import (
+            get_patient_summary_service,
+        )
+
+        service = get_patient_summary_service()
+        stale_summaries = await service.get_stale_summaries()
+
+        if not stale_summaries:
+            print("ℹ️ No stale summaries found")
+            return
+
+        regenerated_count = 0
+        failed_count = 0
+
+        for summary in stale_summaries:
+            try:
+                patient_id = summary.get("patient_id")
+                date_str = summary.get("date")
+                
+                if not patient_id or not date_str:
+                    print(
+                        f"⚠️ Skipping summary with missing patient_id or date: {summary.get('_id')}"
+                    )
+                    failed_count += 1
+                    continue
+
+                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+                # Regenerate the summary (forced=True to override stale state)
+                await service.generate_daily_summary(
+                    patient_id=patient_id,
+                    target_date=target_date,
+                    regenerated_by=RegeneratedBy.SYSTEM,
+                    forced=True,
+                )
+
+                regenerated_count += 1
+                print(
+                    f"✅ Regenerated stale summary for {patient_id} on {target_date}"
+                )
+            except Exception as e:
+                failed_count += 1
+                print(
+                    f"❌ Failed to regenerate stale summary for {summary.get('patient_id')} "
+                    f"on {summary.get('date')}: {e}"
+                )
+
+        print(
+            f"✅ Regenerated {regenerated_count} stale summaries "
+            f"({failed_count} failed out of {len(stale_summaries)} total)"
+        )
+    except Exception as e:
+        print(f"❌ Failed to regenerate stale summaries: {e}")
