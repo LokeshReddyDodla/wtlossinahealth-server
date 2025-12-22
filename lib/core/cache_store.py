@@ -46,13 +46,22 @@ class CacheStore:
     ) -> Optional[bool]:
         key = f"{self.__namespace}:{key.strip()}"
 
-        if expire is None:
-            return self.__client.set(name=key, value=value, nx=nx)
+        if nx:
+            return self.__client.set(
+                name=key,
+                value=value,
+                ex=expire,
+                nx=True,
+            )
 
-        if not isinstance(expire, int):
-            raise ValueError("Expire time must be an integer or None")
+        if expire is not None:
+            return self.__client.setex(
+                name=key,
+                time=expire,
+                value=value,
+            )
 
-        return self.__client.setex(name=key, value=value, time=expire, nx=nx)
+        return self.__client.set(name=key, value=value)
 
     def delete_key(self, key: str) -> Optional[int]:
         key = f"{self.__namespace}:{key.strip()}"
