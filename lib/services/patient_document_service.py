@@ -1,13 +1,10 @@
 import asyncio
 from datetime import datetime
 import hashlib
-from typing import List, Optional
-
+from typing import Any, List, Optional
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
-from lib.core.mongo_store import MongoStore
-from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
 from lib.core.types import DocumentTypeLiteral
 
@@ -15,9 +12,6 @@ from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.date_utils import extract_date_from_text
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from lib.utils.s3_utils import upload_file_to_s3
 
 from qdrant_client.http.models import PointStruct
@@ -28,18 +22,15 @@ from lib.utils.vector_utils import embed_text
 class PatientDocumentService:
     def __init__(
         self,
-        postgres_store: PostgresStore,
         qdrant_store: QdrantStore,
         file_content_extractor_service: FileContentExtractorService,
         patient_profile_service: PatientProfileService,
-        patient_document_collection: MongoStore,
+        patient_document_collection: Any,
     ):
-        self.postgres_store = postgres_store
         self.qdrant_store = qdrant_store
         self.patient_profile_service = patient_profile_service
         self.file_content_extractor_service = file_content_extractor_service
         self.patient_document_collection = patient_document_collection
-
         self.openai_client = AsyncOpenAI()
         self.s3_bucket_name = "user-assets.aihealth.clinic"
         self.qdrant_collection_name = "patient_data"
