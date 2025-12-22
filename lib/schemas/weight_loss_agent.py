@@ -103,6 +103,28 @@ class InbodyReportSummary(InbodyNormalizedFields):
     health_indicators: List[HealthIndicator] = Field(default_factory=list)
 
 
+class MeasurementSummary(BaseModel):
+    label: str
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    normal_min: Optional[float] = None
+    normal_max: Optional[float] = None
+    confidence_score: Optional[float] = None
+
+
+class InbodyReportHighlights(BaseModel):
+    skeletal_muscle_mass: Optional[MeasurementSummary] = None
+    body_fat_percentage: Optional[MeasurementSummary] = None
+    visceral_fat_level: Optional[MeasurementSummary] = None
+    basal_metabolic_rate: Optional[MeasurementSummary] = None
+    segment_lean_analysis: List[MeasurementSummary] = Field(default_factory=list)
+
+
+class InbodyReportDetail(BaseModel):
+    report: InbodyReport
+    highlights: InbodyReportHighlights
+
+
 
 
 

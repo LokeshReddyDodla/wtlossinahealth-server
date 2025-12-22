@@ -274,6 +274,26 @@ class WeightLossAgentService:
 
         return report_doc
 
+    async def get_latest_inbody_report_with_details(
+        self, enrollment_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch latest inbody report with highlighted measurements - MongoDB"""
+
+        report = await self.reports_collection.find_one(
+            {"enrollment_id": str(enrollment_id)}, sort=[("report_date", -1)]
+        )
+
+        if not report:
+            return None
+
+        prepared_report = self._prepare_report_document(report)
+        highlights = self._extract_report_highlights(prepared_report)
+
+        return {
+            "report": prepared_report,
+            "highlights": highlights,
+        }
+
     async def get_daily_reports_data(
         self,
         patient_id: UUID,
@@ -641,6 +661,231 @@ class WeightLossAgentService:
             "program_goals": enrollment.get("program_goals"),
         }
 
+    def _prepare_report_document(self, report: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize MongoDB report document for API responses"""
+
+        prepared = dict(report)
+        prepared.pop("_id", None)
+
+        report_id = prepared.get("report_id")
+        created_at = prepared.get("created_at", datetime.now())
+
+        raw_measurements = prepared.get("measurements") or []
+        measurements: List[Dict[str, Any]] = []
+        for measurement in raw_measurements:
+            measurement_copy = dict(measurement)
+            measurement_copy.setdefault("measurement_id", str(uuid4()))
+            measurement_copy.setdefault("report_id", report_id)
+            measurement_copy.setdefault("created_at", created_at)
+            measurements.append(measurement_copy)
+        prepared["measurements"] = measurements
+
+        raw_indicators = prepared.get("health_indicators") or []
+        indicators: List[Dict[str, Any]] = []
+        for indicator in raw_indicators:
+            indicator_copy = dict(indicator)
+            indicator_copy.setdefault("indicator_id", str(uuid4()))
+            indicator_copy.setdefault("report_id", report_id)
+            indicator_copy.setdefault("created_at", created_at)
+            indicators.append(indicator_copy)
+        prepared["health_indicators"] = indicators
+
+        return prepared
+
+    def _extract_report_highlights(
+        self, report: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Derive highlight metrics used by the UI from measurement data"""
+
+        measurements = report.get("measurements") or []
+        measurement_lookup = self._build_measurement_lookup(measurements)
+
+        highlight_sources = {
+            "skeletal_muscle_mass": [
+                "skeletal_muscle_mass",
+                "muscle_mass",
+                "skeletal_muscle",
+            ],
+            "body_fat_percentage": [
+                "body_fat_percentage",
+                "percentage_body_fat",
+                "body_fat",
+            ],
+            "visceral_fat_level": [
+                "visceral_fat_level",
+                "visceral_fat",
+            ],
+            "basal_metabolic_rate": [
+                "basal_metabolic_rate",
+                "bmr",
+            ],
+        }
+
+        highlights: Dict[str, Any] = {}
+        for field, keys in highlight_sources.items():
+            measurement = None
+            for key in keys:
+                measurement = measurement_lookup.get(key)
+                if measurement:
+                    break
+            highlights[field] = self._format_measurement_summary(measurement)
+
+        highlights["segment_lean_analysis"] = self._collect_segment_lean_measurements(
+            measurements
+        )
+
+        return highlights
+
+    def _build_measurement_lookup(
+        self, measurements: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        lookup: Dict[str, Dict[str, Any]] = {}
+        for measurement in measurements:
+            measurement_type = (measurement.get("measurement_type") or "").strip()
+            if not measurement_type:
+                continue
+            normalized_key = self._normalize_measurement_key(measurement_type)
+            if normalized_key:
+                lookup[normalized_key] = measurement
+        return lookup
+
+    def _normalize_measurement_key(self, value: str) -> str:
+        """Normalize measurement label to enable lookups"""
+
+        return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+    def _format_measurement_summary(
+        self, measurement: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        if not measurement:
+            return None
+
+        return {
+            "label": measurement.get("measurement_type"),
+            "value": measurement.get("value"),
+            "unit": measurement.get("unit"),
+            "normal_min": measurement.get("normal_min"),
+            "normal_max": measurement.get("normal_max"),
+            "confidence_score": measurement.get("confidence_score"),
+        }
+
+    def _collect_segment_lean_measurements(
+        self, measurements: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Return lean measurements for body segments (arms, legs, trunk)"""
+
+        segment_entries: List[Dict[str, Any]] = []
+        segment_keywords = ["arm", "leg", "trunk", "segment"]
+
+        for measurement in measurements:
+            label = (measurement.get("measurement_type") or "").lower()
+            if not label:
+                continue
+            if "lean" not in label:
+                continue
+            if not any(keyword in label for keyword in segment_keywords):
+                continue
+
+            summary = self._format_measurement_summary(measurement)
+            if summary:
+                segment_entries.append(summary)
+
+        return segment_entries
+
+    def _extract_segmental_lean_from_text(
+        self, ai_response_text: str
+    ) -> List[Dict[str, Any]]:
+        """Parse AI response text for segmental lean analysis values"""
+
+        segment_entries: List[Dict[str, Any]] = []
+        seen_keys = set()
+
+        patterns = [
+            re.compile(
+                r"\b(?P<side>right|left|r|l)\s*(?P<bodypart>arm|leg)\b[^0-9]{0,20}(?P<value>[\d.]+)\s*(?P<unit>kg|lbs?|kilograms?|pounds?)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"\b(?P<bodypart>trunk|torso|core|whole\s*body)\b[^0-9]{0,20}(?P<value>[\d.]+)\s*(?P<unit>kg|lbs?|kilograms?|pounds?)",
+                re.IGNORECASE,
+            ),
+        ]
+
+        for pattern in patterns:
+            for match in pattern.finditer(ai_response_text):
+                side = match.groupdict().get("side")
+                bodypart = match.groupdict().get("bodypart")
+                value = match.group("value")
+                unit = match.group("unit") or "kg"
+
+                label = self._format_segment_label(side, bodypart)
+                if not label:
+                    continue
+                key = self._build_segment_metric_key(label)
+
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+
+                try:
+                    value_number = float(value)
+                except (TypeError, ValueError):
+                    continue
+
+                segment_entries.append(
+                    {
+                        "label": label,
+                        "value": value_number,
+                        "unit": unit,
+                        "key": key,
+                    }
+                )
+
+        return segment_entries
+
+    def _format_segment_label(
+        self, side: Optional[str], bodypart: Optional[str]
+    ) -> Optional[str]:
+        """Build human readable label for segmental lean measurements"""
+
+        if not bodypart:
+            return None
+
+        normalized_side = None
+        if side:
+            side_lower = side.lower()
+            if side_lower in ["r", "right"]:
+                normalized_side = "Right"
+            elif side_lower in ["l", "left"]:
+                normalized_side = "Left"
+
+        bodypart_lower = bodypart.lower()
+        bodypart_map = {
+            "arm": "Arm",
+            "leg": "Leg",
+            "trunk": "Trunk",
+            "torso": "Trunk",
+            "core": "Trunk",
+            "wholebody": "Whole Body",
+        }
+        bodypart_key = bodypart_lower.replace(" ", "")
+        resolved_part = bodypart_map.get(bodypart_key, None)
+        if not resolved_part:
+            return None
+
+        parts = []
+        if normalized_side:
+            parts.append(normalized_side)
+        parts.append(resolved_part)
+        parts.append("Lean Mass")
+        return " ".join(parts)
+
+    def _build_segment_metric_key(self, label: str) -> str:
+        """Create a normalized key for storing segmental lean measurements"""
+
+        slug = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+        return f"segment_{slug}"
+
     def _is_value_abnormal(
         self, value: float, normal_min: float, normal_max: float
     ) -> bool:
@@ -669,8 +914,10 @@ class WeightLossAgentService:
             "body_fat_percentage": "body_fat_percent",
             "body_fat": "body_fat_percent",
             "muscle_mass": "muscle_mass_kg",
+            "skeletal_muscle_mass": "muscle_mass_kg",
             "body_water": "body_water_percent",
             "visceral_fat": "visceral_fat_level",
+            "visceral_fat_level": "visceral_fat_level",
             "basal_metabolic_rate": "bmr_kcal",
             "target_weight": "target_weight_kg",
         }
@@ -1230,8 +1477,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 2. Target Weight (if visible on the report)
                 3. Body Fat Percentage and Skeletal Muscle Mass
                 4. Body Water and Protein percentages
-                5. Visceral Fat Level and Basal Metabolic Rate
-                6. Any other visible measurements
+                5. Segmental Lean Analysis (Right/Left Arm, Trunk, Right/Left Leg) with lean mass values
+                6. Visceral Fat Level and Basal Metabolic Rate
+                7. Any other visible measurements
 
                 **Analysis Required:**
                 1. Overall Health Score (0-100)
@@ -1300,7 +1548,7 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
                 # Body Fat Percentage extraction
                 body_fat_match = re.search(
-                    r"body fat[:\s]+([\d.]+)\s*%",
+                    r"(?:body\s+fat(?:\s+percentage)?|pbf)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*%",
                     ai_response_text,
                     re.IGNORECASE,
                 )
@@ -1311,12 +1559,12 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
                 # Skeletal Muscle Mass extraction
                 muscle_match = re.search(
-                    r"(?:skeletal\s+)?muscle mass[:\s]+([\d.]+)\s*(kg|lbs?|kilograms?|pounds?)",
+                    r"(?:skeletal\s+muscle(?:\s+mass)?|muscle\s+mass|smm)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|lbs?|kilograms?|pounds?)",
                     ai_response_text,
                     re.IGNORECASE,
                 )
                 if muscle_match:
-                    extracted_metrics["muscle_mass"] = (
+                    extracted_metrics["skeletal_muscle_mass"] = (
                         f"{muscle_match.group(1)} {muscle_match.group(2)}"
                     )
 
@@ -1333,16 +1581,16 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
                 # Visceral Fat Level extraction
                 visceral_match = re.search(
-                    r"visceral fat[:\s]+([\d.]+)",
+                    r"visceral\s+fat(?:\s+level)?(?:\s*\(.*?\))?[:\-\s]+([\d.]+)",
                     ai_response_text,
                     re.IGNORECASE,
                 )
                 if visceral_match:
-                    extracted_metrics["visceral_fat"] = visceral_match.group(1)
+                    extracted_metrics["visceral_fat_level"] = visceral_match.group(1)
 
                 # Basal Metabolic Rate extraction
                 bmr_match = re.search(
-                    r"(?:basal metabolic rate|bmr)[:\s]+([\d.]+)\s*(kcal|calories?)",
+                    r"(?:basal\s+metabolic\s+rate|bmr)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kcal|calories?)?",
                     ai_response_text,
                     re.IGNORECASE,
                 )
@@ -1350,6 +1598,22 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                     extracted_metrics["basal_metabolic_rate"] = (
                         f"{bmr_match.group(1)} {bmr_match.group(2) if bmr_match.group(2) else 'kcal'}"
                     )
+
+                segmental_metrics = self._extract_segmental_lean_from_text(
+                    ai_response_text
+                )
+                if segmental_metrics:
+                    extracted_metrics["segment_lean_analysis"] = [
+                        {
+                            "label": entry["label"],
+                            "value": entry["value"],
+                            "unit": entry["unit"],
+                        }
+                        for entry in segmental_metrics
+                    ]
+                    for entry in segmental_metrics:
+                        key = entry["key"]
+                        extracted_metrics[key] = f"{entry['value']} {entry['unit']}"
 
                 # Calculate confidence score based on extracted metrics
                 metric_count = len(extracted_metrics)
@@ -1506,10 +1770,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
             try:
                 from lib.schemas.weight_loss_agent import InbodyReportCreate
 
-                # Create report data from analysis result (excluding ai_summary for now due to migration issue)
+                # Create report data from analysis result
                 report_data = InbodyReportCreate(
                     report_date=datetime.now(),
-                    ai_summary=None,  # Temporarily set to None until migration is run
+                    ai_summary=analysis_result.ai_analysis.get("summary"),
                     original_filename=analysis_result.file_name,
                     file_size=analysis_result.metadata.get("file_size", 0),
                     content_type=analysis_result.metadata.get(
@@ -1540,10 +1804,61 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                 # Create measurement documents
                 measurements = []
                 measurements_created = 0
-                for metric_name, metric_value_str in extracted_metrics.items():
+
+                # Persist segmental lean measurements separately so they can be surfaced in highlights
+                segmental_entries = (
+                    extracted_metrics.get("segment_lean_analysis") or []
+                )
+                for entry in segmental_entries:
                     try:
+                        label = entry.get("label")
+                        value = entry.get("value")
+                        if label is None or value is None:
+                            continue
+
+                        value_number = float(value)
+                        unit = entry.get("unit") or "kg"
+
+                        measurements.append(
+                            {
+                                "measurement_type": label,
+                                "value": value_number,
+                                "unit": unit,
+                                "confidence_score": confidence_score,
+                            }
+                        )
+                        measurements_created += 1
+                        print(
+                            f"  - Created segmental lean measurement: {label} = {value_number} {unit}"
+                        )
+                    except (TypeError, ValueError) as segment_error:
+                        print(
+                            f"  - Failed to create segmental lean measurement: {str(segment_error)}"
+                        )
+
+                metric_label_overrides = {
+                    "skeletal_muscle_mass": "Skeletal Muscle Mass",
+                    "muscle_mass": "Skeletal Muscle Mass",
+                    "body_fat_percentage": "Body Fat Percentage",
+                    "percentage_body_fat": "Body Fat Percentage",
+                    "body_fat": "Body Fat Percentage",
+                    "visceral_fat_level": "Visceral Fat Level",
+                    "visceral_fat": "Visceral Fat Level",
+                    "basal_metabolic_rate": "Basal Metabolic Rate",
+                    "bmr": "Basal Metabolic Rate",
+                }
+
+                for metric_name, metric_value in extracted_metrics.items():
+                    try:
+                        if (
+                            isinstance(metric_value, (list, dict))
+                            or metric_name == "segment_lean_analysis"
+                            or metric_name.startswith("segment_")
+                        ):
+                            continue
+
                         # Parse the value and unit
-                        import re
+                        metric_value_str = str(metric_value)
 
                         value_match = re.search(
                             r"([\d.]+)", str(metric_value_str)
@@ -1578,9 +1893,10 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
 
                             # Create measurement document
                             measurement = {
-                                "measurement_type": metric_name.replace(
-                                    "_", " "
-                                ).title(),
+                                "measurement_type": metric_label_overrides.get(
+                                    metric_name,
+                                    metric_name.replace("_", " ").title(),
+                                ),
                                 "value": value,
                                 "unit": unit,
                                 "confidence_score": confidence_score,
@@ -1718,6 +2034,9 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
                         "$set": {
                             "measurements": measurements,
                             "health_indicators": health_indicators,
+                            "ai_summary": analysis_result.ai_analysis.get(
+                                "summary"
+                            ),
                             "processed": True,  # Mark report as processed
                             "measurements_count": measurements_created,
                             "abnormal_indicators_count": indicators_created,

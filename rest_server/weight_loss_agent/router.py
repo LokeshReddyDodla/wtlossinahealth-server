@@ -15,6 +15,7 @@ from lib.schemas.weight_loss_agent import (
     InbodyReport,
     InbodyReportAnalysisResult,
     InbodyReportCreate,
+    InbodyReportDetail,
     InbodyReportUpload,
     WeightLossAgentAnalysisResponse,
     WeightLossEnrollment,
@@ -105,6 +106,41 @@ async def enroll_patient(
             status="success",
             message="Patient enrolled successfully in weight loss program",
             data=enrollment,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
+
+
+@router.get(
+    "/enrollment/{enrollment_id}/analyze",
+    response_model=SuccessResponse[WeightLossAgentAnalysisResponse],
+    summary="Analyze weight loss progress (GET)",
+    description="Generate AI-powered analysis of weight loss progress",
+)
+async def analyze_weight_loss_progress_get(
+    enrollment_id: UUID,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
+    # TODO: Uncomment for production - care provider auth required
+    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+):
+    """Generate AI analysis of weight loss progress (GET variant)"""
+
+    try:
+        from datetime import datetime
+
+        start = datetime.fromisoformat(start_date) if start_date else None
+        end = datetime.fromisoformat(end_date) if end_date else None
+
+        analysis = await weight_loss_service.analyze_weight_loss_progress(enrollment_id, start, end)
+
+        return SuccessResponse(
+            status="success",
+            message="Analysis generated successfully",
+            data=analysis,
         )
     except HTTPException as e:
         raise e
@@ -224,6 +260,42 @@ async def upload_and_analyze_inbody_report(
             status="success",
             message="Inbody report analyzed and stored successfully. The report has been processed by AI and saved to the database. Note: AI summary will be available after database migration.",
             data=analysis_result,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
+
+
+@router.get(
+    "/enrollment/{enrollment_id}/inbody-report",
+    response_model=SuccessResponse[InbodyReportDetail],
+    summary="Get latest inbody report",
+    description="Retrieve the most recent inbody report for an enrollment, including highlighted measurements like skeletal muscle mass, body fat %, segmental lean analysis, visceral fat level, and basal metabolic rate.",
+)
+async def get_latest_inbody_report(
+    enrollment_id: UUID,
+    weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
+    # TODO: Uncomment for production - care provider auth required
+    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+):
+    """Get the most recent inbody report along with highlighted measurements"""
+
+    try:
+        report_with_details = await weight_loss_service.get_latest_inbody_report_with_details(
+            enrollment_id
+        )
+
+        if not report_with_details:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Inbody report not found"
+            )
+
+        return SuccessResponse(
+            status="success",
+            message="Inbody report retrieved successfully",
+            data=report_with_details,
         )
     except HTTPException as e:
         raise e
