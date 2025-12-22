@@ -5,6 +5,7 @@ from typing import Any, List, Optional
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
+from lib.core.mongo_store import MongoStore
 from lib.core.qdrant_store import QdrantStore
 from lib.core.types import DocumentTypeLiteral
 
@@ -25,7 +26,7 @@ class PatientDocumentService:
         qdrant_store: QdrantStore,
         file_content_extractor_service: FileContentExtractorService,
         patient_profile_service: PatientProfileService,
-        patient_document_collection: Any,
+        patient_document_collection: MongoStore,
     ):
         self.qdrant_store = qdrant_store
         self.patient_profile_service = patient_profile_service
