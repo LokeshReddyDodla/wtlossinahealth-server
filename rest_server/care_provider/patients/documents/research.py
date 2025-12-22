@@ -1,7 +1,9 @@
 from fastapi import Depends, HTTPException, status
 
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import get_patient_document_service
+from lib.dependencies.service_dependencies import (
+    get_patient_document_research_service,
+)
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient_document_research import (
     PatientDocumentResearchChatRequest,
@@ -9,7 +11,9 @@ from lib.schemas.patient_document_research import (
     PatientDocumentResearchSummaryRequest,
     PatientDocumentResearchSummaryResponse,
 )
-from lib.services.patient_document_service import PatientDocumentService
+from lib.services.patient_document_research_service import (
+    PatientDocumentResearchService,
+)
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -31,8 +35,8 @@ from .router import router
 async def summarize_patient_documents_for_research(
     patient_id: str,
     request: PatientDocumentResearchSummaryRequest,
-    patient_document_service: PatientDocumentService = Depends(
-        get_patient_document_service
+    patient_document_research_service: PatientDocumentResearchService = Depends(
+        get_patient_document_research_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -41,7 +45,7 @@ async def summarize_patient_documents_for_research(
     ),
 ):
     try:
-        result = await patient_document_service.generate_research_summary(
+        result = await patient_document_research_service.generate_research_summary(
             patient_id=patient_id,
             care_provider_id=str(current_care_provider.care_provider_id),
             request=request,
@@ -70,8 +74,8 @@ async def summarize_patient_documents_for_research(
 async def chat_about_patient_documents(
     patient_id: str,
     request: PatientDocumentResearchChatRequest,
-    patient_document_service: PatientDocumentService = Depends(
-        get_patient_document_service
+    patient_document_research_service: PatientDocumentResearchService = Depends(
+        get_patient_document_research_service
     ),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
@@ -80,7 +84,7 @@ async def chat_about_patient_documents(
     ),
 ):
     try:
-        result = await patient_document_service.chat_about_documents(
+        result = await patient_document_research_service.chat_about_documents(
             patient_id=patient_id,
             care_provider_id=str(current_care_provider.care_provider_id),
             request=request,

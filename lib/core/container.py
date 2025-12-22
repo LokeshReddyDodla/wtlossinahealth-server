@@ -72,6 +72,9 @@ from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
 from lib.services.patient_document_service import PatientDocumentService
+from lib.services.patient_document_research_service import (
+    PatientDocumentResearchService,
+)
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -443,6 +446,16 @@ container.register(
             FileContentExtractorService,
             container.resolve(FileContentExtractorService),
         ),
+        patient_document_collection=cast(
+            MongoStore, container.resolve("patient_documents")
+        ),
+    ),
+)
+
+# 🔹 Patient Document Research Service
+container.register(
+    PatientDocumentResearchService,
+    lambda: PatientDocumentResearchService(
         patient_document_collection=cast(
             MongoStore, container.resolve("patient_documents")
         ),
