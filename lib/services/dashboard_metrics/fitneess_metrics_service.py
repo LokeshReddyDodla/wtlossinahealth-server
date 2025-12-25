@@ -24,9 +24,9 @@ class FitnessMetricsService:
 
     async def get_patients_by_step_threshold(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         steps_op: str = "lt",
         steps_value: int = 1000,
         start: Optional[datetime] = None,
@@ -73,7 +73,7 @@ class FitnessMetricsService:
                     reports=reports,
                     health_facility_id=health_facility_id,
                     care_provider_id=care_provider_id,
-                    is_admin=is_admin,
+                    is_facility_admin=is_facility_admin,
                     postgres_session=session,
                     extract_patient_id=lambda r: r["patient_id"],
                     enrich_payload=lambda report, patient: {
