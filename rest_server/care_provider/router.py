@@ -20,7 +20,6 @@ from .patients.connected_apps.router import (
 from .patients.summaries.router import router as patients_summaries_router
 
 from .profile.router import router as profile_router
-from .dashboard_metrics.router import router as dashboard_metrics_router
 
 router = APIRouter(prefix="/care-providers", tags=["Care Providers"])
 
@@ -40,6 +39,5 @@ router.include_router(patients_prescriptions_router)
 router.include_router(patients_connected_apps_router)
 router.include_router(patients_summaries_router)
 
-router.include_router(dashboard_metrics_router)
 
 from .auth import *

@@ -42,9 +42,9 @@ def build_condition(column, threshold, op: Optional[str]):
 class MealMetricsService:
     async def get_meal_uploads_grouped_by_date(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         with_photos_only: bool = False,
@@ -59,21 +59,12 @@ class MealMetricsService:
                     PatientMealModel.patient_id == PatientModel.patient_id,
                 )
 
-                if is_admin:
-                    stmt = stmt.where(
-                        PatientModel.health_facility_id == health_facility_id
-                    )
-                else:
-                    stmt = stmt.where(
-                        PatientMealModel.patient_id.in_(
-                            select(
-                                patient_care_provider_association.c.patient_id
-                            ).where(
-                                patient_care_provider_association.c.care_provider_id
-                                == care_provider_id
-                            )
-                        )
-                    )
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(PatientMealModel.uploaded_at >= start)
@@ -103,9 +94,9 @@ class MealMetricsService:
 
     async def get_macro_filtered_major_meals(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         protein_threshold: Optional[float] = None,
@@ -151,21 +142,12 @@ class MealMetricsService:
                     .limit(limit)
                 )
 
-                if is_admin:
-                    stmt = stmt.where(
-                        PatientModel.health_facility_id == health_facility_id
-                    )
-                else:
-                    stmt = stmt.where(
-                        PatientMealModel.patient_id.in_(
-                            select(
-                                patient_care_provider_association.c.patient_id
-                            ).where(
-                                patient_care_provider_association.c.care_provider_id
-                                == care_provider_id
-                            )
-                        )
-                    )
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(PatientMealModel.uploaded_at >= start)
@@ -203,3 +185,29 @@ class MealMetricsService:
                 message="Failed to fetch macro filtered meals",
                 detail=str(e),
             )
+
+    def _apply_patient_scope_filters(
+        stmt,
+        *,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
+    ):
+        if health_facility_id and is_facility_admin:
+            return stmt.where(
+                PatientModel.health_facility_id == health_facility_id
+            )
+
+        if care_provider_id:
+            stmt = stmt.where(
+                PatientMealModel.patient_id.in_(
+                    select(
+                        patient_care_provider_association.c.patient_id
+                    ).where(
+                        patient_care_provider_association.c.care_provider_id
+                        == care_provider_id
+                    )
+                )
+            )
+
+        return stmt
