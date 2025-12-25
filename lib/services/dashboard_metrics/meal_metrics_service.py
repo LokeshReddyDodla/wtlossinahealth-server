@@ -187,6 +187,7 @@ class MealMetricsService:
             )
 
     def _apply_patient_scope_filters(
+        self,
         stmt,
         *,
         health_facility_id: Optional[str] = None,
