@@ -84,7 +84,7 @@ async def list_health_facility_care_providers(
                 message="No health facility associated with the care provider.",
             )
 
-        care_providers = await care_provider_profile_service.fetch_care_providers_in_health_facility(
+        care_providers = await care_provider_profile_service.fetch_care_providers(
             health_facility_id=str(current_care_provider.health_facility_id)
         )
 
