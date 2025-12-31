@@ -28,8 +28,8 @@ class Actor:
 def get_current_actor(
     *,
     allowed_roles: list[ProfileTypeEnum],
-    care_provider_feature: CareProviderFeature | None = None,
-    care_provider_action: CareProviderPermissionAction | None = None,
+    care_provider_feature: Optional[CareProviderFeature] = None,
+    care_provider_action: Optional[CareProviderPermissionAction] = None,
     check_permissions: bool = True,
     log_activity: bool = True,
 ):
