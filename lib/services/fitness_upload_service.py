@@ -42,9 +42,9 @@ class FitnessUploadService:
         )
 
         await self.delete_existing_data(
-            patient_id, start_datetime, end_datetime
+            patient_id, start_datetime, end_datetime, postgres_session=postgres_session
         )
-        await self.insert_new_data(patient_id, fitness_data)
+        await self.insert_new_data(patient_id, fitness_data, postgres_session=postgres_session)
         await self.update_last_sync(patient_id, end_datetime)
 
         # Commit the session to save all changes
