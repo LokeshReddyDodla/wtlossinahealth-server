@@ -134,21 +134,32 @@ class PackageService:
             )
 
     @with_postgres_session
-    async def fetch_packages_in_health_facility(
-        self, health_facility_id: str, *, postgres_session: AsyncSession
+    async def fetch_packages(
+        self,
+        health_facility_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
     ) -> List[PackageModel]:
         try:
-            stmt = (
-                select(PackageModel)
-                .where(PackageModel.health_facility_id == health_facility_id)
-                .options(
-                    selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patient_assignments).options(
-                        joinedload(PatientPackageAssignmentModel.package),
-                        joinedload(PatientPackageAssignmentModel.patient),
-                    ),
-                )
+            stmt = select(PackageModel).options(
+                selectinload(PackageModel.health_facility),
+                selectinload(PackageModel.care_providers),
+                selectinload(PackageModel.patient_assignments).options(
+                    joinedload(PatientPackageAssignmentModel.package),
+                    joinedload(PatientPackageAssignmentModel.patient),
+                ),
             )
+
+            if health_facility_id:
+                stmt = stmt.where(PackageModel.health_facility_id == health_facility_id)
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
 
             packages = (await postgres_session.execute(stmt)).scalars().all()
             return list(packages)
