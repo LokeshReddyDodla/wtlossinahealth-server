@@ -123,7 +123,7 @@ async def list_health_facility_packages(
             )
 
         # Fetch packages in the same health facility
-        packages = await package_service.fetch_packages_in_health_facility(
+        packages = await package_service.fetch_packages(
             health_facility_id=str(current_care_provider.health_facility_id)
         )
 
