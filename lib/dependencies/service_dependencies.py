@@ -39,6 +39,12 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 from lib.services.dashboard_metrics.patient_metrics_service import (
     PatientMetricsService,
 )
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
+)
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
@@ -468,6 +474,19 @@ def get_cgm_metrics_service() -> CGMMetricsService:
 def get_fitness_metrics_service() -> FitnessMetricsService:
     return cast(
         FitnessMetricsService, container.resolve(FitnessMetricsService)
+    )
+
+
+def get_health_facility_metrics_service() -> HealthFacilityMetricsService:
+    return cast(
+        HealthFacilityMetricsService,
+        container.resolve(HealthFacilityMetricsService),
+    )
+
+
+def get_package_metrics_service() -> PackageMetricsService:
+    return cast(
+        PackageMetricsService, container.resolve(PackageMetricsService)
     )
 
 
