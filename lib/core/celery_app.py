@@ -74,6 +74,13 @@ celery.conf.update(
                 "expires": 60 * 60 * 2,  # 2 hours expiration
             },
         },
+        "update-package-assignment-statuses": {
+            "task": "lib.tasks.package_assignment_tasks.update_package_assignment_statuses",
+            "schedule": crontab(hour="1", minute="0"),  # 1:00 AM IST daily
+            "options": {
+                "expires": 60 * 60,  # 1 hour expiration
+            },
+        },
     },
 )
 
@@ -89,3 +96,4 @@ from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
 from lib.tasks.weightloss_agent.agentic_orchestrator import *
 from lib.tasks.patient_summary_tasks import *
+from lib.tasks.package_assignment_tasks import *
