@@ -53,6 +53,12 @@ from lib.services.dashboard_metrics.patient_metrics_service import (
 from lib.services.dashboard_metrics.smbg_metrics_service import (
     SMBGMetricsService,
 )
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
+)
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
@@ -1068,6 +1074,18 @@ container.register(
             "fitness_report_collection"
         )
     ),
+)
+
+# 🔹 Health Facility Metrics Service
+container.register(
+    HealthFacilityMetricsService,
+    lambda: HealthFacilityMetricsService(),
+)
+
+# 🔹 Package Metrics Service
+container.register(
+    PackageMetricsService,
+    lambda: PackageMetricsService(),
 )
 
 

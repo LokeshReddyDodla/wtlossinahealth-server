@@ -11,7 +11,9 @@ from lib.models.admin import Admin
 from lib.dependencies.service_dependencies import (
     get_cgm_metrics_service,
     get_fitness_metrics_service,
+    get_health_facility_metrics_service,
     get_meal_metrics_service,
+    get_package_metrics_service,
     get_patient_metrics_service,
     get_smbg_metrics_service,
 )
@@ -33,6 +35,12 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 )
 from lib.services.dashboard_metrics.patient_metrics_service import (
     PatientMetricsService,
+)
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
 )
 from lib.services.package_service import PackageService
 from lib.utils.care_provider_permissions import (
@@ -559,5 +567,83 @@ async def get_patients_with_high_gv(
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Unexpected error fetching patients with high glucose variability",
+            detail=str(e),
+        )
+
+
+@router.get("/health-facilities/onboarded/grouped", response_model=SuccessResponse)
+async def get_health_facilities_onboarded_grouped(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    health_facility_metrics_service: HealthFacilityMetricsService = Depends(
+        get_health_facility_metrics_service
+    ),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.ADMIN,
+            ],
+        )
+    ),
+):
+    try:
+        grouped = await health_facility_metrics_service.get_health_facilities_onboarded_grouped_by_date(
+            start=start,
+            end=end,
+        )
+
+        return SuccessResponse(
+            message="Health facilities onboarded grouped by date",
+            data=grouped,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/packages/created/grouped", response_model=SuccessResponse)
+async def get_packages_created_grouped(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    package_metrics_service: PackageMetricsService = Depends(
+        get_package_metrics_service
+    ),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        health_facility_id, care_provider_id, is_facility_admin = (
+            resolve_patient_scope(current_actor.model)
+        )
+
+        grouped = await package_metrics_service.get_packages_created_grouped_by_date(
+            health_facility_id=health_facility_id,
+            start=start,
+            end=end,
+        )
+
+        return SuccessResponse(
+            message="Packages created grouped by date",
+            data=grouped,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
             detail=str(e),
         )
