@@ -292,20 +292,31 @@ class CareProviderProfileService:
             )
 
     @with_postgres_session
-    async def fetch_care_providers_in_health_facility(
-        self, health_facility_id: str, *, postgres_session: AsyncSession
+    async def fetch_care_providers(
+        self,
+        health_facility_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
     ) -> List[CareProviderModel]:
         try:
-            stmt = (
-                select(CareProviderModel)
-                .where(
+            stmt = select(CareProviderModel).options(
+                selectinload(CareProviderModel.health_facility),
+                selectinload(CareProviderModel.patients),
+                selectinload(CareProviderModel.packages),
+            )
+
+            if health_facility_id:
+                stmt = stmt.where(
                     CareProviderModel.health_facility_id == health_facility_id
                 )
-                .options(
-                    selectinload(CareProviderModel.patients),
-                    selectinload(CareProviderModel.packages),
-                )
-            )
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
 
             result = await postgres_session.execute(stmt)
             care_providers = result.scalars().all()
