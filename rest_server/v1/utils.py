@@ -65,3 +65,22 @@ def get_effective_health_facility_id(
     # Care provider - always use their own health facility
     return health_facility_id
 
+
+def get_effective_care_provider_id(
+    current_actor: Actor,
+) -> Optional[str]:
+    _, care_provider_id, is_admin = resolve_actor_scope(
+        current_actor, require_health_facility=False
+    )
+    
+    if current_actor.role == ProfileTypeEnum.ADMIN:
+        # Global admin sees all patients
+        return None
+    
+    if is_admin:
+        # Facility admin sees all patients in their facility
+        return None
+    
+    # Regular care provider - only see their own patients
+    return care_provider_id
+

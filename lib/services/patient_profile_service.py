@@ -195,6 +195,51 @@ class PatientProfileService:
             )
 
     @with_postgres_session
+    async def fetch_patients(
+        self,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
+    ) -> List[PatientModel]:
+        try:
+            stmt = select(PatientModel).options(
+                selectinload(PatientModel.health_facility),
+                selectinload(PatientModel.care_providers),
+                selectinload(PatientModel.package_assignments).options(
+                    selectinload(PatientPackageAssignmentModel.package)
+                ),
+            )
+
+            if care_provider_id:
+                stmt = stmt.join(PatientModel.care_providers).where(
+                    CareProviderModel.care_provider_id == care_provider_id
+                )
+
+            if health_facility_id:
+                stmt = stmt.where(PatientModel.health_facility_id == health_facility_id)
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
+
+            result = await postgres_session.execute(stmt)
+            patients = result.scalars().all()
+
+            return list(patients)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
     async def fetch_patient_profiles(
         self,
         patient_ids: List[str],
