@@ -44,6 +44,7 @@ async def sync_permissions(
         )
         patient.permissions.health_permission = permissions.health_permission
         patient.permissions.camera_permission = permissions.camera_permission
+        patient.permissions.gallery_permission = permissions.gallery_permission
         patient.permissions.storage_permission = permissions.storage_permission
 
         await session.commit()

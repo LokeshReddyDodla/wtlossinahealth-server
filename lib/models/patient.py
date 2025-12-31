@@ -262,6 +262,7 @@ def create_related_records(mapper, connection, target):
             "notification_permission": False,
             "health_permission": False,
             "camera_permission": False,
+            "gallery_permission": False,
             "storage_permission": False,
         },
     )

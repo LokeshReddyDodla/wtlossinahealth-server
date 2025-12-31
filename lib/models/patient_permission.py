@@ -16,6 +16,7 @@ class PatientPermission(Base):
     notification_permission = Column(Boolean, default=False)
     health_permission = Column(Boolean, default=False)
     camera_permission = Column(Boolean, default=False)
+    gallery_permission = Column(Boolean, default=False)
     storage_permission = Column(Boolean, default=False)
     last_sync_time = Column(
         DateTime,

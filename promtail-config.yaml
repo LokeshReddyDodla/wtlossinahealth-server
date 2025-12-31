@@ -11,16 +11,45 @@ clients:
     batchsize: 102400
 
 scrape_configs:
-  - job_name: api_files
-    static_configs:
-      - targets: [localhost]
-        labels:
-          job: 'api_logs'
-          component: 'backend'
-          default_label: 'api' # Added default label
-          __path__: /var/log/api/*.log # Ensure this is correct
-    pipeline_stages:
-      - regex:
-          expression: '^(?P<timestamp>\S+) (?P<level>\w+) (?P<message>.*)'
-      - labels:
-          level:
+  - job_name: docker-logs
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+
+    relabel_configs:
+      # Filter for aihealth-server project (FIXED!)
+      - source_labels:
+          [__meta_docker_container_label_com_docker_compose_project]
+        regex: aihealth-server
+        action: keep
+
+      # Container name
+      - source_labels: [__meta_docker_container_name]
+        target_label: container
+        regex: "/(.*)"
+        replacement: "${1}"
+
+      # Use Compose service as job label
+      - source_labels:
+          [__meta_docker_container_label_com_docker_compose_service]
+        target_label: job
+        replacement: "${1}"
+
+      # Fallback for job label
+      - target_label: job
+        replacement: "unknown"
+
+      # Required instance label
+      - target_label: instance
+        replacement: "aihealth-server"
+
+      # Set log path
+      - source_labels: [__meta_docker_container_log_path]
+      
+        target_label: __path__
+
+      # Drop all the temporary Docker meta labels
+      - action: labeldrop
+        regex: "__meta_docker.*"
+      - action: labeldrop
+        regex: "__.*"
