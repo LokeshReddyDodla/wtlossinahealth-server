@@ -68,7 +68,7 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
-from lib.services.qdrant_search_engine.clarifier_agent import ClarifierAgent
+# from lib.services.qdrant_search_engine.clarifier_agent import ClarifierAgent
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -118,83 +118,83 @@ async def test_api(request: Request):
         return {"message": "failed to insert", "error": str(e)}
 
 
-@router.get("/active-patients", tags=["Test"])
-async def get_active_patients(
-    days: int = Query(default=3, ge=0, description="Number of days to look back for activity"),
-    active_patient_service: ActivePatientService = Depends(
-        get_active_patient_service
-    ),
-):
-    """
-    Test endpoint to fetch active patients from the last N days.
-    """
-    try:
-        patient_ids = await active_patient_service.get_active_patients(days=days)
-        return {
-            "message": f"Found {len(patient_ids)} active patients in the last {days} days",
-            "days": days,
-            "count": len(patient_ids),
-            "patient_ids": patient_ids,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Failed to fetch active patients",
-            detail=str(e),
-        )
+# @router.get("/active-patients", tags=["Test"])
+# async def get_active_patients(
+#     days: int = Query(default=3, ge=0, description="Number of days to look back for activity"),
+#     active_patient_service: ActivePatientService = Depends(
+#         get_active_patient_service
+#     ),
+# ):
+#     """
+#     Test endpoint to fetch active patients from the last N days.
+#     """
+#     try:
+#         patient_ids = await active_patient_service.get_active_patients(days=days)
+#         return {
+#             "message": f"Found {len(patient_ids)} active patients in the last {days} days",
+#             "days": days,
+#             "count": len(patient_ids),
+#             "patient_ids": patient_ids,
+#         }
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Failed to fetch active patients",
+#             detail=str(e),
+#         )
 
 
-@router.post("/patient-summary/{patient_id}", tags=["Test"])
-async def generate_patient_summary(
-    patient_id: str,
-    date: date,
-    include_document: bool = True,
-    patient_summary_service: PatientSummaryService = Depends(
-        get_patient_summary_service
-    ),
-):
-    """
-    Trigger generate_daily_summary for a patient for a specific date and optionally
-    return the stored document.
-    """
-    try:
+# @router.post("/patient-summary/{patient_id}", tags=["Test"])
+# async def generate_patient_summary(
+#     patient_id: str,
+#     date: date,
+#     include_document: bool = True,
+#     patient_summary_service: PatientSummaryService = Depends(
+#         get_patient_summary_service
+#     ),
+# ):
+#     """
+#     Trigger generate_daily_summary for a patient for a specific date and optionally
+#     return the stored document.
+#     """
+#     try:
         
-        start_dt = datetime.combine(
-            date, datetime.min.time(), tzinfo=timezone.utc
-        )
-        end_dt = datetime.combine(
-            date, datetime.max.time(), tzinfo=timezone.utc
-        )
+#         start_dt = datetime.combine(
+#             date, datetime.min.time(), tzinfo=timezone.utc
+#         )
+#         end_dt = datetime.combine(
+#             date, datetime.max.time(), tzinfo=timezone.utc
+#         )
 
-        await patient_summary_service.generate_daily_summary(
-            patient_id, date
-        )
+#         await patient_summary_service.generate_daily_summary(
+#             patient_id, date
+#         )
 
-        doc = None
-        if include_document:
-            doc = await patient_summary_service.patient_summary_collection.find_one(
-                {
-                    "patient_id": patient_id,
-                    "start_date": start_dt,
-                    "end_date": end_dt,
-                }
-            )
+#         doc = None
+#         if include_document:
+#             doc = await patient_summary_service.patient_summary_collection.find_one(
+#                 {
+#                     "patient_id": patient_id,
+#                     "start_date": start_dt,
+#                     "end_date": end_dt,
+#                 }
+#             )
 
-        return {
-            "message": "summary generated",
-            "period": {"start": start_dt, "end": end_dt},
-            "data": jsonable_encoder(doc, custom_encoder={ObjectId: str}),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Failed to generate patient summary",
-            detail=str(e),
-        )
+#         return {
+#             "message": "summary generated",
+#             "period": {"start": start_dt, "end": end_dt},
+#             "data": jsonable_encoder(doc, custom_encoder={ObjectId: str}),
+#         }
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Failed to generate patient summary",
+#             detail=str(e),
+#         )
 
 
 # @router.post("/extract")
@@ -984,24 +984,24 @@ async def generate_patient_summary(
 #         )
 
 
-@router.post("/ai/agent")
-async def test_clarifier_agent(
-    human_input: str = Query(...),
-    session: AsyncSession = Depends(get_postgres_session),
-):
-    try:
-        clarifier = ClarifierAgent()
-        final_instruction = await clarifier.ask_until_clear(
-            human_input,
-        )
+# @router.post("/ai/agent")
+# async def test_clarifier_agent(
+#     human_input: str = Query(...),
+#     session: AsyncSession = Depends(get_postgres_session),
+# ):
+#     try:
+#         clarifier = ClarifierAgent()
+#         final_instruction = await clarifier.ask_until_clear(
+#             human_input,
+#         )
 
-        return SuccessResponse(message="Voila", data=final_instruction)
-    except HTTPException:
-        raise
-    except Exception as e:
-        await session.rollback()
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
-            detail=str(e),
-        )
+#         return SuccessResponse(message="Voila", data=final_instruction)
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await session.rollback()
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Internal Server Error",
+#             detail=str(e),
+#         )
