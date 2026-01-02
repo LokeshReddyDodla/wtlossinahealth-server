@@ -50,6 +50,10 @@ async def list_health_facilities(
             offset=offset,
         )
 
+        total = await health_facility_service.count_health_facilities(
+            health_facility_id=effective_health_facility_id,
+        )
+
         response_data = []
         for hf in health_facilities:
             health_facility_dict = HealthFacilitySchema.from_orm(hf).model_dump()
@@ -78,8 +82,12 @@ async def list_health_facilities(
             response_data.append(health_facility_dict)
 
         return SuccessResponse(
+            version="v1",
             message="Health facilities fetched successfully.",
-            data=response_data,
+            data={
+                "total": total,
+                "items": response_data,
+            },
         )
     except HTTPException as e:
         raise e

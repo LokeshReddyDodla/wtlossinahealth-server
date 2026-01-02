@@ -33,6 +33,7 @@ class CareProviderUpdate(CareProviderBase):
 
 
 class CareProvider(CareProviderBase):
+    full_name: Optional[str]
     code: str
     care_provider_id: UUID
     status: CareProviderStatus = Field(default=CareProviderStatus.PENDING_VERIFICATION)

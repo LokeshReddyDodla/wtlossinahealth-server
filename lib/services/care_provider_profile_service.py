@@ -5,7 +5,7 @@ import string
 from typing import Dict, List, Optional, Set
 
 from fastapi import status
-from sqlalchemy import and_, exists, or_
+from sqlalchemy import and_, distinct, exists, func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -322,6 +322,33 @@ class CareProviderProfileService:
             care_providers = result.scalars().all()
 
             return list(care_providers)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def count_care_providers(
+        self,
+        health_facility_id: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        try:
+            stmt = select(func.count(distinct(CareProviderModel.care_provider_id)))
+
+            if health_facility_id:
+                stmt = stmt.where(
+                    CareProviderModel.health_facility_id == health_facility_id
+                )
+
+            result = await postgres_session.execute(stmt)
+            count = result.scalar() or 0
+
+            return count
 
         except SQLAlchemyError as e:
             raise_http_exception(

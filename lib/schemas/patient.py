@@ -55,6 +55,7 @@ class PatientUpdate(PatientBase):
 
 class Patient(PatientBase):
     patient_id: UUID
+    full_name: Optional[str]
     age: Optional[float]
     profile_completion: Optional[dict]
     created_at: Optional[datetime]

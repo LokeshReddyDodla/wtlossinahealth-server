@@ -48,6 +48,10 @@ async def list_packages(
             offset=offset,
         )
 
+        total = await package_service.count_packages(
+            health_facility_id=effective_health_facility_id,
+        )
+
         response_data = []
         for pkg in packages:
             package_dict = PackageSchema.from_orm(pkg).model_dump()
@@ -76,8 +80,12 @@ async def list_packages(
             response_data.append(package_dict)
 
         return SuccessResponse(
+            version="v1",
             message="Packages fetched successfully.",
-            data=response_data,
+            data={
+                "total": total,
+                "items": response_data,
+            },
         )
     except HTTPException as e:
         raise e
