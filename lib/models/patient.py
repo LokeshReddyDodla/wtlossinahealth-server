@@ -244,6 +244,20 @@ class Patient(Base):
             "year", func.age(func.current_date(), cls.dob)
         ).cast(Integer)
 
+    @hybrid_property
+    def full_name(self):  # type: ignore
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return None
+
+    @full_name.expression
+    def full_name(cls):
+        return func.concat(cls.first_name, " ", cls.last_name)
+
 
 @listens_for(Patient, "after_insert")
 def create_related_records(mapper, connection, target):
