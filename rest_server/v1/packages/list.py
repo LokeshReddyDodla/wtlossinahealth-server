@@ -1,15 +1,17 @@
-from typing import Optional
+import asyncio
+from typing import List, Literal, Optional
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, status as fastapi_status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_package_service
+from lib.dependencies.service_dependencies import get_package_query_service
+from lib.queries.package_query import PackageQuery
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.schemas.patient import Patient as PatientSchema
 from lib.schemas.package import Package as PackageSchema
-from lib.services.package_service import PackageService
+from lib.services.package_query_service import PackageQueryService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -25,7 +27,14 @@ from .router import router
 async def list_packages(
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    package_service: PackageService = Depends(get_package_service),
+    search: Optional[str] = Query(None, description="Search term"),
+    status: Optional[List[str]] = Query(None, description="Filter by status"),
+    type: Optional[List[str]] = Query(None, description="Filter by package type"),
+    order_by: Optional[Literal["name", "duration_days", "price", "created_at"]] = Query(
+        "created_at", description="Order by field"
+    ),
+    order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
+    query_service: PackageQueryService = Depends(get_package_query_service),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
@@ -42,14 +51,21 @@ async def list_packages(
             current_actor=current_actor,
         )
 
-        packages = await package_service.fetch_packages(
-            health_facility_id=effective_health_facility_id,
+        query = PackageQuery(
             limit=limit,
             offset=offset,
+            search=search,
+            status=status,
+            type=type,
+            health_facility_id=effective_health_facility_id,
+            order_by=order_by,
+            order=order,
         )
 
-        total = await package_service.count_packages(
-            health_facility_id=effective_health_facility_id,
+        # Fetch packages and total count in parallel
+        packages, total = await asyncio.gather(
+            query_service.fetch(query),
+            query_service.count(query),
         )
 
         response_data = []
@@ -91,7 +107,7 @@ async def list_packages(
         raise e
     except Exception as e:
         raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Internal Server Error",
             detail=str(e),
         )

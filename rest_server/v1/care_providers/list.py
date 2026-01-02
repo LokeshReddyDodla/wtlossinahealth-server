@@ -1,14 +1,16 @@
-from typing import Optional
+import asyncio
+from typing import List, Literal, Optional
 
 from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_care_provider_profile_service
+from lib.dependencies.service_dependencies import get_care_provider_query_service
+from lib.queries.care_provider_query import CareProviderQuery
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.schemas.patient import Patient as PatientSchema
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -24,9 +26,13 @@ from .router import router
 async def list_care_providers(
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    search: Optional[str] = Query(None, description="Search term"),
+    role: Optional[List[str]] = Query(None, description="Filter by role"),
+    order_by: Optional[Literal["name", "role", "created_at", "is_verified"]] = Query(
+        "created_at", description="Order by field"
     ),
+    order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
+    query_service: CareProviderQueryService = Depends(get_care_provider_query_service),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
@@ -43,14 +49,20 @@ async def list_care_providers(
             current_actor=current_actor,
         )
 
-        care_providers = await care_provider_service.fetch_care_providers(
-            health_facility_id=effective_health_facility_id,
+        query = CareProviderQuery(
             limit=limit,
             offset=offset,
+            search=search,
+            role=role,
+            health_facility_id=effective_health_facility_id,
+            order_by=order_by,
+            order=order,
         )
 
-        total = await care_provider_service.count_care_providers(
-            health_facility_id=effective_health_facility_id,
+        # Fetch care providers and total count in parallel
+        care_providers, total = await asyncio.gather(
+            query_service.fetch(query),
+            query_service.count(query),
         )
 
         response_data = []

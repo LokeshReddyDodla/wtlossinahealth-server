@@ -96,6 +96,8 @@ from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.services.patient_query_service import PatientQueryService
 from lib.services.patient_enrichment_service import PatientEnrichmentService
+from lib.services.care_provider_query_service import CareProviderQueryService
+from lib.services.package_query_service import PackageQueryService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
@@ -139,6 +141,20 @@ def get_patient_enrichment_service() -> PatientEnrichmentService:
     return cast(
         PatientEnrichmentService,
         container.resolve(PatientEnrichmentService),
+    )
+
+
+def get_care_provider_query_service() -> CareProviderQueryService:
+    return cast(
+        CareProviderQueryService,
+        container.resolve(CareProviderQueryService),
+    )
+
+
+def get_package_query_service() -> PackageQueryService:
+    return cast(
+        PackageQueryService,
+        container.resolve(PackageQueryService),
     )
 
 
