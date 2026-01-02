@@ -1,18 +1,17 @@
-import asyncio
-from typing import Optional
+from typing import List, Literal, Optional
 
 from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_cgm_report_service, get_patient_profile_service, get_user_device_service
-from lib.schemas.care_provider import CareProvider as CareProviderSchema
-from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
-from lib.schemas.package import Package as PackageSchema
+from lib.dependencies.service_dependencies import (
+    get_patient_enrichment_service,
+    get_patient_query_service,
+)
+from lib.queries.patient_query import PatientQuery
 from lib.schemas.patient import Patient as PatientSchema
-from lib.services.cgm_report_service import CGMReportService
-from lib.services.patient_profile_service import PatientProfileService
-from lib.services.user_device_service import UserDeviceService
+from lib.services.patient_enrichment_service import PatientEnrichmentService
+from lib.services.patient_query_service import PatientQueryService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -20,8 +19,8 @@ from lib.utils.care_provider_permissions import (
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 from rest_server.v1.utils import (
-    get_effective_health_facility_id,
     get_effective_care_provider_id,
+    get_effective_health_facility_id,
 )
 
 from .router import router
@@ -29,11 +28,23 @@ from .router import router
 
 @router.get("", response_model=SuccessResponse)
 async def list_patients(
+    mode: Literal["list", "dashboard"] = Query("list"),
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    patient_service: PatientProfileService = Depends(get_patient_profile_service),
-    user_device_service: UserDeviceService = Depends(get_user_device_service),
-    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
+    search: Optional[str] = Query(None, description="Search term"),
+    age: Optional[List[str]] = Query(None, description="Age filter"),
+    gender: Optional[List[str]] = Query(None, description="Gender filter"),
+    monitoring_method: Optional[List[str]] = Query(
+        None, description="Monitoring method filter"
+    ),
+    package: Optional[List[str]] = Query(None, description="Package filter"),
+    connected_apps: Optional[List[str]] = Query(
+        None, description="Connected apps filter"
+    ),
+    query_service: PatientQueryService = Depends(get_patient_query_service),
+    enrichment_service: PatientEnrichmentService = Depends(
+        get_patient_enrichment_service
+    ),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
@@ -46,86 +57,50 @@ async def list_patients(
     ),
 ):
     try:
-        effective_health_facility_id = get_effective_health_facility_id(
-            current_actor=current_actor,
-        )
-        effective_care_provider_id = get_effective_care_provider_id(
-            current_actor=current_actor,
-        )
+        hf_id = get_effective_health_facility_id(current_actor)
+        cp_id = get_effective_care_provider_id(current_actor)
 
-        patients = await patient_service.fetch_patients(
-            health_facility_id=effective_health_facility_id,
-            care_provider_id=effective_care_provider_id,
+        query = PatientQuery(
+            mode=mode,
             limit=limit,
             offset=offset,
+            search=search,
+            age=age,
+            gender=gender,
+            package=package,
+            connected_apps=connected_apps,
+            monitoring_method=monitoring_method,
+            health_facility_id=hf_id,
+            care_provider_id=cp_id,
+            role=current_actor.profile_type.value,
+            include_cgm=mode == "dashboard",
+            include_last_active=mode == "dashboard",
         )
 
-        total = await patient_service.count_patients(
-            health_facility_id=effective_health_facility_id,
-            care_provider_id=effective_care_provider_id,
+        patients = await query_service.fetch(query)
+
+        enrichment = await enrichment_service.enrich(
+            patients,
+            include_cgm=query.include_cgm,
+            include_last_active=query.include_last_active,
         )
 
-        user_ids = [str(p.patient_id) for p in patients]
-        
-        # Fetch data in parallel: last active map and CGM reports batch
-        last_active_map, cgm_reports_map = await asyncio.gather(
-            user_device_service.get_last_active_map(
-                user_ids=user_ids,
-                profile_type=ProfileTypeEnum.PATIENT.value,
-            ),
-            cgm_report_service.fetch_reports_batch(user_ids),
-        )
-
-        response_data = []
-        for patient in patients:
-            patient_id_str = str(patient.patient_id)
-            patient_dict = PatientSchema.from_orm(patient).model_dump()
-            
-            # Add health facility if available
-            if patient.health_facility:
-                patient_dict["health_facility"] = HealthFacilitySchema.from_orm(
-                    patient.health_facility
-                ).model_dump()
-            
-            # Add care providers if available
-            if patient.care_providers:
-                patient_dict["care_providers"] = [
-                    CareProviderSchema.from_orm(cp).model_dump()
-                    for cp in patient.care_providers
-                ]
-            
-            # Add packages from package_assignments if available
-            if patient.package_assignments:
-                patient_dict["packages"] = [
-                    {
-                        "package": PackageSchema.from_orm(assignment.package).model_dump()
-                        if assignment.package else None,
-                        "assignment_id": str(assignment.assignment_id),
-                        "start_date": assignment.start_date,
-                        "end_date": assignment.end_date,
-                        "status": assignment.status,
-                    }
-                    for assignment in patient.package_assignments
-                    if assignment.package
-                ]
-                
-            # Add CGM reports from batch fetch
-            cgm_reports = cgm_reports_map.get(patient_id_str, [])
-            patient_dict["reports"] = {"cgm": cgm_reports}
-            
-            # Add last active at
-            patient_dict["last_active_at"] = last_active_map.get(patient_id_str)
-
-            response_data.append(patient_dict)
+        items = []
+        for p in patients:
+            pid = str(p.patient_id)
+            item = PatientSchema.from_orm(p).model_dump()
+            item["reports"] = {"cgm": enrichment["cgm"].get(pid, [])}
+            item["last_active_at"] = enrichment["last_active"].get(pid)
+            items.append(item)
 
         return SuccessResponse(
-            version="v1",
-            message="Patients fetched successfully.",
+            message="Patients fetched successfully",
             data={
-                "total": total,
-                "items": response_data,
+                "total": len(items),
+                "items": items,
             },
         )
+
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -134,4 +109,3 @@ async def list_patients(
             message="Internal Server Error",
             detail=str(e),
         )
-

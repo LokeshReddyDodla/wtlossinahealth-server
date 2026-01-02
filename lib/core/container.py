@@ -94,6 +94,8 @@ from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
+from lib.services.patient_query_service import PatientQueryService
+from lib.services.patient_enrichment_service import PatientEnrichmentService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -684,6 +686,27 @@ container.register(
     UserDeviceService,
     lambda: UserDeviceService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Patient Query Service
+container.register(
+    PatientQueryService,
+    lambda: PatientQueryService(),
+)
+
+# 🔹 Patient Enrichment Service
+container.register(
+    PatientEnrichmentService,
+    lambda: PatientEnrichmentService(
+        cgm_service=cast(
+            CGMReportService,
+            container.resolve(CGMReportService),
+        ),
+        user_device_service=cast(
+            UserDeviceService,
+            container.resolve(UserDeviceService),
+        ),
     ),
 )
 
