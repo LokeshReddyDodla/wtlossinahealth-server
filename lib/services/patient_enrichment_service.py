@@ -1,3 +1,4 @@
+from typing import Dict
 from lib.services.cgm_report_service import CGMReportService
 from lib.services.user_device_service import UserDeviceService
 from lib.models.patient import Patient as PatientModel
@@ -18,19 +19,22 @@ class PatientEnrichmentService:
         patients: list[PatientModel],
         include_cgm: bool,
         include_last_active: bool,
-    ):
+    ) -> dict[str, list[Dict]]:
         user_ids = [str(p.patient_id) for p in patients]
 
-        cgm_map = {}
-        last_active_map = {}
+        enrichment = {
+            "cgm": {},
+            "last_active": {},
+        }
 
         if include_cgm:
-            cgm_map = await self.cgm_service.fetch_reports_batch(user_ids)
+            enrichment["cgm"] = await self.cgm_service.fetch_reports_batch(user_ids)
+
 
         if include_last_active:
-            last_active_map = await self.user_device_service.get_last_active_map(
+            enrichment["last_active"] = await self.user_device_service.get_last_active_map(
                 user_ids,
                 profile_type=ProfileTypeEnum.PATIENT.value,
             )
 
-        return cgm_map, last_active_map
+        return enrichment

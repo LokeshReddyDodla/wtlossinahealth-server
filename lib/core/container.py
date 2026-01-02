@@ -692,7 +692,9 @@ container.register(
 # 🔹 Patient Query Service
 container.register(
     PatientQueryService,
-    lambda: PatientQueryService(),
+    lambda: PatientQueryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
 )
 
 # 🔹 Patient Enrichment Service

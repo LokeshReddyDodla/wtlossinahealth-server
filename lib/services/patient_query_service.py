@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 from dateutil.relativedelta import relativedelta
+from lib.core.postgres_store import PostgresStore
 from lib.utils.postgres_session_decorator import with_postgres_session
 from sqlalchemy import asc, desc, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
 
 from lib.core.constants import ProfileTypeEnum
-from lib.dependencies.database import get_async_postgres_session
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_connected_app import PatientConnectedApp
@@ -45,6 +45,9 @@ class PatientQueryService:
         "sinocare": PatientConnectedApp.sinocare,
     }
 
+    def __init__(self, postgres_store: PostgresStore):
+        self.postgres_store = postgres_store
+
     @with_postgres_session
     async def fetch(
         self,
@@ -54,6 +57,29 @@ class PatientQueryService:
     ) -> list[PatientModel]:
         """Fetch patients based on query parameters."""
         stmt = self._build_base_query()
+        stmt = self._apply_all_filters(stmt, query)
+        stmt = self._apply_ordering(stmt, query)
+        stmt = self._apply_pagination(stmt, query)
+
+        result = await postgres_session.execute(stmt)
+        return list(result.scalars().all())
+
+    @with_postgres_session
+    async def count(
+        self,
+        query: PatientQuery,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        """Count patients matching query filters (without pagination)."""
+        stmt = select(func.count(func.distinct(PatientModel.patient_id)))
+        stmt = self._apply_all_filters(stmt, query)
+
+        result = await postgres_session.execute(stmt)
+        return result.scalar() or 0
+
+    def _apply_all_filters(self, stmt: Select, query: PatientQuery) -> Select:
+        """Apply all filters to the query statement."""
         stmt = self._apply_scope_filters(stmt, query)
         stmt = self._apply_search_filter(stmt, query)
         stmt = self._apply_gender_filter(stmt, query)
@@ -61,11 +87,7 @@ class PatientQueryService:
         stmt = self._apply_monitoring_method_filter(stmt, query)
         stmt = self._apply_package_filter(stmt, query)
         stmt = self._apply_connected_apps_filter(stmt, query)
-        stmt = self._apply_ordering(stmt, query)
-        stmt = self._apply_pagination(stmt, query)
-
-        result = await postgres_session.execute(stmt)
-        return list(result.scalars().all())
+        return stmt
 
     def _build_base_query(self) -> Select:
         """Build base query with eager loading."""
@@ -77,11 +99,9 @@ class PatientQueryService:
             ),
         )
 
-    def _apply_scope_filters(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
-        """Apply role-based scope filters (admin vs care_provider)."""
-        if query.role == "admin" and query.health_facility_id:
+    def _apply_scope_filters(self, stmt: Select, query: PatientQuery) -> Select:
+        """Apply scope filters (health_facility vs care_provider)."""
+        if query.health_facility_id:
             stmt = stmt.where(
                 PatientModel.health_facility_id == query.health_facility_id
             )
@@ -91,9 +111,7 @@ class PatientQueryService:
             )
         return stmt
 
-    def _apply_search_filter(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_search_filter(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply search filter across name, email, and phone."""
         if not query.search:
             return stmt
@@ -108,9 +126,7 @@ class PatientQueryService:
             )
         )
 
-    def _apply_gender_filter(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_gender_filter(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply gender filter."""
         if query.gender:
             stmt = stmt.where(PatientModel.gender.in_(query.gender))
@@ -142,9 +158,7 @@ class PatientQueryService:
                 # Range case (e.g., "18-25")
                 cutoff_max = today - relativedelta(years=min_years)
                 cutoff_min = today - relativedelta(years=max_years)
-                age_conditions.append(
-                    PatientModel.dob.between(cutoff_min, cutoff_max)
-                )
+                age_conditions.append(PatientModel.dob.between(cutoff_min, cutoff_max))
 
         if age_conditions:
             stmt = stmt.where(or_(*age_conditions))
@@ -161,9 +175,7 @@ class PatientQueryService:
         for method in query.monitoring_method:
             if method == "smbg":
                 conditions.append(
-                    exists().where(
-                        PatientSMBG.patient_id == PatientModel.patient_id
-                    )
+                    exists().where(PatientSMBG.patient_id == PatientModel.patient_id)
                 )
             # CGM filtering typically done post-query via MongoDB reports
 
@@ -171,9 +183,7 @@ class PatientQueryService:
             stmt = stmt.where(or_(*conditions))
         return stmt
 
-    def _apply_package_filter(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_package_filter(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply package assignment filters."""
         if not query.package:
             return stmt
@@ -192,9 +202,7 @@ class PatientQueryService:
             stmt = stmt.where(or_(*conditions))
         return stmt
 
-    def _apply_connected_apps_filter(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_connected_apps_filter(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply connected apps filter (libreview, sinocare)."""
         if not query.connected_apps:
             return stmt
@@ -204,9 +212,7 @@ class PatientQueryService:
 
         for app in query.connected_apps:
             if app in self.CONNECTED_APP_FIELDS:
-                conditions.append(
-                    self.CONNECTED_APP_FIELDS[app].isnot(None)
-                )
+                conditions.append(self.CONNECTED_APP_FIELDS[app].isnot(None))
 
         if conditions:
             stmt = stmt.where(or_(*conditions))
@@ -217,20 +223,14 @@ class PatientQueryService:
         return (
             select(
                 UserDeviceModel.user_id,
-                func.max(UserDeviceModel.last_active_at).label(
-                    "max_last_active_at"
-                ),
+                func.max(UserDeviceModel.last_active_at).label("max_last_active_at"),
             )
-            .where(
-                UserDeviceModel.profile_type == ProfileTypeEnum.PATIENT.value
-            )
+            .where(UserDeviceModel.profile_type == ProfileTypeEnum.PATIENT.value)
             .group_by(UserDeviceModel.user_id)
             .subquery()
         )
 
-    def _apply_ordering(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_ordering(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply ordering to the query."""
         order_by = query.order_by or "last_active_at"
         is_desc = query.order and query.order.lower() == "desc"
@@ -248,9 +248,7 @@ class PatientQueryService:
 
         return stmt
 
-    def _apply_last_active_ordering(
-        self, stmt: Select, is_desc: bool
-    ) -> Select:
+    def _apply_last_active_ordering(self, stmt: Select, is_desc: bool) -> Select:
         """Apply ordering by last_active_at with subquery join."""
         last_active_subquery = self._build_last_active_subquery()
 
@@ -272,9 +270,7 @@ class PatientQueryService:
 
         return stmt
 
-    def _apply_pagination(
-        self, stmt: Select, query: PatientQuery
-    ) -> Select:
+    def _apply_pagination(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply pagination (offset and limit)."""
         if query.offset:
             stmt = stmt.offset(query.offset)

@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Literal, Optional
 
 from fastapi import Depends, HTTPException, Query, status
@@ -72,12 +73,15 @@ async def list_patients(
             monitoring_method=monitoring_method,
             health_facility_id=hf_id,
             care_provider_id=cp_id,
-            role=current_actor.profile_type.value,
             include_cgm=mode == "dashboard",
             include_last_active=mode == "dashboard",
         )
 
-        patients = await query_service.fetch(query)
+        # Fetch patients and total count in parallel
+        patients, total = await asyncio.gather(
+            query_service.fetch(query),
+            query_service.count(query),
+        )
 
         enrichment = await enrichment_service.enrich(
             patients,
@@ -96,7 +100,7 @@ async def list_patients(
         return SuccessResponse(
             message="Patients fetched successfully",
             data={
-                "total": len(items),
+                "total": total,
                 "items": items,
             },
         )
