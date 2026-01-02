@@ -85,7 +85,6 @@ class CareProviderQueryService:
                 | CareProviderModel.last_name.ilike(f"%{query.search}%")
                 | CareProviderModel.email.ilike(f"%{query.search}%")
                 | CareProviderModel.phone_number.ilike(f"%{query.search}%")
-                | CareProviderModel.role.ilike(f"%{query.search}%")
                 | CareProviderModel.code.ilike(f"%{query.search}%")
             )
         return stmt
