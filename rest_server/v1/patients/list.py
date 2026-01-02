@@ -10,6 +10,9 @@ from lib.dependencies.service_dependencies import (
     get_patient_query_service,
 )
 from lib.queries.patient_query import PatientQuery
+from lib.schemas.care_provider import CareProvider as CareProviderSchema
+from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
+from lib.schemas.package import Package as PackageSchema
 from lib.schemas.patient import Patient as PatientSchema
 from lib.services.patient_enrichment_service import PatientEnrichmentService
 from lib.services.patient_query_service import PatientQueryService
@@ -105,6 +108,36 @@ async def list_patients(
         for p in patients:
             pid = str(p.patient_id)
             item = PatientSchema.from_orm(p).model_dump()
+            
+            # Add health facility if available
+            if p.health_facility:
+                item["health_facility"] = HealthFacilitySchema.from_orm(
+                    p.health_facility
+                ).model_dump()
+            
+            # Add care providers if available
+            if p.care_providers:
+                item["care_providers"] = [
+                    CareProviderSchema.from_orm(cp).model_dump()
+                    for cp in p.care_providers
+                ]
+            
+            # Add packages from package_assignments if available
+            if p.package_assignments:
+                item["packages"] = [
+                    {
+                        "package": PackageSchema.from_orm(assignment.package).model_dump()
+                        if assignment.package else None,
+                        "assignment_id": str(assignment.assignment_id),
+                        "start_date": assignment.start_date,
+                        "end_date": assignment.end_date,
+                        "status": assignment.status,
+                    }
+                    for assignment in p.package_assignments
+                    if assignment.package
+                ]
+            
+            # Add CGM reports from enrichment
             item["reports"] = {"cgm": enrichment["cgm"].get(pid, [])}
             item["last_active_at"] = enrichment["last_active"].get(pid)
             items.append(item)
