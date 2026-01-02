@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 from dateutil.relativedelta import relativedelta
+from lib.utils.postgres_session_decorator import with_postgres_session
 from sqlalchemy import asc, desc, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,7 +45,7 @@ class PatientQueryService:
         "sinocare": PatientConnectedApp.sinocare,
     }
 
-    @get_async_postgres_session
+    @with_postgres_session
     async def fetch(
         self,
         query: PatientQuery,
