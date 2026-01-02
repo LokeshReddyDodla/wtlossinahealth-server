@@ -28,9 +28,9 @@ async def list_care_providers(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     search: Optional[str] = Query(None, description="Search term"),
     role: Optional[List[str]] = Query(None, description="Filter by role"),
-    order_by: Optional[Literal["name", "role", "created_at", "is_verified"]] = Query(
-        "created_at", description="Order by field"
-    ),
+    order_by: Optional[
+        Literal["first_name", "last_name", "email", "role", "created_at", "is_verified"]
+    ] = Query("created_at", description="Order by field"),
     order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
     query_service: CareProviderQueryService = Depends(get_care_provider_query_service),
     current_actor: Actor = Depends(
@@ -68,28 +68,28 @@ async def list_care_providers(
         response_data = []
         for cp in care_providers:
             care_provider_dict = CareProviderSchema.from_orm(cp).model_dump()
-            
+
             # Add health facility if available
             if cp.health_facility:
                 care_provider_dict["health_facility"] = HealthFacilitySchema.from_orm(
                     cp.health_facility
                 ).model_dump()
-            
+
             # Add patients if available
             if cp.patients:
                 care_provider_dict["patients"] = [
                     PatientSchema.from_orm(patient).model_dump()
                     for patient in cp.patients
                 ]
-            
+
             # Add packages if available
             if cp.packages:
                 from lib.schemas.package import Package as PackageSchema
+
                 care_provider_dict["packages"] = [
-                    PackageSchema.from_orm(pkg).model_dump()
-                    for pkg in cp.packages
+                    PackageSchema.from_orm(pkg).model_dump() for pkg in cp.packages
                 ]
-            
+
             response_data.append(care_provider_dict)
 
         return SuccessResponse(
@@ -108,4 +108,3 @@ async def list_care_providers(
             message="Internal Server Error",
             detail=str(e),
         )
-
