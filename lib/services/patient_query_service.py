@@ -211,9 +211,10 @@ class PatientQueryService:
         conditions = []
 
         for app in query.connected_apps:
-            if app in self.CONNECTED_APP_FIELDS:
-                conditions.append(self.CONNECTED_APP_FIELDS[app].isnot(None))
-
+            field = self.CONNECTED_APP_FIELDS.get(app)
+            if field is not None:
+                conditions.append(field != None) # noqa: E711
+                
         if conditions:
             stmt = stmt.where(or_(*conditions))
         return stmt
