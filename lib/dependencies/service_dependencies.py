@@ -94,6 +94,8 @@ from lib.services.smbg_vector_service.smbg_vector_service import (
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
+from lib.services.patient_query_service import PatientQueryService
+from lib.services.patient_enrichment_service import PatientEnrichmentService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
@@ -127,6 +129,17 @@ def get_libreview_sync_queue() -> SQSService:
 
 def get_user_device_service() -> UserDeviceService:
     return cast(UserDeviceService, container.resolve(UserDeviceService))
+
+
+def get_patient_query_service() -> PatientQueryService:
+    return cast(PatientQueryService, container.resolve(PatientQueryService))
+
+
+def get_patient_enrichment_service() -> PatientEnrichmentService:
+    return cast(
+        PatientEnrichmentService,
+        container.resolve(PatientEnrichmentService),
+    )
 
 
 def get_chat_messaging_service() -> ChatMessagingService:
