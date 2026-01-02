@@ -4,12 +4,14 @@ from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_patient_profile_service
+from lib.dependencies.service_dependencies import get_cgm_report_service, get_patient_profile_service, get_user_device_service
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.schemas.package import Package as PackageSchema
 from lib.schemas.patient import Patient as PatientSchema
+from lib.services.cgm_report_service import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -29,6 +31,8 @@ async def list_patients(
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     patient_service: PatientProfileService = Depends(get_patient_profile_service),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
@@ -58,6 +62,12 @@ async def list_patients(
         total = await patient_service.count_patients(
             health_facility_id=effective_health_facility_id,
             care_provider_id=effective_care_provider_id,
+        )
+
+        user_ids = [str(p.patient_id) for p in patients]
+        last_active_map = await user_device_service.get_last_active_map(
+            user_ids=user_ids,
+            profile_type=ProfileTypeEnum.PATIENT.value,
         )
 
         response_data = []
@@ -91,7 +101,17 @@ async def list_patients(
                     for assignment in patient.package_assignments
                     if assignment.package
                 ]
+                
+            # Add CGM reports
+            cgm_reports = await cgm_report_service.fetch_reports(
+                str(patient.patient_id)
+            )
+            patient_dict["reports"] = {"cgm": cgm_reports}
             
+            # Add last active at
+            patient_dict["last_active_at"] = last_active_map.get(str(patient.patient_id))
+
+
             response_data.append(patient_dict)
 
         return SuccessResponse(
