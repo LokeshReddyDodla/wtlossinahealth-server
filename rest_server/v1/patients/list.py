@@ -29,7 +29,6 @@ from .router import router
 
 @router.get("", response_model=SuccessResponse)
 async def list_patients(
-    mode: Literal["list", "dashboard"] = Query("list"),
     limit: Optional[int] = Query(None, description="Limit number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     search: Optional[str] = Query(None, description="Search term"),
@@ -42,6 +41,18 @@ async def list_patients(
     connected_apps: Optional[List[str]] = Query(
         None, description="Connected apps filter"
     ),
+    order_by: Optional[
+        Literal[
+            "first_name",
+            "last_name",
+            "email",
+            "created_at",
+            "dob",
+            "age",
+            "last_active_at",
+        ]
+    ] = Query(None, description="Order by field"),
+    order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
     query_service: PatientQueryService = Depends(get_patient_query_service),
     enrichment_service: PatientEnrichmentService = Depends(
         get_patient_enrichment_service
@@ -62,7 +73,6 @@ async def list_patients(
         cp_id = get_effective_care_provider_id(current_actor)
 
         query = PatientQuery(
-            mode=mode,
             limit=limit,
             offset=offset,
             search=search,
@@ -73,8 +83,10 @@ async def list_patients(
             monitoring_method=monitoring_method,
             health_facility_id=hf_id,
             care_provider_id=cp_id,
-            include_cgm=mode == "dashboard",
-            include_last_active=mode == "dashboard",
+            include_cgm=True,
+            include_last_active=True,
+            order_by=order_by,
+            order=order,
         )
 
         # Fetch patients and total count in parallel
