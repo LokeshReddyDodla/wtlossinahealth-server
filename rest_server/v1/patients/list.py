@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Query, status
@@ -65,13 +66,19 @@ async def list_patients(
         )
 
         user_ids = [str(p.patient_id) for p in patients]
-        last_active_map = await user_device_service.get_last_active_map(
-            user_ids=user_ids,
-            profile_type=ProfileTypeEnum.PATIENT.value,
+        
+        # Fetch data in parallel: last active map and CGM reports batch
+        last_active_map, cgm_reports_map = await asyncio.gather(
+            user_device_service.get_last_active_map(
+                user_ids=user_ids,
+                profile_type=ProfileTypeEnum.PATIENT.value,
+            ),
+            cgm_report_service.fetch_reports_batch(user_ids),
         )
 
         response_data = []
         for patient in patients:
+            patient_id_str = str(patient.patient_id)
             patient_dict = PatientSchema.from_orm(patient).model_dump()
             
             # Add health facility if available
@@ -102,15 +109,12 @@ async def list_patients(
                     if assignment.package
                 ]
                 
-            # Add CGM reports
-            cgm_reports = await cgm_report_service.fetch_reports(
-                str(patient.patient_id)
-            )
+            # Add CGM reports from batch fetch
+            cgm_reports = cgm_reports_map.get(patient_id_str, [])
             patient_dict["reports"] = {"cgm": cgm_reports}
             
             # Add last active at
-            patient_dict["last_active_at"] = last_active_map.get(str(patient.patient_id))
-
+            patient_dict["last_active_at"] = last_active_map.get(patient_id_str)
 
             response_data.append(patient_dict)
 

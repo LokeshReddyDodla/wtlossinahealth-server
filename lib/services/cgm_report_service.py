@@ -68,6 +68,50 @@ class CGMReportService:
             )
             return []
 
+    async def fetch_reports_batch(self, patient_ids: List[str]) -> Dict[str, List[Dict]]:
+        try:
+            if not patient_ids:
+                return {}
+
+            reports_cursor = self.cgm_report_collection.find(
+                {
+                    "patient_id": {"$in": patient_ids},
+                    "report_type": CGMReportType.CUSTOM,
+                },
+                {
+                    "_id": 1,
+                    "patient_id": 1,
+                    "start_date": 1,
+                    "end_date": 1,
+                },
+            ).sort([("patient_id", 1), ("start_date", 1)])
+
+            reports = await reports_cursor.to_list(length=None)
+
+            # Group reports by patient_id
+            reports_by_patient: Dict[str, List[Dict]] = {}
+            for report in reports:
+                patient_id = report["patient_id"]
+                report["report_id"] = report.pop("_id")
+                
+                if patient_id not in reports_by_patient:
+                    reports_by_patient[patient_id] = []
+                reports_by_patient[patient_id].append(report)
+
+            # Ensure all patient_ids have an entry (even if empty)
+            for patient_id in patient_ids:
+                if patient_id not in reports_by_patient:
+                    reports_by_patient[patient_id] = []
+
+            return reports_by_patient
+
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch reports batch for {len(patient_ids)} patients. Error: {error}"
+            )
+            # Return empty dict for all patient_ids on error
+            return {patient_id: [] for patient_id in patient_ids}
+
     async def fetch_report(self, patient_id: str, report_id: str):
         try:
             pipeline = [
