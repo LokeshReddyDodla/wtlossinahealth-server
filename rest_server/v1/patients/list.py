@@ -52,7 +52,6 @@ async def list_patients(
             "last_name",
             "email",
             "created_at",
-            "dob",
             "age",
             "last_active_at",
         ]
@@ -132,7 +131,7 @@ async def list_patients(
                     ).model_dump()
                     for assignment in p.package_assignments
                 ]
-                
+
             # Add current package if available
             item["current_package"] = (
                 PatientPackageAssignmentWithDetailSchema.from_orm(p.current_package)
