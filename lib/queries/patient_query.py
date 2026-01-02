@@ -2,9 +2,6 @@ from typing import Optional, List, Literal
 from pydantic import BaseModel
 
 class PatientQuery(BaseModel):
-    # view / intent
-    mode: Literal["list", "dashboard"] = "list"
-
     # pagination
     limit: Optional[int] = None
     offset: int = 0
