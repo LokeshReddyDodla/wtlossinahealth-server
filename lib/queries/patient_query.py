@@ -19,7 +19,7 @@ class PatientQuery(BaseModel):
     connected_apps: Optional[List[str]] = None
 
     # sorting
-    order_by: Optional[Literal["first_name", "last_name", "email", "created_at", "dob", "age", "last_active_at"]] = "last_active_at"
+    order_by: Optional[Literal["first_name", "last_name", "email", "created_at", "age", "last_active_at"]] = "last_active_at"
     order: Literal["asc", "desc"] = "desc"
 
     # enrichment flags (API-driven)
