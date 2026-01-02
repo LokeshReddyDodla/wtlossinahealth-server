@@ -48,6 +48,7 @@ async def list_care_providers(
         effective_health_facility_id = get_effective_health_facility_id(
             current_actor=current_actor,
         )
+        print("🚀 ~ effective_health_facility_id:", effective_health_facility_id)
 
         query = CareProviderQuery(
             limit=limit,

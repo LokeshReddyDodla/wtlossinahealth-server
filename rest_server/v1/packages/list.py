@@ -18,7 +18,10 @@ from lib.utils.care_provider_permissions import (
 )
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
-from rest_server.v1.utils import get_effective_health_facility_id
+from rest_server.v1.utils import (
+    get_effective_care_provider_id,
+    get_effective_health_facility_id,
+)
 
 from .router import router
 
@@ -50,6 +53,9 @@ async def list_packages(
         effective_health_facility_id = get_effective_health_facility_id(
             current_actor=current_actor,
         )
+        effective_care_provider_id = get_effective_care_provider_id(
+            current_actor=current_actor,
+        )
 
         query = PackageQuery(
             limit=limit,
@@ -58,6 +64,7 @@ async def list_packages(
             status=status,
             type=type,
             health_facility_id=effective_health_facility_id,
+            care_provider_id=effective_care_provider_id,
             order_by=order_by,
             order=order,
         )

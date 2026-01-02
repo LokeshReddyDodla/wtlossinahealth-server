@@ -116,7 +116,7 @@ class PatientQueryService:
             stmt = stmt.where(
                 PatientModel.health_facility_id == query.health_facility_id
             )
-        elif query.care_provider_id:
+        if query.care_provider_id:
             stmt = stmt.join(PatientModel.care_providers).where(
                 CareProviderModel.care_provider_id == query.care_provider_id
             )

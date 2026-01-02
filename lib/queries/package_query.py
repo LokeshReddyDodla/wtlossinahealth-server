@@ -9,6 +9,7 @@ class PackageQuery(BaseModel):
 
     # scope (derived, not from client directly)
     health_facility_id: Optional[str] = None
+    care_provider_id: Optional[str] = None
 
     # filters (from query params)
     search: Optional[str] = None
