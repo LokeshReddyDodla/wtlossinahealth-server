@@ -87,8 +87,6 @@ async def list_patients(
             monitoring_method=monitoring_method,
             health_facility_id=hf_id,
             care_provider_id=cp_id,
-            include_cgm=True,
-            include_last_active=True,
             order_by=order_by,
             order=order,
         )
@@ -99,11 +97,7 @@ async def list_patients(
             query_service.count(query),
         )
 
-        enrichment = await enrichment_service.enrich(
-            patients,
-            include_cgm=query.include_cgm,
-            include_last_active=query.include_last_active,
-        )
+        enrichment = await enrichment_service.enrich(patients)
 
         items = []
         for p in patients:
