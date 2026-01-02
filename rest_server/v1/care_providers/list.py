@@ -49,6 +49,10 @@ async def list_care_providers(
             offset=offset,
         )
 
+        total = await care_provider_service.count_care_providers(
+            health_facility_id=effective_health_facility_id,
+        )
+
         response_data = []
         for cp in care_providers:
             care_provider_dict = CareProviderSchema.from_orm(cp).model_dump()
@@ -77,8 +81,12 @@ async def list_care_providers(
             response_data.append(care_provider_dict)
 
         return SuccessResponse(
+            version="v1",
             message="Care providers fetched successfully.",
-            data=response_data,
+            data={
+                "total": total,
+                "items": response_data,
+            },
         )
     except HTTPException as e:
         raise e

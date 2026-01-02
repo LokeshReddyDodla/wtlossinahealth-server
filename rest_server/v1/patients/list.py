@@ -55,6 +55,11 @@ async def list_patients(
             offset=offset,
         )
 
+        total = await patient_service.count_patients(
+            health_facility_id=effective_health_facility_id,
+            care_provider_id=effective_care_provider_id,
+        )
+
         response_data = []
         for patient in patients:
             patient_dict = PatientSchema.from_orm(patient).model_dump()
@@ -90,8 +95,12 @@ async def list_patients(
             response_data.append(patient_dict)
 
         return SuccessResponse(
+            version="v1",
             message="Patients fetched successfully.",
-            data=response_data,
+            data={
+                "total": total,
+                "items": response_data,
+            },
         )
     except HTTPException as e:
         raise e
