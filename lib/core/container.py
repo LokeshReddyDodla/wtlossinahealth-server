@@ -97,6 +97,7 @@ from lib.services.active_patient_service import ActivePatientService
 from lib.services.patient_query_service import PatientQueryService
 from lib.services.patient_enrichment_service import PatientEnrichmentService
 from lib.services.care_provider_query_service import CareProviderQueryService
+from lib.services.package_query_service import PackageQueryService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -717,6 +718,14 @@ container.register(
 container.register(
     CareProviderQueryService,
     lambda: CareProviderQueryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Package Query Service
+container.register(
+    PackageQueryService,
+    lambda: PackageQueryService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
