@@ -14,6 +14,6 @@ class CareProviderQuery(BaseModel):
     role: Optional[List[str]] = None
 
     # sorting
-    order_by: Optional[Literal["name", "role", "created_at", "is_verified"]] = "created_at"
+    order_by: Optional[Literal["first_name", "last_name", "email", "role", "created_at", "is_verified"]] = "created_at"
     order: Literal["asc", "desc"] = "desc"
 

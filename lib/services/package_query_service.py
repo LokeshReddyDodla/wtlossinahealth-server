@@ -1,6 +1,7 @@
-from typing import Dict, Optional
+from typing import Dict
 
 from lib.core.postgres_store import PostgresStore
+from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.package import Package as PackageModel, PackageStatus
 from lib.queries.package_query import PackageQuery
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -74,10 +75,14 @@ class PackageQueryService:
         return stmt
 
     def _apply_scope_filters(self, stmt: Select, query: PackageQuery) -> Select:
-        """Apply scope filters (health_facility)."""
+        """Apply scope filters (health_facility vs care_provider)."""
         if query.health_facility_id:
             stmt = stmt.where(
                 PackageModel.health_facility_id == query.health_facility_id
+            )
+        if query.care_provider_id:
+            stmt = stmt.join(PackageModel.care_providers).where(
+                CareProviderModel.care_provider_id == query.care_provider_id
             )
         return stmt
 
