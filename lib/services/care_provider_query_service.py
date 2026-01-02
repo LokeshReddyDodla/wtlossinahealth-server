@@ -101,15 +101,13 @@ class CareProviderQueryService:
         order_by = query.order_by or "created_at"
         is_desc = query.order and query.order.lower() == "desc"
 
+
         if order_by in self.ORDER_FIELDS:
             order_func = desc if is_desc else asc
-            field = self.ORDER_FIELDS[order_by]
-            stmt = stmt.order_by(order_func(field))
-        else:
-            # Fallback to default
-            stmt = stmt.order_by(desc(CareProviderModel.created_at))
+            stmt = stmt.order_by(order_func(self.ORDER_FIELDS[order_by]))
+        
 
-        return stmt
+        return stmt.order_by(desc(CareProviderModel.created_at))
 
     def _apply_pagination(
         self, stmt: Select, query: CareProviderQuery
