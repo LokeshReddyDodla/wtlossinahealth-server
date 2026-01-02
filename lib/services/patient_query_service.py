@@ -14,6 +14,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_package_assignment import (
+    AssignmentStatus,
     PatientPackageAssignment as PatientPackageAssignmentModel,
 )
 from lib.models.patient_smbg import PatientSMBG
@@ -81,6 +82,7 @@ class PatientQueryService:
     def _apply_all_filters(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply all filters to the query statement."""
         stmt = self._apply_scope_filters(stmt, query)
+        stmt = self._exclude_invalid_patients(stmt)
         stmt = self._apply_search_filter(stmt, query)
         stmt = self._apply_gender_filter(stmt, query)
         stmt = self._apply_age_filter(stmt, query)
@@ -118,6 +120,11 @@ class PatientQueryService:
             stmt = stmt.join(PatientModel.care_providers).where(
                 CareProviderModel.care_provider_id == query.care_provider_id
             )
+        return stmt
+
+    def _exclude_invalid_patients(self, stmt: Select) -> Select:
+        """Exclude patients with missing required fields (e.g., first_name is None)."""
+        stmt = stmt.where(PatientModel.first_name.isnot(None))
         return stmt
 
     def _apply_search_filter(self, stmt: Select, query: PatientQuery) -> Select:
@@ -193,19 +200,25 @@ class PatientQueryService:
         return stmt
 
     def _apply_package_filter(self, stmt: Select, query: PatientQuery) -> Select:
-        """Apply package assignment filters."""
+        """Apply package assignment filters based on current active package."""
         if not query.package:
             return stmt
 
-        package_exists = exists().where(
-            PatientPackageAssignmentModel.patient_id == PatientModel.patient_id
+        today = datetime.today().date()
+        
+        # Check for current active package
+        current_package_exists = exists().where(
+            PatientPackageAssignmentModel.patient_id == PatientModel.patient_id,
+            PatientPackageAssignmentModel.status == AssignmentStatus.ACTIVE,
+            PatientPackageAssignmentModel.start_date <= today,
+            PatientPackageAssignmentModel.end_date >= today,
         )
 
         conditions = []
         if "on-package" in query.package:
-            conditions.append(package_exists)
+            conditions.append(current_package_exists)
         if "no-package" in query.package:
-            conditions.append(~package_exists)
+            conditions.append(~current_package_exists)
 
         if conditions:
             stmt = stmt.where(or_(*conditions))
