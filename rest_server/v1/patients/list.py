@@ -75,8 +75,6 @@ async def list_patients(
     try:
         hf_id = get_effective_health_facility_id(current_actor)
         cp_id = get_effective_care_provider_id(current_actor)
-        print("🚀 ~ hf_id:", hf_id)
-        print("🚀 ~ cp_id:", cp_id)
 
         query = PatientQuery(
             limit=limit,
