@@ -23,18 +23,24 @@ class PatientPackageAssignmentBase(BaseModel):
 
     @model_validator(mode="before")
     def check_dates(cls, data):
+        if data is None:
+            return data
+
         if isinstance(data, dict):
-            if (
-                data.get("start_date") is not None
-                and data.get("end_date") is not None
-            ):
-                if data["end_date"] < data["start_date"]:
+            start_date = data.get("start_date")
+            end_date = data.get("end_date")
+            if start_date is not None and end_date is not None:
+                if end_date < start_date:
                     raise ValueError("end_date must be >= start_date")
         else:
-            if data.start_date is not None and data.end_date is not None:
-                if data.end_date < data.start_date:
+            start_date = getattr(data, "start_date", None)
+            end_date = getattr(data, "end_date", None)
+            if start_date is not None and end_date is not None:
+                if end_date < start_date:
                     raise ValueError("end_date must be >= start_date")
+
         return data
+
 
 
 class PatientPackageAssignmentCreate(PatientPackageAssignmentBase):
