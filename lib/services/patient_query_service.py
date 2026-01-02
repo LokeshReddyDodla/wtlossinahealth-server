@@ -91,12 +91,21 @@ class PatientQueryService:
 
     def _build_base_query(self) -> Select:
         """Build base query with eager loading."""
-        return select(PatientModel).options(
-            selectinload(PatientModel.health_facility),
-            selectinload(PatientModel.care_providers),
-            selectinload(PatientModel.package_assignments).selectinload(
-                PatientPackageAssignmentModel.package
-            ),
+        self._last_active_sq = self._build_last_active_subquery()
+
+        return (
+            select(PatientModel)
+            .outerjoin(
+                self._last_active_sq,
+                PatientModel.patient_id == self._last_active_sq.c.user_id,
+            )
+            .options(
+                selectinload(PatientModel.health_facility),
+                selectinload(PatientModel.care_providers),
+                selectinload(PatientModel.package_assignments).selectinload(
+                    PatientPackageAssignmentModel.package
+                ),
+            )
         )
 
     def _apply_scope_filters(self, stmt: Select, query: PatientQuery) -> Select:
@@ -213,8 +222,8 @@ class PatientQueryService:
         for app in query.connected_apps:
             field = self.CONNECTED_APP_FIELDS.get(app)
             if field is not None:
-                conditions.append(field != None) # noqa: E711
-                
+                conditions.append(field != None)  # noqa: E711
+
         if conditions:
             stmt = stmt.where(or_(*conditions))
         return stmt
@@ -223,12 +232,12 @@ class PatientQueryService:
         """Build subquery for last_active_at aggregation."""
         return (
             select(
-                UserDeviceModel.user_id,
-                func.max(UserDeviceModel.last_active_at).label("max_last_active_at"),
+                UserDeviceModel.user_id.label("user_id"),
+                func.max(UserDeviceModel.last_active_at).label("last_active_at"),
             )
             .where(UserDeviceModel.profile_type == ProfileTypeEnum.PATIENT.value)
             .group_by(UserDeviceModel.user_id)
-            .subquery()
+            .subquery(name="last_active")
         )
 
     def _apply_ordering(self, stmt: Select, query: PatientQuery) -> Select:
@@ -237,39 +246,20 @@ class PatientQueryService:
         is_desc = query.order and query.order.lower() == "desc"
 
         if order_by == "last_active_at":
-            return self._apply_last_active_ordering(stmt, is_desc)
+            col = self._last_active_sq.c.last_active_at
+
+            return stmt.order_by(
+                desc(col).nulls_last() if is_desc else asc(col).nulls_first(),
+                desc(PatientModel.created_at),
+            )
 
         # For other fields, use direct column ordering
         if order_by in self.ORDER_FIELDS:
             order_func = desc if is_desc else asc
             stmt = stmt.order_by(order_func(self.ORDER_FIELDS[order_by]))
-        else:
-            # Fallback to default
-            stmt = stmt.order_by(desc(PatientModel.created_at))
+        
 
-        return stmt
-
-    def _apply_last_active_ordering(self, stmt: Select, is_desc: bool) -> Select:
-        """Apply ordering by last_active_at with subquery join."""
-        last_active_subquery = self._build_last_active_subquery()
-
-        stmt = stmt.outerjoin(
-            last_active_subquery,
-            PatientModel.patient_id == last_active_subquery.c.user_id,
-        )
-
-        if is_desc:
-            stmt = stmt.order_by(
-                desc(last_active_subquery.c.max_last_active_at).nulls_last(),
-                desc(PatientModel.created_at),  # Secondary sort
-            )
-        else:
-            stmt = stmt.order_by(
-                asc(last_active_subquery.c.max_last_active_at).nulls_first(),
-                desc(PatientModel.created_at),  # Secondary sort
-            )
-
-        return stmt
+        return stmt.order_by(desc(PatientModel.created_at))
 
     def _apply_pagination(self, stmt: Select, query: PatientQuery) -> Select:
         """Apply pagination (offset and limit)."""
