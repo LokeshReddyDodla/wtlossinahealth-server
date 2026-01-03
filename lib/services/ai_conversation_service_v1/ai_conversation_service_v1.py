@@ -51,7 +51,7 @@ def log_time(label, start):
 
 class AIConversationServiceV1:
     MAX_MODEL_TOKENS = 400_000
-    SAFE_LIMIT = 8_000
+    SAFE_LIMIT = 64_000
     PATIENT_BATCH_SIZE = 10
 
     def __init__(
@@ -439,7 +439,7 @@ class AIConversationServiceV1:
         # -------------------- Model call --------------------
         invoke_start = time.monotonic()
         try:
-            ai_response = self.structured_model.invoke(messages)  # type: ignore
+            ai_response = await self.structured_model.ainvoke(messages)  # type: ignore
         except Exception as e:
             print(f"[ERROR] model invoke failed for batch {batch_ids}: {e}")
             log_time(f"batch {batch_ids} invoke_failed", invoke_start)
@@ -511,7 +511,7 @@ class AIConversationServiceV1:
             ),
         ]
 
-        summarized_ai_response = self.structured_model.invoke(input=messages)
+        summarized_ai_response = await self.structured_model.ainvoke(messages)  # type: ignore
 
         return summarized_ai_response
 

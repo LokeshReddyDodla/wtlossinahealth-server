@@ -58,10 +58,6 @@ def get_effective_health_facility_id(
         current_actor, require_health_facility=True
     )
 
-    print("🚀 ~ health_facility_id:", health_facility_id)
-    print("🚀 ~ is_admin:", is_admin)
-    print("🚀 ~ current_actor.role:", current_actor.role)
-
     if is_admin and current_actor.role == ProfileTypeEnum.ADMIN.value:
         # Admin sees all facilities
         return None
@@ -76,10 +72,6 @@ def get_effective_care_provider_id(
     _, care_provider_id, is_admin = resolve_actor_scope(
         current_actor, require_health_facility=False
     )
-
-    print("🚀 ~ care_provider_id:", care_provider_id)
-    print("🚀 ~ is_admin:", is_admin)
-    print("🚀 ~ current_actor.role:", current_actor.role)
     
     if current_actor.role == ProfileTypeEnum.ADMIN:
         # Global admin sees all patients
