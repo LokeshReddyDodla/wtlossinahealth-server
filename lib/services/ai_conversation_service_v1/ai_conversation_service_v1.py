@@ -93,6 +93,8 @@ class AIConversationServiceV1:
             self.chat_model = ChatOpenAI(
                 model=model,
                 temperature=1,
+                timeout=120.0,
+                max_retries=2,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
         elif model in GeminiAIModelLiteral.__args__:
@@ -100,6 +102,7 @@ class AIConversationServiceV1:
             self.chat_model = ChatGoogleGenerativeAI(
                 model=model,
                 temperature=1,
+                timeout=120.0,
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),
             )
         else:
@@ -409,32 +412,18 @@ class AIConversationServiceV1:
                 "reason": "empty_context",
             }
 
-        # -------------------- Serialize messages --------------------
-        serialize_start = time.monotonic()
+        # -------------------- Prepare messages --------------------
         messages = [
             self.system_message,
             SystemMessage(content=batch_context),
             HumanMessage(content=human_input),
         ]
-        try:
-            messages_json = json.dumps(
-                [m.__dict__ if hasattr(m, "__dict__") else m for m in messages]
-            )
-        except Exception as e:
-            print(f"[ERROR] serialization failed for batch {batch_ids}: {e}")
-            log_time(
-                f"batch {batch_ids} serialization_failed", serialize_start
-            )
-            return {
-                "skip": True,
-                "batch_patient_ids": batch_ids,
-                "reason": f"serialization_failed: {e}",
-            }
-        serialize_end = time.monotonic()
+        
+        # Quick size check for debugging (without expensive JSON serialization)
+        context_size_mb = len(batch_context.encode('utf-8')) / 1024 / 1024
         print(
-            f"[DEBUG] batch {batch_ids} messages size: {len(messages_json)/1024/1024:.2f} MB"
+            f"[DEBUG] batch {batch_ids} context size: {context_size_mb:.2f} MB"
         )
-        log_time(f"serialize messages for batch {batch_ids}", serialize_start)
 
         # -------------------- Model call --------------------
         invoke_start = time.monotonic()
@@ -457,6 +446,11 @@ class AIConversationServiceV1:
         usage = getattr(ai_response.get("raw", {}), "usage_metadata", {}) or {}
         parse_end = time.monotonic()
         log_time(f"parse results for batch {batch_ids}", parse_start)
+        
+        # Log token usage for debugging
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        print(f"[DEBUG] batch {batch_ids} tokens: {input_tokens} in, {output_tokens} out")
 
         log_time(f"TOTAL batch {batch_ids}", batch_start)
         # isresponse generated flag or something
@@ -472,7 +466,6 @@ class AIConversationServiceV1:
             "tags": parsed.tags,
             "token_usage": usage,
             "timings": {
-                "serialize_s": serialize_end - serialize_start,
                 "network_OpenAI_s": invoke_end - invoke_start,
                 "parse_s": parse_end - parse_start,
                 "total_s": time.monotonic() - batch_start,
@@ -488,6 +481,10 @@ class AIConversationServiceV1:
             combined_texts.append(f"### Batch {i+1}\n{text}")
 
         merged_batches_text = "\n\n".join(combined_texts)
+        
+        # Log input size for debugging
+        input_size_mb = len(merged_batches_text.encode('utf-8')) / 1024 / 1024
+        print(f"[DEBUG] Summarization input size: {input_size_mb:.2f} MB")
 
         summarization_system_prompt = """
         You are a medical data summarizer.
