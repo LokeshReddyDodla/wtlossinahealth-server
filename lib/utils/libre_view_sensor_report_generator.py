@@ -40,14 +40,14 @@ class SensorLifecycleReportGenerator:
             gap_h = (curr - prev).total_seconds() / 3600.0
             segment_duration = (curr - start_time).total_seconds() / 3600.0
 
-            # Case 1: Hard gap ≥ 24h → end report
+            # Case 1: Hard gap ≥ 24h → CLOSED report (sensor definitely ended)
             if gap_h >= self.HARD_GAP_HOURS:
-                reports.append(self._finalize_segment(segment, gaps))
+                reports.append(self._finalize_segment(segment, gaps, is_closed=True, termination_reason="hard_gap"))
                 segment, gaps, start_time = [curr], [], curr
 
-            # Case 2: Sensor max life (14 days) → end report
+            # Case 2: Sensor max life (14 days) → CLOSED report (sensor lifespan reached)
             elif segment_duration >= self.SENSOR_LIFE_DAYS * 24:
-                reports.append(self._finalize_segment(segment, gaps))
+                reports.append(self._finalize_segment(segment, gaps, is_closed=True, termination_reason="sensor_life"))
                 segment, gaps, start_time = [curr], [], curr
 
             else:
@@ -61,8 +61,14 @@ class SensorLifecycleReportGenerator:
                         {"gap_type": "small", "start": prev, "end": curr}
                     )
 
-        # Close last segment
-        reports.append(self._finalize_segment(segment, gaps))
+        # Last segment: OPEN (more data may arrive) unless we have evidence it's closed
+        # Check if last segment reached sensor life
+        if segment:
+            segment_duration = (segment[-1] - start_time).total_seconds() / 3600.0
+            if segment_duration >= self.SENSOR_LIFE_DAYS * 24:
+                reports.append(self._finalize_segment(segment, gaps, is_closed=True, termination_reason="sensor_life"))
+            else:
+                reports.append(self._finalize_segment(segment, gaps, is_closed=False, termination_reason=None))
 
         # Filter out short or low-coverage reports
         return [
@@ -95,19 +101,25 @@ class SensorLifecycleReportGenerator:
 
         return ts
 
-    def _finalize_segment(self, segment, gaps):
+    def _finalize_segment(self, segment, gaps, is_closed=False, termination_reason=None):
         if not segment:
             return None
         start, end = segment[0], segment[-1]
         duration_h = (end - start).total_seconds() / 3600
         expected_points = duration_h * (60 / self.EXPECTED_INTERVAL_MIN)
         coverage = len(segment) / expected_points if expected_points > 0 else 0
+        
+        # Determine status: CLOSED if we have strong evidence sensor ended, otherwise OPEN
+        status = "CLOSED" if is_closed else "OPEN"
+        
         return {
             "start": start,
             "end": end,
             "duration_h": duration_h,
             "coverage": coverage,
             "gaps": gaps,
+            "status": status,  # "OPEN" or "CLOSED"
+            "termination_reason": termination_reason,  # "hard_gap", "sensor_life", or None
             "qa_flags": {
                 "many_small_gaps": self._check_many_small_gaps(
                     gaps, duration_h

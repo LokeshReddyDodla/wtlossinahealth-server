@@ -425,10 +425,11 @@ class CGMReportService:
             raise
 
     async def save_reports_bulk(
-        self, patient_id: str, reports: List[CGMStats]
+        self, patient_id: str, reports: List[CGMStats], status: str = None, termination_reason: str = None
     ):
         from pymongo import UpdateOne
         from datetime import datetime
+        from lib.utils.cgm.processor import CGMReportType
 
         now = datetime.now()
         ops = []
@@ -473,6 +474,13 @@ class CGMReportService:
                     "created_at": report_dict.get("created_at", now),
                 }
             )
+            
+            # Add status and termination_reason for custom reports
+            if report.report_type == CGMReportType.CUSTOM:
+                if status:
+                    report_dict["status"] = status
+                if termination_reason:
+                    report_dict["termination_reason"] = termination_reason
 
             ops.append(
                 UpdateOne(
