@@ -139,6 +139,7 @@ class PatientQueryService:
                 PatientModel.last_name.ilike(search_pattern),
                 PatientModel.email.ilike(search_pattern),
                 PatientModel.phone_number.ilike(search_pattern),
+                PatientModel.patient_id.ilike(search_pattern),
             )
         )
 

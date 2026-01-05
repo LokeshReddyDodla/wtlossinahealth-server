@@ -97,6 +97,7 @@ class PackageQueryService:
         text_conditions = [
             PackageModel.name.ilike(search_pattern),
             PackageModel.code.ilike(search_pattern),
+            PackageModel.package_id.ilike(search_pattern),
         ]
         
         # Try to parse search as number for duration_days and price

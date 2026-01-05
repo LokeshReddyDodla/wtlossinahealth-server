@@ -78,16 +78,22 @@ class CareProviderQueryService:
         return stmt
 
     def _apply_search_filter(self, stmt: Select, query: CareProviderQuery) -> Select:
-        """Apply search filter."""
-        if query.search:
-            stmt = stmt.where(
-                CareProviderModel.first_name.ilike(f"%{query.search}%")
-                | CareProviderModel.last_name.ilike(f"%{query.search}%")
-                | CareProviderModel.email.ilike(f"%{query.search}%")
-                | CareProviderModel.phone_number.ilike(f"%{query.search}%")
-                | CareProviderModel.code.ilike(f"%{query.search}%")
+        """Apply search filter across name, email, phone, and identifiers."""
+        if not query.search:
+            return stmt
+
+        search_pattern = f"%{query.search}%"
+
+        return stmt.where(
+            or_(
+                CareProviderModel.first_name.ilike(search_pattern),
+                CareProviderModel.last_name.ilike(search_pattern),
+                CareProviderModel.email.ilike(search_pattern),
+                CareProviderModel.phone_number.ilike(search_pattern),
+                CareProviderModel.code.ilike(search_pattern),
+                CareProviderModel.care_provider_id.ilike(search_pattern),
             )
-        return stmt
+        )
 
    
     def _apply_role_filter(self, stmt: Select, query: CareProviderQuery) -> Select:
