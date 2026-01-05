@@ -97,10 +97,13 @@ class CGMUploadService:
 
             generator = SensorLifecycleReportGenerator(df)
             reports = generator.generate_reports()
-            report_periods: List[Tuple[datetime, datetime]] = [
+            # Include status and termination_reason in report periods
+            report_periods: List[Tuple[datetime, datetime, str, str]] = [
                 (
                     r["start"],
                     r["end"],
+                    r.get("status", "OPEN"),  # "OPEN" or "CLOSED"
+                    r.get("termination_reason"),  # "hard_gap", "sensor_life", or None
                 )
                 for idx, r in enumerate(reports, start=1)
             ]
@@ -241,7 +244,16 @@ class CGMUploadService:
 
             generator = SensorLifecycleReportGenerator(lifecycle_df)
             reports = generator.generate_reports()
-            report_periods = [(r["start"], r["end"]) for r in reports]
+            # Include status and termination_reason in report periods
+            report_periods = [
+                (
+                    r["start"],
+                    r["end"],
+                    r.get("status", "OPEN"),  # "OPEN" or "CLOSED"
+                    r.get("termination_reason"),  # "hard_gap", "sensor_life", or None
+                )
+                for r in reports
+            ]
 
             # Update last sync
             connected_app_result = await postgres_session.execute(
