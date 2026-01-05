@@ -118,6 +118,94 @@ async def test_api(request: Request):
         return {"message": "failed to insert", "error": str(e)}
 
 
+@router.delete(path="/cgm-reports/duplicates", tags=["Test"])
+async def delete_duplicate_cgm_reports(request: Request):
+    """
+    Delete ALL duplicate CGM reports with report_type="custom" that have the same
+    patient_id and start_date but different end_dates.
+    All duplicates will be deleted (reports will be regenerated later).
+    """
+    try:
+        # Get the cgm_reports collection
+        cgm_collection = request.state.context.mongo_store.get_collection("cgm_reports")
+        
+        # Run aggregation to find duplicates
+        pipeline = [
+            {
+                "$match": {
+                    "report_type": "custom"
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "patient_id": "$patient_id",
+                        "start_date": "$start_date"
+                    },
+                    "end_dates": {"$addToSet": "$end_date"},
+                    "ids": {"$push": "$_id"},
+                    "count": {"$sum": 1}
+                }
+            },
+            {
+                "$match": {
+                    "count": {"$gt": 1},
+                    "end_dates.1": {"$exists": True}
+                }
+            }
+        ]
+        
+        duplicate_groups = await cgm_collection.aggregate(pipeline).to_list(length=None)
+        
+        # Collect all IDs to delete
+        all_ids_to_delete = []
+        deleted_reports = []
+        
+        for group in duplicate_groups:
+            report_ids = group["ids"]
+            patient_id = group["_id"]["patient_id"]
+            start_date = group["_id"]["start_date"]
+            
+            # Fetch all reports in this duplicate group to get their details
+            reports = await cgm_collection.find(
+                {"_id": {"$in": report_ids}}
+            ).to_list(length=None)
+            
+            # Add all report IDs to delete list
+            for report in reports:
+                all_ids_to_delete.append(report["_id"])
+                deleted_reports.append({
+                    "report_id": str(report["_id"]),
+                    "patient_id": str(patient_id),
+                    "start_date": report.get("start_date"),
+                    "end_date": report.get("end_date"),
+                })
+        
+        # Delete all duplicate reports
+        total_deleted = 0
+        if all_ids_to_delete:
+            delete_result = await cgm_collection.delete_many(
+                {"_id": {"$in": all_ids_to_delete}}
+            )
+            total_deleted = delete_result.deleted_count
+        
+        return {
+            "message": f"Deleted {total_deleted} duplicate reports",
+            "summary": {
+                "duplicate_groups_found": len(duplicate_groups),
+                "total_deleted": total_deleted,
+            },
+            "deleted_reports": deleted_reports,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to delete duplicate reports: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete duplicate reports: {str(e)}"
+        )
+
+
 # @router.get("/active-patients", tags=["Test"])
 # async def get_active_patients(
 #     days: int = Query(default=3, ge=0, description="Number of days to look back for activity"),
