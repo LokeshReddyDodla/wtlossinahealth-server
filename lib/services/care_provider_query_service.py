@@ -2,7 +2,7 @@ from typing import Dict, Optional
 
 from lib.core.postgres_store import PostgresStore
 from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy import asc, desc, distinct, func, or_, select
+from sqlalchemy import asc, cast, desc, distinct, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
@@ -91,7 +91,7 @@ class CareProviderQueryService:
                 CareProviderModel.email.ilike(search_pattern),
                 CareProviderModel.phone_number.ilike(search_pattern),
                 CareProviderModel.code.ilike(search_pattern),
-                CareProviderModel.care_provider_id.ilike(search_pattern),
+                cast(CareProviderModel.care_provider_id, String).ilike(search_pattern),
             )
         )
 
