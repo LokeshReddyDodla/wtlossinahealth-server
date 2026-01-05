@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from dateutil.relativedelta import relativedelta
 from lib.core.postgres_store import PostgresStore
 from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy import asc, desc, exists, func, or_, select
+from sqlalchemy import asc, cast, desc, exists, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
@@ -128,7 +128,7 @@ class PatientQueryService:
         return stmt
 
     def _apply_search_filter(self, stmt: Select, query: PatientQuery) -> Select:
-        """Apply search filter across name, email, and phone."""
+        """Apply search filter across name, email, phone, and patient_id."""
         if not query.search:
             return stmt
 
@@ -139,7 +139,7 @@ class PatientQueryService:
                 PatientModel.last_name.ilike(search_pattern),
                 PatientModel.email.ilike(search_pattern),
                 PatientModel.phone_number.ilike(search_pattern),
-                PatientModel.patient_id.ilike(search_pattern),
+                cast(PatientModel.patient_id, String).ilike(search_pattern),
             )
         )
 

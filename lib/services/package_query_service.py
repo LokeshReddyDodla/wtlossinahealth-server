@@ -5,7 +5,7 @@ from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.package import Package as PackageModel, PackageStatus
 from lib.queries.package_query import PackageQuery
 from lib.utils.postgres_session_decorator import with_postgres_session
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import asc, cast, desc, func, or_, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
@@ -97,7 +97,7 @@ class PackageQueryService:
         text_conditions = [
             PackageModel.name.ilike(search_pattern),
             PackageModel.code.ilike(search_pattern),
-            PackageModel.package_id.ilike(search_pattern),
+            cast(PackageModel.package_id, String).ilike(search_pattern),
         ]
         
         # Try to parse search as number for duration_days and price
