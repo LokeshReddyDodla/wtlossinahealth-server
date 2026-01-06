@@ -5,12 +5,16 @@ from fastapi import Depends, HTTPException, Query, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_care_provider_query_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_query_service,
+    get_user_device_service,
+)
 from lib.queries.care_provider_query import CareProviderQuery
 from lib.schemas.care_provider import CareProvider as CareProviderSchema
 from lib.schemas.health_facility import HealthFacility as HealthFacilitySchema
 from lib.schemas.patient import Patient as PatientSchema
 from lib.services.care_provider_query_service import CareProviderQueryService
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -29,10 +33,19 @@ async def list_care_providers(
     search: Optional[str] = Query(None, description="Search term"),
     role: Optional[List[str]] = Query(None, description="Filter by role"),
     order_by: Optional[
-        Literal["first_name", "last_name", "email", "role", "created_at", "is_verified"]
+        Literal[
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "created_at",
+            "is_verified",
+            "last_active_at",
+        ]
     ] = Query("created_at", description="Order by field"),
     order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
     query_service: CareProviderQueryService = Depends(get_care_provider_query_service),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
@@ -65,6 +78,13 @@ async def list_care_providers(
             query_service.count(query),
         )
 
+        # Get last_active_at for all care providers
+        user_ids = [str(cp.care_provider_id) for cp in care_providers]
+        last_active_map = await user_device_service.get_last_active_map(
+            user_ids=user_ids,
+            profile_type=ProfileTypeEnum.CARE_PROVIDER.value,
+        )
+
         response_data = []
         for cp in care_providers:
             care_provider_dict = CareProviderSchema.from_orm(cp).model_dump()
@@ -89,6 +109,11 @@ async def list_care_providers(
                 care_provider_dict["packages"] = [
                     PackageSchema.from_orm(pkg).model_dump() for pkg in cp.packages
                 ]
+
+            # Add last_active_at
+            care_provider_dict["last_active_at"] = last_active_map.get(
+                str(cp.care_provider_id)
+            )
 
             response_data.append(care_provider_dict)
 
