@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
 from lib.utils.postgres_session_decorator import with_postgres_session
 from sqlalchemy import asc, cast, desc, distinct, func, or_, select, String
@@ -8,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import Select
 
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.models.user_device import UserDevice as UserDeviceModel
 from lib.queries.care_provider_query import CareProviderQuery
 
 
@@ -54,10 +56,19 @@ class CareProviderQueryService:
 
     def _build_base_query(self) -> Select:
         """Build base query with eager loading."""
-        return select(CareProviderModel).options(
-            selectinload(CareProviderModel.health_facility),
-            selectinload(CareProviderModel.patients),
-            selectinload(CareProviderModel.packages),
+        self._last_active_sq = self._build_last_active_subquery()
+
+        return (
+            select(CareProviderModel)
+            .outerjoin(
+                self._last_active_sq,
+                CareProviderModel.care_provider_id == self._last_active_sq.c.user_id,
+            )
+            .options(
+                selectinload(CareProviderModel.health_facility),
+                selectinload(CareProviderModel.patients),
+                selectinload(CareProviderModel.packages),
+            )
         )
 
     def _apply_all_filters(self, stmt: Select, query: CareProviderQuery) -> Select:
@@ -102,16 +113,33 @@ class CareProviderQueryService:
             stmt = stmt.where(CareProviderModel.role.in_(query.role))
         return stmt
 
+    def _build_last_active_subquery(self):
+        """Build subquery for last_active_at aggregation."""
+        return (
+            select(
+                UserDeviceModel.user_id.label("user_id"),
+                func.max(UserDeviceModel.last_active_at).label("last_active_at"),
+            )
+            .where(UserDeviceModel.profile_type == ProfileTypeEnum.CARE_PROVIDER.value)
+            .group_by(UserDeviceModel.user_id)
+            .subquery(name="last_active")
+        )
+
     def _apply_ordering(self, stmt: Select, query: CareProviderQuery) -> Select:
         """Apply ordering to the query."""
         order_by = query.order_by or "created_at"
         is_desc = query.order and query.order.lower() == "desc"
 
+        if order_by == "last_active_at":
+            col = self._last_active_sq.c.last_active_at
+            return stmt.order_by(
+                desc(col).nulls_last() if is_desc else asc(col).nulls_first(),
+                desc(CareProviderModel.created_at),
+            )
 
         if order_by in self.ORDER_FIELDS:
             order_func = desc if is_desc else asc
             stmt = stmt.order_by(order_func(self.ORDER_FIELDS[order_by]))
-        
 
         return stmt.order_by(desc(CareProviderModel.created_at))
 
