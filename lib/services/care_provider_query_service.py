@@ -127,11 +127,12 @@ class CareProviderQueryService:
 
     def _apply_ordering(self, stmt: Select, query: CareProviderQuery) -> Select:
         """Apply ordering to the query."""
-        order_by = query.order_by or "created_at"
+        order_by = query.order_by or "last_active_at"
         is_desc = query.order and query.order.lower() == "desc"
 
         if order_by == "last_active_at":
             col = self._last_active_sq.c.last_active_at
+            
             return stmt.order_by(
                 desc(col).nulls_last() if is_desc else asc(col).nulls_first(),
                 desc(CareProviderModel.created_at),
