@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from motor.motor_asyncio import AsyncIOMotorCollection
+from pydantic import ValidationError
+from decouple import config
 
 from lib.guidelines.weightloss_agent.catalog import (
     GUIDELINE_CATALOG,
     get_metric,
     get_metric_sources,
 )
+from lib.schemas.weightloss_agent.plan_ai import AiPlanComposerResponse
 from lib.schemas.weightloss_agent.plan import (
     HabitFocus,
     PlanGenerateRequest,
@@ -20,6 +24,9 @@ from lib.schemas.weightloss_agent.plan import (
     PlanMetricRange,
     PlanSnapshot,
     SafetyRuleCap,
+)
+from lib.services.ai_conversation_service.ai_conversation_service import (
+    AiConversationService,
 )
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.exercise_recommendation_service import (
@@ -41,6 +48,13 @@ class PlanComposerService:
         "calorie_band",
         "hydration_oz",
     ]
+    METRIC_HARD_BOUNDS: Dict[str, tuple[Optional[float], Optional[float]]] = {
+        "daily_steps": (0, 20000),
+        "weekly_minutes_moderate": (0, 600),
+        "protein_floor": (0, 300),
+        "calorie_band": (800, 4000),
+        "hydration_oz": (0, 200),
+    }
 
     def __init__(
         self,
@@ -50,6 +64,7 @@ class PlanComposerService:
         safety_rules_service: SafetyRulesService,
         analytics_service: AnalyticsService,
         exercise_recommendation_service: ExerciseRecommendationService,
+        ai_conversation_service: AiConversationService,
     ) -> None:
         self.plan_snapshots_collection = plan_snapshots_collection
         self.inbody_reports_collection = inbody_reports_collection
@@ -58,6 +73,28 @@ class PlanComposerService:
         self.analytics_service = analytics_service
         self.exercise_recommendation_service = (
             exercise_recommendation_service
+        )
+        self.ai_conversation_service = ai_conversation_service
+        self.enforce_intensity_caps = (
+            str(config("WEIGHTLOSS_ENFORCE_INTENSITY_CAPS", default="true"))
+            .strip()
+            .lower()
+            not in ("0", "false", "no", "off")
+        )
+
+    def _plan_mode(self) -> str:
+        return (
+            str(config("PLAN_COMPOSER_MODE", default="rule_based"))
+            .strip()
+            .lower()
+        )
+
+    def _ai_fallback_enabled(self) -> bool:
+        return (
+            str(config("PLAN_COMPOSER_AI_FALLBACK", default="false"))
+            .strip()
+            .lower()
+            in ("1", "true", "yes", "on")
         )
 
     async def generate_plan(
@@ -75,11 +112,18 @@ class PlanComposerService:
             }
         )
 
-        plan_snapshot = self._compose_plan_snapshot(
-            user_id=request.user_id,
-            safety_summary=safety_summary,
-            context=context,
-        )
+        if self._plan_mode() == "ai":
+            plan_snapshot = await self._compose_plan_snapshot_ai(
+                user_id=request.user_id,
+                safety_summary=safety_summary,
+                context=context,
+            )
+        else:
+            plan_snapshot = self._compose_plan_snapshot(
+                user_id=request.user_id,
+                safety_summary=safety_summary,
+                context=context,
+            )
 
         if plan_snapshot.abstained:
             await self.analytics_service.emit_event(
@@ -192,7 +236,7 @@ class PlanComposerService:
             max_value = metric.max_value
 
             cap = caps_lookup.get(metric_id)
-            if cap:
+            if cap and self.enforce_intensity_caps:
                 max_value = min(max_value, cap.get("value", max_value))
 
             targets[metric_id] = PlanMetricRange(
@@ -269,6 +313,337 @@ class PlanComposerService:
             provenance=self._provenance(),
         )
         return snapshot
+
+    def _extract_json_payload(self, raw: str) -> str:
+        text = (raw or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if len(lines) >= 2 and lines[0].startswith("```"):
+                fence_end = None
+                for idx in range(1, len(lines)):
+                    if lines[idx].startswith("```"):
+                        fence_end = idx
+                        break
+                if fence_end is not None:
+                    text = "\n".join(lines[1:fence_end]).strip()
+
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return text[start : end + 1]
+        return text
+
+    def _build_ai_plan_prompt(
+        self,
+        context: Dict[str, Any],
+        safety_summary: Dict[str, Any],
+    ) -> str:
+        allowed_metric_ids = list(self.REQUIRED_METRICS)
+        guideline_ranges: Dict[str, Dict[str, Any]] = {}
+        for metric_id in allowed_metric_ids:
+            metric = get_metric(metric_id)
+            if not metric:
+                continue
+            guideline_ranges[metric_id] = {
+                "label": metric.label,
+                "min_value": metric.min_value,
+                "max_value": metric.max_value,
+                "units": metric.units,
+                "cadence": metric.cadence,
+            }
+
+        return f"""
+Create personalized plan targets for the next 4 weeks.
+
+Hard requirements:
+- Output ONLY valid JSON (no markdown, no backticks) matching exactly:
+  {{
+    "targets": {{
+      "<metric_id>": {{"min_value": number|null, "max_value": number|null}}
+    }},
+    "hydration_oz": {{"min_value": number|null, "max_value": number|null}},
+    "habits": ["string", "..."]
+  }}
+- Allowed metric_ids (ONLY these): {allowed_metric_ids}
+- Propose realistic, progressive targets. Avoid extreme or unsafe goals.
+- Respect the safety caps/rules provided.
+- Provide 2-4 habit statements that are specific and actionable.
+
+Guideline reference ranges (starting point):
+{json.dumps(guideline_ranges, indent=2)}
+
+Patient context snapshot:
+{json.dumps(context, indent=2, default=str)}
+
+Safety evaluation:
+{json.dumps(safety_summary, indent=2)}
+""".strip()
+
+    async def _compose_plan_snapshot_ai(
+        self,
+        user_id: UUID,
+        safety_summary: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> PlanSnapshot:
+        prompt = self._build_ai_plan_prompt(context, safety_summary)
+        conversation_id = (
+            f"plan_compose_{user_id}_{date.today().isoformat()}"
+        )
+
+        try:
+            ai_message = await self.ai_conversation_service.generate_response(
+                patient_id=str(user_id),
+                user_id=str(user_id),
+                conversation_id=conversation_id,
+                human_input=prompt,
+                conversation_type="other",
+                additional_context={
+                    "context": context,
+                    "safety": safety_summary,
+                },
+            )
+            payload_raw = self._extract_json_payload(
+                (ai_message or {}).get("content") or ""
+            )
+            ai_output = AiPlanComposerResponse.model_validate(
+                json.loads(payload_raw)
+            )
+        except (json.JSONDecodeError, ValidationError) as exc:
+            print(f"AI plan parse/validation failed: {exc}")
+            if self._ai_fallback_enabled():
+                return self._compose_plan_snapshot(
+                    user_id=user_id,
+                    safety_summary=safety_summary,
+                    context=context,
+                )
+            return PlanSnapshot(
+                plan_id=uuid4(),
+                user_id=user_id,
+                generated_at=datetime.now(timezone.utc),
+                valid_from=date.today(),
+                valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
+                hydration=PlanMetricRange(
+                    metric_id="hydration_oz",
+                    label="Hydration",
+                    min_value=None,
+                    max_value=None,
+                    units="oz",
+                    cadence="daily",
+                    sources=[],
+                ),
+                targets={},
+                habits_focus=[],
+                safety_rules=[],
+                sources=[],
+                provenance=self._provenance(plan_mode="ai"),
+                abstained=True,
+                abstain_reason="AI plan output could not be parsed/validated",
+            )
+        except Exception as exc:
+            print(f"AI plan generation failed: {exc}")
+            if self._ai_fallback_enabled():
+                return self._compose_plan_snapshot(
+                    user_id=user_id,
+                    safety_summary=safety_summary,
+                    context=context,
+                )
+            return PlanSnapshot(
+                plan_id=uuid4(),
+                user_id=user_id,
+                generated_at=datetime.now(timezone.utc),
+                valid_from=date.today(),
+                valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
+                hydration=PlanMetricRange(
+                    metric_id="hydration_oz",
+                    label="Hydration",
+                    min_value=None,
+                    max_value=None,
+                    units="oz",
+                    cadence="daily",
+                    sources=[],
+                ),
+                targets={},
+                habits_focus=[],
+                safety_rules=[],
+                sources=[],
+                provenance=self._provenance(plan_mode="ai"),
+                abstained=True,
+                abstain_reason="AI plan generation failed",
+            )
+
+        caps_lookup = {
+            cap["metric"]: cap for cap in safety_summary.get("intensity_caps", [])
+        }
+
+        missing_sources: List[str] = []
+        targets: Dict[str, PlanMetricRange] = {}
+
+        def clamp(value: Optional[float], low: Optional[float], high: Optional[float]) -> Optional[float]:
+            if value is None:
+                return None
+            if low is not None:
+                value = max(value, low)
+            if high is not None:
+                value = min(value, high)
+            return value
+
+        for metric_id in self.REQUIRED_METRICS:
+            if metric_id == "hydration_oz":
+                continue
+            metric = get_metric(metric_id)
+            if not metric:
+                missing_sources.append(metric_id)
+                continue
+            sources = get_metric_sources(metric_id)
+            if not sources:
+                missing_sources.append(metric_id)
+                continue
+
+            proposed = ai_output.targets.get(metric_id) or {}
+            min_value = (
+                proposed.min_value
+                if proposed.min_value is not None
+                else metric.min_value
+            )
+            max_value = (
+                proposed.max_value
+                if proposed.max_value is not None
+                else metric.max_value
+            )
+
+            bound_low, bound_high = self.METRIC_HARD_BOUNDS.get(metric_id, (0, None))
+            min_value = clamp(min_value, bound_low, bound_high)
+            max_value = clamp(max_value, bound_low, bound_high)
+            if min_value is not None and max_value is not None and min_value > max_value:
+                min_value, max_value = max_value, min_value
+
+            cap = caps_lookup.get(metric_id)
+            if cap and self.enforce_intensity_caps and max_value is not None:
+                max_value = min(max_value, cap.get("value", max_value))
+
+            targets[metric_id] = PlanMetricRange(
+                metric_id=metric.metric_id,
+                label=metric.label,
+                min_value=min_value,
+                max_value=max_value,
+                units=metric.units,
+                cadence=metric.cadence,
+                sources=sources,
+            )
+
+        if missing_sources:
+            return PlanSnapshot(
+                plan_id=uuid4(),
+                user_id=user_id,
+                generated_at=datetime.now(timezone.utc),
+                valid_from=date.today(),
+                valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
+                hydration=PlanMetricRange(
+                    metric_id="hydration_oz",
+                    label="Hydration",
+                    min_value=None,
+                    max_value=None,
+                    units="oz",
+                    cadence="daily",
+                    sources=[],
+                ),
+                targets={},
+                habits_focus=[],
+                safety_rules=[],
+                sources=[],
+                provenance=self._provenance(plan_mode="ai"),
+                abstained=True,
+                abstain_reason=f"Missing guideline mapping for: {', '.join(missing_sources)}",
+            )
+
+        hydration_metric = get_metric("hydration_oz")
+        hydration_sources = get_metric_sources("hydration_oz")
+        hydration_min = (
+            ai_output.hydration_oz.min_value
+            if ai_output.hydration_oz.min_value is not None
+            else (hydration_metric.min_value if hydration_metric else None)
+        )
+        hydration_max = (
+            ai_output.hydration_oz.max_value
+            if ai_output.hydration_oz.max_value is not None
+            else (hydration_metric.max_value if hydration_metric else None)
+        )
+        bound_low, bound_high = self.METRIC_HARD_BOUNDS.get("hydration_oz", (0, None))
+        hydration_min = clamp(hydration_min, bound_low, bound_high)
+        hydration_max = clamp(hydration_max, bound_low, bound_high)
+        if hydration_min is not None and hydration_max is not None and hydration_min > hydration_max:
+            hydration_min, hydration_max = hydration_max, hydration_min
+        cap = caps_lookup.get("hydration_oz")
+        if cap and self.enforce_intensity_caps and hydration_max is not None:
+            hydration_max = min(hydration_max, cap.get("value", hydration_max))
+
+        hydration_range = PlanMetricRange(
+            metric_id="hydration_oz",
+            label=(hydration_metric.label if hydration_metric else "Hydration"),
+            min_value=hydration_min,
+            max_value=hydration_max,
+            units=(hydration_metric.units if hydration_metric else "oz"),
+            cadence=(hydration_metric.cadence if hydration_metric else "daily"),
+            sources=hydration_sources,
+        )
+
+        habit_texts = [
+            habit.strip()
+            for habit in (ai_output.habits or [])
+            if habit and habit.strip()
+        ]
+        if not habit_texts:
+            habits_focus = self._build_habits()
+        else:
+            habits_focus = [
+                HabitFocus(
+                    habit_id=f"ai_habit_{idx}",
+                    description=text,
+                    cue="daily",
+                    measurement="self-report",
+                    sources=["ai_plan"],
+                    priority=idx + 1,
+                )
+                for idx, text in enumerate(habit_texts[:4])
+            ]
+
+        safety_rules = [
+            SafetyRuleCap(
+                rule_id=cap["rule_id"],
+                action=cap["type"],
+                rationale_ids=[cap.get("rationale_source_id")],
+                severity=cap.get("severity", "medium"),
+                cap_value=cap.get("value"),
+                units=cap.get("units"),
+            )
+            for cap in safety_summary.get("intensity_caps", [])
+        ]
+
+        sources = list(
+            {
+                source
+                for target in targets.values()
+                for source in target.sources
+            }
+        )
+        sources.extend(hydration_sources)
+        sources.extend(safety_summary.get("rationale_ids", []))
+        sources = list({src for src in sources if src})
+
+        return PlanSnapshot(
+            plan_id=uuid4(),
+            user_id=user_id,
+            generated_at=datetime.now(timezone.utc),
+            review_after_days=7,
+            valid_from=date.today(),
+            valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
+            targets=targets,
+            hydration=hydration_range,
+            habits_focus=habits_focus,
+            safety_rules=safety_rules,
+            sources=sources,
+            provenance=self._provenance(plan_mode="ai"),
+        )
 
     async def _build_ai_recommendations(
         self,
@@ -355,5 +730,8 @@ class PlanComposerService:
             provenance=doc.get("provenance", {}),
         )
 
-    def _provenance(self) -> Dict[str, Any]:
-        return {"composer_version": self.COMPOSER_VERSION}
+    def _provenance(self, plan_mode: str = "rule_based") -> Dict[str, Any]:
+        return {
+            "composer_version": self.COMPOSER_VERSION,
+            "plan_mode": plan_mode,
+        }

@@ -751,6 +751,9 @@ container.register(
             ExerciseRecommendationService,
             container.resolve(ExerciseRecommendationService),
         ),
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
+        ),
     ),
 )
 
@@ -766,6 +769,9 @@ container.register(
         ),
         analytics_service=cast(
             AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
         ),
     ),
 )
