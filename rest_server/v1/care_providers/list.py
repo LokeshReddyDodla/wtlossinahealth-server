@@ -42,7 +42,7 @@ async def list_care_providers(
             "is_verified",
             "last_active_at",
         ]
-    ] = Query("created_at", description="Order by field"),
+    ] = Query(None, description="Order by field"),
     order: Literal["asc", "desc"] = Query("desc", description="Order direction"),
     query_service: CareProviderQueryService = Depends(get_care_provider_query_service),
     user_device_service: UserDeviceService = Depends(get_user_device_service),
