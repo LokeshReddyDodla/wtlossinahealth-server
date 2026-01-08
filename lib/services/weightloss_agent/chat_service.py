@@ -150,6 +150,7 @@ class ChatMixin:
             human_input=user_question,
             conversation_type="weight-loss-agent",
             additional_context=context_data,
+            api_endpoint="/weight-loss-agent/enrollment/{enrollment_id}/chat",
         )
 
         # Extract response - ai_response is message_data with 'content', not 'response'

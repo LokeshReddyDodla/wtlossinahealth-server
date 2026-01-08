@@ -9,6 +9,7 @@ from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.token_usage_service import TokenUsageService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.chat_service import ChatMixin
 from lib.services.weightloss_agent.daily_reports_service import DailyReportsMixin
@@ -42,6 +43,7 @@ class WeightLossAgentService(
         patient_profile_service: PatientProfileService,
         care_provider_profile_service: CareProviderProfileService,
         analytics_service: AnalyticsService,
+        token_usage_service: TokenUsageService,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
@@ -51,3 +53,4 @@ class WeightLossAgentService(
         self.patient_profile_service = patient_profile_service
         self.care_provider_profile_service = care_provider_profile_service
         self.analytics_service = analytics_service
+        self.token_usage_service = token_usage_service

@@ -239,6 +239,7 @@ Recent cards to avoid repeating:
                     "base_context_tags": base_tags,
                     "recent_cards": recent_cards,
                 },
+                api_endpoint="/coach/act",
             )
         except Exception as exc:
             print(f"AI coach cards generation failed: {exc}")

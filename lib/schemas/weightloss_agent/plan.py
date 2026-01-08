@@ -65,3 +65,27 @@ class PlanGenerateResponse(BaseModel):
     abstained: bool = False
     reason: Optional[str] = None
     ai_recommendations: Optional[Dict[str, Any]] = None
+
+
+class PlanAiRecommendations(BaseModel):
+    intensity_level: Optional[str] = None
+    notes: Optional[str] = None
+    timeline: List[Dict[str, Any]] = Field(default_factory=list)
+    follow_up_questions: List[str] = Field(default_factory=list)
+
+
+class PlanDetailResponse(BaseModel):
+    plan_id: UUID
+    user_id: UUID
+    generated_at: datetime
+    review_after_days: int = 7
+    valid_from: date
+    valid_to: date
+    abstained: bool = False
+    abstain_reason: Optional[str] = None
+    targets: Dict[str, PlanMetricRange] = Field(default_factory=dict)
+    hydration: PlanMetricRange
+    habits_focus: List[HabitFocus] = Field(default_factory=list)
+    safety_rules: List[SafetyRuleCap] = Field(default_factory=list)
+    sources: List[str] = Field(default_factory=list)
+    ai_recommendations: Optional[PlanAiRecommendations] = None

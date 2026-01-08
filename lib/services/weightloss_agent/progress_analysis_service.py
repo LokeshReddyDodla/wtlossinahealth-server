@@ -129,6 +129,7 @@ class ProgressAnalysisMixin:
                     latest_report_summary if latest_report else None
                 ),
             },
+            api_endpoint="/weight-loss-agent/enrollment/{enrollment_id}/analyze",
         )
 
         # Parse the AI response into structured format

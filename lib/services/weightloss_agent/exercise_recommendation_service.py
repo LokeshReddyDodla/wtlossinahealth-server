@@ -41,6 +41,7 @@ class ExerciseRecommendationService:
                     "fitness_screen": context.get("fitness"),
                     "willingness": context.get("willingness"),
                 },
+                api_endpoint="/plan/exercise-recommendations",
             )
             content = ai_message.get("content") or ""
             parsed_content = self._parse_json_content(content)

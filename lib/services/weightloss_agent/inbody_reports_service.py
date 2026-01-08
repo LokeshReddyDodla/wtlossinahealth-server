@@ -12,6 +12,7 @@ from fastapi import status
 from sqlalchemy import and_
 from sqlalchemy.future import select
 
+from lib.core.constants import ProfileTypeEnum
 from lib.models.weight_loss_agent import WeightLossAgentEnrollment
 from lib.schemas.weight_loss_agent import (
     InbodyReportAnalysisResult,
@@ -777,6 +778,24 @@ Rules:
                 # Get AI response
                 ai_response_raw = await vision_model.ainvoke([message])
                 ai_response_text = ai_response_raw.content
+                usage_metadata = getattr(ai_response_raw, "usage_metadata", None)
+                if (
+                    usage_metadata
+                    and "input_tokens" in usage_metadata
+                    and "output_tokens" in usage_metadata
+                ):
+                    await self.token_usage_service.log_usage(
+                        user_id=user_id,
+                        user_type=ProfileTypeEnum.PATIENT,
+                        input_tokens=usage_metadata["input_tokens"],
+                        output_tokens=usage_metadata["output_tokens"],
+                        cached_input_tokens=usage_metadata.get(
+                            "cached_input_tokens"
+                        ),
+                        model_used="gpt-4o",
+                        model_provider="openai",
+                        api_endpoint="/weight-loss-agent/enrollment/{enrollment_id}/inbody-report",
+                    )
 
                 print(
                     f"Vision analysis completed successfully. Response length: {len(ai_response_text)}"

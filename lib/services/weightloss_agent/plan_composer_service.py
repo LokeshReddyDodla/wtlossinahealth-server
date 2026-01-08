@@ -102,14 +102,8 @@ class PlanComposerService:
     ) -> PlanGenerateResponse:
         context = await self._build_context(request.user_id)
 
-        safety_summary = await self.safety_rules_service.evaluate(
-            {
-                "user_id": str(request.user_id),
-                "inbody": context.get("inbody", {}),
-                "fitness": context.get("fitness", {}),
-                "willingness": context.get("willingness", {}),
-                "conditions": context.get("conditions", {}),
-            }
+        safety_summary = await self._build_safety_summary(
+            request.user_id, context
         )
 
         if self._plan_mode() == "ai":
@@ -149,6 +143,9 @@ class PlanComposerService:
             safety_summary,
             plan_snapshot,
         )
+        await self._persist_ai_recommendations(
+            plan_snapshot.plan_id, ai_recommendations
+        )
 
         return PlanGenerateResponse(
             plan_snapshot=plan_snapshot,
@@ -165,9 +162,61 @@ class PlanComposerService:
             return None
         return self._doc_to_plan_snapshot(doc)
 
+    async def get_current_plan_details(
+        self, user_id: UUID
+    ) -> Optional[Dict[str, Any]]:
+        doc = await self.plan_snapshots_collection.find_one(
+            {"user_id": str(user_id)}, sort=[("generated_at", -1)]
+        )
+        if not doc:
+            return None
+
+        plan_snapshot = self._doc_to_plan_snapshot(doc)
+        ai_recommendations = doc.get("ai_recommendations")
+
+        if isinstance(ai_recommendations, dict) and (
+            "parsed_content" in ai_recommendations
+        ):
+            ai_recommendations = await self._persist_ai_recommendations(
+                plan_snapshot.plan_id, ai_recommendations
+            )
+
+        if not ai_recommendations and not plan_snapshot.abstained:
+            context = await self._build_context(user_id)
+            safety_summary = await self._build_safety_summary(
+                user_id, context
+            )
+            raw_recommendations = await self._build_ai_recommendations(
+                user_id,
+                context,
+                safety_summary,
+                plan_snapshot,
+            )
+            ai_recommendations = await self._persist_ai_recommendations(
+                plan_snapshot.plan_id, raw_recommendations
+            )
+
+        return {
+            "plan_snapshot": plan_snapshot,
+            "ai_recommendations": ai_recommendations,
+        }
+
     async def get_context_snapshot(self, user_id: UUID) -> Dict[str, Any]:
         """Return the intake + safety context used for planning workflows."""
         return await self._build_context(user_id)
+
+    async def _build_safety_summary(
+        self, user_id: UUID, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return await self.safety_rules_service.evaluate(
+            {
+                "user_id": str(user_id),
+                "inbody": context.get("inbody", {}),
+                "fitness": context.get("fitness", {}),
+                "willingness": context.get("willingness", {}),
+                "conditions": context.get("conditions", {}),
+            }
+        )
 
     async def _build_context(self, user_id: UUID) -> Dict[str, Any]:
         exercise = await self.intake_service.get_latest_exercise_preferences(
@@ -401,6 +450,7 @@ Safety evaluation:
                     "context": context,
                     "safety": safety_summary,
                 },
+                api_endpoint="/plan/generate",
             )
             payload_raw = self._extract_json_payload(
                 (ai_message or {}).get("content") or ""
@@ -664,6 +714,48 @@ Safety evaluation:
         except Exception as exc:
             print(f"Failed to generate AI recommendations: {exc}")
             return None
+
+    def _normalize_ai_recommendations(
+        self, ai_recommendations: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        if not ai_recommendations:
+            return None
+
+        parsed_content = ai_recommendations.get("parsed_content")
+        if not isinstance(parsed_content, dict):
+            parsed_content = {}
+
+        timeline = parsed_content.get("timeline")
+        if not isinstance(timeline, list):
+            timeline = []
+
+        follow_up_questions = (
+            ai_recommendations.get("follow_up_questions") or []
+        )
+        if not isinstance(follow_up_questions, list):
+            follow_up_questions = []
+
+        return {
+            "intensity_level": parsed_content.get("intensity_level"),
+            "notes": parsed_content.get("notes"),
+            "timeline": timeline,
+            "follow_up_questions": follow_up_questions,
+        }
+
+    async def _persist_ai_recommendations(
+        self,
+        plan_id: UUID,
+        ai_recommendations: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        normalized = self._normalize_ai_recommendations(ai_recommendations)
+        if normalized is None:
+            return None
+
+        await self.plan_snapshots_collection.update_one(
+            {"plan_id": str(plan_id)},
+            {"$set": {"ai_recommendations": normalized}},
+        )
+        return normalized
 
     async def _persist_plan(self, plan_snapshot: PlanSnapshot) -> None:
         doc = plan_snapshot.model_dump()
