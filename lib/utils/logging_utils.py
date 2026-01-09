@@ -17,6 +17,28 @@ async def log_last_active_time(
     profile_type: ProfileTypeEnum,
     threshold_minutes: int = 5,
 ):
+    # Admins don't require device verification
+    if profile_type == ProfileTypeEnum.ADMIN:
+        return
+
+    # Check for x-device-id header first
+    device_id_str = request.headers.get("x-device-id")
+    if not device_id_str:
+        raise_http_exception(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Missing x-device-id header",
+        )
+
+    # Validate device ID format
+    try:
+        device_id = UUID(device_id_str)
+    except ValueError:
+        raise_http_exception(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="Invalid x-device-id format",
+        )
+
+    # Fetch user's registered devices
     result = await session.execute(
         select(UserDevice).where(
             UserDevice.user_id == user_id,
@@ -25,26 +47,14 @@ async def log_last_active_time(
     )
     devices = result.scalars().all()
 
+    # If user has no devices but sent a device ID, reject the request
     if not devices:
-        return  # optional: skip if no device
-
-    device_id_str = request.headers.get("x-device-id")
-    if not device_id_str:
         raise_http_exception(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            message="Missing x-device-id header",
+            message="Device not registered. Please log in again.",
         )
-        # return
 
-    try:
-        device_id = UUID(device_id_str)
-    except ValueError:
-        raise_http_exception(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            message="Invalid x-device-id format",
-        )
-        # return
-
+    # Verify the device ID matches one of the user's registered devices
     matching_device: UserDevice | None = next(
         (d for d in devices if str(d.device_id) == str(device_id)),
         None,
@@ -54,7 +64,6 @@ async def log_last_active_time(
             status_code=status.HTTP_401_UNAUTHORIZED,
             message="Device not registered. Please log in again.",
         )
-        # return
 
     now = datetime.now()
 
