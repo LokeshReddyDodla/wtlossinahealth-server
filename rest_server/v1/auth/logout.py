@@ -9,7 +9,7 @@ from lib.services.user_device_service import UserDeviceService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
-from .api_schema import LogoutAllResponse, LogoutRequest, LogoutResponse
+from .api_schema import LogoutRequest, LogoutResponse
 from .router import router
 
 
