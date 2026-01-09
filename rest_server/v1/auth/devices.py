@@ -95,21 +95,11 @@ async def delete_all_devices(
         user_id, role_value = token_data
         role = ProfileTypeEnum(role_value)
 
-        # Get all devices for the user
-        devices = await user_device_service.get_user_devices(
+        # Delete all devices using bulk delete
+        deleted_count = await user_device_service.delete_all_user_devices(
             user_id=UUID(user_id),
             profile_type=role.value,
         )
-
-        # Delete all devices
-        deleted_count = 0
-        for device in devices:
-            try:
-                await user_device_service.delete_user_device(device.device_id)
-                deleted_count += 1
-            except Exception:
-                # Continue deleting other devices even if one fails
-                pass
 
         return SuccessResponse(
             message=f"Deleted {deleted_count} device(s) successfully"

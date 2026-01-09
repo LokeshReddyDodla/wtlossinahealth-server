@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -172,6 +172,31 @@ class UserDeviceService:
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             print(f"Failed to delete user device: {str(e)}")
+            raise
+
+    @with_postgres_session
+    async def delete_all_user_devices(
+        self,
+        user_id: UUID,
+        profile_type: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        try:
+            delete_stmt = delete(UserDeviceModel).where(
+                UserDeviceModel.user_id == user_id
+            )
+            if profile_type:
+                delete_stmt = delete_stmt.where(
+                    UserDeviceModel.profile_type == profile_type
+                )
+
+            result = await postgres_session.execute(delete_stmt)
+            await postgres_session.commit()
+            return result.rowcount
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            print(f"Failed to delete user devices: {str(e)}")
             raise
 
     @with_postgres_session
