@@ -50,16 +50,14 @@ async def login_care_provider(
             role=ProfileTypeEnum.CARE_PROVIDER.value,
         )
 
-        # Store or update user device information if FCM token provided
-        device = None
-        if login_request.fcm_token:
-            device = await user_device_service.create_or_update_user_device(
-                user_id=care_provider.care_provider_id,
-                fcm_token=login_request.fcm_token,
-                device_type=login_request.device_type,
-                profile_type=ProfileTypeEnum.CARE_PROVIDER.value,
-                platform_version=login_request.platform_version,
-            )
+        # Store or update user device information
+        device = await user_device_service.create_or_update_user_device(
+            user_id=care_provider.care_provider_id,
+            fcm_token=login_request.fcm_token,
+            device_type=login_request.device_type,
+            profile_type=ProfileTypeEnum.CARE_PROVIDER.value,
+            platform_version=login_request.platform_version,
+        )
 
         return SuccessResponse(
             message="Care provider authenticated successfully",
