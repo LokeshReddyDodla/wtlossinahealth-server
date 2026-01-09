@@ -102,4 +102,5 @@ VerifyOtpResponse = SuccessResponse[AuthTokenResponse]
 CareProviderLoginResponse = SuccessResponse[AuthTokenResponse]
 LogoutResponse = SuccessResponse[None]  # Only message, no data
 ListDevicesResponse = SuccessResponse[UserDevicesListResponse]
-LogoutAllResponse = SuccessResponse[None]  # Only message, no data
+DeleteDeviceResponse = SuccessResponse[None]  # Only message, no data
+DeleteAllDevicesResponse = SuccessResponse[None]  # Only message, no data
