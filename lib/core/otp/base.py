@@ -1,20 +1,20 @@
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 
 
 class OTPProvider(ABC):
     @abstractmethod
-    async def send_otp(self, phone_number: str, otp: str) -> dict:
-        """Send OTP to the phone number."""
+    async def send_otp(
+        self, phone_number: str, otp: Optional[str] = None
+    ) -> Dict[str, Any]:
         pass
 
     @abstractmethod
     async def verify_otp(self, phone_number: str, otp: str) -> bool:
-        """Verify the OTP for the phone number."""
         pass
 
     @abstractmethod
     async def retry_otp(
         self, phone_number: str, retry_type: str = "text"
-    ) -> dict:
-        """Retry sending the OTP (e.g., resend via SMS or voice)."""
+    ) -> Dict[str, Any]:
         pass
