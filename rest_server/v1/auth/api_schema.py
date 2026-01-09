@@ -1,4 +1,5 @@
-from typing import Optional
+from datetime import datetime
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -77,8 +78,28 @@ class AuthTokenResponse(BaseModel):
     device_id: Optional[str] = Field(None, description="Device ID")
 
 
+class UserDeviceResponse(BaseModel):
+    device_id: str = Field(..., description="Device ID")
+    device_type: Optional[str] = Field(None, description="Device type (e.g., iOS, Android)")
+    device_name: Optional[str] = Field(None, description="Device name")
+    device_model: Optional[str] = Field(None, description="Device model")
+    manufacturer: Optional[str] = Field(None, description="Device manufacturer")
+    platform_version: Optional[str] = Field(None, description="Platform version")
+    app_name: Optional[str] = Field(None, description="App name")
+    app_version: Optional[str] = Field(None, description="App version")
+    last_active_at: Optional[datetime] = Field(None, description="Last active timestamp")
+    created_at: Optional[datetime] = Field(None, description="Device creation timestamp")
+
+
+class UserDevicesListResponse(BaseModel):
+    devices: List[UserDeviceResponse] = Field(..., description="List of user devices")
+    total: int = Field(..., description="Total number of devices")
+
+
 # Typed Success Responses
 SendOtpResponse = SuccessResponse[None]  # Only message, no data
 VerifyOtpResponse = SuccessResponse[AuthTokenResponse]
 CareProviderLoginResponse = SuccessResponse[AuthTokenResponse]
 LogoutResponse = SuccessResponse[None]  # Only message, no data
+ListDevicesResponse = SuccessResponse[UserDevicesListResponse]
+LogoutAllResponse = SuccessResponse[None]  # Only message, no data
