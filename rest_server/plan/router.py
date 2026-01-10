@@ -8,7 +8,7 @@ from lib.dependencies.service_dependencies import get_plan_composer_service
 from lib.schemas.weightloss_agent.plan import (
     PlanGenerateRequest,
     PlanGenerateResponse,
-    PlanSnapshot,
+    PlanDetailResponse,
 )
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
@@ -37,19 +37,26 @@ async def generate_plan(
 
 @router.get(
     "/current",
-    response_model=SuccessResponse[PlanSnapshot],
+    response_model=SuccessResponse[PlanDetailResponse],
     status_code=status.HTTP_200_OK,
 )
 async def get_current_plan(
     user_id: UUID = Query(..., description="Patient identifier"),
     plan_service: PlanComposerService = Depends(get_plan_composer_service),
-) -> SuccessResponse[PlanSnapshot]:
-    plan = await plan_service.get_current_plan(user_id)
-    if not plan:
+) -> SuccessResponse[PlanDetailResponse]:
+    plan_details = await plan_service.get_current_plan_details(user_id)
+    if not plan_details:
         raise_http_exception(
             status.HTTP_404_NOT_FOUND, message="Plan not found for user"
         )
+    plan_snapshot = plan_details["plan_snapshot"]
+    ai_recommendations = plan_details.get("ai_recommendations")
+    payload = plan_snapshot.model_dump()
+    payload.pop("provenance", None)
+    payload["ai_recommendations"] = ai_recommendations
+    data = PlanDetailResponse(**payload)
     return SuccessResponse(
-        message="Plan retrieved",
-        data=plan,
+        message="Full plan retrieved successfully",
+        provenance=plan_snapshot.provenance,
+        data=data,
     )

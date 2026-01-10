@@ -15,24 +15,25 @@ class AvailabilityWindow(BaseModel):
     end_local_time: str = Field(..., description="24h time, e.g., 07:15")
 
 
-class IntensityPreference(BaseModel):
-    floor_rpe: int = Field(3, ge=1, le=10)
-    ceiling_rpe: int = Field(7, ge=1, le=10)
-    notes: Optional[str] = None
-
-
 class ExercisePreferencesCreate(BaseModel):
     patient_id: UUID
+    preferred_workout_type: Optional[str] = Field(
+        None, description="e.g., strength, cardio, HIIT, mixed"
+    )
     preferred_modalities: List[str] = Field(default_factory=list)
     avoid_modalities: List[str] = Field(default_factory=list)
     weekly_session_target: int = Field(..., ge=1, le=28)
     session_length_minutes: int = Field(..., ge=10, le=180)
     availability: List[AvailabilityWindow] = Field(default_factory=list)
+    preferred_workout_days: List[str] = Field(
+        default_factory=list,
+        description="e.g., Monday, Wednesday, Friday or Weekends only",
+    )
     environments: List[str] = Field(
         default_factory=list, description="e.g., indoor, outdoor, pool"
     )
     equipment_available: List[str] = Field(default_factory=list)
-    intensity_preference: Optional[IntensityPreference] = None
+    user_selected_exercises: List[str] = Field(default_factory=list)
     barriers: List[str] = Field(default_factory=list)
     motivators: List[str] = Field(default_factory=list)
     caregiver_notes: Optional[str] = None
