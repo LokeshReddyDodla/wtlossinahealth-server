@@ -24,7 +24,7 @@ class UserDevice(Base):
     created_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
-        nullable=False,
+        nullable=True,
     )
     last_updated_at = Column(
         DateTime,
