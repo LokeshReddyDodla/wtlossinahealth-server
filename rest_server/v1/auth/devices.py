@@ -84,8 +84,9 @@ async def list_user_devices(
                 platform_version=device.platform_version,
                 app_name=device.app_name,
                 app_version=device.app_version,
+                is_active=device.is_active,
+                created_at=device.created_at,
                 last_active_at=device.last_active_at,
-                created_at=device.last_updated_at,
             )
             for device in devices
         ]
