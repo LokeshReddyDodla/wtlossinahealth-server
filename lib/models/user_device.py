@@ -19,6 +19,13 @@ class UserDevice(Base):
         String, nullable=False
     )  # 'patient' or 'care_provider'
 
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        nullable=False,
+    )
     last_updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),

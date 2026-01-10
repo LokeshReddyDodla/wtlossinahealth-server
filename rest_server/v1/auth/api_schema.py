@@ -87,8 +87,9 @@ class UserDeviceResponse(BaseModel):
     platform_version: Optional[str] = Field(None, description="Platform version")
     app_name: Optional[str] = Field(None, description="App name")
     app_version: Optional[str] = Field(None, description="App version")
-    last_active_at: Optional[datetime] = Field(None, description="Last active timestamp")
+    is_active: Optional[bool] = Field(None, description="Whether the device is active")
     created_at: Optional[datetime] = Field(None, description="Device creation timestamp")
+    last_active_at: Optional[datetime] = Field(None, description="Last active timestamp")
 
 
 class UserDevicesListResponse(BaseModel):
