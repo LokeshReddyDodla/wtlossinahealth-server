@@ -25,6 +25,8 @@ class UserDeviceBase(BaseModel):
     longitude: Optional[float] = None
     location_name: Optional[str] = None
 
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
     last_updated_at: Optional[datetime] = None
     last_active_at: Optional[datetime] = None
 

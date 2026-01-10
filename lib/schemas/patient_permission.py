@@ -9,6 +9,7 @@ class PatientPermissionBase(BaseModel):
     notification_permission: Optional[bool] = False
     health_permission: Optional[bool] = False
     camera_permission: Optional[bool] = False
+    gallery_permission: Optional[bool] = False
     storage_permission: Optional[bool] = False
 
 

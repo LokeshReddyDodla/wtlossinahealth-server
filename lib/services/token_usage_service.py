@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Union
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,27 +17,52 @@ from lib.models.token_usage_log import TokenUsageLog
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 PRICING = {
+    "gpt-5.1": {
+        "input": 1.25 / 1_000_000,
+        "cached_input": 0.125 / 1_000_000,
+        "output": 10.00 / 1_000_000,
+    },
+    "gpt-5": {
+        "input": 1.25 / 1_000_000,
+        "cached_input": 0.125 / 1_000_000,
+        "output": 10.00 / 1_000_000,
+    },
     "gpt-5-mini": {
-        "input": 0.25 / 1_000_000,  # $0.20 per 1M input tokens (example)
+        "input": 0.25 / 1_000_000,
         "cached_input": 0.025 / 1_000_000,
         "output": 2.00 / 1_000_000,
     },
-    "gpt-4o": {
-        "input": 2.50 / 1_000_000,  # $2.50 per 1M input tokens
-        "cached_input": 1.25 / 1_000_000,  # $1.25 per 1M cached input tokens
-        "output": 10.00 / 1_000_000,  # $10.00 per 1M output tokens
+    "gpt-5-pro": {
+        "input": 15.00 / 1_000_000,
+        "cached_input": None,
+        "output": 120.00 / 1_000_000,
     },
-    "gpt-4o-mini": {
-        "input": 0.15 / 1_000_000,  # $0.150 per 1M input tokens
-        "cached_input": 0.075 / 1_000_000,  # $0.075 per 1M cached input tokens
-        "output": 0.60 / 1_000_000,  # $0.600 per 1M output tokens
+    "gpt-4.1": {
+        "input": 2.00 / 1_000_000,
+        "cached_input": 0.50 / 1_000_000,
+        "output": 8.00 / 1_000_000,
     },
-    "gpt-4.1-mini": {  # Alias / legacy compatibility
+    "gpt-4.1-mini": {
         "input": 0.40 / 1_000_000,
         "cached_input": 0.10 / 1_000_000,
         "output": 1.60 / 1_000_000,
     },
-    "o3-mini": {  # Experimental reasoning-light
+    "gpt-4.1-nano": {
+        "input": 0.10 / 1_000_000,
+        "cached_input": 0.025 / 1_000_000,
+        "output": 0.40 / 1_000_000,
+    },
+    "gpt-4o": {
+        "input": 2.50 / 1_000_000,
+        "cached_input": 1.25 / 1_000_000,
+        "output": 10.00 / 1_000_000,
+    },
+    "gpt-4o-mini": {
+        "input": 0.15 / 1_000_000,
+        "cached_input": 0.075 / 1_000_000,
+        "output": 0.60 / 1_000_000,
+    },
+    "o3-mini": {
         "input": 1.10 / 1_000_000,
         "cached_input": 0.55 / 1_000_000,
         "output": 4.40 / 1_000_000,
@@ -91,6 +117,14 @@ class TokenUsageService:
         postgres_session: AsyncSession,
     ):
         try:
+            end_datetime = datetime.combine(
+                end_date, datetime.max.time()
+            ).replace(tzinfo=None)
+            
+            start_datetime = datetime.combine(
+                start_date, datetime.min.time()
+            ).replace(tzinfo=None)
+            
             query = (
                 select(
                     func.date(TokenUsageLog.created_at).label("usage_date"),
@@ -108,8 +142,8 @@ class TokenUsageService:
                 .where(
                     TokenUsageLog.user_id == user_id,
                     TokenUsageLog.user_type == user_type,
-                    TokenUsageLog.created_at >= start_date,
-                    TokenUsageLog.created_at <= end_date,
+                    TokenUsageLog.created_at >= start_datetime,
+                    TokenUsageLog.created_at <= end_datetime,
                 )
                 .group_by(func.date(TokenUsageLog.created_at))
                 .order_by(func.date(TokenUsageLog.created_at))

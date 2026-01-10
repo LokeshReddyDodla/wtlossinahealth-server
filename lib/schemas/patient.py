@@ -27,6 +27,7 @@ from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
 from lib.schemas.patient_vital import PatientVital
+from lib.schemas.weight_loss_agent import WeightLossEnrollment
 
 
 class PatientBase(BaseModel):
@@ -54,6 +55,7 @@ class PatientUpdate(PatientBase):
 
 class Patient(PatientBase):
     patient_id: UUID
+    full_name: Optional[str]
     age: Optional[float]
     profile_completion: Optional[dict]
     created_at: Optional[datetime]
@@ -121,6 +123,7 @@ class CompletePatientProfile(CorePatientProfile):
     care_providers: List[CareProvider] = []
     package_assignments: List[PatientPackageAssignmentWithDetail] = []
     current_package: Optional[PatientPackageAssignmentWithDetail] = None
+    weight_loss_enrollment: Optional[WeightLossEnrollment] = None
 
     class Config:
         from_attributes = True

@@ -1,14 +1,19 @@
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import Optional, Tuple, Union
 from uuid import UUID
 from fastapi import Depends, HTTPException, Query, status
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
+from lib.dependencies.actor import get_current_actor, Actor
+from lib.models.admin import Admin
 from lib.dependencies.service_dependencies import (
     get_cgm_metrics_service,
     get_fitness_metrics_service,
+    get_health_facility_metrics_service,
     get_meal_metrics_service,
+    get_package_metrics_service,
     get_patient_metrics_service,
     get_smbg_metrics_service,
 )
@@ -31,19 +36,47 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 from lib.services.dashboard_metrics.patient_metrics_service import (
     PatientMetricsService,
 )
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
+)
 from lib.services.package_service import PackageService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.care_provider.dashboard_metrics.api_schema import (
+from rest_server.dashboard_metrics.api_schema import (
     PatientMealSchema,
 )
 
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+
+
+def resolve_patient_scope(
+    current_user: Union[CareProviderModel, Admin],
+) -> Tuple[Optional[str], Optional[str], bool]:
+    if isinstance(current_user, CareProviderModel):
+        return (
+            (
+                str(current_user.health_facility_id)
+                if current_user.health_facility_id
+                else None
+            ),
+            (
+                str(current_user.care_provider_id)
+                if current_user.care_provider_id
+                else None
+            ),
+            current_user.is_admin,
+        )
+
+    # Global admin
+    return None, None, False
 
 
 @router.get("/patients/active/grouped", response_model=SuccessResponse)
@@ -53,18 +86,26 @@ async def get_active_patients_grouped(
     patient_metrics_service: PatientMetricsService = Depends(
         get_patient_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
     try:
+        health_facility_id, care_provider_id, is_facility_admin = (
+            resolve_patient_scope(current_actor.model)
+        )
+
         grouped = await patient_metrics_service.get_active_patients_by_date(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             start=start,
             end=end,
         )
@@ -92,18 +133,26 @@ async def get_enrolled_patients(
     patient_metrics_service: PatientMetricsService = Depends(
         get_patient_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
     try:
+        health_facility_id, care_provider_id, is_facility_admin = (
+            resolve_patient_scope(current_actor.model)
+        )
+
         patients = await patient_metrics_service.get_enrolled_patients(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             start=start,
             end=end,
             limit=limit,
@@ -131,21 +180,27 @@ async def get_enrolled_patients_grouped(
     patient_metrics_service: PatientMetricsService = Depends(
         get_patient_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
     try:
+        health_facility_id, care_provider_id, is_facility_admin = (
+            resolve_patient_scope(current_actor.model)
+        )
+
         grouped = (
             await patient_metrics_service.get_enrolled_patient_counts_by_date(
-                health_facility_id=str(
-                    current_care_provider.health_facility_id
-                ),
-                care_provider_id=str(current_care_provider.care_provider_id),
-                is_admin=current_care_provider.is_admin,
+                health_facility_id=health_facility_id,
+                care_provider_id=care_provider_id,
+                is_facility_admin=is_facility_admin,
                 start=start,
                 end=end,
             )
@@ -176,17 +231,24 @@ async def get_meals_grouped(
     meal_metrics_service: MealMetricsService = Depends(
         get_meal_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     data = await meal_metrics_service.get_meal_uploads_grouped_by_date(
-        health_facility_id=str(current_care_provider.health_facility_id),
-        care_provider_id=str(current_care_provider.care_provider_id),
-        is_admin=current_care_provider.is_admin,
+        health_facility_id=health_facility_id,
+        care_provider_id=care_provider_id,
+        is_facility_admin=is_facility_admin,
         start=start,
         end=end,
         with_photos_only=with_photos_only,
@@ -220,18 +282,25 @@ async def get_macro_filtered_meals(
     meal_metrics_service: MealMetricsService = Depends(
         get_meal_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     try:
         meals = await meal_metrics_service.get_macro_filtered_major_meals(
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             start=start,
             end=end,
             protein_threshold=protein_threshold,
@@ -274,22 +343,27 @@ async def get_patients_by_step_threshold(
     fitness_metrics_service: FitnessMetricsService = Depends(
         get_fitness_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
 
     try:
         patients = (
             await fitness_metrics_service.get_patients_by_step_threshold(
-                health_facility_id=str(
-                    current_care_provider.health_facility_id
-                ),
-                care_provider_id=str(current_care_provider.care_provider_id),
-                is_admin=current_care_provider.is_admin,
+                health_facility_id=health_facility_id,
+                care_provider_id=care_provider_id,
+                is_facility_admin=is_facility_admin,
                 steps_op=steps_op,
                 steps_value=steps_value,
                 start=start,
@@ -320,15 +394,24 @@ async def get_active_smbg_patients(
     smbg_metrics_service: SMBGMetricsService = Depends(
         get_smbg_metrics_service
     ),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     patients = await smbg_metrics_service.get_active_patients(
-        health_facility_id=str(current_care_provider.health_facility_id),
+        health_facility_id=health_facility_id,
+        care_provider_id=care_provider_id,
+        is_facility_admin=is_facility_admin,
         days=days,
     )
 
@@ -345,13 +428,20 @@ async def get_patients_with_hyper_events(
     limit: int = Query(50, le=500),
     offset: int = Query(0),
     cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     try:
         end = datetime.now()
         start = end - timedelta(days=days)
@@ -360,9 +450,9 @@ async def get_patients_with_hyper_events(
             start=start,
             end=end,
             min_duration_minutes=min_duration_minutes,
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             limit=limit,
             offset=offset,
         )
@@ -388,13 +478,20 @@ async def get_patients_with_hypo_events(
     limit: int = Query(50, le=500),
     offset: int = Query(0),
     cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     try:
         end = datetime.now()
         start = end - timedelta(days=days)
@@ -403,9 +500,9 @@ async def get_patients_with_hypo_events(
             start=start,
             end=end,
             min_duration_minutes=min_duration_minutes,
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             limit=limit,
             offset=offset,
         )
@@ -431,13 +528,20 @@ async def get_patients_with_high_gv(
     limit: int = Query(50, le=500),
     offset: int = Query(0),
     cgm_metrics_service: CGMMetricsService = Depends(get_cgm_metrics_service),
-    current_care_provider: CareProviderModel = Depends(
-        get_current_care_provider(
-            CareProviderPermissionAction.READ,
-            CareProviderFeature.HEALTH_FACILITY,
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
         )
     ),
 ):
+    health_facility_id, care_provider_id, is_facility_admin = (
+        resolve_patient_scope(current_actor.model)
+    )
     try:
         end = datetime.now()
         start = end - timedelta(days=days)
@@ -446,9 +550,9 @@ async def get_patients_with_high_gv(
             start=start,
             end=end,
             gv_threshold=gv_threshold,
-            health_facility_id=str(current_care_provider.health_facility_id),
-            care_provider_id=str(current_care_provider.care_provider_id),
-            is_admin=current_care_provider.is_admin,
+            health_facility_id=health_facility_id,
+            care_provider_id=care_provider_id,
+            is_facility_admin=is_facility_admin,
             limit=limit,
             offset=offset,
         )
@@ -463,5 +567,83 @@ async def get_patients_with_high_gv(
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Unexpected error fetching patients with high glucose variability",
+            detail=str(e),
+        )
+
+
+@router.get("/health-facilities/onboarded/grouped", response_model=SuccessResponse)
+async def get_health_facilities_onboarded_grouped(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    health_facility_metrics_service: HealthFacilityMetricsService = Depends(
+        get_health_facility_metrics_service
+    ),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.ADMIN,
+            ],
+        )
+    ),
+):
+    try:
+        grouped = await health_facility_metrics_service.get_health_facilities_onboarded_grouped_by_date(
+            start=start,
+            end=end,
+        )
+
+        return SuccessResponse(
+            message="Health facilities onboarded grouped by date",
+            data=grouped,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/packages/created/grouped", response_model=SuccessResponse)
+async def get_packages_created_grouped(
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    package_metrics_service: PackageMetricsService = Depends(
+        get_package_metrics_service
+    ),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.ADMIN,
+            ],
+            care_provider_action=CareProviderPermissionAction.READ,
+            care_provider_feature=CareProviderFeature.HEALTH_FACILITY,
+        )
+    ),
+):
+    try:
+        health_facility_id, care_provider_id, is_facility_admin = (
+            resolve_patient_scope(current_actor.model)
+        )
+
+        grouped = await package_metrics_service.get_packages_created_grouped_by_date(
+            health_facility_id=health_facility_id,
+            start=start,
+            end=end,
+        )
+
+        return SuccessResponse(
+            message="Packages created grouped by date",
+            data=grouped,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
             detail=str(e),
         )

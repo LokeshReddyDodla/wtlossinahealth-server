@@ -4,7 +4,7 @@ import string
 from typing import List, Optional
 
 from fastapi import status
-from sqlalchemy import UUID
+from sqlalchemy import UUID, distinct, func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -134,24 +134,60 @@ class PackageService:
             )
 
     @with_postgres_session
-    async def fetch_packages_in_health_facility(
-        self, health_facility_id: str, *, postgres_session: AsyncSession
+    async def fetch_packages(
+        self,
+        health_facility_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
     ) -> List[PackageModel]:
         try:
-            stmt = (
-                select(PackageModel)
-                .where(PackageModel.health_facility_id == health_facility_id)
-                .options(
-                    selectinload(PackageModel.care_providers),
-                    selectinload(PackageModel.patient_assignments).options(
-                        joinedload(PatientPackageAssignmentModel.package),
-                        joinedload(PatientPackageAssignmentModel.patient),
-                    ),
-                )
+            stmt = select(PackageModel).options(
+                selectinload(PackageModel.health_facility),
+                selectinload(PackageModel.care_providers),
+                selectinload(PackageModel.patient_assignments).options(
+                    joinedload(PatientPackageAssignmentModel.package),
+                    joinedload(PatientPackageAssignmentModel.patient),
+                ),
             )
+
+            if health_facility_id:
+                stmt = stmt.where(PackageModel.health_facility_id == health_facility_id)
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
 
             packages = (await postgres_session.execute(stmt)).scalars().all()
             return list(packages)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def count_packages(
+        self,
+        health_facility_id: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        try:
+            stmt = select(func.count(distinct(PackageModel.package_id)))
+
+            if health_facility_id:
+                stmt = stmt.where(PackageModel.health_facility_id == health_facility_id)
+
+            result = await postgres_session.execute(stmt)
+            count = result.scalar() or 0
+
+            return count
 
         except SQLAlchemyError as e:
             raise_http_exception(

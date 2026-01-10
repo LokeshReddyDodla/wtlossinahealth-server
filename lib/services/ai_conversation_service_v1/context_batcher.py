@@ -12,8 +12,8 @@ class AIConversationContextBatcher:
     def __init__(
         self,
         context_builder: AIConversationContextBuilder,
-        model_name: str = "gpt-4.1-mini",
-        max_tokens: int = 48000,  # keep a buffer under model limit
+        model_name: str = "gpt-4o-mini",
+        max_tokens: int = 16_000,
         patient_batch_size: int = 10,
     ):
         self.context_builder = context_builder

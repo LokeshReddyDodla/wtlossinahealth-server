@@ -13,10 +13,33 @@ class CGMReportService:
         cgm_report_collection,
         meal_report_service,
         fitness_report_service,
+        patient_summary_service=None,
     ):
         self.cgm_report_collection = cgm_report_collection
         self.meal_report_service = meal_report_service
         self.fitness_report_service = fitness_report_service
+        self.patient_summary_service = patient_summary_service
+
+    async def _mark_summaries_stale(
+        self, patient_id: str, start_date: datetime, end_date: datetime
+    ) -> None:
+        if not self.patient_summary_service:
+            return
+
+        try:
+            from lib.services.patient_summary.enum import StaleReason
+
+            await self.patient_summary_service.mark_summaries_as_stale(
+                patient_id=patient_id,
+                start_date=start_date,
+                end_date=end_date,
+                stale_reason=StaleReason.DATA_UPDATED,
+            )
+        except Exception as e:
+            # Don't fail the save operation if marking stale fails
+            logging.warning(
+                f"Failed to mark summaries as stale for {patient_id}: {e}"
+            )
 
     async def fetch_reports(self, patient_id: str):
         try:
@@ -44,6 +67,50 @@ class CGMReportService:
                 f"❌ Failed to fetch reports for {patient_id}. Error: {error}"
             )
             return []
+
+    async def fetch_reports_batch(self, patient_ids: List[str]) -> Dict[str, List[Dict]]:
+        try:
+            if not patient_ids:
+                return {}
+
+            reports_cursor = self.cgm_report_collection.find(
+                {
+                    "patient_id": {"$in": patient_ids},
+                    "report_type": CGMReportType.CUSTOM,
+                },
+                {
+                    "_id": 1,
+                    "patient_id": 1,
+                    "start_date": 1,
+                    "end_date": 1,
+                },
+            ).sort([("patient_id", 1), ("start_date", 1)])
+
+            reports = await reports_cursor.to_list(length=None)
+
+            # Group reports by patient_id
+            reports_by_patient: Dict[str, List[Dict]] = {}
+            for report in reports:
+                patient_id = report["patient_id"]
+                report["report_id"] = report.pop("_id")
+                
+                if patient_id not in reports_by_patient:
+                    reports_by_patient[patient_id] = []
+                reports_by_patient[patient_id].append(report)
+
+            # Ensure all patient_ids have an entry (even if empty)
+            for patient_id in patient_ids:
+                if patient_id not in reports_by_patient:
+                    reports_by_patient[patient_id] = []
+
+            return reports_by_patient
+
+        except Exception as error:
+            logging.error(
+                f"❌ Failed to fetch reports batch for {len(patient_ids)} patients. Error: {error}"
+            )
+            # Return empty dict for all patient_ids on error
+            return {patient_id: [] for patient_id in patient_ids}
 
     async def fetch_report(self, patient_id: str, report_id: str):
         try:
@@ -342,6 +409,13 @@ class CGMReportService:
                 f"✅ Saved/Updated cgm report for {patient_id} from {report.start_date} to {report.end_date}"
             )
 
+            # Mark affected summaries as stale
+            await self._mark_summaries_stale(
+                patient_id=patient_id,
+                start_date=report.start_date,
+                end_date=report.end_date,
+            )
+
             return report_id
 
         except Exception as error:
@@ -351,10 +425,11 @@ class CGMReportService:
             raise
 
     async def save_reports_bulk(
-        self, patient_id: str, reports: List[CGMStats]
+        self, patient_id: str, reports: List[CGMStats], status: str = None, termination_reason: str = None
     ):
         from pymongo import UpdateOne
         from datetime import datetime
+        from lib.utils.cgm.processor import CGMReportType
 
         now = datetime.now()
         ops = []
@@ -399,6 +474,13 @@ class CGMReportService:
                     "created_at": report_dict.get("created_at", now),
                 }
             )
+            
+            # Add status and termination_reason for custom reports
+            if report.report_type == CGMReportType.CUSTOM:
+                if status:
+                    report_dict["status"] = status
+                if termination_reason:
+                    report_dict["termination_reason"] = termination_reason
 
             ops.append(
                 UpdateOne(
@@ -409,6 +491,16 @@ class CGMReportService:
         if ops:
             await self.cgm_report_collection.bulk_write(ops)
             print(f"✅ Bulk saved {len(ops)} CGM reports for {patient_id}")
+            
+            # Mark affected summaries as stale
+            # Collect date ranges from all reports
+            for report in reports:
+                await self._mark_summaries_stale(
+                    patient_id=patient_id,
+                    start_date=report.start_date,
+                    end_date=report.end_date,
+                )
+            
             return report_id
         else:
             print("⚠️ No CGM reports to save.")

@@ -10,7 +10,9 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     String,
+    func,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from lib.core.constants import CareProviderStatus
@@ -115,6 +117,21 @@ class CareProvider(Base):
         back_populates="enrolled_by",
         cascade="all, delete-orphan",
     )
+
+    @hybrid_property
+    def full_name(self):  # type: ignore
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return None
+
+    @full_name.expression
+    def full_name(cls):
+        return func.concat(cls.first_name, " ", cls.last_name)
+
     @property
     def is_admin(self):
         return str(self.role).lower() == "admin"

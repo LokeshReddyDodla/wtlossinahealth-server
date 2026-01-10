@@ -16,9 +16,9 @@ from lib.models.associations import patient_care_provider_association
 class PatientMetricsService:
     async def get_enrolled_patients(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         limit: int = 100,
@@ -26,19 +26,14 @@ class PatientMetricsService:
     ) -> List[Patient]:
         try:
             async with get_async_postgres_session() as session:
-                if is_admin:
-                    stmt = select(Patient).where(
-                        Patient.health_facility_id == health_facility_id
-                    )
-                else:
-                    stmt = (
-                        select(Patient)
-                        .join(patient_care_provider_association)
-                        .where(
-                            patient_care_provider_association.c.care_provider_id
-                            == care_provider_id
-                        )
-                    )
+                stmt = select(Patient)
+
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(Patient.created_at >= start)
@@ -50,67 +45,55 @@ class PatientMetricsService:
                     .offset(offset)
                     .limit(limit)
                 )
+
                 result = await session.execute(stmt)
-                patients = result.scalars().all()
-                return list(patients)
+                return result.scalars().all()
 
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch total patients enrolled",
+                message="Failed to fetch patients",
                 detail=str(e),
             )
 
     async def get_enrolled_patient_counts_by_date(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> List[dict]:
         try:
             async with get_async_postgres_session() as session:
-                if is_admin:
-                    stmt = (
-                        select(
-                            cast(Patient.created_at, Date).label("date"),
-                            func.count().label("count"),
-                        )
-                        .where(
-                            Patient.health_facility_id == health_facility_id
-                        )
-                        .group_by(cast(Patient.created_at, Date))
-                        .order_by("date")
-                    )
-                else:
-                    stmt = (
-                        select(
-                            cast(Patient.created_at, Date).label("date"),
-                            func.count().label("count"),
-                        )
-                        .select_from(Patient)
-                        .join(patient_care_provider_association)
-                        .where(
-                            patient_care_provider_association.c.care_provider_id
-                            == care_provider_id
-                        )
-                        .group_by(cast(Patient.created_at, Date))
-                        .order_by("date")
-                    )
+                stmt = select(
+                    cast(Patient.created_at, Date).label("date"),
+                    func.count().label("count"),
+                ).select_from(Patient)
+
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(Patient.created_at >= start)
                 if end:
                     stmt = stmt.where(Patient.created_at <= end)
 
+                stmt = stmt.group_by(cast(Patient.created_at, Date)).order_by(
+                    "date"
+                )
+
                 result = await session.execute(stmt)
-                rows = result.all()
 
                 return [
                     {"date": row.date.isoformat(), "count": row.count}
-                    for row in rows
+                    for row in result.all()
                 ]
+
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -120,15 +103,12 @@ class PatientMetricsService:
 
     async def get_active_patient_count(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> int:
-        """
-        Returns count of unique patients whose most recent device activity is between start and end.
-        """
         try:
             async with get_async_postgres_session() as session:
                 stmt = (
@@ -143,15 +123,12 @@ class PatientMetricsService:
                     )
                 )
 
-                if is_admin:
-                    stmt = stmt.where(
-                        Patient.health_facility_id == health_facility_id
-                    )
-                else:
-                    stmt = stmt.join(patient_care_provider_association).where(
-                        patient_care_provider_association.c.care_provider_id
-                        == care_provider_id
-                    )
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(UserActivityLog.active_at >= start)
@@ -170,15 +147,12 @@ class PatientMetricsService:
 
     async def get_active_patients_by_date(
         self,
-        health_facility_id: str,
-        care_provider_id: str,
-        is_admin: bool,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> List[dict]:
-        """
-        Returns daily counts of unique active patients based on activity logs.
-        """
         try:
             async with get_async_postgres_session() as session:
                 stmt = (
@@ -192,18 +166,18 @@ class PatientMetricsService:
                     .join(
                         Patient, Patient.patient_id == UserActivityLog.user_id
                     )
-                    .where(UserActivityLog.profile_type == "patient")
+                    .where(
+                        UserActivityLog.profile_type
+                        == ProfileTypeEnum.PATIENT.value
+                    )
                 )
 
-                if is_admin:
-                    stmt = stmt.where(
-                        Patient.health_facility_id == health_facility_id
-                    )
-                else:
-                    stmt = stmt.join(patient_care_provider_association).where(
-                        patient_care_provider_association.c.care_provider_id
-                        == care_provider_id
-                    )
+                stmt = self._apply_patient_scope_filters(
+                    stmt,
+                    health_facility_id=health_facility_id,
+                    care_provider_id=care_provider_id,
+                    is_facility_admin=is_facility_admin,
+                )
 
                 if start:
                     stmt = stmt.where(UserActivityLog.active_at >= start)
@@ -215,11 +189,10 @@ class PatientMetricsService:
                 ).order_by("date")
 
                 result = await session.execute(stmt)
-                rows = result.all()
 
                 return [
                     {"date": row.date.isoformat(), "count": row.count}
-                    for row in rows
+                    for row in result.all()
                 ]
 
         except SQLAlchemyError as e:
@@ -228,3 +201,22 @@ class PatientMetricsService:
                 message="Failed to group active patients by date",
                 detail=str(e),
             )
+
+    def _apply_patient_scope_filters(
+        self,
+        stmt,
+        *,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        is_facility_admin: bool = False,
+    ):
+        if health_facility_id and is_facility_admin:
+            return stmt.where(Patient.health_facility_id == health_facility_id)
+
+        if care_provider_id:
+            stmt = stmt.join(patient_care_provider_association).where(
+                patient_care_provider_association.c.care_provider_id
+                == care_provider_id
+            )
+
+        return stmt

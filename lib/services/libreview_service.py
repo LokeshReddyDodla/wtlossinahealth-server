@@ -64,11 +64,6 @@ class LibreViewService:
             )
 
         redis_key = f"{libreview.libreview_id}:{patient_id}"
-        if self.libreview_sync_store.get_key(redis_key):
-            return {
-                "message": "Sync already in progress (in queue).",
-                "data": {"status": "already_queued"},
-            }
 
         payload = {
             "patient_id": patient_id,
@@ -77,13 +72,24 @@ class LibreViewService:
             "timestamp": int(datetime.utcnow().timestamp() * 1000),
         }
 
+        lock_acquired = self.libreview_sync_store.set_key(
+            redis_key,
+            json.dumps(payload),
+            expire=self.REDIS_SYNC_TTL_SECONDS,
+            nx=True,  # SET only if key does NOT exist
+        )
+
+        if not lock_acquired:
+            return {
+                "message": "Sync already in progress (in queue).",
+                "data": {"status": "already_queued"},
+            }
+
+        
+
         self.libreview_sync_queue.send_message(
             deduplication_id=redis_key,
             payload=payload,
-        )
-
-        self.libreview_sync_store.set_key(
-            redis_key, json.dumps(payload), expire=self.REDIS_SYNC_TTL_SECONDS
         )
 
         return {

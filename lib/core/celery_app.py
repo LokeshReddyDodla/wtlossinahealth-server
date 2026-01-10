@@ -61,6 +61,33 @@ celery.conf.update(
             "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
             "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
         },
+        "patient-daily-summaries": {
+            "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",
+            "schedule": crontab(hour="3", minute="0"),  # 3:00 AM IST daily
+        },
+        "regenerate-stale-summaries": {
+            "task": "lib.tasks.patient_summary_tasks.regenerate_stale_summaries",
+            "schedule": crontab(
+                hour="0,3,6,9,12,15,18,21", minute="0"
+            ),  # Every 3 hours at :00
+            "options": {
+                "expires": 60 * 60 * 2,  # 2 hours expiration
+            },
+        },
+        "update-package-assignment-statuses": {
+            "task": "lib.tasks.package_assignment_tasks.update_package_assignment_statuses",
+            "schedule": crontab(hour="1", minute="0"),  # 1:00 AM IST daily
+            "options": {
+                "expires": 60 * 60,  # 1 hour expiration
+            },
+        },
+        "deactivate-inactive-devices": {
+            "task": "lib.tasks.other_tasks.deactivate_inactive_devices",
+            "schedule": crontab(day_of_week=0, hour="2", minute="0"),  # Sunday 2:00 AM IST weekly
+            "options": {
+                "expires": 60 * 60 * 2,  # 2 hours expiration
+            },
+        },
     },
 )
 
@@ -75,3 +102,5 @@ from lib.tasks.other_tasks import *
 from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
 from lib.tasks.weightloss_agent.agentic_orchestrator import *
+from lib.tasks.patient_summary_tasks import *
+from lib.tasks.package_assignment_tasks import *

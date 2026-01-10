@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import exists, or_
+from sqlalchemy import distinct, exists, func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -174,6 +174,7 @@ class PatientProfileService:
                     joinedload(PatientModel.connected_apps).joinedload(
                         PatientConnectedApp.other_app
                     ),
+                    selectinload(PatientModel.weight_loss_enrollment),
                 )
 
             patient = await postgres_session.scalar(stmt)
@@ -185,6 +186,82 @@ class PatientProfileService:
                 )
 
             return patient
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def fetch_patients(
+        self,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
+    ) -> List[PatientModel]:
+        try:
+            stmt = select(PatientModel).options(
+                selectinload(PatientModel.health_facility),
+                selectinload(PatientModel.care_providers),
+                selectinload(PatientModel.package_assignments).options(
+                    selectinload(PatientPackageAssignmentModel.package)
+                ),
+            )
+
+            if care_provider_id:
+                stmt = stmt.join(PatientModel.care_providers).where(
+                    CareProviderModel.care_provider_id == care_provider_id
+                )
+
+            if health_facility_id:
+                stmt = stmt.where(PatientModel.health_facility_id == health_facility_id)
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
+
+            result = await postgres_session.execute(stmt)
+            patients = result.scalars().all()
+
+            return list(patients)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def count_patients(
+        self,
+        health_facility_id: Optional[str] = None,
+        care_provider_id: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        try:
+            stmt = select(func.count(distinct(PatientModel.patient_id)))
+
+            if care_provider_id:
+                stmt = stmt.join(PatientModel.care_providers).where(
+                    CareProviderModel.care_provider_id == care_provider_id
+                )
+
+            if health_facility_id:
+                stmt = stmt.where(PatientModel.health_facility_id == health_facility_id)
+
+            result = await postgres_session.execute(stmt)
+            count = result.scalar() or 0
+
+            return count
 
         except SQLAlchemyError as e:
             raise_http_exception(

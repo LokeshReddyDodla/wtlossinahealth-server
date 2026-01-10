@@ -1,6 +1,7 @@
 import json
 from math import ceil
 from typing import List, Optional
+from datetime import date, datetime, timedelta, timezone
 from fastapi import (
     APIRouter,
     Body,
@@ -17,6 +18,7 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_ai_conversation_service_v1,
     get_ai_conversation_service_v2,
+    get_active_patient_service,
     get_cgm_report_service,
     get_cgm_vector_service,
     get_fitness_report_service,
@@ -26,6 +28,7 @@ from lib.dependencies.service_dependencies import (
     get_patient_profile_service,
     get_patient_profile_vector_service,
     get_qdrant_search_engine,
+    get_patient_summary_service,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
 from lib.models.patient_smbg import PatientSMBG
@@ -65,6 +68,7 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
+# from lib.services.qdrant_search_engine.clarifier_agent import ClarifierAgent
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -86,6 +90,10 @@ from lib.models.patient import Patient as PatientModel
 from lib.models.patient_eating_habit import (
     PatientEatingHabit as PatientEatingHabitModel,
 )
+from lib.services.patient_summary import PatientSummaryService
+from lib.services.active_patient_service import ActivePatientService
+from fastapi.encoders import jsonable_encoder
+from bson import ObjectId
 
 router = APIRouter(prefix="/test")
 
@@ -108,6 +116,173 @@ async def test_api(request: Request):
     except Exception as e:
         logger.error(f"Failed to insert document: {str(e)}")
         return {"message": "failed to insert", "error": str(e)}
+
+
+@router.delete(path="/cgm-reports/duplicates", tags=["Test"])
+async def delete_duplicate_cgm_reports(request: Request):
+    """
+    Delete ALL duplicate CGM reports with report_type="custom" that have the same
+    patient_id and start_date but different end_dates.
+    All duplicates will be deleted (reports will be regenerated later).
+    """
+    try:
+        # Get the cgm_reports collection
+        cgm_collection = request.state.context.mongo_store.get_collection("cgm_reports")
+        
+        # Run aggregation to find duplicates
+        pipeline = [
+            {
+                "$match": {
+                    "report_type": "custom"
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "patient_id": "$patient_id",
+                        "start_date": "$start_date"
+                    },
+                    "end_dates": {"$addToSet": "$end_date"},
+                    "ids": {"$push": "$_id"},
+                    "count": {"$sum": 1}
+                }
+            },
+            {
+                "$match": {
+                    "count": {"$gt": 1},
+                    "end_dates.1": {"$exists": True}
+                }
+            }
+        ]
+        
+        duplicate_groups = await cgm_collection.aggregate(pipeline).to_list(length=None)
+        
+        # Collect all IDs to delete
+        all_ids_to_delete = []
+        deleted_reports = []
+        
+        for group in duplicate_groups:
+            report_ids = group["ids"]
+            patient_id = group["_id"]["patient_id"]
+            start_date = group["_id"]["start_date"]
+            
+            # Fetch all reports in this duplicate group to get their details
+            reports = await cgm_collection.find(
+                {"_id": {"$in": report_ids}}
+            ).to_list(length=None)
+            
+            # Add all report IDs to delete list
+            for report in reports:
+                all_ids_to_delete.append(report["_id"])
+                deleted_reports.append({
+                    "report_id": str(report["_id"]),
+                    "patient_id": str(patient_id),
+                    "start_date": report.get("start_date"),
+                    "end_date": report.get("end_date"),
+                })
+        
+        # Delete all duplicate reports
+        total_deleted = 0
+        if all_ids_to_delete:
+            delete_result = await cgm_collection.delete_many(
+                {"_id": {"$in": all_ids_to_delete}}
+            )
+            total_deleted = delete_result.deleted_count
+        
+        return {
+            "message": f"Deleted {total_deleted} duplicate reports",
+            "summary": {
+                "duplicate_groups_found": len(duplicate_groups),
+                "total_deleted": total_deleted,
+            },
+            "deleted_reports": deleted_reports,
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to delete duplicate reports: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete duplicate reports: {str(e)}"
+        )
+
+
+# @router.get("/active-patients", tags=["Test"])
+# async def get_active_patients(
+#     days: int = Query(default=3, ge=0, description="Number of days to look back for activity"),
+#     active_patient_service: ActivePatientService = Depends(
+#         get_active_patient_service
+#     ),
+# ):
+#     """
+#     Test endpoint to fetch active patients from the last N days.
+#     """
+#     try:
+#         patient_ids = await active_patient_service.get_active_patients(days=days)
+#         return {
+#             "message": f"Found {len(patient_ids)} active patients in the last {days} days",
+#             "days": days,
+#             "count": len(patient_ids),
+#             "patient_ids": patient_ids,
+#         }
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Failed to fetch active patients",
+#             detail=str(e),
+#         )
+
+
+# @router.post("/patient-summary/{patient_id}", tags=["Test"])
+# async def generate_patient_summary(
+#     patient_id: str,
+#     date: date,
+#     include_document: bool = True,
+#     patient_summary_service: PatientSummaryService = Depends(
+#         get_patient_summary_service
+#     ),
+# ):
+#     """
+#     Trigger generate_daily_summary for a patient for a specific date and optionally
+#     return the stored document.
+#     """
+#     try:
+        
+#         start_dt = datetime.combine(
+#             date, datetime.min.time(), tzinfo=timezone.utc
+#         )
+#         end_dt = datetime.combine(
+#             date, datetime.max.time(), tzinfo=timezone.utc
+#         )
+
+#         await patient_summary_service.generate_daily_summary(
+#             patient_id, date
+#         )
+
+#         doc = None
+#         if include_document:
+#             doc = await patient_summary_service.patient_summary_collection.find_one(
+#                 {
+#                     "patient_id": patient_id,
+#                     "start_date": start_dt,
+#                     "end_date": end_dt,
+#                 }
+#             )
+
+#         return {
+#             "message": "summary generated",
+#             "period": {"start": start_dt, "end": end_dt},
+#             "data": jsonable_encoder(doc, custom_encoder={ObjectId: str}),
+#         }
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Failed to generate patient summary",
+#             detail=str(e),
+#         )
 
 
 # @router.post("/extract")
@@ -886,6 +1061,29 @@ async def test_api(request: Request):
 #         )
 
 #         return SuccessResponse(message="Voila", data=result)
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await session.rollback()
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Internal Server Error",
+#             detail=str(e),
+#         )
+
+
+# @router.post("/ai/agent")
+# async def test_clarifier_agent(
+#     human_input: str = Query(...),
+#     session: AsyncSession = Depends(get_postgres_session),
+# ):
+#     try:
+#         clarifier = ClarifierAgent()
+#         final_instruction = await clarifier.ask_until_clear(
+#             human_input,
+#         )
+
+#         return SuccessResponse(message="Voila", data=final_instruction)
 #     except HTTPException:
 #         raise
 #     except Exception as e:

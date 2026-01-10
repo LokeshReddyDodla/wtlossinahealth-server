@@ -14,8 +14,30 @@ from lib.utils.fitness.processor import FitnessReportType
 
 
 class FitnessReportService:
-    def __init__(self, fitness_report_collection):
+    def __init__(self, fitness_report_collection, patient_summary_service=None):
         self.fitness_report_collection = fitness_report_collection
+        self.patient_summary_service = patient_summary_service
+
+    async def _mark_summaries_stale(
+        self, patient_id: str, start_date: datetime, end_date: datetime
+    ) -> None:
+        if not self.patient_summary_service:
+            return
+
+        try:
+            from lib.services.patient_summary.enum import StaleReason
+
+            await self.patient_summary_service.mark_summaries_as_stale(
+                patient_id=patient_id,
+                start_date=start_date,
+                end_date=end_date,
+                stale_reason=StaleReason.DATA_UPDATED,
+            )
+        except Exception as e:
+            # Don't fail the save operation if marking stale fails
+            logging.warning(
+                f"Failed to mark summaries as stale for {patient_id}: {e}"
+            )
 
     async def fetch_report_by_id(self, report_id: str) -> Optional[dict]:
         try:
@@ -224,6 +246,14 @@ class FitnessReportService:
             print(
                 f"✅ Saved/Updated fitness report for {patient_id} ({report.report_type}) from {report.start_date} to {report.end_date}"
             )
+
+            # Mark affected summaries as stale
+            await self._mark_summaries_stale(
+                patient_id=patient_id,
+                start_date=report.start_date,
+                end_date=report.end_date,
+            )
+
             return report_id
 
         except Exception as e:
@@ -269,6 +299,14 @@ class FitnessReportService:
                 print(
                     f"✅ Bulk saved {len(ops)} Fitness reports for {patient_id}"
                 )
+
+                # Mark affected summaries as stale
+                for report in reports:
+                    await self._mark_summaries_stale(
+                        patient_id=patient_id,
+                        start_date=report.start_date,
+                        end_date=report.end_date,
+                    )
             else:
                 print("⚠️ No Fitness reports to save.")
         except Exception as e:

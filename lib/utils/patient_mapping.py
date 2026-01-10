@@ -1,4 +1,4 @@
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +11,12 @@ from sqlalchemy.orm import selectinload
 
 async def map_patients_to_reports(
     reports: List[Dict],
-    health_facility_id: str,
-    care_provider_id: str,
-    is_admin: bool,
     postgres_session: AsyncSession,
     extract_patient_id: Callable[[Dict], str],
     enrich_payload: Callable[[Dict, Patient], Dict],
+    health_facility_id: Optional[str] = None,
+    care_provider_id: Optional[str] = None,
+    is_facility_admin: bool = False,
 ) -> List[Dict]:
     if not reports:
         return []
@@ -33,16 +33,16 @@ async def map_patients_to_reports(
         .where(Patient.patient_id.in_(patient_ids))
     )
 
-    if is_admin:
+    if health_facility_id and is_facility_admin:
         stmt = stmt.where(Patient.health_facility_id == health_facility_id)
-    else:
-        stmt = stmt.where(
-            Patient.patient_id.in_(
-                select(patient_care_provider_association.c.patient_id).where(
-                    patient_care_provider_association.c.care_provider_id
-                    == care_provider_id
-                )
-            )
+    elif care_provider_id:
+        stmt = stmt.join(
+            patient_care_provider_association,
+            Patient.patient_id
+            == patient_care_provider_association.c.patient_id,
+        ).where(
+            patient_care_provider_association.c.care_provider_id
+            == care_provider_id
         )
 
     try:

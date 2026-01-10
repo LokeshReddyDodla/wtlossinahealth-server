@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 from typing import List, Tuple
 
@@ -7,7 +7,7 @@ from celery import shared_task
 
 @shared_task(queue="cgm_reports", rate_limit="20/m")
 def trigger_cgm_report_generation_for_periods(
-    patient_id: str, periods: List[Tuple[datetime, datetime]]
+    patient_id: str, periods: List[Tuple]
 ):
     from lib.dependencies.service_dependencies import (
         get_celery_task_manager,
@@ -24,7 +24,18 @@ def trigger_cgm_report_generation_for_periods(
                 f"🕒 Last synced for {patient_id}: {last_synced.isoformat()}"
             )
 
-        for start_raw, end_raw in reversed(periods):
+        for period in reversed(periods):
+            # Handle both old format (2-tuple) and new format (4-tuple with status)
+            if len(period) == 2:
+                start_raw, end_raw = period
+                status = "OPEN"
+                termination_reason = None
+            elif len(period) == 4:
+                start_raw, end_raw, status, termination_reason = period
+            else:
+                print(f"⚠️ Skipping invalid period format: {period}")
+                continue
+
             start_date = _parse_datetime(start_raw)
             end_date = _parse_datetime(end_raw)
 
@@ -43,14 +54,14 @@ def trigger_cgm_report_generation_for_periods(
 
             task_manager.trigger_task_once(
                 "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
-                args=[patient_id, start_date, end_date],
+                args=[patient_id, start_date, end_date, status, termination_reason],
                 task_id=f"{patient_id}_{start_date.isoformat()}_{end_date.isoformat()}",
                 queue="cgm_reports",
             )
 
             print(
                 f"✅ Triggered CGM report for {patient_id} "
-                f"({start_date.isoformat()} - {end_date.isoformat()})"
+                f"({start_date.isoformat()} - {end_date.isoformat()}, status={status})"
             )
 
     except Exception as e:
@@ -66,6 +77,8 @@ async def generate_and_store_cgm_report(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
+    status: str = "OPEN",
+    termination_reason: str = None,
 ):
     try:
         from lib.dependencies.service_dependencies import (
@@ -73,11 +86,57 @@ async def generate_and_store_cgm_report(
             get_cgm_stats_processor,
             get_cgm_sync_cache_store,
         )
+        from lib.utils.cgm.processor import CGMReportType
 
         processor = get_cgm_stats_processor()
         service = get_cgm_report_service()
         cache_store = get_cgm_sync_cache_store()
         last_synced = _parse_datetime(cache_store.get_key(patient_id))
+
+        # Normalize start_date to beginning of day for comparison
+        start_date_normalized = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        next_day_start = start_date_normalized + timedelta(days=1)
+
+        # Check if a custom report with the same start_date (same calendar day) already exists
+        existing_report = await service.cgm_report_collection.find_one(
+            {
+                "patient_id": patient_id,
+                "report_type": CGMReportType.CUSTOM,
+                "start_date": {"$gte": start_date_normalized, "$lt": next_day_start},
+            },
+            {"_id": 1, "start_date": 1, "end_date": 1, "status": 1, "termination_reason": 1}
+        )
+
+        if existing_report:
+            existing_status = existing_report.get("status", "OPEN")
+            existing_end = existing_report.get("end_date")
+            
+            # If report is CLOSED, skip (immutable)
+            if existing_status == "CLOSED":
+                print(
+                    f"⏭️ Skipping CGM report generation for {patient_id} "
+                    f"({start_date.isoformat()} - {end_date.isoformat()}) "
+                    f"since a CLOSED report already exists with start_date {start_date_normalized.isoformat()} "
+                    f"(end_date: {existing_end.isoformat() if existing_end else 'N/A'})"
+                )
+                return
+            
+            # If report is OPEN and new end_date doesn't extend it, skip
+            if existing_end and end_date <= existing_end:
+                print(
+                    f"⏭️ Skipping CGM report generation for {patient_id} "
+                    f"({start_date.isoformat()} - {end_date.isoformat()}) "
+                    f"since OPEN report already exists with end_date {existing_end.isoformat()} "
+                    f"(new end_date doesn't extend it)"
+                )
+                return
+            
+            # If report is OPEN and new end_date extends it, continue to regenerate
+            if existing_end and end_date > existing_end:
+                print(
+                    f"📅 Extending OPEN report for {patient_id} "
+                    f"from {existing_end.isoformat()} to {end_date.isoformat()}"
+                )
 
         reports = await processor.generate_report(
             patient_id, start_date, end_date
@@ -88,7 +147,9 @@ async def generate_and_store_cgm_report(
             )
             return
 
-        report_id = await service.save_reports_bulk(patient_id, reports)
+        report_id = await service.save_reports_bulk(
+            patient_id, reports, status=status, termination_reason=termination_reason
+        )
         if not report_id:
             print(f"❌ Failed to save CGM reports for {patient_id}")
             return

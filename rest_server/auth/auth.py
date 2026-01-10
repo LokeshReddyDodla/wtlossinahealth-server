@@ -32,13 +32,13 @@ async def send_otp(request: Request, user_phone: UserPhoneNumber):
         otp_service = OTPService(
             provider=twilio_provider, cache_store=cache_store
         )
-        await otp_service.generate_and_send_otp(user_phone.phone_number)
+        otp = await otp_service.generate_and_send_otp(user_phone.phone_number)
 
         # return SuccessResponse(
         #     message=f"OTP sent successfully to your WhatsApp number {user_phone.phone_number}"
         # )
         return SuccessResponse(
-            message="Unable to send OTP on WhatsApp. Please enter the last 4 digits of your device number to proceed."
+            message=f"OTP sent successfully. Your OTP is: {otp}"
         )
 
     except Exception as e:

@@ -1,4 +1,13 @@
 """Service for managing weight loss agent functionality."""
+import re
+from datetime import datetime, timedelta, date
+from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID, uuid4
+
+from fastapi import status
+from sqlalchemy import and_, func
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload, joinedload
 
 from __future__ import annotations
 

@@ -53,6 +53,12 @@ from lib.services.dashboard_metrics.patient_metrics_service import (
 from lib.services.dashboard_metrics.smbg_metrics_service import (
     SMBGMetricsService,
 )
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
+)
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
@@ -86,6 +92,12 @@ from lib.services.patient_profile_vector_service.patient_profile_vector_service 
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
+from lib.services.patient_summary import PatientSummaryService
+from lib.services.active_patient_service import ActivePatientService
+from lib.services.patient_query_service import PatientQueryService
+from lib.services.patient_enrichment_service import PatientEnrichmentService
+from lib.services.care_provider_query_service import CareProviderQueryService
+from lib.services.package_query_service import PackageQueryService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -174,6 +186,13 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("meal_reports"),
+    scope=Scope.singleton,
+)
+container.register(
+    "patient_summary_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("patient_summaries"),
     scope=Scope.singleton,
 )
 container.register(
@@ -411,6 +430,9 @@ container.register(
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -600,7 +622,10 @@ container.register(
 container.register(
     SleepReportService,
     lambda: SleepReportService(
-        sleep_report_collection=container.resolve("sleep_report_collection")
+        sleep_report_collection=container.resolve("sleep_report_collection"),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -610,7 +635,10 @@ container.register(
     lambda: FitnessReportService(
         fitness_report_collection=container.resolve(
             "fitness_report_collection"
-        )
+        ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -618,7 +646,10 @@ container.register(
 container.register(
     MealReportService,
     lambda: MealReportService(
-        meal_report_collection=container.resolve("meal_report_collection")
+        meal_report_collection=container.resolve("meal_report_collection"),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
     ),
 )
 
@@ -632,6 +663,24 @@ container.register(
         ),
         fitness_report_service=cast(
             FitnessReportService, container.resolve(FitnessReportService)
+        ),
+        patient_summary_service=cast(
+            PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
+    ),
+)
+
+# 🔹 Patient Summary Service
+container.register(
+    PatientSummaryService,
+    lambda: PatientSummaryService(
+        patient_summary_collection=container.resolve("patient_summary_collection"),
+        fitness_reports_collection=container.resolve("fitness_report_collection"),
+        sleep_reports_collection=container.resolve("sleep_report_collection"),
+        meal_reports_collection=container.resolve("meal_report_collection"),
+        cgm_reports_collection=container.resolve("cgm_report_collection"),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
         ),
     ),
 )
@@ -650,6 +699,45 @@ container.register(
 container.register(
     UserDeviceService,
     lambda: UserDeviceService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Patient Query Service
+container.register(
+    PatientQueryService,
+    lambda: PatientQueryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Patient Enrichment Service
+container.register(
+    PatientEnrichmentService,
+    lambda: PatientEnrichmentService(
+        cgm_service=cast(
+            CGMReportService,
+            container.resolve(CGMReportService),
+        ),
+        user_device_service=cast(
+            UserDeviceService,
+            container.resolve(UserDeviceService),
+        ),
+    ),
+)
+
+# 🔹 Care Provider Query Service
+container.register(
+    CareProviderQueryService,
+    lambda: CareProviderQueryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Package Query Service
+container.register(
+    PackageQueryService,
+    lambda: PackageQueryService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
@@ -1014,6 +1102,14 @@ container.register(
     lambda: PatientMetricsService(),
 )
 
+# 🔹 Active Patient Service
+container.register(
+    ActivePatientService,
+    lambda: ActivePatientService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
 # 🔹 Meal Metrics Service
 container.register(
     MealMetricsService,
@@ -1042,6 +1138,18 @@ container.register(
             "fitness_report_collection"
         )
     ),
+)
+
+# 🔹 Health Facility Metrics Service
+container.register(
+    HealthFacilityMetricsService,
+    lambda: HealthFacilityMetricsService(),
+)
+
+# 🔹 Package Metrics Service
+container.register(
+    PackageMetricsService,
+    lambda: PackageMetricsService(),
 )
 
 

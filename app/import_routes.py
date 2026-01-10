@@ -22,7 +22,8 @@ from rest_server.safety.router import router as safety_router
 from rest_server.plan.router import router as plan_router
 from rest_server.coach.router import router as coach_router
 from rest_server.symptoms.router import router as symptoms_router
-
+from rest_server.dashboard_metrics.router import router as dashboard_metrics_router
+from rest_server.v1.router import router as v1_router
 
 def import_routes(app: FastAPI) -> None:
     """
@@ -88,6 +89,16 @@ def import_routes(app: FastAPI) -> None:
     app.include_router(plan_router)
     app.include_router(coach_router)
     app.include_router(symptoms_router)
+
+    ###########################################################################
+    # Dashboard Metrics
+    ###########################################################################
+    app.include_router(dashboard_metrics_router)
+
+    ###########################################################################
+    # V1 API
+    ###########################################################################
+    app.include_router(v1_router)
 
     ###########################################################################
     # Weight Loss Agent

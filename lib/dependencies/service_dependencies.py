@@ -39,6 +39,12 @@ from lib.services.dashboard_metrics.smbg_metrics_service import (
 from lib.services.dashboard_metrics.patient_metrics_service import (
     PatientMetricsService,
 )
+from lib.services.dashboard_metrics.health_facility_metrics_service import (
+    HealthFacilityMetricsService,
+)
+from lib.services.dashboard_metrics.package_metrics_service import (
+    PackageMetricsService,
+)
 from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.fitness_report_service import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
@@ -72,6 +78,8 @@ from lib.services.patient_profile_vector_service.patient_profile_vector_service 
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
+from lib.services.patient_summary import PatientSummaryService
+from lib.services.active_patient_service import ActivePatientService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
@@ -86,6 +94,10 @@ from lib.services.smbg_vector_service.smbg_vector_service import (
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
+from lib.services.patient_query_service import PatientQueryService
+from lib.services.patient_enrichment_service import PatientEnrichmentService
+from lib.services.care_provider_query_service import CareProviderQueryService
+from lib.services.package_query_service import PackageQueryService
 from lib.utils.fitness.processor import FitnessStatsProcessor
 from lib.utils.cgm.processor import CGMStatsProcessor
 from lib.utils.meals.processor import MealStatsProcessor
@@ -119,6 +131,31 @@ def get_libreview_sync_queue() -> SQSService:
 
 def get_user_device_service() -> UserDeviceService:
     return cast(UserDeviceService, container.resolve(UserDeviceService))
+
+
+def get_patient_query_service() -> PatientQueryService:
+    return cast(PatientQueryService, container.resolve(PatientQueryService))
+
+
+def get_patient_enrichment_service() -> PatientEnrichmentService:
+    return cast(
+        PatientEnrichmentService,
+        container.resolve(PatientEnrichmentService),
+    )
+
+
+def get_care_provider_query_service() -> CareProviderQueryService:
+    return cast(
+        CareProviderQueryService,
+        container.resolve(CareProviderQueryService),
+    )
+
+
+def get_package_query_service() -> PackageQueryService:
+    return cast(
+        PackageQueryService,
+        container.resolve(PackageQueryService),
+    )
 
 
 def get_chat_messaging_service() -> ChatMessagingService:
@@ -194,6 +231,20 @@ def get_patient_vital_service() -> PatientVitalService:
     return cast(
         PatientVitalService,
         container.resolve(PatientVitalService),
+    )
+
+
+def get_patient_summary_service() -> PatientSummaryService:
+    return cast(
+        PatientSummaryService,
+        container.resolve(PatientSummaryService),
+    )
+
+
+def get_active_patient_service() -> ActivePatientService:
+    return cast(
+        ActivePatientService,
+        container.resolve(ActivePatientService),
     )
 
 
@@ -452,6 +503,19 @@ def get_cgm_metrics_service() -> CGMMetricsService:
 def get_fitness_metrics_service() -> FitnessMetricsService:
     return cast(
         FitnessMetricsService, container.resolve(FitnessMetricsService)
+    )
+
+
+def get_health_facility_metrics_service() -> HealthFacilityMetricsService:
+    return cast(
+        HealthFacilityMetricsService,
+        container.resolve(HealthFacilityMetricsService),
+    )
+
+
+def get_package_metrics_service() -> PackageMetricsService:
+    return cast(
+        PackageMetricsService, container.resolve(PackageMetricsService)
     )
 
 

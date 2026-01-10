@@ -1,9 +1,11 @@
 import re
+from typing import List, Optional
 
 from fastapi import status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import distinct, func
 from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
@@ -22,6 +24,72 @@ class HealthFacilityService:
         postgres_store: PostgresStore,
     ):
         self.postgres_store = postgres_store
+
+    @with_postgres_session
+    async def fetch_health_facilities(
+        self,
+        health_facility_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        *,
+        postgres_session: AsyncSession,
+    ) -> List[HealthFacilityModel]:
+        try:
+            stmt = select(HealthFacilityModel).options(
+                selectinload(HealthFacilityModel.care_providers),
+                selectinload(HealthFacilityModel.patients),
+                selectinload(HealthFacilityModel.packages),
+            )
+
+            if health_facility_id:
+                stmt = stmt.where(
+                    HealthFacilityModel.health_facility_id == health_facility_id
+                )
+
+            if offset:
+                stmt = stmt.offset(offset)
+            
+            if limit:
+                stmt = stmt.limit(limit)
+
+            result = await postgres_session.execute(stmt)
+            health_facilities = result.scalars().all()
+
+            return list(health_facilities)
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def count_health_facilities(
+        self,
+        health_facility_id: Optional[str] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        try:
+            stmt = select(func.count(distinct(HealthFacilityModel.health_facility_id)))
+
+            if health_facility_id:
+                stmt = stmt.where(
+                    HealthFacilityModel.health_facility_id == health_facility_id
+                )
+
+            result = await postgres_session.execute(stmt)
+            count = result.scalar() or 0
+
+            return count
+
+        except SQLAlchemyError as e:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
 
     @with_postgres_session
     async def fetch_health_facility(
