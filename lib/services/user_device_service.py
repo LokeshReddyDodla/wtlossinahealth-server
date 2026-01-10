@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -115,6 +115,10 @@ class UserDeviceService:
             )
             if profile_type is not None:
                 stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
+
+            stmt = stmt.order_by(
+                desc(UserDeviceModel.last_active_at).nullslast()
+            )
 
             result = await postgres_session.execute(stmt)
             devices = result.scalars().all()
