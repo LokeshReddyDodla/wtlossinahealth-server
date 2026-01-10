@@ -19,7 +19,7 @@ class UserDevice(Base):
         String, nullable=False
     )  # 'patient' or 'care_provider'
 
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=True, default=True)
 
     created_at = Column(
         DateTime,
