@@ -487,6 +487,18 @@ container.register(
                 "patient_document_summary_interactions_collection"
             ),
         ),
+        patient_document_service=cast(
+            PatientDocumentService, container.resolve(PatientDocumentService)
+        ),
+        prescription_service=cast(
+            PrescriptionService, container.resolve(PrescriptionService)
+        ),
+        weight_loss_agent_service=cast(
+            WeightLossAgentService, container.resolve(WeightLossAgentService)
+        ),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
+        ),
     ),
 )
 
@@ -839,6 +851,9 @@ container.register(
             ExerciseRecommendationService,
             container.resolve(ExerciseRecommendationService),
         ),
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
+        ),
     ),
 )
 
@@ -854,6 +869,9 @@ container.register(
         ),
         analytics_service=cast(
             AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
         ),
     ),
 )
@@ -914,6 +932,9 @@ container.register(
         ),
         analytics_service=cast(
             AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
         ),
     ),
 )

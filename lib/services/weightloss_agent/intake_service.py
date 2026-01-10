@@ -137,7 +137,8 @@ class IntakeService:
         self, patient_id: UUID
     ) -> Optional[Dict[str, Any]]:
         doc = await self.exercise_preferences_collection.find_one(
-            {"patient_id": str(patient_id)}, sort=[("updated_at", -1)]
+            {"patient_id": str(patient_id)},
+            sort=[("updated_at", -1), ("created_at", -1)],
         )
         return self._expand_payload(doc)
 
@@ -190,6 +191,17 @@ class IntakeService:
         payload = doc.get("payload", {}).copy()
         payload["provenance"] = doc.get("provenance", {})
         payload["patient_id"] = doc.get("patient_id")
+        for key in (
+            "preference_id",
+            "created_at",
+            "updated_at",
+            "screen_id",
+            "screened_at",
+            "willingness_id",
+            "captured_at",
+        ):
+            if key in doc:
+                payload[key] = doc[key]
         return payload
 
     def _serialize_payload(self, payload_model: Any) -> Dict[str, Any]:

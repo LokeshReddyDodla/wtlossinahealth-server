@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from decouple import config
+
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 
 
@@ -22,6 +24,12 @@ class SafetyRulesService:
         default_path = Path(__file__).resolve().parent / "data" / "safety_rules.csv"
         self.csv_path = csv_path or default_path
         self._rules = self._load_rules()
+        self.is_enabled = (
+            str(config("WEIGHTLOSS_SAFETY_RULES_ENABLED", default="true"))
+            .strip()
+            .lower()
+            not in ("0", "false", "no", "off")
+        )
 
     def _load_rules(self) -> List[Dict[str, Any]]:
         rules: List[Dict[str, Any]] = []
@@ -60,6 +68,13 @@ class SafetyRulesService:
         return tokens
 
     async def evaluate(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.is_enabled:
+            return {
+                "contraindications": [],
+                "intensity_caps": [],
+                "rationale_ids": [],
+            }
+
         triggered = []
         for rule in self._rules:
             if self._rule_matches(rule["trigger"], context):
