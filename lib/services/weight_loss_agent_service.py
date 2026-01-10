@@ -9,8 +9,6 @@ from sqlalchemy import and_, func
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload, joinedload
 
-from __future__ import annotations
-
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
