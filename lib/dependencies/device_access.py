@@ -55,6 +55,28 @@ async def authorize_device_access(
     # Care Providers
     elif current_role == ProfileTypeEnum.CARE_PROVIDER:
         if target_role == ProfileTypeEnum.PATIENT:
+            # Check if care provider is admin and shares the same health facility
+            care_provider = await session.scalar(
+                select(CareProvider).where(
+                    CareProvider.care_provider_id == current_user_id
+                )
+            )
+            
+            if care_provider and str(care_provider.role).lower() == "admin":
+                patient = await session.scalar(
+                    select(Patient).where(Patient.patient_id == target_user_id)
+                )
+                
+                # Allow access if both have the same health facility and it's not None
+                if (
+                    patient
+                    and care_provider.health_facility_id is not None
+                    and patient.health_facility_id is not None
+                    and care_provider.health_facility_id == patient.health_facility_id
+                ):
+                    return
+            
+            # Fall back to checking direct assignment via association table
             is_assigned = await session.scalar(
                 select(patient_care_provider_association.c.patient_id).where(
                     and_(
