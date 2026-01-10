@@ -81,6 +81,13 @@ celery.conf.update(
                 "expires": 60 * 60,  # 1 hour expiration
             },
         },
+        "deactivate-inactive-devices": {
+            "task": "lib.tasks.other_tasks.deactivate_inactive_devices",
+            "schedule": crontab(day_of_week=0, hour="2", minute="0"),  # Sunday 2:00 AM IST weekly
+            "options": {
+                "expires": 60 * 60 * 2,  # 2 hours expiration
+            },
+        },
     },
 )
 
