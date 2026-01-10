@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Union
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,6 +117,14 @@ class TokenUsageService:
         postgres_session: AsyncSession,
     ):
         try:
+            end_datetime = datetime.combine(
+                end_date, datetime.max.time()
+            ).replace(tzinfo=None)
+            
+            start_datetime = datetime.combine(
+                start_date, datetime.min.time()
+            ).replace(tzinfo=None)
+            
             query = (
                 select(
                     func.date(TokenUsageLog.created_at).label("usage_date"),
@@ -133,8 +142,8 @@ class TokenUsageService:
                 .where(
                     TokenUsageLog.user_id == user_id,
                     TokenUsageLog.user_type == user_type,
-                    TokenUsageLog.created_at >= start_date,
-                    TokenUsageLog.created_at <= end_date,
+                    TokenUsageLog.created_at >= start_datetime,
+                    TokenUsageLog.created_at <= end_datetime,
                 )
                 .group_by(func.date(TokenUsageLog.created_at))
                 .order_by(func.date(TokenUsageLog.created_at))
