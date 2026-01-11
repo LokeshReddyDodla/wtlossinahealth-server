@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from lib.models.patient_meal import PatientMeal
 from lib.models.patient_vital import PatientVital
@@ -34,11 +35,16 @@ class DailyReportsMixin:
 
                 # Get meals for the day
                 meals_result = await session.execute(
-                    select(PatientMeal).where(
+                    select(PatientMeal)
+                    .where(
                         and_(
                             PatientMeal.patient_id == patient_id,
                             func.date(PatientMeal.date) == current_date,
                         )
+                    )
+                    .options(
+                        selectinload(PatientMeal.total_macro_nutritional_value),
+                        selectinload(PatientMeal.total_micro_nutritional_value),
                     )
                 )
                 meals = meals_result.scalars().all()
