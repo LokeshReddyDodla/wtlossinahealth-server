@@ -45,7 +45,7 @@ async def create_context(request: Request, call_next):
 
     # Log request path and method
     logger = structlog.get_logger("rest_server")
-    logger.info(
+    await logger.info(
         "Request received",
         method=request.method,
         path=request.url.path,
