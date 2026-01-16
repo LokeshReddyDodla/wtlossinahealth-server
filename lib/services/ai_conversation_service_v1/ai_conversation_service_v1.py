@@ -17,8 +17,8 @@ from fastapi import status
 
 from decouple import config
 
-from langchain.output_parsers import PydanticOutputParser
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr, ValidationError

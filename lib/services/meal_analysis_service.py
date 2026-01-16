@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Union
 
 from decouple import config
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr

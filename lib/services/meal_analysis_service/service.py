@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 
 from decouple import config
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from schemas import MealAnalysisResponse, MealAnalysisResult, TokenUsage
