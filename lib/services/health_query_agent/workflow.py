@@ -7,15 +7,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 import instructor
+from decouple import config
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from openai import OpenAI
-import redis
 
 from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
-from microservices.health_query_agent.config import settings
 from .prompts import (
     get_system_prompt_for_patient,
     get_system_prompt_for_care_provider,
@@ -31,14 +30,20 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from langgraph.graph import CompiledGraph
 
+# Configuration
+OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="")
+OPENAI_MODEL: str = config("OPENAI_MODEL", default="gpt-4o-mini")
+MAX_RESPONSE_TOKENS: int = int(config("MAX_RESPONSE_TOKENS", default="150"))
+RESPONSE_TEMPERATURE: float = float(config("RESPONSE_TEMPERATURE", default="0.7"))
+
 
 # ---------------------- API Clients ---------------------- #
 class OpenAIWrapper:
     def __init__(self, use_instructor: bool = False):
         self._client = (
-            instructor.from_openai(OpenAI(api_key=settings.OPENAI_API_KEY))
+            instructor.from_openai(OpenAI(api_key=OPENAI_API_KEY))
             if use_instructor
-            else OpenAI(api_key=settings.OPENAI_API_KEY)
+            else OpenAI(api_key=OPENAI_API_KEY)
         )
 
     @property
@@ -79,7 +84,7 @@ def analyze_intent(state: AgentState) -> dict:
     system_prompt = get_system_prompt(state, current_time)
 
     response = instructor_client.client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=OPENAI_MODEL,
         response_model=QueryIntent,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -131,7 +136,7 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     response_prompt_content = get_response_prompt(current_time, user_role=user_role)
 
     response = openai_client.client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
+        model=OPENAI_MODEL,
         messages=[
             {"role": "system", "content": response_prompt_content},
             *state["messages"],
@@ -140,8 +145,8 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
                 "content": f"[Query processed successfully. Retrieved {len(results)} results for {data_type_display} data for {date_str}.]",
             },
         ],
-        max_tokens=settings.MAX_RESPONSE_TOKENS,
-        temperature=settings.RESPONSE_TEMPERATURE,
+        max_tokens=MAX_RESPONSE_TOKENS,
+        temperature=RESPONSE_TEMPERATURE,
     )
 
     conversational_response = response.choices[0].message.content.strip()

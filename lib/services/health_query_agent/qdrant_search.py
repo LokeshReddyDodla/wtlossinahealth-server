@@ -4,9 +4,10 @@ Qdrant search operations for the health query agent.
 import logging
 from typing import Optional
 
+from decouple import config
+
 from lib.core.qdrant_store import QdrantStore
 from lib.utils.vector_utils import embed_text
-from microservices.health_query_agent.config import settings
 from .filter_builder import FilterBuilder
 from .schemas import QueryIntent
 from qdrant_client.http.models import (
@@ -19,6 +20,7 @@ from qdrant_client.http.models import (
 
 logger = logging.getLogger(__name__)
 
+QDRANT_COLLECTION = config("QDRANT_COLLECTION", default="patient_data")
 
 def build_api_filter(
     patient_ids: Optional[list[str]] = None,
@@ -75,7 +77,7 @@ async def search_qdrant(
     search_confidence = None
     async with qdrant_store.get_client() as client:
         results = await client.search(
-            collection_name=settings.QDRANT_COLLECTION,
+            collection_name=QDRANT_COLLECTION,
             query_vector=query_embedding,
             limit=100,
             query_filter=merged_filter,
