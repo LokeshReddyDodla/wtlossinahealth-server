@@ -99,6 +99,7 @@ class AgentState(TypedDict):
     final_response: Optional[str]
     search_confidence: Optional[float]  # Top search result similarity score
     patient_ids: Optional[List[str]]  # Patient IDs for filtering
+    user_role: Optional[str]  # User role: "patient" or "care_provider"
 
 
 class QueryResponse(BaseModel):

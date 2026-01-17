@@ -6,12 +6,15 @@ import logging
 from typing import Optional
 from datetime import datetime
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
 from lib.core.mongo_store import MongoStore
 from lib.services.health_query_agent.serialization import to_checkpoint_safe
 from .schemas import QueryResponse
 from .workflow import build_workflow
 from .conversation_repository import ConversationRepository
+from lib.utils.http_exceptions import raise_http_exception
+from fastapi import status
 import redis
 
 logger = logging.getLogger(__name__)
@@ -155,10 +158,21 @@ class HealthQueryAgentService:
         user_message: str,
         thread_id: str = "default_session",
         user_id: Optional[str] = None,
+        user_role: Optional[str] = None,
         patient_ids: Optional[list[str]] = None,
     ) -> QueryResponse:
         """Process a user message and return structured response."""
         config = {"configurable": {"thread_id": thread_id}}
+
+        # Validate user_role if provided
+        if user_role:
+            try:
+                ProfileTypeEnum(user_role)
+            except ValueError:
+                raise_http_exception(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Invalid user role"
+                )
 
         await self._save_user_message(user_id, user_message, thread_id)
 
@@ -169,6 +183,7 @@ class HealthQueryAgentService:
             {
                 "messages": messages,
                 "patient_ids": patient_ids,
+                "user_role": user_role,
             },
             config,
         )

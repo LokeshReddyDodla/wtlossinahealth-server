@@ -12,9 +12,15 @@ from langgraph.graph import StateGraph, START, END
 from openai import OpenAI
 import redis
 
+from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
 from microservices.health_query_agent.config import settings
-from .prompts import get_system_prompt, get_response_prompt, get_data_type_display_names
+from .prompts import (
+    get_system_prompt_for_patient,
+    get_system_prompt_for_care_provider,
+    get_response_prompt,
+    get_data_type_display_names,
+)
 from .schemas import AgentState, QueryIntent
 from .checkpointer import RedisCheckpointSaver
 from .qdrant_search import search_qdrant
@@ -48,11 +54,28 @@ openai_client = OpenAIWrapper()
 def analyze_intent(state: AgentState) -> dict:
     """Analyze user intent from the conversation state using Instructor embeddings."""
     current_time = datetime.now().isoformat()
+    
+    # Select prompt based on user role
+    user_role = state.get("user_role")
+    if user_role:
+        try:
+            role_enum = ProfileTypeEnum(user_role)
+            if role_enum == ProfileTypeEnum.CARE_PROVIDER:
+                system_prompt = get_system_prompt_for_care_provider(current_time)
+            else:
+                system_prompt = get_system_prompt_for_patient(current_time)
+        except ValueError:
+            # Fallback to patient prompt if role is invalid
+            system_prompt = get_system_prompt_for_patient(current_time)
+    else:
+        # Default to patient prompt if no role specified
+        system_prompt = get_system_prompt_for_patient(current_time)
+    
     response = instructor_client.client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         response_model=QueryIntent,
         messages=[
-            {"role": "system", "content": get_system_prompt(current_time)},
+            {"role": "system", "content": system_prompt},
             *state["messages"],
         ],
     )
@@ -99,10 +122,14 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         [data_type_names.get(dt.value, dt.value) for dt in intent.data_types]
     )
 
+    # Get role-aware response prompt
+    user_role = state.get("user_role", "patient")
+    response_prompt_content = get_response_prompt(current_time, user_role=user_role)
+
     response = openai_client.client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=[
-            {"role": "system", "content": get_response_prompt(current_time)},
+            {"role": "system", "content": response_prompt_content},
             *state["messages"],
             {
                 "role": "assistant",
