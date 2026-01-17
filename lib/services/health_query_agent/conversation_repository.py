@@ -6,7 +6,10 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 from lib.core.mongo_store import MongoStore
-from microservices.health_query_agent.schemas import ConversationMessage, ConversationHistoryResponse
+from lib.services.health_query_agent.schemas import (
+    ConversationMessage,
+    ConversationHistoryResponse,
+)
 
 logger = logging.getLogger(__name__)
 
