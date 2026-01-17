@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decouple import config
 import orjson
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
@@ -14,8 +15,12 @@ from langgraph.checkpoint.base import (
 )
 
 from lib.core.cache_store import CacheStore
-from microservices.health_query_agent.config import settings
 from .serialization import to_checkpoint_safe
+
+
+CONVERSATION_STATE_TTL_HOURS: int = int(
+    config("CONVERSATION_STATE_TTL_HOURS", default=48)
+)
 
 # ------------------------------------------------------------------ #
 # Model
@@ -63,7 +68,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
 
         self.cache_store = cache_store
 
-        self.ttl = settings.CONVERSATION_STATE_TTL_HOURS * 3600
+        self.ttl = CONVERSATION_STATE_TTL_HOURS * 3600
 
     # ------------------------ utils ------------------------ #
 
@@ -90,7 +95,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
 
     def _save(self, thread_id: str, checkpoint: RedisCheckpoint) -> None:
         checkpoint_bytes = self._dump(checkpoint)
-        checkpoint_str = checkpoint_bytes.decode('utf-8')
+        checkpoint_str = checkpoint_bytes.decode("utf-8")
         self.cache_store.set_key(
             self._key(thread_id),
             checkpoint_str,
@@ -101,7 +106,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
         data = self.cache_store.get_key(self._key(thread_id))
         if data is None:
             return None
-            
+
         return self._load(data)
 
     # -------------------- LangGraph API --------------------- #
