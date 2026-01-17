@@ -79,7 +79,7 @@ async def search_qdrant(
         results = await client.search(
             collection_name=QDRANT_COLLECTION,
             query_vector=query_embedding,
-            limit=100,
+            limit=999,
             query_filter=merged_filter,
         )
 

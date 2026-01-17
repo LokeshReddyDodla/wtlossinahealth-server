@@ -119,13 +119,15 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     # Extract payload data from Qdrant results
     # Limit to top 50 results to prevent token overflow
     payload_items = []
-    for point in results[:50]:
-        if hasattr(point, 'payload') and point.payload:
+    for point in results:
+        if hasattr(point, "payload") and point.payload:
             payload_items.append({**point.payload, "source": "qdrant"})
 
     # Build structured context from extracted payloads
     # Convert to JSON string for LLM context, handling datetime serialization
-    retrieved_data_context = json.dumps(payload_items, default=str) if payload_items else "[]"
+    retrieved_data_context = (
+        json.dumps(payload_items, default=str) if payload_items else "[]"
+    )
 
     # Get role-aware response prompt
     user_role = state.get("user_role", "patient")
@@ -136,13 +138,15 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         {"role": "system", "content": response_prompt_content},
         *state["messages"],
     ]
-    
+
     # Add retrieved data context if we have payloads
     if payload_items:
-        messages.append({
-            "role": "assistant",
-            "content": f"[Retrieved data from query: {retrieved_data_context}]",
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": f"[Retrieved data from query: {retrieved_data_context}]",
+            }
+        )
 
     response = openai_client.client.chat.completions.create(
         model=OPENAI_MODEL,
