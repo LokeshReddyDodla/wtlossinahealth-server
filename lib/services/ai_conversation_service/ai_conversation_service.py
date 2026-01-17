@@ -5,11 +5,11 @@ from typing import Any, Dict, List, Literal, Optional, Type, Union
 from bson import json_util
 from decouple import config
 from fastapi import status
-from langchain.output_parsers import PydanticOutputParser
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
-from langchain_perplexity import ChatPerplexity
+# from langchain_perplexity import ChatPerplexity
 from pydantic import SecretStr, ValidationError
 
 from lib.core.constants import ProfileTypeEnum
@@ -109,13 +109,13 @@ class AiConversationService:
                 temperature=0.5,
                 api_key=SecretStr(str(config("OPENAI_API_KEY"))),
             )
-        elif ai_model_provider == "perplexity":
-            self.chat_model = ChatPerplexity(
-                api_key=SecretStr(str(config("PERPLEXITY_API_KEY"))),
-                model=self.selected_ai_model,
-                temperature=0.5,
-                timeout=200,
-            )
+        # elif ai_model_provider == "perplexity":
+        #     self.chat_model = ChatPerplexity(
+        #         api_key=SecretStr(str(config("PERPLEXITY_API_KEY"))),
+        #         model=self.selected_ai_model,
+        #         temperature=0.5,
+        #         timeout=200,
+        #     )
         else:
             self.chat_model = ChatGoogleGenerativeAI(
                 api_key=SecretStr(str(config("GOOGLE_API_KEY"))),

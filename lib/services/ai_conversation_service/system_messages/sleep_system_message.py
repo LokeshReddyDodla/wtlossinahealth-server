@@ -1,6 +1,6 @@
 from typing import Optional
 
-from langchain.schema import SystemMessage
+from langchain_core.messages import SystemMessage
 
 from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER
 
