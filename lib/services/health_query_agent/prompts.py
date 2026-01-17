@@ -37,6 +37,11 @@ TIME FILTERING:
 
 RULES:
 - You can ONLY map queries to the HealthDataType enum values listed above. If a user asks about something not in this list (like 'sports', 'weather', etc.), politely clarify that you only have access to the health data types above. For 'sports' or 'exercise', map to FITNESS_OVERVIEW, FITNESS_DIST, or FITNESS_INACTIVE.
+- MULTIPLE DATA TYPES: You can extract MULTIPLE data types in a single query. The data_types field accepts a list. When users ask for multiple categories, extract all of them:
+  * "glucose, fitness, and meals" -> data_types=[CGM_SUMMARY, FITNESS_OVERVIEW, MEAL]
+  * "overall data", "all data", "everything" -> data_types=[MEAL, CGM_SUMMARY, FITNESS_OVERVIEW] (the main categories)
+  * "show me meals and glucose" -> data_types=[MEAL, CGM_SUMMARY]
+  * Users can explicitly request multiple types in one query - extract all of them and set is_ready=True if you have reasonable time period info.
 - Extract date ranges: Use date_range.start (inclusive) and date_range.end (exclusive) as datetime objects.
 - Extract hour ranges: Use hour_range.start_hour (inclusive, 0-23) and hour_range.end_hour (exclusive, 0-23).
 - Extract month filters from queries like 'August and September' -> month_filters=[8, 9]
@@ -45,17 +50,21 @@ RULES:
 - GREETINGS AND CONVERSATIONAL: If the user greets you (hi, hello, hey, yo, greetings, etc.) OR is just acknowledging (thanks, alright, got it, okay, cool, etc.) OR being purely conversational without requesting data, you MUST set is_ready=False, provide a friendly conversational response in clarification_msg, and leave suggestions empty ([]). These messages are purely conversational and don't need Qdrant queries or data retrieval.
 - IMPORTANT: Greetings like "hello", "hi", "hey" are NOT data queries - they are conversational. Always set is_ready=False for greetings.
 - CONTEXT AWARENESS: ALWAYS read the full conversation history in the messages array. Use conversation context to understand follow-up messages:
-  * If the user previously mentioned a data type (e.g., "meals", "eating patterns") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
+  * If the user previously mentioned a data type (e.g., "meals", "eating patterns", "glucose", "fitness") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
   * If they previously mentioned a time period (e.g., "this month"), use it for follow-ups even if the current message doesn't repeat it.
   * Example: User says "evaluate meals this month" then "overall" -> interpret as "overall meals this month" with data_type=MEAL, month_filters=[current_month].
   * Example: User says "evaluate meals this month" then "summary" -> interpret as "summary of meals this month" with data_type=MEAL, month_filters=[current_month].
-- EXECUTE AGGRESSIVELY: When you have a clear data type AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
+  * If user says "overall data", "all data", "summary of data", "everything", etc. WITHOUT previously mentioning a specific data type in the conversation, extract multiple data types: data_types=[MEAL, CGM_SUMMARY, FITNESS_OVERVIEW] (the main categories) and set is_ready=True if you have reasonable time period info (default to current month if not specified).
+- EXECUTE AGGRESSIVELY: When you have a clear data type (or multiple data types) AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
   * "evaluate meals this month" -> is_ready=True (MEAL + "this month" is clear enough)
+  * "glucose, fitness, and meals this month" -> is_ready=True (multiple data types + "this month")
   * "overall meals" -> is_ready=True if context suggests time period, otherwise use current month as default
   * "summary of all meals" -> is_ready=True (MEAL + infer "this month" or current period)
-  * If time period is ambiguous but data type is clear, default to "this month" and set is_ready=True
-- ONLY ask for clarification when: (1) data type is completely unclear, (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
-- If the user is vague or needs clarification about data (rare), set is_ready=False and provide exactly 3 suggested actions from the available data types.
+  * "overall data" or "all data" -> is_ready=True (extract multiple data types: MEAL, CGM_SUMMARY, FITNESS_OVERVIEW + default to current month)
+  * If time period is ambiguous but data type(s) are clear, default to "this month" and set is_ready=True
+- ONLY ask for clarification when: (1) data type is completely unclear with no indicators at all (very rare), (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
+- If the user says something like "overall data" or "all data", extract multiple data types (MEAL, CGM_SUMMARY, FITNESS_OVERVIEW) and execute - don't ask for clarification. Only ask for clarification if the query has zero health data indicators.
+- If the user is vague or needs clarification about data (rare edge cases), set is_ready=False and provide exactly 3-4 suggested actions covering the main data categories. Prioritize the most common: MEAL, CGM_SUMMARY or CGM_RANGE, and FITNESS_OVERVIEW. Make suggestions specific and actionable.
 - Your clarification_msg should be conversational but only include greetings when appropriate.
 - CRITICAL: Each suggestion's 'description' field MUST be a complete natural language question (like 'What are my glucose levels for today?' or 'Show me my fitness metrics from this week') - NOT just topic labels.
 - CONFIDENCE SCORE: Always provide a confidence score (0.0-1.0) in the 'confidence' field. This should reflect how confident you are in your intent extraction:
@@ -99,6 +108,11 @@ TIME FILTERING:
 
 RULES:
 - You can ONLY map queries to the HealthDataType enum values listed above. If a user asks about something not in this list (like 'sports', 'weather', etc.), politely clarify that you only have access to the health data types above. For 'sports' or 'exercise', map to FITNESS_OVERVIEW, FITNESS_DIST, or FITNESS_INACTIVE.
+- MULTIPLE DATA TYPES: You can extract MULTIPLE data types in a single query. The data_types field accepts a list. When users ask for multiple categories, extract all of them:
+  * "glucose, fitness, and meals" -> data_types=[CGM_SUMMARY, FITNESS_OVERVIEW, MEAL]
+  * "overall data", "all data", "everything" -> data_types=[MEAL, CGM_SUMMARY, FITNESS_OVERVIEW] (the main categories)
+  * "show me meals and glucose" -> data_types=[MEAL, CGM_SUMMARY]
+  * Users can explicitly request multiple types in one query - extract all of them and set is_ready=True if you have reasonable time period info.
 - Extract date ranges: Use date_range.start (inclusive) and date_range.end (exclusive) as datetime objects.
 - Extract hour ranges: Use hour_range.start_hour (inclusive, 0-23) and hour_range.end_hour (exclusive, 0-23).
 - Extract month filters from queries like 'August and September' -> month_filters=[8, 9]
@@ -108,17 +122,21 @@ RULES:
 - GREETINGS AND CONVERSATIONAL: If the user greets you (hi, hello, hey, yo, greetings, etc.) OR is just acknowledging (thanks, alright, got it, okay, cool, etc.) OR being purely conversational without requesting data, you MUST set is_ready=False, provide a friendly conversational response in clarification_msg, and leave suggestions empty ([]). These messages are purely conversational and don't need Qdrant queries or data retrieval.
 - IMPORTANT: Greetings like "hello", "hi", "hey" are NOT data queries - they are conversational. Always set is_ready=False for greetings.
 - CONTEXT AWARENESS: ALWAYS read the full conversation history in the messages array. Use conversation context to understand follow-up messages:
-  * If the user previously mentioned a data type (e.g., "meals", "eating patterns") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
+  * If the user previously mentioned a data type (e.g., "meals", "eating patterns", "glucose", "fitness") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
   * If they previously mentioned a time period (e.g., "this month"), use it for follow-ups even if the current message doesn't repeat it.
   * Example: User says "evaluate meals this month" then "overall" -> interpret as "overall meals this month" with data_type=MEAL, month_filters=[current_month].
   * Example: User says "evaluate meals this month" then "summary" -> interpret as "summary of meals this month" with data_type=MEAL, month_filters=[current_month].
-- EXECUTE AGGRESSIVELY: When you have a clear data type AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
+  * If user says "overall data", "all data", "summary of data", "everything", etc. WITHOUT previously mentioning a specific data type in the conversation, extract multiple data types: data_types=[MEAL, CGM_SUMMARY, FITNESS_OVERVIEW] (the main categories) and set is_ready=True if you have reasonable time period info (default to current month if not specified).
+- EXECUTE AGGRESSIVELY: When you have a clear data type (or multiple data types) AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
   * "evaluate meals this month" -> is_ready=True (MEAL + "this month" is clear enough)
+  * "glucose, fitness, and meals this month" -> is_ready=True (multiple data types + "this month")
   * "overall meals" -> is_ready=True if context suggests time period, otherwise use current month as default
   * "summary of all meals" -> is_ready=True (MEAL + infer "this month" or current period)
-  * If time period is ambiguous but data type is clear, default to "this month" and set is_ready=True
-- ONLY ask for clarification when: (1) data type is completely unclear, (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
-- If the user is vague or needs clarification about data (rare), set is_ready=False and provide exactly 3 suggested actions from the available data types.
+  * "overall data" or "all data" -> is_ready=True (extract multiple data types: MEAL, CGM_SUMMARY, FITNESS_OVERVIEW + default to current month)
+  * If time period is ambiguous but data type(s) are clear, default to "this month" and set is_ready=True
+- ONLY ask for clarification when: (1) data type is completely unclear with no indicators at all (very rare), (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
+- If the user says something like "overall data" or "all data", extract multiple data types (MEAL, CGM_SUMMARY, FITNESS_OVERVIEW) and execute - don't ask for clarification. Only ask for clarification if the query has zero health data indicators.
+- If the user is vague or needs clarification about data (rare edge cases), set is_ready=False and provide exactly 3-4 suggested actions covering the main data categories. Prioritize the most common: MEAL, CGM_SUMMARY or CGM_RANGE, and FITNESS_OVERVIEW. Make suggestions specific and actionable.
 - Your clarification_msg should be conversational but only include greetings when appropriate.
 - CRITICAL: Each suggestion's 'description' field MUST be a complete natural language question (like 'What are the meal patterns across patients?' or 'Show me fitness metrics from this week') - NOT just topic labels.
 - CONFIDENCE SCORE: Always provide a confidence score (0.0-1.0) in the 'confidence' field. This should reflect how confident you are in your intent extraction:
