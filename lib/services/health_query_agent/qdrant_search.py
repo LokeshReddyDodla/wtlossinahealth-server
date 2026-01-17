@@ -65,7 +65,7 @@ async def search_qdrant(
     api_filter = build_api_filter(patient_ids=patient_ids)
     merged_filter = merge_filters(intent_filter, api_filter)
 
-    logger.debug(f"Built Qdrant filter: {merged_filter}")
+    logger.info(f"Built Qdrant filter: {merged_filter}")
 
     # Generate embedding for semantic search
     query_embedding = await embed_text(query)

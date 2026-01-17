@@ -63,13 +63,15 @@ class FilterBuilder:
         intent: QueryIntent, conditions: List[QdrantFieldCondition]
     ):
         """Add data type filter conditions."""
-        if intent.data_types:
-            conditions.append(
-                QdrantFieldCondition(
-                    key="data_type",
-                    match=QdrantMatchAny(any=[dt.value for dt in intent.data_types]),
-                )
+        data_types_with_profile = set(intent.data_types)
+        data_types_with_profile.add(HealthDataType.PROFILE)
+        
+        conditions.append(
+            QdrantFieldCondition(
+                key="data_type",
+                match=QdrantMatchAny(any=[dt.value for dt in data_types_with_profile]),
             )
+        )
 
     @staticmethod
     def _add_month_filter(

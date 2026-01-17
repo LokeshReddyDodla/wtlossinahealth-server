@@ -4,7 +4,6 @@ Pydantic models and schemas for the health query agent.
 
 from datetime import datetime
 from enum import Enum
-import operator
 from typing import List, Optional, Annotated, TypedDict
 from typing import Any
 
