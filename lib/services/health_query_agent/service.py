@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 from datetime import datetime
 
+from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
 from lib.core.mongo_store import MongoStore
@@ -15,7 +16,6 @@ from .workflow import build_workflow
 from .conversation_repository import ConversationRepository
 from lib.utils.http_exceptions import raise_http_exception
 from fastapi import status
-import redis
 from lib.services.health_query_agent.state_constants import RESET
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class HealthQueryAgentService:
         self,
         qdrant_store: QdrantStore,
         mongo_store: Optional[MongoStore] = None,
-        redis_client: Optional[redis.Redis] = None,
+        cache_store: Optional[CacheStore] = None,
         app=None,
     ):
         self.qdrant_store = qdrant_store
@@ -34,7 +34,7 @@ class HealthQueryAgentService:
         self.conversation_repository = (
             ConversationRepository(mongo_store) if mongo_store else None
         )
-        self.app = app or build_workflow(qdrant_store, redis_client=redis_client)
+        self.app = app or build_workflow(qdrant_store, cache_store=cache_store)
 
     # ---------------------- User/Assistant Message Storage ---------------------- #
 
@@ -179,9 +179,6 @@ class HealthQueryAgentService:
                 )
 
         await self._save_user_message(user_id, user_message, thread_id)
-
-        # messages = self._get_conversation_messages(thread_id)
-        # messages.append({"role": "user", "content": user_message})
 
         result = await self.app.ainvoke(
             {

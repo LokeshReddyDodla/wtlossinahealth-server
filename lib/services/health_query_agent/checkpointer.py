@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import orjson
-import redis.asyncio as redis
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import Any, Optional
@@ -14,6 +13,7 @@ from langgraph.checkpoint.base import (
     CheckpointMetadata,
 )
 
+from lib.core.cache_store import CacheStore
 from microservices.health_query_agent.config import settings
 from .serialization import to_checkpoint_safe
 
@@ -57,16 +57,11 @@ class RedisCheckpoint:
 
 
 class RedisCheckpointSaver(BaseCheckpointSaver):
-    KEY_PREFIX = "health_query_agent"
+    def __init__(self, cache_store: Optional[CacheStore] = None):
+        if not cache_store:
+            raise ValueError("Cache store not configured")
 
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
-        if not settings.REDIS_URL and redis_client is None:
-            raise ValueError("REDIS_URL not configured")
-
-        self.redis: redis.Redis = redis_client or redis.from_url(
-            settings.REDIS_URL,
-            decode_responses=False,  # keep bytes
-        )
+        self.cache_store = cache_store
 
         self.ttl = settings.CONVERSATION_STATE_TTL_HOURS * 3600
 
@@ -77,7 +72,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
         return str(uuid5(NAMESPACE_DNS, f"health-query-agent:{thread_id}"))
 
     def _key(self, thread_id: str) -> str:
-        return f"{self.KEY_PREFIX}:{thread_id}"
+        return thread_id
 
     def _thread_id(self, config: dict) -> Optional[str]:
         return config.get("configurable", {}).get("thread_id")
@@ -94,15 +89,20 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
     # ----------------------- redis ops ---------------------- #
 
     def _save(self, thread_id: str, checkpoint: RedisCheckpoint) -> None:
-        self.redis.setex(
+        checkpoint_bytes = self._dump(checkpoint)
+        checkpoint_str = checkpoint_bytes.decode('utf-8')
+        self.cache_store.set_key(
             self._key(thread_id),
-            self.ttl,
-            self._dump(checkpoint),
+            checkpoint_str,
+            expire=self.ttl,
         )
 
     def _fetch(self, thread_id: str) -> Optional[RedisCheckpoint]:
-        data = self.redis.get(self._key(thread_id))
-        return self._load(data) if data else None
+        data = self.cache_store.get_key(self._key(thread_id))
+        if data is None:
+            return None
+            
+        return self._load(data)
 
     # -------------------- LangGraph API --------------------- #
 
@@ -192,4 +192,4 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
     async def delete(self, config: dict) -> None:
         thread_id = self._thread_id(config)
         if thread_id:
-            await self.redis.delete(self._key(thread_id))
+            self.cache_store.delete_key(self._key(thread_id))

@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph, START, END
 from openai import OpenAI
 import redis
 
+from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
 from microservices.health_query_agent.config import settings
@@ -161,8 +162,8 @@ def should_continue(state: AgentState) -> str:
 
 def build_workflow(
     qdrant_store: QdrantStore,
-    redis_client: Optional[redis.Redis] = None,
-    use_redis: bool = True,
+    cache_store: Optional[CacheStore] = None,
+    use_cache_store: bool = True,
 ) -> "CompiledGraph":
     """Build and compile the LangGraph workflow for health queries."""
     workflow = StateGraph(AgentState)
@@ -179,9 +180,9 @@ def build_workflow(
     )
     workflow.add_edge("execute", END)
 
-    if use_redis:
+    if use_cache_store:
         try:
-            checkpointer = RedisCheckpointSaver(redis_client=redis_client)
+            checkpointer = RedisCheckpointSaver(cache_store=cache_store)
             return workflow.compile(checkpointer=checkpointer)
         except Exception as e:
             logger.warning(
