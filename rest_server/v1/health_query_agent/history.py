@@ -32,7 +32,7 @@ async def get_conversation_history(
     ),
     agent_service: HealthQueryAgentService = Depends(get_health_query_agent_service),
 ):
-    user_id = str(current_actor.user_id)
+    user_id = current_actor.id
 
     history = await agent_service.get_conversation_history(
         user_id=user_id,

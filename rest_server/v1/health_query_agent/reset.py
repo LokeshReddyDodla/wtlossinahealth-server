@@ -7,6 +7,7 @@ from lib.services.health_query_agent.service import HealthQueryAgentService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+from .utils import resolve_bot_conversation_id
 
 
 @router.post(
@@ -25,8 +26,11 @@ async def reset_conversation(
     agent_service: HealthQueryAgentService = Depends(get_health_query_agent_service),
 ):
     """Reset user's conversation (clear active state)."""
-    user_id = str(current_actor.user_id)
-    thread_id = f"user_{user_id}"
+    user_id = current_actor.id
+    thread_id = resolve_bot_conversation_id(
+        actor_type=current_actor.role.value,
+        actor_id=user_id,
+    )
     await agent_service.reset_conversation(thread_id=thread_id, user_id=user_id)
 
     return SuccessResponse(
