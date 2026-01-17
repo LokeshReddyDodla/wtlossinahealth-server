@@ -124,6 +124,8 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
     AgenticOrchestrator,
 )
 
+from lib.services.health_query_agent.service import HealthQueryAgentService
+
 
 def get_libreview_sync_queue() -> SQSService:
     return cast(SQSService, container.resolve("libreview_sync_queue"))
@@ -542,3 +544,10 @@ def get_fitness_qdrant_sync_cache_store() -> CacheStore:
 
 def get_cgm_sync_cache_store() -> CacheStore:
     return cast(CacheStore, container.resolve("cgm_sync"))
+
+
+def get_health_query_agent_service() -> HealthQueryAgentService:
+    return cast(
+        HealthQueryAgentService,
+        container.resolve(HealthQueryAgentService),
+    )
