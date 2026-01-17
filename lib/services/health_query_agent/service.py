@@ -16,6 +16,7 @@ from .conversation_repository import ConversationRepository
 from lib.utils.http_exceptions import raise_http_exception
 from fastapi import status
 import redis
+from lib.services.health_query_agent.state_constants import RESET
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +112,13 @@ class HealthQueryAgentService:
             logger.debug(f"Error getting state for thread_id {thread_id}: {e}")
         return []
 
-    def _build_response_data(self, result: dict, user_message: str, intent) -> dict:
+    def _build_response_data(
+        self, result: dict, user_message: str, intent, thread_id: str
+    ) -> dict:
         """Construct structured response for the user message."""
-        messages = result.get("messages", [])
+        config = {"configurable": {"thread_id": thread_id}}
+        state = self.app.get_state(config)
+        messages = state.values.get("messages", []) if state and state.values else []
         turn_number = sum(1 for m in messages if m.get("role") == "user")
 
         # Base response
@@ -170,18 +175,17 @@ class HealthQueryAgentService:
                 ProfileTypeEnum(user_role)
             except ValueError:
                 raise_http_exception(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Invalid user role"
+                    status_code=status.HTTP_400_BAD_REQUEST, message="Invalid user role"
                 )
 
         await self._save_user_message(user_id, user_message, thread_id)
 
-        messages = self._get_conversation_messages(thread_id)
-        messages.append({"role": "user", "content": user_message})
+        # messages = self._get_conversation_messages(thread_id)
+        # messages.append({"role": "user", "content": user_message})
 
         result = await self.app.ainvoke(
             {
-                "messages": messages,
+                "messages": [{"role": "user", "content": user_message}],
                 "patient_ids": patient_ids,
                 "user_role": user_role,
             },
@@ -189,7 +193,9 @@ class HealthQueryAgentService:
         )
         intent = result.get("intent")
 
-        response_data = self._build_response_data(result, user_message, intent)
+        response_data = self._build_response_data(
+            result, user_message, intent, thread_id
+        )
         await self._save_assistant_message(
             user_id,
             thread_id,
@@ -200,7 +206,9 @@ class HealthQueryAgentService:
 
         if intent and intent.is_ready:
             try:
-                await self.app.aupdate_state(config, {"messages": []})
+                await self.app.aupdate_state(
+                    config, {"messages": RESET, "intent": None}
+                )
             except Exception:
                 pass
 
@@ -230,7 +238,7 @@ class HealthQueryAgentService:
         """Reset a conversation thread (clear active state)."""
         config = {"configurable": {"thread_id": thread_id}}
         try:
-            await self.app.aupdate_state(config, {"messages": []})
+            await self.app.aupdate_state(config, {"messages": RESET, "intent": None})
             logger.info(
                 f"Reset conversation for thread_id: {thread_id}, user_id: {user_id}"
             )

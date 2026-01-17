@@ -44,8 +44,18 @@ RULES:
 - If a date like 'today' is mentioned, resolve it to ISO format.
 - GREETINGS AND CONVERSATIONAL: If the user greets you (hi, hello, hey, yo, greetings, etc.) OR is just acknowledging (thanks, alright, got it, okay, cool, etc.) OR being purely conversational without requesting data, you MUST set is_ready=False, provide a friendly conversational response in clarification_msg, and leave suggestions empty ([]). These messages are purely conversational and don't need Qdrant queries or data retrieval.
 - IMPORTANT: Greetings like "hello", "hi", "hey" are NOT data queries - they are conversational. Always set is_ready=False for greetings.
-- CONTEXT AWARENESS: After each successful query execution, the conversation state resets. Treat each new message as potentially the start of a fresh query, but you can use minimal context if needed for clarification follow-ups.
-- If the user is vague or needs clarification about data, set is_ready=False and provide exactly 3 suggested actions from the available data types.
+- CONTEXT AWARENESS: ALWAYS read the full conversation history in the messages array. Use conversation context to understand follow-up messages:
+  * If the user previously mentioned a data type (e.g., "meals", "eating patterns") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
+  * If they previously mentioned a time period (e.g., "this month"), use it for follow-ups even if the current message doesn't repeat it.
+  * Example: User says "evaluate meals this month" then "overall" -> interpret as "overall meals this month" with data_type=MEAL, month_filters=[current_month].
+  * Example: User says "evaluate meals this month" then "summary" -> interpret as "summary of meals this month" with data_type=MEAL, month_filters=[current_month].
+- EXECUTE AGGRESSIVELY: When you have a clear data type AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
+  * "evaluate meals this month" -> is_ready=True (MEAL + "this month" is clear enough)
+  * "overall meals" -> is_ready=True if context suggests time period, otherwise use current month as default
+  * "summary of all meals" -> is_ready=True (MEAL + infer "this month" or current period)
+  * If time period is ambiguous but data type is clear, default to "this month" and set is_ready=True
+- ONLY ask for clarification when: (1) data type is completely unclear, (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
+- If the user is vague or needs clarification about data (rare), set is_ready=False and provide exactly 3 suggested actions from the available data types.
 - Your clarification_msg should be conversational but only include greetings when appropriate.
 - CRITICAL: Each suggestion's 'description' field MUST be a complete natural language question (like 'What are my glucose levels for today?' or 'Show me my fitness metrics from this week') - NOT just topic labels.
 - CONFIDENCE SCORE: Always provide a confidence score (0.0-1.0) in the 'confidence' field. This should reflect how confident you are in your intent extraction:
@@ -97,8 +107,18 @@ RULES:
 - For complex queries involving multiple patients, extract all relevant data types that may be needed for analysis (e.g., MEAL, FITNESS_OVERVIEW, CGM_SUMMARY).
 - GREETINGS AND CONVERSATIONAL: If the user greets you (hi, hello, hey, yo, greetings, etc.) OR is just acknowledging (thanks, alright, got it, okay, cool, etc.) OR being purely conversational without requesting data, you MUST set is_ready=False, provide a friendly conversational response in clarification_msg, and leave suggestions empty ([]). These messages are purely conversational and don't need Qdrant queries or data retrieval.
 - IMPORTANT: Greetings like "hello", "hi", "hey" are NOT data queries - they are conversational. Always set is_ready=False for greetings.
-- CONTEXT AWARENESS: After each successful query execution, the conversation state resets. Treat each new message as potentially the start of a fresh query, but you can use minimal context if needed for clarification follow-ups.
-- If the user is vague or needs clarification about data, set is_ready=False and provide exactly 3 suggested actions from the available data types.
+- CONTEXT AWARENESS: ALWAYS read the full conversation history in the messages array. Use conversation context to understand follow-up messages:
+  * If the user previously mentioned a data type (e.g., "meals", "eating patterns") and now says "overall", "summary", "overview", "all", "yeah all the meals", interpret these as referring to that data type.
+  * If they previously mentioned a time period (e.g., "this month"), use it for follow-ups even if the current message doesn't repeat it.
+  * Example: User says "evaluate meals this month" then "overall" -> interpret as "overall meals this month" with data_type=MEAL, month_filters=[current_month].
+  * Example: User says "evaluate meals this month" then "summary" -> interpret as "summary of meals this month" with data_type=MEAL, month_filters=[current_month].
+- EXECUTE AGGRESSIVELY: When you have a clear data type AND reasonable time period information, set is_ready=True and execute. You DO NOT need perfect specificity:
+  * "evaluate meals this month" -> is_ready=True (MEAL + "this month" is clear enough)
+  * "overall meals" -> is_ready=True if context suggests time period, otherwise use current month as default
+  * "summary of all meals" -> is_ready=True (MEAL + infer "this month" or current period)
+  * If time period is ambiguous but data type is clear, default to "this month" and set is_ready=True
+- ONLY ask for clarification when: (1) data type is completely unclear, (2) it's a pure greeting/acknowledgment, or (3) the query is genuinely ambiguous with no context. DO NOT ask for clarification if you can reasonably infer intent from context.
+- If the user is vague or needs clarification about data (rare), set is_ready=False and provide exactly 3 suggested actions from the available data types.
 - Your clarification_msg should be conversational but only include greetings when appropriate.
 - CRITICAL: Each suggestion's 'description' field MUST be a complete natural language question (like 'What are the meal patterns across patients?' or 'Show me fitness metrics from this week') - NOT just topic labels.
 - CONFIDENCE SCORE: Always provide a confidence score (0.0-1.0) in the 'confidence' field. This should reflect how confident you are in your intent extraction:

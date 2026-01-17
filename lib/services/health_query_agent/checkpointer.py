@@ -162,7 +162,7 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
 
         return CheckpointTuple(config, asdict(cp), metadata)
 
-    async def get(self, config: dict) -> Optional[CheckpointTuple]:
+    def get(self, config: dict) -> Optional[CheckpointTuple]:
         thread_id = self._thread_id(config)
         if not thread_id:
             return None
@@ -180,8 +180,11 @@ class RedisCheckpointSaver(BaseCheckpointSaver):
 
         return CheckpointTuple(config, asdict(cp), metadata)
 
+    def get_tuple(self, config: dict) -> Optional[CheckpointTuple]:
+        return self.get(config)
+
     async def aget_tuple(self, config: dict):
-        return await self.get(config)
+        return self.get(config)
 
     async def list(self, *args, **kwargs):
         return []

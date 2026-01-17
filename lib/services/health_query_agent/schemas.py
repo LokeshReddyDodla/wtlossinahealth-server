@@ -1,15 +1,21 @@
 """
 Pydantic models and schemas for the health query agent.
 """
+
 from datetime import datetime
 from enum import Enum
+import operator
 from typing import List, Optional, Annotated, TypedDict
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+from lib.services.health_query_agent.state_constants import RESET
 
 
 class HealthDataType(str, Enum):
     """Canonical health data types enum."""
+
     CGM_RANGE = "cgm_range_stats"
     CGM_SUMMARY = "cgm_summary_stats"
     HYPER_STATS = "hyper_stats"
@@ -33,6 +39,7 @@ class HealthDataType(str, Enum):
 
 class SuggestedAction(BaseModel):
     """Suggested action/question for the user."""
+
     label: str = Field(..., description="Short button text, e.g., 'Analyze Meals'")
     description: str = Field(
         ...,
@@ -46,18 +53,21 @@ class SuggestedAction(BaseModel):
 
 class DateRange(BaseModel):
     """Date range with inclusive start and exclusive end."""
+
     start: datetime = Field(description="Inclusive start of date range.")
     end: datetime = Field(description="Exclusive end of date range.")
 
 
 class TimeRange(BaseModel):
     """Time of day range for filtering."""
+
     start_hour: Optional[int] = Field(None, description="Start hour (0-23), inclusive.")
     end_hour: Optional[int] = Field(None, description="End hour (0-23), exclusive.")
 
 
 class QueryIntent(BaseModel):
     """Parsed query intent with all extracted information."""
+
     is_ready: bool = Field(
         ..., description="True if we have enough info (Type + Date) to query."
     )
@@ -92,10 +102,24 @@ class QueryIntent(BaseModel):
     )
 
 
+def messages_reducer(old: list | None, new: Any):
+    if new == RESET:
+        return []
+
+    if old is None:
+        old = []
+
+    if isinstance(new, list):
+        return old + new
+
+    raise ValueError(f"Invalid messages update: {new}")
+
+
 class AgentState(TypedDict):
     """State definition for the LangGraph agent."""
-    messages: Annotated[List[dict], "Conversation history"]
-    intent: Optional[QueryIntent]
+
+    messages: Annotated[list[dict], messages_reducer]
+    intent: QueryIntent
     final_response: Optional[str]
     search_confidence: Optional[float]  # Top search result similarity score
     patient_ids: Optional[List[str]]  # Patient IDs for filtering
@@ -104,6 +128,7 @@ class AgentState(TypedDict):
 
 class QueryResponse(BaseModel):
     """Response model for query processing."""
+
     type: str = "response"
     is_ready: bool
     user_message: str

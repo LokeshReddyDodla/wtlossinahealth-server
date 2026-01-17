@@ -48,29 +48,35 @@ class OpenAIWrapper:
 instructor_client = OpenAIWrapper(use_instructor=True)
 openai_client = OpenAIWrapper()
 
-# ---------------------- Workflow Helpers ---------------------- #
+# ---------------------- Role & Prompt Helpers ---------------------- #
+
+
+def get_user_role(state: AgentState) -> ProfileTypeEnum:
+    """Safely extract user role from state."""
+    try:
+        return ProfileTypeEnum(state.get("user_role"))
+    except Exception:
+        return ProfileTypeEnum.PATIENT
+
+
+def get_system_prompt(state: AgentState, current_time: str) -> str:
+    """Resolve system prompt based on user role."""
+    role = get_user_role(state)
+
+    if role == ProfileTypeEnum.CARE_PROVIDER:
+        return get_system_prompt_for_care_provider(current_time)
+
+    return get_system_prompt_for_patient(current_time)
+
+
+# ---------------------- Workflow Nodes ---------------------- #
 
 
 def analyze_intent(state: AgentState) -> dict:
     """Analyze user intent from the conversation state using Instructor embeddings."""
     current_time = datetime.now().isoformat()
-    
-    # Select prompt based on user role
-    user_role = state.get("user_role")
-    if user_role:
-        try:
-            role_enum = ProfileTypeEnum(user_role)
-            if role_enum == ProfileTypeEnum.CARE_PROVIDER:
-                system_prompt = get_system_prompt_for_care_provider(current_time)
-            else:
-                system_prompt = get_system_prompt_for_patient(current_time)
-        except ValueError:
-            # Fallback to patient prompt if role is invalid
-            system_prompt = get_system_prompt_for_patient(current_time)
-    else:
-        # Default to patient prompt if no role specified
-        system_prompt = get_system_prompt_for_patient(current_time)
-    
+    system_prompt = get_system_prompt(state, current_time)
+
     response = instructor_client.client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         response_model=QueryIntent,
@@ -88,13 +94,10 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     if not intent.is_ready:
         return {
             "final_response": "Query is not ready for execution.",
-            "messages": state["messages"],
         }
 
     current_time = datetime.now().isoformat()
     user_message = state["messages"][-1]["content"] if state["messages"] else ""
-
-    # Get search parameters from state
     patient_ids = state.get("patient_ids")
 
     # Perform Qdrant search
@@ -144,7 +147,6 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
 
     return {
         "final_response": conversational_response,
-        "messages": [],
         "search_confidence": search_confidence,
     }
 
