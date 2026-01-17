@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 # Configuration
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="")
 OPENAI_MODEL: str = config("OPENAI_MODEL", default="gpt-4o-mini")
-MAX_RESPONSE_TOKENS: int = int(config("MAX_RESPONSE_TOKENS", default="150"))
+MAX_RESPONSE_TOKENS: int = int(config("MAX_RESPONSE_TOKENS", default="999"))
 RESPONSE_TEMPERATURE: float = float(config("RESPONSE_TEMPERATURE", default="0.7"))
 
 
@@ -149,10 +149,10 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         )
 
     response = openai_client.client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model="gpt-5.1",
         messages=messages,
-        max_tokens=MAX_RESPONSE_TOKENS,
-        temperature=RESPONSE_TEMPERATURE,
+        # max_tokens=MAX_RESPONSE_TOKENS,
+        # temperature=RESPONSE_TEMPERATURE,
     )
 
     conversational_response = response.choices[0].message.content.strip()
