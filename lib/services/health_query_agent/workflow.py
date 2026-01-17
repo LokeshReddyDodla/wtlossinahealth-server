@@ -2,6 +2,7 @@
 LangGraph workflow setup for the health query agent.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
@@ -19,7 +20,6 @@ from .prompts import (
     get_system_prompt_for_patient,
     get_system_prompt_for_care_provider,
     get_response_prompt,
-    get_data_type_display_names,
 )
 from .schemas import AgentState, QueryIntent
 from .checkpointer import RedisCheckpointSaver
@@ -114,37 +114,39 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         patient_ids=patient_ids,
     )
 
-    # Format date range
-    date_str = "the specified time period"
-    if intent.date_range and intent.date_range.start:
-        start = intent.date_range.start.strftime("%B %d, %Y")
-        end = (
-            intent.date_range.end.strftime("%B %d, %Y")
-            if intent.date_range.end
-            else None
-        )
-        date_str = f"{start} to {end}" if end else start
+    logger.info(f"Length of results: {len(results)}")
 
-    # Format data types
-    data_type_names = get_data_type_display_names()
-    data_type_display = ", ".join(
-        [data_type_names.get(dt.value, dt.value) for dt in intent.data_types]
-    )
+    # Extract payload data from Qdrant results
+    # Limit to top 50 results to prevent token overflow
+    payload_items = []
+    for point in results[:50]:
+        if hasattr(point, 'payload') and point.payload:
+            payload_items.append({**point.payload, "source": "qdrant"})
+
+    # Build structured context from extracted payloads
+    # Convert to JSON string for LLM context, handling datetime serialization
+    retrieved_data_context = json.dumps(payload_items, default=str) if payload_items else "[]"
 
     # Get role-aware response prompt
     user_role = state.get("user_role", "patient")
     response_prompt_content = get_response_prompt(current_time, user_role=user_role)
 
+    # Build message structure: [system prompt, conversation history, retrieved data context, LLM generates response]
+    messages = [
+        {"role": "system", "content": response_prompt_content},
+        *state["messages"],
+    ]
+    
+    # Add retrieved data context if we have payloads
+    if payload_items:
+        messages.append({
+            "role": "assistant",
+            "content": f"[Retrieved data from query: {retrieved_data_context}]",
+        })
+
     response = openai_client.client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": response_prompt_content},
-            *state["messages"],
-            {
-                "role": "assistant",
-                "content": f"[Query processed successfully. Retrieved {len(results)} results for {data_type_display} data for {date_str}.]",
-            },
-        ],
+        messages=messages,
         max_tokens=MAX_RESPONSE_TOKENS,
         temperature=RESPONSE_TEMPERATURE,
     )

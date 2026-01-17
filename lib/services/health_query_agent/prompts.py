@@ -190,29 +190,17 @@ RULES:
 def get_response_prompt(current_time: str, user_role: str = "patient") -> str:
     """Get the system prompt for generating conversational responses."""
     context = "their data" if user_role == "patient" else "the requested patient data"
-    return f"""Current Time: {current_time}. You are a friendly, conversational medical data assistant. The user just asked a question and you successfully retrieved {context}. Generate a natural, conversational response (2-3 sentences) that acknowledges what they asked and confirms you've retrieved the data. Be warm and helpful. Don't be robotic or technical. Just talk naturally like you're having a conversation. Don't include specific dates or technical details unless they make the response more natural."""
+    return f"""Current Time: {current_time}. You are a friendly, conversational medical data assistant. The user just asked a question and you successfully retrieved {context}.
+
+INSTRUCTIONS:
+1. You will receive the retrieved data as a JSON array in a message from the assistant containing "[Retrieved data from query: ...]"
+2. Use this actual retrieved data to answer the user's question directly
+3. Include specific values, dates, and details from the data when relevant to their question
+4. Be natural and conversational - don't just list data, but explain what it means
+5. Keep responses concise (2-4 sentences typically) but informative
+6. Reference specific data points (e.g., "your average glucose was 145 mg/dL" or "you had 3 meals yesterday")
+7. If the retrieved data is empty or doesn't contain relevant information, acknowledge this naturally
+
+Generate a natural, conversational response that answers their question using the retrieved data. Be warm and helpful. Don't be robotic or technical. Include specific dates, values, and details when they help answer the question."""
 
 
-def get_data_type_display_names() -> dict[str, str]:
-    """Get human-readable names for data types."""
-    return {
-        "cgm_range_stats": "glucose range",
-        "cgm_summary_stats": "glucose summary",
-        "hyper_stats": "hyperglycemic events",
-        "hypo_stats": "hypoglycemic events",
-        "rapid_spike_stats": "rapid glucose spikes",
-        "rapid_drop_stats": "rapid glucose drops",
-        "hyper_event": "hyperglycemic events",
-        "hypo_event": "hypoglycemic events",
-        "rapid_spike_event": "rapid spike events",
-        "rapid_drop_event": "rapid drop events",
-        "time_period_stats": "time period statistics",
-        "agp_point": "ambulatory glucose profile",
-        "smbg": "self-monitored blood glucose",
-        "meal": "meal",
-        "fitness_overview": "activity levels",
-        "fitness_activity_distribution": "activity distribution",
-        "fitness_inactive_periods": "inactive periods",
-        "profile": "profile",
-        "patient_document": "documents",
-    }
