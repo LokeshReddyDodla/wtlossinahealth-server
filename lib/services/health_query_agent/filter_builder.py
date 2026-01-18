@@ -1,6 +1,3 @@
-"""
-Filter builder for converting QueryIntent to Qdrant filters.
-"""
 from typing import Any, Optional, List
 from qdrant_client.http.models import (
     FieldCondition as QdrantFieldCondition,
@@ -10,23 +7,18 @@ from qdrant_client.http.models import (
     Filter as QdrantFilter,
 )
 
-from lib.services.qdrant_search_engine.models import NumericRange
+from lib.services.health_query_agent.intent import NumericRange
+
 from .schemas import QueryIntent, HealthDataType
 
 
-def _pydantic_to_qdrant_condition(
-    key: str, value: Any
-) -> QdrantFieldCondition:
+def _pydantic_to_qdrant_condition(key: str, value: Any) -> QdrantFieldCondition:
     """Convert a Pydantic value to a Qdrant field condition."""
     if isinstance(value, NumericRange):
-        return QdrantFieldCondition(
-            key=key, range=QdrantRange(**value.to_dict())
-        )
+        return QdrantFieldCondition(key=key, range=QdrantRange(**value.to_dict()))
 
     if isinstance(value, str):
-        return QdrantFieldCondition(
-            key=key, match=QdrantMatchValue(value=value)
-        )
+        return QdrantFieldCondition(key=key, match=QdrantMatchValue(value=value))
 
     if isinstance(value, list):
         return QdrantFieldCondition(key=key, match=QdrantMatchAny(any=value))
@@ -40,8 +32,6 @@ def _pydantic_to_qdrant_condition(
 
 
 class FilterBuilder:
-    """Builder for creating Qdrant filters from QueryIntent."""
-    
     @staticmethod
     def build(intent: QueryIntent) -> Optional[QdrantFilter]:
         """Build a QdrantFilter from a QueryIntent."""
@@ -53,6 +43,7 @@ class FilterBuilder:
         FilterBuilder._add_month_filter(intent, must_conditions)
         FilterBuilder._add_date_range_filter(intent, must_conditions)
         FilterBuilder._add_time_filters(intent, must_conditions)
+        FilterBuilder._add_numeric_filters(intent, must_conditions)
 
         if must_conditions:
             return QdrantFilter(must=must_conditions)  # type: ignore
@@ -65,7 +56,7 @@ class FilterBuilder:
         """Add data type filter conditions."""
         data_types_with_profile = set(intent.data_types)
         data_types_with_profile.add(HealthDataType.PROFILE)
-        
+
         conditions.append(
             QdrantFieldCondition(
                 key="data_type",
@@ -74,9 +65,7 @@ class FilterBuilder:
         )
 
     @staticmethod
-    def _add_month_filter(
-        intent: QueryIntent, conditions: List[QdrantFieldCondition]
-    ):
+    def _add_month_filter(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
         """Add month filter conditions."""
         if intent.month_filters:
             # If only one month, match that directly
@@ -117,9 +106,7 @@ class FilterBuilder:
             )
 
     @staticmethod
-    def _add_time_filters(
-        intent: QueryIntent, conditions: List[QdrantFieldCondition]
-    ):
+    def _add_time_filters(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
         """Add time-related filter conditions."""
         if intent.time_buckets:
             conditions.append(
@@ -140,14 +127,24 @@ class FilterBuilder:
                     range=QdrantRange(
                         gte=float(intent.hour_range.start_hour),
                         lt=float(intent.hour_range.end_hour),
-                    )
+                    ),
                 )
             )
 
     @staticmethod
+    def _add_numeric_filters(
+        intent: QueryIntent, conditions: List[QdrantFieldCondition]
+    ):
+        for nf in intent.numeric_filters:
+            if nf.range_condition.to_dict():
+                conditions.append(
+                    _pydantic_to_qdrant_condition(nf.key, nf.range_condition)
+                )
+
+    @staticmethod
     def enforce_stats_events_rule(intent: QueryIntent):
         """
-        Enforce the rule that certain data types should include their 
+        Enforce the rule that certain data types should include their
         corresponding stats and event types.
         """
         dt_set = set(intent.data_types)

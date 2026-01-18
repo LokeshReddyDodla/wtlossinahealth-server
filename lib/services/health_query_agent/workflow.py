@@ -16,10 +16,8 @@ from openai import OpenAI
 from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
-from .prompts import (
-    get_system_prompt_for_patient,
-    get_system_prompt_for_care_provider,
-    get_response_prompt,
+from .prompt_builder import (
+    PromptBuilder,
 )
 from .schemas import AgentState, QueryIntent
 from .checkpointer import RedisCheckpointSaver
@@ -32,9 +30,9 @@ if TYPE_CHECKING:
 
 # Configuration
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="")
-OPENAI_MODEL: str = config("OPENAI_MODEL", default="gpt-4o-mini")
-MAX_RESPONSE_TOKENS: int = int(config("MAX_RESPONSE_TOKENS", default="999"))
-RESPONSE_TEMPERATURE: float = float(config("RESPONSE_TEMPERATURE", default="0.7"))
+OPENAI_MODEL: str = "gpt-4o-mini"
+MAX_RESPONSE_TOKENS: int = 999
+RESPONSE_TEMPERATURE: float = 0.7
 
 
 # ---------------------- API Clients ---------------------- #
@@ -65,14 +63,15 @@ def get_user_role(state: AgentState) -> ProfileTypeEnum:
         return ProfileTypeEnum.PATIENT
 
 
-def get_system_prompt(state: AgentState, current_time: str) -> str:
+def get_system_prompt(state: AgentState) -> str:
     """Resolve system prompt based on user role."""
     role = get_user_role(state)
+    builder = PromptBuilder()
 
     if role == ProfileTypeEnum.CARE_PROVIDER:
-        return get_system_prompt_for_care_provider(current_time)
+        return builder.get_system_prompt("care-provider")
 
-    return get_system_prompt_for_patient(current_time)
+    return builder.get_system_prompt("patient")
 
 
 # ---------------------- Workflow Nodes ---------------------- #
@@ -80,14 +79,16 @@ def get_system_prompt(state: AgentState, current_time: str) -> str:
 
 def analyze_intent(state: AgentState) -> dict:
     """Analyze user intent from the conversation state using Instructor embeddings."""
-    current_time = datetime.now().isoformat()
-    system_prompt = get_system_prompt(state, current_time)
+    role = get_user_role(state)
+
+    role_str = "care-provider" if role == ProfileTypeEnum.CARE_PROVIDER else "patient"
+    intent_prompt = PromptBuilder().get_intent_extraction_prompt(role=role_str)
 
     response = instructor_client.client.chat.completions.create(
         model=OPENAI_MODEL,
         response_model=QueryIntent,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": intent_prompt},
             *state["messages"],
         ],
     )
@@ -102,7 +103,6 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
             "final_response": "Query is not ready for execution.",
         }
 
-    current_time = datetime.now().isoformat()
     user_message = state["messages"][-1]["content"] if state["messages"] else ""
     patient_ids = state.get("patient_ids")
 
@@ -129,9 +129,9 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         json.dumps(payload_items, default=str) if payload_items else "[]"
     )
 
-    # Get role-aware response prompt
-    user_role = state.get("user_role", "patient")
-    response_prompt_content = get_response_prompt(current_time, user_role=user_role)
+    role = get_user_role(state)
+    role_str = "care-provider" if role == ProfileTypeEnum.CARE_PROVIDER else "patient"
+    response_prompt_content = PromptBuilder().get_response_prompt(user_role=role_str)
 
     # Build message structure: [system prompt, conversation history, retrieved data context, LLM generates response]
     messages = [
@@ -139,14 +139,13 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         *state["messages"],
     ]
 
-    # Add retrieved data context if we have payloads
-    if payload_items:
-        messages.append(
-            {
-                "role": "assistant",
-                "content": f"[Retrieved data from query: {retrieved_data_context}]",
-            }
-        )
+    # Always add retrieved data context (even if empty) so LLM knows retrieval was attempted
+    messages.append(
+        {
+            "role": "assistant",
+            "content": f"[Retrieved data from query: {retrieved_data_context}]",
+        }
+    )
 
     response = openai_client.client.chat.completions.create(
         model="gpt-5.1",
