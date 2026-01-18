@@ -42,6 +42,32 @@ TIME FILTERING:
 - month_filters: List of month numbers (1-12) for month-based queries (e.g., [8, 9] for August to September)
 - time_buckets: List of time buckets - ['morning'] (6-12), ['afternoon'] (12-17), ['evening'] (17-21), ['night'] (21-6)
 
+NUMERIC FILTERING:
+- numeric_filters: List of NumericFilter objects for filtering by numeric metric values (e.g., "glucose > 200", "protein < 50", "steps between 5000 and 10000").
+- When users mention specific numeric constraints, extract them as NumericFilter objects with:
+  * key: The EXACT Qdrant payload key (use the exact field names from DATA FIELDS AVAILABLE section above)
+  * range_condition: NumericRange with gt/gte/lt/lte based on the comparison:
+    - "greater than", "above", "over" -> use gt
+    - "greater than or equal", "at least" -> use gte
+    - "less than", "below", "under" -> use lt
+    - "less than or equal", "at most" -> use lte
+    - "between X and Y" -> use gte=X, lte=Y
+- Examples:
+  * "glucose over 200" -> numeric_filters=[NumericFilter(key="glucose_mgdl", range_condition=NumericRange(gt=200.0))] for SMBG, or key="data.average_glucose_mgdl" for CGM_SUMMARY
+  * "protein less than 50" -> numeric_filters=[NumericFilter(key="nutrition.proteins", range_condition=NumericRange(lt=50.0))]
+  * "calories between 500 and 1000" -> numeric_filters=[NumericFilter(key="nutrition.calories", range_condition=NumericRange(gte=500.0, lte=1000.0))]
+  * "steps above 10000" -> numeric_filters=[NumericFilter(key="steps", range_condition=NumericRange(gt=10000.0))]
+  * "BMI over 30" -> numeric_filters=[NumericFilter(key="bmi", range_condition=NumericRange(gt=30.0))]
+  * "high glucose" (without specific number) -> Don't add numeric filter, just use appropriate data_type
+  * "low protein" (without specific number) -> Don't add numeric filter, just use appropriate data_type
+- Numeric fields that can be filtered:
+  * MEAL: nutrition.proteins, nutrition.carbohydrates, nutrition.fats, nutrition.calories, nutrition.fiber, nutrition.calcium, nutrition.iron, nutrition.zinc, nutrition.magnesium
+  * CGM_SUMMARY: data.average_glucose_mgdl, data.gmi, data.glucose_variability_percent, data.highest_glucose_mgdl, data.lowest_glucose_mgdl, data.coefficient_of_variation_percent
+  * SMBG: glucose_mgdl
+  * FITNESS_OVERVIEW: steps, active_duration, active_energy, peak_steps, peak_active_energy
+  * PROFILE: age, height, weight, waist, bmi
+- IMPORTANT: Only extract numeric filters when users provide SPECIFIC NUMERIC VALUES or CLEAR RANGES. Don't extract filters for vague terms like "high" or "low" without numbers - those are qualitative, not numeric constraints.
+
 RULES:
 - You can ONLY map queries to the HealthDataType enum values listed above. If a user asks about something not in this list (like 'sports', 'weather', etc.), politely clarify that you only have access to the health data types above. For 'sports' or 'exercise', map to FITNESS_OVERVIEW, FITNESS_DIST, or FITNESS_INACTIVE.
 - CRITICAL: NEVER say "I don't have access to..." or "I can't analyze..." for fields listed in the DATA FIELDS AVAILABLE section. If a field is listed above (like nutrition.proteins, nutrition.carbohydrates, glucose levels, steps, etc.), you DO have access to it through the corresponding data type. Map the query to the appropriate data_type(s) and execute. For example, queries about "protein" or "carbohydrates" should map to MEAL data type - the data exists in nutrition.proteins and nutrition.carbohydrates fields.
@@ -133,6 +159,32 @@ TIME FILTERING:
 - hour_range: TimeRange object with 'start_hour' (0-23, inclusive) and 'end_hour' (0-23, exclusive) fields. Set for time-of-day filtering (e.g., 'between 9 AM and 5 PM' -> start_hour=9, end_hour=17).
 - month_filters: List of month numbers (1-12) for month-based queries (e.g., [8, 9] for August to September)
 - time_buckets: List of time buckets - ['morning'] (6-12), ['afternoon'] (12-17), ['evening'] (17-21), ['night'] (21-6)
+
+NUMERIC FILTERING:
+- numeric_filters: List of NumericFilter objects for filtering by numeric metric values (e.g., "glucose > 200", "protein < 50", "steps between 5000 and 10000").
+- When users mention specific numeric constraints, extract them as NumericFilter objects with:
+  * key: The EXACT Qdrant payload key (use the exact field names from DATA FIELDS AVAILABLE section above)
+  * range_condition: NumericRange with gt/gte/lt/lte based on the comparison:
+    - "greater than", "above", "over" -> use gt
+    - "greater than or equal", "at least" -> use gte
+    - "less than", "below", "under" -> use lt
+    - "less than or equal", "at most" -> use lte
+    - "between X and Y" -> use gte=X, lte=Y
+- Examples:
+  * "glucose over 200" -> numeric_filters=[NumericFilter(key="glucose_mgdl", range_condition=NumericRange(gt=200.0))] for SMBG, or key="data.average_glucose_mgdl" for CGM_SUMMARY
+  * "protein less than 50" -> numeric_filters=[NumericFilter(key="nutrition.proteins", range_condition=NumericRange(lt=50.0))]
+  * "calories between 500 and 1000" -> numeric_filters=[NumericFilter(key="nutrition.calories", range_condition=NumericRange(gte=500.0, lte=1000.0))]
+  * "steps above 10000" -> numeric_filters=[NumericFilter(key="steps", range_condition=NumericRange(gt=10000.0))]
+  * "BMI over 30" -> numeric_filters=[NumericFilter(key="bmi", range_condition=NumericRange(gt=30.0))]
+  * "high glucose" (without specific number) -> Don't add numeric filter, just use appropriate data_type
+  * "low protein" (without specific number) -> Don't add numeric filter, just use appropriate data_type
+- Numeric fields that can be filtered:
+  * MEAL: nutrition.proteins, nutrition.carbohydrates, nutrition.fats, nutrition.calories, nutrition.fiber, nutrition.calcium, nutrition.iron, nutrition.zinc, nutrition.magnesium
+  * CGM_SUMMARY: data.average_glucose_mgdl, data.gmi, data.glucose_variability_percent, data.highest_glucose_mgdl, data.lowest_glucose_mgdl, data.coefficient_of_variation_percent
+  * SMBG: glucose_mgdl
+  * FITNESS_OVERVIEW: steps, active_duration, active_energy, peak_steps, peak_active_energy
+  * PROFILE: age, height, weight, waist, bmi
+- IMPORTANT: Only extract numeric filters when users provide SPECIFIC NUMERIC VALUES or CLEAR RANGES. Don't extract filters for vague terms like "high" or "low" without numbers - those are qualitative, not numeric constraints.
 
 RULES:
 - You can ONLY map queries to the HealthDataType enum values listed above. If a user asks about something not in this list (like 'sports', 'weather', etc.), politely clarify that you only have access to the health data types above. For 'sports' or 'exercise', map to FITNESS_OVERVIEW, FITNESS_DIST, or FITNESS_INACTIVE.

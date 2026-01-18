@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from lib.services.health_query_agent.intent import NumericFilter
+
 
 class QueryResponse(BaseModel):
     type: str = "response"
@@ -16,6 +18,7 @@ class QueryResponse(BaseModel):
     hour_range: Optional[dict] = None
     month_filters: Optional[List[int]] = None
     time_buckets: Optional[List[str]] = None
+    numeric_filters: Optional[List[NumericFilter]] = None
     final_response: Optional[str] = None
     clarification_msg: Optional[str] = None
     suggestions: Optional[List[dict]] = None
