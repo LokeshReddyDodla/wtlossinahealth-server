@@ -141,11 +141,120 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY"],
+  "data_types": ["CGM_SUMMARY", "SMBG"],
   "date_range": {
     "start": "<last_week_start>",
     "end": "<last_week_end>"
   },
   "confidence": 0.95
 }
+```
 
+### Example 2
+
+User:  
+> "Show my meals from last week"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["MEAL"],
+  "date_range": {
+    "start": "<last_week_start>",
+    "end": "<last_week_end>"
+  },
+  "confidence": 0.95
+}
+```
+
+### Example 3
+
+User:  
+> "Show my glucose and meals for today"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["CGM_SUMMARY", "SMBG", "MEAL"],
+  "date_range": {
+    "start": "<today_start>",
+    "end": "<today_end>"
+  },
+  "confidence": 0.9
+}
+```
+
+### Example 4
+
+User:  
+> "How were my glucose levels in the morning?"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "time_buckets": ["morning"],
+  "date_range": {
+    "start": "<today_start>",
+    "end": "<today_end>"
+  },
+  "confidence": 0.85
+}
+```
+
+### Example 5
+
+User:  
+> "Show my glucose readings between 10am and 1pm today"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "date_range": {
+    "start": "<today_start>",
+    "end": "<today_end>"
+  },
+  "hour_range": {
+    "start_hour": 10,
+    "end_hour": 13
+  },
+  "confidence": 0.9
+}
+```
+
+### Example 6
+
+User:  
+> "Did I have any glucose readings over 180 yesterday?"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "date_range": {
+    "start": "<yesterday_start>",
+    "end": "<yesterday_end>"
+  },
+  "numeric_filters": [
+    {
+      "key": "data.average_glucose_mgdl",
+      "range_condition": { "gt": 180 }
+    }
+  ],
+  "confidence": 0.9
+}
+```
+
+### Example 7
+
+User:  
+> "Compare my glucose in January and February"
+
+```json
+{
+  "is_ready": true,
+  "data_types": ["CGM_SUMMARY"],
+  "month_filters": [1, 2],
+  "confidence": 0.85
+}

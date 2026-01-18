@@ -88,7 +88,7 @@ Examples:
 
 ## Time Filtering Rules
 
-Extract time filters when mentioned:
+Extract time filters only when explicitly mentioned.
 
 ### Supported Time Filters
 
@@ -101,12 +101,30 @@ Extract time filters when mentioned:
   - evening (17–21)
   - night (21–06)
 
-### Rules
+### Time Resolution Rules (CRITICAL)
 
-- Resolve relative dates like "today", "this week", "this month" to actual values
-- If time is ambiguous but data type is clear:
-  - Default to **current month**
-  - Set `is_ready=True`
+- Resolve relative time expressions such as:
+  - today
+  - yesterday
+  - this week
+  - last 7 days
+  - this month
+- All relative times MUST be resolved using the injected ${current_time}
+
+### Missing or Ambiguous Time
+
+- If no time filter is mentioned at all:
+  - Do NOT infer or default a date range
+  - Set `is_ready = false` and request clarification
+
+### Multiple Time Filters — Precedence Rules
+
+When multiple time filters are present:
+
+- `date_range` provides the outer boundary
+- `hour_range` and `time_buckets` further constrain within that range
+- `month_filters` are mutually exclusive with `date_range`
+  - If both are present, set `is_ready = false`
 
 ---
 
@@ -137,6 +155,51 @@ Examples:
 
 - ❌ "high glucose" → no numeric filter
 - ✅ "glucose > 200" → numeric filter on `data.average_glucose_mgdl`
+
+---
+
+## Numeric Queries Require Time Context (CRITICAL)
+
+If a query includes one or more `numeric_filters`:
+
+- AND no explicit time filter is present
+- AND no explicit lifetime language is present
+
+Then:
+
+- You MUST NOT assume any default time range
+- You MUST NOT treat the query as all-time
+- You MUST set `is_ready = false`
+- You MUST request time clarification
+
+This rule overrides all execution defaults.
+
+---
+
+### Lifetime / All-Time Language (Explicit Allowance)
+
+The following phrases explicitly indicate lifetime intent:
+
+- "ever"
+- "all time"
+- "overall"
+- "historically"
+- "at any point"
+- "in my lifetime"
+
+ONLY when one of these phrases is present:
+
+- `date_range` MUST be null
+- The query MAY be executed as all-time
+- `is_ready = true` is allowed
+
+---
+
+### Explicitly Forbidden Behavior
+
+- NEVER infer "all time" from numeric thresholds
+- NEVER execute numeric-only queries without time or lifetime language
+- NEVER raise confidence above 0.5 when numeric filters lack time context
 
 ---
 

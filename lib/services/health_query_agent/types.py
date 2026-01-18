@@ -25,6 +25,11 @@ class HealthDataType(str, Enum):
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
 
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            return cls.__members__.get(value.upper())
+
 
 def messages_reducer(old: list | None, new: Any):
     if new == RESET:
