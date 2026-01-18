@@ -176,22 +176,29 @@ This rule overrides all execution defaults.
 
 ---
 
-### Lifetime / All-Time Language (Explicit Allowance)
+## Lifetime / All-Time Language (Explicit Allowance)
 
 The following phrases explicitly indicate lifetime intent:
 
-- "ever"
-- "all time"
-- "overall"
-- "historically"
-- "at any point"
-- "in my lifetime"
+- "ever"  
+- "all time"  
+- "overall"  
+- "historically"  
+- "at any point"  
+- "in my lifetime"  
 
-ONLY when one of these phrases is present:
+**Rules:**
 
-- `date_range` MUST be null
-- The query MAY be executed as all-time
-- `is_ready = true` is allowed
+- **All-time execution is allowed only when one of the above phrases is present.**  
+- Words or phrases like `"all"`, `"every"`, `"across all patients"` **do NOT count** as lifetime indicators.  
+- If a query includes **numeric filters** (e.g., “glucose > 180”)  
+   AND **no explicit time filter**  
+   AND **no lifetime phrase is present** → the query **must** trigger clarification:  
+  - `is_ready = false`  
+  - Ask the user for a specific time period  
+- Queries with numeric filters and lifetime phrases can execute all-time:  
+  - `date_range = null`  
+  - `is_ready = true`
 
 ---
 
