@@ -85,12 +85,13 @@ def analyze_intent(state: AgentState) -> dict:
     intent_prompt = PromptBuilder().get_intent_extraction_prompt(role=role_str)
 
     response = instructor_client.client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model="gpt-4.1-mini",
         response_model=QueryIntent,
         messages=[
             {"role": "system", "content": intent_prompt},
             *state["messages"],
         ],
+        temperature=0.0,
     )
     return {"intent": response}
 
