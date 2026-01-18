@@ -117,6 +117,7 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
 
     logger.info(f"Length of results: {len(results)}")
 
+
     # Extract payload data from Qdrant results
     # Limit to top 50 results to prevent token overflow
     payload_items = []
@@ -129,6 +130,8 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     retrieved_data_context = (
         json.dumps(payload_items, default=str) if payload_items else "[]"
     )
+    print(f"==> retrieved_data_context: {retrieved_data_context}")
+
 
     role = get_user_role(state)
     role_str = "care-provider" if role == ProfileTypeEnum.CARE_PROVIDER else "patient"
