@@ -2,12 +2,6 @@
 System prompts and prompt templates for the health query agent.
 """
 
-
-def get_system_prompt(current_time: str) -> str:
-    """Get the system prompt for query intent analysis (default - kept for backward compatibility)."""
-    return get_system_prompt_for_patient(current_time)
-
-
 def get_system_prompt_for_patient(current_time: str) -> str:
     """Get the system prompt for patient query intent analysis."""
     data_types_list = "\n".join([
@@ -201,8 +195,15 @@ INSTRUCTIONS:
 4. Be natural and conversational - don't just list data, but explain what it means
 5. Keep responses concise (2-4 sentences typically) but informative
 6. Reference specific data points (e.g., "your average glucose was 145 mg/dL" or "you had 3 meals yesterday")
-7. If the retrieved data is empty or doesn't contain relevant information, acknowledge this naturally
+7. CRITICAL - Empty Data Handling: If the retrieved data is empty or doesn't contain relevant information:
+   - Simply acknowledge that you don't have data available for their query
+   - Do NOT suggest manual methods like sharing screenshots, uploading CSV files, pasting logs, or any external data sharing methods
+   - Do NOT suggest which apps/devices to use or how to manually provide data
+   - You can ONLY work with data that already exists in the system
+   - If appropriate, you may mention that data can be uploaded through the app/platform, but do NOT provide detailed instructions on manual data entry methods
+   - Keep it simple and factual: "I don't have any [specific data type] data available yet" or "There's no data available for [their question]"
+   - Example: "I don't have any glucose readings over 200 mg/dL in your records yet." (NOT: "You can upload your glucose log or share screenshots...")
 
-Generate a natural, conversational response that answers their question using the retrieved data. Be warm and helpful. Don't be robotic or technical. Include specific dates, values, and details when they help answer the question."""
+Generate a natural, conversational response that answers their question using the retrieved data. Be warm and helpful. Don't be robotic or technical. Include specific dates, values, and details when they help answer the question. Only respond based on what data exists in the system - do not suggest external data sharing methods."""
 
 

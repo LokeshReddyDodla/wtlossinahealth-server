@@ -32,9 +32,9 @@ if TYPE_CHECKING:
 
 # Configuration
 OPENAI_API_KEY: str = config("OPENAI_API_KEY", default="")
-OPENAI_MODEL: str = config("OPENAI_MODEL", default="gpt-4o-mini")
-MAX_RESPONSE_TOKENS: int = int(config("MAX_RESPONSE_TOKENS", default="999"))
-RESPONSE_TEMPERATURE: float = float(config("RESPONSE_TEMPERATURE", default="0.7"))
+OPENAI_MODEL: str = "gpt-4o-mini"
+MAX_RESPONSE_TOKENS: int = 999
+RESPONSE_TEMPERATURE: float = 0.7
 
 
 # ---------------------- API Clients ---------------------- #
@@ -139,14 +139,13 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
         *state["messages"],
     ]
 
-    # Add retrieved data context if we have payloads
-    if payload_items:
-        messages.append(
-            {
-                "role": "assistant",
-                "content": f"[Retrieved data from query: {retrieved_data_context}]",
-            }
-        )
+    # Always add retrieved data context (even if empty) so LLM knows retrieval was attempted
+    messages.append(
+        {
+            "role": "assistant",
+            "content": f"[Retrieved data from query: {retrieved_data_context}]",
+        }
+    )
 
     response = openai_client.client.chat.completions.create(
         model="gpt-5.1",
