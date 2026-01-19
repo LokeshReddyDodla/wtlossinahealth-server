@@ -40,15 +40,20 @@ class FilterBuilder:
     }
 
     @staticmethod
-    def build(intent: QueryIntent) -> Optional[QdrantFilter]:
+    def build(intent: QueryIntent, patient_ids: List[str]) -> Optional[QdrantFilter]:
+        assert patient_ids, "patient_ids are required"
+
         FilterBuilder.enforce_stats_events_rule(intent)
 
         should_filters: List[QdrantFilter] = []
 
-        # PROFILE TYPE (NO TIME FILTERS)
+        # always include profile type
         should_filters.append(
             QdrantFilter(
                 must=[
+                    QdrantFieldCondition(
+                        key="patient_id", match=QdrantMatchAny(any=patient_ids)
+                    ),
                     QdrantFieldCondition(
                         key="data_type",
                         match=QdrantMatchValue(value=HealthDataType.PROFILE.value),
@@ -69,6 +74,9 @@ class FilterBuilder:
                 QdrantFilter(
                     must=[
                         QdrantFieldCondition(
+                            key="patient_id", match=QdrantMatchAny(any=patient_ids)
+                        ),
+                        QdrantFieldCondition(
                             key="data_type",
                             match=QdrantMatchAny(any=static_types),
                         )
@@ -77,8 +85,6 @@ class FilterBuilder:
             )
 
         # TIMESERIES TYPES (TIME FILTERS)
-        timeseries_conditions: List[QdrantFieldCondition] = []
-
         timeseries_types = [
             dt.value
             for dt in intent.data_types
@@ -86,19 +92,21 @@ class FilterBuilder:
         ]
 
         if timeseries_types:
-            timeseries_conditions.append(
+            must_conditions: List[QdrantFieldCondition] = [
                 QdrantFieldCondition(
-                    key="data_type",
-                    match=QdrantMatchAny(any=timeseries_types),
-                )
-            )
+                    key="patient_id", match=QdrantMatchAny(any=patient_ids)
+                ),
+                QdrantFieldCondition(
+                    key="data_type", match=QdrantMatchAny(any=timeseries_types)
+                ),
+            ]
 
-            FilterBuilder._add_month_filter(intent, timeseries_conditions)
-            FilterBuilder._add_date_range_filter(intent, timeseries_conditions)
-            FilterBuilder._add_time_filters(intent, timeseries_conditions)
-            FilterBuilder._add_numeric_filters(intent, timeseries_conditions)
+            FilterBuilder._add_month_filter(intent, must_conditions)
+            FilterBuilder._add_date_range_filter(intent, must_conditions)
+            FilterBuilder._add_time_filters(intent, must_conditions)
+            FilterBuilder._add_numeric_filters(intent, must_conditions)
 
-            should_filters.append(QdrantFilter(should=timeseries_conditions))
+            should_filters.append(QdrantFilter(must=must_conditions))
 
         if not should_filters:
             return None
