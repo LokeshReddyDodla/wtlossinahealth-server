@@ -5,6 +5,7 @@ from qdrant_client.http.models import (
     MatchValue as QdrantMatchValue,
     MatchAny as QdrantMatchAny,
     Filter as QdrantFilter,
+    MinShould as QdrantMinShould,
 )
 
 from lib.services.health_query_agent.intent import NumericRange
@@ -92,7 +93,7 @@ class FilterBuilder:
 
         return QdrantFilter(
             should=should_filters,
-            min_should=1,
+            min_should=QdrantMinShould(value=1),
         )
 
 
