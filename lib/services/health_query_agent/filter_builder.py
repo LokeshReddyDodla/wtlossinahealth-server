@@ -1,4 +1,4 @@
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Set
 from qdrant_client.http.models import (
     FieldCondition as QdrantFieldCondition,
     Range as QdrantRange,
@@ -32,41 +32,72 @@ def _pydantic_to_qdrant_condition(key: str, value: Any) -> QdrantFieldCondition:
 
 
 class FilterBuilder:
+    # Data types that should NEVER receive time/date filters
+    NON_FILTERABLE_TYPES: Set[HealthDataType] = {
+        HealthDataType.PROFILE,
+        HealthDataType.PATIENT_DOCUMENT,
+    }
+
     @staticmethod
     def build(intent: QueryIntent) -> Optional[QdrantFilter]:
-        """Build a QdrantFilter from a QueryIntent."""
         FilterBuilder.enforce_stats_events_rule(intent)
 
-        must_conditions: List[QdrantFieldCondition] = []
+        should_filters: List[QdrantFilter] = []
 
-        FilterBuilder._add_data_type_filter(intent, must_conditions)
-        FilterBuilder._add_month_filter(intent, must_conditions)
-        FilterBuilder._add_date_range_filter(intent, must_conditions)
-        FilterBuilder._add_time_filters(intent, must_conditions)
-        FilterBuilder._add_numeric_filters(intent, must_conditions)
+        # Data types that should NEVER receive time/date filters
+        static_types = [
+            dt.value
+            for dt in intent.data_types
+            if dt in FilterBuilder.NON_FILTERABLE_TYPES
+        ]
 
-        if must_conditions:
-            return QdrantFilter(must=must_conditions)  # type: ignore
-        return None
-
-    @staticmethod
-    def _add_data_type_filter(
-        intent: QueryIntent, conditions: List[QdrantFieldCondition]
-    ):
-        """Add data type filter conditions."""
-        data_types_with_profile = set(intent.data_types)
-        data_types_with_profile.add(HealthDataType.PROFILE)
-
-        conditions.append(
-            QdrantFieldCondition(
-                key="data_type",
-                match=QdrantMatchAny(any=[dt.value for dt in data_types_with_profile]),
+        if static_types:
+            should_filters.append(
+                QdrantFilter(
+                    must=[
+                        QdrantFieldCondition(
+                            key="data_type",
+                            match=QdrantMatchAny(any=static_types),
+                        )
+                    ]
+                )
             )
+
+        # Data types that should receive time/date filters
+        timeseries_conditions: List[QdrantFieldCondition] = []
+
+        timeseries_types = [
+            dt.value
+            for dt in intent.data_types
+            if dt not in FilterBuilder.NON_FILTERABLE_TYPES
+        ]
+
+        if timeseries_types:
+            timeseries_conditions.append(
+                QdrantFieldCondition(
+                    key="data_type",
+                    match=QdrantMatchAny(any=timeseries_types),
+                )
+            )
+
+            FilterBuilder._add_month_filter(intent, timeseries_conditions)
+            FilterBuilder._add_date_range_filter(intent, timeseries_conditions)
+            FilterBuilder._add_time_filters(intent, timeseries_conditions)
+            FilterBuilder._add_numeric_filters(intent, timeseries_conditions)
+
+            should_filters.append(QdrantFilter(should=timeseries_conditions))
+
+        if not should_filters:
+            return None
+
+        return QdrantFilter(
+            should=should_filters,
+            min_should=1,
         )
+
 
     @staticmethod
     def _add_month_filter(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
-        """Add month filter conditions."""
         if intent.month_filters:
             # If only one month, match that directly
             if len(intent.month_filters) == 1:
@@ -89,7 +120,6 @@ class FilterBuilder:
     def _add_date_range_filter(
         intent: QueryIntent, conditions: List[QdrantFieldCondition]
     ):
-        """Add date range filter conditions."""
         if intent.date_range:
             start_ms = int(intent.date_range.start.timestamp() * 1000)
             end_ms = int(intent.date_range.end.timestamp() * 1000)
@@ -107,7 +137,6 @@ class FilterBuilder:
 
     @staticmethod
     def _add_time_filters(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
-        """Add time-related filter conditions."""
         if intent.time_buckets:
             conditions.append(
                 QdrantFieldCondition(
@@ -143,10 +172,6 @@ class FilterBuilder:
 
     @staticmethod
     def enforce_stats_events_rule(intent: QueryIntent):
-        """
-        Enforce the rule that certain data types should include their
-        corresponding stats and event types.
-        """
         dt_set = set(intent.data_types)
 
         if any("hyper" in dt.value for dt in dt_set):
