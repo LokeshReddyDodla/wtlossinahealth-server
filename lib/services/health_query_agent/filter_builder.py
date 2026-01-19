@@ -35,7 +35,7 @@ class FilterBuilder:
     # Data types that should NEVER receive time/date filters
     NON_FILTERABLE_TYPES: Set[HealthDataType] = {
         HealthDataType.PROFILE,
-        HealthDataType.PATIENT_DOCUMENT,
+        HealthDataType.DOCUMENTS,
     }
 
     @staticmethod
