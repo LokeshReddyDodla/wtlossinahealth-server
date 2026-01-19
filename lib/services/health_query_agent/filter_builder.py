@@ -45,7 +45,19 @@ class FilterBuilder:
 
         should_filters: List[QdrantFilter] = []
 
-        # Data types that should NEVER receive time/date filters
+        # PROFILE TYPE (NO TIME FILTERS)
+        should_filters.append(
+            QdrantFilter(
+                must=[
+                    QdrantFieldCondition(
+                        key="data_type",
+                        match=QdrantMatchValue(value=HealthDataType.PROFILE.value),
+                    )
+                ]
+            )
+        )
+
+        # STATIC TYPES (NO TIME FILTERS)
         static_types = [
             dt.value
             for dt in intent.data_types
@@ -64,7 +76,7 @@ class FilterBuilder:
                 )
             )
 
-        # Data types that should receive time/date filters
+        # TIMESERIES TYPES (TIME FILTERS)
         timeseries_conditions: List[QdrantFieldCondition] = []
 
         timeseries_types = [
@@ -93,9 +105,11 @@ class FilterBuilder:
 
         return QdrantFilter(
             should=should_filters,
-            min_should=QdrantMinShould(value=1),
+            min_should=QdrantMinShould(
+                min_count=1,
+                conditions=should_filters,
+            ),
         )
-
 
     @staticmethod
     def _add_month_filter(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
