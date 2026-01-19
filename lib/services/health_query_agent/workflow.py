@@ -4,7 +4,6 @@ LangGraph workflow setup for the health query agent.
 
 import json
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 import instructor
@@ -107,7 +106,6 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     user_message = state["messages"][-1]["content"] if state["messages"] else ""
     patient_ids = state.get("patient_ids")
 
-    # Perform Qdrant search
     results, search_confidence = await search_qdrant(
         query=user_message,
         intent=intent,
@@ -118,26 +116,21 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     logger.info(f"Length of results: {len(results)}")
 
 
-    # Extract payload data from Qdrant results
-    # Limit to top 50 results to prevent token overflow
     payload_items = []
     for point in results:
         if hasattr(point, "payload") and point.payload:
             payload_items.append({**point.payload, "source": "qdrant"})
 
-    # Build structured context from extracted payloads
-    # Convert to JSON string for LLM context, handling datetime serialization
     retrieved_data_context = (
         json.dumps(payload_items, default=str) if payload_items else "[]"
     )
-    print(f"==> retrieved_data_context: {retrieved_data_context}")
+    # print(f"==> retrieved_data_context: {retrieved_data_context}")
 
 
     role = get_user_role(state)
     role_str = "care-provider" if role == ProfileTypeEnum.CARE_PROVIDER else "patient"
     response_prompt_content = PromptBuilder().get_response_prompt(user_role=role_str)
 
-    # Build message structure: [system prompt, conversation history, retrieved data context, LLM generates response]
     messages = [
         {"role": "system", "content": response_prompt_content},
         *state["messages"],
