@@ -1,99 +1,27 @@
-import json
 from math import ceil
-from typing import List, Optional
-from datetime import date, datetime, timedelta, timezone
 from fastapi import (
     APIRouter,
-    Body,
-    Depends,
-    File,
     HTTPException,
     Request,
-    UploadFile,
 )
 import logging
 
-from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.service_dependencies import (
-    get_ai_conversation_service_v1,
-    get_ai_conversation_service_v2,
-    get_active_patient_service,
-    get_cgm_report_service,
-    get_cgm_vector_service,
-    get_fitness_report_service,
-    get_fitness_vector_service,
-    get_meal_service,
-    get_meal_vector_service,
-    get_patient_profile_service,
-    get_patient_profile_vector_service,
-    get_qdrant_search_engine,
-    get_patient_summary_service,
-)
-from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_smbg import PatientSMBG
-from lib.schemas.patient import CorePatientProfile, Patient
-from lib.schemas.patient_meal import PatientMeal
-from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
-    AiConversationServiceV2,
-)
-
-from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
-    AIConversationServiceV1,
-)
-from lib.services.cgm_report_service import CGMReportService
-
-
-from lib.services.cgm_vector_service import (
-    CGMVectorService,
-)
+from lib.schemas.patient import CorePatientProfile
 
 from lib.services.file_content_extractor import FileContentExtractorService
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.services.fitness_report_service import FitnessReportService
-from lib.services.fitness_vector_service.fitness_vector_service import (
-    FitnessVectorService,
-)
-from lib.services.meal_service import MealService
-from lib.services.meal_vector_service.meal_vector_service import (
-    MealVectorService,
-)
-from lib.services.patient_connected_app_service import (
-    PatientConnectedAppService,
-)
-from lib.services.patient_profile_service import PatientProfileService
-from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
-    PatientProfileVectorService,
-)
-# from lib.services.qdrant_search_engine.clarifier_agent import ClarifierAgent
-from lib.services.qdrant_search_engine.qdrant_search_engine import (
-    QdrantSearchEngine,
-)
-from lib.tasks.fitness_tasks import (
-    trigger_fitness_batch_sync,
-    trigger_fitness_vector_upsert_for_patient,
-)
-from lib.tasks.meal_tasks import generate_meal_vector, process_meal_batch
-from lib.tasks.other_tasks import process_profile_batch, process_smbg_batch
+from lib.tasks.other_tasks import process_profile_batch
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.vector_utils import embed_text
-from rest_server.response_models import SuccessResponse
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, status
 from openai import AsyncOpenAI
-from lib.models.patient_meal import PatientMeal as PatientMealModel
-from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
-from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.models.patient import Patient as PatientModel
 from lib.models.patient_eating_habit import (
     PatientEatingHabit as PatientEatingHabitModel,
 )
-from lib.services.patient_summary import PatientSummaryService
-from lib.services.active_patient_service import ActivePatientService
-from fastapi.encoders import jsonable_encoder
-from bson import ObjectId
 
 router = APIRouter(prefix="/test")
 
@@ -665,95 +593,6 @@ async def delete_duplicate_cgm_reports(request: Request):
 #     return json.loads(content)
 
 
-# @router.get("/qdrant/nl_search")
-# async def search_qdrant_nl(
-#     query: str = Query(
-#         ..., description="Natural language query to search for"
-#     ),
-#     limit: int = Query(5, description="Number of results to return"),
-#     cgm_report_vector_service: CGMReportVectorService = Depends(
-#         get_cgm_report_vector_service
-#     ),
-# ):
-#     try:
-#         # Step 1: Get query embedding
-#         query_embedding = await openai_client.embeddings.create(
-#             model="text-embedding-3-small",
-#             input=query,
-#         )
-#         embedding = query_embedding.data[0].embedding
-
-#         # Step 2: Convert natural language → Qdrant filter
-#         filter_conditions = await nl_to_qdrant_filter(query)
-
-#         # Step 3: Perform search in Qdrant
-#         results = await cgm_report_vector_service.search_similar_reports(
-#             query_embedding=embedding,
-#             limit=limit,
-#             filter_conditions=filter_conditions,  # type: ignore
-#         )
-
-#         return {
-#             "query": query,
-#             "filter": filter_conditions,
-#             "results": results,
-#         }
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
-# @router.get("/qdrant/nl_search/v2")
-# async def search_qdrant_nl_v2(
-#     query: str = Query(
-#         ..., description="Natural language query to search for"
-#     ),
-#     patient_id: Optional[str] = Query(None, description="Patient ID"),
-#     limit: int = Query(500, description="Number of results to return"),
-#     qdrant_search_engine_service: QdrantSearchEngine = Depends(
-#         get_qdrant_search_engine
-#     ),
-# ):
-#     try:
-#         return await qdrant_search_engine_service.search(
-#             query, limit, patient_id
-#         )
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
-# @router.get("/ai/conversation/ask")
-# async def search_qdrant_nl_v2_ask(
-#     query: str = Query(
-#         ..., description="Natural language query to search for"
-#     ),
-#     patient_id: str = Query(None, description="Patient ID"),
-#     care_provider_id: str = Query(None, description="CareProvider ID"),
-#     ai_conversation_service_v2: AiConversationServiceV2 = Depends(
-#         get_ai_conversation_service_v2
-#     ),
-# ):
-#     try:
-#         ai_message_data = await ai_conversation_service_v2.generate_response(
-#             patient_id,
-#             care_provider_id,
-#             ProfileTypeEnum.CARE_PROVIDER,
-#             f"{patient_id}-{care_provider_id}",
-#             query,
-#         )
-
-#         print("==> ai_message_data: ", ai_message_data)
-
-#         return SuccessResponse(
-#             message="AI response generated successfully.",
-#             data=ai_message_data,
-#         )
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
 # @router.get("/qdrant/meal/all")
 # async def enqueue_meal_vector_batches(
 #     session: AsyncSession = Depends(get_postgres_session),
@@ -861,56 +700,56 @@ async def delete_duplicate_cgm_reports(request: Request):
 #         )
 
 
-# @router.get("/qdrant/patient/all")
-# async def enqueue_patient_vector_batches(
-#     session: AsyncSession = Depends(get_postgres_session),
-# ):
-#     BATCH_SIZE = 50
-#     try:
-#         query = select(PatientModel).options(
-#             selectinload(PatientModel.daily_activity),
-#             selectinload(PatientModel.food_allergies),
-#             selectinload(PatientModel.drug_allergies),
-#             selectinload(PatientModel.alcohol_consumption),
-#             selectinload(PatientModel.smoking_habit),
-#             selectinload(PatientModel.sleep_habit),
-#             selectinload(PatientModel.eating_habit).selectinload(
-#                 PatientEatingHabitModel.meal_timings
-#             ),
-#             selectinload(PatientModel.eating_habit).selectinload(
-#                 PatientEatingHabitModel.diet_preferences
-#             ),
-#             selectinload(PatientModel.diabetic_history),
-#             selectinload(PatientModel.family_diabetic_histories),
-#             selectinload(PatientModel.medical_histories),
-#             selectinload(PatientModel.current_medication),
-#         )
-#         result = await session.execute(query)
-#         profiles = result.scalars().all()
+@router.get("/qdrant/patient/all")
+async def enqueue_patient_vector_batches(
+    session: AsyncSession = Depends(get_postgres_session),
+):
+    BATCH_SIZE = 50
+    try:
+        query = select(PatientModel).options(
+            selectinload(PatientModel.daily_activity),
+            selectinload(PatientModel.food_allergies),
+            selectinload(PatientModel.drug_allergies),
+            selectinload(PatientModel.alcohol_consumption),
+            selectinload(PatientModel.smoking_habit),
+            selectinload(PatientModel.sleep_habit),
+            selectinload(PatientModel.eating_habit).selectinload(
+                PatientEatingHabitModel.meal_timings
+            ),
+            selectinload(PatientModel.eating_habit).selectinload(
+                PatientEatingHabitModel.diet_preferences
+            ),
+            selectinload(PatientModel.diabetic_history),
+            selectinload(PatientModel.family_diabetic_histories),
+            selectinload(PatientModel.medical_histories),
+            selectinload(PatientModel.current_medication),
+        )
+        result = await session.execute(query)
+        profiles = result.scalars().all()
 
-#         profiles_data = [
-#             CorePatientProfile.from_orm(m).model_dump(mode="json")
-#             for m in profiles
-#         ]
-#         total_batches = ceil(len(profiles_data) / BATCH_SIZE)
+        profiles_data = [
+            CorePatientProfile.from_orm(m).model_dump(mode="json")
+            for m in profiles
+        ]
+        total_batches = ceil(len(profiles_data) / BATCH_SIZE)
 
-#         for i in range(total_batches):
-#             batch = profiles_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-#             process_profile_batch.delay(batch)
+        for i in range(total_batches):
+            batch = profiles_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+            process_profile_batch.delay(batch)
 
-#         return {
-#             "message": f"Enqueued {total_batches} batches for {len(profiles_data)} profiles."
-#         }
+        return {
+            "message": f"Enqueued {total_batches} batches for {len(profiles_data)} profiles."
+        }
 
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         await session.rollback()
-#         raise_http_exception(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             message="Internal Server Error",
-#             detail=str(e),
-#         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 # @router.get("/qdrant/fitness/all")
@@ -1042,54 +881,3 @@ async def delete_duplicate_cgm_reports(request: Request):
 #             detail=str(e),
 #         )
 
-
-# @router.post("/ai/ask")
-# async def test_ai_conversation_service_v1(
-#     user_id: str = Query(...),
-#     user_type: ProfileTypeEnum = Query(...),
-#     conversation_id: str = Query(...),
-#     human_input: str = Query(...),
-#     patient_ids: List[str] = Body(...),
-#     ai_conversation_service_v1: AIConversationServiceV1 = Depends(
-#         get_ai_conversation_service_v1
-#     ),
-#     session: AsyncSession = Depends(get_postgres_session),
-# ):
-#     try:
-#         result = await ai_conversation_service_v1.generate_response(
-#             patient_ids, user_id, user_type, conversation_id, human_input
-#         )
-
-#         return SuccessResponse(message="Voila", data=result)
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         await session.rollback()
-#         raise_http_exception(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             message="Internal Server Error",
-#             detail=str(e),
-#         )
-
-
-# @router.post("/ai/agent")
-# async def test_clarifier_agent(
-#     human_input: str = Query(...),
-#     session: AsyncSession = Depends(get_postgres_session),
-# ):
-#     try:
-#         clarifier = ClarifierAgent()
-#         final_instruction = await clarifier.ask_until_clear(
-#             human_input,
-#         )
-
-#         return SuccessResponse(message="Voila", data=final_instruction)
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         await session.rollback()
-#         raise_http_exception(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             message="Internal Server Error",
-#             detail=str(e),
-#         )
