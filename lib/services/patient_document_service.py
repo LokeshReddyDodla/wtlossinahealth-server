@@ -154,14 +154,23 @@ class PatientDocumentService:
             extracted_text = self.file_content_extractor_service.extract(
                 file_bytes, file_name, content_type
             )
+
+            is_image = content_type.startswith("image/")
             if not extracted_text or len(extracted_text.strip()) == 0:
-                raise_http_exception(400, "No readable text found in document")
+                if not is_image:
+                    raise_http_exception(
+                        400, "No readable text found in document"
+                    )
+                extracted_text = ""
 
-            # Generate summary
-            summary_text = await self._summarize_document(extracted_text)
+            summary_text = ""
+            text_repr = ""
+            if extracted_text:
+                # Generate summary
+                summary_text = await self._summarize_document(extracted_text)
 
-            # Generate text_repr for embedding
-            text_repr = await self._generate_text_repr(summary_text)
+                # Generate text_repr for embedding
+                text_repr = await self._generate_text_repr(summary_text)
 
             # Determine document date
             document_date = (
@@ -190,22 +199,23 @@ class PatientDocumentService:
                 patient_id
             )
 
-            # Build payload
-            payload = self._build_embedding_payload(
-                profile,
-                document_id,
-                file_url,
-                file_name,
-                content_type,
-                document_type,
-                summary_text,
-                text_repr,
-                uploaded_by_id,
-                uploaded_by_type,
-                document_date,
-            )
+            if text_repr:
+                # Build payload
+                payload = self._build_embedding_payload(
+                    profile,
+                    document_id,
+                    file_url,
+                    file_name,
+                    content_type,
+                    document_type,
+                    summary_text,
+                    text_repr,
+                    uploaded_by_id,
+                    uploaded_by_type,
+                    document_date,
+                )
 
-            await self._upsert_to_qdrant(payload, text_repr, document_id)
+                await self._upsert_to_qdrant(payload, text_repr, document_id)
 
             return document_id
 

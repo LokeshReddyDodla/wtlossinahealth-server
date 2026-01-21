@@ -1,4 +1,5 @@
 from datetime import datetime
+import inspect as py_inspect
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -496,18 +497,23 @@ class PatientDocumentResearchService:
             selected_ai_model="gpt-4o",
         )
 
-        response = await ai_service.generate_response(
-            patient_id=patient_id,
-            user_id=care_provider_id,
-            conversation_id=conversation_id,
-            human_input=prompt,
-            conversation_type="care-provider",
-            additional_context={
+        generate_kwargs = {
+            "patient_id": patient_id,
+            "user_id": care_provider_id,
+            "conversation_id": conversation_id,
+            "human_input": prompt,
+            "conversation_type": "care-provider",
+            "additional_context": {
                 "context_type": "patient_document_research",
                 "documents": [d.model_dump() for d in documents],
             },
-            api_endpoint=api_endpoint,
-        )
+        }
+
+        signature = py_inspect.signature(ai_service.generate_response)
+        if "api_endpoint" in signature.parameters:
+            generate_kwargs["api_endpoint"] = api_endpoint
+
+        response = await ai_service.generate_response(**generate_kwargs)
 
         return {
             "content": response.get("content", "Unable to generate response."),

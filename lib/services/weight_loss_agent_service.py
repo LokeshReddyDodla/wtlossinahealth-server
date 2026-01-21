@@ -1,15 +1,15 @@
+from __future__ import annotations
+
 """Service for managing weight loss agent functionality."""
 import re
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from fastapi import status
 from sqlalchemy import and_, func
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, joinedload
-
-from __future__ import annotations
+from sqlalchemy.orm import joinedload, selectinload
 
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.mongo_store import MongoStore

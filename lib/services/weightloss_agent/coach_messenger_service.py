@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import ValidationError
-from decouple import config
 
 from lib.schemas.weightloss_agent.coach import (
     CoachActionRequest,
@@ -32,6 +31,8 @@ from lib.services.weightloss_agent.plan_composer_service import (
 
 
 class CoachMessengerService:
+    COACH_MESSENGER_MODE = "ai"
+
     def __init__(
         self,
         suggestion_cards_collection: AsyncIOMotorCollection,
@@ -94,19 +95,7 @@ class CoachMessengerService:
         return CoachActionResponse(cards=cards, abstained=False, reason=None)
 
     def _coach_cards_mode(self) -> str:
-        return (
-            str(config("COACH_MESSENGER_MODE", default="rule_based"))
-            .strip()
-            .lower()
-        )
-
-    def _ai_fallback_enabled(self) -> bool:
-        return (
-            str(config("COACH_MESSENGER_AI_FALLBACK", default="false"))
-            .strip()
-            .lower()
-            in ("1", "true", "yes", "on")
-        )
+        return self.COACH_MESSENGER_MODE
 
     async def _persist_card(self, card: SuggestionCard) -> None:
         doc = card.model_dump()
@@ -118,11 +107,7 @@ class CoachMessengerService:
         self, request: CoachActionRequest, plan: PlanSnapshot
     ) -> List[SuggestionCard]:
         if self._coach_cards_mode() == "ai":
-            ai_cards = await self._build_cards_ai(request, plan)
-            if ai_cards:
-                return ai_cards
-            if not self._ai_fallback_enabled():
-                return []
+            return await self._build_cards_ai(request, plan)
         return await self._build_cards_rule_based(request, plan)
 
     async def _recent_cards_context(
@@ -243,14 +228,14 @@ Recent cards to avoid repeating:
             )
         except Exception as exc:
             print(f"AI coach cards generation failed: {exc}")
-            return []
+            raise
 
         payload_raw = self._extract_json_payload(ai_message.get("content") or "")
         try:
             parsed = AiCoachCardsResponse.model_validate(json.loads(payload_raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             print(f"AI coach cards parse/validation failed: {exc}")
-            return []
+            raise
 
         cards: List[SuggestionCard] = []
         for item in parsed.cards[:6]:
