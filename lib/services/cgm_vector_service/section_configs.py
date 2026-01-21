@@ -93,6 +93,18 @@ RAPID_DROP_STATS_CONFIG = CGMSectionConfig(
     call_signature="stats",
 )
 
+CGM_SEMANTIC_WINDOW_CONFIG = CGMSectionConfig(
+    name="cgm_semantic_window",
+    keys=[
+        "readings_count",
+        "min_glucose_mgdl",
+        "avg_glucose_mgdl",
+        "max_glucose_mgdl",
+    ],
+    template_method="cgm_semantic_window",
+    call_signature="stats",
+)
+
 # Event configurations
 HYPER_EVENT_CONFIG = CGMSectionConfig(
     name="hyper_event",
@@ -146,6 +158,7 @@ CGM_SECTION_CONFIGS = {
     "hypo_stats": HYPO_STATS_CONFIG,
     "rapid_spike_stats": RAPID_SPIKE_STATS_CONFIG,
     "rapid_drop_stats": RAPID_DROP_STATS_CONFIG,
+    "cgm_semantic_window": CGM_SEMANTIC_WINDOW_CONFIG,
     # Event sections
     "hyper_event": HYPER_EVENT_CONFIG,
     "hypo_event": HYPO_EVENT_CONFIG,
