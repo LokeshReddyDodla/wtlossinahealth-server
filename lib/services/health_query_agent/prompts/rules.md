@@ -24,26 +24,36 @@ You MUST use `data_definitions.md` as the single source of truth for data types 
 When a user asks about "glucose", "blood sugar", or "glucose readings"
 WITHOUT explicitly specifying a source:
 
-- You MUST include ALL applicable glucose data types:
-  - CGM_RANGE and/or CGM_SUMMARY (if the query implies ranges or summaries)
-  - SMBG
+You MUST include ALL applicable glucose data types:
+
+- CGM_RANGE and/or CGM_SUMMARY  
+  (when the query implies distributions, ranges, summaries, trends, or averages)
+- CGM_SEMANTIC_WINDOW  
+  (when the query implies short windows, snapshots, min/avg/max, or reading counts)
+- SMBG
 
 This applies to queries such as:
 
 - "my glucose readings"
 - "glucose levels today"
 - "blood sugar this week"
+- "how was my glucose?"
+- "glucose stats
 
 Only restrict to a single glucose data type when the user explicitly specifies:
 
 - "fingerstick", "SMBG", "manual reading" → SMBG only
-- "CGM", "sensor", "continuous glucose" → CGM data types only
+- "CGM", "sensor", "continuous glucose" →
+  - CGM_RANGE
+  - CGM_SUMMARY
+  - CGM_SEMANTIC_WINDOW  
+  (exclude SMBG)
 
 ---
 
-### 2. Data Access Guarantees
+### 2. Data Access Guarantees (CRITICAL)
 
-- **CRITICAL**: NEVER say "I don’t have access to" or "I can’t analyze" for any field listed in `data_definitions.md`
+- NEVER say "I don’t have access to" or "I can’t analyze" for any field listed in `data_definitions.md`
 - If a field exists in the data definitions, you DO have access to it through the corresponding data type
 - Always map the query to the appropriate data_type(s) and proceed
 
@@ -67,8 +77,8 @@ Examples:
 
 Examples:
 
-- "show prescriptions" → DOCUMENTS (execute immediately)
-- "list patients with high glucose" → CGM_SUMMARY (execute immediately)
+- "show prescriptions" → DOCUMENTS
+- "list patients with high glucose" → CGM_SUMMARY
 
 ---
 
@@ -79,8 +89,12 @@ Examples:
 
 Examples:
 
-- "glucose, fitness, and meals" → [CGM_SUMMARY, FITNESS_OVERVIEW, MEAL]
-- "meals and glucose" → [MEAL, CGM_SUMMARY]
+- "glucose, fitness, and meals" →
+  [CGM_SUMMARY, CGM_SEMANTIC_WINDOW, SMBG, FITNESS_OVERVIEW, MEAL]
+
+- "meals and glucose" →
+  [MEAL, CGM_SUMMARY, CGM_SEMANTIC_WINDOW, SMBG]
+
 - "overall data", "all data", "everything" →
   [MEAL, CGM_SUMMARY, FITNESS_OVERVIEW]
 
@@ -103,19 +117,19 @@ Extract time filters only when explicitly mentioned.
 
 ### Time Resolution Rules (CRITICAL)
 
-- Resolve relative time expressions such as:
+- Resolve relative expressions using injected `${current_time}`:
   - today
   - yesterday
   - this week
   - last 7 days
   - this month
-- All relative times MUST be resolved using the injected ${current_time}
 
 ### Missing or Ambiguous Time
 
-- If no time filter is mentioned at all:
-  - Do NOT infer or default a date range
-  - Set `is_ready = false` and request clarification
+- If no time filter is mentioned:
+  - Do NOT infer a date range
+  - Set `is_ready = false`
+  - Request clarification
 
 ### Multiple Time Filters — Precedence Rules
 
@@ -155,6 +169,33 @@ Examples:
 
 - ❌ "high glucose" → no numeric filter
 - ✅ "glucose > 200" → numeric filter on `data.average_glucose_mgdl`
+
+---
+
+### Semantic Numeric Mapping (CRITICAL FOR CGM)
+
+When numeric filters imply **min / max / avg glucose semantics**:
+
+- You MUST use `CGM_SEMANTIC_WINDOW` fields
+- NEVER remap these to CGM_SUMMARY
+
+Examples:
+
+- "average glucose > 180"
+  → key: `avg_glucose_mgdl` (CGM_SEMANTIC_WINDOW)
+
+- "max glucose above 250"
+  → key: `max_glucose_mgdl` (CGM_SEMANTIC_WINDOW)
+
+- "min glucose below 70"
+  → key: `min_glucose_mgdl` (CGM_SEMANTIC_WINDOW)
+
+---
+
+IMPORTANT
+
+- NEVER paraphrase field names
+- NEVER infer numeric thresholds from vague language
 
 ---
 

@@ -183,6 +183,12 @@ Your sole task is to map the user's natural language request to the provided Pyd
   - data.percentile_75_mgdl
   - data.percentile_90_mgdl
 
+- **cgm_semantic_window**
+  - readings_count
+  - min_glucose_mgdl
+  - avg_glucose_mgdl
+  - max_glucose_mgdl
+
 - **smbg**
   - hour
   - glucose_mgdl
