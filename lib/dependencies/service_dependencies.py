@@ -80,7 +80,6 @@ from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
-from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
@@ -309,10 +308,6 @@ def get_prescription_analysis_service() -> PrescriptionAnalysisService:
         PrescriptionAnalysisService,
         container.resolve(PrescriptionAnalysisService),
     )
-
-
-def get_osteoflag_service() -> OsteoFlagService:
-    return cast(OsteoFlagService, container.resolve(OsteoFlagService))
 
 
 def get_patient_plan_service() -> PatientPlanService:
