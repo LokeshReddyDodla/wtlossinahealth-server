@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 """Service for managing weight loss agent functionality."""
 import re
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 

@@ -41,6 +41,7 @@ from lib.services.weightloss_agent.safety_rules_service import (
 class PlanComposerService:
     COMPOSER_VERSION = "v0.1.0"
     PLAN_DURATION_DAYS = 28
+    PLAN_COMPOSER_MODE = "ai"
     REQUIRED_METRICS = [
         "daily_steps",
         "weekly_minutes_moderate",
@@ -83,19 +84,7 @@ class PlanComposerService:
         )
 
     def _plan_mode(self) -> str:
-        return (
-            str(config("PLAN_COMPOSER_MODE", default="rule_based"))
-            .strip()
-            .lower()
-        )
-
-    def _ai_fallback_enabled(self) -> bool:
-        return (
-            str(config("PLAN_COMPOSER_AI_FALLBACK", default="false"))
-            .strip()
-            .lower()
-            in ("1", "true", "yes", "on")
-        )
+        return self.PLAN_COMPOSER_MODE
 
     async def generate_plan(
         self, request: PlanGenerateRequest
@@ -460,66 +449,10 @@ Safety evaluation:
             )
         except (json.JSONDecodeError, ValidationError) as exc:
             print(f"AI plan parse/validation failed: {exc}")
-            if self._ai_fallback_enabled():
-                return self._compose_plan_snapshot(
-                    user_id=user_id,
-                    safety_summary=safety_summary,
-                    context=context,
-                )
-            return PlanSnapshot(
-                plan_id=uuid4(),
-                user_id=user_id,
-                generated_at=datetime.now(timezone.utc),
-                valid_from=date.today(),
-                valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
-                hydration=PlanMetricRange(
-                    metric_id="hydration_oz",
-                    label="Hydration",
-                    min_value=None,
-                    max_value=None,
-                    units="oz",
-                    cadence="daily",
-                    sources=[],
-                ),
-                targets={},
-                habits_focus=[],
-                safety_rules=[],
-                sources=[],
-                provenance=self._provenance(plan_mode="ai"),
-                abstained=True,
-                abstain_reason="AI plan output could not be parsed/validated",
-            )
+            raise
         except Exception as exc:
             print(f"AI plan generation failed: {exc}")
-            if self._ai_fallback_enabled():
-                return self._compose_plan_snapshot(
-                    user_id=user_id,
-                    safety_summary=safety_summary,
-                    context=context,
-                )
-            return PlanSnapshot(
-                plan_id=uuid4(),
-                user_id=user_id,
-                generated_at=datetime.now(timezone.utc),
-                valid_from=date.today(),
-                valid_to=date.today() + timedelta(days=self.PLAN_DURATION_DAYS),
-                hydration=PlanMetricRange(
-                    metric_id="hydration_oz",
-                    label="Hydration",
-                    min_value=None,
-                    max_value=None,
-                    units="oz",
-                    cadence="daily",
-                    sources=[],
-                ),
-                targets={},
-                habits_focus=[],
-                safety_rules=[],
-                sources=[],
-                provenance=self._provenance(plan_mode="ai"),
-                abstained=True,
-                abstain_reason="AI plan generation failed",
-            )
+            raise
 
         caps_lookup = {
             cap["metric"]: cap for cap in safety_summary.get("intensity_caps", [])
