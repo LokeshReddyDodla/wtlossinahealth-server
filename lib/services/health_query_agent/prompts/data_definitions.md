@@ -18,7 +18,7 @@ All planners, classifiers, and executors MUST follow these definitions.
 ## Available Data Types
 
 - CGM / Glucose data:
-  CGM_RANGE, CGM_SUMMARY, AGP, SMBG
+  CGM_RANGE, CGM_SUMMARY, AGP, CGM_SEMANTIC_WINDOW, SMBG
 
 - Glucose events:
   HYPER_STATS, HYPO_STATS,
@@ -97,6 +97,20 @@ Fields:
 
 Maps to:
 Questions about time-in-range, glucose ranges, and target percentages.
+
+---
+
+### CGM_SEMANTIC_WINDOW
+
+Fields:
+
+- `readings_count`
+- `min_glucose_mgdl`
+- `avg_glucose_mgdl`
+- `max_glucose_mgdl`
+
+Maps to:
+Questions about CGM readings in 30-minute time windows, glucose patterns within specific time periods, detailed glucose trends, or granular glucose data analysis.
 
 ---
 
@@ -229,6 +243,12 @@ Example:
 `data.highest_glucose_mgdl`,
 `data.lowest_glucose_mgdl`,
 `data.coefficient_of_variation_percent`
+
+---
+
+### CGM_SEMANTIC_WINDOW (Numeric Fields)
+
+`readings_count`, `min_glucose_mgdl`, `avg_glucose_mgdl`, `max_glucose_mgdl`
 
 ---
 
