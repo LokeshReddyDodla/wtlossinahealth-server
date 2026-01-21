@@ -43,6 +43,15 @@ async def create_context(request: Request, call_next):
     # Bind context to request state
     request.state.context = server_context
 
+    # Log request path and method
+    logger = structlog.get_logger("rest_server")
+    await logger.info(
+        "Request received",
+        method=request.method,
+        path=request.url.path,
+        query_params=str(request.query_params) if request.query_params else None,
+    )
+
     # Process API call
     response = await call_next(request)
 

@@ -145,6 +145,8 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
     AgenticOrchestrator,
 )
 
+from lib.services.health_query_agent.service import HealthQueryAgentService
+
 # Initialize Container
 container = Container()
 
@@ -331,6 +333,7 @@ for namespace in [
     "cgm_qdrant_sync",
     "fitness_qdrant_sync",
     "cgm_sync",
+    "health_query_agent",
 ]:
     container.register(
         namespace,
@@ -1047,6 +1050,16 @@ container.register(
     lambda: QdrantSearchEngine(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
         intent_cache=cast(IntentCache, container.resolve(IntentCache)),
+    ),
+)
+
+# 🔹 Health Query Agent Service
+container.register(
+    HealthQueryAgentService,
+    lambda: HealthQueryAgentService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+        cache_store=cast(CacheStore, container.resolve("health_query_agent")), 
     ),
 )
 

@@ -1,4 +1,4 @@
-FROM python:3.9.10-slim
+FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1\
@@ -16,13 +16,15 @@ ENV PYTHONUNBUFFERED=1 \
 # prepend poetry and venv to path
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y \
-    curl \
-    build-essential \
-    tesseract-ocr \
-    libtesseract-dev \
-    poppler-utils \
-    libmagic1 \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y \
+        curl \
+        build-essential \
+        tesseract-ocr \
+        libtesseract-dev \
+        poppler-utils \
+        libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # install poetry - respects $POETRY_VERSION & $POETRY_HOME

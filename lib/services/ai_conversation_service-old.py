@@ -3,7 +3,7 @@ from uuid import UUID
 
 from decouple import config
 from fastapi import status
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr, ValidationError
 

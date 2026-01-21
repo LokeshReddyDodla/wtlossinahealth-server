@@ -6,7 +6,7 @@ authors = ["Mukhtar <mukhtar@ahealth.in>"]
 # package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
+python = ">=3.10,<4.0"
 fastapi = "^0.109.0"
 # langchain = "^0.2.0"
 # pydantic = { version = "^1.10.7", allow-prereleases = true }
@@ -50,14 +50,8 @@ firebase-admin = "^6.5.0"
 asgiref = "^3.8.1"
 nest-asyncio = "^1.6.0"
 orjson = "^3.10.7"
-langchain-community = "^0.3.1"
-langchain = "^0.3.3"
-langchain-openai = "^0.2.2"
 markdownify = "^0.13.1"
 punq = "^0.7.0"
-tenacity = "^9.0.0"
-langchain-google-genai = "^2.1.2"
-langchain-perplexity = "^0.1.0"
 twilio = "^9.7.0"
 celery-aio-pool = "^0.1.0rc8"
 qdrant-client = "^1.15.1"
@@ -69,6 +63,13 @@ instructor = "^1.11.3"
 eval-type-backport = "^0.2.2"
 openpyxl = "^3.1.5"
 xlrd = "^2.0.2"
+langchain = "^1.2.4"
+langchain-community = "^0.4.1"
+langchain-openai = "^1.1.7"
+tenacity = "^9.1.2"
+langgraph = "^1.0.6"
+langchain-google-genai = "^4.2.0"
+jsonpickle = "^4.1.1"
 
 
 [tool.poetry.group.dev.dependencies]

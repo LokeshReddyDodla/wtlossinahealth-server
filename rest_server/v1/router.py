@@ -8,6 +8,8 @@ from .care_providers.router import router as care_providers_router
 from .patients.router import router as patients_router
 from .health_facilities.router import router as health_facilities_router
 from .token_usage.router import router as token_usage_router
+from .reports.router import router as reports_router
+from .health_query_agent.router import router as health_query_agent_router
 
 router.include_router(auth_router)
 router.include_router(packages_router)
@@ -15,4 +17,6 @@ router.include_router(care_providers_router)
 router.include_router(patients_router)
 router.include_router(health_facilities_router)
 router.include_router(token_usage_router)
+router.include_router(reports_router)
+router.include_router(health_query_agent_router)
 

@@ -84,3 +84,38 @@ def get_effective_care_provider_id(
     # Regular care provider - only see their own patients
     return care_provider_id
 
+
+def resolve_patient_ids_for_query(
+    current_actor: Actor,
+    provided_patient_ids: Optional[list[str]] = None,
+) -> list[str]:
+    user_id = current_actor.id
+    
+    if current_actor.role == ProfileTypeEnum.PATIENT:
+        if provided_patient_ids is None:
+            return [user_id]
+        elif provided_patient_ids != [user_id]:
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="Patients can only access their own data",
+            )
+        return provided_patient_ids
+    
+    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER: # TODO: Remove this once we have a proper patient access check
+        if not provided_patient_ids or len(provided_patient_ids) == 0:
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="patient_ids is required for care provider queries",
+            )
+        return provided_patient_ids
+    
+    elif current_actor.role == ProfileTypeEnum.ADMIN:
+        # Admin can query any patient(s) or all if None
+        return provided_patient_ids or []
+    
+    else:
+        raise_http_exception(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message=f"Unsupported role: {current_actor.role}",
+        )
+
