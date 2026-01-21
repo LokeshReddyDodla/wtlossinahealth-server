@@ -368,6 +368,8 @@ class AiConversationService:
         human_input: str,
         conversation_type: AiConversationTypeLiteral,
         additional_context: Optional[Any] = None,
+        *,
+        api_endpoint: Optional[str] = None,
     ) -> Dict:
         await self.add_message_to_conversation(
             user_id,
@@ -457,7 +459,7 @@ class AiConversationService:
                     ),
                     model_used=self.selected_ai_model,
                     model_provider=self.ai_model_provider,
-                    api_endpoint="/ai-conversation/respond",
+                    api_endpoint=api_endpoint or "/ai-conversation/respond",
                 )  # type: ignore
 
             return ai_message_data

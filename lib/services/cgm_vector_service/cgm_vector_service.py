@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 import logging
@@ -18,7 +18,6 @@ from lib.services.cgm_vector_service.section_templates import (
 )
 
 from lib.utils.vector_utils import embed_text_batch_safe
-from qdrant_client import AsyncQdrantClient
 
 
 logger = logging.getLogger(__name__)
@@ -309,7 +308,7 @@ class CGMVectorService:
             )
 
             point = self._create_point_info(
-                data_type=f"time_period_stats",
+                data_type="time_period_stats",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
@@ -356,13 +355,127 @@ class CGMVectorService:
                     hour_val = None
 
             point = self._create_point_info(
-                data_type=f"agp_point",
+                data_type="agp_point",
                 text_repr=summary_text,
                 start_time=start_time,
                 end_time=end_time,
                 additional_payload={
                     "hour": hour_val,
                     "data": agp_point,
+                },
+            )
+            points.append(point)
+
+        return points
+
+    def _parse_timestamp(self, timestamp: Any) -> Optional[datetime]:
+        """Parse timestamp from various formats"""
+        if isinstance(timestamp, datetime):
+            return timestamp
+        if isinstance(timestamp, str):
+            try:
+                # Try ISO format first
+                return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    # Try common formats
+                    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+                        try:
+                            return datetime.strptime(timestamp, fmt)
+                        except ValueError:
+                            continue
+                except Exception:
+                    pass
+        return None
+
+    def _bucket_30_minutes(self, dt: datetime) -> datetime:
+        """Round down to the nearest 30-minute bucket"""
+        # Round down minutes to 0 or 30
+        minute = (dt.minute // 30) * 30
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    async def _process_cgm_readings(
+        self,
+        report_data: dict,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> List[PointStruct]:
+        """Process CGM readings into 30-minute buckets"""
+        points: list[PointStruct] = []
+        cgm_readings = report_data.get("cgm_readings", [])
+
+        if not cgm_readings:
+            return points
+
+        # Group readings into 30-minute buckets
+        buckets: dict[datetime, list[dict]] = {}
+
+        for reading in cgm_readings:
+            # Parse timestamp
+            timestamp = self._parse_timestamp(
+                reading.get("device_timestamp")
+            )
+            if not timestamp:
+                continue
+
+            # Skip readings outside report period
+            if timestamp < start_time or timestamp > end_time:
+                continue
+
+            glucose_mgdl = reading.get("glucose_mgdl")
+            if glucose_mgdl is None:
+                continue
+
+            # Bucket the timestamp
+            bucket_start = self._bucket_30_minutes(timestamp)
+            bucket_end = bucket_start + timedelta(minutes=30)
+
+            if bucket_start not in buckets:
+                buckets[bucket_start] = []
+
+            buckets[bucket_start].append({
+                "device_timestamp": timestamp,
+                "glucose_mgdl": float(glucose_mgdl),
+            })
+
+        # Process each bucket
+        for bucket_start in sorted(buckets.keys()):
+            bucket_readings = buckets[bucket_start]
+            bucket_end = bucket_start + timedelta(minutes=30)
+
+            if not bucket_readings:
+                continue
+
+            # Compute statistics
+            glucose_values = [r["glucose_mgdl"] for r in bucket_readings]
+            readings_count = len(glucose_values)
+            min_glucose_mgdl = min(glucose_values)
+            max_glucose_mgdl = max(glucose_values)
+            avg_glucose_mgdl = sum(glucose_values) / readings_count
+
+            # Create summary data
+            bucket_data = {
+                "readings_count": readings_count,
+                "min_glucose_mgdl": min_glucose_mgdl,
+                "avg_glucose_mgdl": avg_glucose_mgdl,
+                "max_glucose_mgdl": max_glucose_mgdl,
+            }
+
+            # Generate summary text using template
+            summary_text = CGMSectionTemplates.cgm_semantic_window(
+                bucket_start.isoformat(),
+                bucket_end.isoformat(),
+                bucket_data,
+            )
+
+            # Store raw readings in payload
+            point = self._create_point_info(
+                data_type="cgm_semantic_window",
+                text_repr=summary_text,
+                start_time=bucket_start,
+                end_time=bucket_end,
+                additional_payload={
+                    **bucket_data,
                 },
             )
             points.append(point)
@@ -388,6 +501,7 @@ class CGMVectorService:
             self._process_rapid_change_stats,
             self._process_time_period_stats,
             self._process_agp_points,
+            self._process_cgm_readings,
         ]
 
         for method in process_methods:
@@ -424,6 +538,11 @@ class CGMVectorService:
                 else None
             )
             base += f"-period_{period_name}"
+
+        elif data_type == "cgm_semantic_window":
+            # Use bucket start time for uniqueness
+            bucket_start = start_time.isoformat()
+            base += f"-bucket_{bucket_start}"
 
         elif data_type.endswith("_event"):
             event_hash = hashlib.md5(

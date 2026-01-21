@@ -124,6 +124,18 @@ class CGMSectionTemplates:
         )
 
     @staticmethod
+    def cgm_semantic_window(
+        start_str: str, end_str: str, data: dict
+    ) -> str:
+        return (
+            f"CGM semantic window from {start_str} to {end_str}: "
+            f"readings_count: {data.get('readings_count', 0)}, "
+            f"min_glucose_mgdl: {data.get('min_glucose_mgdl', 0)}, "
+            f"avg_glucose_mgdl: {data.get('avg_glucose_mgdl', 0):.2f}, "
+            f"max_glucose_mgdl: {data.get('max_glucose_mgdl', 0)}."
+        )
+
+    @staticmethod
     def default_section(
         section_name: str, start_str: str, end_str: str, data: dict
     ) -> str:
