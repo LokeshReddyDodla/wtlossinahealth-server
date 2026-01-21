@@ -98,9 +98,12 @@ def analyze_intent(state: AgentState) -> dict:
 async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     """Execute the user query and return conversational response."""
     intent = state["intent"]
+    source_messages = state["messages"].copy() if state.get("messages") else []
+    
     if not intent.is_ready:
         return {
             "final_response": "Query is not ready for execution.",
+            "source_messages": source_messages,
         }
 
     user_message = state["messages"][-1]["content"] if state["messages"] else ""
@@ -152,10 +155,11 @@ async def execute_query(state: AgentState, qdrant_store: QdrantStore) -> dict:
     )
 
     conversational_response = response.choices[0].message.content.strip()
-
+   
     return {
         "final_response": conversational_response,
         "search_confidence": search_confidence,
+        "source_messages": source_messages,  # Messages used to generate this response
     }
 
 

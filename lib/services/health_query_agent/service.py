@@ -63,6 +63,7 @@ class HealthQueryAgentService:
         intent,
         response_data: dict,
         is_ready: bool,
+        source_messages: Optional[list] = None,
     ):
         """Save an assistant message to MongoDB."""
         if not self.conversation_repository or not user_id:
@@ -84,17 +85,23 @@ class HealthQueryAgentService:
                     intent, "clarification_msg", None
                 )
 
+            metadata = {
+                "thread_id": thread_id,
+                "turn_number": response_data.get("turn_number", 0),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            # Add source messages that were used to generate this response
+            if source_messages:
+                metadata["source_messages"] = source_messages
+
             await self.conversation_repository.save_message(
                 user_id=user_id,
                 message_type="assistant",
                 content=response_data["message"],
                 intent=intent_dict,
                 response=response_dict,
-                metadata={
-                    "thread_id": thread_id,
-                    "turn_number": response_data.get("turn_number", 0),
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
+                metadata=metadata,
             )
         except Exception as e:
             logger.warning(f"Failed to save assistant message: {e}")
@@ -190,6 +197,13 @@ class HealthQueryAgentService:
         )
         intent = result.get("intent")
 
+        source_messages = result.get("source_messages")
+        if source_messages is None:
+            state = self.app.get_state(config)
+            source_messages = (
+                state.values.get("messages", []) if state and state.values else []
+            )
+
         response_data = self._build_response_data(
             result, user_message, intent, thread_id
         )
@@ -199,6 +213,7 @@ class HealthQueryAgentService:
             intent,
             response_data,
             intent.is_ready if intent else False,
+            source_messages=source_messages,
         )
 
         if intent and intent.is_ready:
