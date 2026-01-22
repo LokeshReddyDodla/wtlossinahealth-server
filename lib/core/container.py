@@ -98,6 +98,7 @@ from lib.services.patient_query_service import PatientQueryService
 from lib.services.patient_enrichment_service import PatientEnrichmentService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
+from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -561,6 +562,19 @@ container.register(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
         selected_ai_model="gpt-4o",
+        ai_model_provider="openai",
+    ),
+)
+
+# 🔹 OsteoFlag Screening Service
+container.register(
+    OsteoFlagService,
+    lambda: OsteoFlagService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
+        ),
+        selected_ai_model="gpt-5.2",
         ai_model_provider="openai",
     ),
 )
