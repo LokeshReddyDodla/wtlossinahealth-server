@@ -28,6 +28,9 @@ from lib.services.ai_conversation_service_v1.context_builder import (
 from lib.services.ai_conversation_service_v1.context_resolver import (
     AIConversationContextResolver,
 )
+from lib.services.care_provider_access_service import (
+    CareProviderAccessService,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -38,6 +41,7 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.chat.direct_chat_resolver import DirectChatResolver
 from lib.services.dashboard_metrics.cgm_metrics_service import (
     CGMMetricsService,
 )
@@ -164,94 +168,94 @@ container.register(
 container.register(MongoStore, MongoStore, scope=Scope.singleton)
 container.register(
     "cgm_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("cgm_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "cgm_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "fitness_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("fitness_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "fitness_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "sleep_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("sleep_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "sleep_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "meal_report_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("meal_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "meal_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "patient_summary_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("patient_summaries"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_summaries"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "ai_conversation_messages_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("ai_conversation_messages"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "ai_conversation_messages"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "chat_messages_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("chat_messages"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "chat_messages"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "chats_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("chats"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "chats"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "patient_documents",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("patient_documents"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_documents"
+    ),
 )
 container.register(
     "patient_document_summary_interactions_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("patient_document_summary_interactions"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_document_summary_interactions"
+    ),
     scope=Scope.singleton,
 )
 
 # Weight Loss Agent Collections
 container.register(
     "inbody_reports_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_inbody_reports"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_inbody_reports"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weight_loss_interactions_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_weight_loss_interactions"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_weight_loss_interactions"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weight_loss_progress_analyses_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_weight_loss_progress_analyses"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_weight_loss_progress_analyses"
+    ),
     scope=Scope.singleton,
 )
 
@@ -259,58 +263,58 @@ container.register(
 # Intake + patient app collections
 container.register(
     "exercise_preferences_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_exercise_preferences"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_exercise_preferences"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "fitness_screen_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_fitness_screen"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_fitness_screen"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "willingness_commitment_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_willingness_commitment"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_willingness_commitment"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "plan_snapshots_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_plan_snapshots"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_plan_snapshots"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "suggestion_cards_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_suggestion_cards"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_suggestion_cards"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weekly_symptoms_glp1_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_weekly_symptoms_glp1"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_weekly_symptoms_glp1"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "audit_traces_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_audit_traces"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_audit_traces"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "analytics_events_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_analytics_events"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_analytics_events"
+    ),
     scope=Scope.singleton,
 )
 
@@ -357,6 +361,10 @@ container.register(ChatMessagingService, ChatMessagingService)
 container.register(ChatNotificationService, ChatNotificationService)
 container.register(ChatParticipantService, ChatParticipantService)
 container.register(ChatManagementService, ChatManagementService)
+container.register(
+    DirectChatResolver,
+    lambda: DirectChatResolver(chat_service=container.resolve(ChatManagementService)),
+)
 
 
 # 🔹 Patient Profile Service
@@ -486,9 +494,7 @@ container.register(
         ),
         patient_document_summary_interactions_collection=cast(
             MongoStore,
-            container.resolve(
-                "patient_document_summary_interactions_collection"
-            ),
+            container.resolve("patient_document_summary_interactions_collection"),
         ),
         patient_document_service=cast(
             PatientDocumentService, container.resolve(PatientDocumentService)
@@ -568,9 +574,7 @@ container.register(
 # 🔹 Fitness Stats Processor
 container.register(
     FitnessStatsProcessor,
-    lambda: FitnessStatsProcessor(
-        clickhouse_store=container.resolve(ClickHouseStore)
-    ),
+    lambda: FitnessStatsProcessor(clickhouse_store=container.resolve(ClickHouseStore)),
 )
 
 # 🔹 Glucose Stats Processor
@@ -636,9 +640,7 @@ container.register(
 container.register(
     FitnessReportService,
     lambda: FitnessReportService(
-        fitness_report_collection=container.resolve(
-            "fitness_report_collection"
-        ),
+        fitness_report_collection=container.resolve("fitness_report_collection"),
         patient_summary_service=cast(
             PatientSummaryService, container.resolve(PatientSummaryService)
         ),
@@ -737,6 +739,14 @@ container.register(
     ),
 )
 
+# 🔹 Care Provider Access Service
+container.register(
+    CareProviderAccessService,
+    lambda: CareProviderAccessService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
 # 🔹 Package Query Service
 container.register(
     PackageQueryService,
@@ -799,15 +809,11 @@ container.register(
         exercise_preferences_collection=container.resolve(
             "exercise_preferences_collection"
         ),
-        fitness_screen_collection=container.resolve(
-            "fitness_screen_collection"
-        ),
+        fitness_screen_collection=container.resolve("fitness_screen_collection"),
         willingness_commitment_collection=container.resolve(
             "willingness_commitment_collection"
         ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -815,9 +821,7 @@ container.register(
 container.register(
     SafetyRulesService,
     lambda: SafetyRulesService(
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -835,21 +839,13 @@ container.register(
 container.register(
     PlanComposerService,
     lambda: PlanComposerService(
-        plan_snapshots_collection=container.resolve(
-            "plan_snapshots_collection"
-        ),
-        inbody_reports_collection=container.resolve(
-            "inbody_reports_collection"
-        ),
-        intake_service=cast(
-            IntakeService, container.resolve(IntakeService)
-        ),
+        plan_snapshots_collection=container.resolve("plan_snapshots_collection"),
+        inbody_reports_collection=container.resolve("inbody_reports_collection"),
+        intake_service=cast(IntakeService, container.resolve(IntakeService)),
         safety_rules_service=cast(
             SafetyRulesService, container.resolve(SafetyRulesService)
         ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
         exercise_recommendation_service=cast(
             ExerciseRecommendationService,
             container.resolve(ExerciseRecommendationService),
@@ -864,15 +860,11 @@ container.register(
 container.register(
     CoachMessengerService,
     lambda: CoachMessengerService(
-        suggestion_cards_collection=container.resolve(
-            "suggestion_cards_collection"
-        ),
+        suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
         plan_composer_service=cast(
             PlanComposerService, container.resolve(PlanComposerService)
         ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
         ai_conversation_service=cast(
             AiConversationService, container.resolve(AiConversationService)
         ),
@@ -883,12 +875,8 @@ container.register(
 container.register(
     Glp1SymptomsService,
     lambda: Glp1SymptomsService(
-        weekly_symptoms_collection=container.resolve(
-            "weekly_symptoms_glp1_collection"
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        weekly_symptoms_collection=container.resolve("weekly_symptoms_glp1_collection"),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -902,9 +890,7 @@ container.register(
         coach_messenger_service=cast(
             CoachMessengerService, container.resolve(CoachMessengerService)
         ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -912,9 +898,7 @@ container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        clickhouse_store=cast(
-            ClickHouseStore, container.resolve(ClickHouseStore)
-        ),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
         reports_collection=cast(
             MongoStore, container.resolve("inbody_reports_collection")
         ),
@@ -933,9 +917,7 @@ container.register(
             CareProviderProfileService,
             container.resolve(CareProviderProfileService),
         ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
@@ -986,9 +968,7 @@ container.register(
         libreview_sync_queue=cast(
             SQSService, container.resolve("libreview_sync_queue")
         ),
-        libreview_sync_store=cast(
-            CacheStore, container.resolve("libreview_sync")
-        ),
+        libreview_sync_store=cast(CacheStore, container.resolve("libreview_sync")),
     ),
 )
 
@@ -1059,7 +1039,7 @@ container.register(
     lambda: HealthQueryAgentService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
         mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-        cache_store=cast(CacheStore, container.resolve("health_query_agent")), 
+        cache_store=cast(CacheStore, container.resolve("health_query_agent")),
     ),
 )
 
@@ -1102,9 +1082,7 @@ container.register(
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
         ),
-        patient_profile_store=cast(
-            CacheStore, container.resolve("patient_profile")
-        ),
+        patient_profile_store=cast(CacheStore, container.resolve("patient_profile")),
     ),
 )
 
@@ -1147,9 +1125,7 @@ container.register(
 container.register(
     FitnessMetricsService,
     lambda: FitnessMetricsService(
-        fitness_report_collection=container.resolve(
-            "fitness_report_collection"
-        )
+        fitness_report_collection=container.resolve("fitness_report_collection")
     ),
 )
 
