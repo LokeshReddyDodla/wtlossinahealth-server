@@ -12,6 +12,9 @@ from lib.services.ai_conversation_service.ai_conversation_service_v2 import (
 from lib.services.ai_conversation_service_v1.ai_conversation_service_v1 import (
     AIConversationServiceV1,
 )
+from lib.services.care_provider_access_service import (
+    CareProviderAccessService,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -24,6 +27,7 @@ from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.chat.direct_chat_resolver import DirectChatResolver
 from lib.services.dashboard_metrics.cgm_metrics_service import (
     CGMMetricsService,
 )
@@ -165,39 +169,40 @@ def get_chat_messaging_service() -> ChatMessagingService:
 
 
 def get_chat_notification_service() -> ChatNotificationService:
-    return cast(
-        ChatNotificationService, container.resolve(ChatNotificationService)
-    )
+    return cast(ChatNotificationService, container.resolve(ChatNotificationService))
 
 
 def get_chat_management_service() -> ChatManagementService:
-    return cast(
-        ChatManagementService, container.resolve(ChatManagementService)
-    )
+    return cast(ChatManagementService, container.resolve(ChatManagementService))
+
+
+def get_direct_chat_resolver() -> DirectChatResolver:
+    return cast(DirectChatResolver, container.resolve(DirectChatResolver))
 
 
 def get_ai_conversation_service() -> AiConversationService:
-    return cast(
-        AiConversationService, container.resolve(AiConversationService)
-    )
+    return cast(AiConversationService, container.resolve(AiConversationService))
 
 
 def get_ai_conversation_service_v2() -> AiConversationServiceV2:
-    return cast(
-        AiConversationServiceV2, container.resolve(AiConversationServiceV2)
-    )
+    return cast(AiConversationServiceV2, container.resolve(AiConversationServiceV2))
 
 
 def get_patient_profile_service() -> PatientProfileService:
-    return cast(
-        PatientProfileService, container.resolve(PatientProfileService)
-    )
+    return cast(PatientProfileService, container.resolve(PatientProfileService))
 
 
 def get_care_provider_profile_service() -> CareProviderProfileService:
     return cast(
         CareProviderProfileService,
         container.resolve(CareProviderProfileService),
+    )
+
+
+def get_care_provider_access_service() -> CareProviderAccessService:
+    return cast(
+        CareProviderAccessService,
+        container.resolve(CareProviderAccessService),
     )
 
 
@@ -292,9 +297,7 @@ def get_plan_composer_service() -> PlanComposerService:
 
 
 def get_coach_messenger_service() -> CoachMessengerService:
-    return cast(
-        CoachMessengerService, container.resolve(CoachMessengerService)
-    )
+    return cast(CoachMessengerService, container.resolve(CoachMessengerService))
 
 
 def get_glp1_symptoms_service() -> Glp1SymptomsService:
@@ -319,9 +322,7 @@ def get_patient_plan_service() -> PatientPlanService:
     )
 
 
-def get_patient_package_assignment_service() -> (
-    PatientPackageAssignmentService
-):
+def get_patient_package_assignment_service() -> PatientPackageAssignmentService:
     return cast(
         PatientPackageAssignmentService,
         container.resolve(PatientPackageAssignmentService),
@@ -329,9 +330,7 @@ def get_patient_package_assignment_service() -> (
 
 
 def get_patient_document_service() -> PatientDocumentService:
-    return cast(
-        PatientDocumentService, container.resolve(PatientDocumentService)
-    )
+    return cast(PatientDocumentService, container.resolve(PatientDocumentService))
 
 
 def get_patient_document_research_service() -> PatientDocumentResearchService:
@@ -416,9 +415,7 @@ def get_libreview_service() -> LibreViewService:
 
 
 def get_ai_conversation_service_v1() -> AIConversationServiceV1:
-    return cast(
-        AIConversationServiceV1, container.resolve(AIConversationServiceV1)
-    )
+    return cast(AIConversationServiceV1, container.resolve(AIConversationServiceV1))
 
 
 def get_qdrant_search_engine() -> QdrantSearchEngine:
@@ -485,9 +482,7 @@ def get_weight_loss_progress_analyses_collection():
 
 
 def get_patient_metrics_service() -> PatientMetricsService:
-    return cast(
-        PatientMetricsService, container.resolve(PatientMetricsService)
-    )
+    return cast(PatientMetricsService, container.resolve(PatientMetricsService))
 
 
 def get_meal_metrics_service() -> MealMetricsService:
@@ -503,9 +498,7 @@ def get_cgm_metrics_service() -> CGMMetricsService:
 
 
 def get_fitness_metrics_service() -> FitnessMetricsService:
-    return cast(
-        FitnessMetricsService, container.resolve(FitnessMetricsService)
-    )
+    return cast(FitnessMetricsService, container.resolve(FitnessMetricsService))
 
 
 def get_health_facility_metrics_service() -> HealthFacilityMetricsService:
@@ -516,15 +509,11 @@ def get_health_facility_metrics_service() -> HealthFacilityMetricsService:
 
 
 def get_package_metrics_service() -> PackageMetricsService:
-    return cast(
-        PackageMetricsService, container.resolve(PackageMetricsService)
-    )
+    return cast(PackageMetricsService, container.resolve(PackageMetricsService))
 
 
 def get_weight_loss_agent_service() -> WeightLossAgentService:
-    return cast(
-        WeightLossAgentService, container.resolve(WeightLossAgentService)
-    )
+    return cast(WeightLossAgentService, container.resolve(WeightLossAgentService))
 
 
 def get_file_content_extractor_service() -> FileContentExtractorService:
