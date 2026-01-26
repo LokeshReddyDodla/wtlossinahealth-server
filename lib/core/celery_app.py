@@ -28,13 +28,13 @@ celery.conf.update(
                 "expires": 60 * 60,  # 1 hour expiration
             },
         },
-        "trigger-cgm-vector-upsert-daily": {
-            "task": "lib.tasks.cgm_tasks.trigger_cgm_vector_upsert_for_all_patients",
-            "schedule": crontab(minute="0", hour="1"),  # 1:00 AM every day
-            "options": {
-                "expires": 60 * 60,  # 1 hour expiration
-            },
-        },
+        # "trigger-cgm-vector-upsert-daily": {
+        #     "task": "lib.tasks.cgm_tasks.trigger_cgm_vector_upsert_for_all_patients",
+        #     "schedule": crontab(minute="0", hour="1"),  # 1:00 AM every day
+        #     "options": {
+        #         "expires": 60 * 60,  # 1 hour expiration
+        #     },
+        # },
         "meal-reminder-breakfast": {
             "task": "lib.tasks.meal_reminder.time_based_tasks.check_breakfast_reminders",
             "schedule": crontab(
