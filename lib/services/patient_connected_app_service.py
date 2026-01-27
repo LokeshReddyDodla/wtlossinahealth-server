@@ -124,9 +124,9 @@ class PatientConnectedAppService:
             existing_libreview: Any = result.scalars().first()
 
             if existing_libreview:
-                # Update existing LibreView record
+                if existing_libreview.libreview_id != libreview_id:
+                    existing_libreview.last_sync_timestamp = None
                 existing_libreview.libreview_id = libreview_id
-                existing_libreview.last_sync_timestamp = None
 
                 await postgres_session.commit()
                 await postgres_session.refresh(existing_libreview)
