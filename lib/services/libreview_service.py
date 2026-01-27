@@ -64,6 +64,7 @@ class LibreViewService:
             )
 
         redis_key = f"{libreview.libreview_id}:{patient_id}"
+        sqs_deduplication_id = f"{libreview.libreview_id}-{patient_id}"
 
         payload = {
             "patient_id": patient_id,
@@ -82,19 +83,23 @@ class LibreViewService:
         if not lock_acquired:
             return {
                 "message": "Sync already in progress (in queue).",
-                "data": {"status": "already_queued"},
+                "data": {
+                    "status": "already_queued",
+                    "last_sync_timestamp": last_sync.isoformat() if last_sync else None,
+                },
             }
 
-        
-
         self.libreview_sync_queue.send_message(
-            deduplication_id=redis_key,
+            deduplication_id=sqs_deduplication_id,
             payload=payload,
         )
 
         return {
             "message": "Sync request accepted and added to queue.",
-            "data": {"status": "queued"},
+            "data": {
+                "status": "queued",
+                "last_sync_timestamp": last_sync.isoformat() if last_sync else None,
+            },
         }
 
     @with_postgres_session
