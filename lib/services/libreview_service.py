@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from lib.core.cache_store import CacheStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_connected_app import (
@@ -40,8 +40,10 @@ class LibreViewService:
         self.libreview_sync_store = libreview_sync_store
 
     async def sync_libreview(self, patient_id: str, user_id: str) -> dict:
-        connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
-            patient_id=patient_id,
+        connected_apps = (
+            await self.patient_connected_app_service.get_connected_apps_for_patient(
+                patient_id=patient_id,
+            )
         )  # type: ignore
 
         if not connected_apps.libreview:
@@ -50,9 +52,7 @@ class LibreViewService:
                 message="LibreView not connected for this patient.",
             )
 
-        libreview = PatientLibreViewSchema.model_validate(
-            connected_apps.libreview
-        )
+        libreview = PatientLibreViewSchema.model_validate(connected_apps.libreview)
         last_sync = connected_apps.libreview.last_sync_timestamp
 
         if last_sync and (datetime.utcnow() - last_sync) < timedelta(
@@ -98,16 +98,24 @@ class LibreViewService:
         await self._update_last_sync_timestamp(patient_id)
 
         # Get updated timestamp for response
-        updated_connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
-            patient_id=patient_id,
+        updated_connected_apps = (
+            await self.patient_connected_app_service.get_connected_apps_for_patient(
+                patient_id=patient_id,
+            )
         )
-        updated_last_sync = updated_connected_apps.libreview.last_sync_timestamp if updated_connected_apps.libreview else None
+        updated_last_sync = (
+            updated_connected_apps.libreview.last_sync_timestamp
+            if updated_connected_apps.libreview
+            else None
+        )
 
         return {
             "message": "Sync request accepted and added to queue.",
             "data": {
                 "status": "queued",
-                "last_sync_timestamp": updated_last_sync.isoformat() if updated_last_sync else None,
+                "last_sync_timestamp": updated_last_sync.isoformat()
+                if updated_last_sync
+                else None,
             },
         }
 
@@ -115,17 +123,22 @@ class LibreViewService:
     async def _update_last_sync_timestamp(
         self, patient_id: str, *, postgres_session: AsyncSession
     ):
-        """Update last_sync_timestamp when sync is queued."""
-        result = await postgres_session.execute(
-            select(PatientConnectedApp)
-            .where(PatientConnectedApp.patient_id == patient_id)
-            .options(selectinload(PatientConnectedApp.libreview))
+        connected_app_id = await postgres_session.scalar(
+            select(PatientConnectedApp.id).where(
+                PatientConnectedApp.patient_id == patient_id
+            )
         )
-        connected_app = result.scalars().first()
-        
-        if connected_app and connected_app.libreview:
-            connected_app.libreview.last_sync_timestamp = datetime.utcnow()
-            await postgres_session.commit()
+
+        if not connected_app_id:
+            return
+
+        await postgres_session.execute(
+            update(PatientLibreView)
+            .where(PatientLibreView.connected_app_id == connected_app_id)
+            .values(last_sync_timestamp=datetime.utcnow())
+        )
+
+        await postgres_session.commit()
 
     @with_postgres_session
     async def get_patients_with_libreview(
