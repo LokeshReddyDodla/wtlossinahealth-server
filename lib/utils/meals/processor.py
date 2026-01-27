@@ -151,10 +151,10 @@ class MealStatsProcessor:
                 total_meals += 1
 
                 macros = meal.get("total_macro_nutritional_value", {})
-                carbs = macros.get("carbohydrates", 0)
-                proteins = macros.get("proteins", 0)
-                fats = macros.get("fats", 0)
-                fiber = macros.get("fiber", 0)
+                carbs = macros.get("carbohydrates") or 0
+                proteins = macros.get("proteins") or 0
+                fats = macros.get("fats") or 0
+                fiber = macros.get("fiber") or 0
 
                 if carbs > HIGH_CARB_THRESHOLD:
                     high_carb_meals += 1
@@ -289,10 +289,10 @@ class MealStatsProcessor:
                         total_meals += 1
                         mtype = (meal.get("type") or "").lower()
                         macros = meal.get("total_macro_nutritional_value", {})
-                        carbs = macros.get("carbohydrates", 0)
-                        protein = macros.get("proteins", 0)
-                        fat = macros.get("fats", 0)
-                        fiber = macros.get("fiber", 0)
+                        carbs = macros.get("carbohydrates") or 0
+                        protein = macros.get("proteins") or 0
+                        fat = macros.get("fats") or 0
+                        fiber = macros.get("fiber") or 0
 
                         # Count meal types
                         if mtype == "snack":
@@ -369,11 +369,11 @@ class MealStatsProcessor:
                         continue
                     macros = meal.get("total_macro_nutritional_value", {})
                     buckets[mtype]["carbs"].append(
-                        macros.get("carbohydrates", 0)
+                        macros.get("carbohydrates") or 0
                     )
-                    buckets[mtype]["protein"].append(macros.get("proteins", 0))
-                    buckets[mtype]["fat"].append(macros.get("fats", 0))
-                    buckets[mtype]["fiber"].append(macros.get("fiber", 0))
+                    buckets[mtype]["protein"].append(macros.get("proteins") or 0)
+                    buckets[mtype]["fat"].append(macros.get("fats") or 0)
+                    buckets[mtype]["fiber"].append(macros.get("fiber") or 0)
             return {
                 mtype: {
                     macro: median(vals) if vals else 0
