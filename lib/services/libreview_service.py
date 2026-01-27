@@ -94,13 +94,38 @@ class LibreViewService:
             payload=payload,
         )
 
+        # Update last_sync_timestamp when sync is queued
+        await self._update_last_sync_timestamp(patient_id)
+
+        # Get updated timestamp for response
+        updated_connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
+            patient_id=patient_id,
+        )
+        updated_last_sync = updated_connected_apps.libreview.last_sync_timestamp if updated_connected_apps.libreview else None
+
         return {
             "message": "Sync request accepted and added to queue.",
             "data": {
                 "status": "queued",
-                "last_sync_timestamp": last_sync.isoformat() if last_sync else None,
+                "last_sync_timestamp": updated_last_sync.isoformat() if updated_last_sync else None,
             },
         }
+
+    @with_postgres_session
+    async def _update_last_sync_timestamp(
+        self, patient_id: str, *, postgres_session: AsyncSession
+    ):
+        """Update last_sync_timestamp when sync is queued."""
+        result = await postgres_session.execute(
+            select(PatientConnectedApp)
+            .where(PatientConnectedApp.patient_id == patient_id)
+            .options(selectinload(PatientConnectedApp.libreview))
+        )
+        connected_app = result.scalars().first()
+        
+        if connected_app and connected_app.libreview:
+            connected_app.libreview.last_sync_timestamp = datetime.utcnow()
+            await postgres_session.commit()
 
     @with_postgres_session
     async def get_patients_with_libreview(
