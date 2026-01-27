@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import hashlib
 import json
 
 from sqlalchemy import select, update
@@ -64,7 +65,8 @@ class LibreViewService:
             )
 
         redis_key = f"{libreview.libreview_id}:{patient_id}"
-        sqs_deduplication_id = f"{libreview.libreview_id}-{patient_id}"
+        print("==> redis_key: ", redis_key)
+        sqs_deduplication_id = hashlib.sha256(redis_key.encode()).hexdigest()[:128]
 
         payload = {
             "patient_id": patient_id,
