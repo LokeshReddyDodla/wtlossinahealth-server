@@ -179,15 +179,17 @@ class HealthQueryAgentService:
             intent_dict["time_buckets"] = response_data["time_buckets"]
         if response_data.get("numeric_filters"):
             intent_dict["numeric_filters"] = response_data["numeric_filters"]
+        if response_data.get("suggestions"):
+            intent_dict["suggestions"] = response_data["suggestions"]
+        if response_data.get("confidence") is not None:
+            intent_dict["confidence"] = response_data["confidence"]
 
-        # Build response dict
         response_dict = {
             "message": response_data.get("message", ""),
             "is_ready": response_data.get("is_ready", False),
             "data_types": response_data.get("data_types"),
         }
 
-        # Build metadata
         metadata = {
             "thread_id": thread_id,
             "turn_number": response_data.get("turn_number", 0),
