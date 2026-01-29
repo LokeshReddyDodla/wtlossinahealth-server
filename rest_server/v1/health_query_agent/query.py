@@ -1,10 +1,11 @@
-from fastapi import Depends
+from fastapi import Depends, Query
+from typing import Union
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_health_query_agent_service
 from lib.services.health_query_agent.service import HealthQueryAgentService
-from lib.services.health_query_agent.schemas import QueryResponse
+from lib.services.health_query_agent.schemas import QueryResponse, ConversationMessage
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -19,7 +20,7 @@ from .utils import resolve_bot_conversation_id
 
 @router.post(
     "/query",
-    response_model=SuccessResponse[QueryResponse],
+    response_model=SuccessResponse[Union[QueryResponse, ConversationMessage]],
 )
 async def process_query(
     payload: QueryRequest,
@@ -61,6 +62,7 @@ async def process_query(
         user_id=user_id,
         user_role=user_role.value,
         patient_ids=resolved_patient_ids,
+        debug=False,
     )
 
     return SuccessResponse(
