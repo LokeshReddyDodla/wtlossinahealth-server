@@ -1,6 +1,7 @@
 """
 MongoDB repository for storing and retrieving conversation history.
 """
+
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -20,7 +21,7 @@ class ConversationRepository:
     def __init__(self, mongo_store: MongoStore):
         self.mongo_store = mongo_store
         self.collection = mongo_store.get_collection(COLLECTION_NAME)
-    
+
     async def ensure_indexes(self):
         """Create necessary indexes for efficient queries."""
         try:
@@ -30,18 +31,18 @@ class ConversationRepository:
                 name="user_timestamp_idx",
                 background=True,
             )
-            
+
             # Timestamp index for cleanup/analytics
             await self.collection.create_index(
                 [("created_at", 1)],
                 name="created_at_idx",
                 background=True,
             )
-            
+
             logger.info("Created indexes for health_query_conversations collection")
         except Exception as e:
             logger.warning(f"Error creating indexes (may already exist): {e}")
-    
+
     async def save_message(
         self,
         user_id: str,
@@ -65,14 +66,14 @@ class ConversationRepository:
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             }
-            
+
             result = await self.mongo_store.insert_document(COLLECTION_NAME, document)
             logger.debug(f"Saved message for user_id: {user_id}, type: {message_type}")
             return str(result)
         except Exception as e:
             logger.error(f"Error saving message: {e}")
             raise
-    
+
     async def get_conversation_history(
         self,
         user_id: str,
@@ -88,16 +89,20 @@ class ConversationRepository:
             query = {"user_id": user_id}
             if since:
                 query["created_at"] = {"$gte": since}
-            
+
             # Get total count
             total_messages = await self.collection.count_documents(query)
-            
-            # Fetch messages with pagination
-            cursor = self.collection.find(query).sort("created_at", 1).skip(offset).limit(limit)
+
+            cursor = (
+                self.collection.find(query)
+                .sort("created_at", -1)
+                .skip(offset)
+                .limit(limit)
+            )
             messages_docs = []
             async for doc in cursor:
                 messages_docs.append(doc)
-            
+
             # Convert to ConversationMessage objects
             messages = []
             for doc in messages_docs:
@@ -110,7 +115,7 @@ class ConversationRepository:
                     metadata=doc.get("metadata"),
                 )
                 messages.append(message)
-            
+
             return ConversationHistoryResponse(
                 user_id=user_id,
                 total_messages=total_messages,
@@ -119,22 +124,21 @@ class ConversationRepository:
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}")
             raise
-    
+
     async def delete_user_conversation(self, user_id: str) -> int:
         """
         Delete all conversation history for a user.
         """
         try:
             result = await self.mongo_store.delete_many_documents(
-                COLLECTION_NAME,
-                {"user_id": user_id}
+                COLLECTION_NAME, {"user_id": user_id}
             )
             logger.info(f"Deleted {result} messages for user_id: {user_id}")
             return result
         except Exception as e:
             logger.error(f"Error deleting conversation history: {e}")
             raise
-    
+
     async def archive_user_conversation(self, user_id: str) -> int:
         """
         Archive conversation by adding archived flag (soft delete).
@@ -143,7 +147,7 @@ class ConversationRepository:
             result = await self.mongo_store.update_many_documents(
                 COLLECTION_NAME,
                 {"user_id": user_id},
-                {"$set": {"archived": True, "archived_at": datetime.utcnow()}}
+                {"$set": {"archived": True, "archived_at": datetime.utcnow()}},
             )
             logger.info(f"Archived {result} messages for user_id: {user_id}")
             return result
