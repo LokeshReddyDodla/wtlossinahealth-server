@@ -156,11 +156,13 @@ class MealStatsProcessor:
         ]
 
         if not reports:
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
             return MealStatisticsReport(
                 metadata=ReportMetadata(
                     date_range=DateRange(
-                        start=start_date.isoformat(),
-                        end=end_date.isoformat(),
+                        start=start_datetime.isoformat(),
+                        end=end_datetime.isoformat(),
                     ),
                     total_meals=0,
                     days_covered=days_covered,
@@ -186,8 +188,8 @@ class MealStatsProcessor:
         return MealStatisticsReport(
             metadata=ReportMetadata(
                 date_range=DateRange(
-                    start=start_date.isoformat(),
-                    end=end_date.isoformat(),
+                    start=datetime.combine(start_date, datetime.min.time()).isoformat(),
+                    end=datetime.combine(end_date, datetime.max.time()).isoformat(),
                 ),
                 total_meals=total_meals,
                 days_covered=days_covered,
@@ -201,18 +203,18 @@ class MealStatsProcessor:
                 ),
                 within_budget_percentages=WithinBudgetPercentages(
                     carbs=round(within_carb_range * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                     else 0.0,
                     protein=round(within_protein_range * 100 / total_meals, 1)
                     if total_meals
                     else 0.0,
                     fat=round(within_fat_budget * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                     else 0.0,
                     fiber=round(within_fiber_budget * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                     else 0.0,
-                ),
+            ),
             ),
             breakdowns=MealTypeBreakdown(by_meal_type=detailed_stats),
             meals=MealsData(by_date=meals_by_date) if meals_by_date else None,
@@ -227,6 +229,10 @@ class MealStatsProcessor:
         reports = await self.meal_report_service.fetch_daily_reports_in_range(
             patient_id, start_date, end_date
         )
+
+        days_covered = (end_date.date() - start_date.date()).days + 1
+        start_datetime = datetime.combine(start_date.date(), datetime.min.time())
+        end_datetime = datetime.combine(end_date.date(), datetime.max.time())
 
         (
             total_meals,
@@ -253,6 +259,14 @@ class MealStatsProcessor:
 
         if not reports:
             return MonthlySummary(
+                metadata=ReportMetadata(
+                    date_range=DateRange(
+                        start=start_datetime.isoformat(),
+                        end=end_datetime.isoformat(),
+                    ),
+                    total_meals=0,
+                    days_covered=days_covered,
+                ),
                 counts=MonthlyMealCounts(
                     total_meals=0,
                     snacks=0,
@@ -301,6 +315,14 @@ class MealStatsProcessor:
         }
 
         return MonthlySummary(
+            metadata=ReportMetadata(
+                date_range=DateRange(
+                    start=start_datetime.isoformat(),
+                    end=end_datetime.isoformat(),
+                ),
+                total_meals=total_meals,
+                days_covered=days_covered,
+            ),
             counts=MonthlyMealCounts(
                 total_meals=total_meals,
                 snacks=snacks_count,
@@ -312,18 +334,18 @@ class MealStatsProcessor:
             ),
             within_budget_percentages=WithinBudgetPercentages(
                 carbs=round(within_carb_range * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                 else 0.0,
                 protein=round(within_protein_range * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                 else 0.0,
                 fat=round(within_fat_range * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                 else 0.0,
                 fiber=round(within_fiber_range * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                 else 0.0,
-            ),
+                ),
             weekly_summaries=weekly_summaries,
             meal_type_comparison=meal_type_comparison,
         )

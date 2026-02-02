@@ -161,11 +161,12 @@ class SMBGStatsProcessor:
 
         stats = SMBGStatistics.calculate_basic_stats(smbg_records)
         stats["average_time"] = SMBGStatistics.average_time(all_times)
-        stats["meal_statistics"] = await (
+        meal_statistics_report = await (
             self.meal_stats_processor.get_meal_statistics_in_range(
                 patient_id, start_date, end_date
             )
         )
+        stats["meal_statistics"] = meal_statistics_report.model_dump()
 
         return stats
 

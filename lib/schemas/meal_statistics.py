@@ -114,6 +114,7 @@ class MonthlyMealCounts(BaseModel):
 
 
 class MonthlySummary(BaseModel):
+    metadata: ReportMetadata
     counts: MonthlyMealCounts
     within_budget_percentages: WithinBudgetPercentages
     weekly_summaries: List[WeeklySummary]
