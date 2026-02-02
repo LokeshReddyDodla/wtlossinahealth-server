@@ -15,15 +15,7 @@ class SMBGStatistics:
     def calculate_basic_stats(
         readings: List[PatientSMBG],
     ) -> dict:
-        """
-        Calculate basic statistics for a list of SMBG readings.
-
-        Args:
-            readings: List of PatientSMBG records
-
-        Returns:
-            Dictionary with count, out_of_range, highest, lowest, median
-        """
+        """Calculate basic statistics for a list of SMBG readings."""
         if not readings:
             return {
                 "count": 0,
@@ -49,15 +41,7 @@ class SMBGStatistics:
     def calculate_window_stats(
         readings: List[PatientSMBG],
     ) -> dict:
-        """
-        Calculate statistics for a meal window including average time.
-
-        Args:
-            readings: List of PatientSMBG records
-
-        Returns:
-            Dictionary with window statistics including average_time
-        """
+        """Calculate statistics for a meal window including average time."""
         if not readings:
             return {
                 "count": 0,
@@ -68,7 +52,6 @@ class SMBGStatistics:
                 "average_time": None,
             }
 
-        levels = [r.glucose_level for r in readings]
         times = [r.reading_time for r in readings]
 
         stats = SMBGStatistics.calculate_basic_stats(readings)
@@ -81,16 +64,7 @@ class SMBGStatistics:
         pre_meal_readings: List[PatientSMBG],
         post_meal_readings: List[PatientSMBG],
     ) -> dict:
-        """
-        Calculate summary statistics for pre and post meal readings.
-
-        Args:
-            pre_meal_readings: List of pre-meal SMBG records
-            post_meal_readings: List of post-meal SMBG records
-
-        Returns:
-            Dictionary with pre_meal, post_meal, and overall stats
-        """
+        """Calculate summary statistics for pre and post meal readings."""
         def summarize(readings: List[PatientSMBG]) -> dict:
             if not readings:
                 return {
@@ -134,30 +108,12 @@ class SMBGStatistics:
     def is_in_range(
         value: float, low: float = GLUCOSE_RANGE_LOW, high: float = GLUCOSE_RANGE_HIGH
     ) -> bool:
-        """
-        Check if glucose value is within target range.
-
-        Args:
-            value: Glucose level in mg/dL
-            low: Lower bound (default: 70)
-            high: Upper bound (default: 180)
-
-        Returns:
-            True if value is within range
-        """
+        """Check if glucose value is within target range."""
         return low <= value <= high
 
     @staticmethod
     def average_time(datetimes: List[datetime]) -> Optional[str]:
-        """
-        Compute average time of day from a list of datetimes.
-
-        Args:
-            datetimes: List of datetime objects
-
-        Returns:
-            Average time as 'HH:MM' string, or None if empty
-        """
+        """Compute average time of day from a list of datetimes."""
         if not datetimes:
             return None
 
@@ -172,15 +128,7 @@ class SMBGStatistics:
 
     @staticmethod
     def calculate_median(values: List[float]) -> Optional[float]:
-        """
-        Calculate median of a list of values.
-
-        Args:
-            values: List of numeric values
-
-        Returns:
-            Median value or None if empty
-        """
+        """Calculate median of a list of values."""
         if not values:
             return None
         return statistics.median(values)

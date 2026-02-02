@@ -4,7 +4,6 @@ from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats
-from lib.services.reports import CGMReportType
 
 
 class CGMReportService:
@@ -42,6 +41,8 @@ class CGMReportService:
             )
 
     async def fetch_reports(self, patient_id: str):
+        from .processor import CGMReportType
+        
         try:
             reports_cursor = self.cgm_report_collection.find(
                 {
@@ -69,6 +70,8 @@ class CGMReportService:
             return []
 
     async def fetch_reports_batch(self, patient_ids: List[str]) -> Dict[str, List[Dict]]:
+        from .processor import CGMReportType
+
         try:
             if not patient_ids:
                 return {}
@@ -429,7 +432,7 @@ class CGMReportService:
     ):
         from pymongo import UpdateOne
         from datetime import datetime
-        from lib.services.reports import CGMReportType
+        from .processor import CGMReportType
 
         now = datetime.now()
         ops = []

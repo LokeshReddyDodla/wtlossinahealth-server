@@ -10,7 +10,6 @@ from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-from lib.services.reports import FitnessReportType
 
 
 class FitnessReportService:
@@ -35,19 +34,13 @@ class FitnessReportService:
             )
         except Exception as e:
             # Don't fail the save operation if marking stale fails
-            logging.warning(
-                f"Failed to mark summaries as stale for {patient_id}: {e}"
-            )
+            logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
     async def fetch_report_by_id(self, report_id: str) -> Optional[dict]:
         try:
-            return await self.fitness_report_collection.find_one(
-                {"_id": report_id}
-            )
+            return await self.fitness_report_collection.find_one({"_id": report_id})
         except Exception as error:
-            logging.error(
-                f"❌ Failed to fetch report by ID {report_id}: {error}"
-            )
+            logging.error(f"❌ Failed to fetch report by ID {report_id}: {error}")
             return None
 
     async def fetch_daily_reports_in_range(
@@ -57,6 +50,8 @@ class FitnessReportService:
         end_date: date,
         include_id: bool = False,
     ):
+        from .processor import FitnessReportType
+
         try:
             projection = {}
             if not include_id:
@@ -87,6 +82,8 @@ class FitnessReportService:
         self, patient_id: str, date: date, regenerate: bool = False
     ):
         try:
+            from .processor import FitnessReportType
+
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
@@ -118,13 +115,11 @@ class FitnessReportService:
             )
             return None
 
-    async def fetch_weekly_report(
-        self, patient_id: str, year: int, week_no: int
-    ):
+    async def fetch_weekly_report(self, patient_id: str, year: int, week_no: int):
         try:
-            start_date, end_date = get_week_start_and_end_from_week_no(
-                year, week_no
-            )
+            from .processor import FitnessReportType
+
+            start_date, end_date = get_week_start_and_end_from_week_no(year, week_no)
 
             report = await self.fitness_report_collection.find_one(
                 {
@@ -147,10 +142,10 @@ class FitnessReportService:
             )
             return None
 
-    async def fetch_monthly_report(
-        self, patient_id: str, year: int, month_no: int
-    ):
+    async def fetch_monthly_report(self, patient_id: str, year: int, month_no: int):
         try:
+            from .processor import FitnessReportType
+
             start_date, end_date = get_month_start_end(year, month_no)
 
             report = await self.fitness_report_collection.find_one(
@@ -221,9 +216,7 @@ class FitnessReportService:
                 report.end_date,
             )
 
-            existing = await self.fitness_report_collection.find_one(
-                {"_id": report_id}
-            )
+            existing = await self.fitness_report_collection.find_one({"_id": report_id})
 
             report_dict = report.model_dump(exclude_none=True)
             report_dict.update(
@@ -260,9 +253,7 @@ class FitnessReportService:
             print(f"❌ Failed to save report: {e}")
             raise
 
-    async def save_reports_bulk(
-        self, patient_id: str, reports: List[FitnessStats]
-    ):
+    async def save_reports_bulk(self, patient_id: str, reports: List[FitnessStats]):
         try:
             from pymongo import UpdateOne
             from datetime import datetime
@@ -289,16 +280,12 @@ class FitnessReportService:
                 )
 
                 ops.append(
-                    UpdateOne(
-                        {"_id": report_id}, {"$set": report_dict}, upsert=True
-                    )
+                    UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
                 )
 
             if ops:
                 await self.fitness_report_collection.bulk_write(ops)
-                print(
-                    f"✅ Bulk saved {len(ops)} Fitness reports for {patient_id}"
-                )
+                print(f"✅ Bulk saved {len(ops)} Fitness reports for {patient_id}")
 
                 # Mark affected summaries as stale
                 for report in reports:

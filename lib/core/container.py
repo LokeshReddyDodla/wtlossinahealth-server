@@ -603,9 +603,7 @@ container.register(
 container.register(
     SMBGStatsProcessor,
     lambda: SMBGStatsProcessor(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=container.resolve(PatientProfileService),
-        patient_plan_service=container.resolve(PatientPlanService),
+        postgres_store=container.resolve(PostgresStore),
         meal_stats_processor=container.resolve(MealStatsProcessor),
     ),
 )

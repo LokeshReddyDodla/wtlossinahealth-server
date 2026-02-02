@@ -1,13 +1,8 @@
 import hashlib
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats, CGMReading
-from lib.services.reports import (
-    MealReportService,
-    FitnessReportType,
-    FitnessStatsProcessor,
-)
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.cgm.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.cgm.hypo_stats_fetcher import HypoStatsFetcher
@@ -19,13 +14,6 @@ from lib.utils.cgm.queries import (
 from lib.utils.cgm.range import CGMRangeStatsFetcher
 from lib.utils.cgm.summary import CGMSummaryStatsFetcher
 from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
-
-from typing import List, Optional, Dict
-import hashlib
-from datetime import datetime
-
-from lib.schemas.cgm_stats import CGMStats, CGMReading
-from lib.utils.cgm.events import execute_query
 
 
 class CGMReportType:

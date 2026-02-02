@@ -10,7 +10,6 @@ from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-from lib.services.reports import SleepReportType
 
 
 class SleepReportService:
@@ -43,6 +42,7 @@ class SleepReportService:
         self, patient_id: str, start_date: date, end_date: date
     ):
         try:
+            from .processor import SleepReportType
             reports = (
                 await self.sleep_report_collection.find(
                     {
@@ -66,6 +66,8 @@ class SleepReportService:
 
     async def fetch_daily_report(self, patient_id: str, date: date):
         try:
+            from .processor import SleepReportType
+            
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
 
@@ -94,6 +96,8 @@ class SleepReportService:
         self, patient_id: str, year: int, week_no: int
     ):
         try:
+            from .processor import SleepReportType
+            
             start_date, end_date = get_week_start_and_end_from_week_no(
                 year, week_no
             )
@@ -123,6 +127,8 @@ class SleepReportService:
         self, patient_id: str, year: int, month_no: int
     ):
         try:
+            from .processor import SleepReportType
+            
             start_date, end_date = get_month_start_end(year, month_no)
 
             report = await self.sleep_report_collection.find_one(
