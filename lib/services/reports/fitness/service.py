@@ -8,7 +8,7 @@ from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-
+from .processor import FitnessReportType
 
 class FitnessReportService:
     def __init__(self, fitness_report_collection, patient_summary_service=None):
@@ -51,8 +51,6 @@ class FitnessReportService:
         end_date: date,
         include_id: bool = False,
     ):
-        from .processor import FitnessReportType
-
         try:
             projection = {} if include_id else {"_id": 0}
             start_iso = datetime.combine(start_date, time.min).isoformat()
@@ -85,8 +83,6 @@ class FitnessReportService:
         self, patient_id: str, date: date, regenerate: bool = False
     ):
         try:
-            from .processor import FitnessReportType
-
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
             start_iso = start_date.isoformat()
@@ -122,8 +118,6 @@ class FitnessReportService:
 
     async def fetch_weekly_report(self, patient_id: str, year: int, week_no: int):
         try:
-            from .processor import FitnessReportType
-
             start_date, end_date = get_week_start_and_end_from_week_no(year, week_no)
             start_iso = start_date.isoformat()
             end_iso = end_date.isoformat()
@@ -151,8 +145,6 @@ class FitnessReportService:
 
     async def fetch_monthly_report(self, patient_id: str, year: int, month_no: int):
         try:
-            from .processor import FitnessReportType
-
             start_date, end_date = get_month_start_end(year, month_no)
             start_iso = start_date.isoformat()
             end_iso = end_date.isoformat()

@@ -4,6 +4,7 @@ from datetime import date, datetime, time
 from typing import Dict, List
 
 from lib.schemas.cgm_stats import CGMStats
+from .processor import CGMReportType
 
 
 class CGMReportService:
@@ -42,8 +43,6 @@ class CGMReportService:
             logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
     async def fetch_reports(self, patient_id: str):
-        from .processor import CGMReportType
-
         try:
             reports_cursor = self.cgm_report_collection.find(
                 {
@@ -70,8 +69,6 @@ class CGMReportService:
     async def fetch_reports_batch(
         self, patient_ids: List[str]
     ) -> Dict[str, List[Dict]]:
-        from .processor import CGMReportType
-
         try:
             if not patient_ids:
                 return {}
@@ -427,7 +424,6 @@ class CGMReportService:
         termination_reason: str = None,
     ):
         from pymongo import UpdateOne
-        from .processor import CGMReportType
 
         if not reports:
             logging.warning("No CGM reports to save")
