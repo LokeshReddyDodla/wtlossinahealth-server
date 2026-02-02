@@ -14,7 +14,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.schemas.patient import CompletePatientProfile
 from lib.services.care_provider_access_service import CareProviderAccessService
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 from lib.services.chat.direct_chat_resolver import DirectChatResolver
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.user_device_service import UserDeviceService

@@ -17,7 +17,7 @@ from lib.utils.care_provider_permissions import (
 )
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.meals.diet_recommendations import get_diet_recommendations
-from lib.utils.meals.processor import MealStatsProcessor
+from lib.services.reports import MealStatsProcessor
 from rest_server.patients.meals.api_schema import PatientMealAnalysis
 from rest_server.response_models import SuccessResponse
 

@@ -1,5 +1,5 @@
 from typing import Dict
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 from lib.services.user_device_service import UserDeviceService
 from lib.models.patient import Patient as PatientModel
 from lib.core.constants import ProfileTypeEnum

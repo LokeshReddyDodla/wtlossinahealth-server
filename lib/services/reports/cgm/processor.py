@@ -3,12 +3,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from lib.schemas.cgm_stats import CGMStats, CGMReading
-from lib.services.meal_report_service import MealReportService
-from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
-from lib.utils.fitness.processor import (
+from lib.services.reports import (
+    MealReportService,
     FitnessReportType,
     FitnessStatsProcessor,
 )
+from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.cgm.hyper_stats_fetcher import HyperStatsFetcher
 from lib.utils.cgm.hypo_stats_fetcher import HypoStatsFetcher
 from lib.utils.cgm.queries import (

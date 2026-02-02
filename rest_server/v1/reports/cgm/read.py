@@ -11,7 +11,7 @@ from lib.dependencies.service_dependencies import (
     get_patient_profile_service,
 )
 from lib.schemas.patient import CorePatientProfile
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse

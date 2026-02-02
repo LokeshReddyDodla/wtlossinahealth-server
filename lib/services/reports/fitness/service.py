@@ -10,7 +10,7 @@ from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-from lib.utils.fitness.processor import FitnessReportType
+from lib.services.reports import FitnessReportType
 
 
 class FitnessReportService:

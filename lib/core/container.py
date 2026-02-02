@@ -34,7 +34,7 @@ from lib.services.care_provider_access_service import (
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -64,13 +64,13 @@ from lib.services.dashboard_metrics.package_metrics_service import (
     PackageMetricsService,
 )
 from lib.services.file_content_extractor import FileContentExtractorService
-from lib.services.fitness_report_service import FitnessReportService
+from lib.services.reports import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal_analysis_service import MealAnalysisService
-from lib.services.meal_report_service import MealReportService
+from lib.services.reports import MealReportService
 from lib.services.meal_service import MealService
 from lib.services.vector import MealVectorService
 from lib.services.package_service import PackageService
@@ -106,17 +106,19 @@ from lib.services.qdrant_search_engine.intent_cache import IntentCache
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
-from lib.services.sleep_report_service import SleepReportService
+from lib.services.reports import SleepReportService
 from lib.services.vector import SMBGVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
-from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.cgm.processor import CGMStatsProcessor
-from lib.utils.meals.processor import MealStatsProcessor
-from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
-from lib.utils.smbg.processor import SMBGStatsProcessor
+from lib.services.reports import (
+    FitnessStatsProcessor,
+    CGMStatsProcessor,
+    MealStatsProcessor,
+    SleepStatsProcessor,
+    SMBGStatsProcessor,
+)
 from lib.services.vector import CGMVectorService, VitalsVectorService
 
 # Weight Loss Agent Service

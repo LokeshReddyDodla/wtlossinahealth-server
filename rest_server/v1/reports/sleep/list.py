@@ -10,7 +10,7 @@ from lib.dependencies.report_access import (
     get_report_access_info,
 )
 from lib.dependencies.service_dependencies import get_sleep_report_service
-from lib.services.sleep_report_service import SleepReportService
+from lib.services.reports import SleepReportService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

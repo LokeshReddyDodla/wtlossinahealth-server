@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats
-from lib.utils.cgm.processor import CGMReportType
+from lib.services.reports import CGMReportType
 
 
 class CGMReportService:
@@ -429,7 +429,7 @@ class CGMReportService:
     ):
         from pymongo import UpdateOne
         from datetime import datetime
-        from lib.utils.cgm.processor import CGMReportType
+        from lib.services.reports import CGMReportType
 
         now = datetime.now()
         ops = []

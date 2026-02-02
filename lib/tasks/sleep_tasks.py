@@ -4,7 +4,7 @@ from celery import shared_task
 
 from lib.utils.async_runner import run_async_task
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
-from lib.utils.sleep.sleep_stats_processor import SleepReportType
+from lib.services.reports import SleepReportType
 
 
 @shared_task(queue="default")

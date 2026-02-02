@@ -9,7 +9,7 @@ from lib.dependencies.report_access import (
     get_report_access_info,
 )
 from lib.dependencies.service_dependencies import get_fitness_report_service
-from lib.services.fitness_report_service import FitnessReportService
+from lib.services.reports import FitnessReportService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

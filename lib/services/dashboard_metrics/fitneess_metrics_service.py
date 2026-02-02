@@ -7,7 +7,7 @@ from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
 from lib.utils.date.age_utils import calculate_age
-from lib.utils.fitness.processor import FitnessReportType
+from lib.services.reports import FitnessReportType
 from lib.utils.http_exceptions import raise_http_exception
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import status

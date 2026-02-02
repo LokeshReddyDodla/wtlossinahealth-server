@@ -10,7 +10,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.patient import Patient
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.meal_report_service import MealReportService
+from lib.services.reports import MealReportService
 from lib.services.meal_service import MealService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import InQueueResponse, SuccessResponse

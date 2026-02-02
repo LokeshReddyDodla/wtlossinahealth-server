@@ -10,7 +10,7 @@ from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-from lib.utils.sleep.sleep_stats_processor import SleepReportType
+from lib.services.reports import SleepReportType
 
 
 class SleepReportService:
