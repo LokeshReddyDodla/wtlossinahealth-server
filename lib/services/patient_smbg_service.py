@@ -12,9 +12,7 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.smbg_vector_service.smbg_vector_service import (
-    SMBGVectorService,
-)
+from lib.services.vector import SMBGVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 

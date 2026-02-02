@@ -85,9 +85,7 @@ from lib.services.care_provider_profile_service import (
 from lib.services.chat.chat_exceptions import ChatCreationError
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
-from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
-    PatientProfileVectorService,
-)
+from lib.services.vector import PatientProfileVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 
