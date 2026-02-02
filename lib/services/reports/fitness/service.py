@@ -33,7 +33,6 @@ class FitnessReportService:
                 stale_reason=StaleReason.DATA_UPDATED,
             )
         except Exception as e:
-            # Don't fail the save operation if marking stale fails
             logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
     async def fetch_report_by_id(self, report_id: str) -> Optional[dict]:

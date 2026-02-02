@@ -1,6 +1,10 @@
+"""Database query utilities for fitness report data."""
+
+
 def generate_summary_stats_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Generate query for summary statistics."""
     return f"""
     SELECT
         SUM(CASE WHEN type = 'STEPS' THEN value ELSE 0 END) AS total_steps,
@@ -18,6 +22,7 @@ def generate_summary_stats_query(
 def generate_hourly_stats_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Generate query for hourly statistics."""
     return f"""
    WITH
         hours AS (
@@ -53,9 +58,27 @@ def generate_hourly_stats_query(
     """
 
 
+def generate_average_active_session_duration_query(
+    patient_id: str, start_datetime: str, end_datetime: str
+) -> str:
+    """Generate query for average active session duration."""
+    return f"""
+    SELECT
+        AVG(COALESCE(dateDiff('minute', start_datetime, end_datetime), 0)) AS average_active_session_duration
+    FROM
+        aihealth.fitness_data
+    WHERE
+        patient_id = '{patient_id}'
+        AND start_datetime >= '{start_datetime}'
+        AND end_datetime <= '{end_datetime}'
+        AND type = 'ACTIVE_ENERGY_BURNED'
+    """
+
+
 def generate_activity_distribution_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Generate query for activity distribution by time of day."""
     return f"""
     SELECT
         CASE
@@ -88,6 +111,7 @@ def generate_activity_distribution_query(
 def generate_peak_activity_time_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Generate query for peak activity time."""
     return f"""
     SELECT
         hour,
@@ -116,6 +140,7 @@ def generate_peak_activity_time_query(
 def generate_inactive_periods_query(
     patient_id: str, start_datetime: str, end_datetime: str
 ) -> str:
+    """Generate query for inactive periods."""
     return f"""
     SELECT
         t1.end_datetime AS start_time,
@@ -125,7 +150,7 @@ def generate_inactive_periods_query(
         SELECT
             start_datetime,
             end_datetime,
-            type AS preceding_activity, -- Capture preceding activity type
+            type AS preceding_activity,
             toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
             aihealth.fitness_data
@@ -138,7 +163,7 @@ def generate_inactive_periods_query(
         SELECT
             start_datetime,
             end_datetime,
-            type AS following_activity, -- Capture following activity type
+            type AS following_activity,
             toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
             aihealth.fitness_data
@@ -153,80 +178,3 @@ def generate_inactive_periods_query(
     ORDER BY
         inactive_duration DESC
     """
-
-
-def generate_average_active_session_duration_query(
-    patient_id: str, start_datetime: str, end_datetime: str
-) -> str:
-    return f"""
-    SELECT
-        AVG(COALESCE(dateDiff('minute', start_datetime, end_datetime), 0)) AS average_active_session_duration
-    FROM
-        aihealth.fitness_data
-    WHERE
-        patient_id = '{patient_id}'
-        AND start_datetime >= '{start_datetime}'
-        AND end_datetime <= '{end_datetime}'
-        AND type = 'ACTIVE_ENERGY_BURNED'
-    """
-
-
-# def generate_available_data_range_by_date(
-#     patient_id: str,
-# ) -> str:
-#     return f"""
-#     SELECT
-#         toDate(min(start_datetime)) AS earliest_date,
-#         toDate(max(end_datetime)) AS latest_date
-#     FROM
-#         aihealth.fitness_data
-#     WHERE
-#         patient_id = '{patient_id}'
-#     """
-
-
-# def generate_all_available_dates(patient_id: str) -> str:
-#     return f"""
-#     SELECT
-#         DISTINCT toDate(start_datetime) AS date
-#     FROM
-#         aihealth.fitness_data
-#     WHERE
-#         patient_id = '{patient_id}'
-#     ORDER BY
-#         date
-#     """
-
-
-# def generate_all_available_weeks(patient_id: str) -> str:
-#     return f"""
-#     SELECT
-#         toWeek(start_datetime, 3) AS week_number,
-#         toDate(min(start_datetime)) AS start_datetime,
-#         toDate(max(end_datetime)) AS end_datetime
-#     FROM
-#         aihealth.fitness_data
-#     WHERE
-#         patient_id = '{patient_id}'
-#     GROUP BY
-#         week_number
-#     ORDER BY
-#         week_number
-#     """
-
-
-# def generate_all_available_months(patient_id: str) -> str:
-#     return f"""
-#     SELECT
-#         toMonth(start_datetime) AS month_number,
-#         toDate(min(start_datetime)) AS start_datetime,
-#         toDate(max(end_datetime)) AS end_datetime
-#     FROM
-#         aihealth.fitness_data
-#     WHERE
-#         patient_id = '{patient_id}'
-#     GROUP BY
-#         month_number
-#     ORDER BY
-#         month_number
-#     """
