@@ -3,8 +3,6 @@ import logging
 from datetime import date, datetime, time
 from typing import List
 
-from pymongo import ReplaceOne
-
 from lib.schemas.sleep_stats import SleepStats
 from lib.utils.date_utils import (
     get_month_start_end,
@@ -16,6 +14,10 @@ class SleepReportService:
     def __init__(self, sleep_report_collection, patient_summary_service=None):
         self.sleep_report_collection = sleep_report_collection
         self.patient_summary_service = patient_summary_service
+
+    def _extract_datetime_from_iso(self, iso_string: str) -> datetime:
+        """Extract datetime from ISO string, handling timezone."""
+        return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
 
     async def _mark_summaries_stale(
         self, patient_id: str, start_date: datetime, end_date: datetime
@@ -33,35 +35,33 @@ class SleepReportService:
                 stale_reason=StaleReason.DATA_UPDATED,
             )
         except Exception as e:
-            # Don't fail the save operation if marking stale fails
-            logging.warning(
-                f"Failed to mark summaries as stale for {patient_id}: {e}"
-            )
+            logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
     async def fetch_daily_reports_in_range(
         self, patient_id: str, start_date: date, end_date: date
     ):
         try:
             from .processor import SleepReportType
+            start_iso = datetime.combine(start_date, time.min).isoformat()
+            end_iso = datetime.combine(end_date, time.max).replace(microsecond=0).isoformat()
+
             reports = (
                 await self.sleep_report_collection.find(
                     {
                         "patient_id": patient_id,
-                        "report_type": SleepReportType.DAILY,
-                        "start_date": {"$gte": start_date},
-                        "end_date": {"$lte": end_date},
+                        "metadata.report_type": SleepReportType.DAILY,
+                        "metadata.date_range.start": {"$gte": start_iso},
+                        "metadata.date_range.end": {"$lte": end_iso},
                     },
                     {"_id": 0},
                 )
-                .sort("start_date", 1)
+                .sort("metadata.date_range.start", 1)
                 .to_list(length=None)
             )
 
             return reports
         except Exception as error:
-            logging.error(
-                f"❌ Failed to fetch daily sleep reports for {patient_id} from {start_date} to {end_date}. Error: {error}"
-            )
+            logging.error(f"Failed to fetch daily sleep reports for {patient_id} from {start_date} to {end_date}: {error}")
             return []
 
     async def fetch_daily_report(self, patient_id: str, date: date):
@@ -70,26 +70,24 @@ class SleepReportService:
             
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": SleepReportType.DAILY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": SleepReportType.DAILY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
-                    patient_id, start_date, end_date, SleepReportType.DAILY
-                )
+                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.DAILY)
 
             return report
         except Exception as error:
-            logging.error(
-                f"❌ Failed to fetch daily sleep report for {patient_id} on {date}. Error: {error}"
-            )
+            logging.error(f"Failed to fetch daily sleep report for {patient_id} on {date}: {error}")
             return None
 
     async def fetch_weekly_report(
@@ -98,29 +96,25 @@ class SleepReportService:
         try:
             from .processor import SleepReportType
             
-            start_date, end_date = get_week_start_and_end_from_week_no(
-                year, week_no
-            )
+            start_date, end_date = get_week_start_and_end_from_week_no(year, week_no)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": SleepReportType.WEEKLY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": SleepReportType.WEEKLY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
-                    patient_id, start_date, end_date, SleepReportType.WEEKLY
-                )
+                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.WEEKLY)
 
             return report
         except Exception as error:
-            logging.error(
-                f"❌ Failed to fetch weekly sleep report for {patient_id} (Year: {year}, Week: {week_no}). Error: {error}"
-            )
+            logging.error(f"Failed to fetch weekly sleep report for {patient_id} (Year: {year}, Week: {week_no}): {error}")
             return None
 
     async def fetch_monthly_report(
@@ -130,25 +124,23 @@ class SleepReportService:
             from .processor import SleepReportType
             
             start_date, end_date = get_month_start_end(year, month_no)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             report = await self.sleep_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": SleepReportType.MONTHLY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": SleepReportType.MONTHLY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
-                    patient_id, start_date, end_date, SleepReportType.MONTHLY
-                )
+                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.MONTHLY)
             return report
         except Exception as error:
-            logging.error(
-                f"❌ Failed to fetch monthly sleep report for {patient_id} (Year: {year}, Month: {month_no}). Error: {error}"
-            )
+            logging.error(f"Failed to fetch monthly sleep report for {patient_id} (Year: {year}, Month: {month_no}): {error}")
             return None
 
     def _trigger_report_generation(
@@ -171,42 +163,39 @@ class SleepReportService:
                 queue="default",
             )
 
-            print(
-                f"🚀 Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}"
-            )
+            logging.info(f"Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}")
         except Exception as error:
-            logging.error(
-                f"❌ Failed to trigger {report_type} sleep report generation for {patient_id}. Error: {error}"
-            )
+            logging.error(f"Failed to trigger {report_type} sleep report generation for {patient_id}: {error}")
 
     def _generate_report_id(
         self,
         patient_id: str,
         report_type: str,
-        start: datetime,
-        end: datetime,
+        start_iso: str,
+        end_iso: str,
     ) -> str:
-        key = f"{patient_id}_{report_type}_{start.date()}_{end.date()}"
+        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
         return hashlib.sha256(key.encode()).hexdigest()
 
     async def save_reports_bulk(self, patient_id, reports: List[SleepStats]):
         try:
             from pymongo import UpdateOne
-            from datetime import datetime
+
+            if not reports:
+                logging.warning("No Sleep reports to save")
+                return
 
             now = datetime.now()
             ops = []
 
-            operations = []
-            now = datetime.now()
-
             for report in reports:
+                metadata = report.metadata
                 report_dict = report.model_dump(exclude_none=True)
                 report_id = self._generate_report_id(
                     patient_id,
-                    report.report_type,
-                    report.start_date,
-                    report.end_date,
+                    metadata.report_type,
+                    metadata.date_range.start,
+                    metadata.date_range.end,
                 )
 
                 report_dict.update(
@@ -218,28 +207,17 @@ class SleepReportService:
                     }
                 )
 
-                ops.append(
-                    UpdateOne(
-                        {"_id": report_id}, {"$set": report_dict}, upsert=True
-                    )
-                )
+                ops.append(UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True))
 
-            if ops:
-                await self.sleep_report_collection.bulk_write(ops)
-                print(
-                    f"✅ Bulk saved {len(ops)} Sleep reports for {patient_id}"
-                )
+            await self.sleep_report_collection.bulk_write(ops)
+            logging.info(f"Bulk saved {len(ops)} Sleep reports for {patient_id}")
 
-                # Mark affected summaries as stale
-                for report in reports:
-                    await self._mark_summaries_stale(
-                        patient_id=patient_id,
-                        start_date=report.start_date,
-                        end_date=report.end_date,
-                    )
-            else:
-                print("⚠️ No Fitness reports to save.")
+            for report in reports:
+                metadata = report.metadata
+                start_dt = self._extract_datetime_from_iso(metadata.date_range.start)
+                end_dt = self._extract_datetime_from_iso(metadata.date_range.end)
+                await self._mark_summaries_stale(patient_id=patient_id, start_date=start_dt, end_date=end_dt)
 
         except Exception as e:
-            print(f"Failed to save reports in bulk: {e}")
+            logging.error(f"Failed to save reports in bulk: {e}")
             raise

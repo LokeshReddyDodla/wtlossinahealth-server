@@ -3,8 +3,6 @@ import logging
 from datetime import date, datetime, time
 from typing import List, Optional
 
-from pymongo import ReplaceOne
-
 from lib.schemas.fitness_stats import FitnessStats
 from lib.utils.date_utils import (
     get_month_start_end,
@@ -16,6 +14,10 @@ class FitnessReportService:
     def __init__(self, fitness_report_collection, patient_summary_service=None):
         self.fitness_report_collection = fitness_report_collection
         self.patient_summary_service = patient_summary_service
+
+    def _extract_datetime_from_iso(self, iso_string: str) -> datetime:
+        """Extract datetime from ISO string, handling timezone."""
+        return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
 
     async def _mark_summaries_stale(
         self, patient_id: str, start_date: datetime, end_date: datetime
@@ -52,28 +54,30 @@ class FitnessReportService:
         from .processor import FitnessReportType
 
         try:
-            projection = {}
-            if not include_id:
-                projection["_id"] = 0
+            projection = {} if include_id else {"_id": 0}
+            start_iso = datetime.combine(start_date, time.min).isoformat()
+            end_iso = (
+                datetime.combine(end_date, time.max).replace(microsecond=0).isoformat()
+            )
 
             reports = (
                 await self.fitness_report_collection.find(
                     {
                         "patient_id": patient_id,
-                        "report_type": FitnessReportType.DAILY,
-                        "start_date": {"$gte": start_date},
-                        "end_date": {"$lte": end_date},
+                        "metadata.report_type": FitnessReportType.DAILY,
+                        "metadata.date_range.start": {"$gte": start_iso},
+                        "metadata.date_range.end": {"$lte": end_iso},
                     },
                     projection,
                 )
-                .sort("start_date", 1)
+                .sort("metadata.date_range.start", 1)
                 .to_list(length=None)
             )
 
             return reports
         except Exception as error:
             logging.error(
-                f"❌ Failed to fetch daily reports for {patient_id} from {start_date} to {end_date}. Error: {error}"
+                f"Failed to fetch daily reports for {patient_id} from {start_date} to {end_date}: {error}"
             )
             return []
 
@@ -85,6 +89,8 @@ class FitnessReportService:
 
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             if regenerate:
                 self._trigger_report_generation(
@@ -95,9 +101,9 @@ class FitnessReportService:
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": FitnessReportType.DAILY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": FitnessReportType.DAILY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
@@ -110,7 +116,7 @@ class FitnessReportService:
             return report
         except Exception as error:
             logging.error(
-                f"❌ Failed to fetch daily report for {patient_id} on {date}. Error: {error}"
+                f"Failed to fetch daily report for {patient_id} on {date}: {error}"
             )
             return None
 
@@ -119,13 +125,15 @@ class FitnessReportService:
             from .processor import FitnessReportType
 
             start_date, end_date = get_week_start_and_end_from_week_no(year, week_no)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": FitnessReportType.WEEKLY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": FitnessReportType.WEEKLY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
@@ -137,7 +145,7 @@ class FitnessReportService:
             return report
         except Exception as error:
             logging.error(
-                f"❌ Failed to fetch weekly report for {patient_id} (Week {week_no}, {year}). Error: {error}"
+                f"Failed to fetch weekly report for {patient_id} (Week {week_no}, {year}): {error}"
             )
             return None
 
@@ -146,13 +154,15 @@ class FitnessReportService:
             from .processor import FitnessReportType
 
             start_date, end_date = get_month_start_end(year, month_no)
+            start_iso = start_date.isoformat()
+            end_iso = end_date.isoformat()
 
             report = await self.fitness_report_collection.find_one(
                 {
                     "patient_id": patient_id,
-                    "report_type": FitnessReportType.MONTHLY,
-                    "start_date": start_date,
-                    "end_date": end_date,
+                    "metadata.report_type": FitnessReportType.MONTHLY,
+                    "metadata.date_range.start": start_iso,
+                    "metadata.date_range.end": end_iso,
                 },
                 {"_id": 0},
             )
@@ -163,7 +173,7 @@ class FitnessReportService:
             return report
         except Exception as error:
             logging.error(
-                f"❌ Failed to fetch monthly report for {patient_id} (Month {month_no}, {year}). Error: {error}"
+                f"Failed to fetch monthly report for {patient_id} (Month {month_no}, {year}): {error}"
             )
             return None
 
@@ -187,32 +197,33 @@ class FitnessReportService:
                 queue="default",
             )
 
-            print(
-                f"🚀 Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}"
+            logging.info(
+                f"Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}"
             )
         except Exception as error:
             logging.error(
-                f"❌ Failed to trigger report generation for {patient_id} from {start_date} to {end_date}. Error: {error}"
+                f"Failed to trigger report generation for {patient_id} from {start_date} to {end_date}: {error}"
             )
 
     def _generate_report_id(
         self,
         patient_id: str,
         report_type: str,
-        start: datetime,
-        end: datetime,
+        start_iso: str,
+        end_iso: str,
     ) -> str:
-        key = f"{patient_id}_{report_type}_{start.date()}_{end.date()}"
+        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
         return hashlib.sha256(key.encode()).hexdigest()
 
     async def save_report(self, patient_id: str, report: FitnessStats):
         try:
+            metadata = report.metadata
             now = datetime.now()
             report_id = self._generate_report_id(
                 patient_id,
-                report.report_type,
-                report.start_date,
-                report.end_date,
+                metadata.report_type,
+                metadata.date_range.start,
+                metadata.date_range.end,
             )
 
             existing = await self.fitness_report_collection.find_one({"_id": report_id})
@@ -222,51 +233,50 @@ class FitnessReportService:
                 {
                     "_id": report_id,
                     "patient_id": patient_id,
-                    "created_at": (
-                        existing.get("created_at", now) if existing else now
-                    ),
+                    "created_at": existing.get("created_at", now) if existing else now,
                     "updated_at": now,
                 }
             )
 
             await self.fitness_report_collection.replace_one(
-                {"_id": report_id},
-                report_dict,
-                upsert=True,
+                {"_id": report_id}, report_dict, upsert=True
             )
 
-            print(
-                f"✅ Saved/Updated fitness report for {patient_id} ({report.report_type}) from {report.start_date} to {report.end_date}"
+            start_dt = self._extract_datetime_from_iso(metadata.date_range.start)
+            end_dt = self._extract_datetime_from_iso(metadata.date_range.end)
+            logging.info(
+                f"Saved/Updated fitness report for {patient_id} ({metadata.report_type}) from {start_dt} to {end_dt}"
             )
 
-            # Mark affected summaries as stale
             await self._mark_summaries_stale(
-                patient_id=patient_id,
-                start_date=report.start_date,
-                end_date=report.end_date,
+                patient_id=patient_id, start_date=start_dt, end_date=end_dt
             )
 
             return report_id
 
         except Exception as e:
-            print(f"❌ Failed to save report: {e}")
+            logging.error(f"Failed to save fitness report: {e}")
             raise
 
     async def save_reports_bulk(self, patient_id: str, reports: List[FitnessStats]):
         try:
             from pymongo import UpdateOne
-            from datetime import datetime
+
+            if not reports:
+                logging.warning("No Fitness reports to save")
+                return
 
             now = datetime.now()
             ops = []
 
             for report in reports:
+                metadata = report.metadata
                 report_dict = report.model_dump(exclude_none=True)
                 report_id = self._generate_report_id(
                     patient_id,
-                    report.report_type,
-                    report.start_date,
-                    report.end_date,
+                    metadata.report_type,
+                    metadata.date_range.start,
+                    metadata.date_range.end,
                 )
 
                 report_dict.update(
@@ -282,19 +292,17 @@ class FitnessReportService:
                     UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
                 )
 
-            if ops:
-                await self.fitness_report_collection.bulk_write(ops)
-                print(f"✅ Bulk saved {len(ops)} Fitness reports for {patient_id}")
+            await self.fitness_report_collection.bulk_write(ops)
+            logging.info(f"Bulk saved {len(ops)} Fitness reports for {patient_id}")
 
-                # Mark affected summaries as stale
-                for report in reports:
-                    await self._mark_summaries_stale(
-                        patient_id=patient_id,
-                        start_date=report.start_date,
-                        end_date=report.end_date,
-                    )
-            else:
-                print("⚠️ No Fitness reports to save.")
+            for report in reports:
+                metadata = report.metadata
+                start_dt = self._extract_datetime_from_iso(metadata.date_range.start)
+                end_dt = self._extract_datetime_from_iso(metadata.date_range.end)
+                await self._mark_summaries_stale(
+                    patient_id=patient_id, start_date=start_dt, end_date=end_dt
+                )
+
         except Exception as e:
-            print(f"Failed to save reports in bulk: {e}")
+            logging.error(f"Failed to save reports in bulk: {e}")
             raise
