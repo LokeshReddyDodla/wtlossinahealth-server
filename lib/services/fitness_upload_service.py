@@ -79,6 +79,13 @@ class FitnessUploadService:
             end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
             source_name,
         )
+        self.clickhouse_store.delete_existing_sleep_data(
+            "aihealth.sleep_data",
+            patient_id,
+            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+            source_name,
+        )
 
         smbg_query = delete(PatientSMBG).where(
             PatientSMBG.patient_id == patient_id,
@@ -148,6 +155,32 @@ class FitnessUploadService:
             for item in fitness_data.steps + fitness_data.active_energy_burned
         ]
         self.clickhouse_store.write_data("aihealth.fitness_data", data_points)
+
+        # Insert sleep data into ClickHouse
+        sleep_data_points = [
+            {
+                "patient_id": patient_id,
+                "type": sleep_type,
+                "source_name": item.source_name,
+                "source_platform": item.source_platform,
+                "sleep_duration": float(item.value),
+                "sleep_start_time": parse(item.start_datetime).replace(
+                    tzinfo=None
+                ),
+                "sleep_end_time": parse(item.end_datetime).replace(
+                    tzinfo=None
+                ),
+            }
+            for sleep_type, sleep_data in [
+                ("sleep_in_bed", fitness_data.sleep_in_bed),
+                ("sleep_deep", fitness_data.sleep_deep),
+                ("sleep_light", fitness_data.sleep_light),
+                ("sleep_rem", fitness_data.sleep_rem),
+                ("sleep_awake", fitness_data.sleep_awake),
+            ]
+            for item in sleep_data
+        ]
+        self.clickhouse_store.write_data("aihealth.sleep_data", sleep_data_points)
 
         # Insert data into PatientVitals, PatientSMBG, PatientSleep, etc.
         vitals = [

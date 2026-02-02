@@ -56,9 +56,25 @@ class ClickHouseStore:
         """
         self.client.execute(create_table_query)
 
+    def create_sleep_data_table(self):
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS aihealth.sleep_data (
+            patient_id String,
+            type String,
+            source_name String,
+            source_platform String,
+            sleep_duration Float64,
+            sleep_start_time DateTime,
+            sleep_end_time DateTime
+        ) ENGINE = MergeTree()
+        ORDER BY (patient_id, sleep_start_time);
+        """
+        self.client.execute(create_table_query)
+
     def create_all_tables(self):
         self.create_cgm_data_table()
         self.create_fitness_data_table()
+        self.create_sleep_data_table()
 
     def write_data(self, table_name, data):
         if not data:
@@ -103,6 +119,30 @@ class ClickHouseStore:
             ALTER TABLE {table_name} DELETE 
             WHERE patient_id = '{patient_id}' 
             AND start_datetime BETWEEN '{start_time}' AND '{end_time}' 
+            AND source_name != 'manual'
+            """
+        self.client.execute(query)
+
+    def delete_existing_sleep_data(
+        self,
+        table_name: str,
+        patient_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        source_name: Optional[str] = None,
+    ):
+        if source_name:
+            query = f"""
+            ALTER TABLE {table_name} DELETE 
+            WHERE patient_id = '{patient_id}' 
+            AND sleep_start_time BETWEEN '{start_time}' AND '{end_time}' 
+            AND source_name = '{source_name}'
+            """
+        else:
+            query = f"""
+            ALTER TABLE {table_name} DELETE 
+            WHERE patient_id = '{patient_id}' 
+            AND sleep_start_time BETWEEN '{start_time}' AND '{end_time}' 
             AND source_name != 'manual'
             """
         self.client.execute(query)
