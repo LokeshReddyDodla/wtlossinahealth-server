@@ -34,7 +34,9 @@ class ClickHouseStore:
             time DateTime,
             glucose_level Float32,
             record_type String,
-            source String DEFAULT 'unknown'
+            source String DEFAULT 'unknown',
+            INDEX idx_record_type record_type TYPE set(100) GRANULARITY 4,
+            INDEX idx_source source TYPE set(100) GRANULARITY 4
         ) ENGINE = MergeTree()
         ORDER BY (patient_id, time);
         """
@@ -50,7 +52,9 @@ class ClickHouseStore:
             unit String,
             value Float64,
             start_datetime DateTime,
-            end_datetime DateTime
+            end_datetime DateTime,
+            INDEX idx_type type TYPE set(100) GRANULARITY 4,
+            INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = MergeTree()
         ORDER BY (patient_id, start_datetime);
         """
@@ -65,7 +69,9 @@ class ClickHouseStore:
             source_platform String,
             sleep_duration Float64,
             sleep_start_time DateTime,
-            sleep_end_time DateTime
+            sleep_end_time DateTime,
+            INDEX idx_type type TYPE set(100) GRANULARITY 4,
+            INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = MergeTree()
         ORDER BY (patient_id, sleep_start_time);
         """
