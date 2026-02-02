@@ -1,28 +1,42 @@
+"""SMBG statistics processor for generating patient reports."""
+
 import calendar
 from datetime import datetime, timedelta
-import statistics
-from typing import Any, Optional
-from sqlalchemy import select
+from typing import Any, Dict, Optional
 
-from lib.models.patient_smbg import PatientSMBG
+from lib.core.postgres_store import PostgresStore
 from lib.utils.date.periods import WeekWisePeriod
 from lib.utils.postgres_session_decorator import with_postgres_session
 
-WINDOWS = {
-    "breakfast": (4, 11),  # 04:00–10:59
-    "lunch": (11, 16),  # 11:00–15:59
-    "dinner": (17, 3),  # 17:00–03:59
-}
+from .constants import (
+    PRE_MEAL_TYPES,
+    POST_MEAL_TYPES,
+    PREVIOUS_WEEK_OFFSET_DAYS,
+)
+from .meal_window_bucketer import MealWindowBucketer
+from .queries import SMBGQueries
+from .statistics import SMBGStatistics
 
 
 class SMBGStatsProcessor:
+    """Processor for generating SMBG statistics and reports."""
+
     def __init__(
         self,
-        postgres_store,
+        postgres_store: PostgresStore,
         patient_profile_service,
         patient_plan_service,
         meal_stats_processor,
     ):
+        """
+        Initialize SMBG stats processor.
+
+        Args:
+            postgres_store: PostgreSQL store instance
+            patient_profile_service: Patient profile service
+            patient_plan_service: Patient plan service
+            meal_stats_processor: Meal statistics processor
+        """
         self.postgres_store = postgres_store
         self.patient_profile_service = patient_profile_service
         self.patient_plan_service = patient_plan_service
@@ -36,89 +50,196 @@ class SMBGStatsProcessor:
         end_date: datetime,
         *,
         postgres_session,
-    ):
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive SMBG statistics for a date range.
+
+        Args:
+            patient_id: Patient identifier
+            start_date: Start datetime
+            end_date: End datetime
+            postgres_session: Database session
+
+        Returns:
+            Dictionary containing SMBG statistics
+        """
+        # Normalize dates to full day range
         start_date = datetime.combine(start_date.date(), datetime.min.time())
         end_date = datetime.combine(end_date.date(), datetime.max.time())
 
-        # fetch SMBGs in range
-        result = await postgres_session.execute(
-            select(PatientSMBG)
-            .where(PatientSMBG.patient_id == patient_id)
-            .where(PatientSMBG.reading_time >= start_date)
-            .where(PatientSMBG.reading_time <= end_date)
+        # Fetch SMBG readings in a single query
+        smbg_records = await SMBGQueries.fetch_readings_in_range(
+            postgres_session, patient_id, start_date, end_date
         )
-        smbg_records = result.scalars().all()
 
         if not smbg_records:
             return {}
 
-        # classify readings into meal windows
-        buckets = self._bucketize_by_meal(smbg_records)
+        # Classify readings into meal windows
+        buckets = MealWindowBucketer.bucketize_by_meal(smbg_records)
 
-        stats: dict[str, Any] = {
+        # Build meal window statistics
+        meal_windows_stats = self._calculate_meal_window_stats(
+            buckets, patient_id, start_date, end_date, postgres_session
+        )
+
+        # Build overall statistics
+        overall_stats = self._calculate_overall_stats(
+            smbg_records, patient_id, start_date, end_date, postgres_session
+        )
+
+        # Build month summary
+        month_summary = await self._calculate_month_summary(
+            patient_id, start_date, end_date, postgres_session
+        )
+
+        return {
             "start_date": start_date,
             "end_date": end_date,
-            "meal_windows": {},
+            "meal_windows": meal_windows_stats,
+            "overall": overall_stats,
+            "month_summary": month_summary,
         }
+
+    def _calculate_meal_window_stats(
+        self,
+        buckets: Dict[str, list],
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        postgres_session,
+    ) -> Dict[str, Any]:
+        """
+        Calculate statistics for each meal window.
+
+        Args:
+            buckets: Dictionary of bucketed readings
+            patient_id: Patient identifier
+            start_date: Start datetime
+            end_date: End datetime
+            postgres_session: Database session
+
+        Returns:
+            Dictionary of meal window statistics
+        """
+        meal_windows_stats = {}
 
         for bucket_name, readings in buckets.items():
-            levels = [r.glucose_level for r in readings]
-            if not levels:
+            if not readings:
                 continue
 
-            avg_time = self._average_time([r.reading_time for r in readings])
+            stats = SMBGStatistics.calculate_window_stats(readings)
+            stats["median_prev_week"] = self._get_previous_week_median(
+                patient_id, start_date, end_date, bucket_name, postgres_session
+            )
 
-            stats["meal_windows"][bucket_name] = {
-                "count": len(levels),
-                "out_of_range": sum(
-                    1 for v in levels if not self._is_in_range(v)
-                ),
-                "highest": max(levels),
-                "lowest": min(levels),
-                "median": statistics.median(levels),
-                "average_time": avg_time,
-                "median_prev_week": await self._median_previous_week(
-                    patient_id, start_date, end_date, bucket_name
-                ),
-            }
+            meal_windows_stats[bucket_name] = stats
 
-        # add overall median vs previous week median
-        all_levels = [r.glucose_level for r in smbg_records]
-        stats["overall"] = {
-            "count": len(all_levels),
-            "out_of_range": sum(
-                1 for v in all_levels if not self._is_in_range(v)
-            ),
-            "highest": max(all_levels),
-            "lowest": min(all_levels),
-            "median": statistics.median(all_levels),
-            "average_time": self._average_time(
-                [r.reading_time for r in smbg_records]
-            ),
-            "median_prev_week": await self._median_previous_week(
+        return meal_windows_stats
+
+    def _calculate_overall_stats(
+        self,
+        smbg_records: list,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        postgres_session,
+    ) -> Dict[str, Any]:
+        """
+        Calculate overall statistics for all readings.
+
+        Args:
+            smbg_records: List of SMBG records
+            patient_id: Patient identifier
+            start_date: Start datetime
+            end_date: End datetime
+            postgres_session: Database session
+
+        Returns:
+            Dictionary of overall statistics
+        """
+        all_times = [r.reading_time for r in smbg_records]
+
+        stats = SMBGStatistics.calculate_basic_stats(smbg_records)
+        stats["average_time"] = SMBGStatistics.average_time(all_times)
+        stats["median_prev_week"] = self._get_previous_week_median(
+            patient_id, start_date, end_date, None, postgres_session
+        )
+
+        # Get meal statistics
+        stats["meal_statistics"] = (
+            self.meal_stats_processor.get_meal_statistics_in_range(
                 patient_id, start_date, end_date
-            ),
-            "meal_statistics": await self.meal_stats_processor.get_meal_statistics_in_range(
-                patient_id, start_date, end_date
-            ),
-        }
+            )
+        )
 
-        # month summary
+        return stats
+
+    async def _calculate_month_summary(
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        postgres_session,
+    ) -> Dict[str, Any]:
+        """
+        Calculate monthly summary statistics.
+
+        Args:
+            patient_id: Patient identifier
+            start_date: Start datetime
+            end_date: End datetime
+            postgres_session: Database session
+
+        Returns:
+            Dictionary of monthly summary statistics
+        """
+        # Calculate month boundaries
         month_start = datetime(start_date.year, start_date.month, 1)
         last_day = calendar.monthrange(start_date.year, start_date.month)[1]
         month_end = datetime(
             start_date.year, start_date.month, last_day, 23, 59, 59
         )
 
-        stats["month_summary"] = {
+        # Fetch all records for the month
+        month_records = await SMBGQueries.fetch_readings_in_range(
+            postgres_session, patient_id, month_start, month_end
+        )
+
+        if not month_records:
+            return {
+                "start_date": month_start,
+                "end_date": month_end,
+                "smbg": {},
+                "meal": await self.meal_stats_processor.get_meal_month_summary(
+                    patient_id=patient_id,
+                    start_date=month_start,
+                    end_date=month_end,
+                ),
+            }
+
+        # Split pre vs post meal
+        pre_meal = SMBGQueries.filter_by_type(month_records, PRE_MEAL_TYPES)
+        post_meal = SMBGQueries.filter_by_type(month_records, POST_MEAL_TYPES)
+
+        # Calculate summary stats
+        summary_stats = SMBGStatistics.calculate_summary_stats(pre_meal, post_meal)
+
+        # Calculate weekly trends
+        trend = self._calculate_weekly_trends(
+            month_records, month_start, month_end
+        )
+
+        smbg_summary = {
+            "total_smbg": len(month_records),
+            **summary_stats,
+            "trend": trend,
+        }
+
+        return {
             "start_date": month_start,
             "end_date": month_end,
-            "smbg": await self.get_monthly_summary(
-                patient_id=patient_id,
-                start_date=month_start,
-                end_date=month_end,
-                postgres_session=postgres_session,
-            ),  # type: ignore
+            "smbg": smbg_summary,
             "meal": await self.meal_stats_processor.get_meal_month_summary(
                 patient_id=patient_id,
                 start_date=month_start,
@@ -126,7 +247,59 @@ class SMBGStatsProcessor:
             ),
         }
 
-        return stats
+    def _calculate_weekly_trends(
+        self,
+        records: list,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Dict[str, Any]:
+        """
+        Calculate weekly trends for the month.
+
+        Args:
+            records: List of SMBG records
+            start_date: Month start date
+            end_date: Month end date
+
+        Returns:
+            Dictionary of weekly trend data
+        """
+        weeks = WeekWisePeriod(start_date, end_date).periods
+        trend = {}
+        current = start_date
+
+        for week in weeks:
+            week_start = week["start_date"]
+            week_end = week["end_date"]
+            week_no = week["week_no"]
+            iso_week_no = week["iso_week_no"]
+
+            # Filter records for this week
+            week_records = SMBGQueries.filter_by_date_range(
+                records, current, week_end
+            )
+
+            # Split by meal type
+            pre_week = [
+                r.glucose_level
+                for r in SMBGQueries.filter_by_type(week_records, PRE_MEAL_TYPES)
+            ]
+            post_week = [
+                r.glucose_level
+                for r in SMBGQueries.filter_by_type(week_records, POST_MEAL_TYPES)
+            ]
+
+            trend[f"week_{week_no}"] = {
+                "pre_meal_median": SMBGStatistics.calculate_median(pre_week),
+                "post_meal_median": SMBGStatistics.calculate_median(post_week),
+                "start_date": week_start,
+                "end_date": week_end,
+                "iso_week_no": iso_week_no,
+            }
+
+            current = week_end + timedelta(days=1)
+
+        return trend
 
     @with_postgres_session
     async def get_monthly_summary(
@@ -136,179 +309,85 @@ class SMBGStatsProcessor:
         end_date: datetime,
         *,
         postgres_session,
-    ):
-        result = await postgres_session.execute(
-            select(PatientSMBG)
-            .where(PatientSMBG.patient_id == patient_id)
-            .where(PatientSMBG.reading_time >= start_date)
-            .where(PatientSMBG.reading_time <= end_date)
-        )
-        smbg_records = result.scalars().all()
+    ) -> Dict[str, Any]:
+        """
+        Get monthly summary statistics.
 
-        if not smbg_records:
+        Args:
+            patient_id: Patient identifier
+            start_date: Start datetime
+            end_date: End datetime
+            postgres_session: Database session
+
+        Returns:
+            Dictionary of monthly summary statistics
+        """
+        # Fetch records for the month
+        records = await SMBGQueries.fetch_readings_in_range(
+            postgres_session, patient_id, start_date, end_date
+        )
+
+        if not records:
             return {}
 
-        # Split pre vs post
-        pre_meal = [
-            r for r in smbg_records if r.type in ("before_meal", "pre_meal")
-        ]
-        post_meal = [
-            r for r in smbg_records if r.type in ("after_meal", "post_meal")
-        ]
+        # Split pre vs post meal
+        pre_meal = SMBGQueries.filter_by_type(records, PRE_MEAL_TYPES)
+        post_meal = SMBGQueries.filter_by_type(records, POST_MEAL_TYPES)
 
-        # Counts + within range
-        def summarize(readings):
-            if not readings:
-                return {"count": 0, "within_range": 0, "within_range_pct": 0.0}
-            count = len(readings)
-            within = sum(
-                1 for r in readings if self._is_in_range(r.glucose_level)
-            )
-            return {
-                "count": count,
-                "within_range": within,
-                "within_range_pct": round(within * 100 / count, 1),
-            }
+        # Calculate summary stats
+        summary_stats = SMBGStatistics.calculate_summary_stats(pre_meal, post_meal)
 
-        pre_stats = summarize(pre_meal)
-        post_stats = summarize(post_meal)
-
-        # Trend per week
-        weeks = WeekWisePeriod(start_date, end_date).periods
-        trend = {}
-        current = start_date
-        for week in weeks:
-            week_start = week["start_date"]
-            week_end = week["end_date"]
-            week_no = week["week_no"]
-            iso_week_no = week["iso_week_no"]
-
-            week_records = [
-                r
-                for r in smbg_records
-                if current <= r.reading_time <= week_end
-            ]
-
-            pre_week = [
-                r.glucose_level
-                for r in week_records
-                if r.type in ("before_meal", "pre_meal")
-            ]
-            post_week = [
-                r.glucose_level
-                for r in week_records
-                if r.type in ("after_meal", "post_meal")
-            ]
-
-            trend[f"week_{week_no}"] = {
-                "pre_meal_median": (
-                    statistics.median(pre_week) if pre_week else None
-                ),
-                "post_meal_median": (
-                    statistics.median(post_week) if post_week else None
-                ),
-                "start_date": week_start,
-                "end_date": week_end,
-                "iso_week_no": iso_week_no,
-            }
-            current = week_end + timedelta(days=1)
+        # Calculate weekly trends
+        trend = self._calculate_weekly_trends(records, start_date, end_date)
 
         return {
-            "total_smbg": len(smbg_records),
-            "pre_meal": pre_stats,
-            "post_meal": post_stats,
-            "score": {
-                "pre_meal": pre_stats["within_range_pct"],
-                "post_meal": post_stats["within_range_pct"],
-                "overall": round(
-                    (pre_stats["within_range"] + post_stats["within_range"])
-                    * 100
-                    / max(1, (pre_stats["count"] + post_stats["count"])),
-                    1,
-                ),
-            },
+            "total_smbg": len(records),
+            **summary_stats,
             "trend": trend,
         }
 
-    def _bucketize_by_meal(self, records):
-        buckets = {
-            "pre_breakfast": [],
-            "post_breakfast": [],
-            "pre_lunch": [],
-            "post_lunch": [],
-            "pre_dinner": [],
-            "post_dinner": [],
-            "random": [],
-            "other": [],
-        }
-
-        for r in records:
-            hour = r.reading_time.hour
-            assigned = False
-
-            for meal, (start, end) in WINDOWS.items():
-                if start < end:
-                    in_window = start <= hour < end
-                else:
-                    in_window = hour >= start or hour < end
-
-                if in_window:
-                    if r.type in ("before_meal", "pre_meal"):
-                        buckets[f"pre_{meal}"].append(r)
-                    elif r.type in ("after_meal", "post_meal"):
-                        buckets[f"post_{meal}"].append(r)
-                    else:
-                        buckets["random"].append(r)
-                    assigned = True
-                    break
-
-            if not assigned:
-                buckets["other"].append(r)
-
-        return buckets
-
-    @with_postgres_session
-    async def _median_previous_week(
+    async def _get_previous_week_median(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-        bucket_name: Optional[str] = None,
-        *,
+        bucket_name: Optional[str],
         postgres_session,
-    ):
-        prev_start = start_date - timedelta(days=7)
-        prev_end = end_date - timedelta(days=7)
+    ) -> Optional[float]:
+        """
+        Get median glucose level from previous week.
 
-        result = await postgres_session.execute(
-            select(PatientSMBG)
-            .where(PatientSMBG.patient_id == patient_id)
-            .where(PatientSMBG.reading_time >= prev_start)
-            .where(PatientSMBG.reading_time <= prev_end)
+        Args:
+            patient_id: Patient identifier
+            start_date: Current period start date
+            end_date: Current period end date
+            bucket_name: Optional bucket name to filter by
+            postgres_session: Database session
+
+        Returns:
+            Median value or None
+        """
+        # Fetch previous week records
+        prev_records = await SMBGQueries.fetch_readings_for_previous_week(
+            postgres_session,
+            patient_id,
+            start_date,
+            end_date,
+            PREVIOUS_WEEK_OFFSET_DAYS,
         )
-        records = result.scalars().all()
-        if not records:
+
+        if not prev_records:
             return None
 
+        # Filter by bucket if specified
         if bucket_name:
-            buckets = self._bucketize_by_meal(records)
-            values = [r.glucose_level for r in buckets[bucket_name]]
+            buckets = MealWindowBucketer.bucketize_by_meal(prev_records)
+            readings = buckets.get(bucket_name, [])
         else:
-            values = [r.glucose_level for r in records]
+            readings = prev_records
 
-        return statistics.median(values) if values else None
-
-    def _average_time(self, datetimes: list[datetime]) -> Optional[str]:
-        """Compute average time of day from a list of datetimes, return 'HH:MM'."""
-        if not datetimes:
+        if not readings:
             return None
-        total_seconds = [
-            dt.hour * 3600 + dt.minute * 60 + dt.second for dt in datetimes
-        ]
-        avg_seconds = sum(total_seconds) / len(total_seconds)
-        hours, remainder = divmod(int(avg_seconds), 3600)
-        minutes, _ = divmod(remainder, 60)
-        return f"{hours:02d}:{minutes:02d}"
 
-    def _is_in_range(self, value: float, low=70, high=180):
-        return low <= value <= high
+        values = [r.glucose_level for r in readings]
+        return SMBGStatistics.calculate_median(values)
