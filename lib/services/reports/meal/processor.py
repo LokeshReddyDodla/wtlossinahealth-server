@@ -17,7 +17,7 @@ from lib.schemas.meal_statistics import (
     WithinBudgetPercentages,
 )
 from lib.utils.date.periods import WeekWisePeriod
-from lib.utils.cgm.summary import CGMSummaryStatsFetcher
+from lib.services.reports.cgm.statistics import CGMStatistics
 from lib.utils.meals.diet_recommendations import get_diet_recommendations
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -58,7 +58,7 @@ class MealStatsProcessor:
             date,
         )
 
-        avg_glucose = CGMSummaryStatsFetcher.fetch_daily_average_glucose(
+        avg_glucose = CGMStatistics.fetch_daily_average_glucose(
             self.clickhouse_store, patient_id, date, date
         ).get(date, 0.0)
 
@@ -94,7 +94,7 @@ class MealStatsProcessor:
         )
 
         avg_glucose_by_date = (
-            CGMSummaryStatsFetcher.fetch_daily_average_glucose(
+            CGMStatistics.fetch_daily_average_glucose(
                 self.clickhouse_store, patient_id, start_date, end_date
             )
         )

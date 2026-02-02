@@ -1,14 +1,19 @@
+"""Hypoglycemia statistics calculations."""
+
 from lib.schemas.cgm_stats import HypoStats, RapidDropStats
-from lib.utils.cgm.events import CGMEventsProcessor, execute_query
+from .events import CGMEventsProcessor, execute_cgm_query
 
 
-class HypoStatsFetcher(CGMEventsProcessor):
+class HypoglycemiaStatistics(CGMEventsProcessor):
+    """Calculate hypoglycemia statistics and rapid drop events."""
+
     def __init__(self, buffer: int = 5):
         super().__init__(threshold=70, buffer=buffer)
 
     def fetch(
-        self, clickhouse_store, patient_id, start_date_str, end_date_str
+        self, clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> HypoStats:
+        """Fetch hypoglycemia statistics for a date range."""
         query = f"""
         SELECT
             time AS device_timestamp,
@@ -21,7 +26,7 @@ class HypoStatsFetcher(CGMEventsProcessor):
             AND time <= '{end_date_str}'
         ORDER BY time
         """
-        df = execute_query(clickhouse_store, query)
+        df = execute_cgm_query(clickhouse_store, query)
         if df.empty:
             return HypoStats(
                 total_hypo_duration_minutes=0,

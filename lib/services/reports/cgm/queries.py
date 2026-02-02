@@ -1,6 +1,8 @@
-def generate_hourly_agp_points_cgm_query(
-    patient_id, start_date, end_date
-) -> str:
+"""ClickHouse query builders for CGM data."""
+
+
+def generate_hourly_agp_points_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query for hourly AGP (Ambulatory Glucose Profile) points."""
     return f"""
     SELECT
         toHour(time) AS hour_24,
@@ -22,9 +24,10 @@ def generate_hourly_agp_points_cgm_query(
     """
 
 
-def generate_cgm_range_coverage_query(
-    patient_id, start_date, end_date, range_condition, alias
-):
+def generate_range_coverage_query(
+    patient_id: str, start_date: str, end_date: str, range_condition: str, alias: str
+) -> str:
+    """Generate query for glucose range coverage statistics."""
     return f"""
     SELECT
         COUNT(*) AS total_readings,
@@ -40,7 +43,8 @@ def generate_cgm_range_coverage_query(
     """
 
 
-def generate_summary_stats_cgm_query(patient_id, start_date, end_date):
+def generate_summary_stats_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query for CGM summary statistics."""
     return f"""
     SELECT
         AVG(glucose_level) AS average_glucose_mgdl,
@@ -59,7 +63,8 @@ def generate_summary_stats_cgm_query(patient_id, start_date, end_date):
     """
 
 
-def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
+def generate_time_period_stats_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query for time period statistics (overnight, breakfast, lunch, dinner)."""
     return f"""
     SELECT
         CASE
@@ -100,7 +105,8 @@ def generate_time_period_cgm_stats_query(patient_id, start_date, end_date):
     """
 
 
-def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
+def generate_readings_in_range_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query to fetch all CGM readings in a date range."""
     return f"""
     SELECT
         time AS device_timestamp,
@@ -116,7 +122,8 @@ def generate_cgm_readings_in_range_query(patient_id, start_date, end_date):
     """
 
 
-def generate_hourly_avg_cgm_query(patient_id, start_date, end_date):
+def generate_hourly_avg_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query for hourly average glucose levels."""
     return f"""
     SELECT
         toHour(time) AS hour_24,
@@ -134,7 +141,8 @@ def generate_hourly_avg_cgm_query(patient_id, start_date, end_date):
     """
 
 
-def generate_daily_avg_cgm_query(patient_id, start_date, end_date):
+def generate_daily_avg_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query for daily average glucose levels."""
     return f"""
     SELECT
         toDate(time) AS date,
@@ -151,9 +159,10 @@ def generate_daily_avg_cgm_query(patient_id, start_date, end_date):
     """
 
 
-def generate_cgm_readings_around_meal_query(
-    patient_id, meal_time, before_minutes=30, after_minutes=30
-):
+def generate_readings_around_meal_query(
+    patient_id: str, meal_time: str, before_minutes: int = 30, after_minutes: int = 30
+) -> str:
+    """Generate query to fetch CGM readings around a meal time."""
     return f"""
     SELECT
         time AS reading_time,
@@ -168,4 +177,16 @@ def generate_cgm_readings_around_meal_query(
             AND 
             toDateTime('{meal_time}') + INTERVAL {after_minutes} MINUTE
     ORDER BY time;
+    """
+
+
+def generate_total_readings_count_query(patient_id: str, start_date: str, end_date: str) -> str:
+    """Generate query to count total CGM readings in a date range."""
+    return f"""
+    SELECT COUNT(*) 
+    FROM aihealth.cgm_data
+    WHERE patient_id = '{patient_id}'
+    AND record_type = 'historic'
+    AND time >= '{start_date}'
+    AND time <= '{end_date}'
     """

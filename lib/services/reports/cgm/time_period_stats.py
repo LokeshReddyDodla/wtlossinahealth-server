@@ -1,19 +1,22 @@
+"""CGM time period statistics (overnight, breakfast, lunch, dinner)."""
+
 from typing import Dict
-from pydantic import BaseModel
 
 from lib.schemas.cgm_stats import CGMTimePeriodStats
-from lib.utils.cgm.queries import generate_time_period_cgm_stats_query
 from lib.utils.validation_utils import validate_float
 
+from .queries import generate_time_period_stats_query
 
-class GlucoseTimePeriodStatsFetcher:
+
+class TimePeriodStatistics:
+    """Static methods for calculating time period statistics."""
+
     @staticmethod
     def fetch(
-        clickhouse_store, patient_id, start_date_str, end_date_str
+        clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> Dict[str, CGMTimePeriodStats]:
-        query = generate_time_period_cgm_stats_query(
-            patient_id, start_date_str, end_date_str
-        )
+        """Fetch glucose statistics by time period."""
+        query = generate_time_period_stats_query(patient_id, start_date_str, end_date_str)
         results = clickhouse_store.client.execute(query)
 
         time_period_stats = {}

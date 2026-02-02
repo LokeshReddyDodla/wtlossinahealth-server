@@ -1,14 +1,19 @@
+"""Hyperglycemia statistics calculations."""
+
 from lib.schemas.cgm_stats import HyperStats, RapidSpikeStats
-from lib.utils.cgm.events import CGMEventsProcessor, execute_query
+from .events import CGMEventsProcessor, execute_cgm_query
 
 
-class HyperStatsFetcher(CGMEventsProcessor):
+class HyperglycemiaStatistics(CGMEventsProcessor):
+    """Calculate hyperglycemia statistics and rapid spike events."""
+
     def __init__(self, buffer: int = 5):
         super().__init__(threshold=180, buffer=buffer)
 
     def fetch(
-        self, clickhouse_store, patient_id, start_date_str, end_date_str
+        self, clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> HyperStats:
+        """Fetch hyperglycemia statistics for a date range."""
         query = f"""
         SELECT
             time AS device_timestamp,
@@ -21,7 +26,7 @@ class HyperStatsFetcher(CGMEventsProcessor):
             AND time <= '{end_date_str}'
         ORDER BY time
         """
-        df = execute_query(clickhouse_store, query)
+        df = execute_cgm_query(clickhouse_store, query)
 
         if df.empty:
             return HyperStats(

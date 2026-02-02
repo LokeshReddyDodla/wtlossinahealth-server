@@ -2,10 +2,22 @@ from datetime import date, datetime
 from datetime import time as datetime_time
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from lib.schemas.fitness_stats import FitnessStats
 from lib.schemas.patient_meal import PatientMeal
+
+
+class DateRange(BaseModel):
+    start: str = Field(..., description="Start date in ISO format")
+    end: str = Field(..., description="End date in ISO format")
+
+
+class ReportMetadata(BaseModel):
+    date_range: DateRange
+    total_readings: int = Field(..., description="Total number of CGM readings")
+    days_covered: int = Field(..., description="Number of days covered in the report")
+    report_type: str = Field(..., description="Type of report (daily, weekly, custom)")
 
 
 class CGMRangeStats(BaseModel):
@@ -116,10 +128,7 @@ class CGMTimePeriodStats(BaseModel):
 
 
 class CGMStats(BaseModel):
-    start_date: datetime
-    end_date: datetime
-    report_type: str
-
+    metadata: ReportMetadata
     cgm_readings: Optional[List[CGMReading]] = None
     cgm_summary_stats: CGMSummaryStats
     cgm_range_stats: CGMRangeStats
@@ -129,3 +138,18 @@ class CGMStats(BaseModel):
 
     fitness_report: Optional[FitnessStats] = None
     meal_report_id: Optional[str] = None
+
+    @property
+    def start_date(self):
+        """Backward compatibility: return start date from metadata."""
+        return datetime.fromisoformat(self.metadata.date_range.start.replace("Z", "+00:00"))
+
+    @property
+    def end_date(self):
+        """Backward compatibility: return end date from metadata."""
+        return datetime.fromisoformat(self.metadata.date_range.end.replace("Z", "+00:00"))
+
+    @property
+    def report_type(self):
+        """Backward compatibility: return report type from metadata."""
+        return self.metadata.report_type

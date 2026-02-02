@@ -1,4 +1,7 @@
-from typing import Any, Dict
+"""CGM event processing (hyperglycemia, hypoglycemia, rapid spikes/drops)."""
+
+from typing import Any, Dict, List
+
 import pandas as pd
 
 from lib.schemas.cgm_stats import (
@@ -9,7 +12,8 @@ from lib.schemas.cgm_stats import (
 )
 
 
-def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
+def execute_cgm_query(clickhouse_store, query: str) -> pd.DataFrame:
+    """Execute ClickHouse query and return DataFrame with CGM data."""
     data = clickhouse_store.client.execute(query)
     if not data:
         return pd.DataFrame()
@@ -19,6 +23,8 @@ def execute_query(clickhouse_store, query: str) -> pd.DataFrame:
 
 
 class CGMEventsProcessor:
+    """Base class for processing CGM events (hyper/hypo)."""
+
     def __init__(self, threshold: int, buffer: int = 0):
         self.threshold = threshold
         self.buffer = buffer
@@ -26,6 +32,7 @@ class CGMEventsProcessor:
     def process_events(
         self, df: pd.DataFrame, event_type: str
     ) -> Dict[str, Any]:
+        """Process hyper or hypo events from CGM data."""
         events = []
         current_event = None
 
@@ -118,6 +125,7 @@ class CGMEventsProcessor:
         }
 
     def process_rapid_spikes(self, df: pd.DataFrame) -> RapidSpikeStats:
+        """Process rapid glucose spikes (increase >20 mg/dL in ≤15 minutes)."""
         spikes = []
         current_spike = None
 
@@ -194,6 +202,7 @@ class CGMEventsProcessor:
         )
 
     def process_rapid_drops(self, df: pd.DataFrame) -> RapidDropStats:
+        """Process rapid glucose drops (decrease >25 mg/dL in ≤30 minutes)."""
         drops = []
         current_drop = None
 

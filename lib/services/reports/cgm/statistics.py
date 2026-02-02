@@ -1,26 +1,29 @@
-import math
+"""CGM summary statistics calculations."""
+
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List
 
 import pandas as pd
 
 from lib.schemas.cgm_stats import AGPPoint, CGMSummaryStats
-from lib.utils.cgm.queries import (
-    generate_hourly_agp_points_cgm_query,
-    generate_daily_avg_cgm_query,
-    generate_summary_stats_cgm_query,
-)
 from lib.utils.validation_utils import validate_float
 
+from .queries import (
+    generate_daily_avg_query,
+    generate_hourly_agp_points_query,
+    generate_summary_stats_query,
+)
 
-class CGMSummaryStatsFetcher:
+
+class CGMStatistics:
+    """Static methods for calculating CGM summary statistics."""
+
     @staticmethod
-    def fetch(
-        clickhouse_store, patient_id, start_date_str, end_date_str
+    def fetch_summary_stats(
+        clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> CGMSummaryStats:
-        query = generate_summary_stats_cgm_query(
-            patient_id, start_date_str, end_date_str
-        )
+        """Fetch and calculate CGM summary statistics."""
+        query = generate_summary_stats_query(patient_id, start_date_str, end_date_str)
         result = clickhouse_store.client.execute(query)
 
         average_glucose = validate_float(result[0][0] if result else 0.0)
@@ -40,16 +43,13 @@ class CGMSummaryStatsFetcher:
         gmi_mmol = validate_float(gmi * 10.93)
 
         glucose_variability_percent = validate_float(
-            (glucose_stddev / average_glucose) * 100
-            if average_glucose
-            else 0.0
+            (glucose_stddev / average_glucose) * 100 if average_glucose else 0.0
         )
 
         coefficient_of_variation_percent = glucose_variability_percent
-
         std_dev_glucose_mgdl = validate_float(glucose_stddev)
 
-        agp_points = CGMSummaryStatsFetcher.fetch_agp_points(
+        agp_points = CGMStatistics.fetch_agp_points(
             clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
@@ -69,9 +69,10 @@ class CGMSummaryStatsFetcher:
 
     @staticmethod
     def fetch_daily_average_glucose(
-        clickhouse_store, patient_id, start_date, end_date
-    ) -> dict:
-        query = generate_daily_avg_cgm_query(
+        clickhouse_store, patient_id: str, start_date: datetime, end_date: datetime
+    ) -> Dict[datetime, float]:
+        """Fetch daily average glucose levels as a dictionary."""
+        query = generate_daily_avg_query(
             patient_id,
             start_date.strftime("%Y-%m-%dT00:00:00"),
             end_date.strftime("%Y-%m-%dT23:59:59"),
@@ -85,11 +86,10 @@ class CGMSummaryStatsFetcher:
 
     @staticmethod
     def fetch_agp_points(
-        clickhouse_store, patient_id, start_date_str, end_date_str
+        clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> List[AGPPoint]:
-        query = generate_hourly_agp_points_cgm_query(
-            patient_id, start_date_str, end_date_str
-        )
+        """Fetch AGP (Ambulatory Glucose Profile) points."""
+        query = generate_hourly_agp_points_query(patient_id, start_date_str, end_date_str)
         agp_result = clickhouse_store.client.execute(query)
 
         return [

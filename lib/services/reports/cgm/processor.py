@@ -2,18 +2,20 @@ import hashlib
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from lib.schemas.cgm_stats import CGMStats, CGMReading
+from lib.schemas.cgm_stats import CGMStats, CGMReading, DateRange, ReportMetadata
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
-from lib.utils.cgm.hyper_stats_fetcher import HyperStatsFetcher
-from lib.utils.cgm.hypo_stats_fetcher import HypoStatsFetcher
-from lib.utils.cgm.queries import (
-    generate_hourly_avg_cgm_query,
-    generate_cgm_readings_around_meal_query,
-    generate_cgm_readings_in_range_query,
+
+from .hyper_stats import HyperglycemiaStatistics
+from .hypo_stats import HypoglycemiaStatistics
+from .queries import (
+    generate_hourly_avg_query,
+    generate_readings_around_meal_query,
+    generate_readings_in_range_query,
+    generate_total_readings_count_query,
 )
-from lib.utils.cgm.range import CGMRangeStatsFetcher
-from lib.utils.cgm.summary import CGMSummaryStatsFetcher
-from lib.utils.cgm.time_period import GlucoseTimePeriodStatsFetcher
+from .range_stats import CGMRangeStatistics
+from .statistics import CGMStatistics
+from .time_period_stats import TimePeriodStatistics
 
 
 class CGMReportType:
@@ -35,13 +37,14 @@ class CGMStatsProcessor:
         self.fitness_stats_processor = fitness_stats_processor
         self.meal_report_service = meal_report_service
 
-    def get_cgm_readings_in_range(
+    def get_readings_in_range(
         self,
         patient_id: str,
         start_date_str: str,
         end_date_str: str,
     ) -> List[CGMReading]:
-        query = generate_cgm_readings_in_range_query(
+        """Get all CGM readings in a date range."""
+        query = generate_readings_in_range_query(
             patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
@@ -53,10 +56,11 @@ class CGMStatsProcessor:
             for row in data
         ]
 
-    def get_hourly_avg_cgm_readings(
+    def get_hourly_avg_readings(
         self, patient_id: str, start_date_str: str, end_date_str: str
     ) -> List[CGMReading]:
-        query = generate_hourly_avg_cgm_query(
+        """Get hourly average CGM readings."""
+        query = generate_hourly_avg_query(
             patient_id, start_date_str, end_date_str
         )
         data = self.clickhouse_store.client.execute(query)
@@ -68,14 +72,15 @@ class CGMStatsProcessor:
             for row in data
         ]
 
-    def get_cgm_readings_around_meal(
+    def get_readings_around_meal(
         self,
         patient_id: str,
         meal_time: datetime,
-        before_minutes=15,
-        after_minutes=90,
+        before_minutes: int = 15,
+        after_minutes: int = 90,
     ):
-        query = generate_cgm_readings_around_meal_query(
+        """Get CGM readings around a meal time."""
+        query = generate_readings_around_meal_query(
             patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),
             before_minutes,
@@ -137,19 +142,19 @@ class CGMStatsProcessor:
         start_date_str = start_date.strftime("%Y-%m-%dT%H:%M:%S")
         end_date_str = end_date.strftime("%Y-%m-%dT%H:%M:%S")
 
-        cgm_summary_stats = CGMSummaryStatsFetcher.fetch(
+        cgm_summary_stats = CGMStatistics.fetch_summary_stats(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        cgm_range_stats = CGMRangeStatsFetcher.fetch(
+        cgm_range_stats = CGMRangeStatistics.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        hyper_stats = HyperStatsFetcher().fetch(
+        hyper_stats = HyperglycemiaStatistics().fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        hypo_stats = HypoStatsFetcher().fetch(
+        hypo_stats = HypoglycemiaStatistics().fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
-        time_period_stats = GlucoseTimePeriodStatsFetcher.fetch(
+        time_period_stats = TimePeriodStatistics.fetch(
             self.clickhouse_store, patient_id, start_date_str, end_date_str
         )
 
@@ -164,17 +169,31 @@ class CGMStatsProcessor:
         meal_report_id: Optional[str] = None
 
         if report_type == CGMReportType.DAILY:
-            cgm_readings = self.get_cgm_readings_in_range(
+            cgm_readings = self.get_readings_in_range(
                 patient_id, start_date_str, end_date_str
             )
             meal_report_id = hashlib.sha256(
                 f"{patient_id}_{report_type}_{start_date.date()}".encode()
             ).hexdigest()
 
+        days_covered = (end_date.date() - start_date.date()).days + 1
+        
+        total_readings_query = generate_total_readings_count_query(
+            patient_id, start_date_str, end_date_str
+        )
+        total_readings_result = self.clickhouse_store.client.execute(total_readings_query)
+        total_readings = total_readings_result[0][0] if total_readings_result else 0
+
         return CGMStats(
-            start_date=start_date,
-            end_date=end_date,
-            report_type=report_type,
+            metadata=ReportMetadata(
+                date_range=DateRange(
+                    start=start_date.isoformat(),
+                    end=end_date.isoformat(),
+                ),
+                total_readings=total_readings,
+                days_covered=days_covered,
+                report_type=report_type,
+            ),
             cgm_readings=cgm_readings,
             cgm_summary_stats=cgm_summary_stats,
             cgm_range_stats=cgm_range_stats,
