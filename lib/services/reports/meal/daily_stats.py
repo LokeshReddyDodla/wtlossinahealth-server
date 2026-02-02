@@ -1,10 +1,14 @@
+"""Daily meal statistics builders."""
+
 from datetime import datetime
 
-from lib.schemas.meal_stats import DailyMealStats
 from dateutil.parser import parse as parse_date
+
+from lib.schemas.meal_stats import DailyMealStats
 
 
 def empty_daily_stats(date, avg_glucose_by_date, diet_recommendations):
+    """Create empty daily stats when no meal data is available."""
     return DailyMealStats(
         date=date,
         meal_count=0,
@@ -30,6 +34,7 @@ def build_daily_stats(
     patient_id,
     cgm_stats_processor,
 ):
+    """Build daily meal statistics from database row."""
     for meal in row.meals:
         meal_time = datetime.combine(row.date, parse_date(meal["time"]).time())
         glucose_before_meal, glucose_after_meal = (
@@ -38,7 +43,6 @@ def build_daily_stats(
             )
         )
 
-        # Append glucose readings to each meal
         meal["glucose_before_meal"] = glucose_before_meal
         meal["glucose_after_meal"] = glucose_after_meal
 

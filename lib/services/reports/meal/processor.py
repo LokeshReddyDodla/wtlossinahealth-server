@@ -1,24 +1,35 @@
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from functools import partial
-from statistics import median
 
-from lib.core.postgres_store import PostgresStore
-
+from lib.schemas.meal_statistics import (
+    DateRange,
+    DailyMeals,
+    MealCounts,
+    MealStatisticsReport,
+    MealStatisticsSummary,
+    MealTypeBreakdown,
+    MealTypeComparison,
+    MealTypeMedians,
+    MealsData,
+    MonthlyMealCounts,
+    MonthlySummary,
+    ReportMetadata,
+    WithinBudgetPercentages,
+)
 from lib.utils.date.periods import WeekWisePeriod
 from lib.utils.cgm.summary import CGMSummaryStatsFetcher
-from lib.utils.meals.daily_stats import build_daily_stats, empty_daily_stats
 from lib.utils.meals.diet_recommendations import get_diet_recommendations
-from lib.utils.meals.query_builders import (
-    build_meal_query,
-)
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+from .daily_stats import build_daily_stats, empty_daily_stats
+from .queries import build_meal_query
+from .statistics import MealStatistics
 
 
 class MealStatsProcessor:
     def __init__(
         self,
-        postgres_store: PostgresStore,
+        postgres_store,
         clickhouse_store,
         cgm_stats_processor,
         patient_profile_service,
@@ -47,7 +58,6 @@ class MealStatsProcessor:
             date,
         )
 
-        # Fetch average glucose for the single date
         avg_glucose = CGMSummaryStatsFetcher.fetch_daily_average_glucose(
             self.clickhouse_store, patient_id, date, date
         ).get(date, 0.0)
@@ -83,7 +93,6 @@ class MealStatsProcessor:
             start_date,
         )
 
-        # Fetch all glucose stats once for the entire date range
         avg_glucose_by_date = (
             CGMSummaryStatsFetcher.fetch_daily_average_glucose(
                 self.clickhouse_store, patient_id, start_date, end_date
@@ -114,275 +123,155 @@ class MealStatsProcessor:
 
     async def get_meal_statistics_in_range(
         self, patient_id: str, start_date: date, end_date: date
-    ) -> dict:
+    ) -> MealStatisticsReport:
         reports = await self.meal_report_service.fetch_daily_reports_in_range(
             patient_id, start_date, end_date
         )
 
-        if not reports:
-            return {}
+        days_covered = (end_date - start_date).days + 1
 
-        total_meals = 0
-        high_carb_meals = 0
-        low_protein_meals = 0
-        low_fiber_meals = 0
+        (
+            total_meals,
+            high_carb_meals,
+            low_protein_meals,
+            low_fiber_meals,
+            within_carb_range,
+            within_protein_range,
+            within_fat_budget,
+            within_fiber_budget,
+        ) = MealStatistics.calculate_meal_counts_and_budget_compliance(reports)
 
-        within_carb_range = 0
-        within_protein_range = 0
-        within_fat_budget = 0
-        within_fiber_budget = 0
-
-        meal_type_stats = defaultdict(
-            lambda: {"carbs": [], "proteins": [], "fats": [], "fiber": []}
+        meal_type_stats = MealStatistics.collect_meal_type_stats(reports)
+        detailed_stats = MealStatistics.calculate_meal_type_nutrient_stats(
+            meal_type_stats
         )
 
-        # thresholds (tune as needed or fetch from diet plan)
-        HIGH_CARB_THRESHOLD = 60
-        LOW_PROTEIN_THRESHOLD = 10
-        LOW_FIBER_THRESHOLD = 3
+        meals_by_date = [
+            DailyMeals(
+                date=report["date"],
+                meals=report.get("meals", []),
+            )
+            for report in reports
+            if report.get("meals")
+        ]
 
-        CARB_MIN, CARB_MAX = 45, 65
-        PROTEIN_MIN, PROTEIN_MAX = 15, 40
-        FAT_MIN, FAT_MAX = 20, 35
-        FIBER_MIN, FIBER_MAX = 8, 15
+        if not reports:
+            return MealStatisticsReport(
+                metadata=ReportMetadata(
+                    date_range=DateRange(
+                        start=start_date.isoformat(),
+                        end=end_date.isoformat(),
+                    ),
+                    total_meals=0,
+                    days_covered=days_covered,
+                ),
+                summary=MealStatisticsSummary(
+                    counts=MealCounts(
+                        total_meals=0,
+                        high_carb_meals=0,
+                        low_protein_meals=0,
+                        low_fiber_meals=0,
+                    ),
+                    within_budget_percentages=WithinBudgetPercentages(
+                        carbs=0.0,
+                        protein=0.0,
+                        fat=0.0,
+                        fiber=0.0,
+                    ),
+                ),
+                breakdowns=MealTypeBreakdown(by_meal_type={}),
+                meals=None,
+            )
 
-        for report in reports:
-            for meal in report.get("meals", []):
-                total_meals += 1
-
-                macros = meal.get("total_macro_nutritional_value", {})
-                carbs = macros.get("carbohydrates") or 0
-                proteins = macros.get("proteins") or 0
-                fats = macros.get("fats") or 0
-                fiber = macros.get("fiber") or 0
-
-                if carbs > HIGH_CARB_THRESHOLD:
-                    high_carb_meals += 1
-                if proteins < LOW_PROTEIN_THRESHOLD:
-                    low_protein_meals += 1
-                if fiber < LOW_FIBER_THRESHOLD:
-                    low_fiber_meals += 1
-
-                if CARB_MIN <= carbs <= CARB_MAX:
-                    within_carb_range += 1
-                if PROTEIN_MIN <= proteins <= PROTEIN_MAX:
-                    within_protein_range += 1
-                if FAT_MIN <= fats <= FAT_MAX:
-                    within_fat_budget += 1
-                if FIBER_MIN <= fiber <= FIBER_MAX:
-                    within_fiber_budget += 1
-
-                meal_type = meal.get("type", "other").lower()
-                meal_type_stats[meal_type]["carbs"].append(
-                    (carbs, report["date"])
-                )
-                meal_type_stats[meal_type]["proteins"].append(
-                    (proteins, report["date"])
-                )
-                meal_type_stats[meal_type]["fats"].append(
-                    (fats, report["date"])
-                )
-                meal_type_stats[meal_type]["fiber"].append(
-                    (fiber, report["date"])
-                )
-
-        # build stats per meal type
-        detailed_stats = {}
-        for meal_type, nutrients in meal_type_stats.items():
-            detailed_stats[meal_type] = {}
-            for nutrient, values in nutrients.items():
-                if not values:
-                    continue
-                nums = [v[0] for v in values]
-                max_val, max_date = max(values, key=lambda x: x[0])
-                detailed_stats[meal_type][nutrient] = {
-                    "median": median(nums),
-                    "range": [min(nums), max(nums)],
-                    "max_value": max_val,
-                    "max_date": max_date,
-                }
-
-        return {
-            "total_meals": total_meals,
-            "high_carb_meals": high_carb_meals,
-            "low_protein_meals": low_protein_meals,
-            "low_fiber_meals": low_fiber_meals,
-            "within_carb_range_pct": (
-                round(within_carb_range * 100 / total_meals, 1)
-                if total_meals
-                else 0.0
+        return MealStatisticsReport(
+            metadata=ReportMetadata(
+                date_range=DateRange(
+                    start=start_date.isoformat(),
+                    end=end_date.isoformat(),
+                ),
+                total_meals=total_meals,
+                days_covered=days_covered,
             ),
-            "within_protein_range_pct": (
-                round(within_protein_range * 100 / total_meals, 1)
-                if total_meals
-                else 0.0
+            summary=MealStatisticsSummary(
+                counts=MealCounts(
+                    total_meals=total_meals,
+                    high_carb_meals=high_carb_meals,
+                    low_protein_meals=low_protein_meals,
+                    low_fiber_meals=low_fiber_meals,
+                ),
+                within_budget_percentages=WithinBudgetPercentages(
+                    carbs=round(within_carb_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0,
+                    protein=round(within_protein_range * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0,
+                    fat=round(within_fat_budget * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0,
+                    fiber=round(within_fiber_budget * 100 / total_meals, 1)
+                    if total_meals
+                    else 0.0,
+                ),
             ),
-            "within_fat_budget_pct": (
-                round(within_fat_budget * 100 / total_meals, 1)
-                if total_meals
-                else 0.0
-            ),
-            "within_fiber_budget_pct": (
-                round(within_fiber_budget * 100 / total_meals, 1)
-                if total_meals
-                else 0.0
-            ),
-            "meal_type_stats": detailed_stats,
-        }
+            breakdowns=MealTypeBreakdown(by_meal_type=detailed_stats),
+            meals=MealsData(by_date=meals_by_date) if meals_by_date else None,
+        )
 
     async def get_meal_month_summary(
         self,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> dict:
+    ) -> MonthlySummary:
         reports = await self.meal_report_service.fetch_daily_reports_in_range(
             patient_id, start_date, end_date
         )
-        if not reports:
-            return {}
 
-        # ---- Counters ----
-        total_meals = 0
-        snacks_count = 0
-        meal_type_counts = {"breakfast": 0, "lunch": 0, "dinner": 0}
-        high_carb_count = 0
-        low_protein_count = 0
+        (
+            total_meals,
+            snacks_count,
+            meal_type_counts,
+            high_carb_count,
+            low_protein_count,
+        ) = MealStatistics.calculate_monthly_counts(reports)
 
-        # ---- Within-budget counters ----
-        within_carb_range = 0
-        within_protein_range = 0
-        within_fat_range = 0
-        within_fiber_range = 0
+        (
+            within_carb_range,
+            within_protein_range,
+            within_fat_range,
+            within_fiber_range,
+        ) = MealStatistics.calculate_monthly_budget_compliance(reports)
 
-        # thresholds (can also come from diet recommendations)
-        HIGH_CARB_THRESHOLD = 60
-        LOW_PROTEIN_THRESHOLD = 10
-
-        CARB_MIN, CARB_MAX = 45, 65
-        PROTEIN_MIN, PROTEIN_MAX = 15, 40
-        FAT_MIN, FAT_MAX = 20, 35
-        FIBER_MIN, FIBER_MAX = 8, 15
-
-        # ---- Weekly breakdowns (init buckets from split_into_weeks) ----
         week_periods = WeekWisePeriod(start_date, end_date).periods
-        week_buckets = {
-            week["week_no"]: {
-                "start_date": week["start_date"].date(),
-                "end_date": week["end_date"].date(),
-                "iso_week_no": week["iso_week_no"],
-                "carbs": [],
-                "proteins": [],
-                "fats": [],
-                "fiber": [],
-            }
-            for week in week_periods
-        }
+        week_buckets = MealStatistics.build_week_buckets(week_periods)
+        MealStatistics.populate_week_buckets(reports, week_periods, week_buckets)
 
-        # ---- Collect all meals ----
-        for report in reports:
-            rdate = datetime.fromisoformat(report["date"])
-            for week in week_periods:
-                if week["start_date"] <= rdate <= week["end_date"]:
-                    bucket = week_buckets[week["week_no"]]
-                    for meal in report.get("meals", []):
-                        total_meals += 1
-                        mtype = (meal.get("type") or "").lower()
-                        macros = meal.get("total_macro_nutritional_value", {})
-                        carbs = macros.get("carbohydrates") or 0
-                        protein = macros.get("proteins") or 0
-                        fat = macros.get("fats") or 0
-                        fiber = macros.get("fiber") or 0
+        weekly_summaries = MealStatistics.calculate_weekly_summaries(
+            week_buckets, week_periods
+        )
 
-                        # Count meal types
-                        if mtype == "snack":
-                            snacks_count += 1
-                        elif mtype in meal_type_counts:
-                            meal_type_counts[mtype] += 1
-
-                        # High/low checks
-                        if carbs > HIGH_CARB_THRESHOLD:
-                            high_carb_count += 1
-                        if protein < LOW_PROTEIN_THRESHOLD:
-                            low_protein_count += 1
-
-                        # Within budget checks
-                        if CARB_MIN <= carbs <= CARB_MAX:
-                            within_carb_range += 1
-                        if PROTEIN_MIN <= protein <= PROTEIN_MAX:
-                            within_protein_range += 1
-                        if FAT_MIN <= fat <= FAT_MAX:
-                            within_fat_range += 1
-                        if FIBER_MIN <= fiber <= FIBER_MAX:
-                            within_fiber_range += 1
-
-                        # Add to week bucket
-                        bucket["carbs"].append(carbs)
-                        bucket["proteins"].append(protein)
-                        bucket["fats"].append(fat)
-                        bucket["fiber"].append(fiber)
-                    break
-
-        # ---- Weekly summaries ----
-        weekly = []
-        for week_no, vals in week_buckets.items():
-            carb_energy = sum(vals["carbs"]) * 4
-            protein_energy = sum(vals["proteins"]) * 4
-            fat_energy = sum(vals["fats"]) * 9
-            total_energy = carb_energy + protein_energy + fat_energy or 1
-
-            weekly.append(
-                {
-                    "week_label": f"Week {week_no}",
-                    "iso_week_no": str(vals["iso_week_no"]),
-                    "start_date": str(vals["start_date"]),
-                    "end_date": str(vals["end_date"]),
-                    "median_carbs": (
-                        median(vals["carbs"]) if vals["carbs"] else 0
-                    ),
-                    "energy_pct": {
-                        "carbs": round(carb_energy / total_energy * 100, 1),
-                        "protein": round(
-                            protein_energy / total_energy * 100, 1
-                        ),
-                        "fat": round(fat_energy / total_energy * 100, 1),
-                    },
-                }
+        if not reports:
+            return MonthlySummary(
+                counts=MonthlyMealCounts(
+                    total_meals=0,
+                    snacks=0,
+                    breakfast=0,
+                    lunch=0,
+                    dinner=0,
+                    high_carb_meals=0,
+                    low_protein_meals=0,
+                ),
+                within_budget_percentages=WithinBudgetPercentages(
+                    carbs=0.0,
+                    protein=0.0,
+                    fat=0.0,
+                    fiber=0.0,
+                ),
+                weekly_summaries=[],
+                meal_type_comparison={},
             )
 
-        # ---- Month vs previous month medians ----
-        def compute_meal_type_medians(rpts):
-            buckets = {
-                "breakfast": {
-                    "carbs": [],
-                    "protein": [],
-                    "fat": [],
-                    "fiber": [],
-                },
-                "lunch": {"carbs": [], "protein": [], "fat": [], "fiber": []},
-                "dinner": {"carbs": [], "protein": [], "fat": [], "fiber": []},
-            }
-            for rpt in rpts:
-                for meal in rpt.get("meals", []):
-                    mtype = (meal.get("type") or "").lower()
-                    if mtype not in buckets:
-                        continue
-                    macros = meal.get("total_macro_nutritional_value", {})
-                    buckets[mtype]["carbs"].append(
-                        macros.get("carbohydrates") or 0
-                    )
-                    buckets[mtype]["protein"].append(macros.get("proteins") or 0)
-                    buckets[mtype]["fat"].append(macros.get("fats") or 0)
-                    buckets[mtype]["fiber"].append(macros.get("fiber") or 0)
-            return {
-                mtype: {
-                    macro: median(vals) if vals else 0
-                    for macro, vals in macros.items()
-                }
-                for mtype, macros in buckets.items()
-            }
-
-        # previous month window
         first_of_current = start_date.replace(day=1)
         prev_month_last_day = first_of_current - timedelta(days=1)
         prev_start = prev_month_last_day.replace(day=1)
@@ -394,48 +283,47 @@ class MealStatsProcessor:
             )
         )
 
-        current_type_medians = compute_meal_type_medians(reports)
-        prev_type_medians = compute_meal_type_medians(prev_reports)
+        current_type_medians = MealStatistics.compute_meal_type_medians(reports)
+        prev_type_medians = MealStatistics.compute_meal_type_medians(prev_reports)
 
-        meal_type_medians_month_compare = {
-            mtype: {
-                "current": current_type_medians.get(mtype, {}),
-                "previous": prev_type_medians.get(mtype, {}),
-            }
+        meal_type_comparison = {
+            mtype: MealTypeComparison(
+                current=current_type_medians.get(
+                    mtype,
+                    MealTypeMedians(carbs=0, protein=0, fat=0, fiber=0),
+                ),
+                previous=prev_type_medians.get(
+                    mtype,
+                    MealTypeMedians(carbs=0, protein=0, fat=0, fiber=0),
+                ),
+            )
             for mtype in ("breakfast", "lunch", "dinner")
         }
 
-        # ---- Return summary ----
-        return {
-            "counts": {
-                "total_meals": total_meals,
-                "snacks": snacks_count,
-                **meal_type_counts,
-                "high_carb_meals": high_carb_count,
-                "low_protein_meals": low_protein_count,
-            },
-            "weekly": weekly,
-            "within_budget_pct": {
-                "carbs": (
-                    round(within_carb_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0
-                ),
-                "protein": (
-                    round(within_protein_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0
-                ),
-                "fat": (
-                    round(within_fat_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0
-                ),
-                "fiber": (
-                    round(within_fiber_range * 100 / total_meals, 1)
-                    if total_meals
-                    else 0.0
-                ),
-            },
-            "meal_type_medians_month_compare": meal_type_medians_month_compare,
-        }
+        return MonthlySummary(
+            counts=MonthlyMealCounts(
+                total_meals=total_meals,
+                snacks=snacks_count,
+                breakfast=meal_type_counts["breakfast"],
+                lunch=meal_type_counts["lunch"],
+                dinner=meal_type_counts["dinner"],
+                high_carb_meals=high_carb_count,
+                low_protein_meals=low_protein_count,
+            ),
+            within_budget_percentages=WithinBudgetPercentages(
+                carbs=round(within_carb_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0,
+                protein=round(within_protein_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0,
+                fat=round(within_fat_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0,
+                fiber=round(within_fiber_range * 100 / total_meals, 1)
+                if total_meals
+                else 0.0,
+            ),
+            weekly_summaries=weekly_summaries,
+            meal_type_comparison=meal_type_comparison,
+        )

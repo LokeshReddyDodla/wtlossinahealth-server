@@ -1,5 +1,10 @@
+"""Database query utilities for meal report data."""
+
 from datetime import date
+
 from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
+
 from lib.models.patient_meal import (
     PatientFoodItem,
     PatientMacroNutritionalValue,
@@ -8,10 +13,10 @@ from lib.models.patient_meal import (
     PatientTotalMacroNutritionalValue,
     PatientTotalMicroNutritionalValue,
 )
-from sqlalchemy.orm import aliased
 
 
 def build_meal_query(patient_id: str, start_date: date, end_date: date):
+    """Build SQLAlchemy query for fetching meal data within a date range."""
     PatientFoodItemAlias = aliased(PatientFoodItem)
     PatientMacroNutritionalValueAlias = aliased(PatientMacroNutritionalValue)
     PatientMicroNutritionalValueAlias = aliased(PatientMicroNutritionalValue)
@@ -47,6 +52,7 @@ def build_meal_query(patient_id: str, start_date: date, end_date: date):
 
 
 def build_nutritional_aggregates(meal):
+    """Build aggregate functions for nutritional values."""
     return [
         func.sum(PatientTotalMacroNutritionalValue.calories).label(
             "total_calories"
@@ -71,6 +77,7 @@ def build_nutritional_aggregates(meal):
 
 
 def build_macro_json(macro):
+    """Build JSON object for macro nutritional values."""
     return func.json_build_object(
         "calories",
         macro.calories,
@@ -86,6 +93,7 @@ def build_macro_json(macro):
 
 
 def build_micro_json(micro):
+    """Build JSON object for micro nutritional values."""
     return func.json_build_object(
         "calcium",
         micro.calcium,
@@ -99,6 +107,7 @@ def build_micro_json(micro):
 
 
 def build_items_json(food_item_alias, macro_alias, micro_alias, meal):
+    """Build JSON aggregation for food items in a meal."""
     return (
         select(
             func.json_agg(
@@ -132,6 +141,7 @@ def build_items_json(food_item_alias, macro_alias, micro_alias, meal):
 
 
 def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
+    """Build JSON aggregation for meal data."""
     return func.json_agg(
         func.json_build_object(
             "id",

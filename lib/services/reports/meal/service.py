@@ -23,7 +23,6 @@ class MealReportService:
                 stale_reason=StaleReason.DATA_UPDATED,
             )
         except Exception as e:
-            # Don't fail the save operation if marking stale fails
             logging.warning(
                 f"Failed to mark summaries as stale for {patient_id}: {e}"
             )
@@ -137,7 +136,6 @@ class MealReportService:
             report["_id"] = report_id
             report["date"] = report["date"].isoformat()
 
-            # Upsert the report (insert if new, update if exists)
             await self.meal_report_collection.replace_one(
                 {"_id": report_id}, report, upsert=True
             )
@@ -146,8 +144,6 @@ class MealReportService:
                 f"✅ Saved/Updated daily report for {patient_id} on {report['date']}"
             )
 
-            # Mark affected summaries as stale
-            # Parse date from string if needed
             report_date = (
                 datetime.fromisoformat(report["date"]).date()
                 if isinstance(report["date"], str)
