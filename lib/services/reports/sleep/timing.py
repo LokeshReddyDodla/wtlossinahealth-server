@@ -1,19 +1,18 @@
-from datetime import datetime, time, timedelta
-from typing import Any, Dict
+from datetime import datetime
 
 from sqlalchemy import text
 
 from lib.models.patient_sleep import PatientSleep
 
 
-class SleepTimingFetcher:
+class SleepTimingStatistics:
     @staticmethod
     async def fetch(
         postgres_session,
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
-    ) -> Dict[str, Any]:
+    ) -> dict:
         query = text(
             """
         SELECT 
@@ -34,7 +33,6 @@ class SleepTimingFetcher:
         """
         )
 
-        # Execute the query
         result = await postgres_session.execute(
             query,
             {
@@ -45,7 +43,6 @@ class SleepTimingFetcher:
         )
         row = result.first()
 
-        # Return results as ISO 8601 formatted strings
         return {
             "earliest_start_time": (
                 row.earliest_start.isoformat() if row.earliest_start else None

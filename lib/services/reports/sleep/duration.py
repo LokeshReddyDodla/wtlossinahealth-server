@@ -1,19 +1,19 @@
 from datetime import datetime
-from typing import Any, Dict
+from typing import Optional
 
 from sqlalchemy import func, select
 
 from lib.models.patient_sleep import PatientSleep
 
 
-class SleepDurationFetcher:
+class SleepDurationStatistics:
     @staticmethod
     async def fetch(
         postgres_session,
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
-    ) -> Dict[str, Any]:
+    ) -> dict:
         days_diff = (end_datetime - start_datetime).days + 1
 
         query = select(
@@ -29,11 +29,8 @@ class SleepDurationFetcher:
         result = await postgres_session.execute(query)
         row = result.first()
 
-        # Calculate per-day averages
         total_duration = row.total_duration or 0
-        per_day_avg_duration = (
-            total_duration / days_diff if days_diff > 0 else 0
-        )
+        per_day_avg_duration = total_duration / days_diff if days_diff > 0 else 0
 
         return {
             "total_duration": row.total_duration,

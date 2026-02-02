@@ -1,19 +1,19 @@
 from datetime import datetime
-from typing import Any, Dict
+from typing import Dict, Union
 
 from sqlalchemy import func, select
 
 from lib.models.patient_sleep import PatientSleep
 
 
-class SleepQualityFetcher:
+class SleepQualityStatistics:
     @staticmethod
     async def fetch(
         postgres_session,
         patient_id: str,
         start_date: datetime,
         end_date: datetime,
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, Union[float, str]]:
         query = (
             select(
                 PatientSleep.type,
@@ -47,10 +47,7 @@ class SleepQualityFetcher:
             (row.duration for row in rows if row.type == "sleep_awake"), 0
         )
 
-        # Fallback to total sleep duration if `sleep_in_bed` is not available
-        effective_in_bed_duration = in_bed_duration or (
-            total_duration + awake_time
-        )
+        effective_in_bed_duration = in_bed_duration or (total_duration + awake_time)
 
         sleep_efficiency = (
             (total_duration / effective_in_bed_duration) * 100
@@ -68,7 +65,7 @@ class SleepQualityFetcher:
             else 0
         )
 
-        sleep_quality = SleepQualityFetcher._classify_sleep_quality(
+        sleep_quality = SleepQualityStatistics._classify_sleep_quality(
             sleep_efficiency, restorative_sleep, awake_percentage
         )
 

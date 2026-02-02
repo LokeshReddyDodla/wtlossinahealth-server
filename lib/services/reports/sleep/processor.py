@@ -1,21 +1,27 @@
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import List
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
-from lib.schemas.sleep_stats import SleepStats
-from lib.services.ai_conversation_service.ai_conversation_service import (
-    AiConversationService,
+from lib.models.patient_sleep import PatientSleep
+from lib.schemas.sleep_stats import (
+    DateRange,
+    ReportMetadata,
+    SleepDuration,
+    SleepQuality,
+    SleepStats,
+    SleepTiming,
+    SleepTypeDistribution,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 from lib.utils.postgres_session_decorator import with_postgres_session
-from lib.utils.sleep.duration_fetcher import SleepDurationFetcher
-from lib.utils.sleep.quality_fetcher import SleepQualityFetcher
-from lib.utils.sleep.timing_fetcher import SleepTimingFetcher
-from lib.utils.sleep.type_distribution_fetcher import (
-    SleepTypeDistributionFetcher,
-)
+
+from .duration import SleepDurationStatistics
+from .quality import SleepQualityStatistics
+from .timing import SleepTimingStatistics
+from .type_distribution import SleepTypeDistributionStatistics
 
 
 class SleepReportType:
@@ -26,16 +32,8 @@ class SleepReportType:
 
 
 class SleepStatsProcessor:
-    def __init__(
-        self,
-        postgres_store: PostgresStore,
-    ):
+    def __init__(self, postgres_store: PostgresStore):
         self.postgres_store = postgres_store
-        self.ai_conversation_service = AiConversationService(
-            conversation_type="sleep",
-            selected_ai_model="gpt-4.1-mini",
-            ai_model_provider="openai",
-        )
 
     async def generate_report(
         self,
@@ -86,43 +84,56 @@ class SleepStatsProcessor:
         end_datetime: datetime,
         report_type: str,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> SleepStats:
-        duration_analysis = await SleepDurationFetcher.fetch(
+        days_covered = (end_datetime - start_datetime).days + 1
+
+        total_sessions_query = select(func.count(PatientSleep.id)).where(
+            PatientSleep.patient_id == patient_id,
+            PatientSleep.sleep_start_time >= start_datetime,
+            PatientSleep.sleep_end_time <= end_datetime,
+        )
+        total_sessions_result = await postgres_session.execute(total_sessions_query)
+        total_sessions = total_sessions_result.scalar() or 0
+
+        duration_data = await SleepDurationStatistics.fetch(
             postgres_session, patient_id, start_datetime, end_datetime
         )
-        type_distribution = await SleepTypeDistributionFetcher.fetch(
+        type_distribution_data = await SleepTypeDistributionStatistics.fetch(
             postgres_session, patient_id, start_datetime, end_datetime
         )
-        timing_analysis = await SleepTimingFetcher.fetch(
+        timing_data = await SleepTimingStatistics.fetch(
             postgres_session, patient_id, start_datetime, end_datetime
-        )  # Inaccurate
-        quality_analysis = await SleepQualityFetcher.fetch(
+        )
+        quality_data = await SleepQualityStatistics.fetch(
             postgres_session, patient_id, start_datetime, end_datetime
         )
 
-        # Construct the sleep stats report
-        report = SleepStats(
-            start_date=start_datetime,
-            end_date=end_datetime,
-            report_type=report_type,
-            duration_analysis=duration_analysis,
-            type_distribution=type_distribution,
-            timing_analysis=timing_analysis,
-            quality_analysis=quality_analysis,
+        return SleepStats(
+            metadata=ReportMetadata(
+                date_range=DateRange(
+                    start=start_datetime.isoformat(),
+                    end=end_datetime.isoformat(),
+                ),
+                total_sessions=total_sessions,
+                days_covered=days_covered,
+                report_type=report_type,
+            ),
+            duration=SleepDuration(**duration_data),
+            type_distribution=SleepTypeDistribution(**type_distribution_data),
+            timing=SleepTiming(**timing_data),
+            quality=SleepQuality(**quality_data),
         )
-
-        return report
 
     @with_postgres_session
     async def _process_multiple_periods(
         self,
         patient_id: str,
-        periods: List[Dict[str, datetime]],
+        periods: List[dict],
         report_type: str,
         *,
-        postgres_session: AsyncSession
-    ) -> List[Dict[str, SleepStats]]:
+        postgres_session: AsyncSession,
+    ) -> List[SleepStats]:
         stats = []
         for period in periods:
             stats.append(

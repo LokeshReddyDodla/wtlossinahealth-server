@@ -1,19 +1,19 @@
 from datetime import datetime
-from typing import Any, Dict
+from typing import Dict, Union
 
 from sqlalchemy import func, select
 
 from lib.models.patient_sleep import PatientSleep
 
 
-class SleepTypeDistributionFetcher:
+class SleepTypeDistributionStatistics:
     @staticmethod
     async def fetch(
         postgres_session,
         patient_id: str,
         start_datetime: datetime,
         end_datetime: datetime,
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, Union[Dict[str, float], float]]:
         days_diff = (end_datetime - start_datetime).days + 1
 
         query = (
@@ -31,10 +31,8 @@ class SleepTypeDistributionFetcher:
         result = await postgres_session.execute(query)
         rows = result.fetchall()
 
-        # Calculate total duration
         total_duration = sum(row.duration for row in rows)
 
-        # Build the distribution with per-day averages
         distribution = {
             row.type: {
                 "duration_minutes": row.duration,
