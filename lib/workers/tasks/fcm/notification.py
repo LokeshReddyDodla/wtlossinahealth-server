@@ -25,6 +25,9 @@ async def process_fcm_notification(
 
         for participant in participants:
             user_id = str(participant["id"])
+            # NOTE: is_muted is a special case used for chat notifications only.
+            # For other notification types (e.g., meal reminders), this check should not be used
+            # as notification permissions are handled at the FCM service level.
             is_muted = participant.get("is_muted", False)
 
             if is_muted:
