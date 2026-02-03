@@ -2,7 +2,6 @@
 
 import functools
 import time
-from datetime import datetime
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 from loguru import logger
@@ -22,10 +21,10 @@ def task_with_logging(func: Callable[..., T]) -> Callable[..., T]:
     async def wrapper(ctx: Dict[str, Any], *args, **kwargs) -> T:
         task_name = func.__name__
         job_id = ctx.get("job_id", "unknown")
-        
+
         logger.info(f"[{task_name}] Starting {job_id}")
         start_time = time.perf_counter()
-        
+
         try:
             result = await func(ctx, *args, **kwargs)
             duration = (time.perf_counter() - start_time) * 1000
@@ -34,17 +33,5 @@ def task_with_logging(func: Callable[..., T]) -> Callable[..., T]:
         except Exception as e:
             logger.error(f"[{task_name}] Failed {job_id}: {e}")
             raise
-    
+
     return wrapper
-
-
-def parse_datetime(value: Any) -> Optional[datetime]:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, bytes):
-        value = value.decode()
-    if isinstance(value, str):
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return None

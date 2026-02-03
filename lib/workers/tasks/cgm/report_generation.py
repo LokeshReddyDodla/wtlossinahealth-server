@@ -7,7 +7,8 @@ from loguru import logger
 
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
-from lib.workers.tasks.base import TaskResult, task_with_logging, parse_datetime
+from lib.utils.datetime_utils import normalize_to_date_iso, parse_datetime
+from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
 async def filter_periods_needing_work(
@@ -18,10 +19,7 @@ async def filter_periods_needing_work(
 
     service = get_cgm_report_service()
 
-    start_dates_iso = [
-        p["start"].isoformat() if isinstance(p["start"], datetime) else p["start"]
-        for p in periods
-    ]
+    start_dates_iso = [normalize_to_date_iso(p["start"]) for p in periods]
 
     existing_cursor = service.cgm_report_collection.find(
         {
@@ -42,18 +40,15 @@ async def filter_periods_needing_work(
     for report in existing_reports:
         start = report.get("metadata", {}).get("date_range", {}).get("start")
         if start:
-            existing_map[start] = {
+            start_normalized = normalize_to_date_iso(start)
+            existing_map[start_normalized] = {
                 "end": report.get("metadata", {}).get("date_range", {}).get("end"),
                 "sensor_status": report.get("sensor_status", "OPEN"),
             }
 
     to_process = []
     for period in periods:
-        start_iso = (
-            period["start"].isoformat()
-            if isinstance(period["start"], datetime)
-            else period["start"]
-        )
+        start_iso = normalize_to_date_iso(period["start"])
         end_iso = (
             period["end"].isoformat()
             if isinstance(period["end"], datetime)
@@ -178,7 +173,7 @@ async def _generate_single_report(
             patient_id,
             reports,
             sensor_status=sensor_status,
-            termination_reason=termination_reason,
+            termination_reason=termination_reason or "",
         )
 
         logger.info(
