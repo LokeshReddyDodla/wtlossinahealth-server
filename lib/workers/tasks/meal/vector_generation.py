@@ -1,5 +1,6 @@
 """Meal Vector Generation Tasks."""
 
+from datetime import datetime
 from typing import Any, Dict
 
 from loguru import logger
@@ -63,7 +64,8 @@ async def _enqueue_meal_vector(
     patient_id: str, meal_id: str, meal_data: Dict[str, Any]
 ) -> str | None:
     """Internal: Enqueue meal vector generation."""
-    job_id = f"meal:vector:{patient_id}:{meal_id}"
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    job_id = f"meal:vector:{patient_id}:{meal_id}:{timestamp}"
 
     job = await enqueue_job(
         "generate_meal_vector",

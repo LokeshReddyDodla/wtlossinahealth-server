@@ -10,7 +10,7 @@ from lib.dependencies.service_dependencies import (
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.meal_service import MealService
+from lib.services.meal import MealService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,

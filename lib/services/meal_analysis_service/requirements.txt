@@ -1,6 +1,0 @@
-fastapi
-uvicorn
-langchain
-langchain-openai
-pydantic
-python-decouple

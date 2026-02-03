@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Any, Union
 
 from decouple import config
@@ -6,7 +5,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.constants import AI_RESPONSE_SAFETY_DISCLAIMER, ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
@@ -15,14 +13,14 @@ from lib.core.types import (
     GeminiAIModelLiteral,
     OpenAIModelLiteral,
 )
-
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.services.token_usage_service import TokenUsageService
-from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.utils.retry_utils import retry_request
 
 
 class MealAnalysisService:
+    """Service for AI-powered meal analysis."""
+
     def __init__(
         self,
         postgres_store: PostgresStore,
@@ -129,7 +127,6 @@ class MealAnalysisService:
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         usage_metadata = ai_response["raw"].usage_metadata
 
-        # Log token usage if applicable
         if usage_metadata:
             await self.token_usage_service.log_usage(
                 user_id=patient_id,
@@ -189,7 +186,6 @@ class MealAnalysisService:
         parsed_response: MealAnalysisResponse = ai_response.get("parsed", {})
         usage_metadata = ai_response["raw"].usage_metadata
 
-        # Log token usage if applicable
         if usage_metadata:
             await self.token_usage_service.log_usage(
                 user_id=patient_id,

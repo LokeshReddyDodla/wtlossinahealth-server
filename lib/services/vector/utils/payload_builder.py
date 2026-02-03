@@ -34,9 +34,7 @@ class PayloadBuilder:
             return "night"
 
     @staticmethod
-    def time_buckets_for_range(
-        start_time: datetime, end_time: datetime
-    ) -> List[str]:
+    def time_buckets_for_range(start_time: datetime, end_time: datetime) -> List[str]:
         """
         Calculate time buckets for a time range.
 
@@ -93,17 +91,11 @@ class PayloadBuilder:
         """
         # Validate required fields
         if not patient_id:
-            raise PayloadValidationError(
-                "patient_id is required", field="patient_id"
-            )
+            raise PayloadValidationError("patient_id is required", field="patient_id")
         if not data_type:
-            raise PayloadValidationError(
-                "data_type is required", field="data_type"
-            )
-        if not text_repr:
-            raise PayloadValidationError(
-                "text_repr is required", field="text_repr"
-            )
+            raise PayloadValidationError("data_type is required", field="data_type")
+        if text_repr is None:
+            raise PayloadValidationError("text_repr is required", field="text_repr")
 
         payload: Dict[str, Any] = {
             "patient_id": patient_id,

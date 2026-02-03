@@ -69,9 +69,8 @@ from lib.services.fitness_upload_service import FitnessUploadService
 from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
-from lib.services.meal_analysis_service import MealAnalysisService
+from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
-from lib.services.meal_service import MealService
 from lib.services.vector import MealVectorService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
@@ -519,7 +518,7 @@ container.register(
     ),
 )
 
-# 🔹 Meal Service (Nested with Meal Analysis and Patient Profile)
+# 🔹 Meal Service
 container.register(
     MealService,
     lambda: MealService(
