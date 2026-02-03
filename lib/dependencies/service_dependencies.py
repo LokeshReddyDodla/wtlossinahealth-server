@@ -23,6 +23,7 @@ from lib.services.reports import CGMReportService
 
 from lib.services.vector import CGMVectorService
 from lib.services.cgm_upload_service import CGMUploadService
+from lib.services.fcm_service import FCMService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
@@ -539,11 +540,9 @@ def get_health_query_agent_service() -> HealthQueryAgentService:
     )
 
 
+def get_fcm_service() -> FCMService:
+    return FCMService()
+
+
 def get_arq_task_manager_service() -> ArqTaskManager:
-    """
-    Get the ARQ task manager for enqueuing background tasks.
-    
-    Returns:
-        ArqTaskManager singleton instance
-    """
     return get_arq_task_manager()
