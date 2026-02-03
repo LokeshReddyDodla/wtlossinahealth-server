@@ -125,11 +125,100 @@ services:
       - aihealth-api
     restart: unless-stopped
 
+  # ==========================================
+  # ARQ Workers (Redis-based async task queue)
+  # ==========================================
+  
+  aihealth-arq-redis:
+    container_name: aihealth-arq-redis
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${ARQ_REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    ports:
+      - 6380:6379
+    volumes:
+      - arq_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ARQ_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  aihealth-arq-worker:
+    container_name: aihealth-arq-worker
+    image: aihealth-api:latest
+    command: >
+      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.WorkerSettings
+    environment:
+      - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
+      - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
+      - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
+      - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - arq_logs:/var/log/arq
+      - .:/src  # for dev use only
+    depends_on:
+      aihealth-arq-redis:
+        condition: service_healthy
+      aihealth-api:
+        condition: service_started
+      aihealth-postgres:
+        condition: service_started
+      aihealth-mongo:
+        condition: service_started
+    restart: unless-stopped
+
+  aihealth-arq-worker-cgm:
+    container_name: aihealth-arq-worker-cgm
+    image: aihealth-api:latest
+    command: >
+      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.CGMReportWorkerSettings
+    environment:
+      - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
+      - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
+      - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
+      - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+    volumes:
+      - arq_logs:/var/log/arq
+      - .:/src  # for dev use only
+    depends_on:
+      aihealth-arq-redis:
+        condition: service_healthy
+      aihealth-api:
+        condition: service_started
+      aihealth-postgres:
+        condition: service_started
+      aihealth-mongo:
+        condition: service_started
+    restart: no
+
   aihealth-redis:
     container_name: aihealth-redis
     image: redis:alpine
     command:
-      - "-- requirepass ${REDIS_PASSWORD}"
+      - "--requirepass ${REDIS_PASSWORD}"
     restart: unless-stopped
     ports:
       - 6379:6379
@@ -277,6 +366,7 @@ services:
     environment:
       - CB_ADMIN_NAME=${CB_ADMIN_NAME}
       - CB_ADMIN_PASSWORD=${CB_ADMIN_PASSWORD}
+      - CB_AUTO_CREATE=true
     volumes:
       - cloudbeaver_workspace:/opt/cloudbeaver/workspace
 
@@ -368,7 +458,8 @@ volumes:
   celery_beat_logs:
   loki_data:
   grafana_data:
-
+  arq_redis_data:
+  arq_logs:
 
 networks:
   shared_network:

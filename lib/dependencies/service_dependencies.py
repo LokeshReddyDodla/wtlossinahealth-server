@@ -3,6 +3,7 @@ from typing import cast
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.celery_task_manager import CeleryTaskManager
+from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -536,3 +537,13 @@ def get_health_query_agent_service() -> HealthQueryAgentService:
         HealthQueryAgentService,
         container.resolve(HealthQueryAgentService),
     )
+
+
+def get_arq_task_manager_service() -> ArqTaskManager:
+    """
+    Get the ARQ task manager for enqueuing background tasks.
+    
+    Returns:
+        ArqTaskManager singleton instance
+    """
+    return get_arq_task_manager()
