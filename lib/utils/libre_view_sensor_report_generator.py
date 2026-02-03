@@ -109,17 +109,16 @@ class SensorLifecycleReportGenerator:
         expected_points = duration_h * (60 / self.EXPECTED_INTERVAL_MIN)
         coverage = len(segment) / expected_points if expected_points > 0 else 0
         
-        # Determine status: CLOSED if we have strong evidence sensor ended, otherwise OPEN
-        status = "CLOSED" if is_closed else "OPEN"
-        
+        sensor_status = "CLOSED" if is_closed else "OPEN"
+
         return {
             "start": start,
             "end": end,
             "duration_h": duration_h,
             "coverage": coverage,
             "gaps": gaps,
-            "status": status,  # "OPEN" or "CLOSED"
-            "termination_reason": termination_reason,  # "hard_gap", "sensor_life", or None
+            "sensor_status": sensor_status,
+            "termination_reason": termination_reason,
             "qa_flags": {
                 "many_small_gaps": self._check_many_small_gaps(
                     gaps, duration_h

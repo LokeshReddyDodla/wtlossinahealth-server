@@ -420,7 +420,7 @@ class CGMReportService:
         self,
         patient_id: str,
         reports: List[CGMStats],
-        status: str = None,
+        sensor_status: str = None,
         termination_reason: str = None,
     ):
         from pymongo import UpdateOne
@@ -474,8 +474,8 @@ class CGMReportService:
             )
 
             if metadata.report_type == CGMReportType.CUSTOM:
-                if status:
-                    report_dict["status"] = status
+                if sensor_status:
+                    report_dict["sensor_status"] = sensor_status
                 if termination_reason:
                     report_dict["termination_reason"] = termination_reason
 
