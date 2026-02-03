@@ -80,8 +80,6 @@ async def _enqueue_fcm_notification(
     )
 
     if job:
-        logger.info(
-            f"Enqueued FCM notification for {len(participants)} participants"
-        )
+        logger.info(f"Enqueued FCM notification for {len(participants)} participants")
 
     return job.job_id if job else None

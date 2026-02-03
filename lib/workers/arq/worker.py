@@ -17,8 +17,10 @@ def _get_all_cron_jobs():
     cron_jobs = []
 
     from lib.workers.tasks.device import get_cron_jobs as get_device_cron_jobs
+    from lib.workers.tasks.meal import get_cron_jobs as get_meal_cron_jobs
 
     cron_jobs.extend(get_device_cron_jobs())
+    cron_jobs.extend(get_meal_cron_jobs())
 
     return cron_jobs
 
