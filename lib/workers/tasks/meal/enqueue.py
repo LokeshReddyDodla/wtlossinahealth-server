@@ -11,7 +11,7 @@ from lib.workers.tasks.meal.vector_generation import _enqueue_meal_vector
 
 
 async def enqueue_daily_meal_report_async(
-    patient_id: str, report_date: date | str
+    patient_id: str, report_date: date
 ) -> Optional[str]:
     """Enqueue daily meal report generation (async)."""
     try:
@@ -21,9 +21,7 @@ async def enqueue_daily_meal_report_async(
         return None
 
 
-def enqueue_daily_meal_report_sync(
-    patient_id: str, report_date: date | str
-) -> Optional[str]:
+def enqueue_daily_meal_report_sync(patient_id: str, report_date: date) -> Optional[str]:
     """Enqueue daily meal report generation (sync)."""
     import nest_asyncio
 

@@ -38,9 +38,7 @@ def build_daily_stats(
     for meal in row.meals:
         meal_time = datetime.combine(row.date, parse_date(meal["time"]).time())
         glucose_before_meal, glucose_after_meal = (
-            cgm_stats_processor.get_cgm_readings_around_meal(
-                patient_id, meal_time
-            )
+            cgm_stats_processor.get_readings_around_meal(patient_id, meal_time)
         )
 
         meal["glucose_before_meal"] = glucose_before_meal
