@@ -1,9 +1,11 @@
 """FCM Notification Tasks."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from lib.workers.arq.config import Queues
+from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
@@ -60,3 +62,26 @@ async def process_fcm_notification(
             error=str(e),
             data={"total_participants": len(participants), "sent": 0, "failed": 0},
         )
+
+
+async def _enqueue_fcm_notification(
+    participants: List[Dict], notification_info: Dict[str, Any]
+) -> Optional[str]:
+    """Internal: Enqueue FCM notification task."""
+    if not participants:
+        logger.warning("No participants provided for FCM notification")
+        return None
+
+    job = await enqueue_job(
+        "process_fcm_notification",
+        participants,
+        notification_info,
+        _queue_name=Queues.DEFAULT,
+    )
+
+    if job:
+        logger.info(
+            f"Enqueued FCM notification for {len(participants)} participants"
+        )
+
+    return job.job_id if job else None

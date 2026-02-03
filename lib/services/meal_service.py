@@ -27,9 +27,9 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 from lib.services.meal_analysis_service import MealAnalysisService
 from lib.services.vector import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.tasks.meal_tasks import (
-    generate_daily_meal_report,
-    generate_meal_vector,
+from lib.workers.tasks.meal.enqueue import (
+    enqueue_daily_meal_report_sync,
+    enqueue_meal_vector_sync,
 )
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -267,7 +267,7 @@ class MealService:
             await postgres_session.refresh(meal)
 
             # 🚀 Trigger Meal Report Generation after Upload
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
+            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
 
             return meal
 
@@ -332,7 +332,7 @@ class MealService:
             await postgres_session.refresh(meal)
 
             # Trigger report generation
-            generate_daily_meal_report.delay(str(patient_id), meal.date)
+            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
 
             return meal
 
@@ -576,14 +576,14 @@ class MealService:
         meal_obj: PatientMealModel,
     ):
         try:
-            generate_daily_meal_report.delay(str(patient_id), meal_date)
-            generate_meal_vector.delay(
+            enqueue_daily_meal_report_sync(str(patient_id), meal_date.date())
+            enqueue_meal_vector_sync(
                 str(patient_id),
                 str(meal_id),
                 PatientMealSchema.from_orm(meal_obj).model_dump(mode="json"),
             )
         except Exception as task_error:
-            print(f"⚠️ Failed to enqueue meal vector tasks: {task_error}")
+            print(f"⚠️ Failed to enqueue meal tasks: {task_error}")
 
     @with_postgres_session
     async def delete_meal(
@@ -610,7 +610,7 @@ class MealService:
             await postgres_session.commit()
 
             # 🚀 Trigger Meal Report Generation after Deletion
-            generate_daily_meal_report.delay(str(patient_id), meal_date)
+            enqueue_daily_meal_report_sync(str(patient_id), meal_date)
 
             # 🧹 Delete from vector DB too
             await self.meal_vector_service.delete_meal_vector(str(meal_id))

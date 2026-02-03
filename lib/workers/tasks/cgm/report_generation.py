@@ -193,8 +193,8 @@ async def _generate_single_report(
         return {"success": False, "start": start_date.isoformat(), "error": str(e)}
 
 
-async def enqueue_cgm_reports(patient_id: str, periods: List[Dict]) -> Optional[str]:
-    """Enqueue CGM report processing. Call from upload services."""
+async def _enqueue_cgm_reports(patient_id: str, periods: List[Dict]) -> Optional[str]:
+    """Internal: Enqueue CGM report processing."""
     if not periods:
         return None
 

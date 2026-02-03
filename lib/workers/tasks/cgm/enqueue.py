@@ -8,10 +8,10 @@ from loguru import logger
 
 async def enqueue_cgm_report_generation_async(patient_id: str, periods: List[Dict]) -> Optional[str]:
     """Enqueue CGM report generation (async)."""
-    from lib.workers.tasks.cgm.report_generation import enqueue_cgm_reports
+    from lib.workers.tasks.cgm.report_generation import _enqueue_cgm_reports
 
     try:
-        return await enqueue_cgm_reports(patient_id, periods)
+        return await _enqueue_cgm_reports(patient_id, periods)
     except Exception as e:
         logger.error(f"Failed to enqueue CGM reports for {patient_id}: {e}")
         return None

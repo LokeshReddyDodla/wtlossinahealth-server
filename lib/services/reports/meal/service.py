@@ -102,15 +102,9 @@ class MealReportService:
         report_date: date,
     ):
         try:
-            from lib.dependencies.service_dependencies import get_celery_task_manager
+            from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_sync
 
-            task_manager = get_celery_task_manager()
-            task_manager.trigger_task_once(
-                "lib.tasks.meal_tasks.generate_daily_meal_report",
-                args=[patient_id, report_date],
-                task_id=f"{patient_id}_{report_date}",
-                queue="default",
-            )
+            enqueue_daily_meal_report_sync(patient_id, report_date)
             logging.info(
                 f"Triggered daily report generation for {patient_id} on {report_date}"
             )
