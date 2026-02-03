@@ -12,6 +12,17 @@ from lib.workers.tasks import get_all_tasks
 _all_tasks = get_all_tasks()
 
 
+def _get_all_cron_jobs():
+    """Aggregate cron jobs from all task modules."""
+    cron_jobs = []
+
+    from lib.workers.tasks.device import get_cron_jobs as get_device_cron_jobs
+
+    cron_jobs.extend(get_device_cron_jobs())
+
+    return cron_jobs
+
+
 async def startup(ctx: Dict[str, Any]) -> None:
     logger.info("ARQ Worker starting...")
     from lib.core.container import container
@@ -31,7 +42,7 @@ class WorkerSettings:
 
     redis_settings = get_arq_redis_settings()
     functions = _all_tasks
-    cron_jobs = []
+    cron_jobs = _get_all_cron_jobs()
     on_startup = startup
     on_shutdown = shutdown
     queue_name = Queues.DEFAULT
