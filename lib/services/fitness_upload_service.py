@@ -8,8 +8,8 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_vital import PatientVital
-from lib.tasks.fitness_tasks import (
-    trigger_fitness_report_generation_for_patient,
+from lib.workers.tasks.fitness.enqueue import (
+    enqueue_process_fitness_upload_sync,
 )
 from lib.tasks.sleep_tasks import generate_sleep_reports_for_patient
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -51,7 +51,7 @@ class FitnessUploadService:
         await postgres_session.commit()
 
         # Trigger report generation asynchronously
-        trigger_fitness_report_generation_for_patient.delay(
+        enqueue_process_fitness_upload_sync(
             patient_id, start_datetime, end_datetime
         )
 

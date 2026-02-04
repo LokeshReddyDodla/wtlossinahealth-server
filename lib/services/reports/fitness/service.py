@@ -177,20 +177,16 @@ class FitnessReportService:
         report_type: str,
     ):
         try:
-            from lib.dependencies.service_dependencies import (
-                get_celery_task_manager,
+            from lib.workers.tasks.fitness.enqueue import (
+                enqueue_process_fitness_upload_sync,
             )
 
-            task_manager = get_celery_task_manager()
-            task_manager.trigger_task_once(
-                "lib.tasks.fitness_tasks.generate_and_store_fitness_report",
-                args=[patient_id, start_date, end_date, report_type],
-                task_id=f"{patient_id}_{start_date}_{end_date}_{report_type}",
-                queue="default",
+            enqueue_process_fitness_upload_sync(
+                patient_id, start_date, end_date
             )
 
             logging.info(
-                f"Triggered {report_type} report generation for {patient_id} from {start_date} to {end_date}"
+                f"Triggered fitness report generation for {patient_id} from {start_date} to {end_date}"
             )
         except Exception as error:
             logging.error(

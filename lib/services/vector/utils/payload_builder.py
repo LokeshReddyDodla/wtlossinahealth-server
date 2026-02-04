@@ -97,6 +97,7 @@ class PayloadBuilder:
         if text_repr is None:
             raise PayloadValidationError("text_repr is required", field="text_repr")
 
+        now_ms = int(datetime.now().timestamp() * 1000)
         payload: Dict[str, Any] = {
             "patient_id": patient_id,
             "patient_age": patient_age,
@@ -113,6 +114,7 @@ class PayloadBuilder:
             "time_of_day_bucket": PayloadBuilder.time_buckets_for_range(
                 start_time, end_time
             ),
+            "vector_updated_at": now_ms,
         }
 
         if report_id:
