@@ -10,13 +10,13 @@ from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
-async def get_reports_needing_vectors(
+async def _filter_reports_needing_vectors(
     patient_id: str,
     start_date: datetime,
     end_date: datetime,
 ) -> List[Dict]:
     """Get daily reports that need vector generation.
-    
+
     Compares report.updated_at with vector.vector_updated_at to determine
     if vectors need regeneration. Also regenerates vectors missing vector_updated_at
     to backfill the new field.
@@ -77,7 +77,10 @@ async def get_reports_needing_vectors(
                 if vector_updated_at is None:
                     vector_updated_map[report_id] = None
                 else:
-                    if report_id not in vector_updated_map or vector_updated_at > vector_updated_map[report_id]:
+                    if (
+                        report_id not in vector_updated_map
+                        or vector_updated_at > vector_updated_map[report_id]
+                    ):
                         vector_updated_map[report_id] = vector_updated_at
 
     except Exception as e:
@@ -106,7 +109,7 @@ async def get_reports_needing_vectors(
         elif report_updated_at:
             vector_updated_at_ms = vector_updated_map[report_id]
             report_updated_at_ms = int(report_updated_at.timestamp() * 1000)
-            
+
             if report_updated_at_ms > vector_updated_at_ms:
                 reports_needing_vectors.append(report)
 
@@ -130,7 +133,9 @@ async def generate_fitness_vectors(
 
         vector_service = get_fitness_vector_service()
 
-        reports = await get_reports_needing_vectors(patient_id, start_date, end_date)
+        reports = await _filter_reports_needing_vectors(
+            patient_id, start_date, end_date
+        )
 
         if not reports:
             logger.info(f"All fitness vectors up to date for {patient_id}")

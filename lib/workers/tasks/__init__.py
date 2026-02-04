@@ -13,12 +13,14 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.fcm import get_tasks as get_fcm_tasks
     from lib.workers.tasks.fitness import get_tasks as get_fitness_tasks
     from lib.workers.tasks.meal import get_tasks as get_meal_tasks
+    from lib.workers.tasks.sleep import get_tasks as get_sleep_tasks
     
     tasks.extend(get_cgm_tasks())
     tasks.extend(get_device_tasks())
     tasks.extend(get_fcm_tasks())
     tasks.extend(get_fitness_tasks())
     tasks.extend(get_meal_tasks())
+    tasks.extend(get_sleep_tasks())
     
     logger.info(f"Registered {len(tasks)} ARQ tasks")
     return tasks
