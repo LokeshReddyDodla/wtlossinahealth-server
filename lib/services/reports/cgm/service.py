@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from datetime import date, datetime, time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from lib.schemas.cgm_stats import CGMStats
 from .processor import CGMReportType
@@ -51,7 +51,7 @@ class CGMReportService:
                 },
                 {
                     "_id": 1,
-                    "metadata.date_range": 1,
+                    "metadata": 1,
                 },
             ).sort("metadata.date_range.start", 1)
 
@@ -81,7 +81,7 @@ class CGMReportService:
                 {
                     "_id": 1,
                     "patient_id": 1,
-                    "metadata.date_range": 1,
+                    "metadata": 1,
                 },
             ).sort([("patient_id", 1), ("metadata.date_range.start", 1)])
 
@@ -420,8 +420,8 @@ class CGMReportService:
         self,
         patient_id: str,
         reports: List[CGMStats],
-        sensor_status: str = None,
-        termination_reason: str = None,
+        sensor_status: Optional[str] = None,
+        termination_reason: Optional[str] = None,
     ):
         from pymongo import UpdateOne
 
