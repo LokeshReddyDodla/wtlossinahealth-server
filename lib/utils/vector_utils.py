@@ -23,7 +23,7 @@ OPENAI_EMBEDDING_MODEL = "text-embedding-3-large"
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 
 EmbeddingProvider = Literal["gemini", "openai"]
-DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = "gemini"
+DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = "openai"
 
 
 def count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
