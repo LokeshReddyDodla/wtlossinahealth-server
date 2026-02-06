@@ -15,6 +15,7 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.patient_summary.service import PatientSummaryService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_sync
 
 
 class PatientVitalService:
@@ -104,6 +105,30 @@ class PatientVitalService:
             await self._mark_summaries_stale(
                 patient_id=patient_id,
                 test_time=vital_data.test_time,
+            )
+
+            # Enqueue vital vector generation
+            vital_data_dict = {
+                "a1c": new_vital.a1c,
+                "creatinine": new_vital.creatinine,
+                "diastolic_bp": new_vital.diastolic_bp,
+                "systolic_bp": new_vital.systolic_bp,
+                "heart_rate": new_vital.heart_rate,
+                "ketones": new_vital.ketones,
+                "respiratory_rate": new_vital.respiratory_rate,
+                "spo2": new_vital.spo2,
+                "temperature": new_vital.temperature,
+                "weight": new_vital.weight,
+                "test_time": new_vital.test_time,
+                "source_name": new_vital.source_name or "",
+                "source_platform": new_vital.source_platform or "",
+                "uploaded_at": new_vital.uploaded_at,
+            }
+
+            enqueue_generate_vital_vector_sync(
+                patient_id=patient_id,
+                vital_id=str(new_vital.id),
+                vital_data=vital_data_dict,
             )
 
             return new_vital

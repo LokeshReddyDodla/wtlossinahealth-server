@@ -15,7 +15,7 @@ from lib.schemas.patient import CorePatientProfile
 from lib.services.dashboard_metrics.meal_metrics_service import (
     MealMetricsService,
 )
-from lib.services.meal_report_service import MealReportService
+from lib.services.reports import MealReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,

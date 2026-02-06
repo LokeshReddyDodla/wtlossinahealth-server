@@ -12,11 +12,12 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.smbg_vector_service.smbg_vector_service import (
-    SMBGVectorService,
-)
+from lib.services.vector import SMBGVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+from lib.workers.tasks.smbg.enqueue import (
+    enqueue_generate_smbg_vector_sync,
+)
 
 
 class PatientSmbgService:
@@ -76,25 +77,18 @@ class PatientSmbgService:
             await postgres_session.commit()
             await postgres_session.refresh(new_smbg)
 
-            patient_profile = (
-                await self.patient_profile_service.fetch_patient_profile(
-                    patient_id=patient_id, postgres_session=postgres_session
-                )
-            )
-
-            await self.smbg_vector_service.upsert_smbg(
+            reading_data = {
+                "glucose_mgdl": new_smbg.glucose_level,
+                "reading_time": new_smbg.reading_time.isoformat(),
+                "type": new_smbg.type,
+                "notes": new_smbg.notes,
+                "uploaded_at": new_smbg.uploaded_at,
+                "source": new_smbg.source_name or "app",
+            }
+            enqueue_generate_smbg_vector_sync(
                 patient_id=patient_id,
                 reading_id=str(new_smbg.id),
-                reading={
-                    "glucose_mgdl": new_smbg.glucose_level,
-                    "reading_time": new_smbg.reading_time.isoformat(),
-                    "type": new_smbg.type,
-                    "notes": new_smbg.notes,
-                    "uploaded_at": new_smbg.uploaded_at,
-                    "source": new_smbg.source_name or "app",
-                },
-                patient_age=patient_profile.age,
-                patient_gender=patient_profile.gender,
+                reading_data=reading_data,
             )
 
             ai_response_generated = await self._generate_ai_response(

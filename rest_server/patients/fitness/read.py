@@ -9,12 +9,12 @@ from lib.dependencies.service_dependencies import (
     get_fitness_stats_processor,
 )
 from lib.models.patient import Patient
-from lib.services.fitness_report_service import FitnessReportService
+from lib.services.reports import FitnessReportService
 from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
-from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.services.reports import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import InQueueResponse, SuccessResponse
 

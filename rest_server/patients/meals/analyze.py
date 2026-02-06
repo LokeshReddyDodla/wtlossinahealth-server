@@ -10,9 +10,9 @@ from lib.dependencies.service_dependencies import (
 from lib.models.patient import Patient
 from lib.schemas.patient_diet_plan import MealDistribution
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.meal_service import MealService
+from lib.services.meal import MealService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.meals.processor import MealStatsProcessor
+from lib.services.reports import MealStatsProcessor
 from rest_server.patients.meals.api_schema import PatientMealAnalysis
 from rest_server.response_models import SuccessResponse
 

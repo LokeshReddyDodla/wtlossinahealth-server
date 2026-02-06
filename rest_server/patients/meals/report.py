@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_meal_report_service
 from lib.models.patient import Patient
-from lib.services.meal_report_service import MealReportService
+from lib.services.reports import MealReportService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

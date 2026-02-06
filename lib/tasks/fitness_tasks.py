@@ -4,7 +4,7 @@ from celery import shared_task
 
 
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
-from lib.utils.fitness.processor import FitnessReportType
+from lib.services.reports import FitnessReportType
 
 
 @shared_task(queue="default", rate_limit="20/m")

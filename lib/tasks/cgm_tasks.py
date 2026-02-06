@@ -86,7 +86,7 @@ async def generate_and_store_cgm_report(
             get_cgm_stats_processor,
             get_cgm_sync_cache_store,
         )
-        from lib.utils.cgm.processor import CGMReportType
+        from lib.services.reports import CGMReportType
 
         processor = get_cgm_stats_processor()
         service = get_cgm_report_service()
@@ -188,12 +188,25 @@ async def trigger_cgm_vector_upsert_for_all_patients():
 
     patients = await libreview_service.get_patients_with_libreview()  # type: ignore
 
+    print(f"🔄 Starting CGM vector sync for {len(patients)} patients")
+
     for patient in patients:
         patient_id = str(patient.patient_id)
 
         start_date, end_date = _get_sync_dates(
             cache_store, patient_id, patient.created_at
         )
+
+        # Skip if start_date is >= end_date (nothing to sync)
+        if start_date >= end_date:
+            print(
+                f"⏭️ Skipping {patient_id}: start_date ({start_date.isoformat()}) >= end_date ({end_date.isoformat()})"
+            )
+            continue
+
+        # Use a more stable task_id that doesn't change with every run
+        # Use start_date only, so we don't create duplicate tasks for the same date range
+        task_id = f"cgm_qdrant_sync_{patient_id}_{start_date.date().isoformat()}"  # type: ignore
 
         task_manager.trigger_task_once(
             "lib.tasks.cgm_tasks.sync_patient_daily_cgm_reports_to_vector_store",
@@ -204,9 +217,11 @@ async def trigger_cgm_vector_upsert_for_all_patients():
                 start_date,
                 end_date,
             ],
-            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            task_id=task_id,
             queue="vector_sync",
         )
+
+    print(f"✅ Finished triggering CGM vector sync tasks for {len(patients)} patients")
 
 
 @shared_task(queue="vector_sync", rate_limit="20/m")
@@ -231,6 +246,17 @@ async def trigger_cgm_vector_upsert_for_patient(patient_id: str):
             cache_store, patient_id, patient.created_at
         )
 
+        # Skip if start_date is >= end_date (nothing to sync)
+        if start_date >= end_date:
+            print(
+                f"⏭️ Skipping {patient_id}: start_date ({start_date.isoformat()}) >= end_date ({end_date.isoformat()})"
+            )
+            return
+
+        # Use a more stable task_id that doesn't change with every run
+        # Use start_date only, so we don't create duplicate tasks for the same date range
+        task_id = f"cgm_qdrant_sync_{patient_id}_{start_date.date().isoformat()}"  # type: ignore
+
         task_manager.trigger_task_once(
             "lib.tasks.cgm_tasks.sync_patient_daily_cgm_reports_to_vector_store",
             args=[
@@ -240,7 +266,7 @@ async def trigger_cgm_vector_upsert_for_patient(patient_id: str):
                 start_date,
                 end_date,
             ],
-            task_id=f"cgm_qdrant_sync_{patient_id}_{start_date.date()}_{end_date.date()}",  # type: ignore
+            task_id=task_id,
             queue="vector_sync",
         )
 
@@ -268,6 +294,20 @@ async def sync_patient_daily_cgm_reports_to_vector_store(
 
     last_synced = _parse_datetime(cache_store.get_key(patient_id))
 
+    # Double-check: skip if start_date >= end_date
+    if start_date >= end_date:
+        print(
+            f"⏭️ Skipping sync for {patient_id}: start_date ({start_date.isoformat()}) >= end_date ({end_date.isoformat()})"
+        )
+        return
+
+    # If we have a last_synced date and end_date is not newer, skip
+    if last_synced and end_date <= last_synced:
+        print(
+            f"⏭️ Skipping sync for {patient_id}: end_date ({end_date.isoformat()}) <= last_synced ({last_synced.isoformat()})"
+        )
+        return
+
     reports = await report_service.fetch_day_wise_reports(
         patient_id=patient_id,
         start_date=start_date,
@@ -276,6 +316,9 @@ async def sync_patient_daily_cgm_reports_to_vector_store(
 
     if not reports:
         print(f"⚠️ No new daily reports to sync for {patient_id}")
+        # Still update cache to prevent re-checking the same date range
+        if not last_synced or end_date > last_synced:
+            cache_store.set_key(patient_id, end_date.isoformat(), expire=None)
         return
 
     await vector_service.upsert_report(

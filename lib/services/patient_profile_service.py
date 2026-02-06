@@ -55,7 +55,6 @@ from lib.models.patient_smoking_habit import (
 )
 from lib.schemas.patient import (
     CorePatientProfile,
-    Patient as PatientSchema,
     PatientCreate,
 )
 from lib.schemas.patient import PatientUpdate
@@ -85,11 +84,12 @@ from lib.services.care_provider_profile_service import (
 from lib.services.chat.chat_exceptions import ChatCreationError
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_notification_service import ChatNotificationService
-from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
-    PatientProfileVectorService,
-)
+from lib.services.vector import PatientProfileVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+from lib.workers.tasks.profile.enqueue import (
+    enqueue_generate_profile_vector_sync,
+)
 
 
 class PatientProfileService:
@@ -223,7 +223,7 @@ class PatientProfileService:
 
             if offset:
                 stmt = stmt.offset(offset)
-            
+
             if limit:
                 stmt = stmt.limit(limit)
 
@@ -416,9 +416,7 @@ class PatientProfileService:
                 patient_id, postgres_session=postgres_session
             )
 
-            for key, value in patient_data.model_dump(
-                exclude_unset=True
-            ).items():
+            for key, value in patient_data.model_dump(exclude_unset=True).items():
                 if key not in ["created_at", "updated_at", "phone_number"]:
                     setattr(patient_profile, key, value)
 
@@ -439,11 +437,11 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
-            await self.profile_vector_service.upsert_profile(
-                CorePatientProfile.from_orm(updated_patient).model_dump(
-                    mode="json"
-                )
+
+            profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
+                mode="json"
             )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -520,15 +518,13 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.food_allergies = (
-                await self._upsert_multiple_entities(
-                    patient_profile.food_allergies,
-                    food_allergies or [],
-                    PatientFoodAllergyModel,
-                    "patient_id",
-                    patient_id,
-                    postgres_session=postgres_session,
-                )
+            patient_profile.food_allergies = await self._upsert_multiple_entities(
+                patient_profile.food_allergies,
+                food_allergies or [],
+                PatientFoodAllergyModel,
+                "patient_id",
+                patient_id,
+                postgres_session=postgres_session,
             )
 
             ignore_fields = [
@@ -555,14 +551,12 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.eating_habit.diet_preferences = (
-                self._upsert_single_entity(
-                    patient_profile.eating_habit.diet_preferences,
-                    eating_habit.diet_preferences,
-                    PatientDietPreferenceModel,
-                    "eating_habit_id",
-                    patient_profile.eating_habit.eating_habit_id,
-                )
+            patient_profile.eating_habit.diet_preferences = self._upsert_single_entity(
+                patient_profile.eating_habit.diet_preferences,
+                eating_habit.diet_preferences,
+                PatientDietPreferenceModel,
+                "eating_habit_id",
+                patient_profile.eating_habit.eating_habit_id,
             )
 
             updated = self._mark_profile_section_complete(
@@ -578,11 +572,11 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
-            await self.profile_vector_service.upsert_profile(
-                CorePatientProfile.from_orm(updated_patient).model_dump(
-                    mode="json"
-                )
+
+            profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
+                mode="json"
             )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -636,15 +630,13 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.drug_allergies = (
-                await self._upsert_multiple_entities(
-                    patient_profile.drug_allergies,
-                    drug_allergies or [],
-                    PatientDrugAllergyModel,
-                    "patient_id",
-                    patient_id,
-                    postgres_session=postgres_session,
-                )
+            patient_profile.drug_allergies = await self._upsert_multiple_entities(
+                patient_profile.drug_allergies,
+                drug_allergies or [],
+                PatientDrugAllergyModel,
+                "patient_id",
+                patient_id,
+                postgres_session=postgres_session,
             )
 
             patient_profile.family_diabetic_histories = (
@@ -658,15 +650,13 @@ class PatientProfileService:
                 )
             )
 
-            patient_profile.medical_histories = (
-                await self._upsert_multiple_entities(
-                    patient_profile.medical_histories,
-                    medical_histories or [],
-                    PatientMedicalHistoryModel,
-                    "patient_id",
-                    patient_id,
-                    postgres_session=postgres_session,
-                )
+            patient_profile.medical_histories = await self._upsert_multiple_entities(
+                patient_profile.medical_histories,
+                medical_histories or [],
+                PatientMedicalHistoryModel,
+                "patient_id",
+                patient_id,
+                postgres_session=postgres_session,
             )
 
             updated = self._mark_profile_section_complete(
@@ -682,11 +672,11 @@ class PatientProfileService:
             updated_patient = await self.fetch_patient_profile(
                 patient_id, detailed=True, postgres_session=postgres_session
             )
-            await self.profile_vector_service.upsert_profile(
-                CorePatientProfile.from_orm(updated_patient).model_dump(
-                    mode="json"
-                )
+
+            profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
+                mode="json"
             )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -761,9 +751,7 @@ class PatientProfileService:
             result = await postgres_session.execute(stmt)
             fetched_care_providers = result.scalars().all()
 
-            fetched_ids = {
-                str(cp.care_provider_id) for cp in fetched_care_providers
-            }
+            fetched_ids = {str(cp.care_provider_id) for cp in fetched_care_providers}
             missing_ids = set(care_provider_ids) - fetched_ids
             if missing_ids:
                 raise_http_exception(
@@ -780,9 +768,7 @@ class PatientProfileService:
                     newly_added_providers.append(cp)
 
             if not newly_added_providers:
-                raise_http_exception(
-                    400, "All care providers already assigned."
-                )
+                raise_http_exception(400, "All care providers already assigned.")
 
             # Ensure changes are flushed before creating chats
             await postgres_session.flush()
@@ -824,17 +810,13 @@ class PatientProfileService:
     ) -> list[PatientModel]:
         try:
             # Fetch care provider
-            care_provider = (
-                await self.care_provider_service.fetch_care_provider(
-                    care_provider_id
-                )
+            care_provider = await self.care_provider_service.fetch_care_provider(
+                care_provider_id
             )
             care_provider = await postgres_session.merge(care_provider)
 
             if str(care_provider.health_facility_id) != health_facility_id:
-                raise_http_exception(
-                    400, "Care provider is in a different facility"
-                )
+                raise_http_exception(400, "Care provider is in a different facility")
 
             # Fetch all patients in batch
             patient_map = await self.fetch_patient_profiles(
@@ -912,9 +894,7 @@ class PatientProfileService:
                 raise_http_exception(400, "Patient is in a different facility")
 
             if not patient.care_providers:
-                raise_http_exception(
-                    400, "Patient has no assigned care providers"
-                )
+                raise_http_exception(400, "Patient has no assigned care providers")
 
             # Fetch care providers in batch
             stmt = select(CareProviderModel).where(
@@ -974,17 +954,13 @@ class PatientProfileService:
     ) -> list[str]:
         try:
             # Fetch care provider
-            care_provider = (
-                await self.care_provider_service.fetch_care_provider(
-                    care_provider_id
-                )
+            care_provider = await self.care_provider_service.fetch_care_provider(
+                care_provider_id
             )
             care_provider = await postgres_session.merge(care_provider)
 
             if str(care_provider.health_facility_id) != health_facility_id:
-                raise_http_exception(
-                    400, "Care provider is in a different facility"
-                )
+                raise_http_exception(400, "Care provider is in a different facility")
 
             # Fetch patients in batch
             patient_map = await self.fetch_patient_profiles(
@@ -1049,9 +1025,7 @@ class PatientProfileService:
             stmt = select(CareProviderModel).where(
                 CareProviderModel.code == care_provider_code
             )
-            care_provider = (
-                (await postgres_session.execute(stmt)).scalars().first()
-            )
+            care_provider = (await postgres_session.execute(stmt)).scalars().first()
 
             if not care_provider:
                 raise_http_exception(
@@ -1103,9 +1077,7 @@ class PatientProfileService:
         self, patient_id: str, *, postgres_session: AsyncSession
     ) -> bool:
         try:
-            stmt = select(
-                exists().where(PatientModel.patient_id == patient_id)
-            )
+            stmt = select(exists().where(PatientModel.patient_id == patient_id))
             exists_result = await postgres_session.scalar(stmt)
 
             if not exists_result:
@@ -1180,9 +1152,7 @@ class PatientProfileService:
 
         return new_entities
 
-    def _mark_profile_section_complete(
-        self, profile_completion, section: str
-    ) -> bool:
+    def _mark_profile_section_complete(self, profile_completion, section: str) -> bool:
         if not profile_completion[section]["is_complete"]:
             profile_completion[section]["is_complete"] = True
             return True

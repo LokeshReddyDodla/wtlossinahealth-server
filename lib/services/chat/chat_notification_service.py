@@ -3,7 +3,7 @@ from typing import List, Optional
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_participant_service import ChatParticipantService
-from lib.tasks.fcm_tasks import send_fcm_notification_task
+from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_sync
 
 
 class ChatNotificationService(BaseChatService):
@@ -53,7 +53,7 @@ class ChatNotificationService(BaseChatService):
             )
 
             # Trigger FCM notification task
-            send_fcm_notification_task.delay(
+            enqueue_fcm_notification_sync(
                 participants=filtered_participants,
                 notification_info=notification_info.dict(),
             )

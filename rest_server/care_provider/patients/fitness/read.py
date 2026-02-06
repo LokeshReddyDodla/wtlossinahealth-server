@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import get_fitness_report_service
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.services.fitness_report_service import FitnessReportService
+from lib.services.reports import FitnessReportService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,

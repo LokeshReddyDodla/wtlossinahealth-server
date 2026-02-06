@@ -34,7 +34,7 @@ from lib.services.care_provider_access_service import (
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 
 from lib.services.cgm_upload_service import CGMUploadService
 from lib.services.chat.chat_management_service import ChatManagementService
@@ -64,19 +64,14 @@ from lib.services.dashboard_metrics.package_metrics_service import (
     PackageMetricsService,
 )
 from lib.services.file_content_extractor import FileContentExtractorService
-from lib.services.fitness_report_service import FitnessReportService
+from lib.services.reports import FitnessReportService
 from lib.services.fitness_upload_service import FitnessUploadService
-from lib.services.fitness_vector_service.fitness_vector_service import (
-    FitnessVectorService,
-)
+from lib.services.vector import FitnessVectorService
 from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
-from lib.services.meal_analysis_service import MealAnalysisService
-from lib.services.meal_report_service import MealReportService
-from lib.services.meal_service import MealService
-from lib.services.meal_vector_service.meal_vector_service import (
-    MealVectorService,
-)
+from lib.services.meal import MealAnalysisService, MealService
+from lib.services.reports import MealReportService
+from lib.services.vector import MealVectorService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -90,9 +85,7 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
-    PatientProfileVectorService,
-)
+from lib.services.vector import PatientProfileVectorService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -108,24 +101,23 @@ from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
 from lib.services.prescription_service import PrescriptionService
-from lib.services.qdrant_search_engine.intent_cache import IntentCache
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
-from lib.services.sleep_report_service import SleepReportService
-from lib.services.smbg_vector_service.smbg_vector_service import (
-    SMBGVectorService,
-)
+from lib.services.reports import SleepReportService
+from lib.services.vector import SMBGVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
-from lib.utils.fitness.processor import FitnessStatsProcessor
-from lib.utils.cgm.processor import CGMStatsProcessor
-from lib.utils.meals.processor import MealStatsProcessor
-from lib.utils.sleep.sleep_stats_processor import SleepStatsProcessor
-from lib.utils.smbg.processor import SMBGStatsProcessor
-from lib.services.cgm_vector_service import CGMVectorService
+from lib.services.reports import (
+    FitnessStatsProcessor,
+    CGMStatsProcessor,
+    MealStatsProcessor,
+    SleepStatsProcessor,
+    SMBGStatsProcessor,
+)
+from lib.services.vector import CGMVectorService, VitalsVectorService
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
@@ -525,7 +517,7 @@ container.register(
     ),
 )
 
-# 🔹 Meal Service (Nested with Meal Analysis and Patient Profile)
+# 🔹 Meal Service
 container.register(
     MealService,
     lambda: MealService(
@@ -609,9 +601,7 @@ container.register(
 container.register(
     SMBGStatsProcessor,
     lambda: SMBGStatsProcessor(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=container.resolve(PatientProfileService),
-        patient_plan_service=container.resolve(PatientPlanService),
+        postgres_store=container.resolve(PostgresStore),
         meal_stats_processor=container.resolve(MealStatsProcessor),
     ),
 )
@@ -1013,23 +1003,20 @@ container.register(
     ),
 )
 
-
-# 🔹 Intent Cache
+# 🔹 Vitals Vector Service
 container.register(
-    IntentCache,
-    lambda: IntentCache(
-        intent_cache_store=cast(
-            CacheStore, container.resolve("ai_conversation_intent_context")
-        )
+    VitalsVectorService,
+    lambda: VitalsVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )
+
 
 # 🔹 Qdrant Search Engine
 container.register(
     QdrantSearchEngine,
     lambda: QdrantSearchEngine(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
-        intent_cache=cast(IntentCache, container.resolve(IntentCache)),
     ),
 )
 
