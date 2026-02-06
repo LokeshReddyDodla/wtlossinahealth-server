@@ -1,11 +1,9 @@
-from datetime import date, datetime
-from datetime import time as datetime_time
-from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
 from lib.schemas.fitness_stats import FitnessStats
-from lib.schemas.patient_meal import PatientMeal
 
 
 class DateRange(BaseModel):
@@ -142,12 +140,16 @@ class CGMStats(BaseModel):
     @property
     def start_date(self):
         """Backward compatibility: return start date from metadata."""
-        return datetime.fromisoformat(self.metadata.date_range.start.replace("Z", "+00:00"))
+        return datetime.fromisoformat(
+            self.metadata.date_range.start.replace("Z", "+00:00")
+        )
 
     @property
     def end_date(self):
         """Backward compatibility: return end date from metadata."""
-        return datetime.fromisoformat(self.metadata.date_range.end.replace("Z", "+00:00"))
+        return datetime.fromisoformat(
+            self.metadata.date_range.end.replace("Z", "+00:00")
+        )
 
     @property
     def report_type(self):
