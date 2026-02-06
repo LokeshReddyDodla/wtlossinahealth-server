@@ -107,6 +107,14 @@ async def process_cgm_upload(
 
     if not to_process:
         logger.info(f"No periods need processing for {patient_id}")
+
+        # TODO: Rethink this. We should only trigger vector generation if we have new reports.
+        await _trigger_vector_generation(
+            patient_id,
+            min(p["start"] for p in periods_normalized),
+            max(p["end"] for p in periods_normalized),
+        )
+
         return TaskResult(
             success=True,
             data={
