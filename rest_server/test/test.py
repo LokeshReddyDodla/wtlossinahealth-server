@@ -1,4 +1,5 @@
 from math import ceil
+from datetime import datetime
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -10,6 +11,7 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
     get_cgm_vector_service,
+    get_libreview_service,
     get_patient_profile_service,
 )
 from lib.schemas.patient import CorePatientProfile
@@ -32,6 +34,7 @@ from lib.models.patient_eating_habit import (
     PatientEatingHabit as PatientEatingHabitModel,
 )
 from rest_server.response_models import SuccessResponse
+from lib.services.libreview_service import LibreViewService
 
 router = APIRouter(prefix="/test")
 
@@ -54,6 +57,57 @@ async def test_api(request: Request):
     except Exception as e:
         logger.error(f"Failed to insert document: {str(e)}")
         return {"message": "failed to insert", "error": str(e)}
+
+
+@router.post(path="/libreview/sync/all", tags=["Test"])
+async def sync_all_libreview_to_sqs(
+    libreview_service: LibreViewService = Depends(get_libreview_service),
+    requested_by: str = "system_bulk_sync",
+):
+    """Push all LibreView-connected patients to SQS for sync."""
+    try:
+        patients = await libreview_service.get_patients_with_libreview()  # type: ignore
+        queued = 0
+        skipped = 0
+        errors = []
+
+        for patient in patients:
+            patient_id = str(patient.patient_id)
+            libreview = (
+                patient.connected_apps.libreview
+                if patient.connected_apps
+                else None
+            )
+            if not libreview:
+                skipped += 1
+                continue
+
+            payload = {
+                "patient_id": patient_id,
+                "libreview_id": libreview.libreview_id,
+                "requested_by": requested_by,
+                "timestamp": int(datetime.utcnow().timestamp() * 1000),
+            }
+
+            libreview_service.libreview_sync_queue.send_message(
+                payload=payload,
+            )
+            queued += 1
+
+        return {
+            "message": "LibreView sync queued for all patients",
+            "data": {
+                "total_patients": len(patients),
+                "queued": queued,
+                "skipped": skipped,
+                "errors": errors,
+            },
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 
 @router.delete(path="/cgm-reports/duplicates", tags=["Test"])
