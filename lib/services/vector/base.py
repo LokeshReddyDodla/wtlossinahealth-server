@@ -3,7 +3,7 @@
 import logging
 from abc import ABC
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from qdrant_client.models import PointIdsList, PointStruct
@@ -109,6 +109,44 @@ class BaseVectorService(ABC):
             MD5 hash string
         """
         return self.point_id_generator.generate_simple(entity_id)
+
+    def _extract_dates_from_report(
+        self, report_data: Dict[str, Any], report_id: Optional[str] = None
+    ) -> Tuple[datetime, datetime]:
+        """
+        Extract start and end dates from report metadata.date_range.
+
+        Args:
+            report_data: Report data dictionary
+            report_id: Optional report ID for error messages
+
+        Returns:
+            Tuple of (start_time, end_time) as datetime objects
+
+        Raises:
+            ValueError: If metadata.date_range is missing or dates cannot be parsed
+        """
+        from lib.utils.datetime_utils import parse_datetime
+
+        metadata = report_data.get("metadata", {})
+        date_range = metadata.get("date_range", {})
+
+        if not date_range:
+            report_id_str = f" for report_id: {report_id}" if report_id else ""
+            raise ValueError(
+                f"Report data must contain 'metadata.date_range' structure{report_id_str}"
+            )
+
+        start_time = parse_datetime(date_range.get("start"))
+        end_time = parse_datetime(date_range.get("end"))
+
+        if not start_time or not end_time:
+            report_id_str = f" for report_id: {report_id}" if report_id else ""
+            raise ValueError(
+                f"Failed to parse start_date or end_date from metadata.date_range{report_id_str}"
+            )
+
+        return start_time, end_time
 
     def _build_base_payload(
         self,

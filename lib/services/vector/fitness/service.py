@@ -86,8 +86,7 @@ class FitnessVectorService(BaseVectorService):
         report_data: Dict[str, Any],
     ) -> List[Any]:
         """Process a single report period."""
-        start_time = report_data["start_date"]
-        end_time = report_data["end_date"]
+        start_time, end_time = self._extract_dates_from_report(report_data, report_id)
 
         point_infos: List[Dict[str, Any]] = []
 
