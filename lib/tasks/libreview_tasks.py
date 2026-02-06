@@ -60,18 +60,18 @@ async def _sync_all_libreview_async():
 async def _sync_patient_libreview(
     patient: PatientModel, libreview_service: LibreViewService
 ) -> dict:
-    libreview = patient.connected_apps.libreview
+    # libreview = patient.connected_apps.libreview
     patient_id = str(patient.patient_id)
 
     # Check if sync is needed (optional)
-    if libreview.last_sync_timestamp and (
-        datetime.utcnow() - libreview.last_sync_timestamp
-    ) < timedelta(hours=2):
-        return {
-            "patient_id": patient_id,
-            "status": "skipped",
-            "reason": "Sync was performed recently",
-        }
+    # if libreview.last_sync_timestamp and (
+    #     datetime.utcnow() - libreview.last_sync_timestamp
+    # ) < timedelta(hours=2):
+    #     return {
+    #         "patient_id": patient_id,
+    #         "status": "skipped",
+    #         "reason": "Sync was performed recently",
+    #     }
 
     # Perform the actual sync
     sync_result = await libreview_service.sync_libreview(
