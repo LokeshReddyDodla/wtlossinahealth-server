@@ -259,13 +259,14 @@ class HealthQueryAgentService:
             source_messages=source_messages,
         )
 
-        if intent and intent.is_ready:
-            try:
-                await self.app.aupdate_state(
-                    config, {"messages": RESET, "intent": None}
-                )
-            except Exception:
-                pass
+        # TODO: Experiment without resetting the state
+        # if intent and intent.is_ready:
+        #     try:
+        #         await self.app.aupdate_state(
+        #             config, {"messages": RESET, "intent": None}
+        #         )
+        #     except Exception:
+        #         pass
 
         if debug:
             return QueryResponse(**response_data)
