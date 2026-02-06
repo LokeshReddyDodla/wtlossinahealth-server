@@ -167,7 +167,7 @@ async def _generate_monthly_reports(
         processor = get_sleep_stats_processor()
         service = get_sleep_report_service()
 
-        reports = processor.generate_report(
+        reports = await processor.generate_report(
             patient_id,
             start_date,
             end_date,
