@@ -1,5 +1,6 @@
 from math import ceil
 from datetime import datetime
+import hashlib
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -90,6 +91,9 @@ async def sync_all_libreview_to_sqs(
             }
 
             libreview_service.libreview_sync_queue.send_message(
+                deduplication_id=hashlib.sha256(
+                    f"{libreview.libreview_id}:{patient_id}".encode()
+                ).hexdigest()[:128],
                 payload=payload,
             )
             queued += 1
