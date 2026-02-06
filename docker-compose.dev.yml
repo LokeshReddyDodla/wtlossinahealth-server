@@ -1,26 +1,25 @@
 services:
+  # ==========================================
+  # Core Application
+  # ==========================================
   aihealth-api:
     container_name: aihealth-api
     build:
       context: "."
       dockerfile: ./deployment/rest_server/Dockerfile
     image: aihealth-api:latest
-    depends_on:
-      - aihealth-redis
-      - aihealth-postgres
-      - aihealth-mongo
-      - aihealth-clickhouse
-      - aihealth-qdrant
     restart: no
     ports:
       - 8000:8000
     environment:
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # JWT
       - JWT_ALGORITHM
       - JWT_SECRET
       - JWT_AUDIENCE
+      # Redis
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # PostgreSQL
       - POSTGRES_URL=${POSTGRES_URL}
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
       - POSTGRES_URL_SYNC=${POSTGRES_URL_SYNC}
@@ -28,19 +27,137 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # MongoDB
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
+      # Celery
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
-      - .:/src # for dev use only
+      - .:/src
+    depends_on:
+      - aihealth-redis
+      - aihealth-postgres
+      - aihealth-mongo
+      - aihealth-clickhouse
+      - aihealth-qdrant
 
+  # ==========================================
+  # Databases
+  # ==========================================
+  aihealth-postgres:
+    container_name: aihealth-postgres
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  aihealth-mongo:
+    container_name: aihealth-mongo
+    image: mongo:latest
+    restart: unless-stopped
+    ports:
+      - 27017:27017
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
+      - MONGO_REPLICA_SET_NAME=rs0
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
+    command:
+      - mongod
+      - --replSet
+      - rs0
+      - --bind_ip_all
+      - --port
+      - "27017"
+      - --auth
+      - --keyFile
+      - /etc/mongo-keyfile/mongodb-keyfile
+
+  aihealth-redis:
+    container_name: aihealth-redis
+    image: redis:alpine
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    command:
+      - "--requirepass ${REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+
+  aihealth-clickhouse:
+    container_name: aihealth-clickhouse
+    image: clickhouse/clickhouse-server:25.8
+    restart: no
+    ports:
+      - 8123:8123
+      - 9000:9000
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_MAX_THREADS=4
+      - CLICKHOUSE_BACKGROUND_POOL_SIZE=2
+      - CLICKHOUSE_BACKGROUND_MERGE_POOL_SIZE=2
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  aihealth-qdrant:
+    container_name: aihealth-qdrant
+    image: qdrant/qdrant:v1.11.0
+    restart: unless-stopped
+    ports:
+      - 6333:6333
+      - 6334:6334
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__HTTP_PORT=6333
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  aihealth-arq-redis:
+    container_name: aihealth-arq-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - 6380:6379
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+      - --requirepass
+      - ${ARQ_REDIS_PASSWORD}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - arq_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ARQ_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Task Workers - Celery (Legacy)
+  # ==========================================
   aihealth-celery-default:
     container_name: aihealth-celery-default
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
       --pool=custom --loglevel=info --concurrency=4 -Q default
@@ -48,26 +165,25 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - QDRANT_HOST=${QDRANT_HOST}
       - QDRANT_PORT=${QDRANT_PORT}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
     volumes:
       - celery_logs:/var/log/celery
       - celery_data:/var/lib/celery
     depends_on:
       - aihealth-redis
       - aihealth-api
-    restart: unless-stopped
-    # user: "1000:1000"
 
   aihealth-celery-reports:
     container_name: aihealth-celery-reports
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
       --pool=custom --loglevel=info --concurrency=4 -Q cgm_reports
@@ -76,22 +192,21 @@ services:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
     volumes:
       - celery_logs:/var/log/celery
       - celery_data:/var/lib/celery
     depends_on:
       - aihealth-redis
       - aihealth-api
-    restart: unless-stopped
-    # user: "1000:1000"
 
   aihealth-celery-vectors:
     container_name: aihealth-celery-vectors
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
       --pool=custom --loglevel=info --concurrency=2 -Q vector_sync
@@ -107,13 +222,14 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-api
-    restart: unless-stopped
-    # user: "1000:1000"
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat
     image: aihealth-api:latest
-    command: /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery beat --loglevel=info
+    restart: unless-stopped
+    command: >
+      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery beat
+      --loglevel=info
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
@@ -123,57 +239,42 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-api
-    restart: unless-stopped
 
   # ==========================================
-  # ARQ Workers (Redis-based async task queue)
+  # Task Workers - ARQ
   # ==========================================
-  
-  aihealth-arq-redis:
-    container_name: aihealth-arq-redis
-    image: redis:7-alpine
-    command: >
-      redis-server
-      --appendonly yes
-      --requirepass ${ARQ_REDIS_PASSWORD}
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-    restart: unless-stopped
-    ports:
-      - 6380:6379
-    volumes:
-      - arq_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${ARQ_REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   aihealth-arq-worker:
     container_name: aihealth-arq-worker
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.WorkerSettings
     environment:
+      # ARQ Redis
       - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
       - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
       - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
       - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      # Redis
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # PostgreSQL
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # MongoDB
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Qdrant
       - QDRANT_HOST=${QDRANT_HOST}
       - QDRANT_PORT=${QDRANT_PORT}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - arq_logs:/var/log/arq
-      - .:/src  # for dev use only
+      - .:/src
     depends_on:
       aihealth-arq-redis:
         condition: service_healthy
@@ -183,33 +284,39 @@ services:
         condition: service_started
       aihealth-mongo:
         condition: service_started
-    restart: unless-stopped
 
   aihealth-arq-worker-reports:
     container_name: aihealth-arq-worker-reports
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.ReportsWorkerSettings
     environment:
+      # ARQ Redis
       - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
       - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
       - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
       - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      # Redis
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # PostgreSQL
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # MongoDB
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Qdrant
       - QDRANT_HOST=${QDRANT_HOST}
       - QDRANT_PORT=${QDRANT_PORT}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - arq_logs:/var/log/arq
-      - .:/src  # for dev use only
+      - .:/src
     depends_on:
       aihealth-arq-redis:
         condition: service_healthy
@@ -219,33 +326,39 @@ services:
         condition: service_started
       aihealth-mongo:
         condition: service_started
-    restart: unless-stopped
 
   aihealth-arq-worker-vectors:
     container_name: aihealth-arq-worker-vectors
     image: aihealth-api:latest
+    restart: unless-stopped
     command: >
       /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.VectorsWorkerSettings
     environment:
+      # ARQ Redis
       - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
       - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
       - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
       - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      # Redis
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # PostgreSQL
       - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      # MongoDB
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Qdrant
       - QDRANT_HOST=${QDRANT_HOST}
       - QDRANT_PORT=${QDRANT_PORT}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - arq_logs:/var/log/arq
-      - .:/src  # for dev use only
+      - .:/src
     depends_on:
       aihealth-arq-redis:
         condition: service_healthy
@@ -257,157 +370,67 @@ services:
         condition: service_started
       aihealth-qdrant:
         condition: service_started
-    restart: unless-stopped
 
-  aihealth-redis:
-    container_name: aihealth-redis
-    image: redis:alpine
-    command:
-      - "--requirepass ${REDIS_PASSWORD}"
-    restart: unless-stopped
-    ports:
-      - 6379:6379
-    volumes:
-      - redis_data:/data
-
-  aihealth-postgres:
-    container_name: aihealth-postgres
-    image: postgres:16.4-alpine
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-    ports:
-      - 5432:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  aihealth-mongo:
-    container_name: aihealth-mongo
-    image: mongo:latest
-    restart: unless-stopped
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
-      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
-      - MONGO_REPLICA_SET_NAME=rs0
-    ports:
-      - 27017:27017
-    volumes:
-      - mongo_data:/data/db
-      - ./mongodb-keyfile:/etc/mongo-keyfile/mongodb-keyfile
-    command:
-      [
-        "mongod",
-        "--replSet",
-        "rs0",
-        "--bind_ip_all",
-        "--port",
-        "27017",
-        "--auth",
-        "--keyFile",
-        "/etc/mongo-keyfile/mongodb-keyfile",
-      ]
-    # entrypoint: [ "/bin/bash", "-c", "chown mongodb:mongodb /etc/mongo-keyfile/mongodb-keyfile && chmod 600 /etc/mongo-keyfile/mongodb-keyfile && exec mongod --replSet rs0 --bind_ip_all --port 27017 --auth --keyFile /etc/mongo-keyfile/mongodb-keyfile" ]
-
-  aihealth-clickhouse:
-    container_name: aihealth-clickhouse
-    image: clickhouse/clickhouse-server:25.8
-    restart: no
-    ports:
-      - 8123:8123 # HTTP interface
-      - 9000:9000 # Native client
-    environment:
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_MAX_THREADS=4
-      - CLICKHOUSE_BACKGROUND_POOL_SIZE=2
-      - CLICKHOUSE_BACKGROUND_MERGE_POOL_SIZE=2
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-
-  aihealth-nginx:
-    container_name: aihealth-nginx
-    build:
-      context: "."
-      dockerfile: "./deployment/nginx/Dockerfile"
-    restart: no
-    ports:
-      - 80:80
-      - 443:443
-    depends_on:
-      - aihealth-api
-    volumes:
-      - ssl_certs:/etc/ssl
-
-  aihealth-qdrant:
-    container_name: aihealth-qdrant
-    image: qdrant/qdrant:v1.11.0
-    restart: unless-stopped
-    ports:
-      - "6333:6333" # REST API
-      - "6334:6334" # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__GRPC_PORT: 6334
-      QDRANT__SERVICE__HTTP_PORT: 6333
-
+  # ==========================================
+  # Development Tools
+  # ==========================================
   pgadmin:
-    image: dpage/pgadmin4
     container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-      PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: "False"
-      PGADMIN_CONFIG_WTF_CSRF_ENABLED: "False"
+    image: dpage/pgadmin4
+    restart: unless-stopped
     ports:
-      - "8081:80"
+      - 8081:80
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+      - PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT=False
+      - PGADMIN_CONFIG_WTF_CSRF_ENABLED=False
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
   redisinsight:
-    image: redislabs/redisinsight:latest
     container_name: redisinsight
+    image: redislabs/redisinsight:latest
+    restart: unless-stopped
     ports:
-      - "5540:5540"
+      - 5540:5540
     volumes:
       - redisinsight_data:/data
 
   flower:
-    image: mher/flower
     container_name: flower
-    command: celery --broker=${CELERY_BROKER_URL} flower --port=5555
+    image: mher/flower
+    restart: unless-stopped
     ports:
-      - "5555:5555"
+      - 5555:5555
     environment:
       - CELERY_BROKER_URL=${CELERY_BROKER_URL}
     depends_on:
       - aihealth-redis
 
   mongo-express:
-    image: mongo-express:latest
     container_name: mongo-express
+    image: mongo-express:latest
+    restart: unless-stopped
+    ports:
+      - 8082:8081
     environment:
       - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
       - ME_CONFIG_MONGODB_SERVER=aihealth-mongo
       - ME_CONFIG_BASICAUTH_USERNAME=${MONGOEXPRESS_LOGIN}
       - ME_CONFIG_BASICAUTH_PASSWORD=${MONGOEXPRESS_PASSWORD}
-    ports:
-      - "8082:8081"
-    depends_on:
-      - aihealth-mongo
     volumes:
       - ./config.js:/node_modules/mongo-express/config.default.js
+    depends_on:
+      - aihealth-mongo
 
   cloudbeaver:
-    image: dbeaver/cloudbeaver:latest
     container_name: cloudbeaver
+    image: dbeaver/cloudbeaver:latest
     restart: unless-stopped
     ports:
-      - "8084:8978"
+      - 8084:8978
     environment:
       - CB_ADMIN_NAME=${CB_ADMIN_NAME}
       - CB_ADMIN_PASSWORD=${CB_ADMIN_PASSWORD}
@@ -420,11 +443,14 @@ services:
     image: portainer/portainer-ce:latest
     restart: unless-stopped
     ports:
-      - "9001:9000"
+      - 9001:9000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
 
+  # ==========================================
+  # Infrastructure
+  # ==========================================
   cloudflared:
     container_name: cloudflared
     image: cloudflare/cloudflared:latest
@@ -435,22 +461,12 @@ services:
     volumes:
       - ./cloudflared:/etc/cloudflared
 
-  # meal_analysis_service:
-  #   build:
-  #     context: ./lib/services/meal_analysis_service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8001:8000"
-  #   environment:
-  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
-  #   restart: unless-stopped
-
   loki:
     container_name: loki
     image: grafana/loki:latest
     restart: unless-stopped
     ports:
-      - "3100:3100"
+      - 3100:3100
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - loki_data:/loki
@@ -460,11 +476,11 @@ services:
     container_name: promtail
     image: grafana/promtail:latest
     restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./deployment/promtail-config.yml:/etc/promtail/config.yml:ro
-    command: -config.file=/etc/promtail/config.yml
     depends_on:
       - loki
 
@@ -473,7 +489,7 @@ services:
     image: grafana/grafana:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - 3000:3000
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -484,27 +500,31 @@ services:
     depends_on:
       - loki
 
-  
 volumes:
+  # Application
   api_logs:
   alembic_data:
-  redis_data:
+  # Databases
   postgres_data:
   mongo_data:
+  redis_data:
   clickhouse_data:
   qdrant_data:
-  ssl_certs:
-  redisinsight_data:
-  cloudbeaver_workspace:
-  portainer_data:
-  pgadmin_data:
+  arq_redis_data:
+  # Workers
   celery_logs:
   celery_data:
   celery_beat_logs:
+  arq_logs:
+  # Development Tools
+  pgadmin_data:
+  redisinsight_data:
+  cloudbeaver_workspace:
+  portainer_data:
+  # Infrastructure
+  ssl_certs:
   loki_data:
   grafana_data:
-  arq_redis_data:
-  arq_logs:
 
 networks:
   shared_network:
