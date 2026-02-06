@@ -212,7 +212,7 @@ async def _trigger_vector_generation(
             start_date,
             vector_end,
             _job_id=job_id,
-            _queue_name=Queues.VECTOR_SYNC,
+            _queue_name=Queues.VECTORS,
         )
 
         logger.info(f"Triggered fitness vector generation for {patient_id}")

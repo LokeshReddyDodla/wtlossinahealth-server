@@ -8,8 +8,8 @@ class Queues:
     """Queue names for task routing."""
 
     DEFAULT = "arq:queue:default"
-    CGM_REPORTS = "arq:queue:cgm:report-generation"
-    VECTOR_SYNC = "arq:queue:vector:sync"
+    REPORTS = "arq:queue:reports"
+    VECTORS = "arq:queue:vectors"
 
 
 def get_arq_redis_settings() -> RedisSettings:

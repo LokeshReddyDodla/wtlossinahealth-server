@@ -69,7 +69,7 @@ async def _enqueue_daily_meal_report(patient_id: str, report_date: date) -> str 
         patient_id,
         report_date,
         _job_id=job_id,
-        _queue_name=Queues.DEFAULT,
+        _queue_name=Queues.REPORTS,
     )
 
     if job:

@@ -205,7 +205,7 @@ async def _enqueue_cgm_reports(patient_id: str, periods: List[Dict]) -> Optional
         patient_id,
         periods,
         _job_id=job_id,
-        _queue_name=Queues.CGM_REPORTS,
+        _queue_name=Queues.REPORTS,
     )
 
     if job:

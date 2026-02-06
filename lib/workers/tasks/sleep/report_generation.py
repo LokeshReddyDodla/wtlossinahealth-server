@@ -221,7 +221,7 @@ async def _enqueue_sleep_upload(
         start_date,
         end_date,
         _job_id=job_id,
-        _queue_name=Queues.DEFAULT,
+        _queue_name=Queues.REPORTS,
     )
 
     if job:

@@ -49,9 +49,9 @@ services:
       - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
       - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - QDRANT_HOST=${QDRANT_HOST:-aihealth-qdrant}
-      - QDRANT_PORT=${QDRANT_PORT:-6333}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-patient_data}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
@@ -168,6 +168,9 @@ services:
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
     volumes:
       - arq_logs:/var/log/arq
       - .:/src  # for dev use only
@@ -182,11 +185,11 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  aihealth-arq-worker-cgm:
-    container_name: aihealth-arq-worker-cgm
+  aihealth-arq-worker-reports:
+    container_name: aihealth-arq-worker-reports
     image: aihealth-api:latest
     command: >
-      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.CGMReportWorkerSettings
+      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.ReportsWorkerSettings
     environment:
       - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
       - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
@@ -200,6 +203,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - MONGO_URL=${MONGO_URL}
       - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
     volumes:
       - arq_logs:/var/log/arq
       - .:/src  # for dev use only
@@ -212,7 +219,45 @@ services:
         condition: service_started
       aihealth-mongo:
         condition: service_started
-    restart: no
+    restart: unless-stopped
+
+  aihealth-arq-worker-vectors:
+    container_name: aihealth-arq-worker-vectors
+    image: aihealth-api:latest
+    command: >
+      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.VectorsWorkerSettings
+    environment:
+      - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
+      - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
+      - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
+      - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=${QDRANT_HOST}
+      - QDRANT_PORT=${QDRANT_PORT}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
+    volumes:
+      - arq_logs:/var/log/arq
+      - .:/src  # for dev use only
+    depends_on:
+      aihealth-arq-redis:
+        condition: service_healthy
+      aihealth-api:
+        condition: service_started
+      aihealth-postgres:
+        condition: service_started
+      aihealth-mongo:
+        condition: service_started
+      aihealth-qdrant:
+        condition: service_started
+    restart: unless-stopped
 
   aihealth-redis:
     container_name: aihealth-redis

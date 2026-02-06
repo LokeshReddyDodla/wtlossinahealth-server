@@ -75,7 +75,7 @@ async def _enqueue_smbg_vector(
         reading_id,
         reading_data,
         _job_id=job_id,
-        _queue_name=Queues.DEFAULT,
+        _queue_name=Queues.VECTORS,
     )
 
     if job:

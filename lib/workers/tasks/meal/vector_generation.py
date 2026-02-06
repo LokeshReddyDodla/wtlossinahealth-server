@@ -73,7 +73,7 @@ async def _enqueue_meal_vector(
         meal_id,
         meal_data,
         _job_id=job_id,
-        _queue_name=Queues.DEFAULT,
+        _queue_name=Queues.VECTORS,
     )
 
     if job:

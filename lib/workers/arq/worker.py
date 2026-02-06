@@ -42,7 +42,7 @@ async def shutdown(ctx: Dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    """Default worker - listens to default queue."""
+    """Default worker - lightweight tasks."""
 
     redis_settings = get_arq_redis_settings()
     functions = _all_tasks
@@ -50,29 +50,30 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     queue_name = Queues.DEFAULT
-    max_jobs = 100
-    job_timeout = timedelta(minutes=10)
+    max_jobs = 200
+    job_timeout = timedelta(minutes=2)
     keep_result = timedelta(hours=24)
     retry_jobs = True
     max_tries = 3
 
 
-class CGMReportWorkerSettings(WorkerSettings):
-    """CGM-specific worker with dedicated queue."""
+class ReportsWorkerSettings(WorkerSettings):
+    """Reports worker - report generation tasks."""
 
     redis_settings = WorkerSettings.redis_settings
     functions = WorkerSettings.functions
-    queue_name = Queues.CGM_REPORTS
+    queue_name = Queues.REPORTS
     max_jobs = 50
     job_timeout = timedelta(minutes=15)
+    max_tries = 2
 
 
-class VectorSyncWorkerSettings(WorkerSettings):
-    """Vector sync worker."""
+class VectorsWorkerSettings(WorkerSettings):
+    """Vectors worker - vector generation tasks."""
 
     redis_settings = WorkerSettings.redis_settings
     functions = WorkerSettings.functions
-    queue_name = Queues.VECTOR_SYNC
-    max_jobs = 20
+    queue_name = Queues.VECTORS
+    max_jobs = 30
     job_timeout = timedelta(minutes=20)
     max_tries = 2
