@@ -6,9 +6,7 @@ from celery.schedules import crontab
 celery = Celery(
     "aihealth",
     broker=config("CELERY_BROKER_URL", default="redis://localhost:6379/0"),
-    backend=config(
-        "CELERY_RESULT_BACKEND", default="redis://localhost:6379/0"
-    ),
+    backend=config("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0"),
 )
 
 celery.conf.update(
@@ -19,15 +17,15 @@ celery.conf.update(
     enable_utc=True,
     broker_connection_retry_on_startup=True,
     beat_schedule={
-        "sync-libreview-daily": {
-            "task": "lib.tasks.libreview_tasks.sync_all_libreview",
-            "schedule": crontab(
-                minute="0", hour="8,11,18"
-            ),  # Runs at 8:00, 11:00, and 18:00
-            "options": {
-                "expires": 60 * 60,  # 1 hour expiration
-            },
-        },
+        # "sync-libreview-daily": {
+        #     "task": "lib.tasks.libreview_tasks.sync_all_libreview",
+        #     "schedule": crontab(
+        #         minute="0", hour="8,11,18"
+        #     ),  # Runs at 8:00, 11:00, and 18:00
+        #     "options": {
+        #         "expires": 60 * 60,  # 1 hour expiration
+        #     },
+        # },
         # "trigger-cgm-vector-upsert-daily": {
         #     "task": "lib.tasks.cgm_tasks.trigger_cgm_vector_upsert_for_all_patients",
         #     "schedule": crontab(minute="0", hour="1"),  # 1:00 AM every day
@@ -35,28 +33,28 @@ celery.conf.update(
         #         "expires": 60 * 60,  # 1 hour expiration
         #     },
         # },
-        "meal-reminder-breakfast": {
-            "task": "lib.tasks.meal_reminder.time_based_tasks.check_breakfast_reminders",
-            "schedule": crontab(
-                hour="10", minute="30"
-            ),  # After breakfast window ends
-        },
-        "meal-reminder-lunch": {
-            "task": "lib.tasks.meal_reminder.time_based_tasks.check_lunch_reminders",
-            "schedule": crontab(
-                hour="14", minute="30"
-            ),  # After lunch window ends
-        },
-        "meal-reminder-dinner": {
-            "task": "lib.tasks.meal_reminder.time_based_tasks.check_dinner_reminders",
-            "schedule": crontab(
-                hour="22", minute="30"
-            ),  # After dinner window ends
-        },
-        "meal-reminder-missed-streak": {
-            "task": "lib.tasks.meal_reminder.general_check_task.check_missed_meals_streaks",
-            "schedule": crontab(hour="9", minute="15"),  # Once every morning
-        },
+        # "meal-reminder-breakfast": {
+        #     "task": "lib.tasks.meal_reminder.time_based_tasks.check_breakfast_reminders",
+        #     "schedule": crontab(
+        #         hour="10", minute="30"
+        #     ),  # After breakfast window ends
+        # },
+        # "meal-reminder-lunch": {
+        #     "task": "lib.tasks.meal_reminder.time_based_tasks.check_lunch_reminders",
+        #     "schedule": crontab(
+        #         hour="14", minute="30"
+        #     ),  # After lunch window ends
+        # },
+        # "meal-reminder-dinner": {
+        #     "task": "lib.tasks.meal_reminder.time_based_tasks.check_dinner_reminders",
+        #     "schedule": crontab(
+        #         hour="22", minute="30"
+        #     ),  # After dinner window ends
+        # },
+        # "meal-reminder-missed-streak": {
+        #     "task": "lib.tasks.meal_reminder.general_check_task.check_missed_meals_streaks",
+        #     "schedule": crontab(hour="9", minute="15"),  # Once every morning
+        # },
         "weightloss-agent-daily-cycle": {
             "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
             "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
@@ -74,20 +72,20 @@ celery.conf.update(
                 "expires": 60 * 60 * 2,  # 2 hours expiration
             },
         },
-        "update-package-assignment-statuses": {
-            "task": "lib.tasks.package_assignment_tasks.update_package_assignment_statuses",
-            "schedule": crontab(hour="1", minute="0"),  # 1:00 AM IST daily
-            "options": {
-                "expires": 60 * 60,  # 1 hour expiration
-            },
-        },
-        "deactivate-inactive-devices": {
-            "task": "lib.tasks.other_tasks.deactivate_inactive_devices",
-            "schedule": crontab(day_of_week=0, hour="2", minute="0"),  # Sunday 2:00 AM IST weekly
-            "options": {
-                "expires": 60 * 60 * 2,  # 2 hours expiration
-            },
-        },
+        # "update-package-assignment-statuses": {
+        #     "task": "lib.tasks.package_assignment_tasks.update_package_assignment_statuses",
+        #     "schedule": crontab(hour="1", minute="0"),  # 1:00 AM IST daily
+        #     "options": {
+        #         "expires": 60 * 60,  # 1 hour expiration
+        #     },
+        # },
+        # "deactivate-inactive-devices": {
+        #     "task": "lib.tasks.other_tasks.deactivate_inactive_devices",
+        #     "schedule": crontab(day_of_week=0, hour="2", minute="0"),  # Sunday 2:00 AM IST weekly
+        #     "options": {
+        #         "expires": 60 * 60 * 2,  # 2 hours expiration
+        #     },
+        # },
     },
 )
 
