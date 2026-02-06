@@ -174,29 +174,41 @@ class FitnessVectorService(BaseVectorService):
         self, report_data: Dict[str, Any], *_
     ) -> List[Dict[str, Any]]:
         """Process event sections."""
+        from lib.utils.datetime_utils import parse_datetime
+
         results: List[Dict[str, Any]] = []
         events = report_data.get("inactive_periods", [])
 
         for evt in events:
+            # Parse string dates to datetime objects
+            start_time = parse_datetime(evt["start_time"])
+            end_time = parse_datetime(evt["end_time"])
+
+            if not start_time or not end_time:
+                logger.warning(
+                    f"Skipping inactive period event due to invalid dates: {evt}"
+                )
+                continue
+
             data = {
-                "start_time": evt["start_time"],
-                "end_time": evt["end_time"],
+                "start_time": start_time,
+                "end_time": end_time,
                 "inactive_duration": evt["inactive_duration"],
             }
 
             text, payload = self.processor.generate_section_summary(
                 "fitness_inactive_periods",
                 data,
-                evt["start_time"],
-                evt["end_time"],
+                start_time,
+                end_time,
             )
 
             results.append(
                 {
                     "data_type": "fitness_inactive_periods",
                     "text_repr": text,
-                    "start_time": evt["start_time"],
-                    "end_time": evt["end_time"],
+                    "start_time": start_time,
+                    "end_time": end_time,
                     "additional_payload": payload,
                 }
             )
