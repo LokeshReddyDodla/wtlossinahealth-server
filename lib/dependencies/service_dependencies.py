@@ -126,6 +126,9 @@ from lib.services.weightloss_agent.task_service import TaskService
 from lib.services.weightloss_agent.agentic_chat_service import (
     AgenticChatService,
 )
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
 
@@ -314,6 +317,10 @@ def get_task_service() -> TaskService:
 
 def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
+
+
+def get_coach_messenger_service() -> CoachMessengerService:
+    return cast(CoachMessengerService, container.resolve(CoachMessengerService))
 
 
 def get_prescription_analysis_service() -> PrescriptionAnalysisService:

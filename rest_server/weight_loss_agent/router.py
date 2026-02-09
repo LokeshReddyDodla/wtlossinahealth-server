@@ -4,15 +4,24 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status, HTTPException, Query
 
+from lib.core.constants import ProfileTypeEnum
+from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
+from lib.dependencies.patient_access import (
+    resolve_patient_access,
+    verify_enrollment_access,
+    verify_enrollment_access_for_care_provider,
+)
 from lib.dependencies.service_dependencies import (
     get_agentic_chat_service,
+    get_care_provider_profile_service,
     get_glp1_injection_service,
     get_weight_loss_agent_service,
 )
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
+from lib.services.care_provider_profile_service import CareProviderProfileService
 from lib.schemas.weight_loss_agent import (
     ChatRequest,
     HealthIndicator,
@@ -98,20 +107,31 @@ router = APIRouter(prefix="/weight-loss-agent", tags=["Weight Loss Agent"])
 async def enroll_patient(
     enrollment_data: WeightLossEnrollmentCreate,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    
-    # TODO: Uncomment for production - care provider auth required
-    #  current_care_provider: CareProvider = Depends(
-    #      get_current_care_provider(
-    #          action=CareProviderPermissionAction.CREATE,
-    #          feature=CareProviderFeature.PATIENTS,
-    #          check_permissions=True,
-    #          log_activity=True,
-    #      )
-    #  ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProvider = Depends(
+        get_current_care_provider(
+            action=CareProviderPermissionAction.CREATE,
+            feature=CareProviderFeature.PATIENTS,
+            check_permissions=True,
+            log_activity=True,
+        )
+    ),
 ):
     """Enroll a patient in the weight loss program (doctor only)"""
 
     try:
+        # Verify the care provider is assigned to this patient
+        if not await care_provider_service.is_patient_assigned(
+            care_provider_id=current_care_provider.care_provider_id,
+            patient_id=enrollment_data.patient_id,
+        ):
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="You do not have access to this patient",
+            )
+
         enrollment = await weight_loss_service.enroll_patient_in_weight_loss_program(
             enrollment_data
         )
@@ -138,12 +158,27 @@ async def analyze_weight_loss_progress_get(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Generate AI analysis of weight loss progress (GET variant)"""
 
     try:
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
+
         from datetime import datetime
 
         start = datetime.fromisoformat(start_date) if start_date else None
@@ -172,11 +207,28 @@ async def update_enrollment(
     enrollment_id: UUID,
     update_data: WeightLossEnrollmentUpdate,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    current_care_provider: CareProvider = Depends(get_current_care_provider),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProvider = Depends(
+        get_current_care_provider(
+            action=CareProviderPermissionAction.UPDATE,
+            feature=CareProviderFeature.PATIENTS,
+            check_permissions=True,
+            log_activity=True,
+        )
+    ),
 ):
     """Update patient enrollment details"""
 
     try:
+        await verify_enrollment_access_for_care_provider(
+            enrollment_id=enrollment_id,
+            care_provider=current_care_provider,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
+
         enrollment = await weight_loss_service.update_patient_enrollment(enrollment_id, update_data)
 
         return SuccessResponse(
@@ -199,12 +251,26 @@ async def update_enrollment(
 async def get_patient_enrollment(
     patient_id: UUID,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Get patient's weight loss enrollment"""
 
     try:
-        enrollment = await weight_loss_service.get_patient_enrollment_by_patient_id(patient_id)
+        verified_patient_id = await resolve_patient_access(
+            actor=actor,
+            patient_id=patient_id,
+            care_provider_service=care_provider_service,
+        )
+        enrollment = await weight_loss_service.get_patient_enrollment_by_patient_id(verified_patient_id)
 
         if not enrollment:
             raise_http_exception(
@@ -234,8 +300,17 @@ async def upload_and_analyze_inbody_report(
     enrollment_id: UUID,
     report_file: UploadFile = File(...),
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProvider = Depends(
+        get_current_care_provider(
+            action=CareProviderPermissionAction.CREATE,
+            feature=CareProviderFeature.PATIENTS,
+            check_permissions=True,
+            log_activity=True,
+        )
+    ),
 ):
     """Upload an inbody report file and get AI analysis"""
 
@@ -254,13 +329,13 @@ async def upload_and_analyze_inbody_report(
                 message=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
             )
 
-        # Get patient_id from enrollment (MongoDB)
-        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found"
-            )
+        # Verify CP has access to this enrollment's patient
+        enrollment = await verify_enrollment_access_for_care_provider(
+            enrollment_id=enrollment_id,
+            care_provider=current_care_provider,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         patient_id = enrollment.get("patient_id")
 
         # Process file and get AI analysis
@@ -290,12 +365,27 @@ async def upload_and_analyze_inbody_report(
 async def get_latest_inbody_report(
     enrollment_id: UUID,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Get the most recent inbody report along with highlighted measurements"""
 
     try:
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
+
         report_with_details = await weight_loss_service.get_latest_inbody_report_with_details(
             enrollment_id
         )
@@ -328,12 +418,27 @@ async def store_inbody_report_analysis(
     enrollment_id: UUID,
     analysis_data: InbodyReportAnalysisResult,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
+    current_care_provider: CareProvider = Depends(
+        get_current_care_provider(
+            action=CareProviderPermissionAction.CREATE,
+            feature=CareProviderFeature.PATIENTS,
+            check_permissions=True,
+            log_activity=True,
+        )
+    ),
 ):
     """Store the analyzed inbody report data in database"""
 
     try:
+        await verify_enrollment_access_for_care_provider(
+            enrollment_id=enrollment_id,
+            care_provider=current_care_provider,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         if not analysis_data:
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -386,12 +491,27 @@ async def get_weight_loss_progress(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Get weight loss progress report"""
 
     try:
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
+
         from datetime import datetime
 
         start = datetime.fromisoformat(start_date) if start_date else None
@@ -421,12 +541,27 @@ async def analyze_weight_loss_progress(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Generate AI analysis of weight loss progress"""
 
     try:
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
+
         from datetime import datetime
 
         start = datetime.fromisoformat(start_date) if start_date else None
@@ -454,19 +589,27 @@ async def analyze_weight_loss_progress(
 async def get_inbody_reports(
     enrollment_id: UUID,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Get all inbody reports for an enrollment"""
 
     try:
-        # Get enrollment from MongoDB
-        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found"
-            )
+        # Verify caller owns this enrollment
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         
         # Get all reports for this enrollment from MongoDB
         reports_cursor = weight_loss_service.reports_collection.find({
@@ -522,12 +665,26 @@ async def get_health_indicators(
     enrollment_id: UUID,
     report_id: UUID,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Get health indicators for an inbody report"""
 
     try:
+        await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         # Get report from MongoDB
         report = await weight_loss_service.reports_collection.find_one({
             "report_id": str(report_id)
@@ -574,8 +731,16 @@ async def chat_with_weight_loss_agent(
     chat_request: ChatRequest,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
     agentic_chat_service: AgenticChatService = Depends(get_agentic_chat_service),
-    # TODO: Uncomment for production - care provider auth required
-    # current_care_provider: CareProvider = Depends(get_current_care_provider),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     """Chat with agentic weight loss coach"""
 
@@ -588,13 +753,13 @@ async def chat_with_weight_loss_agent(
                 message="Question is required"
             )
 
-        # Get patient_id from enrollment (MongoDB)
-        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found"
-            )
+        # Verify caller owns this enrollment and get enrollment data
+        enrollment = await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         patient_id = enrollment.get("patient_id")
         patient_uuid = UUID(patient_id)
 
@@ -640,14 +805,25 @@ async def get_weight_loss_agent_chat_history(
     limit: int = Query(200, ge=1, le=500),
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
     agentic_chat_service: AgenticChatService = Depends(get_agentic_chat_service),
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
 ):
     try:
-        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
-        if not enrollment:
-            raise_http_exception(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Enrollment not found"
-            )
+        # Verify caller owns this enrollment and get enrollment data
+        enrollment = await verify_enrollment_access(
+            enrollment_id=enrollment_id,
+            actor=actor,
+            weight_loss_service=weight_loss_service,
+            care_provider_service=care_provider_service,
+        )
         patient_id = enrollment.get("patient_id")
         history = await agentic_chat_service.get_chat_history(
             UUID(patient_id), limit=limit
@@ -671,6 +847,16 @@ async def get_weight_loss_agent_chat_history(
 )
 async def upsert_glp_injection_settings(
     payload: GlpInjectionSettingsUpsert,
+    actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            care_provider_feature=CareProviderFeature.PATIENTS,
+            care_provider_action=CareProviderPermissionAction.CREATE,
+        )
+    ),
+    care_provider_service: CareProviderProfileService = Depends(
+        get_care_provider_profile_service
+    ),
     injection_service: Glp1InjectionService = Depends(
         get_glp1_injection_service
     ),
@@ -679,6 +865,12 @@ async def upsert_glp_injection_settings(
     ),
 ):
     try:
+        patient_id = await resolve_patient_access(
+            actor=actor,
+            patient_id=payload.user_id,
+            care_provider_service=care_provider_service,
+        )
+        payload.user_id = patient_id
         record = await injection_service.upsert_settings(payload)
         await agentic_chat_service.initialize_symptom_flow(payload.user_id)
         return SuccessResponse(
