@@ -3,8 +3,12 @@ from typing import Union
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_health_query_agent_service
+from lib.dependencies.service_dependencies import (
+    get_health_query_agent_service,
+    get_care_provider_access_service,
+)
 from lib.services.health_query_agent.service import HealthQueryAgentService
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.health_query_agent.schemas import QueryResponse, ConversationMessage
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -35,13 +39,17 @@ async def process_query(
         )
     ),
     agent_service: HealthQueryAgentService = Depends(get_health_query_agent_service),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     user_id = current_actor.id
     user_role = current_actor.role
 
-    resolved_patient_ids = resolve_patient_ids_for_query(
+    resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,
+        care_provider_access_service=care_provider_access_service,
     )
 
     subject_patient_id = None

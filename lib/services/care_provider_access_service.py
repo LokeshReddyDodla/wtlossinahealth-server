@@ -62,3 +62,58 @@ class CareProviderAccessService:
 
         return bool(is_assigned)
 
+    @with_postgres_session
+    async def get_accessible_patients(
+        self,
+        care_provider_id: UUID,
+        patient_ids: list[UUID],
+        *,
+        postgres_session: AsyncSession,
+    ) -> list[UUID]:
+        """
+        Efficiently check which of the given patient IDs are accessible to the care provider.
+        Returns only the patient IDs the care provider has access to.
+        """
+        if not patient_ids:
+            return []
+
+        care_provider = await postgres_session.scalar(
+            select(CareProviderModel).where(
+                CareProviderModel.care_provider_id == care_provider_id
+            )
+        )
+
+        if not care_provider:
+            return []
+
+        accessible_patient_ids: set[UUID] = set()
+
+        # Admin rule: access to all patients in same health facility
+        if str(care_provider.role).lower() == "admin":
+            patients = await postgres_session.scalars(
+                select(PatientModel.patient_id).where(
+                    and_(
+                        PatientModel.patient_id.in_(patient_ids),
+                        PatientModel.health_facility_id
+                        == care_provider.health_facility_id,
+                    )
+                )
+            )
+            accessible_patient_ids.update(patients.all())
+
+        # Assignment rule: explicitly assigned patients
+        assigned_patients = await postgres_session.scalars(
+            select(patient_care_provider_association.c.patient_id).where(
+                and_(
+                    patient_care_provider_association.c.care_provider_id
+                    == care_provider_id,
+                    patient_care_provider_association.c.patient_id.in_(
+                        patient_ids
+                    ),
+                )
+            )
+        )
+        accessible_patient_ids.update(assigned_patients.all())
+
+        return list(accessible_patient_ids)
+

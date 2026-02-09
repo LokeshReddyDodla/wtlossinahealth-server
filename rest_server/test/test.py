@@ -8,6 +8,7 @@ from fastapi import (
 )
 import logging
 
+from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_cgm_report_service,
@@ -15,6 +16,7 @@ from lib.dependencies.service_dependencies import (
     get_libreview_service,
     get_patient_profile_service,
 )
+from lib.models.admin import Admin
 from lib.schemas.patient import CorePatientProfile
 
 from lib.services.reports import CGMReportService
@@ -45,24 +47,10 @@ extractor = FileContentExtractorService()
 openai_client = AsyncOpenAI()
 
 
-@router.get(path="/mongodb", tags=["Test"])
-async def test_api(request: Request):
-    try:
-        logger.info("Attempting to insert document")
-        document = {"initial_key": "initial_value"}
-        await request.state.context.mongo_store.insert_document(
-            "test_collection", document
-        )
-        logger.info("Document inserted successfully")
-        return {"message": "inserted successfully"}
-    except Exception as e:
-        logger.error(f"Failed to insert document: {str(e)}")
-        return {"message": "failed to insert", "error": str(e)}
-
-
-@router.post(path="/libreview/sync/all", tags=["Test"])
+@router.post(path="/libreview/sync/all", tags=["Test"], include_in_schema=False)
 async def sync_all_libreview_to_sqs(
     libreview_service: LibreViewService = Depends(get_libreview_service),
+    current_admin: Admin = Depends(get_current_admin),
     requested_by: str = "system_bulk_sync",
 ):
     """Push all LibreView-connected patients to SQS for sync."""
@@ -75,9 +63,7 @@ async def sync_all_libreview_to_sqs(
         for patient in patients:
             patient_id = str(patient.patient_id)
             libreview = (
-                patient.connected_apps.libreview
-                if patient.connected_apps
-                else None
+                patient.connected_apps.libreview if patient.connected_apps else None
             )
             if not libreview:
                 skipped += 1
@@ -115,7 +101,10 @@ async def sync_all_libreview_to_sqs(
 
 
 @router.delete(path="/cgm-reports/duplicates", tags=["Test"])
-async def delete_duplicate_cgm_reports(request: Request):
+async def delete_duplicate_cgm_reports(
+    request: Request,
+    current_admin: Admin = Depends(get_current_admin),
+):
     """
     Delete ALL duplicate CGM reports with report_type="custom" that have the same
     patient_id and start_date but different end_dates.
@@ -386,6 +375,7 @@ async def test_qdrant_cgm(
     ),
     cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
     session: AsyncSession = Depends(get_postgres_session),
+    current_admin: Admin = Depends(get_current_admin),
 ):
     try:
         report = await cgm_report_service.fetch_report(patient_id, report_id)
