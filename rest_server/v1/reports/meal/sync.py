@@ -61,11 +61,11 @@ async def sync_patient_meals_report(
 
     jobs = []
     for patient in patients_with_meals:
-        job_id = enqueue_daily_meal_report_sync(str(patient.id), report_date)
-        logger.info(f"Queued report for patient {patient.id}: {job_id}")
+        job_id = enqueue_daily_meal_report_sync(str(patient.patient_id), report_date)
+        logger.info(f"Queued report for patient {patient.patient_id}: {job_id}")
         jobs.append(
             MealReportJob(
-                patient_id=str(patient.id),
+                patient_id=str(patient.patient_id),
                 job_id=job_id,
                 status="queued" if job_id else "failed",
             )
