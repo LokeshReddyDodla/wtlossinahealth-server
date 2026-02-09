@@ -47,14 +47,9 @@ services:
       - aihealth-mongo
       - aihealth-clickhouse
       - aihealth-qdrant
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 2G
-        reservations:
-          cpus: "1.0"
-          memory: 1G
+    cpus: "1.5"
+    mem_limit: 2g
+    
 
   # ==========================================
   # Databases
@@ -111,10 +106,7 @@ services:
       - "--requirepass ${REDIS_PASSWORD}"
     volumes:
       - redis_data:/data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+    
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
@@ -164,10 +156,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    
 
   # ==========================================
   # Task Workers - Celery (Legacy)
@@ -198,11 +187,7 @@ services:
       - aihealth-redis
       - aihealth-api
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 1.5G
+    
 
   aihealth-celery-reports:
     container_name: aihealth-celery-reports
@@ -227,11 +212,7 @@ services:
       - aihealth-redis
       - aihealth-api
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2.5G
+    
 
   aihealth-celery-vectors:
     container_name: aihealth-celery-vectors
@@ -253,11 +234,7 @@ services:
       - aihealth-redis
       - aihealth-api
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 1.5G
+    
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat
@@ -276,10 +253,7 @@ services:
       - aihealth-redis
       - aihealth-api
     deploy:
-      resources:
-        limits:
-          cpus: "0.3"
-          memory: 512M
+      
 
   # ==========================================
   # Task Workers - ARQ
@@ -325,11 +299,9 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
+    cpus: "1.0"
+    mem_limit: 1g
+    
 
   aihealth-arq-worker-reports:
     container_name: aihealth-arq-worker-reports
@@ -372,11 +344,9 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2G
+    cpus: "2.0"
+    mem_limit: 2g
+    
 
   aihealth-arq-worker-vectors:
     container_name: aihealth-arq-worker-vectors
@@ -421,11 +391,9 @@ services:
       aihealth-qdrant:
         condition: service_started
     user: "1000:1000"
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2G
+    cpus: "2.0"
+    mem_limit: 2g
+    
 
   # ==========================================
   # Reverse Proxy
@@ -543,14 +511,8 @@ services:
     volumes:
       - loki_data:/loki
       - ./deployment/loki-config.yaml:/etc/loki/local-config.yaml:ro
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
+    cpus: "0.5"
+    mem_limit: 512m
 
   promtail:
     container_name: promtail
@@ -563,14 +525,7 @@ services:
       - ./deployment/promtail-config.yml:/etc/promtail/config.yml:ro
     depends_on:
       - loki
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 256M
+    
 
   grafana:
     container_name: grafana
@@ -587,14 +542,8 @@ services:
       - ./deployment/grafana-provisioning:/etc/grafana/provisioning
     depends_on:
       - loki
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 256M
+    cpus: "0.5"
+    mem_limit: 512m
 
 volumes:
   # Application
