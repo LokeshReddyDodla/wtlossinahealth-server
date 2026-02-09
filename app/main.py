@@ -3,57 +3,65 @@ from fastapi import FastAPI
 from socketio import ASGIApp
 
 from app.import_routes import import_routes
+from lib.core.logging import setup_logging
 from lib.initializers.cache_setup import initialize_caches
 from lib.initializers.db_setup import (
     create_db_and_tables,
     initialize_databases,
 )
-from lib.initializers.logger_setup import setup_logger
 from lib.initializers.middleware_setup import setup_middlewares
 from lib.services.socketio_service import sio
 
-# Create fastAPI app
-app = FastAPI(swagger_ui_parameters={"persistAuthorization": os.getenv("ENV") == "dev"})
 
-# Add middlewares
-setup_middlewares(app)
+# -----------------------------------------------------------------------------
+# App factory
+# -----------------------------------------------------------------------------
+def create_app() -> FastAPI:
+    app = FastAPI(
+        swagger_ui_parameters={"persistAuthorization": os.getenv("ENV") == "dev"}
+    )
 
+    # logging
+    setup_logging(app)
+    app.state.logger = __import__("structlog").get_logger("rest_server")
 
-###############################################################################
-# Rest server startup hooks
-###############################################################################
-@app.on_event("startup")
-async def startup_event() -> None:
-    """
-    Initialize modules and attach them to app
-    """
-    # Initialize caches
-    initialize_caches(app)
+    # middleware
+    setup_middlewares(app)
 
-    # Initialize databases
-    initialize_databases(app)
-
-    # Initialize logger
-    setup_logger(app)
-
-    # Import routes
+    # routes
     import_routes(app)
 
-    # Create tables
+    return app
+
+
+app = create_app()
+
+# socket.io wrapper
+socket_app = ASGIApp(
+    sio,
+    other_asgi_app=app,
+    socketio_path="/ws",
+)
+
+
+# -----------------------------------------------------------------------------
+# Lifecycle events
+# -----------------------------------------------------------------------------
+@app.on_event("startup")
+async def on_startup() -> None:
+    # infra
+    initialize_caches(app)
+    initialize_databases(app)
+
+    # schema
     await create_db_and_tables()
 
-    # connect qdrant
+    # external services
     await app.state.qdrant_store.connect()
 
 
 @app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """
-    Cleanup and close connections
-    """
+async def on_shutdown() -> None:
     await app.state.postgres_store.close()
     app.state.mongo_store.client.close()
     await app.state.qdrant_store.close()
-
-
-socket_app = ASGIApp(sio, other_asgi_app=app, socketio_path="/ws")

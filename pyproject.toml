@@ -71,6 +71,7 @@ langgraph = "^1.0.6"
 langchain-google-genai = "^4.2.0"
 jsonpickle = "^4.1.1"
 arq = "^0.27.0"
+rich = "^14.3.2"
 
 
 [tool.poetry.group.dev.dependencies]

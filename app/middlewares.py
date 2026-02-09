@@ -8,13 +8,7 @@ from lib.core.server_context import Context
 
 
 async def create_context(request: Request, call_next):
-    """
-    Create server context and bind it to the request
-    Also bind request context variables to the logger
-    """
     start_time = time.perf_counter()
-
-    # Reuse incoming request ID if provided
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
 
     # Create context
@@ -34,6 +28,9 @@ async def create_context(request: Request, call_next):
         qdrant_store=request.app.state.qdrant_store,
     )
 
+    # Bind context to request state
+    request.state.context = server_context
+
     # Bind vars to structlog logger
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -42,26 +39,36 @@ async def create_context(request: Request, call_next):
         path=request.url.path,
     )
 
-    # Bind context to request state
-    request.state.context = server_context
+    logger = request.app.state.logger
 
-    # Log request path and method
-    logger = structlog.get_logger("rest_server")
     await logger.info(
-        "Request received",
-        request_id=request_id,
-        method=request.method,
-        path=request.url.path,
-        query_params=str(request.query_params) if request.query_params else None,
+        "request.start",
+        query_params=str(request.query_params) or None,
+        lifecycle="request",
     )
 
-    # Process API call
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception:
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        await logger.exception(
+            "request.error",
+            duration_ms=duration_ms,
+            lifecycle="request",
+        )
+        raise
 
-    # Add tracing headers
+    duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+    await logger.info(
+        "request.end",
+        status_code=status_code,
+        duration_ms=duration_ms,
+        lifecycle="request",
+    )
+
     response.headers["x-request-id"] = request_id
-    response.headers["x-response-time-ms"] = str(
-        int((time.perf_counter() - start_time) * 1000)
-    )
+    response.headers["x-response-time-ms"] = str(duration_ms)
 
     return response
