@@ -1,10 +1,11 @@
 from typing import Optional, Tuple
+from uuid import UUID
 from fastapi import status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor
-from lib.models.admin import Admin
 from lib.models.care_provider import CareProvider as CareProviderModel
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.http_exceptions import raise_http_exception
 
 
@@ -85,9 +86,10 @@ def get_effective_care_provider_id(
     return care_provider_id
 
 
-def resolve_patient_ids_for_query(
+async def resolve_patient_ids_for_query(
     current_actor: Actor,
     provided_patient_ids: Optional[list[str]] = None,
+    care_provider_access_service: Optional[CareProviderAccessService] = None,
 ) -> list[str]:
     user_id = current_actor.id
     
@@ -101,12 +103,34 @@ def resolve_patient_ids_for_query(
             )
         return provided_patient_ids
     
-    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER: # TODO: Remove this once we have a proper patient access check
+    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
         if not provided_patient_ids or len(provided_patient_ids) == 0:
             raise_http_exception(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="patient_ids is required for care provider queries",
             )
+        
+        if not care_provider_access_service:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Access validation service not available",
+            )
+        
+        # Batch validate all requested patients against care provider's access
+        patient_uuids = [UUID(pid) for pid in provided_patient_ids]
+        accessible_patient_ids = await care_provider_access_service.get_accessible_patients(
+            care_provider_id=UUID(current_actor.id),
+            patient_ids=patient_uuids,
+        )
+        
+        # Check if all requested patients are accessible
+        if len(accessible_patient_ids) != len(patient_uuids):
+            inaccessible_patients = set(patient_uuids) - set(accessible_patient_ids)
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message=f"Care provider does not have access to requested patients: {inaccessible_patients}",
+            )
+        
         return provided_patient_ids
     
     elif current_actor.role == ProfileTypeEnum.ADMIN:

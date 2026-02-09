@@ -2,6 +2,7 @@ from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from lib.dependencies.auth.admin_auth import get_current_admin
 from pydantic import BaseModel, validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -26,12 +27,15 @@ class AdminCreate(BaseModel):
 
 
 @router.post(
-    "/register", tags=["Admin - Auth"], response_model=SuccessResponse
+    "/register",
+    tags=["Admin - Auth"],
+    response_model=SuccessResponse,
 )
 async def register_admin(
     request: Request,
     admin_data: AdminCreate,
     session: AsyncSession = Depends(get_postgres_session),
+    current_admin: Admin = Depends(get_current_admin),
 ):
     try:
         # Check if the admin already exists
@@ -48,9 +52,7 @@ async def register_admin(
 
         # Create a new admin
         hashed_password = hash_password(admin_data.password)
-        new_admin = Admin(
-            email=admin_data.email, hashed_password=hashed_password
-        )
+        new_admin = Admin(email=admin_data.email, hashed_password=hashed_password)
         session.add(new_admin)
         await session.commit()
         await session.refresh(new_admin)
@@ -62,13 +64,15 @@ async def register_admin(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        response = ErrorResponse(
-            message="Internal Server Error", detail=str(e)
-        )
+        response = ErrorResponse(message="Internal Server Error", detail=str(e))
         raise HTTPException(status_code=500, detail=response.dict())
 
 
-@router.post("/login", tags=["Admin - Auth"], response_model=SuccessResponse)
+@router.post(
+    "/login",
+    tags=["Admin - Auth"],
+    response_model=SuccessResponse,
+)
 async def login_admin(
     request: Request,
     session: AsyncSession = Depends(get_postgres_session),
@@ -82,11 +86,10 @@ async def login_admin(
         admin = result.scalars().first()
 
         if not admin or not verify_password(
-            form_data.password, admin.hashed_password  # type: ignore
+            form_data.password,
+            admin.hashed_password,  # type: ignore
         ):
-            raise HTTPException(
-                status_code=400, detail="Invalid email or password"
-            )
+            raise HTTPException(status_code=400, detail="Invalid email or password")
 
         token = create_jwt_token(
             user_id=str(admin.id), role=ProfileTypeEnum.ADMIN.value

@@ -4,8 +4,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.middlewares import create_context
 
 
+ALLOWED_ORIGINS = [
+    "https://api.aihealth.clinic",
+    "http://localhost:3000",
+]
+
 def setup_middlewares(app):
-    origins = ["*"]
+    origins = ALLOWED_ORIGINS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
