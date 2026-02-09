@@ -1,3 +1,4 @@
+import time
 import uuid
 
 import structlog
@@ -7,12 +8,8 @@ from lib.core.server_context import Context
 
 
 async def create_context(request: Request, call_next):
-    """
-    Create server context and bind it to the request
-    Also bind request context variables to the logger
-    """
-    # Generate request ID
-    request_id = uuid.uuid4().hex
+    start_time = time.perf_counter()
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
 
     # Create context
     server_context = Context(
@@ -25,34 +22,53 @@ async def create_context(request: Request, call_next):
         config_store=request.app.state.config_store,
         rate_limit_store=request.app.state.rate_limit_store,
         address_mapping_store=request.app.state.address_mapping_store,
-        fitness_sync_store=request.app.state.fitness_sync_store,
-        libreview_sync_store=request.app.state.libreview_sync_store,
         postgres_store=request.app.state.postgres_store,
         mongo_store=request.app.state.mongo_store,
         clickhouse_store=request.app.state.clickhouse_store,
         qdrant_store=request.app.state.qdrant_store,
     )
 
-    # Bind vars to structlog logger
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(
-        url=request.url.path,
-        request_id=request_id,
-    )
-
     # Bind context to request state
     request.state.context = server_context
 
-    # Log request path and method
-    logger = structlog.get_logger("rest_server")
-    await logger.info(
-        "Request received",
+    # Bind vars to structlog logger
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
         method=request.method,
         path=request.url.path,
-        query_params=str(request.query_params) if request.query_params else None,
     )
 
-    # Process API call
-    response = await call_next(request)
+    logger = request.app.state.logger
+
+    await logger.info(
+        "request.start",
+        query_params=str(request.query_params) or None,
+        lifecycle="request",
+    )
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception:
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        await logger.exception(
+            "request.error",
+            duration_ms=duration_ms,
+            lifecycle="request",
+        )
+        raise
+
+    duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+    await logger.info(
+        "request.end",
+        status_code=status_code,
+        duration_ms=duration_ms,
+        lifecycle="request",
+    )
+
+    response.headers["x-request-id"] = request_id
+    response.headers["x-response-time-ms"] = str(duration_ms)
 
     return response

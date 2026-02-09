@@ -1,15 +1,21 @@
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.jwt import decode_jwt_token
 
 security = HTTPBearer()
 
+device_id_header = APIKeyHeader(
+    name="x-device-id",
+    auto_error=False,
+)
+
 
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    device_id: str | None = Depends(device_id_header),
 ):
     try:
         token = credentials.credentials
