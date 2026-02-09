@@ -133,17 +133,19 @@ from lib.services.weightloss_agent.safety_rules_service import (
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
 )
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.glp1_injection_service import (
+    Glp1InjectionService,
 )
 from lib.services.weightloss_agent.exercise_recommendation_service import (
     ExerciseRecommendationService,
 )
-from lib.services.weightloss_agent.agentic_orchestrator import (
-    AgenticOrchestrator,
+from lib.services.weightloss_agent.flow_engine import FlowEngine
+from lib.services.weightloss_agent.task_service import TaskService
+from lib.services.weightloss_agent.agentic_chat_service import (
+    AgenticChatService,
 )
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
@@ -284,6 +286,34 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("wtloss_plan_snapshots"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_flow_instances_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_flow_instances"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_tasks_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_tasks"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_glp_injection_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_glpinjection_login"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_symptom_daily_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_symptom_daily"),
     scope=Scope.singleton,
 )
 container.register(
@@ -874,25 +904,6 @@ container.register(
     ),
 )
 
-# 🔹 Coach Messenger Service
-container.register(
-    CoachMessengerService,
-    lambda: CoachMessengerService(
-        suggestion_cards_collection=container.resolve(
-            "suggestion_cards_collection"
-        ),
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
-        ai_conversation_service=cast(
-            AiConversationService, container.resolve(AiConversationService)
-        ),
-    ),
-)
-
 # 🔹 GLP-1 Symptoms Service
 container.register(
     Glp1SymptomsService,
@@ -906,19 +917,31 @@ container.register(
     ),
 )
 
-# 🔹 Agentic Orchestrator
+# 🔹 GLP-1 Injection Settings Service
 container.register(
-    AgenticOrchestrator,
-    lambda: AgenticOrchestrator(
-        plan_composer_service=cast(
-            PlanComposerService, container.resolve(PlanComposerService)
+    Glp1InjectionService,
+    lambda: Glp1InjectionService(
+        settings_collection=container.resolve(
+            "weightloss_glp_injection_collection"
         ),
-        coach_messenger_service=cast(
-            CoachMessengerService, container.resolve(CoachMessengerService)
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+    ),
+)
+
+# 🔹 Weightloss Flow Engine
+container.register(
+    FlowEngine,
+    lambda: FlowEngine(
+        flow_collection=container.resolve(
+            "weightloss_flow_instances_collection"
+        )
+    ),
+)
+
+# 🔹 Weightloss Task Service
+container.register(
+    TaskService,
+    lambda: TaskService(
+        tasks_collection=container.resolve("weightloss_tasks_collection")
     ),
 )
 
@@ -952,6 +975,38 @@ container.register(
         ),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
+        ),
+    ),
+)
+
+# 🔹 Agentic Weightloss Chat Service
+container.register(
+    AgenticChatService,
+    lambda: AgenticChatService(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+        flow_engine=cast(FlowEngine, container.resolve(FlowEngine)),
+        task_service=cast(TaskService, container.resolve(TaskService)),
+        injection_service=cast(
+            Glp1InjectionService, container.resolve(Glp1InjectionService)
+        ),
+        intake_service=cast(IntakeService, container.resolve(IntakeService)),
+        safety_rules_service=cast(
+            SafetyRulesService, container.resolve(SafetyRulesService)
+        ),
+        chat_messaging_service=cast(
+            ChatMessagingService, container.resolve(ChatMessagingService)
+        ),
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        weight_loss_agent_service=cast(
+            WeightLossAgentService, container.resolve(WeightLossAgentService)
+        ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        symptom_daily_collection=container.resolve(
+            "weightloss_symptom_daily_collection"
         ),
     ),
 )

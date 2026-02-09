@@ -115,14 +115,16 @@ from lib.services.weightloss_agent.safety_rules_service import (
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
 )
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
 )
-from lib.services.weightloss_agent.agentic_orchestrator import (
-    AgenticOrchestrator,
+from lib.services.weightloss_agent.glp1_injection_service import (
+    Glp1InjectionService,
+)
+from lib.services.weightloss_agent.flow_engine import FlowEngine
+from lib.services.weightloss_agent.task_service import TaskService
+from lib.services.weightloss_agent.agentic_chat_service import (
+    AgenticChatService,
 )
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
@@ -292,18 +294,26 @@ def get_plan_composer_service() -> PlanComposerService:
     return cast(PlanComposerService, container.resolve(PlanComposerService))
 
 
-def get_coach_messenger_service() -> CoachMessengerService:
-    return cast(
-        CoachMessengerService, container.resolve(CoachMessengerService)
-    )
-
-
 def get_glp1_symptoms_service() -> Glp1SymptomsService:
     return cast(Glp1SymptomsService, container.resolve(Glp1SymptomsService))
 
 
-def get_agentic_orchestrator_service() -> AgenticOrchestrator:
-    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
+def get_glp1_injection_service() -> Glp1InjectionService:
+    return cast(
+        Glp1InjectionService, container.resolve(Glp1InjectionService)
+    )
+
+
+def get_flow_engine_service() -> FlowEngine:
+    return cast(FlowEngine, container.resolve(FlowEngine))
+
+
+def get_task_service() -> TaskService:
+    return cast(TaskService, container.resolve(TaskService))
+
+
+def get_agentic_chat_service() -> AgenticChatService:
+    return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
 def get_prescription_analysis_service() -> PrescriptionAnalysisService:

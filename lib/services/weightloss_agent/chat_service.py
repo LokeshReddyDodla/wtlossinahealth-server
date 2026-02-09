@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
 from fastapi import status
@@ -23,6 +23,7 @@ class ChatMixin:
         user_id: str,
         conversation_id: str,
         user_question: str,
+        additional_context: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         """Handle chatbot conversations about weight loss progress and reports - PostgreSQL for enrollment"""
 
@@ -141,6 +142,13 @@ class ChatMixin:
             "latest_inbody_report": latest_report_summary,
             "question_type": "chatbot_conversation",
         }
+        if additional_context:
+            context_data["agentic_api_context"] = additional_context
+            context_data["response_contract"] = {
+                "prefer_data_grounded_response": True,
+                "avoid_generic_greetings": True,
+                "coach_tone": "weightloss_coach",
+            }
 
         # Generate AI response
         ai_response = await ai_service.generate_response(
@@ -186,6 +194,11 @@ class ChatMixin:
                 "citations": metadata.get("citations", []),
                 "follow_up_questions": ai_response.get(
                     "follow_up_questions", []
+                ),
+                "agentic_api_calls": (
+                    (additional_context or {}).get("api_calls", [])
+                    if additional_context
+                    else []
                 ),
             },
             "created_at": datetime.now(),

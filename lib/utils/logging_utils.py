@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from uuid import UUID
-from typing import Sequence
+from typing import Optional, Sequence
 from fastapi import Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,7 @@ async def log_last_active_time(
         )
 
     # Verify the device ID matches one of the user's registered devices
-    matching_device: UserDevice | None = next(
+    matching_device: Optional[UserDevice] = next(
         (d for d in devices if str(d.device_id) == str(device_id)),
         None,
     )

@@ -2,11 +2,15 @@ from typing import Dict, List, Optional
 from uuid import UUID
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status, HTTPException
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status, HTTPException, Query
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
-from lib.dependencies.service_dependencies import get_weight_loss_agent_service
+from lib.dependencies.service_dependencies import (
+    get_agentic_chat_service,
+    get_glp1_injection_service,
+    get_weight_loss_agent_service,
+)
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
 from lib.schemas.weight_loss_agent import (
@@ -23,7 +27,17 @@ from lib.schemas.weight_loss_agent import (
     WeightLossEnrollmentUpdate,
     WeightLossProgressReport,
 )
+from lib.schemas.weightloss_agent.agentic_settings import (
+    GlpInjectionSettingsRecord,
+    GlpInjectionSettingsUpsert,
+)
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.weightloss_agent.agentic_chat_service import (
+    AgenticChatService,
+)
+from lib.services.weightloss_agent.glp1_injection_service import (
+    Glp1InjectionService,
+)
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -559,14 +573,14 @@ async def chat_with_weight_loss_agent(
     enrollment_id: UUID,
     chat_request: ChatRequest,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
+    agentic_chat_service: AgenticChatService = Depends(get_agentic_chat_service),
     # TODO: Uncomment for production - care provider auth required
     # current_care_provider: CareProvider = Depends(get_current_care_provider),
 ):
-    """Chat with AI weight loss agent about progress and reports"""
+    """Chat with agentic weight loss coach"""
 
     try:
         user_question = chat_request.question.strip()
-        conversation_id = chat_request.conversation_id or f"chat_{enrollment_id}_{datetime.now().isoformat()}"
 
         if not user_question:
             raise_http_exception(
@@ -582,20 +596,97 @@ async def chat_with_weight_loss_agent(
                 message="Enrollment not found"
             )
         patient_id = enrollment.get("patient_id")
+        patient_uuid = UUID(patient_id)
 
-        response = await weight_loss_service.chat_with_weight_loss_agent(
+        # Trigger any due follow-ups/check-ins on this endpoint call so the
+        # agentic behavior is visible inside the weightloss chat path.
+        await agentic_chat_service.run_scheduled_for_user(patient_uuid)
+
+        await agentic_chat_service.record_user_message(
+            patient_uuid, user_question
+        )
+        agentic_response = await agentic_chat_service.handle_user_message(
+            patient_uuid,
+            user_question,
             enrollment_id=enrollment_id,
-            user_id=patient_id,  # Use patient_id from enrollment
-            conversation_id=conversation_id,
-            user_question=user_question,
+        )
+        chat_id = await agentic_chat_service.get_or_create_weightloss_chat_id(
+            patient_uuid
         )
 
         return SuccessResponse(
             status="success",
-            message="AI response generated successfully",
-            data=response,
+            message="Message processed",
+            data={
+                "chat_id": chat_id,
+                "status": "queued",
+                "agentic_response": agentic_response,
+            },
         )
     except HTTPException as e:
         raise e
     except Exception as e:
         raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
+
+
+@router.get(
+    "/enrollment/{enrollment_id}/chat",
+    response_model=SuccessResponse[Dict],
+    summary="Get weight loss agent chat history",
+    description="Fetch previously stored chat messages for the enrollment's Weightloss Coach thread",
+)
+async def get_weight_loss_agent_chat_history(
+    enrollment_id: UUID,
+    limit: int = Query(200, ge=1, le=500),
+    weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
+    agentic_chat_service: AgenticChatService = Depends(get_agentic_chat_service),
+):
+    try:
+        enrollment = await weight_loss_service.get_patient_enrollment(enrollment_id)
+        if not enrollment:
+            raise_http_exception(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="Enrollment not found"
+            )
+        patient_id = enrollment.get("patient_id")
+        history = await agentic_chat_service.get_chat_history(
+            UUID(patient_id), limit=limit
+        )
+        return SuccessResponse(
+            status="success",
+            message="Chat history retrieved successfully",
+            data=history,
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise_http_exception(status_code=status.HTTP_400_BAD_REQUEST, message=str(e))
+
+
+@router.post(
+    "/glp-injection",
+    response_model=SuccessResponse[GlpInjectionSettingsRecord],
+    status_code=status.HTTP_200_OK,
+    summary="Upsert GLP-1 injection settings",
+)
+async def upsert_glp_injection_settings(
+    payload: GlpInjectionSettingsUpsert,
+    injection_service: Glp1InjectionService = Depends(
+        get_glp1_injection_service
+    ),
+    agentic_chat_service: AgenticChatService = Depends(
+        get_agentic_chat_service
+    ),
+):
+    try:
+        record = await injection_service.upsert_settings(payload)
+        await agentic_chat_service.initialize_symptom_flow(payload.user_id)
+        return SuccessResponse(
+            status="success",
+            message="GLP-1 injection settings updated",
+            data=record,
+        )
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST, message=str(e)
+        )

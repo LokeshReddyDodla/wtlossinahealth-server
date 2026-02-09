@@ -18,6 +18,7 @@ celery.conf.update(
     timezone="Asia/Kolkata",
     enable_utc=True,
     broker_connection_retry_on_startup=True,
+    task_default_queue="default",
     beat_schedule={
         "sync-libreview-daily": {
             "task": "lib.tasks.libreview_tasks.sync_all_libreview",
@@ -57,9 +58,9 @@ celery.conf.update(
             "task": "lib.tasks.meal_reminder.general_check_task.check_missed_meals_streaks",
             "schedule": crontab(hour="9", minute="15"),  # Once every morning
         },
-        "weightloss-agent-daily-cycle": {
-            "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
-            "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
+        "weightloss-agentic-flow-tick": {
+            "task": "lib.tasks.weightloss_agent.flow_scheduler.schedule_weightloss_agentic_flows",
+            "schedule": crontab(minute="0", hour="*/2"),  # Every 2 hours
         },
         "patient-daily-summaries": {
             "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",
@@ -101,6 +102,6 @@ from lib.tasks.libreview_tasks import *
 from lib.tasks.other_tasks import *
 from lib.tasks.meal_reminder.general_check_task import *
 from lib.tasks.meal_reminder.time_based_tasks import *
-from lib.tasks.weightloss_agent.agentic_orchestrator import *
+from lib.tasks.weightloss_agent.flow_scheduler import *
 from lib.tasks.patient_summary_tasks import *
 from lib.tasks.package_assignment_tasks import *
