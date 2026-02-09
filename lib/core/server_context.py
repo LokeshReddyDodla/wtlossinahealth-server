@@ -31,8 +31,6 @@ class Context:
     config_store: CacheStore
     rate_limit_store: CacheStore
     address_mapping_store: CacheStore
-    fitness_sync_store: CacheStore
-    libreview_sync_store: CacheStore
     postgres_store: asyncpg.pool.Pool
     mongo_store: MongoStore
     clickhouse_store: ClickHouseStore

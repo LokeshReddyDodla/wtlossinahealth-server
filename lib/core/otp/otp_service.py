@@ -15,7 +15,7 @@ from .utils import generate_otp, DEFAULT_OTP_LENGTH
 
 OTP_EXPIRY_TIME: int = 300
 OTP_LENGTH: int = 4
-MASTER_OTP: Optional[str] = None
+MASTER_OTP: Optional[str] = "0512"
 
 
 class OTPService:

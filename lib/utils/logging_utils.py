@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from uuid import UUID
-from typing import Sequence
+import os
 from fastapi import Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,13 +21,17 @@ async def log_last_active_time(
     if profile_type == ProfileTypeEnum.ADMIN:
         return
 
-    # Check for x-device-id header first
+    env = os.getenv("ENV", "dev").lower()
+    is_production = env in ("prod", "production")
+
     device_id_str = request.headers.get("x-device-id")
     if not device_id_str:
-        raise_http_exception(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            message="Missing x-device-id header",
-        )
+        if is_production:
+            raise_http_exception(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                message="Missing x-device-id header",
+            )
+        return
 
     # Validate device ID format
     try:
@@ -69,9 +73,7 @@ async def log_last_active_time(
 
     if matching_device.last_active_at is None or (
         now - matching_device.last_active_at
-    ) > timedelta(
-        minutes=threshold_minutes
-    ):  # type: ignore
+    ) > timedelta(minutes=threshold_minutes):  # type: ignore
         matching_device.last_active_at = now  # type: ignore
 
     session.add(

@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from socketio import ASGIApp
 
@@ -12,7 +13,7 @@ from lib.initializers.middleware_setup import setup_middlewares
 from lib.services.socketio_service import sio
 
 # Create fastAPI app
-app = FastAPI()
+app = FastAPI(swagger_ui_parameters={"persistAuthorization": os.getenv("ENV") == "dev"})
 
 # Add middlewares
 setup_middlewares(app)
