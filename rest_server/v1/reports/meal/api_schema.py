@@ -1,5 +1,5 @@
 from datetime import date as datetime_date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,19 @@ class MealReportListResponse(BaseModel):
     """Response model for list of meal reports"""
     reports: List[MealReportResponse] = Field(..., description="List of meal reports")
     total: int = Field(..., description="Total number of reports")
+
+
+class MealReportJob(BaseModel):
+    patient_id: str
+    job_id: Optional[str]
+    status: str
+
+
+class SyncMealReportResponse(BaseModel):
+    message: str
+    report_date: datetime_date
+    jobs: List[MealReportJob]
+
 
 
 # Typed Success Responses
