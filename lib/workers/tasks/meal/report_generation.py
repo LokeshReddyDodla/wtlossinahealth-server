@@ -61,14 +61,14 @@ async def generate_daily_meal_report(
 async def _enqueue_daily_meal_report(patient_id: str, report_date: date) -> str | None:
     """Internal: Enqueue daily meal report generation."""
     report_date_str = report_date.isoformat()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     job_id = f"meal:report:{patient_id}:{report_date_str}:{timestamp}"
 
     job = await enqueue_job(
         "generate_daily_meal_report",
         patient_id,
         report_date,
-        # _job_id=job_id,
+        _job_id=job_id,
         _queue_name=Queues.REPORTS,
     )
 
