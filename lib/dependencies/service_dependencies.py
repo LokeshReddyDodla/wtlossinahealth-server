@@ -93,6 +93,11 @@ from lib.services.patient_query_service import PatientQueryService
 from lib.services.patient_enrichment_service import PatientEnrichmentService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
+from lib.services.patient_data_availability_service import (
+    PatientDataAvailabilityService,
+)
+from lib.services.patient_daily_overview_service import PatientDailyOverviewService
+
 from lib.services.reports import (
     FitnessStatsProcessor,
     CGMStatsProcessor,
@@ -183,6 +188,17 @@ def get_ai_conversation_service_v2() -> AiConversationServiceV2:
 
 def get_patient_profile_service() -> PatientProfileService:
     return cast(PatientProfileService, container.resolve(PatientProfileService))
+
+
+def get_patient_data_availability_service() -> PatientDataAvailabilityService:
+    return cast(
+        PatientDataAvailabilityService,
+        container.resolve(PatientDataAvailabilityService),
+    )
+
+
+def get_patient_daily_overview_service() -> PatientDailyOverviewService:
+    return cast(PatientDailyOverviewService, container.resolve(PatientDailyOverviewService))
 
 
 def get_care_provider_profile_service() -> CareProviderProfileService:
