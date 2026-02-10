@@ -17,8 +17,6 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 
 
 class PatientDataAvailabilityService:
-    """Service to check data availability for a patient across date ranges"""
-
     def __init__(
         self,
         postgres_store: PostgresStore,
@@ -41,7 +39,6 @@ class PatientDataAvailabilityService:
         start_date = target_date - timedelta(days=days_before)
         end_date = target_date + timedelta(days=days_after)
 
-        # Initialize all dates with zero counts
         date_range = []
         current_date = start_date
         while current_date <= end_date:

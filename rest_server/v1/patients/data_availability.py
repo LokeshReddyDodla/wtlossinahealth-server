@@ -81,7 +81,6 @@ async def get_patient_data_availability(
         if days_after > max_allowed_after:
             days_after = max_allowed_after
 
-        # Get data availability
         availability_data = (
             await patient_data_availability_service.get_data_availability(
                 patient_id=str(target_patient_id),
