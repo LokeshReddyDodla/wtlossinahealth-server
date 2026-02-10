@@ -93,6 +93,10 @@ from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.patient_query_service import PatientQueryService
 from lib.services.patient_enrichment_service import PatientEnrichmentService
+from lib.services.patient_data_availability_service import (
+    PatientDataAvailabilityService,
+)
+from lib.services.patient_daily_overview_service import PatientDailyOverviewService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
 
@@ -355,7 +359,11 @@ container.register(ChatParticipantService, ChatParticipantService)
 container.register(ChatManagementService, ChatManagementService)
 container.register(
     DirectChatResolver,
-    lambda: DirectChatResolver(chat_service=container.resolve(ChatManagementService)),
+    lambda: DirectChatResolver(
+        chat_service=cast(
+            ChatManagementService, container.resolve(ChatManagementService)
+        )
+    ),
 )
 
 
@@ -377,6 +385,33 @@ container.register(
         profile_vector_service=cast(
             PatientProfileVectorService,
             container.resolve(PatientProfileVectorService),
+        ),
+    ),
+)
+
+# 🔹 Patient Data Availability Service
+container.register(
+    PatientDataAvailabilityService,
+    lambda: PatientDataAvailabilityService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+    ),
+)
+
+# 🔹 Patient Daily Overview Service
+container.register(
+    PatientDailyOverviewService,
+    lambda: PatientDailyOverviewService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        meal_report_service=cast(
+            MealReportService, container.resolve(MealReportService)
+        ),
+        cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
+        fitness_report_service=cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        ),
+        sleep_report_service=cast(
+            SleepReportService, container.resolve(SleepReportService)
         ),
     ),
 )
