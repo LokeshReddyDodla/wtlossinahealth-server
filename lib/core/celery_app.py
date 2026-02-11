@@ -60,7 +60,7 @@ celery.conf.update(
         },
         "weightloss-agentic-flow-tick": {
             "task": "lib.tasks.weightloss_agent.flow_scheduler.schedule_weightloss_agentic_flows",
-            "schedule": crontab(minute="0", hour="*/2"),  # Every 2 hours
+            "schedule": crontab(minute="*/15"),  # Every 15 minutes
         },
         "patient-daily-summaries": {
             "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",

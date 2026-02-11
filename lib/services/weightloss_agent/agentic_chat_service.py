@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -15,13 +15,20 @@ from lib.core.constants import SYSTEM_USER_ID
 from lib.core.mongo_store import MongoStore
 from lib.schemas.chat import ChatSchema, ParticipantSchema
 from lib.schemas.chat_message import ChatMessageCreate
+from lib.schemas.weightloss_agent.coach import CoachActionRequest
 from lib.schemas.weightloss_agent.plan import PlanGenerateRequest
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
 from lib.services.weightloss_agent.flow_engine import FlowEngine
 from lib.services.weightloss_agent.glp1_injection_service import (
     Glp1InjectionService,
+)
+from lib.services.weightloss_agent.glp1_symptoms_service import (
+    Glp1SymptomsService,
 )
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.plan_composer_service import (
@@ -50,6 +57,8 @@ class AgenticChatService:
     FOLLOWUP1_OFFSET_MINUTES = 60
     FOLLOWUP2_TIME = "20:30"
     WORKOUT_CONFIRM_WINDOW_HOURS = 12
+    WEEKLY_PROGRESS_DAY = 6  # 0=Monday .. 6=Sunday
+    WEEKLY_PROGRESS_TIME = "19:00"
     GREETING_TERMS = {
         "hi",
         "hello",
@@ -74,6 +83,9 @@ class AgenticChatService:
         weight_loss_agent_service: WeightLossAgentService,
         patient_profile_service: PatientProfileService,
         symptom_daily_collection: AsyncIOMotorCollection,
+        glp1_symptoms_service: Glp1SymptomsService,
+        coach_messenger_service: CoachMessengerService,
+        suggestion_cards_collection: AsyncIOMotorCollection,
     ) -> None:
         self.mongo_store = mongo_store
         self.flow_engine = flow_engine
@@ -86,6 +98,9 @@ class AgenticChatService:
         self.weight_loss_agent_service = weight_loss_agent_service
         self.patient_profile_service = patient_profile_service
         self.symptom_daily_collection = symptom_daily_collection
+        self.glp1_symptoms_service = glp1_symptoms_service
+        self.coach_messenger_service = coach_messenger_service
+        self.suggestion_cards_collection = suggestion_cards_collection
 
     async def run_scheduled_for_user(self, user_id: UUID) -> None:
         now_utc = datetime.now(timezone.utc)
@@ -99,6 +114,9 @@ class AgenticChatService:
 
         await self._maybe_run_daily_checkin(user_id, now_local, settings)
         await self._ensure_symptom_flow(user_id, now_local, settings)
+        await self._maybe_run_weekly_progress(user_id, now_local)
+        await self._maybe_regenerate_stale_plan(user_id)
+        await self._maybe_deliver_coach_card(user_id, now_local)
 
         # Handle due flows for this user (workout follow-ups, symptoms, etc.)
         due_flows = await self.flow_engine.get_due_flows(user_id, now_utc)
@@ -162,6 +180,11 @@ class AgenticChatService:
                 await self._send_bot_message(user_id, greeting)
                 return greeting
 
+            # --- Real-time safety gate ---
+            safety_disclaimer = await self._evaluate_safety_gate(
+                user_id, api_context
+            )
+
             ai_response = await self.weight_loss_agent_service.chat_with_weight_loss_agent(
                 enrollment_id=enrollment_id,
                 user_id=str(user_id),
@@ -173,6 +196,8 @@ class AgenticChatService:
                 "response",
                 "Thanks for the update. Let me know if you want help with today's plan.",
             )
+            if safety_disclaimer:
+                response_text = f"{safety_disclaimer}\n\n{response_text}"
             await self._send_bot_message(user_id, response_text)
             return response_text
 
@@ -439,6 +464,24 @@ class AgenticChatService:
                 track("/weight-loss-agent/daily-summary/context", True)
         except Exception as exc:
             track("/weight-loss-agent/daily-summary/context", False, str(exc))
+
+        # Recent coaching suggestion cards
+        try:
+            recent_cards = await self._get_recent_coach_cards(user_id, limit=6)
+            if recent_cards:
+                context["coach_cards_snapshot"] = recent_cards
+            track("/coach/recent-cards", True)
+        except Exception as exc:
+            track("/coach/recent-cards", False, str(exc))
+
+        # Task completion streaks (last 7 days)
+        try:
+            streak_info = await self._compute_task_streak(user_id, now_local)
+            if streak_info:
+                context["task_streak_snapshot"] = streak_info
+            track("/weight-loss-agent/tasks/streak", True)
+        except Exception as exc:
+            track("/weight-loss-agent/tasks/streak", False, str(exc))
 
         return context
 
@@ -840,6 +883,124 @@ class AgenticChatService:
             flow["flow_id"], {"next_run_at": datetime.now(timezone.utc)}
         )
 
+    async def _maybe_run_weekly_progress(
+        self, user_id: UUID, now_local: datetime
+    ) -> None:
+        """Send an AI-generated weekly progress report on Sunday evening.
+
+        Uses a ``weekly_progress`` flow to track state so the report is only
+        sent once per week.  The flow's ``next_run_at`` is always advanced to
+        the *next* Sunday at ``WEEKLY_PROGRESS_TIME`` after sending.
+        """
+        flow = await self.flow_engine.get_or_create_flow(
+            user_id,
+            "weekly_progress",
+            state_data={"last_report_week": None},
+        )
+        state_data = dict(flow.get("state_data", {}) or {})
+
+        progress_time = self._parse_time(self.WEEKLY_PROGRESS_TIME) or time(19, 0)
+        today = now_local.date()
+        today_weekday = today.weekday()  # 0=Monday .. 6=Sunday
+
+        # Only fire on the configured day at or after the target time
+        if today_weekday != self.WEEKLY_PROGRESS_DAY:
+            # Advance next_run to the coming Sunday
+            days_until = (self.WEEKLY_PROGRESS_DAY - today_weekday) % 7 or 7
+            next_sunday = today + timedelta(days=days_until)
+            next_run = datetime.combine(
+                next_sunday, progress_time, tzinfo=now_local.tzinfo
+            ).astimezone(timezone.utc)
+            if flow.get("next_run_at") != next_run:
+                await self.flow_engine.update_flow(
+                    flow["flow_id"], {"next_run_at": next_run}
+                )
+            return
+
+        target_dt = datetime.combine(today, progress_time, tzinfo=now_local.tzinfo)
+        if now_local < target_dt:
+            await self.flow_engine.update_flow(
+                flow["flow_id"],
+                {"next_run_at": target_dt.astimezone(timezone.utc)},
+            )
+            return
+
+        # ISO week string to de-duplicate within the same calendar week
+        week_key = today.isocalendar()
+        week_str = f"{week_key[0]}-W{week_key[1]:02d}"
+        if state_data.get("last_report_week") == week_str:
+            # Already sent this week — schedule for next Sunday
+            next_sunday = today + timedelta(days=7)
+            next_run = datetime.combine(
+                next_sunday, progress_time, tzinfo=now_local.tzinfo
+            ).astimezone(timezone.utc)
+            await self.flow_engine.update_flow(
+                flow["flow_id"], {"next_run_at": next_run}
+            )
+            return
+
+        # Resolve enrollment to call the progress analysis
+        enrollment = (
+            await self.weight_loss_agent_service.get_patient_enrollment_by_patient_id(
+                user_id
+            )
+        )
+        if not enrollment or not enrollment.get("enrollment_id"):
+            return
+
+        enrollment_id = UUID(enrollment["enrollment_id"])
+        try:
+            analysis = (
+                await self.weight_loss_agent_service.analyze_weight_loss_progress(
+                    enrollment_id=enrollment_id,
+                    start_date=datetime.combine(
+                        today - timedelta(days=7), datetime.min.time()
+                    ),
+                    end_date=datetime.combine(today, datetime.max.time()),
+                )
+            )
+        except Exception:
+            # If analysis fails, retry next tick
+            return
+
+        # Build a concise chat-friendly summary from the analysis dict
+        summary_parts = ["📊 Weekly Progress Report"]
+        if analysis.get("summary"):
+            summary_parts.append(str(analysis["summary"]))
+        if analysis.get("key_metrics"):
+            metrics = analysis["key_metrics"]
+            if isinstance(metrics, dict):
+                for key, val in metrics.items():
+                    label = key.replace("_", " ").title()
+                    summary_parts.append(f"• {label}: {val}")
+            elif isinstance(metrics, list):
+                for item in metrics[:6]:
+                    summary_parts.append(f"• {item}")
+        if analysis.get("recommendations"):
+            recs = analysis["recommendations"]
+            if isinstance(recs, list):
+                summary_parts.append("Recommendations:")
+                for rec in recs[:3]:
+                    summary_parts.append(f"  → {rec}")
+            elif isinstance(recs, str):
+                summary_parts.append(f"Recommendations: {recs}")
+        summary_parts.append(
+            "Keep going! Reply anytime if you want to dig deeper into your data."
+        )
+
+        await self._send_bot_message(user_id, "\n".join(summary_parts))
+
+        # Update state and schedule next run
+        state_data["last_report_week"] = week_str
+        next_sunday = today + timedelta(days=7)
+        next_run = datetime.combine(
+            next_sunday, progress_time, tzinfo=now_local.tzinfo
+        ).astimezone(timezone.utc)
+        await self.flow_engine.update_flow(
+            flow["flow_id"],
+            {"state_data": state_data, "next_run_at": next_run},
+        )
+
     async def _send_daily_checkin(
         self,
         user_id: UUID,
@@ -1070,12 +1231,18 @@ class AgenticChatService:
             "window_start": window.start_local.strftime("%H:%M"),
             "window_end": window.end_local.strftime("%H:%M"),
         }
-        await self.task_service.get_or_create_task(
+        workout_task = await self.task_service.get_or_create_task(
             user_id,
             "workout",
             date_str,
             metadata=metadata,
         )
+
+        # Schedule follow-up prompts after the workout window
+        if workout_task.get("status") == "pending":
+            await self._schedule_workout_followups(
+                user_id, workout_task, day, window
+            )
 
     async def _schedule_workout_followups(
         self,
@@ -1421,11 +1588,305 @@ class AgenticChatService:
                 }
             },
         )
+
+        # Feed into clinical escalation pipeline on weekly cadence
+        if state_data.get("cadence") == "weekly":
+            await self._aggregate_weekly_symptoms(user_id, now_utc)
+
         await self._send_bot_message(
             user_id,
             "Thanks for sharing. I’ve logged your symptoms for follow-up.",
         )
         return True
+
+    async def _aggregate_weekly_symptoms(
+        self, user_id: UUID, now_utc: datetime
+    ) -> None:
+        """Aggregate the last 7 days of daily symptom entries into a
+        Glp1SymptomsService.log_weekly_symptoms record so the clinical
+        escalation pipeline can evaluate persistent severity and recurrent
+        hypoglycemia.  This bridges chat-captured daily symptoms with the
+        formal weekly symptom reporting required for safety monitoring.
+        """
+        from lib.schemas.weightloss_agent.symptoms import (
+            SymptomEntry,
+            WeeklySymptomsCreate,
+        )
+
+        week_end = now_utc.date()
+        week_start = week_end - timedelta(days=6)
+
+        cursor = self.symptom_daily_collection.find(
+            {
+                "user_id": str(user_id),
+                "captured_at": {
+                    "$gte": datetime.combine(
+                        week_start, datetime.min.time(), tzinfo=timezone.utc
+                    ),
+                    "$lte": now_utc,
+                },
+            }
+        )
+        daily_docs = await cursor.to_list(length=100)
+        if not daily_docs:
+            return
+
+        # Build a single aggregated SymptomEntry from daily severity reports.
+        max_severity = max(doc.get("severity", 0) for doc in daily_docs)
+        days_reported = len({
+            doc["captured_at"].date()
+            if isinstance(doc.get("captured_at"), datetime)
+            else doc.get("captured_at")
+            for doc in daily_docs
+        })
+        combined_notes = "; ".join(
+            doc.get("notes", "") for doc in daily_docs if doc.get("notes")
+        )
+
+        # Pull medication info from injection settings
+        settings = await self.injection_service.get_settings(user_id)
+        medication_name = (settings or {}).get("medication_name")
+        medication_dose_mg = (settings or {}).get("medication_dose_mg")
+
+        payload = WeeklySymptomsCreate(
+            user_id=user_id,
+            medication_name=medication_name,
+            medication_dose_mg=medication_dose_mg,
+            week_start=week_start,
+            week_end=week_end,
+            symptoms=[
+                SymptomEntry(
+                    name="glp1_general",
+                    severity_grade=max_severity,
+                    days_reported=days_reported,
+                    notes=combined_notes[:500] if combined_notes else None,
+                )
+            ],
+            notes=f"Auto-aggregated from {len(daily_docs)} daily chat reports",
+        )
+        try:
+            record = await self.glp1_symptoms_service.log_weekly_symptoms(payload)
+            if record.escalation_triggered:
+                await self._send_bot_message(
+                    user_id,
+                    "⚠️ Based on your recent symptom reports, I’ve flagged this "
+                    "for your care provider’s review. Please reach out to your "
+                    "doctor if symptoms worsen.",
+                )
+        except Exception:
+            # Don't let aggregation failures break the chat flow
+            pass
+
+    # ------------------------------------------------------------------
+    # Tier 2: Coach card delivery
+    # ------------------------------------------------------------------
+    async def _maybe_deliver_coach_card(
+        self, user_id: UUID, now_local: datetime
+    ) -> None:
+        """Generate coaching cards via CoachMessengerService and send the
+        highest-confidence card as a bot chat message.  Runs once per day
+        (tracked via the daily_checkin flow's ``last_coach_card_date``).
+        """
+        flow = await self.flow_engine.get_flow(user_id, "daily_checkin")
+        if not flow:
+            return
+        state_data = dict(flow.get("state_data", {}) or {})
+        today_str = now_local.date().isoformat()
+
+        if state_data.get("last_coach_card_date") == today_str:
+            return  # Already delivered today
+
+        try:
+            response = await self.coach_messenger_service.act(
+                CoachActionRequest(
+                    user_id=user_id,
+                    trigger="daily_scheduled",
+                    context_tags=["agentic", "daily"],
+                )
+            )
+        except Exception:
+            return  # Don't block the pipeline if card generation fails
+
+        if response.abstained or not response.cards:
+            return
+
+        # Pick the card with highest confidence
+        best_card = max(response.cards, key=lambda c: c.confidence)
+        card_message = f"💡 {best_card.title}\n{best_card.body}"
+        if best_card.cta:
+            card_message += f"\n👉 {best_card.cta}"
+        await self._send_bot_message(user_id, card_message)
+
+        state_data["last_coach_card_date"] = today_str
+        await self.flow_engine.update_flow(
+            flow["flow_id"], {"state_data": state_data}
+        )
+
+    # ------------------------------------------------------------------
+    # Tier 2: Real-time safety gate
+    # ------------------------------------------------------------------
+    async def _evaluate_safety_gate(
+        self, user_id: UUID, api_context: Dict[str, Any]
+    ) -> Optional[str]:
+        """Evaluate safety rules against current patient context.  Returns a
+        disclaimer string if critical/high contraindications are triggered,
+        otherwise ``None``.
+        """
+        safety_snapshot = api_context.get("safety_snapshot") or {}
+        contraindications = safety_snapshot.get("contraindications") or []
+
+        # Filter for critical and high severity only
+        severe_flags = [
+            c for c in contraindications
+            if c.get("severity") in ("critical", "high")
+        ]
+        if not severe_flags:
+            return None
+
+        reasons = []
+        for flag in severe_flags:
+            desc = flag.get("description") or flag.get("type", "safety concern")
+            reasons.append(f"• {desc} (severity: {flag.get('severity', 'high')})")
+
+        disclaimer = (
+            "⚠️ **Safety Notice** — Based on your health profile, the "
+            "following precautions apply:\n"
+            + "\n".join(reasons)
+            + "\nPlease consult your care provider before making changes "
+            "to your exercise or medication routine."
+        )
+        return disclaimer
+
+    # ------------------------------------------------------------------
+    # Tier 2: Auto-plan regeneration (staleness check)
+    # ------------------------------------------------------------------
+    PLAN_STALE_DAYS = 7
+
+    async def _maybe_regenerate_stale_plan(self, user_id: UUID) -> None:
+        """Regenerate the plan if it is older than ``PLAN_STALE_DAYS`` days.
+        Runs once per day during the scheduled tick.  Uses the daily_checkin
+        flow's ``last_plan_regen_date`` to de-duplicate.
+        """
+        flow = await self.flow_engine.get_flow(user_id, "daily_checkin")
+        if not flow:
+            return
+        state_data = dict(flow.get("state_data", {}) or {})
+
+        today_str = date.today().isoformat()
+        if state_data.get("last_plan_regen_date") == today_str:
+            return  # Already checked today
+
+        plan = await self.plan_composer_service.get_current_plan(user_id)
+        if plan:
+            generated_at = plan.generated_at
+            if isinstance(generated_at, str):
+                try:
+                    generated_at = datetime.fromisoformat(generated_at)
+                except ValueError:
+                    generated_at = None
+
+            if generated_at:
+                age_days = (datetime.now(timezone.utc) - generated_at.replace(
+                    tzinfo=timezone.utc
+                ) if generated_at.tzinfo is None else
+                    datetime.now(timezone.utc) - generated_at).days
+                if age_days < self.PLAN_STALE_DAYS:
+                    state_data["last_plan_regen_date"] = today_str
+                    await self.flow_engine.update_flow(
+                        flow["flow_id"], {"state_data": state_data}
+                    )
+                    return
+
+        # Plan is stale or missing — regenerate
+        try:
+            await self.plan_composer_service.generate_plan(
+                PlanGenerateRequest(user_id=user_id)
+            )
+        except Exception:
+            pass  # Will retry next tick
+
+        state_data["last_plan_regen_date"] = today_str
+        await self.flow_engine.update_flow(
+            flow["flow_id"], {"state_data": state_data}
+        )
+
+    # ------------------------------------------------------------------
+    # Tier 2: Enriched context helpers
+    # ------------------------------------------------------------------
+    async def _get_recent_coach_cards(
+        self, user_id: UUID, *, limit: int = 6
+    ) -> List[Dict[str, Any]]:
+        """Fetch recent suggestion cards for the user from MongoDB."""
+        cursor = (
+            self.suggestion_cards_collection.find(
+                {"user_id": str(user_id)},
+                projection={
+                    "_id": 0,
+                    "title": 1,
+                    "body": 1,
+                    "card_type": 1,
+                    "context_tags": 1,
+                    "confidence": 1,
+                    "created_at": 1,
+                },
+            )
+            .sort("created_at", -1)
+            .limit(limit)
+        )
+        results = await cursor.to_list(length=limit)
+        return [
+            {
+                "card_type": item.get("card_type"),
+                "title": item.get("title"),
+                "body": item.get("body"),
+                "context_tags": item.get("context_tags", []),
+                "confidence": item.get("confidence"),
+                "created_at": (
+                    item["created_at"].isoformat()
+                    if isinstance(item.get("created_at"), datetime)
+                    else item.get("created_at")
+                ),
+            }
+            for item in results
+        ]
+
+    async def _compute_task_streak(
+        self, user_id: UUID, now_local: datetime
+    ) -> Dict[str, Any]:
+        """Compute a 7-day task completion summary for richer AI context."""
+        today = now_local.date()
+        dates = [(today - timedelta(days=i)).isoformat() for i in range(7)]
+        cursor = self.task_service.tasks_collection.find(
+            {"user_id": str(user_id), "date": {"$in": dates}}
+        )
+        tasks = await cursor.to_list(length=200)
+
+        total = len(tasks)
+        done = len([t for t in tasks if t.get("status") == "done"])
+        skipped = len([t for t in tasks if t.get("status") == "skipped"])
+        pending = len([t for t in tasks if t.get("status") == "pending"])
+
+        # Compute consecutive days with all tasks completed (streak)
+        streak = 0
+        for i in range(7):
+            day_str = (today - timedelta(days=i)).isoformat()
+            day_tasks = [t for t in tasks if t.get("date") == day_str]
+            if not day_tasks:
+                break
+            if all(t.get("status") == "done" for t in day_tasks):
+                streak += 1
+            else:
+                break
+
+        return {
+            "period_days": 7,
+            "total_tasks": total,
+            "completed": done,
+            "skipped": skipped,
+            "pending": pending,
+            "completion_rate": round(done / total, 2) if total else 0,
+            "current_streak_days": streak,
+        }
 
     async def _resolve_workout_window(
         self, user_id: UUID, day: date

@@ -218,12 +218,17 @@ Recent cards to avoid repeating:
                 conversation_id=conversation_id,
                 human_input=prompt,
                 conversation_type="other",
-                additional_context={
-                    "plan_snapshot": plan.model_dump(),
-                    "trigger": request.trigger,
-                    "base_context_tags": base_tags,
-                    "recent_cards": recent_cards,
-                },
+                additional_context=json.loads(
+                    json.dumps(
+                        {
+                            "plan_snapshot": plan.model_dump(),
+                            "trigger": request.trigger,
+                            "base_context_tags": base_tags,
+                            "recent_cards": recent_cards,
+                        },
+                        default=str,
+                    )
+                ),
                 api_endpoint="/coach/act",
             )
         except Exception as exc:

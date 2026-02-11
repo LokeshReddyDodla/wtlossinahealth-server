@@ -142,6 +142,9 @@ from lib.services.weightloss_agent.glp1_injection_service import (
 from lib.services.weightloss_agent.exercise_recommendation_service import (
     ExerciseRecommendationService,
 )
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
 from lib.services.weightloss_agent.flow_engine import FlowEngine
 from lib.services.weightloss_agent.task_service import TaskService
 from lib.services.weightloss_agent.agentic_chat_service import (
@@ -945,6 +948,25 @@ container.register(
     ),
 )
 
+# 🔹 Coach Messenger Service
+container.register(
+    CoachMessengerService,
+    lambda: CoachMessengerService(
+        suggestion_cards_collection=container.resolve(
+            "suggestion_cards_collection"
+        ),
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+        ai_conversation_service=cast(
+            AiConversationService, container.resolve(AiConversationService)
+        ),
+    ),
+)
+
 container.register(
     WeightLossAgentService,
     lambda: WeightLossAgentService(
@@ -1007,6 +1029,15 @@ container.register(
         ),
         symptom_daily_collection=container.resolve(
             "weightloss_symptom_daily_collection"
+        ),
+        glp1_symptoms_service=cast(
+            Glp1SymptomsService, container.resolve(Glp1SymptomsService)
+        ),
+        coach_messenger_service=cast(
+            CoachMessengerService, container.resolve(CoachMessengerService)
+        ),
+        suggestion_cards_collection=container.resolve(
+            "suggestion_cards_collection"
         ),
     ),
 )

@@ -51,6 +51,18 @@ class TaskService:
         )
         return await cursor.to_list(length=None)
 
+    async def get_tasks_for_date(
+        self, user_id: UUID, date_str: str
+    ) -> List[Dict[str, Any]]:
+        """Return *all* tasks for the given user and date, regardless of status."""
+        cursor = self.tasks_collection.find(
+            {
+                "user_id": str(user_id),
+                "date": date_str,
+            }
+        )
+        return await cursor.to_list(length=None)
+
     async def create_task(
         self,
         user_id: UUID,
