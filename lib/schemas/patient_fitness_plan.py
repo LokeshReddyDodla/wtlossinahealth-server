@@ -19,7 +19,6 @@ class PatientFitnessPlanBase(BaseModel):
 class PatientFitnessPlanCreate(PatientFitnessPlanBase):
     pass
 
-
 class PatientFitnessPlanUpdate(PatientFitnessPlanBase):
     pass
 
