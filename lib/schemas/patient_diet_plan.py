@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class MealDistribution(BaseModel):
-    total_calories: float
+    calories: float
     carbs: float
     protein: float
     fats: float
@@ -18,27 +18,35 @@ class MealDistribution(BaseModel):
 
 
 class PatientDietPlanBase(MealDistribution):
+    major_meal: Optional[MealDistribution] = None
+    snack: Optional[MealDistribution] = None
+
+
+class PatientDietPlanCreate(PatientDietPlanBase):
     start_date: datetime_date
     end_date: Optional[datetime_date] = None
     is_default: bool = False
     status: str = "ACTIVE"
     plan_reason: Optional[str] = None
 
-    major_meal: Optional[MealDistribution] = None
-    snack: Optional[MealDistribution] = None
-
-
-class PatientDietPlanCreate(PatientDietPlanBase):
-    pass
-
 
 class PatientDietPlanUpdate(PatientDietPlanBase):
+    start_date: datetime_date
+    end_date: Optional[datetime_date] = None
+    is_default: bool = False
+    status: str = "ACTIVE"
+    plan_reason: Optional[str] = None
     pass
 
 
 class PatientDietPlan(PatientDietPlanBase):
     diet_plan_id: UUID
     patient_id: UUID
+    start_date: datetime_date
+    end_date: Optional[datetime_date] = None
+    is_default: bool = False
+    status: str = "ACTIVE"
+    plan_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

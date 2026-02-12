@@ -28,7 +28,7 @@ class PatientDietPlan(Base):
         nullable=False,
         index=True,
     )
-    total_calories = Column(Float)
+    calories = Column(Float)
     carbs = Column(Float)
     protein = Column(Float)
     fats = Column(Float)

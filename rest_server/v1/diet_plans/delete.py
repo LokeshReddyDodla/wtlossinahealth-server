@@ -1,5 +1,4 @@
 from http.client import HTTPException
-from uuid import UUID
 
 from fastapi import Depends, status
 
@@ -7,13 +6,13 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
-    get_patient_plan_service,
+    get_patient_diet_plan_service,
 )
 from lib.dependencies.patient_access import (
     resolve_patient_access,
 )
 from lib.services.care_provider_access_service import CareProviderAccessService
-from lib.services.patient_plan_service import PatientPlanService
+from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -29,8 +28,8 @@ from .router import router
     response_model=SuccessResponse,
 )
 async def delete_diet_plan(
-    diet_plan_id: UUID,
-    plan_service: PatientPlanService = Depends(get_patient_plan_service),
+    diet_plan_id: str,
+    plan_service: PatientDietPlanService = Depends(get_patient_diet_plan_service),
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
@@ -48,7 +47,7 @@ async def delete_diet_plan(
     """Delete a diet plan."""
     try:
         # Get the plan first to verify access
-        diet_plan = await plan_service.get_diet_plan(str(diet_plan_id))
+        diet_plan = await plan_service.get_diet_plan(diet_plan_id)
 
         if not diet_plan:
             raise_http_exception(
@@ -63,7 +62,7 @@ async def delete_diet_plan(
             care_provider_access_service=care_provider_access_service,
         )
 
-        await plan_service.delete_diet_plan(str(diet_plan_id))
+        await plan_service.delete_diet_plan(diet_plan_id)
 
         return SuccessResponse(
             data=None,

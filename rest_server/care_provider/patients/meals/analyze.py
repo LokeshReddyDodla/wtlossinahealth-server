@@ -16,7 +16,6 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.meals.diet_recommendations import get_diet_recommendations
 from lib.services.reports import MealStatsProcessor
 from rest_server.patients.meals.api_schema import PatientMealAnalysis
 from rest_server.response_models import SuccessResponse
@@ -35,9 +34,7 @@ async def analyze_meal(
     re_analyze: Optional[bool] = False,
     update_fields: Optional[dict] = None,
     meal_service: MealService = Depends(get_meal_service),
-    meal_stats_processor: MealStatsProcessor = Depends(
-        get_meal_stats_processor
-    ),
+    meal_stats_processor: MealStatsProcessor = Depends(get_meal_stats_processor),
     current_care_provider: CareProviderModel = Depends(
         get_current_care_provider(
             CareProviderPermissionAction.CREATE, CareProviderFeature.REPORTS
@@ -50,14 +47,12 @@ async def analyze_meal(
             re_analyze=re_analyze,
             update_fields=update_fields,
             patient_id=str(patient_id),
-        )
+        )  # type: ignore
 
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
 
-        diet_recommendations_data = (
-            await meal_stats_processor.get_diet_recommendation(
-                str(patient_id), meal_data.uploaded_at
-            )
+        diet_recommendations_data = await meal_stats_processor.get_diet_recommendation(
+            str(patient_id), meal_data.uploaded_at
         )
 
         meal_recommendation = (
@@ -66,9 +61,7 @@ async def analyze_meal(
             else diet_recommendations_data.major_meal
         )
 
-        validated_recommendations = MealDistribution.model_validate(
-            meal_recommendation
-        )
+        validated_recommendations = MealDistribution.model_validate(meal_recommendation)
 
         return SuccessResponse(
             message="Meal analyzed successfully.",

@@ -1,5 +1,4 @@
 from http.client import HTTPException
-from uuid import UUID
 
 from fastapi import Depends, status
 
@@ -7,18 +6,17 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
-    get_patient_plan_service,
+    get_patient_fitness_plan_service,
 )
 from lib.dependencies.patient_access import (
     resolve_patient_access,
 )
 from lib.schemas.patient_fitness_plan import (
     PatientFitnessPlan,
-    PatientFitnessPlanCreate,
     PatientFitnessPlanUpdate,
 )
 from lib.services.care_provider_access_service import CareProviderAccessService
-from lib.services.patient_plan_service import PatientPlanService
+from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
@@ -36,7 +34,7 @@ from .router import router
 async def update_fitness_plan(
     fitness_plan_id: str,
     payload: PatientFitnessPlanUpdate,
-    plan_service: PatientPlanService = Depends(get_patient_plan_service),
+    plan_service: PatientFitnessPlanService = Depends(get_patient_fitness_plan_service),
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
@@ -75,7 +73,7 @@ async def update_fitness_plan(
         updated_plan = await plan_service.update_fitness_plan(
             fitness_plan_id=fitness_plan_id,
             update_data=update_data,
-        )
+        ) # type: ignore
 
         return SuccessResponse(
             data=PatientFitnessPlan.model_validate(updated_plan),

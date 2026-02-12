@@ -86,8 +86,6 @@ from lib.services.reports import SMBGStatsProcessor
 
 processor = SMBGStatsProcessor(
     postgres_store=postgres_store,
-    patient_profile_service=patient_profile_service,
-    patient_plan_service=patient_plan_service,
     meal_stats_processor=meal_stats_processor,
 )
 

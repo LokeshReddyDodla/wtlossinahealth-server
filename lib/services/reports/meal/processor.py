@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
 from functools import partial
 
 from lib.schemas.meal_statistics import (
@@ -32,21 +32,18 @@ class MealStatsProcessor:
         postgres_store,
         clickhouse_store,
         cgm_stats_processor,
-        patient_profile_service,
-        patient_plan_service,
+        patient_diet_plan_service,
         meal_report_service,
     ):
         self.postgres_store = postgres_store
         self.clickhouse_store = clickhouse_store
-        self.patient_profile_service = patient_profile_service
-        self.patient_plan_service = patient_plan_service
+        self.patient_diet_plan_service = patient_diet_plan_service
         self.cgm_stats_processor = cgm_stats_processor
         self.meal_report_service = meal_report_service
 
         self.get_diet_recommendation = partial(
             get_diet_recommendations,
-            patient_plan_service=self.patient_plan_service,
-            patient_profile_service=self.patient_profile_service,
+            patient_diet_plan_service=self.patient_diet_plan_service,
         )
 
     @with_postgres_session
@@ -58,8 +55,14 @@ class MealStatsProcessor:
             date,
         )
 
+        start_dt = datetime.combine(date, time.min)
+        end_dt = datetime.combine(date, time.max)
+
         avg_glucose = CGMStatistics.fetch_daily_average_glucose(
-            self.clickhouse_store, patient_id, date, date
+            self.clickhouse_store,
+            patient_id,
+            start_dt,
+            end_dt,
         ).get(date, 0.0)
 
         query = build_meal_query(patient_id, date, date)
@@ -67,9 +70,7 @@ class MealStatsProcessor:
         row = result.first()
 
         if not row:
-            return empty_daily_stats(
-                date, {date: avg_glucose}, diet_recommendations
-            )
+            return empty_daily_stats(date, {date: avg_glucose}, diet_recommendations)
 
         return build_daily_stats(
             row,
@@ -93,10 +94,8 @@ class MealStatsProcessor:
             start_date,
         )
 
-        avg_glucose_by_date = (
-            CGMStatistics.fetch_daily_average_glucose(
-                self.clickhouse_store, patient_id, start_date, end_date
-            )
+        avg_glucose_by_date = CGMStatistics.fetch_daily_average_glucose(
+            self.clickhouse_store, patient_id, start_date, end_date
         )
 
         query = build_meal_query(patient_id, start_date, end_date)
@@ -105,9 +104,7 @@ class MealStatsProcessor:
 
         if not rows:
             return [
-                empty_daily_stats(
-                    start_date, avg_glucose_by_date, diet_recommendations
-                )
+                empty_daily_stats(start_date, avg_glucose_by_date, diet_recommendations)
             ]
 
         return [
@@ -203,18 +200,18 @@ class MealStatsProcessor:
                 ),
                 within_budget_percentages=WithinBudgetPercentages(
                     carbs=round(within_carb_range * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                     else 0.0,
                     protein=round(within_protein_range * 100 / total_meals, 1)
                     if total_meals
                     else 0.0,
                     fat=round(within_fat_budget * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                     else 0.0,
                     fiber=round(within_fiber_budget * 100 / total_meals, 1)
-                if total_meals
+                    if total_meals
                     else 0.0,
-            ),
+                ),
             ),
             breakdowns=MealTypeBreakdown(by_meal_type=detailed_stats),
             meals=MealsData(by_date=meals_by_date) if meals_by_date else None,
@@ -291,10 +288,8 @@ class MealStatsProcessor:
         prev_start = prev_month_last_day.replace(day=1)
         prev_end = prev_month_last_day
 
-        prev_reports = (
-            await self.meal_report_service.fetch_daily_reports_in_range(
-                patient_id, prev_start, prev_end
-            )
+        prev_reports = await self.meal_report_service.fetch_daily_reports_in_range(
+            patient_id, prev_start, prev_end
         )
 
         current_type_medians = MealStatistics.compute_meal_type_medians(reports)
@@ -334,18 +329,18 @@ class MealStatsProcessor:
             ),
             within_budget_percentages=WithinBudgetPercentages(
                 carbs=round(within_carb_range * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                 else 0.0,
                 protein=round(within_protein_range * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                 else 0.0,
                 fat=round(within_fat_range * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                 else 0.0,
                 fiber=round(within_fiber_range * 100 / total_meals, 1)
-                    if total_meals
+                if total_meals
                 else 0.0,
-                ),
+            ),
             weekly_summaries=weekly_summaries,
             meal_type_comparison=meal_type_comparison,
         )
