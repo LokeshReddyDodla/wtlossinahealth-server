@@ -158,7 +158,7 @@ class CGMUploadService:
 
         df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
 
-        required_cols = ["s/n", "time point", "value", "units"]
+        required_cols = ["time point", "value", "units"]
         if not set(required_cols).issubset(df_raw.columns):
             raise ValueError("Sinocare file missing required columns")
 
