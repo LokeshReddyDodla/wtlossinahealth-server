@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date as datetime_date
 from typing import Optional
 from uuid import UUID
 
@@ -16,6 +16,12 @@ class PatientFitnessPlanCreate(PatientFitnessPlanBase):
 
 class PatientFitnessPlan(PatientFitnessPlanBase):
     fitness_plan_id: UUID
+    patient_id: UUID
+    start_date: datetime_date
+    end_date: Optional[datetime_date] = None
+    is_default: bool = False
+    status: str = "ACTIVE"
+    plan_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

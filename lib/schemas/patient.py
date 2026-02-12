@@ -10,11 +10,13 @@ from lib.schemas.patient_connected_app import PatientConnectedApp
 from lib.schemas.patient_current_medication import PatientCurrentMedication
 from lib.schemas.patient_daily_activity import PatientDailyActivity
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
+from lib.schemas.patient_diet_plan import PatientDietPlan
 from lib.schemas.patient_drug_allergy import PatientDrugAllergy
 from lib.schemas.patient_eating_habit import PatientEatingHabit
 from lib.schemas.patient_family_diabetic_history import (
     PatientFamilyDiabeticHistory,
 )
+from lib.schemas.patient_fitness_plan import PatientFitnessPlan
 from lib.schemas.patient_food_allergy import PatientFoodAllergy
 from lib.schemas.patient_medical_history import PatientMedicalHistory
 from lib.schemas.patient_package_assignment import (
@@ -22,7 +24,6 @@ from lib.schemas.patient_package_assignment import (
     PatientPackageAssignmentWithDetail,
 )
 from lib.schemas.patient_permission import PatientPermission
-from lib.schemas.patient_plan import PatientPlan
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
@@ -96,7 +97,8 @@ class CorePatientProfile(Patient):
     family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
     medical_histories: List[PatientMedicalHistory] = []
     current_medication: Optional[PatientCurrentMedication] = None
-    patient_plans: List[PatientPlan] = []
+    diet_plans: List[PatientDietPlan] = []
+    fitness_plans: List[PatientFitnessPlan] = []
 
     class Config:
         from_attributes = True

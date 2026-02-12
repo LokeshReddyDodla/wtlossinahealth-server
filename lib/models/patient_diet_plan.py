@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, UUID, Column, DateTime, Float, ForeignKey, String
+from sqlalchemy import (
+    JSON,
+    UUID,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    String,
+    Boolean,
+    Index,
+)
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -10,8 +21,12 @@ from lib.models import Base
 class PatientDietPlan(Base):
     __tablename__ = "patient_diet_plans"
 
-    diet_plan_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    diet_plan_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patient_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("patients.patient_id"),
+        nullable=False,
+        index=True,
     )
     total_calories = Column(Float)
     carbs = Column(Float)
@@ -26,14 +41,28 @@ class PatientDietPlan(Base):
     major_meal = Column(JSON, nullable=True)
     snack = Column(JSON, nullable=True)
 
-    created_at = Column(
-        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
-    )
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=True)
+    is_default = Column(Boolean, default=False, index=True)
+    status = Column(String(20), default="ACTIVE", index=True)
+    plan_reason = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
     updated_at = Column(
         DateTime,
         default=lambda: datetime.now().replace(tzinfo=None),
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
 
-    # Relationship to patient plan
-    patient_plans = relationship("PatientPlan", back_populates="diet_plan")
+    # Relationships
+    patient = relationship("Patient", back_populates="diet_plans")
+
+    __table_args__ = (
+        Index(
+            "ix_patient_diet_plan_default",
+            "patient_id",
+            unique=True,
+            postgresql_where="is_default = true",
+        ),
+        Index("ix_patient_diet_plan_status_date", "patient_id", "status", "start_date"),
+    )
