@@ -70,14 +70,15 @@ async def update_fitness_plan(
             care_provider_access_service=care_provider_access_service,
         )
 
-        # Update fields from payload
+        # Update the fitness plan in the database
         update_data = payload.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            if value is not None and hasattr(fitness_plan, field):
-                setattr(fitness_plan, field, value)
+        updated_plan = await plan_service.update_fitness_plan(
+            fitness_plan_id=fitness_plan_id,
+            update_data=update_data,
+        )
 
         return SuccessResponse(
-            data=PatientFitnessPlan.model_validate(fitness_plan),
+            data=PatientFitnessPlan.model_validate(updated_plan),
             message="Fitness plan updated successfully",
         )
 

@@ -27,7 +27,6 @@ from .router import router
 @router.delete(
     "/{diet_plan_id}",
     response_model=SuccessResponse,
-    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_diet_plan(
     diet_plan_id: UUID,

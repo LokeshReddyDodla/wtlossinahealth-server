@@ -70,14 +70,15 @@ async def update_diet_plan(
             care_provider_access_service=care_provider_access_service,
         )
 
-        # Update fields from payload
+        # Update the diet plan in the database
         update_data = payload.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            if value is not None and hasattr(diet_plan, field):
-                setattr(diet_plan, field, value)
+        updated_plan = await plan_service.update_diet_plan(
+            diet_plan_id=diet_plan_id,
+            update_data=update_data,
+        )  # type: ignore
 
         return SuccessResponse(
-            data=PatientDietPlan.model_validate(diet_plan),
+            data=PatientDietPlan.model_validate(updated_plan),
             message="Diet plan updated successfully",
         )
 

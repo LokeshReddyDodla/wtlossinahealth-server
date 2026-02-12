@@ -27,7 +27,6 @@ from .router import router
 @router.delete(
     "/{fitness_plan_id}",
     response_model=SuccessResponse,
-    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_fitness_plan(
     fitness_plan_id: str,
