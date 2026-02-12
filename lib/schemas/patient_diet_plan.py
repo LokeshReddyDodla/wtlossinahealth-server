@@ -18,6 +18,12 @@ class MealDistribution(BaseModel):
 
 
 class PatientDietPlanBase(MealDistribution):
+    start_date: datetime_date
+    end_date: Optional[datetime_date] = None
+    is_default: bool = False
+    status: str = "ACTIVE"
+    plan_reason: Optional[str] = None
+
     major_meal: Optional[MealDistribution] = None
     snack: Optional[MealDistribution] = None
 
@@ -26,17 +32,15 @@ class PatientDietPlanCreate(PatientDietPlanBase):
     pass
 
 
+class PatientDietPlanUpdate(PatientDietPlanBase):
+    pass
+
+
 class PatientDietPlan(PatientDietPlanBase):
     diet_plan_id: UUID
     patient_id: UUID
-    start_date: datetime_date
-    end_date: Optional[datetime_date] = None
-    is_default: bool = False
-    status: str = "ACTIVE"
-    plan_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
-

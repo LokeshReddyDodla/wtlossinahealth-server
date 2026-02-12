@@ -10,29 +10,29 @@ async def get_diet_recommendations(
     patient_profile_service,
 ) -> PatientDietPlanBase:
     """Fetch diet recommendations from an active plan or calculate dynamically."""
-    active_plan = await patient_plan_service.get_active_patient_plan(
+    active_diet_plan = await patient_plan_service.get_active_diet_plan(
         patient_id, query_date
     )
 
-    if active_plan and active_plan.diet_plan:
+    if active_diet_plan:
         return PatientDietPlanBase(
-            total_calories=active_plan.diet_plan.total_calories,
-            protein=active_plan.diet_plan.protein,
-            carbs=active_plan.diet_plan.carbs,
-            fats=active_plan.diet_plan.fats,
-            fiber=active_plan.diet_plan.fiber,
-            calcium=active_plan.calcium,
-            iron=active_plan.iron,
-            zinc=active_plan.zinc,
-            magnesium=active_plan.magnesium,
+            total_calories=active_diet_plan.total_calories,
+            protein=active_diet_plan.protein,
+            carbs=active_diet_plan.carbs,
+            fats=active_diet_plan.fats,
+            fiber=active_diet_plan.fiber,
+            calcium=active_diet_plan.calcium,
+            iron=active_diet_plan.iron,
+            zinc=active_diet_plan.zinc,
+            magnesium=active_diet_plan.magnesium,
             major_meal=(
-                MealDistribution(**active_plan.diet_plan.major_meal)
-                if active_plan.diet_plan.major_meal
+                MealDistribution(**active_diet_plan.major_meal)
+                if active_diet_plan.major_meal
                 else None
             ),
             snack=(
-                MealDistribution(**active_plan.diet_plan.snack)
-                if active_plan.diet_plan.snack
+                MealDistribution(**active_diet_plan.snack)
+                if active_diet_plan.snack
                 else None
             ),
         )
