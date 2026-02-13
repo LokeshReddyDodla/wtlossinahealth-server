@@ -29,9 +29,7 @@ async def analyze_meal_api(
     re_analyze: Optional[bool] = False,
     update_fields: Optional[dict] = None,
     meal_service: MealService = Depends(get_meal_service),
-    meal_stats_processor: MealStatsProcessor = Depends(
-        get_meal_stats_processor
-    ),
+    meal_stats_processor: MealStatsProcessor = Depends(get_meal_stats_processor),
     current_patient: Patient = Depends(get_current_patient),
 ):
     """
@@ -47,20 +45,12 @@ async def analyze_meal_api(
 
         meal_data = PatientMealSchema.from_orm(analyzed_meal)
 
-        diet_recommendations_data = (
-            await meal_stats_processor.get_diet_recommendation(
-                str(current_patient.patient_id), meal_data.uploaded_at
-            )
-        )
-
-        meal_recommendation = (
-            diet_recommendations_data.snack
-            if meal_data.type == "snack"
-            else diet_recommendations_data.major_meal
+        diet_recommendations_data = await meal_stats_processor.get_diet_recommendation(
+            str(current_patient.patient_id), meal_data.uploaded_at
         )
 
         validated_recommendations = MealDistribution.model_validate(
-            meal_recommendation
+            diet_recommendations_data
         )
 
         return SuccessResponse(

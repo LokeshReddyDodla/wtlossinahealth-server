@@ -55,13 +55,9 @@ async def analyze_meal(
             str(patient_id), meal_data.uploaded_at
         )
 
-        meal_recommendation = (
-            diet_recommendations_data.snack
-            if meal_data.type == "snack"
-            else diet_recommendations_data.major_meal
+        validated_recommendations = MealDistribution.model_validate(
+            diet_recommendations_data
         )
-
-        validated_recommendations = MealDistribution.model_validate(meal_recommendation)
 
         return SuccessResponse(
             message="Meal analyzed successfully.",
