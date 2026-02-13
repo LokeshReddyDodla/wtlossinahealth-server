@@ -86,6 +86,7 @@ from lib.services.patient_package_assignment_service import (
 )
 from lib.services.patient_plan_service import PatientPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.patient_profile_vector_service.patient_profile_vector_service import (
     PatientProfileVectorService,
 )
@@ -258,6 +259,15 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("wtloss_weight_loss_progress_analyses"),
+    scope=Scope.singleton,
+)
+
+# Profile Update Agent Collection
+container.register(
+    "profile_update_conversations_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("profile_update_conversations"),
     scope=Scope.singleton,
 )
 
@@ -1268,3 +1278,17 @@ container.register(
 
 # 🔹 File Content Extractor Service
 container.register(FileContentExtractorService, FileContentExtractorService)
+
+# 🔹 Profile Update Agent Service
+container.register(
+    ProfileUpdateAgentService,
+    lambda: ProfileUpdateAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        conversation_collection=container.resolve(
+            "profile_update_conversations_collection"
+        ),
+    ),
+)

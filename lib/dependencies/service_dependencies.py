@@ -107,6 +107,7 @@ from lib.utils.smbg.processor import SMBGStatsProcessor
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.safety_rules_service import (
@@ -572,4 +573,11 @@ def get_health_query_agent_service() -> HealthQueryAgentService:
     return cast(
         HealthQueryAgentService,
         container.resolve(HealthQueryAgentService),
+    )
+
+
+def get_profile_update_agent_service() -> ProfileUpdateAgentService:
+    return cast(
+        ProfileUpdateAgentService,
+        container.resolve(ProfileUpdateAgentService),
     )
