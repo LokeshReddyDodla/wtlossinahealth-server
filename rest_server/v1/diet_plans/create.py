@@ -70,7 +70,6 @@ async def create_diet_plan(
             end_date=payload.end_date,
             is_default=payload.is_default,
             status=payload.status,
-            plan_reason=payload.plan_reason,
         )  # type: ignore
 
         return SuccessResponse(

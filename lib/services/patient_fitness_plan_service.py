@@ -37,7 +37,6 @@ class PatientFitnessPlanService:
     ) -> PatientFitnessPlanModel:
         """Create a new fitness plan for a patient with date range and lifecycle fields."""
         try:
-            # Check for overlapping ACTIVE plans
             if status == "ACTIVE":
                 overlapping_stmt = select(PatientFitnessPlanModel).where(
                     PatientFitnessPlanModel.patient_id == patient_id,
@@ -53,12 +52,12 @@ class PatientFitnessPlanService:
                 overlapping_plan = result.scalars().first()
 
                 if overlapping_plan:
+                    end_date_display = overlapping_plan.end_date.strftime('%B %d, %Y') if overlapping_plan.end_date else 'ongoing'
                     raise_http_exception(
                         status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message=f"Cannot create ACTIVE fitness plan: overlaps with existing plan (ID: {overlapping_plan.fitness_plan_id}) from {overlapping_plan.start_date} to {overlapping_plan.end_date or 'ongoing'}. Please archive or modify the existing plan first.",
+                        message=f"You already have an active fitness plan from {overlapping_plan.start_date.strftime('%B %d, %Y')} to {end_date_display}. Please pause or archive it before creating a new one.",
                     )
 
-            # Check if trying to set is_default when another default exists
             if is_default:
                 existing_default = await self.get_default_fitness_plan(
                     patient_id, postgres_session=postgres_session
@@ -66,7 +65,7 @@ class PatientFitnessPlanService:
                 if existing_default:
                     raise_http_exception(
                         status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message=f"Patient {patient_id} already has a default fitness plan.",
+                        message="A default fitness plan already exists. Please update the existing one or remove its default status first.",
                     )
 
             fitness_plan = PatientFitnessPlanModel(
@@ -81,7 +80,7 @@ class PatientFitnessPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                message="Failed to create fitness plan due to an integrity error.",
+                message="Unable to create fitness plan. Please check your inputs and try again.",
                 detail=str(e),
             )
 
@@ -107,20 +106,17 @@ class PatientFitnessPlanService:
         Use this when you want to replace the current plan with a new one.
         """
         try:
-            # Get all current ACTIVE plans
             active_plans = await self.get_patient_fitness_plans(
                 patient_id=patient_id,
                 status_filter="ACTIVE",
                 postgres_session=postgres_session,
             )
 
-            # Archive all active plans and adjust end dates
             for plan in active_plans:
                 plan.status = "ARCHIVED"
                 if plan.end_date is None or plan.end_date >= start_date:
                     plan.end_date = start_date - timedelta(days=1)
 
-            # Now create the new plan
             return await self.create_fitness_plan(
                 patient_id=patient_id,
                 fitness_plan_data=fitness_plan_data,
@@ -135,7 +131,7 @@ class PatientFitnessPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to replace active fitness plan.",
+                message="Unable to update your fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -171,7 +167,7 @@ class PatientFitnessPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch active fitness plan.",
+                message="Unable to load your active fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -195,7 +191,7 @@ class PatientFitnessPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch default fitness plan.",
+                message="Unable to load your default fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -223,7 +219,7 @@ class PatientFitnessPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch patient fitness plans.",
+                message="Unable to load fitness plans. Please try again.",
                 detail=str(e),
             )
 
@@ -246,7 +242,7 @@ class PatientFitnessPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch fitness plan.",
+                message="Unable to load this fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -269,7 +265,7 @@ class PatientFitnessPlanService:
             if not fitness_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Fitness plan with ID '{fitness_plan_id}' not found.",
+                    message="Fitness plan not found. It may have been deleted.",
                 )
 
             for field, value in update_data.items():
@@ -283,7 +279,7 @@ class PatientFitnessPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to update fitness plan.",
+                message="Unable to save changes to your fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -306,7 +302,7 @@ class PatientFitnessPlanService:
             if not fitness_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Fitness plan with ID '{fitness_plan_id}' not found.",
+                    message="Fitness plan not found. It may have been deleted.",
                 )
 
             fitness_plan.status = new_status
@@ -317,7 +313,7 @@ class PatientFitnessPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to update fitness plan status.",
+                message="Unable to update fitness plan status. Please try again.",
                 detail=str(e),
             )
 
@@ -339,7 +335,7 @@ class PatientFitnessPlanService:
             if not fitness_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Fitness plan with ID '{fitness_plan_id}' not found.",
+                    message="Fitness plan not found. It may have been deleted.",
                 )
 
             await postgres_session.delete(fitness_plan)
@@ -348,6 +344,6 @@ class PatientFitnessPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to delete fitness plan.",
+                message="Unable to delete fitness plan. Please try again.",
                 detail=str(e),
             )

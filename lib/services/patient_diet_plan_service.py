@@ -31,13 +31,11 @@ class PatientDietPlanService:
         end_date: Optional[datetime_date] = None,
         is_default: bool = False,
         status: str = "ACTIVE",
-        plan_reason: Optional[str] = None,
         *,
         postgres_session: AsyncSession,
     ) -> PatientDietPlanModel:
         """Create a new diet plan for a patient with date range and lifecycle fields."""
         try:
-            # Check for overlapping ACTIVE plans
             if status == "ACTIVE":
                 overlapping_stmt = select(PatientDietPlanModel).where(
                     PatientDietPlanModel.patient_id == patient_id,
@@ -53,12 +51,12 @@ class PatientDietPlanService:
                 overlapping_plan = result.scalars().first()
 
                 if overlapping_plan:
+                    end_date_display = overlapping_plan.end_date.strftime('%B %d, %Y') if overlapping_plan.end_date else 'ongoing'
                     raise_http_exception(
                         status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message=f"Cannot create ACTIVE diet plan: overlaps with existing plan (ID: {overlapping_plan.diet_plan_id}) from {overlapping_plan.start_date} to {overlapping_plan.end_date or 'ongoing'}. Please archive or modify the existing plan first.",
+                        message=f"You already have an active diet plan from {overlapping_plan.start_date.strftime('%B %d, %Y')} to {end_date_display}. Please pause or archive it before creating a new one.",
                     )
 
-            # Check if trying to set is_default when another default exists
             if is_default:
                 existing_default = await self.get_default_diet_plan(
                     patient_id, postgres_session=postgres_session
@@ -66,7 +64,7 @@ class PatientDietPlanService:
                 if existing_default:
                     raise_http_exception(
                         status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message=f"Patient {patient_id} already has a default diet plan.",
+                        message="A default diet plan already exists. Please update the existing one or remove its default status first.",
                     )
 
             diet_plan = PatientDietPlanModel(
@@ -81,7 +79,7 @@ class PatientDietPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                message="Failed to create diet plan due to an integrity error.",
+                message="Unable to create diet plan. Please check your inputs and try again.",
                 detail=str(e),
             )
 
@@ -107,20 +105,17 @@ class PatientDietPlanService:
         Use this when you want to replace the current plan with a new one.
         """
         try:
-            # Get all current ACTIVE plans
             active_plans = await self.get_patient_diet_plans(
                 patient_id=patient_id,
                 status_filter="ACTIVE",
                 postgres_session=postgres_session,
             )
 
-            # Archive all active plans and adjust end dates
             for plan in active_plans:
                 plan.status = "ARCHIVED"
                 if plan.end_date is None or plan.end_date >= start_date:
                     plan.end_date = start_date - timedelta(days=1)
 
-            # Now create the new plan
             return await self.create_diet_plan(
                 patient_id=patient_id,
                 diet_plan_data=diet_plan_data,
@@ -135,7 +130,7 @@ class PatientDietPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to replace active diet plan.",
+                message="Unable to update your diet plan. Please try again.",
                 detail=str(e),
             )
 
@@ -171,7 +166,7 @@ class PatientDietPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch active diet plan.",
+                message="Unable to load your active diet plan. Please try again.",
                 detail=str(e),
             )
 
@@ -195,7 +190,7 @@ class PatientDietPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch default diet plan.",
+                message="Unable to load your default diet plan. Please try again.",
                 detail=str(e),
             )
 
@@ -223,7 +218,7 @@ class PatientDietPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch patient diet plans.",
+                message="Unable to load diet plans. Please try again.",
                 detail=str(e),
             )
 
@@ -246,7 +241,7 @@ class PatientDietPlanService:
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to fetch diet plan.",
+                message="Unable to load this diet plan. Please try again.",
                 detail=str(e),
             )
 
@@ -269,7 +264,7 @@ class PatientDietPlanService:
             if not diet_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Diet plan with ID '{diet_plan_id}' not found.",
+                    message="Diet plan not found. It may have been deleted.",
                 )
 
             for field, value in update_data.items():
@@ -283,7 +278,7 @@ class PatientDietPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to update diet plan.",
+                message="Unable to save changes to your diet plan. Please try again.",
                 detail=str(e),
             )
 
@@ -306,7 +301,7 @@ class PatientDietPlanService:
             if not diet_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Diet plan with ID '{diet_plan_id}' not found.",
+                    message="Diet plan not found. It may have been deleted.",
                 )
 
             diet_plan.status = new_status
@@ -317,7 +312,7 @@ class PatientDietPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to update diet plan status.",
+                message="Unable to update diet plan status. Please try again.",
                 detail=str(e),
             )
 
@@ -339,7 +334,7 @@ class PatientDietPlanService:
             if not diet_plan:
                 raise_http_exception(
                     status_code=responseStatus.HTTP_404_NOT_FOUND,
-                    message=f"Diet plan with ID '{diet_plan_id}' not found.",
+                    message="Diet plan not found. It may have been deleted.",
                 )
 
             await postgres_session.delete(diet_plan)
@@ -348,6 +343,6 @@ class PatientDietPlanService:
             await postgres_session.rollback()
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to delete diet plan.",
+                message="Unable to delete diet plan. Please try again.",
                 detail=str(e),
             )
