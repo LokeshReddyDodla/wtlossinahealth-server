@@ -83,7 +83,8 @@ from lib.services.patient_document_research_service import (
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
-from lib.services.patient_plan_service import PatientPlanService
+from lib.services.patient_diet_plan_service import PatientDietPlanService
+from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -485,10 +486,18 @@ container.register(
     ),
 )
 
-# 🔹 Patient Plan Service
+# 🔹 Patient Diet Plan Service
 container.register(
-    PatientPlanService,
-    lambda: PatientPlanService(
+    PatientDietPlanService,
+    lambda: PatientDietPlanService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+# 🔹 Patient Fitness Plan Service
+container.register(
+    PatientFitnessPlanService,
+    lambda: PatientFitnessPlanService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
@@ -626,8 +635,7 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         clickhouse_store=container.resolve(ClickHouseStore),
         cgm_stats_processor=container.resolve(CGMStatsProcessor),
-        patient_profile_service=container.resolve(PatientProfileService),
-        patient_plan_service=container.resolve(PatientPlanService),
+        patient_diet_plan_service=container.resolve(PatientDietPlanService),
         meal_report_service=container.resolve(MealReportService),
     ),
 )

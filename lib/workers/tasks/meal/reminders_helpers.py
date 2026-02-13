@@ -69,7 +69,7 @@ async def process_meal_reminder_for_type(meal_type: str) -> None:
             .where(PatientPermission.notification_permission.is_(True))
             .where(
                 ~exists(
-                    select(PatientMeal.meal_id).where(
+                    select(PatientMeal.id).where(
                         PatientMeal.patient_id == Patient.patient_id,
                         PatientMeal.date == today,
                         func.lower(PatientMeal.type) == meal_type_lower,

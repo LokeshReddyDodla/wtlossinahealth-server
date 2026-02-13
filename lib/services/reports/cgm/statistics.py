@@ -1,9 +1,7 @@
 """CGM summary statistics calculations."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List
-
-import pandas as pd
 
 from lib.schemas.cgm_stats import AGPPoint, CGMSummaryStats
 from lib.utils.validation_utils import validate_float
@@ -30,14 +28,10 @@ class CGMStatistics:
         glucose_stddev = validate_float(result[0][1] if result else 0.0)
 
         highest_glucose = validate_float(result[0][2] if result else 0.0)
-        highest_glucose_date = (
-            result[0][3] if result and result[0][3] else datetime.min
-        )
+        highest_glucose_date = result[0][3] if result and result[0][3] else datetime.min
 
         lowest_glucose = validate_float(result[0][4] if result else 0.0)
-        lowest_glucose_date = (
-            result[0][5] if result and result[0][5] else datetime.min
-        )
+        lowest_glucose_date = result[0][5] if result and result[0][5] else datetime.min
 
         gmi = validate_float(3.31 + 0.02392 * average_glucose)
         gmi_mmol = validate_float(gmi * 10.93)
@@ -70,7 +64,7 @@ class CGMStatistics:
     @staticmethod
     def fetch_daily_average_glucose(
         clickhouse_store, patient_id: str, start_date: datetime, end_date: datetime
-    ) -> Dict[datetime, float]:
+    ) -> Dict[date, float]:
         """Fetch daily average glucose levels as a dictionary."""
         query = generate_daily_avg_query(
             patient_id,
@@ -89,7 +83,9 @@ class CGMStatistics:
         clickhouse_store, patient_id: str, start_date_str: str, end_date_str: str
     ) -> List[AGPPoint]:
         """Fetch AGP (Ambulatory Glucose Profile) points."""
-        query = generate_hourly_agp_points_query(patient_id, start_date_str, end_date_str)
+        query = generate_hourly_agp_points_query(
+            patient_id, start_date_str, end_date_str
+        )
         agp_result = clickhouse_store.client.execute(query)
 
         return [

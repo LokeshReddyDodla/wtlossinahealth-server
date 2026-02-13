@@ -54,25 +54,17 @@ def build_meal_query(patient_id: str, start_date: date, end_date: date):
 def build_nutritional_aggregates(meal):
     """Build aggregate functions for nutritional values."""
     return [
-        func.sum(PatientTotalMacroNutritionalValue.calories).label(
-            "total_calories"
-        ),
-        func.sum(PatientTotalMacroNutritionalValue.proteins).label(
-            "total_proteins"
-        ),
+        func.sum(PatientTotalMacroNutritionalValue.calories).label("calories"),
+        func.sum(PatientTotalMacroNutritionalValue.proteins).label("proteins"),
         func.sum(PatientTotalMacroNutritionalValue.carbohydrates).label(
-            "total_carbohydrates"
+            "carbohydrates"
         ),
-        func.sum(PatientTotalMacroNutritionalValue.fats).label("total_fats"),
-        func.sum(PatientTotalMacroNutritionalValue.fiber).label("total_fiber"),
-        func.sum(PatientTotalMicroNutritionalValue.calcium).label(
-            "total_calcium"
-        ),
-        func.sum(PatientTotalMicroNutritionalValue.iron).label("total_iron"),
-        func.sum(PatientTotalMicroNutritionalValue.zinc).label("total_zinc"),
-        func.sum(PatientTotalMicroNutritionalValue.magnesium).label(
-            "total_magnesium"
-        ),
+        func.sum(PatientTotalMacroNutritionalValue.fats).label("fats"),
+        func.sum(PatientTotalMacroNutritionalValue.fiber).label("fiber"),
+        func.sum(PatientTotalMicroNutritionalValue.calcium).label("calcium"),
+        func.sum(PatientTotalMicroNutritionalValue.iron).label("iron"),
+        func.sum(PatientTotalMicroNutritionalValue.zinc).label("zinc"),
+        func.sum(PatientTotalMicroNutritionalValue.magnesium).label("magnesium"),
     ]
 
 

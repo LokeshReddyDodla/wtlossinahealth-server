@@ -1,8 +1,7 @@
-from datetime import date
 from typing import Dict
 
 
-class DietPlanCalculator:
+class NutritionCalculator:
     def __init__(
         self,
         weight: float,
@@ -36,11 +35,14 @@ class DietPlanCalculator:
         return self.calculate_bmr() * activity_multiplier
 
     def calculate_macronutrients(self, tdee: float) -> Dict[str, float]:
-        """Calculate macronutrient distribution."""
-        protein = self.weight * 1.8
-        fats = tdee * 0.25 / 9
-        carbs = (tdee - (protein * 4 + fats * 9)) / 4
-        return {"protein": protein, "fats": fats, "carbs": carbs}
+        """Calculate macronutrient distribution (in grams)."""
+        protein_grams = self.weight * 1.8
+        protein_calories = protein_grams * 4
+        fats_calories = tdee * 0.25
+        fats_grams = fats_calories / 9
+        carbs_calories = tdee - protein_calories - fats_calories
+        carbs_grams = carbs_calories / 4
+        return {"protein": protein_grams, "fats": fats_grams, "carbs": carbs_grams}
 
     def get_micronutrient_recommendations(self) -> Dict[str, float]:
         """Return micronutrient recommendations based on age and gender."""

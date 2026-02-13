@@ -69,7 +69,8 @@ from lib.services.patient_document_research_service import (
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
-from lib.services.patient_plan_service import PatientPlanService
+from lib.services.patient_diet_plan_service import PatientDietPlanService
+from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -324,10 +325,17 @@ def get_prescription_analysis_service() -> PrescriptionAnalysisService:
     )
 
 
-def get_patient_plan_service() -> PatientPlanService:
+def get_patient_diet_plan_service() -> PatientDietPlanService:
     return cast(
-        PatientPlanService,
-        container.resolve(PatientPlanService),
+        PatientDietPlanService,
+        container.resolve(PatientDietPlanService),
+    )
+
+
+def get_patient_fitness_plan_service() -> PatientFitnessPlanService:
+    return cast(
+        PatientFitnessPlanService,
+        container.resolve(PatientFitnessPlanService),
     )
 
 

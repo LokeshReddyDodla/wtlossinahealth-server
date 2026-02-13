@@ -25,7 +25,7 @@ async def resolve_patient_access(
         is_assigned = await care_provider_access_service.is_patient_assigned(
             care_provider_id=actor.model.care_provider_id,
             patient_id=patient_id,
-        )
+        )  # type: ignore
         if not is_assigned:
             raise_http_exception(
                 status_code=403,

@@ -46,7 +46,8 @@ from lib.models.patient_meal_timing import (
 from lib.models.patient_medical_history import (
     PatientMedicalHistory as PatientMedicalHistoryModel,
 )
-from lib.models.patient_plan import PatientPlan as PatientPlanModel
+from lib.models.patient_diet_plan import PatientDietPlan as PatientDietPlanModel
+from lib.models.patient_fitness_plan import PatientFitnessPlan as PatientFitnessPlanModel
 from lib.models.patient_sleep_habit import (
     PatientSleepHabit as PatientSleepHabitModel,
 )
@@ -144,12 +145,8 @@ class PatientProfileService:
                     joinedload(PatientModel.eating_habit).joinedload(
                         PatientEatingHabitModel.diet_preferences
                     ),
-                    joinedload(PatientModel.patient_plans).joinedload(
-                        PatientPlanModel.diet_plan
-                    ),
-                    joinedload(PatientModel.patient_plans).joinedload(
-                        PatientPlanModel.fitness_plan
-                    ),
+                    selectinload(PatientModel.diet_plans),
+                    selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
@@ -301,12 +298,8 @@ class PatientProfileService:
                     selectinload(PatientModel.eating_habit).selectinload(
                         PatientEatingHabitModel.diet_preferences
                     ),
-                    selectinload(PatientModel.patient_plans).selectinload(
-                        PatientPlanModel.diet_plan
-                    ),
-                    selectinload(PatientModel.patient_plans).selectinload(
-                        PatientPlanModel.fitness_plan
-                    ),
+                    selectinload(PatientModel.diet_plans),
+                    selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
