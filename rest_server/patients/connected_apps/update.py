@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 import json
+from typing import Union
+
 from fastapi import Depends, HTTPException, Query, Request, status
 
 from lib.dependencies.auth.base import get_current_user
@@ -20,7 +22,7 @@ from lib.services.patient_connected_app_service import (
 )
 from lib.services.sqs_service import SQSService
 from lib.utils.http_exceptions import raise_http_exception
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 
 from .router import router
 
@@ -63,18 +65,20 @@ async def upsert_libreview(
 
 @router.post(
     "/libreview/sync",
-    response_model=SuccessResponse,
+    response_model=Union[SuccessResponse, InQueueResponse],
 )
 async def sync_libreview(
     request: Request,
     patient_id: str = Query(...),
+    force: bool = Query(default=False),
     libreview_service: LibreViewService = Depends(get_libreview_service),
     current_user=Depends(get_current_user),
 ):
     try:
-        user_id, _ = current_user
+        result = await libreview_service.sync_libreview(patient_id, force=force)
 
-        result = await libreview_service.sync_libreview(patient_id, user_id)
+        if result.get("status") == "in_queue":
+            return InQueueResponse(**result)
 
         return SuccessResponse(**result)
     except HTTPException as http_exc:

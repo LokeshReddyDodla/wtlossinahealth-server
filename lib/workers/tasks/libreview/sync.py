@@ -63,7 +63,7 @@ async def sync_patient_libreview(
         await cgm_service.parse_and_upload_libreview_raw_csv_data(
             patient_id=patient_id,
             file_contents=csv_data,
-        )
+        )  # type: ignore
 
         logger.info(
             f"[sync_patient_libreview] Successfully synced data for patient {patient_id}"

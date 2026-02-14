@@ -88,3 +88,4 @@ class LibreViewWorkerSettings(WorkerSettings):
     max_jobs = 10
     job_timeout = timedelta(minutes=15)
     max_tries = 2
+    keep_result = timedelta(seconds=0)

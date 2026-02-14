@@ -4,6 +4,7 @@ import asyncio
 from typing import Optional
 
 from arq import create_pool
+from arq.jobs import Job
 from arq.connections import ArqRedis
 from loguru import logger
 
@@ -13,14 +14,14 @@ from .config import get_arq_redis_settings
 class ArqRedisPool:
     _pool: Optional[ArqRedis] = None
     _lock: asyncio.Lock = asyncio.Lock()
-    
+
     @classmethod
     async def get_pool(cls) -> ArqRedis:
         async with cls._lock:
             if cls._pool is None:
                 cls._pool = await create_pool(get_arq_redis_settings())
             return cls._pool
-    
+
     @classmethod
     async def close_pool(cls) -> None:
         async with cls._lock:
@@ -41,7 +42,7 @@ async def enqueue_job(
     **kwargs,
 ):
     pool = await get_arq_pool()
-    
+
     job = await pool.enqueue_job(
         task_name,
         *args,
@@ -49,10 +50,17 @@ async def enqueue_job(
         _queue_name=_queue_name,
         **kwargs,
     )
-    
+
     if job is None:
         logger.debug(f"Duplicate job skipped: {_job_id}")
     else:
         logger.info(f"Enqueued: {task_name} (ID: {job.job_id})")
-    
+
     return job
+
+
+async def is_job_in_queue(job_id: str) -> bool:
+    pool = await get_arq_pool()
+    job_key = f"arq:job:{job_id}"
+    exists = await pool.exists(job_key)
+    return bool(exists)

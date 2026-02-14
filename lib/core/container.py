@@ -998,10 +998,6 @@ container.register(
             PatientConnectedAppService,
             container.resolve(PatientConnectedAppService),
         ),
-        libreview_sync_queue=cast(
-            SQSService, container.resolve("libreview_sync_queue")
-        ),
-        libreview_sync_store=cast(CacheStore, container.resolve("libreview_sync")),
     ),
 )
 
