@@ -51,10 +51,10 @@ class LibreViewService:
             and (datetime.utcnow() - last_sync)
             < timedelta(seconds=self.SYNC_INTERVAL_SECONDS)
         ):
-            raise_http_exception(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                message="Sync allowed only once every 3 hours.",
-            )
+            return {
+                "status": "cooldown",
+                "message": "Sync allowed only once every 3 hours.",
+            }
 
         if not force:
             job_id = f"libreview:sync:{patient_id}"
@@ -76,6 +76,7 @@ class LibreViewService:
             "message": "Sync request accepted and added to queue.",
             "data": {
                 "status": "queued",
+                "message": "Sync request accepted and added to queue.",
                 "job_id": job_id,
             },
         }
