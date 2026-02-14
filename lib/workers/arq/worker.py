@@ -77,3 +77,15 @@ class VectorsWorkerSettings(WorkerSettings):
     max_jobs = 30
     job_timeout = timedelta(minutes=20)
     max_tries = 2
+
+
+class LibreViewWorkerSettings(WorkerSettings):
+    """LibreView worker - LibreView sync tasks."""
+
+    redis_settings = WorkerSettings.redis_settings
+    functions = WorkerSettings.functions
+    queue_name = Queues.LIBREVIEW
+    max_jobs = 10
+    job_timeout = timedelta(minutes=15)
+    max_tries = 2
+    keep_result = timedelta(seconds=0)

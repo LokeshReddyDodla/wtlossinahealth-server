@@ -371,6 +371,53 @@ services:
       aihealth-qdrant:
         condition: service_started
 
+  aihealth-arq-worker-libreview:
+    container_name: aihealth-arq-worker-libreview
+    image: aihealth-api:latest
+    restart: unless-stopped
+    command: >
+      /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.LibreViewWorkerSettings
+    environment:
+      # ARQ Redis
+      - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
+      - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}
+      - ARQ_REDIS_PORT=${ARQ_REDIS_PORT}
+      - ARQ_REDIS_DB=${ARQ_REDIS_DB}
+      # Redis
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # PostgreSQL
+      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      # MongoDB
+      - MONGO_URL=${MONGO_URL}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      # ClickHouse
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      # LibreView
+      - LIBREVIEW_AUTH_TOKEN=${LIBREVIEW_AUTH_TOKEN}
+      - LIBREVIEW_ACCOUNT_ID=${LIBREVIEW_ACCOUNT_ID}
+      - LIBREVIEW_SITE_KEY=${LIBREVIEW_SITE_KEY}
+      - LIBREVIEW_API_BASE_URL=${LIBREVIEW_API_BASE_URL}
+      # 2Captcha
+      - TWOCAPTCHA_API_KEY=${TWOCAPTCHA_API_KEY}
+    volumes:
+      - arq_logs:/var/log/arq
+      - .:/src
+    depends_on:
+      aihealth-arq-redis:
+        condition: service_healthy
+      aihealth-api:
+        condition: service_started
+      aihealth-postgres:
+        condition: service_started
+      aihealth-clickhouse:
+        condition: service_started
+
   # ==========================================
   # Development Tools
   # ==========================================
