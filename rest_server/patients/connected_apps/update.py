@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta
-import json
 from typing import Union
 
 from fastapi import Depends, HTTPException, Query, Request, status
@@ -8,7 +6,6 @@ from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
     get_libreview_service,
-    get_libreview_sync_queue,
     get_patient_connected_app_service,
 )
 from lib.models.patient import Patient
@@ -20,7 +17,6 @@ from lib.services.libreview_service import LibreViewService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
-from lib.services.sqs_service import SQSService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import InQueueResponse, SuccessResponse
 

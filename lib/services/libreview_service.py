@@ -18,8 +18,6 @@ from lib.models.patient import Patient as PatientModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rest_server.response_models import InQueueResponse
-
 
 class LibreViewService:
     SYNC_INTERVAL_SECONDS = 3 * 60 * 60  # 3 hours

@@ -4,7 +4,6 @@ import asyncio
 from typing import Optional
 
 from arq import create_pool
-from arq.jobs import Job
 from arq.connections import ArqRedis
 from loguru import logger
 

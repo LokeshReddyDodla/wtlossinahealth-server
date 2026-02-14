@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 import logging
 
 from celery import shared_task
@@ -75,7 +74,8 @@ async def _sync_patient_libreview(
 
     # Perform the actual sync
     sync_result = await libreview_service.sync_libreview(
-        patient_id=patient_id, user_id=patient_id
+        patient_id=patient_id,
+        force=False,
     )
     logger.info(sync_result)
 
