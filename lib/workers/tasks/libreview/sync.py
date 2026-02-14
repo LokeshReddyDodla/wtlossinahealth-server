@@ -134,29 +134,39 @@ async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
                     force=False,  # Respect cooldown
                 )
 
-                if isinstance(result, dict):
-                    status = result.get("status")
+                # Defensive check
+                if not isinstance(result, dict) or "status" not in result:
+                    logger.warning(
+                        f"[sync_all_patients_libreview] Unexpected response for patient {patient_id}: {result}"
+                    )
+                    stats["synced"] += 1
+                    stats["error_details"].append(
+                        f"Invalid response for patient {patient_id}: {result}"
+                    )
+                    continue
 
-                    if status == "in_queue":
-                        stats["in_queue"] += 1
-                        logger.info(
-                            f"[sync_all_patients_libreview] Patient {patient_id} already in queue, skipping"
-                        )
-                    elif status == "cooldown":
-                        stats["cooldown_skipped"] += 1
-                        logger.info(
-                            f"[sync_all_patients_libreview] Patient {patient_id} on cooldown, skipping"
-                        )
-                    else:
-                        stats["synced"] += 1
-                        logger.info(
-                            f"[sync_all_patients_libreview] Successfully enqueued sync for patient {patient_id}"
-                        )
-                else:
+                status = result["status"]
+
+                if status == "in_queue":
+                    stats["in_queue"] += 1
+                    logger.info(
+                        f"[sync_all_patients_libreview] Patient {patient_id} already in queue, skipping"
+                    )
+                elif status == "cooldown":
+                    stats["cooldown_skipped"] += 1
+                    logger.info(
+                        f"[sync_all_patients_libreview] Patient {patient_id} on cooldown, skipping"
+                    )
+                elif status == "queued":
                     stats["synced"] += 1
                     logger.info(
                         f"[sync_all_patients_libreview] Successfully enqueued sync for patient {patient_id}"
                     )
+                else:
+                    logger.warning(
+                        f"[sync_all_patients_libreview] Unknown status '{status}' for patient {patient_id}"
+                    )
+                    stats["synced"] += 1
 
             except Exception as e:
                 stats["errors"] += 1
