@@ -12,6 +12,7 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.device import get_tasks as get_device_tasks
     from lib.workers.tasks.fcm import get_tasks as get_fcm_tasks
     from lib.workers.tasks.fitness import get_tasks as get_fitness_tasks
+    from lib.workers.tasks.libreview import get_tasks as get_libreview_tasks
     from lib.workers.tasks.meal import get_tasks as get_meal_tasks
     from lib.workers.tasks.package import get_tasks as get_package_tasks
     from lib.workers.tasks.profile import get_tasks as get_profile_tasks
@@ -23,6 +24,7 @@ def get_all_tasks() -> List[Callable]:
     tasks.extend(get_device_tasks())
     tasks.extend(get_fcm_tasks())
     tasks.extend(get_fitness_tasks())
+    tasks.extend(get_libreview_tasks())
     tasks.extend(get_meal_tasks())
     tasks.extend(get_package_tasks())
     tasks.extend(get_profile_tasks())
