@@ -250,6 +250,8 @@ services:
     command: >
       /opt/pysetup/.venv/bin/python -m arq lib.workers.arq.worker.WorkerSettings
     environment:
+      # Timezone
+      - TZ=Asia/Kolkata
       # ARQ Redis
       - ARQ_REDIS_HOST=${ARQ_REDIS_HOST}
       - ARQ_REDIS_PASSWORD=${ARQ_REDIS_PASSWORD}

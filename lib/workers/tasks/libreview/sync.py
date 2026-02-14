@@ -83,3 +83,102 @@ async def sync_patient_libreview(
         error_msg = f"LibreView sync failed for patient {patient_id}: {str(e)}"
         logger.error(f"[sync_patient_libreview] {error_msg}", exc_info=True)
         return TaskResult(success=False, error=error_msg)
+
+
+@task_with_logging
+async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
+    """
+    Scheduled task to sync LibreView data for all patients with LibreView connected.
+    Respects 3-hour cooldown per patient. Skips patients already in sync queue.
+    """
+    logger.info(
+        "[sync_all_patients_libreview] Starting scheduled LibreView sync for all patients"
+    )
+
+    stats = {
+        "total_patients": 0,
+        "synced": 0,
+        "in_queue": 0,
+        "cooldown_skipped": 0,
+        "errors": 0,
+        "error_details": [],
+    }
+
+    try:
+        # Get service from container
+        from lib.dependencies.service_dependencies import get_libreview_service
+
+        libreview_service = get_libreview_service()
+
+        # Get all patients with LibreView connected
+        async with postgres_store.get_session() as session:
+            patients = await libreview_service.get_patients_with_libreview(
+                postgres_session=session
+            )  # type: ignore
+
+        stats["total_patients"] = len(patients)
+        logger.info(
+            f"[sync_all_patients_libreview] Found {len(patients)} patients with LibreView"
+        )
+
+        # Sync each patient
+        for patient in patients:
+            patient_id = str(patient.patient_id)
+            logger.info(
+                f"[sync_all_patients_libreview] Processing patient {patient_id}"
+            )
+
+            try:
+                result = await libreview_service.sync_libreview(
+                    patient_id=patient_id,
+                    force=False,  # Respect cooldown
+                )
+
+                if isinstance(result, dict):
+                    status = result.get("status")
+
+                    if status == "in_queue":
+                        stats["in_queue"] += 1
+                        logger.info(
+                            f"[sync_all_patients_libreview] Patient {patient_id} already in queue, skipping"
+                        )
+                    elif status == "cooldown":
+                        stats["cooldown_skipped"] += 1
+                        logger.info(
+                            f"[sync_all_patients_libreview] Patient {patient_id} on cooldown, skipping"
+                        )
+                    else:
+                        stats["synced"] += 1
+                        logger.info(
+                            f"[sync_all_patients_libreview] Successfully enqueued sync for patient {patient_id}"
+                        )
+                else:
+                    stats["synced"] += 1
+                    logger.info(
+                        f"[sync_all_patients_libreview] Successfully enqueued sync for patient {patient_id}"
+                    )
+
+            except Exception as e:
+                stats["errors"] += 1
+                error_msg = f"Failed to sync patient {patient_id}: {str(e)}"
+                stats["error_details"].append(error_msg)
+                logger.error(
+                    f"[sync_all_patients_libreview] {error_msg}", exc_info=True
+                )
+
+        # Log summary
+        logger.info(
+            f"[sync_all_patients_libreview] Completed scheduled sync. "
+            f"Synced: {stats['synced']}, In Queue: {stats['in_queue']}, "
+            f"Cooldown: {stats['cooldown_skipped']}, Errors: {stats['errors']}"
+        )
+
+        return TaskResult(
+            success=True,
+            data=stats,
+        )
+
+    except Exception as e:
+        error_msg = f"LibreView scheduled sync failed: {str(e)}"
+        logger.error(f"[sync_all_patients_libreview] {error_msg}", exc_info=True)
+        return TaskResult(success=False, error=error_msg)
