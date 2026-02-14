@@ -47,7 +47,6 @@ services:
       - aihealth-mongo
       - aihealth-clickhouse
       - aihealth-qdrant
-    cpus: "1.5"
     mem_limit: 2g
     
 
@@ -301,7 +300,6 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    cpus: "1.0"
     mem_limit: 1g
     
 
@@ -346,7 +344,6 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    cpus: "2.0"
     mem_limit: 2g
     
 
@@ -393,7 +390,6 @@ services:
       aihealth-qdrant:
         condition: service_started
     user: "1000:1000"
-    cpus: "2.0"
     mem_limit: 2g
     
 
@@ -442,7 +438,6 @@ services:
       aihealth-clickhouse:
         condition: service_started
     user: "1000:1000"
-    cpus: "1.0"
     mem_limit: 1g
     
 
@@ -562,7 +557,6 @@ services:
     volumes:
       - loki_data:/loki
       - ./deployment/loki-config.yaml:/etc/loki/local-config.yaml:ro
-    cpus: "0.5"
     mem_limit: 512m
 
   promtail:
@@ -593,7 +587,6 @@ services:
       - ./deployment/grafana-provisioning:/etc/grafana/provisioning
     depends_on:
       - loki
-    cpus: "0.5"
     mem_limit: 512m
 
 volumes:
