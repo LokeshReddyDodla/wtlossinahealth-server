@@ -47,7 +47,7 @@ services:
       - aihealth-mongo
       - aihealth-clickhouse
       - aihealth-qdrant
-    mem_limit: 2g
+    # mem_limit: 2g
     
 
   # ==========================================
@@ -300,7 +300,7 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    mem_limit: 1g
+    # mem_limit: 1g
     
 
   aihealth-arq-worker-reports:
@@ -344,7 +344,7 @@ services:
       aihealth-mongo:
         condition: service_started
     user: "1000:1000"
-    mem_limit: 2g
+    # mem_limit: 2g
     
 
   aihealth-arq-worker-vectors:
@@ -390,7 +390,7 @@ services:
       aihealth-qdrant:
         condition: service_started
     user: "1000:1000"
-    mem_limit: 2g
+    # mem_limit: 2g
     
 
   aihealth-arq-worker-libreview:
@@ -438,7 +438,7 @@ services:
       aihealth-clickhouse:
         condition: service_started
     user: "1000:1000"
-    mem_limit: 1g
+    # mem_limit: 1g
     
 
   # ==========================================
