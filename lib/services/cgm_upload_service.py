@@ -170,9 +170,9 @@ class CGMUploadService:
 
         df["units"] = df["units"].str.strip().str.lower()
         df["glucose_mgdl"] = df.apply(
-            lambda row: self._convert_to_mgdl(row["value"], row["units"]),
+            lambda row: self._convert_to_mgdl(row["value"], row["units"]),  # type: ignore
             axis=1,
-        )
+        )  # type: ignore
         df = df.dropna(subset=["glucose_mgdl"])
         df["glucose_mgdl"] = df["glucose_mgdl"].astype(int)
 

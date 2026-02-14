@@ -18,6 +18,7 @@ class ClickHouseStore:
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD.strip(),
+            send_receive_timeout=300,
         )
         self.create_database()
 
@@ -90,6 +91,11 @@ class ClickHouseStore:
         query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES"
         self.client.execute(query, values)
 
+    @staticmethod
+    def _fmt(dt: datetime) -> str:
+        """ClickHouse-safe DateTime format"""
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
     def delete_existing_cgm_data(
         self,
         table_name: str,
@@ -98,12 +104,19 @@ class ClickHouseStore:
         end_time: datetime,
         source: Optional[str] = None,
     ):
+        start = self._fmt(start_time)
+        end = self._fmt(end_time)
+
         source_condition = f"AND source = '{source}'" if source else ""
         query = f"""
-        ALTER TABLE {table_name} DELETE WHERE patient_id = '{patient_id}' AND time BETWEEN '{start_time}' AND '{end_time}'
-        {source_condition}
+        ALTER TABLE {table_name}
+        DELETE WHERE
+            patient_id = '{patient_id}'
+            AND time >= toDateTime('{start}')
+            AND time <= toDateTime('{end}')
+            {source_condition}
         """
-        self.client.execute(query)
+        self.client.execute(query, settings={"mutations_sync": 1})
 
     def delete_existing_fitness_data(
         self,
@@ -113,21 +126,24 @@ class ClickHouseStore:
         end_time: datetime,
         source_name: Optional[str] = None,
     ):
+        start = self._fmt(start_time)
+        end = self._fmt(end_time)
+
         if source_name:
-            query = f"""
-            ALTER TABLE {table_name} DELETE 
-            WHERE patient_id = '{patient_id}' 
-            AND start_datetime BETWEEN '{start_time}' AND '{end_time}' 
-            AND source_name = '{source_name}'
-            """
+            condition = f"AND source_name = '{source_name}'"
         else:
-            query = f"""
-            ALTER TABLE {table_name} DELETE 
-            WHERE patient_id = '{patient_id}' 
-            AND start_datetime BETWEEN '{start_time}' AND '{end_time}' 
-            AND source_name != 'manual'
-            """
-        self.client.execute(query)
+            condition = "AND source_name != 'manual'"
+
+        query = f"""
+        ALTER TABLE {table_name}
+        DELETE WHERE
+            patient_id = '{patient_id}'
+            AND start_datetime >= toDateTime('{start}')
+            AND start_datetime <= toDateTime('{end}')
+            {condition}
+        """
+
+        self.client.execute(query, settings={"mutations_sync": 1})
 
     def delete_existing_sleep_data(
         self,
@@ -137,21 +153,24 @@ class ClickHouseStore:
         end_time: datetime,
         source_name: Optional[str] = None,
     ):
+        start = self._fmt(start_time)
+        end = self._fmt(end_time)
+
         if source_name:
-            query = f"""
-            ALTER TABLE {table_name} DELETE 
-            WHERE patient_id = '{patient_id}' 
-            AND sleep_start_time BETWEEN '{start_time}' AND '{end_time}' 
-            AND source_name = '{source_name}'
-            """
+            condition = f"AND source_name = '{source_name}'"
         else:
-            query = f"""
-            ALTER TABLE {table_name} DELETE 
-            WHERE patient_id = '{patient_id}' 
-            AND sleep_start_time BETWEEN '{start_time}' AND '{end_time}' 
-            AND source_name != 'manual'
-            """
-        self.client.execute(query)
+            condition = "AND source_name != 'manual'"
+
+        query = f"""
+        ALTER TABLE {table_name}
+        DELETE WHERE
+            patient_id = '{patient_id}'
+            AND sleep_start_time >= toDateTime('{start}')
+            AND sleep_start_time <= toDateTime('{end}')
+            {condition}
+        """
+
+        self.client.execute(query, settings={"mutations_sync": 1})
 
     def query_data(self, query):
         try:
@@ -163,7 +182,7 @@ class ClickHouseStore:
 
     def delete_data(self, table_name, condition):
         query = f"ALTER TABLE {table_name} DELETE WHERE {condition}"
-        self.client.execute(query)
+        self.client.execute(query, settings={"mutations_sync": 1})
 
     def clear_all_data(self, table_name):
         query = f"TRUNCATE TABLE {table_name}"
