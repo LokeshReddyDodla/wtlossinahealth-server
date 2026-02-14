@@ -1,21 +1,21 @@
 from datetime import datetime
 from typing import Optional
+import os
 
 from clickhouse_driver import Client
-from decouple import config
 
 # Read ClickHouse URL and credentials from env
-CLICKHOUSE_HOST = config("CLICKHOUSE_HOST", default="localhost")
-CLICKHOUSE_PORT = config("CLICKHOUSE_PORT", default="9000")
-CLICKHOUSE_USER = config("CLICKHOUSE_USER", default="default")
-CLICKHOUSE_PASSWORD = str(config("CLICKHOUSE_PASSWORD", default=""))
+CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "aihealth-clickhouse")
+CLICKHOUSE_PORT = os.getenv("CLICKHOUSE_PORT", "9000")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
+CLICKHOUSE_PASSWORD = str(os.getenv("CLICKHOUSE_PASSWORD", ""))
 
 
 class ClickHouseStore:
     def __init__(self):
         self.client = Client(
             host=CLICKHOUSE_HOST,
-            port=CLICKHOUSE_PORT,
+            port=int(CLICKHOUSE_PORT),
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD.strip(),
             send_receive_timeout=300,
