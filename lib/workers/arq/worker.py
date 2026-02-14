@@ -87,7 +87,7 @@ class LibreViewWorkerSettings(WorkerSettings):
     redis_settings = WorkerSettings.redis_settings
     functions = WorkerSettings.functions
     queue_name = Queues.LIBREVIEW
-    max_jobs = 4
+    max_jobs = 2
     job_timeout = timedelta(minutes=15)
     max_tries = 2
     keep_result = timedelta(seconds=0)
