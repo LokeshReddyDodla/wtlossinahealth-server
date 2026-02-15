@@ -247,6 +247,6 @@ class LibreViewClient:
             turnstile = await self.solve_turnstile(libreview_id)
             export = await self.request_export(libreview_id, turnstile)
             csv_url = await self.wait_for_export_ready(
-                export["status_url"], export["auth_token"]
+                export["status_url"], export["auth_token"], poll_interval=10.0
             )
             return await self.download_csv(csv_url)
