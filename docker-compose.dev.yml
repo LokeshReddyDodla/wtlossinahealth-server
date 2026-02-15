@@ -179,49 +179,7 @@ services:
     depends_on:
       - aihealth-redis
       - aihealth-api
-
-  aihealth-celery-reports:
-    container_name: aihealth-celery-reports
-    image: aihealth-api:latest
-    restart: unless-stopped
-    command: >
-      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
-      --pool=custom --loglevel=info --concurrency=4 -Q cgm_reports
-      --max-tasks-per-child=20
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-    volumes:
-      - celery_logs:/var/log/celery
-      - celery_data:/var/lib/celery
-    depends_on:
-      - aihealth-redis
-      - aihealth-api
-
-  aihealth-celery-vectors:
-    container_name: aihealth-celery-vectors
-    image: aihealth-api:latest
-    restart: unless-stopped
-    command: >
-      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
-      --pool=custom --loglevel=info --concurrency=2 -Q vector_sync
-      --max-tasks-per-child=10
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
-    volumes:
-      - celery_logs:/var/log/celery
-      - celery_data:/var/lib/celery
-    depends_on:
-      - aihealth-redis
-      - aihealth-api
+      
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat

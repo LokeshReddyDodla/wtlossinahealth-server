@@ -335,30 +335,6 @@ class CGMReportService:
             )
             return []
 
-    def _trigger_report_generation(
-        self, patient_id: str, start_date: datetime, end_date: datetime
-    ):
-        try:
-            from lib.dependencies.service_dependencies import (
-                get_celery_task_manager,
-            )
-
-            task_manager = get_celery_task_manager()
-            task_manager.trigger_task_once(
-                "lib.tasks.cgm_tasks.generate_and_store_cgm_report",
-                args=[patient_id, start_date, end_date],
-                task_id=f"{patient_id}_{start_date}_{end_date}",
-                queue="cgm_reports",
-            )
-
-            print(
-                f"🚀 Triggered cgm report generation for {patient_id} from {start_date} to {end_date}"
-            )
-        except Exception as error:
-            logging.error(
-                f"❌ Failed to trigger report generation for {patient_id} from {start_date} to {end_date}. Error: {error}"
-            )
-
     def _generate_report_id(
         self,
         patient_id: str,
