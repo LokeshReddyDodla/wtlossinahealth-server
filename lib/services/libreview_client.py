@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 import httpx
 from decouple import config
@@ -7,7 +7,8 @@ from loguru import logger
 from twocaptcha import TwoCaptcha
 
 import time
-from typing import Dict
+
+from lib.core.cache_store import CacheStore
 
 
 class LibreViewClient:
@@ -16,14 +17,25 @@ class LibreViewClient:
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_BASE_URL = "https://api-ap.libreview.io"
 
+    AUTH_TOKEN_KEY = "auth:token"
+    AUTH_LOCK_KEY = "auth:lock"
+
+    LOCK_TTL = 15  # seconds
+    TOKEN_SAFETY_MARGIN = 30  # seconds
+
     def __init__(self):
-        self.auth_token = config("LIBREVIEW_AUTH_TOKEN")
         self.account_id = config("LIBREVIEW_ACCOUNT_ID")
         self.site_key = config("LIBREVIEW_SITE_KEY")
         self.captcha_api_key = config("TWOCAPTCHA_API_KEY")
         self.base_url = config("LIBREVIEW_API_BASE_URL", default=self.DEFAULT_BASE_URL)
 
+        # login creds
+        self.email = config("LIBREVIEW_EMAIL")
+        self.password = config("LIBREVIEW_PASSWORD")
+        self.trusted_device_token = config("LIBREVIEW_TRUSTED_DEVICE_TOKEN")
+
         self._client: Optional[httpx.AsyncClient] = None
+        self.cache_store = CacheStore("libreview")
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -56,7 +68,7 @@ class LibreViewClient:
             self._client = None
 
     # ------------------------------------------------------------------
-    # Headers
+    # Auth
     # ------------------------------------------------------------------
 
     def _auth_headers(self, token: str) -> Dict[str, str]:
@@ -64,6 +76,66 @@ class LibreViewClient:
             "Authorization": f"Bearer {token}",
             "account-id": self.account_id,  # type: ignore
         }
+
+    async def _get_auth_token(self) -> str:
+        cached = self.cache_store.get_key(self.AUTH_TOKEN_KEY)
+        if cached:
+            return cached.decode()
+
+        # acquire lock
+        lock = self.cache_store.set_key(
+            self.AUTH_LOCK_KEY,
+            "1",
+            expire=self.LOCK_TTL,
+            nx=True,
+        )
+
+        if not lock:
+            # another worker is refreshing
+            await asyncio.sleep(1)
+            cached = self.cache_store.get_key(self.AUTH_TOKEN_KEY)
+            if cached:
+                return cached.decode()
+            raise RuntimeError("LibreView auth token unavailable")
+
+        try:
+            token, ttl = await self._login_and_get_token()
+            self.cache_store.set_key(self.AUTH_TOKEN_KEY, token, expire=ttl)
+            return token
+        finally:
+            self.cache_store.delete_key(self.AUTH_LOCK_KEY)
+
+    async def _login_and_get_token(self) -> Tuple[str, int]:
+        client = await self._get_client()
+
+        payload = {
+            "email": self.email,
+            "password": self.password,
+            "trustedDeviceToken": self.trusted_device_token,
+        }
+
+        response = await client.post(
+            f"{self.base_url}/auth/login",
+            json=payload,
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "product": "lv",
+                "newyu-lv-web-version": "3.24.0.31",
+            },
+        )
+
+        response.raise_for_status()
+        data = response.json()["data"]["authTicket"]
+
+        token = data["token"]
+        expires = int(data["expires"])
+
+        now = int(time.time())
+        ttl = max(expires - now - self.TOKEN_SAFETY_MARGIN, 60)
+
+        logger.info("[LibreView] Auth token refreshed (ttl={}s)", ttl)
+        return token, ttl
 
     # ------------------------------------------------------------------
     # Turnstile
@@ -97,12 +169,13 @@ class LibreViewClient:
         self, libreview_id: str, turnstile_token: str
     ) -> Dict[str, str]:
         client = await self._get_client()
+        auth_token = await self._get_auth_token()
 
         response = await client.post(
             f"{self.base_url}/patients/{libreview_id}/export",
             json={"type": "glucose"},
             headers={
-                **self._auth_headers(self.auth_token),  # type: ignore
+                **self._auth_headers(auth_token),
                 "captcha-token": turnstile_token,
             },
         )
