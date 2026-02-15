@@ -12,6 +12,10 @@ from qdrant_client.models import (
     KeywordIndexParams,
     IntegerIndexType,
     KeywordIndexType,
+    ScalarQuantization,
+    OptimizersConfigDiff,
+    ScalarQuantizationConfig,
+    ScalarType,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,16 +71,30 @@ class QdrantStore:
                     f"✅ Qdrant collection '{QDRANT_COLLECTION}' already exists"
                 )
             except Exception:
-                logger.info(
-                    f"🆕 Creating Qdrant collection '{QDRANT_COLLECTION}'"
-                )
+                logger.info(f"🆕 Creating Qdrant collection '{QDRANT_COLLECTION}'")
                 await client.recreate_collection(
                     collection_name=QDRANT_COLLECTION,
                     vectors_config=VectorParams(
-                        size=3072, distance=Distance.COSINE
+                        size=3072, distance=Distance.COSINE, on_disk=True
                     ),
-                    hnsw_config=HnswConfigDiff(m=32, ef_construct=120),
+                    hnsw_config=HnswConfigDiff(
+                        m=16,
+                        ef_construct=100,
+                        on_disk=True,
+                    ),
+                    quantization_config=ScalarQuantization(
+                        scalar=ScalarQuantizationConfig(
+                            type=ScalarType.INT8, always_ram=False
+                        )
+                    ),
+                    optimizers_config=OptimizersConfigDiff(
+                        default_segment_number=2,
+                        indexing_threshold=20000,
+                        memmap_threshold=20000,
+                        flush_interval_sec=5,
+                    ),
                 )
+
         self._collection_ready = True
 
     async def ensure_payload_indices(self):
@@ -95,9 +113,7 @@ class QdrantStore:
                 type=IntegerIndexType.INTEGER, lookup=True, range=False
             ),
             "data_type": KeywordIndexParams(type=KeywordIndexType.KEYWORD),
-            "time_of_day_bucket": KeywordIndexParams(
-                type=KeywordIndexType.KEYWORD
-            ),
+            "time_of_day_bucket": KeywordIndexParams(type=KeywordIndexType.KEYWORD),
             "patient_id": KeywordIndexParams(
                 type=KeywordIndexType.KEYWORD, is_tenant=True
             ),
@@ -136,15 +152,20 @@ class QdrantStore:
             raise
 
     async def upsert_points_chunked(
-        self, collection_name: str, points: list, chunk_size: int = 200
+        self, collection_name: str, points: list, chunk_size: int = 100
     ):
         """Efficiently upserts points in chunks."""
+        total = len(points)
         async with self.get_client() as client:
             for i in range(0, len(points), chunk_size):
                 chunk = points[i : i + chunk_size]
                 await client.upsert(
-                    collection_name=collection_name, points=chunk
+                    collection_name=collection_name, points=chunk, wait=False
                 )
+                if (i // chunk_size + 1) % 10 == 0:
+                    logger.info(
+                        f"📤 Upserted {min(i + chunk_size, total)}/{total} points"
+                    )
 
     async def close(self):
         """Closes Qdrant client (usually only on server shutdown)."""
