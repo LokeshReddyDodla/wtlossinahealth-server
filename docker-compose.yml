@@ -129,10 +129,9 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__MAX_WORKERS=2
       - QDRANT__STORAGE__CACHE_SIZE=512MiB
-      - RAYON_NUM_THREADS=2 
-      - TOKIO_WORKER_THREADS=4 
     volumes:
       - qdrant_data:/qdrant/storage
+    mem_limit: 3g
 
   aihealth-arq-redis:
     container_name: aihealth-arq-redis
