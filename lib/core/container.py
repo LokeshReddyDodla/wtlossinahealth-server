@@ -325,15 +325,10 @@ container.register(
 
 # CacheStore
 for namespace in [
-    "fitness_sync",
     "user_otp",
     "user_session",
-    "libreview_sync",
-    "ai_conversation_intent_context",
+    "fitness_sync",
     "patient_profile",
-    "cgm_qdrant_sync",
-    "fitness_qdrant_sync",
-    "cgm_sync",
     "health_query_agent",
 ]:
     container.register(
