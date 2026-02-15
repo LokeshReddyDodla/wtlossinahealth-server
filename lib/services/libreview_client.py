@@ -1,12 +1,11 @@
 import asyncio
+import time
 from typing import Dict, Optional, Tuple
 
 import httpx
 from decouple import config
 from loguru import logger
 from twocaptcha import TwoCaptcha
-
-import time
 
 from lib.core.cache_store import CacheStore
 
@@ -248,6 +247,6 @@ class LibreViewClient:
             turnstile = await self.solve_turnstile(libreview_id)
             export = await self.request_export(libreview_id, turnstile)
             csv_url = await self.wait_for_export_ready(
-                export["status_url"], export["auth_token"], poll_interval=10.0
+                export["status_url"], export["auth_token"]
             )
             return await self.download_csv(csv_url)

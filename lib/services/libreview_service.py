@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 
 
 class LibreViewService:
-    SYNC_INTERVAL_SECONDS = 3 * 60 * 60  # 3 hours
+    SYNC_INTERVAL_SECONDS = 2 * 60 * 60  # 2 hours
 
     def __init__(
         self,
