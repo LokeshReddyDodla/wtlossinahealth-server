@@ -14,6 +14,7 @@ from qdrant_client.http.models import (
     MatchAny,
 )
 from lib.core.qdrant_store import QdrantStore
+from qdrant_client.models import SearchParams 
 
 
 class QdrantSearchEngine:
@@ -96,9 +97,7 @@ class QdrantSearchEngine:
             List of matching reports.
         """
         async with self.qdrant_store.get_client() as client:
-            print(
-                f"Searching with filter: {filter_conditions}, limit: {limit}"
-            )
+            print(f"Searching with filter: {filter_conditions}, limit: {limit}")
 
             return await client.search(
                 collection_name=self.collection_name,
@@ -106,6 +105,9 @@ class QdrantSearchEngine:
                 limit=limit,
                 query_filter=filter_conditions,
                 score_threshold=score_threshold,
+                hnsw_ef=128,
+                exact=False,
+                # search_params=SearchParams(hnsw_ef=128),
             )
 
     def _build_filter(
@@ -135,16 +137,12 @@ class QdrantSearchEngine:
                 )
             else:
                 conditions.append(
-                    FieldCondition(
-                        key="patient_id", match=MatchAny(any=patient_ids)
-                    )
+                    FieldCondition(key="patient_id", match=MatchAny(any=patient_ids))
                 )
 
         if report_id:
             conditions.append(
-                FieldCondition(
-                    key="report_id", match=MatchValue(value=report_id)
-                )
+                FieldCondition(key="report_id", match=MatchValue(value=report_id))
             )
 
         return Filter(must=conditions) if conditions else None
@@ -155,9 +153,7 @@ class QdrantSearchEngine:
         if base_filter and extra_filter:
             return Filter(
                 must=(base_filter.must or []) + (extra_filter.must or []),  # type: ignore
-                should=(base_filter.should or [])
-                + (extra_filter.should or []),  # type: ignore
-                must_not=(base_filter.must_not or [])
-                + (extra_filter.must_not or []),  # type: ignore
+                should=(base_filter.should or []) + (extra_filter.should or []),  # type: ignore
+                must_not=(base_filter.must_not or []) + (extra_filter.must_not or []),  # type: ignore
             )
         return base_filter or extra_filter
