@@ -27,8 +27,6 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.services.patient_profile_service import PatientProfileService
-from lib.tasks.cgm_tasks import sync_patient_daily_cgm_reports_to_vector_store
-from lib.tasks.other_tasks import process_profile_batch
 from lib.utils.http_exceptions import raise_http_exception
 from fastapi import Depends, status
 from openai import AsyncOpenAI
@@ -36,7 +34,7 @@ from lib.models.patient import Patient as PatientModel
 from lib.models.patient_eating_habit import (
     PatientEatingHabit as PatientEatingHabitModel,
 )
-from rest_server.response_models import SuccessResponse
+from rest_server.response_models import InQueueResponse, SuccessResponse
 from lib.services.libreview_service import LibreViewService
 
 router = APIRouter(prefix="/test")
@@ -47,52 +45,38 @@ extractor = FileContentExtractorService()
 openai_client = AsyncOpenAI()
 
 
-@router.post(path="/libreview/sync/all", tags=["Test"], include_in_schema=False)
-async def sync_all_libreview_to_sqs(
-    libreview_service: LibreViewService = Depends(get_libreview_service),
+@router.post(path="/libreview/sync/{patient_id}", tags=["Test"])
+async def test_libreview_sync(
+    patient_id: str,
     current_admin: Admin = Depends(get_current_admin),
-    requested_by: str = "system_bulk_sync",
+    libreview_service: LibreViewService = Depends(get_libreview_service),
+    force: bool = False,
 ):
-    """Push all LibreView-connected patients to SQS for sync."""
+    """
+    Test endpoint: Enqueue LibreView sync for a single patient via ARQ worker.
+
+    This will:
+    1. Get the patient's LibreView ID from the database
+    2. Solve Cloudflare Turnstile captcha
+    3. Request LibreView data export
+    4. Poll for export completion
+    5. Download CSV and upload to ClickHouse
+    """
     try:
-        patients = await libreview_service.get_patients_with_libreview()  # type: ignore
-        queued = 0
-        skipped = 0
-        errors = []
+        result = await libreview_service.sync_libreview(patient_id, force=force)
 
-        for patient in patients:
-            patient_id = str(patient.patient_id)
-            libreview = (
-                patient.connected_apps.libreview if patient.connected_apps else None
-            )
-            if not libreview:
-                skipped += 1
-                continue
+        if result.get("status") == "in_queue":
+            return InQueueResponse(**result)
 
-            payload = {
+        return SuccessResponse(
+            message="LibreView sync job enqueued successfully",
+            data={
+                **(result.get("data") or {}),
                 "patient_id": patient_id,
-                "libreview_id": libreview.libreview_id,
-                "requested_by": requested_by,
-                "timestamp": int(datetime.utcnow().timestamp() * 1000),
-            }
-
-            libreview_service.libreview_sync_queue.send_message(
-                deduplication_id=hashlib.sha256(
-                    f"{libreview.libreview_id}:{patient_id}".encode()
-                ).hexdigest()[:128],
-                payload=payload,
-            )
-            queued += 1
-
-        return {
-            "message": "LibreView sync queued for all patients",
-            "data": {
-                "total_patients": len(patients),
-                "queued": queued,
-                "skipped": skipped,
-                "errors": errors,
+                "queue": "arq:queue:libreview",
+                "note": "Check worker logs for progress",
             },
-        }
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
