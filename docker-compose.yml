@@ -187,7 +187,7 @@ services:
       - aihealth-redis
       - aihealth-api
     user: "1000:1000"
-        
+
 
   aihealth-celery-beat:
     container_name: aihealth-celery-beat
@@ -437,17 +437,6 @@ services:
       - 5540:5540
     volumes:
       - redisinsight_data:/data
-
-  flower:
-    container_name: flower
-    image: mher/flower
-    restart: unless-stopped
-    ports:
-      - 5555:5555
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-    depends_on:
-      - aihealth-redis
 
   mongo-express:
     container_name: mongo-express
