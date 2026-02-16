@@ -56,14 +56,13 @@ class LibreViewService:
                 "message": "Sync allowed only once every 3 hours.",
             }
 
-        if not force:
-            job_id = f"libreview:sync:{patient_id}"
-            if await is_job_in_queue(job_id):
-                return {
-                    "status": "in_queue",
-                    "message": "Sync already queued. Please check back shortly.",
-                    "data": {"job_id": job_id},
-                }
+        job_id = f"libreview:sync:{patient_id}"
+        if await is_job_in_queue(job_id):
+            return {
+                "status": "in_queue",
+                "message": "Sync already queued. Please check back shortly.",
+                "data": {"job_id": job_id},
+            }
 
         job_id = await enqueue_libreview_sync_async(patient_id)
         if not job_id:
