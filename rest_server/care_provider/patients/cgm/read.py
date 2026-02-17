@@ -81,7 +81,7 @@ async def get_cgm_daily_report(
 
         if not daily_report:
             return InQueueResponse(
-                message="CGM report is being generated. Please check back shortly.",
+                message="CGM report is being generated or data is insufficient. Please check back shortly.",
             )
 
         return SuccessResponse(
