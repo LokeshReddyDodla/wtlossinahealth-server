@@ -2,8 +2,8 @@ from typing import cast
 
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
-from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
+from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -78,6 +78,7 @@ from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
+from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
@@ -109,6 +110,7 @@ from lib.services.reports import (
 
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
+from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.safety_rules_service import (
@@ -117,11 +119,19 @@ from lib.services.weightloss_agent.safety_rules_service import (
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
 )
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
+)
+from lib.services.weightloss_agent.glp1_injection_service import (
+    Glp1InjectionService,
+)
+from lib.services.weightloss_agent.flow_engine import FlowEngine
+from lib.services.weightloss_agent.task_service import TaskService
+from lib.services.weightloss_agent.agentic_chat_service import (
+    AgenticChatService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
 )
 from lib.services.weightloss_agent.agentic_orchestrator import (
     AgenticOrchestrator,
@@ -314,8 +324,22 @@ def get_glp1_symptoms_service() -> Glp1SymptomsService:
     return cast(Glp1SymptomsService, container.resolve(Glp1SymptomsService))
 
 
-def get_agentic_orchestrator_service() -> AgenticOrchestrator:
-    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
+def get_glp1_injection_service() -> Glp1InjectionService:
+    return cast(
+        Glp1InjectionService, container.resolve(Glp1InjectionService)
+    )
+
+
+def get_flow_engine_service() -> FlowEngine:
+    return cast(FlowEngine, container.resolve(FlowEngine))
+
+
+def get_task_service() -> TaskService:
+    return cast(TaskService, container.resolve(TaskService))
+
+
+def get_agentic_chat_service() -> AgenticChatService:
+    return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
 def get_prescription_analysis_service() -> PrescriptionAnalysisService:
@@ -323,6 +347,10 @@ def get_prescription_analysis_service() -> PrescriptionAnalysisService:
         PrescriptionAnalysisService,
         container.resolve(PrescriptionAnalysisService),
     )
+
+
+def get_osteoflag_service() -> OsteoFlagService:
+    return cast(OsteoFlagService, container.resolve(OsteoFlagService))
 
 
 def get_patient_diet_plan_service() -> PatientDietPlanService:
@@ -411,13 +439,6 @@ def get_smbg_stats_processor() -> SMBGStatsProcessor:
 
 def get_fitness_upload_service() -> FitnessUploadService:
     return cast(FitnessUploadService, container.resolve(FitnessUploadService))
-
-
-def get_celery_task_manager() -> CeleryTaskManager:
-    return cast(
-        CeleryTaskManager,
-        container.resolve(CeleryTaskManager),
-    )
 
 
 def get_token_usage_service() -> TokenUsageService:
@@ -563,9 +584,27 @@ def get_health_query_agent_service() -> HealthQueryAgentService:
     )
 
 
+def get_profile_update_agent_service() -> ProfileUpdateAgentService:
+    return cast(
+        ProfileUpdateAgentService,
+        container.resolve(ProfileUpdateAgentService),
+    )
+
+
 def get_fcm_service() -> FCMService:
     return FCMService()
 
 
 def get_arq_task_manager_service() -> ArqTaskManager:
     return get_arq_task_manager()
+
+
+def get_celery_task_manager() -> CeleryTaskManager:
+    return cast(
+        CeleryTaskManager,
+        container.resolve(CeleryTaskManager),
+    )
+
+
+def get_agentic_orchestrator_service() -> AgenticOrchestrator:
+    return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))

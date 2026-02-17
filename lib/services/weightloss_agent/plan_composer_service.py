@@ -151,6 +151,44 @@ class PlanComposerService:
             return None
         return self._doc_to_plan_snapshot(doc)
 
+    PLAN_STALE_DAYS = 7
+
+    async def maybe_regenerate_plan(
+        self, user_id: UUID, *, force: bool = False
+    ) -> bool:
+        """Re-generate the plan if it is stale (older than ``PLAN_STALE_DAYS``
+        days) or if *force* is ``True``.  Returns ``True`` if a new plan was
+        generated.
+
+        Call this from data-mutation endpoints (GLP injection upsert, inbody
+        upload, intake updates) so the plan stays fresh when key inputs change.
+        """
+        if not force:
+            plan = await self.get_current_plan(user_id)
+            if plan:
+                generated_at = plan.generated_at
+                if isinstance(generated_at, str):
+                    try:
+                        generated_at = datetime.fromisoformat(generated_at)
+                    except ValueError:
+                        generated_at = None
+                if generated_at:
+                    if generated_at.tzinfo is None:
+                        generated_at = generated_at.replace(tzinfo=timezone.utc)
+                    age_days = (
+                        datetime.now(timezone.utc) - generated_at
+                    ).days
+                    if age_days < self.PLAN_STALE_DAYS:
+                        return False
+
+        try:
+            response = await self.generate_plan(
+                PlanGenerateRequest(user_id=user_id)
+            )
+            return response is not None and not response.abstained
+        except Exception:
+            return False
+
     async def get_current_plan_details(
         self, user_id: UUID
     ) -> Optional[Dict[str, Any]]:

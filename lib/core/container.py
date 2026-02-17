@@ -12,6 +12,7 @@ from decouple import config
 from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
+from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
 from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
@@ -86,6 +87,7 @@ from lib.services.patient_package_assignment_service import (
 from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
@@ -100,6 +102,7 @@ from lib.services.patient_data_availability_service import (
 from lib.services.patient_daily_overview_service import PatientDailyOverviewService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
+from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
 from lib.services.prescription_analysis_service import (
@@ -133,14 +136,22 @@ from lib.services.weightloss_agent.safety_rules_service import (
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
 )
-from lib.services.weightloss_agent.coach_messenger_service import (
-    CoachMessengerService,
-)
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
 )
+from lib.services.weightloss_agent.glp1_injection_service import (
+    Glp1InjectionService,
+)
 from lib.services.weightloss_agent.exercise_recommendation_service import (
     ExerciseRecommendationService,
+)
+from lib.services.weightloss_agent.coach_messenger_service import (
+    CoachMessengerService,
+)
+from lib.services.weightloss_agent.flow_engine import FlowEngine
+from lib.services.weightloss_agent.task_service import TaskService
+from lib.services.weightloss_agent.agentic_chat_service import (
+    AgenticChatService,
 )
 from lib.services.weightloss_agent.agentic_orchestrator import (
     AgenticOrchestrator,
@@ -256,6 +267,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Profile Update Agent Collection
+container.register(
+    "profile_update_conversations_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("profile_update_conversations"),
+    scope=Scope.singleton,
+)
+
 
 # Intake + patient app collections
 container.register(
@@ -287,6 +307,34 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "weightloss_flow_instances_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_flow_instances"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_tasks_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_tasks"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_glp_injection_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_glpinjection_login"),
+    scope=Scope.singleton,
+)
+container.register(
+    "weightloss_symptom_daily_collection",
+    factory=lambda: cast(
+        MongoStore, container.resolve(MongoStore)
+    ).get_collection("wtloss_symptom_daily"),
+    scope=Scope.singleton,
+)
+container.register(
     "suggestion_cards_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_suggestion_cards"
@@ -315,6 +363,12 @@ container.register(
     scope=Scope.singleton,
 )
 
+
+container.register(
+    ArqTaskManager,
+    lambda: get_arq_task_manager(),
+    scope=Scope.singleton,
+)
 
 container.register(
     CeleryTaskManager,
@@ -601,6 +655,19 @@ container.register(
     ),
 )
 
+# 🔹 OsteoFlag Screening Service
+container.register(
+    OsteoFlagService,
+    lambda: OsteoFlagService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        token_usage_service=cast(
+            TokenUsageService, container.resolve(TokenUsageService)
+        ),
+        selected_ai_model="gpt-5.2",
+        ai_model_provider="openai",
+    ),
+)
+
 # 🔹 Fitness Stats Processor
 container.register(
     FitnessStatsProcessor,
@@ -883,6 +950,47 @@ container.register(
     ),
 )
 
+# 🔹 GLP-1 Symptoms Service
+container.register(
+    Glp1SymptomsService,
+    lambda: Glp1SymptomsService(
+        weekly_symptoms_collection=container.resolve(
+            "weekly_symptoms_glp1_collection"
+        ),
+        analytics_service=cast(
+            AnalyticsService, container.resolve(AnalyticsService)
+        ),
+    ),
+)
+
+# 🔹 GLP-1 Injection Settings Service
+container.register(
+    Glp1InjectionService,
+    lambda: Glp1InjectionService(
+        settings_collection=container.resolve(
+            "weightloss_glp_injection_collection"
+        ),
+    ),
+)
+
+# 🔹 Weightloss Flow Engine
+container.register(
+    FlowEngine,
+    lambda: FlowEngine(
+        flow_collection=container.resolve(
+            "weightloss_flow_instances_collection"
+        )
+    ),
+)
+
+# 🔹 Weightloss Task Service
+container.register(
+    TaskService,
+    lambda: TaskService(
+        tasks_collection=container.resolve("weightloss_tasks_collection")
+    ),
+)
+
 # 🔹 Coach Messenger Service
 container.register(
     CoachMessengerService,
@@ -895,15 +1003,6 @@ container.register(
         ai_conversation_service=cast(
             AiConversationService, container.resolve(AiConversationService)
         ),
-    ),
-)
-
-# 🔹 GLP-1 Symptoms Service
-container.register(
-    Glp1SymptomsService,
-    lambda: Glp1SymptomsService(
-        weekly_symptoms_collection=container.resolve("weekly_symptoms_glp1_collection"),
-        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -947,6 +1046,47 @@ container.register(
         analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
+        ),
+    ),
+)
+
+# 🔹 Agentic Weightloss Chat Service
+container.register(
+    AgenticChatService,
+    lambda: AgenticChatService(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+        flow_engine=cast(FlowEngine, container.resolve(FlowEngine)),
+        task_service=cast(TaskService, container.resolve(TaskService)),
+        injection_service=cast(
+            Glp1InjectionService, container.resolve(Glp1InjectionService)
+        ),
+        intake_service=cast(IntakeService, container.resolve(IntakeService)),
+        safety_rules_service=cast(
+            SafetyRulesService, container.resolve(SafetyRulesService)
+        ),
+        chat_messaging_service=cast(
+            ChatMessagingService, container.resolve(ChatMessagingService)
+        ),
+        plan_composer_service=cast(
+            PlanComposerService, container.resolve(PlanComposerService)
+        ),
+        weight_loss_agent_service=cast(
+            WeightLossAgentService, container.resolve(WeightLossAgentService)
+        ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        symptom_daily_collection=container.resolve(
+            "weightloss_symptom_daily_collection"
+        ),
+        glp1_symptoms_service=cast(
+            Glp1SymptomsService, container.resolve(Glp1SymptomsService)
+        ),
+        coach_messenger_service=cast(
+            CoachMessengerService, container.resolve(CoachMessengerService)
+        ),
+        suggestion_cards_collection=container.resolve(
+            "suggestion_cards_collection"
         ),
     ),
 )
@@ -1164,3 +1304,17 @@ container.register(
 
 # 🔹 File Content Extractor Service
 container.register(FileContentExtractorService, FileContentExtractorService)
+
+# 🔹 Profile Update Agent Service
+container.register(
+    ProfileUpdateAgentService,
+    lambda: ProfileUpdateAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        conversation_collection=container.resolve(
+            "profile_update_conversations_collection"
+        ),
+    ),
+)
