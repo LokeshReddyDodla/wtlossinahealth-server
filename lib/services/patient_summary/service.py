@@ -1,5 +1,5 @@
 import hashlib
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from decouple import config
@@ -62,98 +62,108 @@ class PatientSummaryService:
         forced: bool = False,
     ) -> None:
 
-        start_date = datetime.combine(
-            target_date, datetime.min.time(), tzinfo=None
-        )
-        end_date = datetime.combine(
-            target_date, datetime.max.time(), tzinfo=None
-        )
+        start_date = datetime.combine(target_date, datetime.min.time(), tzinfo=None)
+        end_date = datetime.combine(target_date, datetime.max.time(), tzinfo=None)
 
         now = datetime.now()
 
         # Check if summary already exists
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        report_id = self._generate_report_id(
-            patient_id, "daily", start_iso, end_iso
-        )
-        
+        report_id = self._generate_report_id(patient_id, "daily", start_iso, end_iso)
+
         existing_summary = await self.patient_summary_collection.find_one(
             {"_id": report_id}
         )
 
         existing_meta = (existing_summary or {}).get("metadata", {})
+        existing_state = existing_meta.get("state")
 
-        # 🚨 Guard: prevent regenerating finalized summaries unless forced
+        # Determine who triggered this based on context
+        if not existing_summary:
+            # First time generation
+            actual_regenerated_by = RegeneratedBy.SYSTEM_INITIAL
+        else:
+            actual_regenerated_by = regenerated_by
+
+        # 🚨 Guard: prevent regenerating finalized summaries unless forced or stale
         if existing_summary and not forced:
-            existing_state = existing_meta.get("state")
             if existing_state == SummaryState.FINALIZED.value:
                 raise RuntimeError(
                     f"Cannot regenerate finalized summary for {patient_id} on {target_date}. "
-                    "Set forced=True to override."
+                    "Summary is current."
                 )
 
-        # 🚨 Guard: user can only generate if summary is STALE
+        # 🚨 Guard: user can only regenerate if summary is STALE or FAILED
         if regenerated_by == RegeneratedBy.USER:
-            if not existing_meta:
+            if not existing_summary:
                 raise RuntimeError(
-                    "User cannot generate summary before system job runs"
+                    "User cannot generate summary before system creates initial version"
                 )
 
-            existing_state = existing_meta.get("state")
-            if existing_state != SummaryState.STALE.value:
+            if existing_state not in [
+                SummaryState.STALE.value,
+                SummaryState.FAILED.value,
+            ]:
                 raise RuntimeError(
-                    f"Cannot regenerate summary from state '{existing_state}'"
+                    f"User cannot regenerate summary in state '{existing_state}'. "
+                    f"Only STALE or FAILED summaries can be regenerated."
                 )
 
-        # Build the summary snapshot
-        summary = await self._build_summary_snapshot(
-            patient_id, "daily", start_date, end_date
-        )
-        
-        # Consolidate all metadata into single metadata object
-        metadata = {
-            # Report identification
-            "report_type": "daily",
-            "date_range": {
-                "start": start_iso,
-                "end": end_iso,
-            },
-            "summary_version": self.SUMMARY_VERSION,
-            "model_version": self.MODEL_VERSION,
-            
-            # Lifecycle/state management
-            "state": SummaryState.FINALIZED.value,
-            "generated_at": now,
-            "finalized_at": now if regenerated_by == RegeneratedBy.SYSTEM else None,
-            "data_last_updated_at": existing_meta.get(
-                "data_last_updated_at", now
-            ),
-            "regenerated_at": (
-                now
-                if regenerated_by == RegeneratedBy.USER
-                else existing_meta.get("regenerated_at")
-            ),
-            "regenerated_by": regenerated_by.value,
-            "stale_reason": (
-                None
-                if regenerated_by == RegeneratedBy.SYSTEM
-                else existing_meta.get("stale_reason")
-            ),
-        }
-        
-        await self.patient_summary_collection.replace_one(
-            {"_id": report_id},
-            {
-                "_id": report_id,
-                "patient_id": patient_id,
-                "created_at": existing_summary.get("created_at", now) if existing_summary else now,
-                "updated_at": now,
-                "metadata": metadata,
-                **summary,
-            },
-            upsert=True,
-        )
+        try:
+            # Build the summary snapshot
+            summary = await self._build_summary_snapshot(
+                patient_id, "daily", start_date, end_date
+            )
+
+            # Clean metadata - only essential fields
+            metadata = {
+                # Report identification
+                "report_type": "daily",
+                "date_range": {
+                    "start": start_iso,
+                    "end": end_iso,
+                },
+                "summary_version": self.SUMMARY_VERSION,
+                "model_version": self.MODEL_VERSION,
+                # State management (simplified)
+                "state": SummaryState.FINALIZED.value,
+                "data_last_updated_at": existing_meta.get(
+                    "data_last_updated_at"
+                ),  # Only if exists
+                "regenerated_by": actual_regenerated_by.value,
+                "stale_reason": None,  # Clear stale reason when finalized
+            }
+
+            await self.patient_summary_collection.replace_one(
+                {"_id": report_id},
+                {
+                    "_id": report_id,
+                    "patient_id": patient_id,
+                    "created_at": existing_summary.get("created_at", now)
+                    if existing_summary
+                    else now,
+                    "updated_at": now,
+                    "metadata": metadata,
+                    **summary,
+                },
+                upsert=True,
+            )
+
+        except Exception as e:
+            # If generation fails, mark as FAILED
+            if existing_summary:
+                await self.patient_summary_collection.update_one(
+                    {"_id": report_id},
+                    {
+                        "$set": {
+                            "metadata.state": SummaryState.FAILED.value,
+                            "metadata.error_message": str(e),
+                            "updated_at": now,
+                        }
+                    },
+                )
+            raise
 
     async def _build_summary_snapshot(
         self,
@@ -179,19 +189,11 @@ class PatientSummaryService:
 
         period_date: date = end_date.date()
 
-        glucose = await self._build_glucose_section(
-            patient_id, start_date, end_date
-        )
+        glucose = await self._build_glucose_section(patient_id, start_date, end_date)
         meals = await self._build_meals_section(patient_id, period_date)
-        activity = await self._build_activity_section(
-            patient_id, start_date, end_date
-        )
-        sleep = await self._build_sleep_section(
-            patient_id, start_date, end_date
-        )
-        vitals = await self._build_vitals_section(
-            patient_id, start_date, end_date
-        )
+        activity = await self._build_activity_section(patient_id, start_date, end_date)
+        sleep = await self._build_sleep_section(patient_id, start_date, end_date)
+        vitals = await self._build_vitals_section(patient_id, start_date, end_date)
 
         data_presence = {
             "cgm": glucose is not None,
@@ -219,10 +221,7 @@ class PatientSummaryService:
         if data_presence["cgm"] and glucose:
             if glucose.get("tir_pct") is not None and glucose["tir_pct"] < 70:
                 flags.append("Low time-in-range (<70%)")
-            if (
-                glucose.get("avg_mgdl") is not None
-                and glucose["avg_mgdl"] > 180
-            ):
+            if glucose.get("avg_mgdl") is not None and glucose["avg_mgdl"] > 180:
                 flags.append("High average glucose (>180 mg/dL)")
             if (
                 glucose.get("variability_pct") is not None
@@ -258,15 +257,9 @@ class PatientSummaryService:
                 flags.append("Prolonged inactivity (>3h)")
 
         if data_presence["sleep"] and sleep:
-            if (
-                sleep.get("duration_hours") is not None
-                and sleep["duration_hours"] < 6
-            ):
+            if sleep.get("duration_hours") is not None and sleep["duration_hours"] < 6:
                 flags.append("Short sleep (<6h)")
-            if (
-                sleep.get("efficiency_pct") is not None
-                and sleep["efficiency_pct"] < 75
-            ):
+            if sleep.get("efficiency_pct") is not None and sleep["efficiency_pct"] < 75:
                 flags.append("Low sleep efficiency (<75%)")
 
         if data_presence["vitals"] and vitals:
@@ -312,7 +305,7 @@ class PatientSummaryService:
     ) -> Optional[Dict[str, Any]]:
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        
+
         doc = await self.cgm_reports_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -367,7 +360,7 @@ class PatientSummaryService:
         self, patient_id: str, report_date: date
     ) -> Optional[Dict[str, Any]]:
         date_iso = report_date.isoformat()
-        
+
         doc = await self.meal_reports_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -396,9 +389,7 @@ class PatientSummaryService:
             def _meal_view(m: Dict[str, Any]) -> Dict[str, Any]:
                 macro = m.get("total_macro_nutritional_value", {}) or {}
                 return {
-                    "meal_id": (
-                        str(m.get("id")) if m.get("id") is not None else None
-                    ),
+                    "meal_id": (str(m.get("id")) if m.get("id") is not None else None),
                     "name": m.get("name"),
                     "type": m.get("type"),
                     "score": m.get("score"),
@@ -411,9 +402,7 @@ class PatientSummaryService:
             best_meal = _meal_view(best)
             # Avoid identical best/worst when only one scored meal
             worst_meal = (
-                _meal_view(worst)
-                if best is not worst and meal_count >= 2
-                else None
+                _meal_view(worst) if best is not worst and meal_count >= 2 else None
             )
 
         nutrition_totals = {
@@ -441,7 +430,7 @@ class PatientSummaryService:
     ) -> Optional[Dict[str, Any]]:
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        
+
         doc = await self.fitness_reports_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -452,9 +441,7 @@ class PatientSummaryService:
         if not doc:
             return None
 
-        inactive_periods: List[Dict[str, Any]] = (
-            doc.get("inactive_periods", []) or []
-        )
+        inactive_periods: List[Dict[str, Any]] = doc.get("inactive_periods", []) or []
         longest_inactive = max(
             (p.get("inactive_duration", 0) for p in inactive_periods),
             default=0,
@@ -480,7 +467,7 @@ class PatientSummaryService:
     ) -> Optional[Dict[str, Any]]:
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        
+
         doc = await self.sleep_reports_collection.find_one(
             {
                 "patient_id": patient_id,
@@ -517,7 +504,7 @@ class PatientSummaryService:
         from lib.core.postgres_store import PostgresStore
         from lib.models.patient_vital import PatientVital
 
-        store = container.resolve(PostgresStore)
+        store: PostgresStore = container.resolve(PostgresStore)  # type: ignore
         async with store.get_session() as session:
             result = await session.execute(
                 select(
@@ -704,9 +691,7 @@ class PatientSummaryService:
 
             ai_msg: AIMessage = await self._llm.ainvoke([system_msg, user_msg])
             content = ai_msg.content or "{}"
-            parsed = (
-                parser.parse(content) if isinstance(content, str) else None
-            )
+            parsed = parser.parse(content) if isinstance(content, str) else None
             if parsed:
                 # Post-process: ensure key_points and patterns are populated if data exists
                 data_presence = snapshot.get("data_presence", {})
@@ -787,9 +772,7 @@ class PatientSummaryService:
         elif period_name_upper == "LAST_WEEK":
             week_start = yesterday - timedelta(days=yesterday.weekday())
             last_week_end = week_start - timedelta(days=1)
-            last_week_start = last_week_end - timedelta(
-                days=last_week_end.weekday()
-            )
+            last_week_start = last_week_end - timedelta(days=last_week_end.weekday())
             start_date, end_date = last_week_start, last_week_end
 
         elif period_name_upper == "THIS_MONTH":
@@ -813,9 +796,7 @@ class PatientSummaryService:
         else:
             raise ValueError(f"Unsupported period name: {period_name}")
 
-        start_dt = datetime.combine(
-            start_date, datetime.min.time(), tzinfo=None
-        )
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=None)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=None)
         return start_dt, end_dt
 
@@ -825,34 +806,22 @@ class PatientSummaryService:
         start_date, end_date = self._period_name_to_dates(period_name)
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        report_id = self._generate_report_id(
-            patient_id, "daily", start_iso, end_iso
-        )
+        report_id = self._generate_report_id(patient_id, "daily", start_iso, end_iso)
 
-        summary = await self.patient_summary_collection.find_one(
-            {"_id": report_id}
-        )
+        summary = await self.patient_summary_collection.find_one({"_id": report_id})
 
         return summary
 
     async def fetch_summary_by_date(
         self, patient_id: str, target_date: date
     ) -> Optional[Dict[str, Any]]:
-        start_date = datetime.combine(
-            target_date, datetime.min.time(), tzinfo=None
-        )
-        end_date = datetime.combine(
-            target_date, datetime.max.time(), tzinfo=None
-        )
+        start_date = datetime.combine(target_date, datetime.min.time(), tzinfo=None)
+        end_date = datetime.combine(target_date, datetime.max.time(), tzinfo=None)
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
-        report_id = self._generate_report_id(
-            patient_id, "daily", start_iso, end_iso
-        )
+        report_id = self._generate_report_id(patient_id, "daily", start_iso, end_iso)
 
-        summary = await self.patient_summary_collection.find_one(
-            {"_id": report_id}
-        )
+        summary = await self.patient_summary_collection.find_one({"_id": report_id})
 
         return summary
 
@@ -895,10 +864,6 @@ class PatientSummaryService:
                     "metadata.stale_reason": stale_reason.value,
                     "updated_at": now,
                 },
-                "$unset": {
-                    "metadata.regenerated_at": "",
-                    "metadata.regenerated_by": "",
-                },
             },
         )
 
@@ -906,8 +871,8 @@ class PatientSummaryService:
         query = {
             "metadata.state": SummaryState.STALE.value,
         }
-        
+
         cursor = self.patient_summary_collection.find(query)
         summaries = await cursor.to_list(length=None)
-        
+
         return summaries
