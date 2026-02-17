@@ -1,24 +1,12 @@
 """Scheduled cron jobs for patient summary tasks."""
 
-from lib.workers.tasks.patient_summary.tasks import (
-    schedule_daily_patient_summaries,
-    regenerate_stale_summaries,
-)
+from lib.workers.tasks.patient_summary.summary_generation import regenerate_stale_summaries
 from lib.workers.tasks.utils import daily_cron
 
 
 def get_cron_jobs():
     """Return cron jobs for patient summary tasks."""
     return [
-        # Daily summaries at 3:00 AM IST
-        daily_cron(
-            coroutine=schedule_daily_patient_summaries,
-            name="patient-daily-summaries",
-            hour=3,
-            minute=0,
-            timeout_s=3600,
-        ),
-        # Regenerate stale summaries every 3 hours
         daily_cron(
             coroutine=regenerate_stale_summaries,
             name="regenerate-stale-summaries-0",

@@ -1,13 +1,16 @@
 import hashlib
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import List, Optional
 
 from lib.schemas.fitness_stats import FitnessStats
+from lib.services.patient_summary.enum import StaleReason
 from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,
 )
+from lib.utils.datetime_utils import parse_datetime
+from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
 from .processor import FitnessReportType
 
 class FitnessReportService:
@@ -15,25 +18,22 @@ class FitnessReportService:
         self.fitness_report_collection = fitness_report_collection
         self.patient_summary_service = patient_summary_service
 
-    def _extract_datetime_from_iso(self, iso_string: str) -> datetime:
-        """Extract datetime from ISO string, handling timezone."""
-        return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
-
-    async def _mark_summaries_stale(
+    async def _mark_summaries_stale_for_range(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> None:
-        if not self.patient_summary_service:
-            return
-
+        """Mark summaries as stale and enqueue regeneration for each date in range."""
         try:
-            from lib.services.patient_summary.enum import StaleReason
-
-            await self.patient_summary_service.mark_summaries_as_stale(
-                patient_id=patient_id,
-                start_date=start_date,
-                end_date=end_date,
-                stale_reason=StaleReason.DATA_UPDATED,
-            )
+            # Iterate through each day in the range
+            current_date = start_date.date()
+            end_date_obj = end_date.date()
+            
+            while current_date <= end_date_obj:
+                await mark_summary_stale_and_enqueue(
+                    patient_id=patient_id,
+                    target_date=current_date,
+                    stale_reason=StaleReason.DATA_UPDATED,
+                )
+                current_date += timedelta(days=1)
         except Exception as e:
             logging.warning(f"Failed to mark summaries as stale for {patient_id}: {e}")
 
@@ -230,15 +230,20 @@ class FitnessReportService:
                 {"_id": report_id}, report_dict, upsert=True
             )
 
-            start_dt = self._extract_datetime_from_iso(metadata.date_range.start)
-            end_dt = self._extract_datetime_from_iso(metadata.date_range.end)
+            start_dt = parse_datetime(metadata.date_range.start)
+            end_dt = parse_datetime(metadata.date_range.end)
             logging.info(
                 f"Saved/Updated fitness report for {patient_id} ({metadata.report_type}) from {start_dt} to {end_dt}"
             )
 
-            await self._mark_summaries_stale(
-                patient_id=patient_id, start_date=start_dt, end_date=end_dt
-            )
+            if start_dt and end_dt:
+                await self._mark_summaries_stale_for_range(
+                    patient_id=patient_id, start_date=start_dt, end_date=end_dt
+                )
+            else:
+                logging.warning(
+                    f"Could not parse datetime range for fitness report: {metadata.date_range.start} - {metadata.date_range.end}"
+                )
 
             return report_id
 
@@ -285,11 +290,16 @@ class FitnessReportService:
 
             for report in reports:
                 metadata = report.metadata
-                start_dt = self._extract_datetime_from_iso(metadata.date_range.start)
-                end_dt = self._extract_datetime_from_iso(metadata.date_range.end)
-                await self._mark_summaries_stale(
-                    patient_id=patient_id, start_date=start_dt, end_date=end_dt
-                )
+                start_dt = parse_datetime(metadata.date_range.start)
+                end_dt = parse_datetime(metadata.date_range.end)
+                if start_dt and end_dt:
+                    await self._mark_summaries_stale_for_range(
+                        patient_id=patient_id, start_date=start_dt, end_date=end_dt
+                    )
+                else:
+                    logging.warning(
+                        f"Could not parse datetime range for fitness report: {metadata.date_range.start} - {metadata.date_range.end}"
+                    )
 
         except Exception as e:
             logging.error(f"Failed to save reports in bulk: {e}")

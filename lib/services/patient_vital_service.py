@@ -1,19 +1,19 @@
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List
 
-from fastapi import HTTPException, status
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from fastapi import status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_vital import PatientVital as PatientVitalModel
-from lib.schemas.patient_vital import PatientVital as PatientVitalSchema
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.patient_summary.enum import StaleReason
 from lib.services.patient_summary.service import PatientSummaryService
 from lib.utils.http_exceptions import raise_http_exception
+from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.tasks.vitals.enqueue import enqueue_generate_vital_vector_sync
 
@@ -28,29 +28,6 @@ class PatientVitalService:
         self.postgres_store = postgres_store
         self.patient_profile_service = patient_profile_service
         self.patient_summary_service = patient_summary_service
-
-    async def _mark_summaries_stale(
-        self, patient_id: str, test_time: datetime
-    ) -> None:
-        if not self.patient_summary_service:
-            return
-
-        try:
-            from lib.services.patient_summary.enum import StaleReason
-
-            target_date = test_time.date() if isinstance(test_time, datetime) else test_time
-
-            await self.patient_summary_service.mark_summaries_as_stale(
-                patient_id=patient_id,
-                target_date=target_date,
-                stale_reason=StaleReason.DATA_UPDATED,
-            )
-        except Exception as e:
-            # Don't fail the operation if marking stale fails
-            import logging
-            logging.warning(
-                f"Failed to mark summaries as stale for {patient_id}: {e}"
-            )
 
     @with_postgres_session
     async def get_patient_vitals(
@@ -77,7 +54,7 @@ class PatientVitalService:
         patient_id: str,
         vital_data: PatientVitalCreate,
         *,
-        postgres_session: AsyncSession
+        postgres_session: AsyncSession,
     ) -> PatientVitalModel:
         try:
             new_vital = PatientVitalModel(
@@ -101,10 +78,11 @@ class PatientVitalService:
             await postgres_session.commit()
             await postgres_session.refresh(new_vital)
 
-            # Mark affected summaries as stale
-            await self._mark_summaries_stale(
+            # Mark affected summaries as stale and enqueue regeneration
+            await mark_summary_stale_and_enqueue(
                 patient_id=patient_id,
-                test_time=vital_data.test_time,
+                target_date=vital_data.test_time.date(),
+                stale_reason=StaleReason.DATA_UPDATED,
             )
 
             # Enqueue vital vector generation
@@ -166,10 +144,11 @@ class PatientVitalService:
             await postgres_session.delete(vital_record)
             await postgres_session.commit()
 
-            # Mark affected summaries as stale
-            await self._mark_summaries_stale(
+            # Mark affected summaries as stale and enqueue regeneration
+            await mark_summary_stale_and_enqueue(
                 patient_id=patient_id,
-                test_time=test_time,
+                target_date=test_time.date(),
+                stale_reason=StaleReason.DATA_DELETED,
             )
         except SQLAlchemyError as e:
             await postgres_session.rollback()
