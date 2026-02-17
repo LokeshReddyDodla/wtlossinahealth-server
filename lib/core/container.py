@@ -390,7 +390,6 @@ container.register(
     PatientDataAvailabilityService,
     lambda: PatientDataAvailabilityService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 
