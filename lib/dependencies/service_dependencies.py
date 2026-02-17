@@ -3,6 +3,7 @@ from typing import cast
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
+from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -596,6 +597,13 @@ def get_fcm_service() -> FCMService:
 
 def get_arq_task_manager_service() -> ArqTaskManager:
     return get_arq_task_manager()
+
+
+def get_celery_task_manager() -> CeleryTaskManager:
+    return cast(
+        CeleryTaskManager,
+        container.resolve(CeleryTaskManager),
+    )
 
 
 def get_agentic_orchestrator_service() -> AgenticOrchestrator:

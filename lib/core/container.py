@@ -4,6 +4,7 @@ from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.cache_store import CacheStore
+from lib.core.celery_app import celery
 from lib.core.clickhouse_store import ClickHouseStore
 from decouple import config
 
@@ -12,6 +13,7 @@ from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
+from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -365,6 +367,12 @@ container.register(
 container.register(
     ArqTaskManager,
     lambda: get_arq_task_manager(),
+    scope=Scope.singleton,
+)
+
+container.register(
+    CeleryTaskManager,
+    lambda: CeleryTaskManager(app=celery),
     scope=Scope.singleton,
 )
 
