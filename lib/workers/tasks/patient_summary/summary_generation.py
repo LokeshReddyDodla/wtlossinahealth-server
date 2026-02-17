@@ -121,13 +121,10 @@ async def regenerate_stale_summaries(ctx: Dict[str, Any]) -> TaskResult:
 
 async def _enqueue_patient_summary(
     patient_id: str,
-    target_date: Optional[date] = None,
+    target_date: date,
     forced: bool = False,
 ) -> Optional[str]:
     """Internal: Enqueue patient summary generation."""
-    if target_date is None:
-        target_date = datetime.now().date()
-
     target_date_str = target_date.isoformat()
     job_id = f"summary:{patient_id}:{target_date_str}"
 

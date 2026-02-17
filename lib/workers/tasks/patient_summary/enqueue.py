@@ -6,12 +6,14 @@ from typing import Optional
 
 from loguru import logger
 
-from lib.workers.tasks.patient_summary.summary_generation import _enqueue_patient_summary
+from lib.workers.tasks.patient_summary.summary_generation import (
+    _enqueue_patient_summary,
+)
 
 
 async def enqueue_patient_summary_async(
     patient_id: str,
-    target_date: Optional[date] = None,
+    target_date: date,
     forced: bool = False,
 ) -> Optional[str]:
     """Enqueue patient summary generation (async)."""
@@ -24,7 +26,7 @@ async def enqueue_patient_summary_async(
 
 def enqueue_patient_summary_sync(
     patient_id: str,
-    target_date: Optional[date] = None,
+    target_date: date,
     forced: bool = False,
 ) -> Optional[str]:
     """Enqueue patient summary generation (sync)."""
