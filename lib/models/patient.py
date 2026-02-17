@@ -133,8 +133,12 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    patient_plans = relationship(
-        "PatientPlan", back_populates="patient", cascade="all, delete-orphan"
+    diet_plans = relationship(
+        "PatientDietPlan", back_populates="patient", cascade="all, delete-orphan"
+    )
+
+    fitness_plans = relationship(
+        "PatientFitnessPlan", back_populates="patient", cascade="all, delete-orphan"
     )
 
     meals = relationship(
@@ -257,6 +261,48 @@ class Patient(Base):
     @full_name.expression
     def full_name(cls):
         return func.concat(cls.first_name, " ", cls.last_name)
+
+    @property
+    def default_diet_plan(self):
+        """Returns the default diet plan (set during onboarding)"""
+        return next(
+            (plan for plan in self.diet_plans if plan.is_default and plan.status == "ACTIVE"),
+            None,
+        )
+
+    @property
+    def default_fitness_plan(self):
+        """Returns the default fitness plan (set during onboarding)"""
+        return next(
+            (plan for plan in self.fitness_plans if plan.is_default and plan.status == "ACTIVE"),
+            None,
+        )
+
+    def get_active_diet_plan(self, date=None):
+        """Returns the diet plan active on a given date"""
+        if date is None:
+            date = datetime.now().date()
+        return next(
+            (
+                plan
+                for plan in self.diet_plans
+                if plan.status == "ACTIVE" and plan.start_date <= date and (plan.end_date is None or plan.end_date >= date)
+            ),
+            None,
+        )
+
+    def get_active_fitness_plan(self, date=None):
+        """Returns the fitness plan active on a given date"""
+        if date is None:
+            date = datetime.now().date()
+        return next(
+            (
+                plan
+                for plan in self.fitness_plans
+                if plan.status == "ACTIVE" and plan.start_date <= date and (plan.end_date is None or plan.end_date >= date)
+            ),
+            None,
+        )
 
 
 @listens_for(Patient, "after_insert")

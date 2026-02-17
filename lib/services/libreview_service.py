@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
-import json
 
 from sqlalchemy import select
-from lib.core.cache_store import CacheStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_connected_app import (
     PatientConnectedApp,
@@ -11,12 +9,10 @@ from lib.models.patient_connected_app import (
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
 )
-from lib.services.sqs_service import SQSService
+from lib.workers.arq.redis import is_job_in_queue
+from lib.workers.tasks.libreview.enqueue import enqueue_libreview_sync_async
 from lib.utils.http_exceptions import raise_http_exception
-from fastapi import Depends, HTTPException, Query, Request, status
-from lib.schemas.patient_connected_app import (
-    PatientLibreView as PatientLibreViewSchema,
-)
+from fastapi import status
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.models.patient import Patient as PatientModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,23 +21,20 @@ from sqlalchemy.orm import selectinload
 
 class LibreViewService:
     SYNC_INTERVAL_SECONDS = 2 * 60 * 60  # 2 hours
-    REDIS_SYNC_TTL_SECONDS = 30 * 60  # Optional: Keep Redis lock for 30 min
 
     def __init__(
         self,
         postgres_store: PostgresStore,
         patient_connected_app_service: PatientConnectedAppService,
-        libreview_sync_queue: SQSService,
-        libreview_sync_store: CacheStore,
     ):
         self.postgres_store = postgres_store
         self.patient_connected_app_service = patient_connected_app_service
-        self.libreview_sync_queue = libreview_sync_queue
-        self.libreview_sync_store = libreview_sync_store
 
-    async def sync_libreview(self, patient_id: str, user_id: str) -> dict:
-        connected_apps = await self.patient_connected_app_service.get_connected_apps_for_patient(
-            patient_id=patient_id,
+    async def sync_libreview(self, patient_id: str, force: bool = False) -> dict:
+        connected_apps = (
+            await self.patient_connected_app_service.get_connected_apps_for_patient(
+                patient_id=patient_id,
+            )  # type: ignore
         )  # type: ignore
 
         if not connected_apps.libreview:
@@ -50,51 +43,41 @@ class LibreViewService:
                 message="LibreView not connected for this patient.",
             )
 
-        libreview = PatientLibreViewSchema.model_validate(
-            connected_apps.libreview
-        )
         last_sync = connected_apps.libreview.last_sync_timestamp
 
-        if last_sync and (datetime.utcnow() - last_sync) < timedelta(
-            seconds=self.SYNC_INTERVAL_SECONDS
+        if (
+            last_sync
+            and not force
+            and (datetime.utcnow() - last_sync)
+            < timedelta(seconds=self.SYNC_INTERVAL_SECONDS)
         ):
-            raise_http_exception(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                message="Sync allowed only once every 2 hours.",
-            )
-
-        redis_key = f"{libreview.libreview_id}:{patient_id}"
-
-        payload = {
-            "patient_id": patient_id,
-            "libreview_id": libreview.libreview_id,
-            "requested_by": str(user_id),
-            "timestamp": int(datetime.utcnow().timestamp() * 1000),
-        }
-
-        lock_acquired = self.libreview_sync_store.set_key(
-            redis_key,
-            json.dumps(payload),
-            expire=self.REDIS_SYNC_TTL_SECONDS,
-            nx=True,  # SET only if key does NOT exist
-        )
-
-        if not lock_acquired:
             return {
-                "message": "Sync already in progress (in queue).",
-                "data": {"status": "already_queued"},
+                "status": "cooldown",
+                "message": "Sync allowed only once every 3 hours.",
             }
 
-        
+        job_id = f"libreview:sync:{patient_id}"
+        if await is_job_in_queue(job_id):
+            return {
+                "status": "in_queue",
+                "message": "Sync already queued. Please check back shortly.",
+                "data": {"job_id": job_id},
+            }
 
-        self.libreview_sync_queue.send_message(
-            deduplication_id=redis_key,
-            payload=payload,
-        )
+        job_id = await enqueue_libreview_sync_async(patient_id)
+        if not job_id:
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Failed to enqueue LibreView sync job.",
+            )
 
         return {
             "message": "Sync request accepted and added to queue.",
-            "data": {"status": "queued"},
+            "data": {
+                "status": "queued",
+                "message": "Sync request accepted and added to queue.",
+                "job_id": job_id,
+            },
         }
 
     @with_postgres_session

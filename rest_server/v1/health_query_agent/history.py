@@ -28,6 +28,7 @@ async def get_conversation_history(
                 ProfileTypeEnum.PATIENT,
                 ProfileTypeEnum.CARE_PROVIDER,
             ],
+            check_permissions=False,
         )
     ),
     agent_service: HealthQueryAgentService = Depends(get_health_query_agent_service),

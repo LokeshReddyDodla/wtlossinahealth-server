@@ -4,3 +4,5 @@ router = APIRouter(prefix="/meal", tags=["V1 - Meal Reports"])
 
 from .list import *
 from .read import *
+from .test import *
+from .sync import *

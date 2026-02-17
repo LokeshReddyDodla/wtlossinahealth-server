@@ -18,7 +18,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.smbg.processor import SMBGStatsProcessor
+from lib.services.reports import SMBGStatsProcessor
 from rest_server.response_models import SuccessResponse
 from lib.models.care_provider import CareProvider as CareProviderModel
 

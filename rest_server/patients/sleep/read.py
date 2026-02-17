@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_sleep_report_service
 from lib.models.patient import Patient
-from lib.services.sleep_report_service import SleepReportService
+from lib.services.reports import SleepReportService
 from lib.utils.date_utils import (
     get_month_start_end,
     get_week_start_and_end_from_week_no,

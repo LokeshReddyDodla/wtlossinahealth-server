@@ -11,7 +11,7 @@ from lib.core.mongo_store import MongoStore
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
-from lib.utils.cgm.processor import CGMReportType
+from lib.services.reports import CGMReportType
 from lib.utils.date.age_utils import calculate_age
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.patient_mapping import map_patients_to_reports

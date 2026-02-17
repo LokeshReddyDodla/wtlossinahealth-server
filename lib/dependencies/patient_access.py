@@ -5,7 +5,7 @@ from uuid import UUID
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.http_exceptions import raise_http_exception
 
 if TYPE_CHECKING:
@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 async def resolve_patient_access(
     *,
     actor: Actor,
-    patient_id: Optional[UUID],
-    care_provider_service: CareProviderProfileService,
+    patient_id: UUID | None,
+    care_provider_access_service: CareProviderAccessService,
 ) -> UUID:
     """Ensure the caller may act on *patient_id*.
 
@@ -33,10 +33,11 @@ async def resolve_patient_access(
         )
 
     if actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        if not await care_provider_service.is_patient_assigned(
+        is_assigned = await care_provider_access_service.is_patient_assigned(
             care_provider_id=actor.model.care_provider_id,
             patient_id=patient_id,
-        ):
+        )  # type: ignore
+        if not is_assigned:
             raise_http_exception(
                 status_code=403,
                 message="You do not have access to this patient",
@@ -50,7 +51,7 @@ async def verify_enrollment_access(
     enrollment_id: UUID,
     actor: Actor,
     weight_loss_service: "WeightLossAgentService",
-    care_provider_service: CareProviderProfileService,
+    care_provider_access_service: CareProviderAccessService,
 ) -> dict:
     """Load an enrollment and ensure the caller may access it.
 
@@ -90,7 +91,7 @@ async def verify_enrollment_access(
     await resolve_patient_access(
         actor=actor,
         patient_id=patient_uuid,
-        care_provider_service=care_provider_service,
+        care_provider_access_service=care_provider_access_service,
     )
 
     return enrollment
@@ -101,7 +102,7 @@ async def verify_enrollment_access_for_care_provider(
     enrollment_id: UUID,
     care_provider: object,
     weight_loss_service: "WeightLossAgentService",
-    care_provider_service: CareProviderProfileService,
+    care_provider_access_service: CareProviderAccessService,
 ) -> dict:
     """Same as *verify_enrollment_access* but for CP-only routes.
 
@@ -130,7 +131,7 @@ async def verify_enrollment_access_for_care_provider(
         else raw_patient_id
     )
 
-    if not await care_provider_service.is_patient_assigned(
+    if not await care_provider_access_service.is_patient_assigned(
         care_provider_id=care_provider.care_provider_id,  # type: ignore[attr-defined]
         patient_id=patient_uuid,
     ):

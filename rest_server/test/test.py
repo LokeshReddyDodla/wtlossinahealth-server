@@ -1,4 +1,6 @@
 from math import ceil
+from datetime import datetime
+import hashlib
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -6,15 +8,25 @@ from fastapi import (
 )
 import logging
 
+from lib.dependencies.auth.admin_auth import get_current_admin
 from lib.dependencies.database import get_postgres_session
+from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
+    get_cgm_vector_service,
+    get_libreview_service,
+    get_patient_profile_service,
+)
+from lib.models.admin import Admin
 from lib.schemas.patient import CorePatientProfile
 
+from lib.services.reports import CGMReportService
+from lib.services.vector import CGMVectorService
 from lib.services.file_content_extractor import FileContentExtractorService
 from sqlalchemy.orm import selectinload
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.tasks.other_tasks import process_profile_batch
+from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from fastapi import Depends, status
 from openai import AsyncOpenAI
@@ -22,6 +34,8 @@ from lib.models.patient import Patient as PatientModel
 from lib.models.patient_eating_habit import (
     PatientEatingHabit as PatientEatingHabitModel,
 )
+from rest_server.response_models import InQueueResponse, SuccessResponse
+from lib.services.libreview_service import LibreViewService
 
 router = APIRouter(prefix="/test")
 
@@ -31,23 +45,50 @@ extractor = FileContentExtractorService()
 openai_client = AsyncOpenAI()
 
 
-@router.get(path="/mongodb", tags=["Test"])
-async def test_api(request: Request):
+@router.post(path="/libreview/sync/{patient_id}", tags=["Test"])
+async def test_libreview_sync(
+    patient_id: str,
+    current_admin: Admin = Depends(get_current_admin),
+    libreview_service: LibreViewService = Depends(get_libreview_service),
+    force: bool = False,
+):
+    """
+    Test endpoint: Enqueue LibreView sync for a single patient via ARQ worker.
+
+    This will:
+    1. Get the patient's LibreView ID from the database
+    2. Solve Cloudflare Turnstile captcha
+    3. Request LibreView data export
+    4. Poll for export completion
+    5. Download CSV and upload to ClickHouse
+    """
     try:
-        logger.info("Attempting to insert document")
-        document = {"initial_key": "initial_value"}
-        await request.state.context.mongo_store.insert_document(
-            "test_collection", document
+        result = await libreview_service.sync_libreview(patient_id, force=force)
+
+        if result.get("status") == "in_queue":
+            return InQueueResponse(**result)
+
+        return SuccessResponse(
+            message="LibreView sync job enqueued successfully",
+            data={
+                **(result.get("data") or {}),
+                "patient_id": patient_id,
+                "queue": "arq:queue:libreview",
+                "note": "Check worker logs for progress",
+            },
         )
-        logger.info("Document inserted successfully")
-        return {"message": "inserted successfully"}
     except Exception as e:
-        logger.error(f"Failed to insert document: {str(e)}")
-        return {"message": "failed to insert", "error": str(e)}
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 
 @router.delete(path="/cgm-reports/duplicates", tags=["Test"])
-async def delete_duplicate_cgm_reports(request: Request):
+async def delete_duplicate_cgm_reports(
+    request: Request,
+    current_admin: Admin = Depends(get_current_admin),
+):
     """
     Delete ALL duplicate CGM reports with report_type="custom" that have the same
     patient_id and start_date but different end_dates.
@@ -56,59 +97,49 @@ async def delete_duplicate_cgm_reports(request: Request):
     try:
         # Get the cgm_reports collection
         cgm_collection = request.state.context.mongo_store.get_collection("cgm_reports")
-        
+
         # Run aggregation to find duplicates
         pipeline = [
-            {
-                "$match": {
-                    "report_type": "custom"
-                }
-            },
+            {"$match": {"report_type": "custom"}},
             {
                 "$group": {
-                    "_id": {
-                        "patient_id": "$patient_id",
-                        "start_date": "$start_date"
-                    },
+                    "_id": {"patient_id": "$patient_id", "start_date": "$start_date"},
                     "end_dates": {"$addToSet": "$end_date"},
                     "ids": {"$push": "$_id"},
-                    "count": {"$sum": 1}
+                    "count": {"$sum": 1},
                 }
             },
-            {
-                "$match": {
-                    "count": {"$gt": 1},
-                    "end_dates.1": {"$exists": True}
-                }
-            }
+            {"$match": {"count": {"$gt": 1}, "end_dates.1": {"$exists": True}}},
         ]
-        
+
         duplicate_groups = await cgm_collection.aggregate(pipeline).to_list(length=None)
-        
+
         # Collect all IDs to delete
         all_ids_to_delete = []
         deleted_reports = []
-        
+
         for group in duplicate_groups:
             report_ids = group["ids"]
             patient_id = group["_id"]["patient_id"]
             start_date = group["_id"]["start_date"]
-            
+
             # Fetch all reports in this duplicate group to get their details
-            reports = await cgm_collection.find(
-                {"_id": {"$in": report_ids}}
-            ).to_list(length=None)
-            
+            reports = await cgm_collection.find({"_id": {"$in": report_ids}}).to_list(
+                length=None
+            )
+
             # Add all report IDs to delete list
             for report in reports:
                 all_ids_to_delete.append(report["_id"])
-                deleted_reports.append({
-                    "report_id": str(report["_id"]),
-                    "patient_id": str(patient_id),
-                    "start_date": report.get("start_date"),
-                    "end_date": report.get("end_date"),
-                })
-        
+                deleted_reports.append(
+                    {
+                        "report_id": str(report["_id"]),
+                        "patient_id": str(patient_id),
+                        "start_date": report.get("start_date"),
+                        "end_date": report.get("end_date"),
+                    }
+                )
+
         # Delete all duplicate reports
         total_deleted = 0
         if all_ids_to_delete:
@@ -116,7 +147,7 @@ async def delete_duplicate_cgm_reports(request: Request):
                 {"_id": {"$in": all_ids_to_delete}}
             )
             total_deleted = delete_result.deleted_count
-        
+
         return {
             "message": f"Deleted {total_deleted} duplicate reports",
             "summary": {
@@ -125,12 +156,11 @@ async def delete_duplicate_cgm_reports(request: Request):
             },
             "deleted_reports": deleted_reports,
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to delete duplicate reports: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete duplicate reports: {str(e)}"
+            status_code=500, detail=f"Failed to delete duplicate reports: {str(e)}"
         )
 
 
@@ -176,7 +206,7 @@ async def delete_duplicate_cgm_reports(request: Request):
 #     return the stored document.
 #     """
 #     try:
-        
+
 #         start_dt = datetime.combine(
 #             date, datetime.min.time(), tzinfo=timezone.utc
 #         )
@@ -319,50 +349,48 @@ async def delete_duplicate_cgm_reports(request: Request):
 #         )
 
 
-# @router.get("/qdrant/cgm/{report_id}")
-# async def test_qdrant_cgm(
-#     report_id: str,
-#     patient_id: str,
-#     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
-#     cgm_report_vector_service: CGMReportVectorService = Depends(
-#         get_cgm_report_vector_service
-#     ),
-#     patient_profile_service: PatientProfileService = Depends(
-#         get_patient_profile_service
-#     ),
-#     cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
-#     session: AsyncSession = Depends(get_postgres_session),
-# ):
-#     try:
-#         report = await cgm_report_service.fetch_report(patient_id, report_id)
+@router.get("/qdrant/cgm/{report_id}")
+async def test_qdrant_cgm(
+    report_id: str,
+    patient_id: str,
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
+    patient_profile_service: PatientProfileService = Depends(
+        get_patient_profile_service
+    ),
+    cgm_vector_service: CGMVectorService = Depends(get_cgm_vector_service),
+    session: AsyncSession = Depends(get_postgres_session),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    try:
+        report = await cgm_report_service.fetch_report(patient_id, report_id)
 
-#         if not report:
-#             raise
+        if not report:
+            raise
 
-#         patient_info = await patient_profile_service.fetch_patient_profile(
-#             patient_id=patient_id, include_health_data=True
-#         )
+        patient_info = await patient_profile_service.fetch_patient_profile(
+            patient_id=patient_id, include_health_data=True
+        )
 
-#         await cgm_vector_service.upsert_report(
-#             patient_id,
-#             report["overall"]["_id"],
-#             report["day_wise"],
-#             patient_info.age,
-#             patient_info.gender,
-#         )
-#         return SuccessResponse(
-#             message="Report fetched successfully",
-#             data=report,
-#         )
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         await session.rollback()
-#         raise_http_exception(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             message="Internal Server Error",
-#             detail=str(e),
-#         )
+        await sync_patient_daily_cgm_reports_to_vector_store(
+            patient_id,
+            patient_info.age,
+            patient_info.gender,
+            report["overall"]["start_date"],
+            report["overall"]["end_date"],
+        )
+        return SuccessResponse(
+            message="Report fetched successfully",
+            data=report,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
 
 
 # @router.get("/qdrant/search")
@@ -700,56 +728,56 @@ async def delete_duplicate_cgm_reports(request: Request):
 #         )
 
 
-@router.get("/qdrant/patient/all")
-async def enqueue_patient_vector_batches(
-    session: AsyncSession = Depends(get_postgres_session),
-):
-    BATCH_SIZE = 50
-    try:
-        query = select(PatientModel).options(
-            selectinload(PatientModel.daily_activity),
-            selectinload(PatientModel.food_allergies),
-            selectinload(PatientModel.drug_allergies),
-            selectinload(PatientModel.alcohol_consumption),
-            selectinload(PatientModel.smoking_habit),
-            selectinload(PatientModel.sleep_habit),
-            selectinload(PatientModel.eating_habit).selectinload(
-                PatientEatingHabitModel.meal_timings
-            ),
-            selectinload(PatientModel.eating_habit).selectinload(
-                PatientEatingHabitModel.diet_preferences
-            ),
-            selectinload(PatientModel.diabetic_history),
-            selectinload(PatientModel.family_diabetic_histories),
-            selectinload(PatientModel.medical_histories),
-            selectinload(PatientModel.current_medication),
-        )
-        result = await session.execute(query)
-        profiles = result.scalars().all()
+# @router.get("/qdrant/patient/all")
+# async def enqueue_patient_vector_batches(
+#     session: AsyncSession = Depends(get_postgres_session),
+# ):
+#     BATCH_SIZE = 50
+#     try:
+#         query = select(PatientModel).options(
+#             selectinload(PatientModel.daily_activity),
+#             selectinload(PatientModel.food_allergies),
+#             selectinload(PatientModel.drug_allergies),
+#             selectinload(PatientModel.alcohol_consumption),
+#             selectinload(PatientModel.smoking_habit),
+#             selectinload(PatientModel.sleep_habit),
+#             selectinload(PatientModel.eating_habit).selectinload(
+#                 PatientEatingHabitModel.meal_timings
+#             ),
+#             selectinload(PatientModel.eating_habit).selectinload(
+#                 PatientEatingHabitModel.diet_preferences
+#             ),
+#             selectinload(PatientModel.diabetic_history),
+#             selectinload(PatientModel.family_diabetic_histories),
+#             selectinload(PatientModel.medical_histories),
+#             selectinload(PatientModel.current_medication),
+#         )
+#         result = await session.execute(query)
+#         profiles = result.scalars().all()
 
-        profiles_data = [
-            CorePatientProfile.from_orm(m).model_dump(mode="json")
-            for m in profiles
-        ]
-        total_batches = ceil(len(profiles_data) / BATCH_SIZE)
+#         profiles_data = [
+#             CorePatientProfile.from_orm(m).model_dump(mode="json")
+#             for m in profiles
+#         ]
+#         total_batches = ceil(len(profiles_data) / BATCH_SIZE)
 
-        for i in range(total_batches):
-            batch = profiles_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-            process_profile_batch.delay(batch)
+#         for i in range(total_batches):
+#             batch = profiles_data[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+#             process_profile_batch.delay(batch)
 
-        return {
-            "message": f"Enqueued {total_batches} batches for {len(profiles_data)} profiles."
-        }
+#         return {
+#             "message": f"Enqueued {total_batches} batches for {len(profiles_data)} profiles."
+#         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        await session.rollback()
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal Server Error",
-            detail=str(e),
-        )
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         await session.rollback()
+#         raise_http_exception(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message="Internal Server Error",
+#             detail=str(e),
+#         )
 
 
 # @router.get("/qdrant/fitness/all")
@@ -880,4 +908,3 @@ async def enqueue_patient_vector_batches(
 #             message="Internal Server Error",
 #             detail=str(e),
 #         )
-

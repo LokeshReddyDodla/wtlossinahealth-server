@@ -4,7 +4,6 @@ from openai import AsyncOpenAI
 
 
 from lib.services.qdrant_search_engine.filter_builder import FilterBuilder
-from lib.services.qdrant_search_engine.intent_cache import IntentCache
 from lib.services.qdrant_search_engine.intent_extractor import IntentExtractor
 from lib.utils.vector_utils import embed_text
 from qdrant_client.http.models import (
@@ -15,18 +14,17 @@ from qdrant_client.http.models import (
     MatchAny,
 )
 from lib.core.qdrant_store import QdrantStore
+from qdrant_client.models import SearchParams 
 
 
 class QdrantSearchEngine:
     def __init__(
         self,
         qdrant_store: QdrantStore,
-        intent_cache: IntentCache,
         collection_name: str = "patient_data",
     ):
         self.openai_client = AsyncOpenAI()
         self.qdrant_store = qdrant_store
-        self.intent_cache = intent_cache
         self.collection_name = collection_name
         self.intent_extractor = IntentExtractor(self.openai_client)
 
@@ -42,17 +40,9 @@ class QdrantSearchEngine:
 
         # Get previous intents for continuity
         context_intents = []
-        if conversation_id:
-            context_intents = self.intent_cache.get_recent_intents(
-                conversation_id
-            )
 
         # Extract intent
         intent = await self.intent_extractor.extract(query, context_intents)
-
-        # Cache intent
-        if conversation_id:
-            self.intent_cache.push_intent(conversation_id, intent)
 
         # Build filters
         intent_filter = FilterBuilder.build(intent)
@@ -107,9 +97,7 @@ class QdrantSearchEngine:
             List of matching reports.
         """
         async with self.qdrant_store.get_client() as client:
-            print(
-                f"Searching with filter: {filter_conditions}, limit: {limit}"
-            )
+            print(f"Searching with filter: {filter_conditions}, limit: {limit}")
 
             return await client.search(
                 collection_name=self.collection_name,
@@ -117,6 +105,9 @@ class QdrantSearchEngine:
                 limit=limit,
                 query_filter=filter_conditions,
                 score_threshold=score_threshold,
+                hnsw_ef=128,
+                exact=False,
+                # search_params=SearchParams(hnsw_ef=128),
             )
 
     def _build_filter(
@@ -146,16 +137,12 @@ class QdrantSearchEngine:
                 )
             else:
                 conditions.append(
-                    FieldCondition(
-                        key="patient_id", match=MatchAny(any=patient_ids)
-                    )
+                    FieldCondition(key="patient_id", match=MatchAny(any=patient_ids))
                 )
 
         if report_id:
             conditions.append(
-                FieldCondition(
-                    key="report_id", match=MatchValue(value=report_id)
-                )
+                FieldCondition(key="report_id", match=MatchValue(value=report_id))
             )
 
         return Filter(must=conditions) if conditions else None
@@ -166,9 +153,7 @@ class QdrantSearchEngine:
         if base_filter and extra_filter:
             return Filter(
                 must=(base_filter.must or []) + (extra_filter.must or []),  # type: ignore
-                should=(base_filter.should or [])
-                + (extra_filter.should or []),  # type: ignore
-                must_not=(base_filter.must_not or [])
-                + (extra_filter.must_not or []),  # type: ignore
+                should=(base_filter.should or []) + (extra_filter.should or []),  # type: ignore
+                must_not=(base_filter.must_not or []) + (extra_filter.must_not or []),  # type: ignore
             )
         return base_filter or extra_filter

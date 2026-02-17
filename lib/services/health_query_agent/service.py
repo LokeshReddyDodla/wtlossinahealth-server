@@ -3,7 +3,7 @@ Agent service for processing user queries and managing conversations.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime
 
 from lib.core.cache_store import CacheStore
@@ -11,7 +11,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.core.qdrant_store import QdrantStore
 from lib.core.mongo_store import MongoStore
 from lib.services.health_query_agent.serialization import to_checkpoint_safe
-from .schemas import QueryResponse
+from .schemas import QueryResponse, ConversationMessage
 from .workflow import build_workflow
 from .conversation_repository import ConversationRepository
 from lib.utils.http_exceptions import raise_http_exception
@@ -163,6 +163,48 @@ class HealthQueryAgentService:
 
         return response_data
 
+    def _convert_to_conversation_message(
+        self, response_data: dict, user_message: str, thread_id: str
+    ) -> ConversationMessage:
+        intent_dict = {}
+        if response_data.get("data_types"):
+            intent_dict["data_types"] = response_data["data_types"]
+        if response_data.get("date_range"):
+            intent_dict["date_range"] = response_data["date_range"]
+        if response_data.get("hour_range"):
+            intent_dict["hour_range"] = response_data["hour_range"]
+        if response_data.get("month_filters"):
+            intent_dict["month_filters"] = response_data["month_filters"]
+        if response_data.get("time_buckets"):
+            intent_dict["time_buckets"] = response_data["time_buckets"]
+        if response_data.get("numeric_filters"):
+            intent_dict["numeric_filters"] = response_data["numeric_filters"]
+        if response_data.get("suggestions"):
+            intent_dict["suggestions"] = response_data["suggestions"]
+        if response_data.get("confidence") is not None:
+            intent_dict["confidence"] = response_data["confidence"]
+
+        response_dict = {
+            "message": response_data.get("message", ""),
+            "is_ready": response_data.get("is_ready", False),
+            "data_types": response_data.get("data_types"),
+        }
+
+        metadata = {
+            "thread_id": thread_id,
+            "turn_number": response_data.get("turn_number", 0),
+            "message_count": response_data.get("message_count", 0),
+        }
+
+        return ConversationMessage(
+            message_type="assistant",
+            content=response_data.get("message", ""),
+            timestamp=datetime.utcnow(),
+            intent=intent_dict if intent_dict else None,
+            response=response_dict if response_data.get("is_ready") else None,
+            metadata=metadata,
+        )
+
     # ---------------------- Public API ---------------------- #
 
     async def process_message(
@@ -172,7 +214,8 @@ class HealthQueryAgentService:
         user_id: Optional[str] = None,
         user_role: Optional[str] = None,
         patient_ids: Optional[list[str]] = None,
-    ) -> QueryResponse:
+        debug: bool = False,
+    ) -> Union[QueryResponse, ConversationMessage]:
         """Process a user message and return structured response."""
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -216,6 +259,7 @@ class HealthQueryAgentService:
             source_messages=source_messages,
         )
 
+        # TODO: Experiment without resetting the state
         if intent and intent.is_ready:
             try:
                 await self.app.aupdate_state(
@@ -224,7 +268,12 @@ class HealthQueryAgentService:
             except Exception:
                 pass
 
-        return QueryResponse(**response_data)
+        if debug:
+            return QueryResponse(**response_data)
+        else:
+            return self._convert_to_conversation_message(
+                response_data, user_message, thread_id
+            )
 
     async def get_conversation_history(
         self,

@@ -4,7 +4,6 @@ from typing import Any, List, Optional
 from pydantic import BaseModel
 
 from lib.schemas.patient_diet_plan import PatientDietPlanBase
-from lib.schemas.patient_meal import PatientFoodItem, PatientMeal
 
 
 class NutritionStats(BaseModel):

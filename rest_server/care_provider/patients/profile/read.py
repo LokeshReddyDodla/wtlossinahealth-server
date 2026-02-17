@@ -15,7 +15,7 @@ from lib.schemas.patient import CompletePatientProfile
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.user_device_service import UserDeviceService

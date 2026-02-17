@@ -8,7 +8,7 @@ from lib.dependencies.service_dependencies import (
     get_meal_service,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.services.meal_service import MealService
+from lib.services.meal import MealService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,

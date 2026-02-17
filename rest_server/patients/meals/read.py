@@ -10,8 +10,8 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.patient import Patient
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
-from lib.services.meal_report_service import MealReportService
-from lib.services.meal_service import MealService
+from lib.services.reports import MealReportService
+from lib.services.meal import MealService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import InQueueResponse, SuccessResponse
 
@@ -109,6 +109,14 @@ async def get_day_meal_report(
             return InQueueResponse(
                 message="Report is being generated. Please check back shortly.",
             )
+
+        # TODO: Remove this backward compatibility code after the frontend is updated to use total_calories instead of calories in diet_recommendations
+        # Add backward compatibility for total_calories
+        if meal_report and "diet_recommendations" in meal_report:
+            if "calories" in meal_report["diet_recommendations"]:
+                meal_report["diet_recommendations"]["total_calories"] = meal_report[
+                    "diet_recommendations"
+                ]["calories"]
 
         return SuccessResponse(
             message="Day Meal report fetched successfully",

@@ -15,15 +15,15 @@ from lib.dependencies.service_dependencies import (
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.patient_report import PatientReport
-from lib.services.cgm_report_service import CGMReportService
-from lib.services.meal_report_service import MealReportService
+from lib.services.reports import CGMReportService
+from lib.services.reports import MealReportService
 from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
-from lib.utils.fitness.processor import FitnessStatsProcessor
+from lib.services.reports import FitnessStatsProcessor
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 

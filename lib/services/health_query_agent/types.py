@@ -17,6 +17,7 @@ class HealthDataType(str, Enum):
     RAPID_DROP_EVENT = "rapid_drop_event"
     TIME_PERIOD = "time_period_stats"
     AGP = "agp_point"
+    CGM_SEMANTIC_WINDOW = "cgm_semantic_window"
     SMBG = "smbg"
     MEAL = "meal"
     FITNESS_OVERVIEW = "fitness_overview"

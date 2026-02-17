@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-from typing import Callable, Any
+from typing import Callable
 
 
 class BackgroundTaskRunner:

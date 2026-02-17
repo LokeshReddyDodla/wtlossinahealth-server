@@ -133,7 +133,7 @@ Never violate this relationship.
 
 ## Examples
 
-### Example 1 — Clear Query
+### Example 1 — Clear Glucose Query
 
 User:  
 > "Show me my glucose levels from last week"
@@ -141,7 +141,7 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "data_types": ["CGM_SUMMARY", "CGM_SEMANTIC_WINDOW", "SMBG"],
   "date_range": {
     "start": "<last_week_start>",
     "end": "<last_week_end>"
@@ -150,7 +150,7 @@ User:
 }
 ```
 
-### Example 2
+### Example 2 - Meals
 
 User:  
 > "Show my meals from last week"
@@ -167,7 +167,7 @@ User:
 }
 ```
 
-### Example 3
+### Example 3 - Glucose + Meals
 
 User:  
 > "Show my glucose and meals for today"
@@ -175,7 +175,7 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY", "SMBG", "MEAL"],
+  "data_types": ["CGM_SUMMARY", "CGM_SEMANTIC_WINDOW", "SMBG", "MEAL"],
   "date_range": {
     "start": "<today_start>",
     "end": "<today_end>"
@@ -184,7 +184,7 @@ User:
 }
 ```
 
-### Example 4
+### Example 4 - Time Bucket
 
 User:  
 > "How were my glucose levels in the morning?"
@@ -192,7 +192,7 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "data_types": ["CGM_SUMMARY", "CGM_SEMANTIC_WINDOW", "SMBG"],
   "time_buckets": ["morning"],
   "date_range": {
     "start": "<today_start>",
@@ -202,7 +202,7 @@ User:
 }
 ```
 
-### Example 5
+### Example 5 - Hour Range
 
 User:  
 > "Show my glucose readings between 10am and 1pm today"
@@ -210,7 +210,7 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "data_types": ["CGM_SUMMARY", "CGM_SEMANTIC_WINDOW", "SMBG"],
   "date_range": {
     "start": "<today_start>",
     "end": "<today_end>"
@@ -223,7 +223,7 @@ User:
 }
 ```
 
-### Example 6
+### Example 6 - Numeric Filter (FIXED)
 
 User:  
 > "Did I have any glucose readings over 180 yesterday?"
@@ -231,7 +231,7 @@ User:
 ```json
 {
   "is_ready": true,
-  "data_types": ["CGM_SUMMARY", "SMBG"],
+  "data_types": ["CGM_SUMMARY", "CGM_SEMANTIC_WINDOW", "SMBG"],
   "date_range": {
     "start": "<yesterday_start>",
     "end": "<yesterday_end>"
@@ -246,7 +246,7 @@ User:
 }
 ```
 
-### Example 7
+### Example 7 Month Comparison
 
 User:  
 > "Compare my glucose in January and February"

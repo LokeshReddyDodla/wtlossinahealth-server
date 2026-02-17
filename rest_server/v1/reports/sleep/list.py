@@ -1,19 +1,16 @@
 from datetime import date
 from typing import Optional
-from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.constants import ProfileTypeEnum
-from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.database import get_postgres_session
-from lib.dependencies.device_access import (
-    authorize_device_access,
-    resolve_profile_type,
+from lib.dependencies.report_access import (
+    ReportAccessInfo,
+    get_report_access_info,
 )
 from lib.dependencies.service_dependencies import get_sleep_report_service
-from lib.services.sleep_report_service import SleepReportService
+from lib.services.reports import SleepReportService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -44,11 +41,7 @@ async def list_sleep_reports(
     end_date: date = Query(
         ..., description="End date for report query (YYYY-MM-DD)"
     ),
-    patient_id: Optional[str] = Query(
-        None,
-        description="Patient ID to fetch reports for (optional, defaults to authenticated user)",
-    ),
-    token_data: tuple = Depends(get_current_user),
+    access_info: ReportAccessInfo = Depends(get_report_access_info),
     session: AsyncSession = Depends(get_postgres_session),
     sleep_report_service: SleepReportService = Depends(get_sleep_report_service),
 ) -> ListSleepReportsResponse:
@@ -59,46 +52,14 @@ async def list_sleep_reports(
                 message="End date must be greater than or equal to start date",
             )
 
-        current_user_id, role_value = token_data
-        current_role = ProfileTypeEnum(role_value)
-
-        # Care providers must provide patient_id (they don't have their own reports)
-        if current_role == ProfileTypeEnum.CARE_PROVIDER and not patient_id:
-            raise_http_exception(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="patient_id is required for care providers",
-            )
-
-        # Determine target patient_id (default to authenticated user if not provided)
-        target_patient_id = UUID(patient_id) if patient_id else UUID(current_user_id)
-
-        # Resolve the profile type of the target user
-        target_role = await resolve_profile_type(session, target_patient_id)
-
-        # Reports are only for patients
-        if target_role != ProfileTypeEnum.PATIENT:
-            raise_http_exception(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Reports are only available for patients",
-            )
-
-        # Authorize access based on roles
-        await authorize_device_access(
-            session=session,
-            current_user_id=UUID(current_user_id),
-            current_role=current_role,
-            target_user_id=target_patient_id,
-            target_role=target_role,
-        )
-
         # Fetch reports
         reports = await sleep_report_service.fetch_daily_reports_in_range(
-            str(target_patient_id), start_date, end_date
+            str(access_info.target_patient_id), start_date, end_date
         )
 
         report_responses = [
             SleepReportResponse(
-                patient_id=str(target_patient_id),
+                patient_id=str(access_info.target_patient_id),
                 start_date=report.get("start_date"),
                 end_date=report.get("end_date"),
                 report_type=report.get("report_type", "daily"),
@@ -117,12 +78,6 @@ async def list_sleep_reports(
 
     except HTTPException:
         raise
-    except ValueError as e:
-        raise_http_exception(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            message="Invalid patient ID format or date range",
-            detail=str(e),
-        )
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

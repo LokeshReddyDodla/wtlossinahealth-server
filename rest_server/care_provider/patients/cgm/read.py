@@ -9,7 +9,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.schemas.patient import CorePatientProfile
-from lib.services.cgm_report_service import CGMReportService
+from lib.services.reports import CGMReportService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
