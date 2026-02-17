@@ -89,7 +89,7 @@ class PatientDailyOverviewService:
         self, patient_id: str, selected_date: date
     ) -> GlucoseMetrics:
         try:
-            report = await self.cgm_report_service.fetch_day_report(
+            report = await self.cgm_report_service.fetch_daily_report(
                 patient_id, selected_date
             )
 

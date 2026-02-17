@@ -94,7 +94,7 @@ async def get_meal_counts_by_date_api(
 
 
 @router.get(path="/report/day", response_model=SuccessResponse)
-async def get_day_meal_report(
+async def get_daily_meal_report(
     request: Request,
     date: date,
     meal_report_service: MealReportService = Depends(get_meal_report_service),
@@ -119,7 +119,7 @@ async def get_day_meal_report(
                 ]["calories"]
 
         return SuccessResponse(
-            message="Day Meal report fetched successfully",
+            message="Daily meal report fetched successfully",
             data=meal_report,
         )
 

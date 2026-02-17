@@ -4,7 +4,6 @@ from typing import Dict
 from sqlalchemy import and_, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_meal import PatientMeal
 from lib.models.patient_smbg import PatientSMBG
@@ -20,10 +19,8 @@ class PatientDataAvailabilityService:
     def __init__(
         self,
         postgres_store: PostgresStore,
-        clickhouse_store: ClickHouseStore,
     ):
         self.postgres_store = postgres_store
-        self.clickhouse_store = clickhouse_store
 
     @with_postgres_session
     async def get_data_availability(
@@ -99,16 +96,20 @@ class PatientDataAvailabilityService:
         session: AsyncSession,
     ) -> Dict[date, int]:
         """Get SMBG reading counts grouped by date"""
-        query = select(
-            cast(PatientSMBG.reading_time, Date).label("date"),
-            func.count(PatientSMBG.id).label("count"),
-        ).where(
-            and_(
-                PatientSMBG.patient_id == patient_id,
-                cast(PatientSMBG.reading_time, Date) >= start_date,
-                cast(PatientSMBG.reading_time, Date) <= end_date,
+        query = (
+            select(
+                cast(PatientSMBG.reading_time, Date).label("date"),
+                func.count(PatientSMBG.id).label("count"),
             )
-        ).group_by(cast(PatientSMBG.reading_time, Date))
+            .where(
+                and_(
+                    PatientSMBG.patient_id == patient_id,
+                    cast(PatientSMBG.reading_time, Date) >= start_date,
+                    cast(PatientSMBG.reading_time, Date) <= end_date,
+                )
+            )
+            .group_by(cast(PatientSMBG.reading_time, Date))
+        )
 
         result = await session.execute(query)
         rows = result.fetchall()
@@ -122,16 +123,20 @@ class PatientDataAvailabilityService:
         session: AsyncSession,
     ) -> Dict[date, int]:
         """Get meal counts grouped by date"""
-        query = select(
-            PatientMeal.date,
-            func.count(PatientMeal.id).label("count"),
-        ).where(
-            and_(
-                PatientMeal.patient_id == patient_id,
-                PatientMeal.date >= start_date,
-                PatientMeal.date <= end_date,
+        query = (
+            select(
+                PatientMeal.date,
+                func.count(PatientMeal.id).label("count"),
             )
-        ).group_by(PatientMeal.date)
+            .where(
+                and_(
+                    PatientMeal.patient_id == patient_id,
+                    PatientMeal.date >= start_date,
+                    PatientMeal.date <= end_date,
+                )
+            )
+            .group_by(PatientMeal.date)
+        )
 
         result = await session.execute(query)
         rows = result.fetchall()
@@ -145,16 +150,20 @@ class PatientDataAvailabilityService:
         session: AsyncSession,
     ) -> Dict[date, int]:
         """Get vitals counts grouped by date"""
-        query = select(
-            cast(PatientVital.test_time, Date).label("date"),
-            func.count(PatientVital.id).label("count"),
-        ).where(
-            and_(
-                PatientVital.patient_id == patient_id,
-                cast(PatientVital.test_time, Date) >= start_date,
-                cast(PatientVital.test_time, Date) <= end_date,
+        query = (
+            select(
+                cast(PatientVital.test_time, Date).label("date"),
+                func.count(PatientVital.id).label("count"),
             )
-        ).group_by(cast(PatientVital.test_time, Date))
+            .where(
+                and_(
+                    PatientVital.patient_id == patient_id,
+                    cast(PatientVital.test_time, Date) >= start_date,
+                    cast(PatientVital.test_time, Date) <= end_date,
+                )
+            )
+            .group_by(cast(PatientVital.test_time, Date))
+        )
 
         result = await session.execute(query)
         rows = result.fetchall()
@@ -166,31 +175,37 @@ class PatientDataAvailabilityService:
         start_date: date,
         end_date: date,
     ) -> Dict[date, int]:
-        """Get CGM data counts grouped by date from ClickHouse"""
+        """Get CGM data counts grouped by date from CGM reports."""
         try:
-            # Convert dates to datetime for ClickHouse query
+            from lib.dependencies.service_dependencies import (
+                get_cgm_report_service,
+            )
+
+            cgm_report_service = get_cgm_report_service()
             start_datetime = datetime.combine(start_date, datetime.min.time())
             end_datetime = datetime.combine(
                 end_date, datetime.max.time().replace(microsecond=0)
             )
 
-            query = f"""
-            SELECT 
-                toDate(time) as date,
-                count(*) as count
-            FROM aihealth.cgm_data
-            WHERE patient_id = '{patient_id}'
-                AND time >= '{start_datetime.strftime('%Y-%m-%d %H:%M:%S')}'
-                AND time <= '{end_datetime.strftime('%Y-%m-%d %H:%M:%S')}'
-            GROUP BY toDate(time)
-            """
+            reports = await cgm_report_service.fetch_daily_reports(
+                patient_id, start_datetime, end_datetime
+            )
 
-            result = self.clickhouse_store.client.execute(query)
-            if result:
-                return {row[0]: row[1] for row in result}  # type: ignore
-            return {}
+            counts: Dict[date, int] = {}
+            for report in reports:
+                date_range = report.get("metadata", {}).get("date_range", {})
+                start_iso = date_range.get("start")
+                if not start_iso:
+                    continue
+
+                report_date = datetime.fromisoformat(
+                    start_iso.replace("Z", "+00:00")
+                ).date()
+                cgm_readings = report.get("cgm_readings") or []
+                counts[report_date] = len(cgm_readings)
+
+            return counts
         except Exception as e:
-            # Log error and return empty dict
             print(f"Error fetching CGM counts: {e}")
             return {}
 
@@ -200,30 +215,31 @@ class PatientDataAvailabilityService:
         start_date: date,
         end_date: date,
     ) -> Dict[date, int]:
-        """Get fitness data counts grouped by date from ClickHouse"""
+        """Get fitness data counts grouped by date from fitness reports."""
         try:
-            # Convert dates to datetime for ClickHouse query
-            start_datetime = datetime.combine(start_date, datetime.min.time())
-            end_datetime = datetime.combine(
-                end_date, datetime.max.time().replace(microsecond=0)
+            from lib.dependencies.service_dependencies import (
+                get_fitness_report_service,
             )
 
-            query = f"""
-            SELECT 
-                toDate(start_datetime) as date,
-                count(*) as count
-            FROM aihealth.fitness_data
-            WHERE patient_id = '{patient_id}'
-                AND start_datetime >= '{start_datetime.strftime('%Y-%m-%d %H:%M:%S')}'
-                AND start_datetime <= '{end_datetime.strftime('%Y-%m-%d %H:%M:%S')}'
-            GROUP BY toDate(start_datetime)
-            """
+            fitness_report_service = get_fitness_report_service()
+            reports = await fitness_report_service.fetch_daily_reports_in_range(
+                patient_id, start_date, end_date
+            )
 
-            result = self.clickhouse_store.client.execute(query)
-            if result:
-                return {row[0]: row[1] for row in result}  # type: ignore
-            return {}
+            counts: Dict[date, int] = {}
+            for report in reports:
+                date_range = report.get("metadata", {}).get("date_range", {})
+                start_iso = date_range.get("start")
+                if not start_iso:
+                    continue
+
+                report_date = datetime.fromisoformat(
+                    start_iso.replace("Z", "+00:00")
+                ).date()
+                steps = report.get("steps") or 0
+                counts[report_date] = int(steps)
+
+            return counts
         except Exception as e:
-            # Log error and return empty dict
             print(f"Error fetching fitness counts: {e}")
             return {}

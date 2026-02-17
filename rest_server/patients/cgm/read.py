@@ -15,20 +15,20 @@ from .router import router
 
 
 @router.get("/report/day", response_model=SuccessResponse)
-async def get_cgm_day_report(
+async def get_cgm_daily_report(
     request: Request,
     date: date = Query(...),
     cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        day_report = await cgm_report_service.fetch_day_report(
+        daily_report = await cgm_report_service.fetch_daily_report(
             str(current_patient.patient_id), date
         )
 
         return SuccessResponse(
-            message="Day Glucose report fetched successfully",
-            data=day_report,
+            message="Daily glucose report fetched successfully",
+            data=daily_report,
         )
 
     except Exception as e:

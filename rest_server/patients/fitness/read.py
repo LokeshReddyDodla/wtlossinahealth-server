@@ -58,7 +58,7 @@ async def get_fitness_stats(
 @router.get(
     "/report/day",
 )
-async def get_day_fitness_report(
+async def get_daily_fitness_report(
     request: Request,
     date: date = Query(...),
     fitness_report_service: FitnessReportService = Depends(
@@ -77,7 +77,7 @@ async def get_day_fitness_report(
             )
 
         return SuccessResponse(
-            message="Day fitness report fetched successfully",
+            message="Daily fitness report fetched successfully",
             data=jsonable_encoder(report),
         )
     except Exception as e:

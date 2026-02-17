@@ -209,19 +209,19 @@ class CGMReportService:
                 ]
             )
 
-            day_wise = []
+            daily_reports = []
             week_wise = []
 
             async for report in other_cursor:
                 report_type = report.get("metadata", {}).get("report_type", "")
                 if report_type == "daily":
-                    day_wise.append(report)
+                    daily_reports.append(report)
                 elif report_type == "weekly":
                     week_wise.append(report)
 
             return {
                 "overall": custom_report,
-                "day_wise": day_wise,
+                "day_wise": daily_reports,
                 "week_wise": week_wise,
             }
 
@@ -231,7 +231,7 @@ class CGMReportService:
             )
             return None
 
-    async def fetch_day_report(self, patient_id: str, date: date):
+    async def fetch_daily_report(self, patient_id: str, date: date):
         try:
             start_date = datetime.combine(date, time.min)
             end_date = datetime.combine(date, time.max).replace(microsecond=0)
@@ -290,11 +290,11 @@ class CGMReportService:
 
         except Exception as error:
             logging.error(
-                f"Failed to fetch day report for {patient_id} on {date}: {error}"
+                f"Failed to fetch daily report for {patient_id} on {date}: {error}"
             )
             return None
 
-    async def fetch_day_wise_reports(
+    async def fetch_daily_reports(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> list[dict]:
         try:
@@ -318,20 +318,20 @@ class CGMReportService:
                 },
             ]
 
-            day_wise_reports = await self.cgm_report_collection.aggregate(
+            daily_reports = await self.cgm_report_collection.aggregate(
                 pipeline
             ).to_list(length=None)
 
-            if not day_wise_reports:
+            if not daily_reports:
                 logging.warning(
-                    f"No day_wise CGM reports found for {patient_id} ({start_date} - {end_date})"
+                    f"No daily CGM reports found for {patient_id} ({start_date} - {end_date})"
                 )
 
-            return day_wise_reports
+            return daily_reports
 
         except Exception as error:
             logging.error(
-                f"Failed to fetch day_wise CGM reports for {patient_id}: {error}"
+                f"Failed to fetch daily CGM reports for {patient_id}: {error}"
             )
             return []
 

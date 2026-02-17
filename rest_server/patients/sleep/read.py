@@ -18,7 +18,7 @@ from .router import router
 
 
 @router.get("/day", response_model=SuccessResponse)
-async def get_day_sleep_data(
+async def get_daily_sleep_data(
     request: Request,
     date: date = Query(...),
     sleep_report_service: SleepReportService = Depends(
@@ -37,7 +37,7 @@ async def get_day_sleep_data(
             )
 
         return SuccessResponse(
-            message="Day sleep report fetched successfully",
+            message="Daily sleep report fetched successfully",
             data=jsonable_encoder(report),
         )
     except HTTPException as http_exc:

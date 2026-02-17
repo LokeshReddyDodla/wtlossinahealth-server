@@ -45,7 +45,7 @@ async def get_patient_overview_api(
             patient_id, date
         )
 
-        cgm_report = await cgm_report_service.fetch_day_report(
+        cgm_report = await cgm_report_service.fetch_daily_report(
             patient_id, date
         )
 
