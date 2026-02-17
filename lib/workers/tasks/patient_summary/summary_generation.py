@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from lib.services.patient_summary.enum import RegeneratedBy
+from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
@@ -139,6 +140,7 @@ async def _enqueue_patient_summary(
         target_date_str,
         forced,
         _job_id=job_id,
+        _queue_name=Queues.DEFAULT,
     )
 
     if job:
