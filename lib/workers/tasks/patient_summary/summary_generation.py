@@ -69,7 +69,9 @@ async def regenerate_stale_summaries(ctx: Dict[str, Any]) -> TaskResult:
         for summary in stale_summaries:
             try:
                 patient_id = summary.get("patient_id")
-                date_str = summary.get("date")
+                metadata = summary.get("metadata", {})
+                date_range = metadata.get("date_range", {})
+                date_str = date_range.get("start")
 
                 if not patient_id or not date_str:
                     logger.warning(
@@ -78,7 +80,8 @@ async def regenerate_stale_summaries(ctx: Dict[str, Any]) -> TaskResult:
                     failed_count += 1
                     continue
 
-                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                # Extract date from ISO format datetime string
+                target_date = datetime.fromisoformat(date_str).date()
 
                 await service.generate_daily_summary(
                     patient_id=patient_id,
@@ -93,9 +96,11 @@ async def regenerate_stale_summaries(ctx: Dict[str, Any]) -> TaskResult:
                 )
             except Exception as e:
                 failed_count += 1
+                metadata = summary.get("metadata", {})
+                date_range = metadata.get("date_range", {})
                 logger.error(
                     f"❌ Failed to regenerate stale summary for {summary.get('patient_id')} "
-                    f"on {summary.get('date')}: {e}"
+                    f"on {date_range.get('start')}: {e}"
                 )
 
         logger.info(
