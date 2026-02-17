@@ -132,7 +132,8 @@ async def _enqueue_patient_summary(
 ) -> Optional[str]:
     """Internal: Enqueue patient summary generation."""
     target_date_str = target_date.isoformat()
-    job_id = f"summary:{patient_id}:{target_date_str}"
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    job_id = f"summary:{patient_id}:{target_date_str}:{timestamp}"
 
     job = await enqueue_job(
         "generate_daily_summary_for_patient",
