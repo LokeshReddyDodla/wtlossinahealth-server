@@ -1,3 +1,4 @@
+import hashlib
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -8,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 from sqlalchemy import func, select
 
-from lib.core.constants import SYSTEM_USER_ID, ProfileTypeEnum
+from lib.core.constants import ProfileTypeEnum
 from lib.services.patient_summary.enum import StaleReason, SummaryState, RegeneratedBy
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.patient_summary.models import InsightsResponse
@@ -42,6 +43,17 @@ class PatientSummaryService:
             api_key=SecretStr(str(config("OPENAI_API_KEY"))),
         )
 
+    def _generate_report_id(
+        self,
+        patient_id: str,
+        report_type: str,
+        start_iso: str,
+        end_iso: str,
+    ) -> str:
+        """Generate consistent report ID for patient summary."""
+        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
+        return hashlib.sha256(key.encode()).hexdigest()
+
     async def generate_daily_summary(
         self,
         patient_id: str,
@@ -60,15 +72,17 @@ class PatientSummaryService:
         now = datetime.now()
 
         # Check if summary already exists
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        report_id = self._generate_report_id(
+            patient_id, "daily", start_iso, end_iso
+        )
+        
         existing_summary = await self.patient_summary_collection.find_one(
-            {
-                "patient_id": patient_id,
-                "start_date": start_date,
-                "end_date": end_date,
-            }
+            {"_id": report_id}
         )
 
-        existing_meta = (existing_summary or {}).get("summary_meta", {})
+        existing_meta = (existing_summary or {}).get("metadata", {})
 
         # 🚨 Guard: prevent regenerating finalized summaries unless forced
         if existing_summary and not forced:
@@ -97,7 +111,18 @@ class PatientSummaryService:
             patient_id, "daily", start_date, end_date
         )
         
-        summary_meta = {
+        # Consolidate all metadata into single metadata object
+        metadata = {
+            # Report identification
+            "report_type": "daily",
+            "date_range": {
+                "start": start_iso,
+                "end": end_iso,
+            },
+            "summary_version": self.SUMMARY_VERSION,
+            "model_version": self.MODEL_VERSION,
+            
+            # Lifecycle/state management
             "state": SummaryState.FINALIZED.value,
             "generated_at": now,
             "finalized_at": now if regenerated_by == RegeneratedBy.SYSTEM else None,
@@ -116,25 +141,16 @@ class PatientSummaryService:
                 else existing_meta.get("stale_reason")
             ),
         }
-
-        await self.patient_summary_collection.update_one(
+        
+        await self.patient_summary_collection.replace_one(
+            {"_id": report_id},
             {
+                "_id": report_id,
                 "patient_id": patient_id,
-                "start_date": start_date,
-                "end_date": end_date,
-            },
-            {
-                "$set": {
-                    "patient_id": patient_id,
-                    "summary_version": self.SUMMARY_VERSION,
-                    "model_version": self.MODEL_VERSION,
-                    "report_type": "daily",
-                    "date": target_date.isoformat(),
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "summary_meta": summary_meta,
-                    **summary,
-                },
+                "created_at": existing_summary.get("created_at", now) if existing_summary else now,
+                "updated_at": now,
+                "metadata": metadata,
+                **summary,
             },
             upsert=True,
         )
@@ -151,7 +167,6 @@ class PatientSummaryService:
 
         {
           "patient_id": "...",
-          "date": "YYYY-MM-DD",
           "data_presence": {...},
           "glucose": {...},
           "meals": {...},
@@ -262,7 +277,6 @@ class PatientSummaryService:
 
         return {
             "patient_id": patient_id,
-            "date": period_date.isoformat(),
             "data_presence": data_presence,
             "glucose": glucose,
             "meals": meals,
@@ -296,11 +310,14 @@ class PatientSummaryService:
     async def _build_glucose_section(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> Optional[Dict[str, Any]]:
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        
         doc = await self.cgm_reports_collection.find_one(
             {
                 "patient_id": patient_id,
-                "report_type": "daily",
-                "start_date": {"$gte": start_date, "$lte": end_date},
+                "metadata.report_type": "daily",
+                "metadata.date_range.start": {"$gte": start_iso, "$lte": end_iso},
             }
         )
         if not doc:
@@ -349,11 +366,15 @@ class PatientSummaryService:
     async def _build_meals_section(
         self, patient_id: str, report_date: date
     ) -> Optional[Dict[str, Any]]:
+        date_iso = report_date.isoformat()
+        
         doc = await self.meal_reports_collection.find_one(
             {
                 "patient_id": patient_id,
-                "report_type": "daily",
-                "date": report_date.isoformat(),
+                "$or": [
+                    {"date": date_iso},
+                    {"metadata.date_range.start": {"$regex": f"^{date_iso}"}},
+                ],
             }
         )
         if not doc:
@@ -418,11 +439,14 @@ class PatientSummaryService:
     async def _build_activity_section(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> Optional[Dict[str, Any]]:
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        
         doc = await self.fitness_reports_collection.find_one(
             {
                 "patient_id": patient_id,
-                "report_type": "daily",
-                "start_date": {"$gte": start_date, "$lte": end_date},
+                "metadata.report_type": "daily",
+                "metadata.date_range.start": {"$gte": start_iso, "$lte": end_iso},
             }
         )
         if not doc:
@@ -454,11 +478,14 @@ class PatientSummaryService:
     async def _build_sleep_section(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> Optional[Dict[str, Any]]:
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        
         doc = await self.sleep_reports_collection.find_one(
             {
                 "patient_id": patient_id,
-                "report_type": "daily",
-                "start_date": {"$gte": start_date, "$lte": end_date},
+                "metadata.report_type": "daily",
+                "metadata.date_range.start": {"$gte": start_iso, "$lte": end_iso},
             }
         )
         if not doc:
@@ -796,13 +823,14 @@ class PatientSummaryService:
         self, patient_id: str, period_name: str
     ) -> Optional[Dict[str, Any]]:
         start_date, end_date = self._period_name_to_dates(period_name)
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        report_id = self._generate_report_id(
+            patient_id, "daily", start_iso, end_iso
+        )
 
         summary = await self.patient_summary_collection.find_one(
-            {
-                "patient_id": patient_id,
-                "start_date": start_date,
-                "end_date": end_date,
-            }
+            {"_id": report_id}
         )
 
         return summary
@@ -816,13 +844,14 @@ class PatientSummaryService:
         end_date = datetime.combine(
             target_date, datetime.max.time(), tzinfo=None
         )
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+        report_id = self._generate_report_id(
+            patient_id, "daily", start_iso, end_iso
+        )
 
         summary = await self.patient_summary_collection.find_one(
-            {
-                "patient_id": patient_id,
-                "start_date": start_date,
-                "end_date": end_date,
-            }
+            {"_id": report_id}
         )
 
         return summary
@@ -847,32 +876,35 @@ class PatientSummaryService:
             start_date = datetime.combine(target_date, datetime.min.time())
             end_date = datetime.combine(target_date, datetime.max.time())
 
+        start_iso = start_date.isoformat()
+        end_iso = end_date.isoformat()
+
         query = {
             "patient_id": patient_id,
-            "start_date": {"$lte": end_date},
-            "end_date": {"$gte": start_date},
-            "summary_meta.state": SummaryState.FINALIZED.value,
+            "metadata.date_range.start": {"$lte": end_iso},
+            "metadata.date_range.end": {"$gte": start_iso},
+            "metadata.state": SummaryState.FINALIZED.value,
         }
 
         await self.patient_summary_collection.update_many(
             query,
             {
                 "$set": {
-                    "summary_meta.state": SummaryState.STALE.value,
-                    "summary_meta.data_last_updated_at": now,
-                    "summary_meta.stale_reason": stale_reason.value,
+                    "metadata.state": SummaryState.STALE.value,
+                    "metadata.data_last_updated_at": now,
+                    "metadata.stale_reason": stale_reason.value,
                     "updated_at": now,
                 },
                 "$unset": {
-                    "summary_meta.regenerated_at": "",
-                    "summary_meta.regenerated_by": "",
+                    "metadata.regenerated_at": "",
+                    "metadata.regenerated_by": "",
                 },
             },
         )
 
     async def get_stale_summaries(self) -> List[Dict[str, Any]]:
         query = {
-            "summary_meta.state": SummaryState.STALE.value,
+            "metadata.state": SummaryState.STALE.value,
         }
         
         cursor = self.patient_summary_collection.find(query)

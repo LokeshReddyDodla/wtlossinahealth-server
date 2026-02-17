@@ -3,7 +3,6 @@ from typing import cast
 from lib.core.cache_store import CacheStore
 from lib.core.container import container
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
-from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -209,7 +208,9 @@ def get_patient_data_availability_service() -> PatientDataAvailabilityService:
 
 
 def get_patient_daily_overview_service() -> PatientDailyOverviewService:
-    return cast(PatientDailyOverviewService, container.resolve(PatientDailyOverviewService))
+    return cast(
+        PatientDailyOverviewService, container.resolve(PatientDailyOverviewService)
+    )
 
 
 def get_care_provider_profile_service() -> CareProviderProfileService:
@@ -325,9 +326,7 @@ def get_glp1_symptoms_service() -> Glp1SymptomsService:
 
 
 def get_glp1_injection_service() -> Glp1InjectionService:
-    return cast(
-        Glp1InjectionService, container.resolve(Glp1InjectionService)
-    )
+    return cast(Glp1InjectionService, container.resolve(Glp1InjectionService))
 
 
 def get_flow_engine_service() -> FlowEngine:
@@ -597,13 +596,6 @@ def get_fcm_service() -> FCMService:
 
 def get_arq_task_manager_service() -> ArqTaskManager:
     return get_arq_task_manager()
-
-
-def get_celery_task_manager() -> CeleryTaskManager:
-    return cast(
-        CeleryTaskManager,
-        container.resolve(CeleryTaskManager),
-    )
 
 
 def get_agentic_orchestrator_service() -> AgenticOrchestrator:
