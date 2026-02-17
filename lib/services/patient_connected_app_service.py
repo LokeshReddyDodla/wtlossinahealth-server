@@ -58,6 +58,35 @@ class PatientConnectedAppService:
             )
 
     @with_postgres_session
+    async def get_or_create_connected_apps_for_patient(
+        self, patient_id: str, *, postgres_session: AsyncSession
+    ) -> PatientConnectedAppModel:
+        try:
+            result = await postgres_session.execute(
+                select(PatientConnectedAppModel).where(
+                    PatientConnectedAppModel.patient_id == patient_id
+                )
+            )
+
+            connected_app = result.scalars().first()
+            if connected_app:
+                return connected_app
+
+            new_connected_app = PatientConnectedAppModel(
+                patient_id=patient_id,
+            )
+            postgres_session.add(new_connected_app)
+            await postgres_session.flush()
+            return new_connected_app
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to create connected apps for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
     async def get_all_connected_apps_with_libreview(
         self, *, postgres_session: AsyncSession
     ) -> List[PatientConnectedAppModel]:
@@ -112,7 +141,7 @@ class PatientConnectedAppService:
         postgres_session: AsyncSession,
     ) -> PatientLibreViewModel:
         try:
-            connected_app = await self.get_connected_apps_for_patient(
+            connected_app = await self.get_or_create_connected_apps_for_patient(
                 patient_id, postgres_session=postgres_session
             )
 
@@ -160,7 +189,7 @@ class PatientConnectedAppService:
         postgres_session: AsyncSession,
     ) -> PatientSinocareModel:
         try:
-            connected_app = await self.get_connected_apps_for_patient(
+            connected_app = await self.get_or_create_connected_apps_for_patient(
                 patient_id, postgres_session=postgres_session
             )
 
