@@ -152,53 +152,6 @@ services:
       retries: 5
 
   # ==========================================
-  # Task Workers - Celery (Legacy)
-  # ==========================================
-  aihealth-celery-default:
-    container_name: aihealth-celery-default
-    image: aihealth-api:latest
-    restart: unless-stopped
-    command: >
-      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery worker
-      --pool=custom --loglevel=info --concurrency=4 -Q default
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - CELERY_CUSTOM_WORKER_POOL=celery_aio_pool.pool:AsyncIOPool
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - QDRANT_HOST=${QDRANT_HOST}
-      - QDRANT_PORT=${QDRANT_PORT}
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION}
-    volumes:
-      - celery_logs:/var/log/celery
-      - celery_data:/var/lib/celery
-    depends_on:
-      - aihealth-redis
-      - aihealth-api
-
-
-  aihealth-celery-beat:
-    container_name: aihealth-celery-beat
-    image: aihealth-api:latest
-    restart: unless-stopped
-    command: >
-      /opt/pysetup/.venv/bin/python -m celery -A lib.core.celery_app.celery beat
-      --loglevel=info
-    environment:
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-      - POSTGRES_ASYNCPG_URL=${POSTGRES_ASYNCPG_URL}
-    volumes:
-      - celery_beat_logs:/var/log/celery
-    depends_on:
-      - aihealth-redis
-      - aihealth-api
-
-  # ==========================================
   # Task Workers - ARQ
   # ==========================================
   aihealth-arq-worker:

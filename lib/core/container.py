@@ -4,7 +4,6 @@ from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.cache_store import CacheStore
-from lib.core.celery_app import celery
 from lib.core.clickhouse_store import ClickHouseStore
 from decouple import config
 
@@ -13,7 +12,6 @@ from lib.core.mongo_store import MongoStore
 from lib.core.postgres_store import PostgresStore
 from lib.core.qdrant_store import QdrantStore
 from lib.managers.arq_task_manager import ArqTaskManager, get_arq_task_manager
-from lib.managers.celery_task_manager import CeleryTaskManager
 from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
@@ -270,9 +268,9 @@ container.register(
 # Profile Update Agent Collection
 container.register(
     "profile_update_conversations_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("profile_update_conversations"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "profile_update_conversations"
+    ),
     scope=Scope.singleton,
 )
 
@@ -308,30 +306,30 @@ container.register(
 )
 container.register(
     "weightloss_flow_instances_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_flow_instances"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_flow_instances"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weightloss_tasks_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_tasks"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_tasks"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weightloss_glp_injection_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_glpinjection_login"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_glpinjection_login"
+    ),
     scope=Scope.singleton,
 )
 container.register(
     "weightloss_symptom_daily_collection",
-    factory=lambda: cast(
-        MongoStore, container.resolve(MongoStore)
-    ).get_collection("wtloss_symptom_daily"),
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_symptom_daily"
+    ),
     scope=Scope.singleton,
 )
 container.register(
@@ -367,12 +365,6 @@ container.register(
 container.register(
     ArqTaskManager,
     lambda: get_arq_task_manager(),
-    scope=Scope.singleton,
-)
-
-container.register(
-    CeleryTaskManager,
-    lambda: CeleryTaskManager(app=celery),
     scope=Scope.singleton,
 )
 
@@ -659,12 +651,16 @@ container.register(
 container.register(
     OsteoFlagService,
     lambda: OsteoFlagService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
+        patient_document_service=cast(
+            PatientDocumentService, container.resolve(PatientDocumentService)
+        ),
+        osteoflag_detect_collection=cast(
+            MongoStore, container.resolve("osteoflag_detect_collection")
+        ),
         selected_ai_model="gpt-5.2",
-        ai_model_provider="openai",
     ),
 )
 
@@ -954,12 +950,8 @@ container.register(
 container.register(
     Glp1SymptomsService,
     lambda: Glp1SymptomsService(
-        weekly_symptoms_collection=container.resolve(
-            "weekly_symptoms_glp1_collection"
-        ),
-        analytics_service=cast(
-            AnalyticsService, container.resolve(AnalyticsService)
-        ),
+        weekly_symptoms_collection=container.resolve("weekly_symptoms_glp1_collection"),
+        analytics_service=cast(AnalyticsService, container.resolve(AnalyticsService)),
     ),
 )
 
@@ -967,9 +959,7 @@ container.register(
 container.register(
     Glp1InjectionService,
     lambda: Glp1InjectionService(
-        settings_collection=container.resolve(
-            "weightloss_glp_injection_collection"
-        ),
+        settings_collection=container.resolve("weightloss_glp_injection_collection"),
     ),
 )
 
@@ -977,9 +967,7 @@ container.register(
 container.register(
     FlowEngine,
     lambda: FlowEngine(
-        flow_collection=container.resolve(
-            "weightloss_flow_instances_collection"
-        )
+        flow_collection=container.resolve("weightloss_flow_instances_collection")
     ),
 )
 
@@ -1085,9 +1073,7 @@ container.register(
         coach_messenger_service=cast(
             CoachMessengerService, container.resolve(CoachMessengerService)
         ),
-        suggestion_cards_collection=container.resolve(
-            "suggestion_cards_collection"
-        ),
+        suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
     ),
 )
 
