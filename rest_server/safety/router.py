@@ -8,7 +8,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service,
+    get_care_provider_access_service,
     get_plan_composer_service,
     get_safety_rules_service,
 )
@@ -16,7 +16,7 @@ from lib.schemas.weightloss_agent.safety import (
     SafetyValidationRequest,
     SafetyValidationResponse,
 )
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.weightloss_agent.safety_rules_service import (
     SafetyRulesService,
 )
@@ -46,8 +46,8 @@ async def validate_safety_rules(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     safety_rules_service: SafetyRulesService = Depends(
         get_safety_rules_service
@@ -59,7 +59,7 @@ async def validate_safety_rules(
     patient_id = await resolve_patient_access(
         actor=actor,
         patient_id=payload.user_id,
-        care_provider_service=care_provider_service,
+        care_provider_access_service=care_provider_access_service,
     )
     payload.user_id = patient_id
     stored_context = await plan_service.get_context_snapshot(

@@ -15,6 +15,7 @@ from lib.dependencies.patient_access import (
 )
 from lib.dependencies.service_dependencies import (
     get_agentic_chat_service,
+    get_care_provider_access_service,
     get_care_provider_profile_service,
     get_glp1_injection_service,
     get_plan_composer_service,
@@ -23,6 +24,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.care_provider import CareProvider
 from lib.models.patient import Patient
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.care_provider_profile_service import CareProviderProfileService
 from lib.schemas.weight_loss_agent import (
     ChatRequest,
@@ -171,8 +173,8 @@ async def analyze_weight_loss_progress_get(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Generate AI analysis of weight loss progress (GET variant)"""
@@ -182,7 +184,7 @@ async def analyze_weight_loss_progress_get(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
 
         from datetime import datetime
@@ -213,8 +215,8 @@ async def update_enrollment(
     enrollment_id: UUID,
     update_data: WeightLossEnrollmentUpdate,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     current_care_provider: CareProvider = Depends(
         get_current_care_provider(
@@ -232,7 +234,7 @@ async def update_enrollment(
             enrollment_id=enrollment_id,
             care_provider=current_care_provider,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
 
         enrollment = await weight_loss_service.update_patient_enrollment(enrollment_id, update_data)
@@ -264,8 +266,8 @@ async def get_patient_enrollment(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Get patient's weight loss enrollment"""
@@ -274,7 +276,7 @@ async def get_patient_enrollment(
         verified_patient_id = await resolve_patient_access(
             actor=actor,
             patient_id=patient_id,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         enrollment = await weight_loss_service.get_patient_enrollment_by_patient_id(verified_patient_id)
 
@@ -306,8 +308,8 @@ async def upload_and_analyze_inbody_report(
     enrollment_id: UUID,
     report_file: UploadFile = File(...),
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     plan_composer_service: PlanComposerService = Depends(
         get_plan_composer_service
@@ -343,7 +345,7 @@ async def upload_and_analyze_inbody_report(
             enrollment_id=enrollment_id,
             care_provider=current_care_provider,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         patient_id = enrollment.get("patient_id")
 
@@ -388,8 +390,8 @@ async def get_latest_inbody_report(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Get the most recent inbody report along with highlighted measurements"""
@@ -399,7 +401,7 @@ async def get_latest_inbody_report(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
 
         report_with_details = await weight_loss_service.get_latest_inbody_report_with_details(
@@ -434,8 +436,8 @@ async def store_inbody_report_analysis(
     enrollment_id: UUID,
     analysis_data: InbodyReportAnalysisResult,
     weight_loss_service: WeightLossAgentService = Depends(get_weight_loss_agent_service),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     current_care_provider: CareProvider = Depends(
         get_current_care_provider(
@@ -453,7 +455,7 @@ async def store_inbody_report_analysis(
             enrollment_id=enrollment_id,
             care_provider=current_care_provider,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         if not analysis_data:
             raise_http_exception(
@@ -514,8 +516,8 @@ async def get_weight_loss_progress(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Get weight loss progress report"""
@@ -525,7 +527,7 @@ async def get_weight_loss_progress(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
 
         from datetime import datetime
@@ -564,8 +566,8 @@ async def analyze_weight_loss_progress(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Generate AI analysis of weight loss progress"""
@@ -575,7 +577,7 @@ async def analyze_weight_loss_progress(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
 
         from datetime import datetime
@@ -612,8 +614,8 @@ async def get_inbody_reports(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Get all inbody reports for an enrollment"""
@@ -624,7 +626,7 @@ async def get_inbody_reports(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         
         # Get all reports for this enrollment from MongoDB
@@ -688,8 +690,8 @@ async def get_health_indicators(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Get health indicators for an inbody report"""
@@ -699,7 +701,7 @@ async def get_health_indicators(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         # Get report from MongoDB
         report = await weight_loss_service.reports_collection.find_one({
@@ -754,8 +756,8 @@ async def chat_with_weight_loss_agent(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     """Chat with agentic weight loss coach"""
@@ -774,7 +776,7 @@ async def chat_with_weight_loss_agent(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         patient_id = enrollment.get("patient_id")
         patient_uuid = UUID(patient_id)
@@ -828,8 +830,8 @@ async def get_weight_loss_agent_chat_history(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     try:
@@ -838,7 +840,7 @@ async def get_weight_loss_agent_chat_history(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         patient_id = enrollment.get("patient_id")
         history = await agentic_chat_service.get_chat_history(
@@ -876,8 +878,8 @@ async def get_today_tasks(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     try:
@@ -885,7 +887,7 @@ async def get_today_tasks(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         patient_id = enrollment.get("patient_id")
 
@@ -940,8 +942,8 @@ async def complete_task(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
 ):
     try:
@@ -949,7 +951,7 @@ async def complete_task(
             enrollment_id=enrollment_id,
             actor=actor,
             weight_loss_service=weight_loss_service,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         patient_id = enrollment.get("patient_id")
 
@@ -999,8 +1001,8 @@ async def upsert_glp_injection_settings(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     injection_service: Glp1InjectionService = Depends(
         get_glp1_injection_service
@@ -1016,7 +1018,7 @@ async def upsert_glp_injection_settings(
         patient_id = await resolve_patient_access(
             actor=actor,
             patient_id=payload.user_id,
-            care_provider_service=care_provider_service,
+            care_provider_access_service=care_provider_access_service,
         )
         payload.user_id = patient_id
         record = await injection_service.upsert_settings(payload)

@@ -6,14 +6,14 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service,
+    get_care_provider_access_service,
     get_glp1_symptoms_service,
 )
 from lib.schemas.weightloss_agent.symptoms import (
     WeeklySymptomsCreate,
     WeeklySymptomsRecord,
 )
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.weightloss_agent.glp1_symptoms_service import (
     Glp1SymptomsService,
 )
@@ -40,8 +40,8 @@ async def log_weekly_symptoms(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     symptoms_service: Glp1SymptomsService = Depends(
         get_glp1_symptoms_service
@@ -50,7 +50,7 @@ async def log_weekly_symptoms(
     patient_id = await resolve_patient_access(
         actor=actor,
         patient_id=payload.user_id,
-        care_provider_service=care_provider_service,
+        care_provider_access_service=care_provider_access_service,
     )
     payload.user_id = patient_id
     try:

@@ -8,7 +8,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
-    get_care_provider_profile_service,
+    get_care_provider_access_service,
     get_plan_composer_service,
 )
 from lib.schemas.weightloss_agent.plan import (
@@ -16,7 +16,7 @@ from lib.schemas.weightloss_agent.plan import (
     PlanGenerateResponse,
     PlanDetailResponse,
 )
-from lib.services.care_provider_profile_service import CareProviderProfileService
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.weightloss_agent.plan_composer_service import (
     PlanComposerService,
 )
@@ -44,15 +44,15 @@ async def generate_plan(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     plan_service: PlanComposerService = Depends(get_plan_composer_service),
 ) -> SuccessResponse[PlanGenerateResponse]:
     patient_id = await resolve_patient_access(
         actor=actor,
         patient_id=payload.user_id,
-        care_provider_service=care_provider_service,
+        care_provider_access_service=care_provider_access_service,
     )
     payload.user_id = patient_id
     response = await plan_service.generate_plan(payload)
@@ -76,15 +76,15 @@ async def get_current_plan(
             care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
-    care_provider_service: CareProviderProfileService = Depends(
-        get_care_provider_profile_service
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
     ),
     plan_service: PlanComposerService = Depends(get_plan_composer_service),
 ) -> SuccessResponse[PlanDetailResponse]:
     patient_id = await resolve_patient_access(
         actor=actor,
         patient_id=user_id,
-        care_provider_service=care_provider_service,
+        care_provider_access_service=care_provider_access_service,
     )
     plan_details = await plan_service.get_current_plan_details(patient_id)
     if not plan_details:
