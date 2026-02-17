@@ -31,7 +31,7 @@ from .router import router
 
 
 @router.get("/reports/day/{date}")
-async def get_day_meal_report(
+async def get_daily_meal_report(
     request: Request,
     patient_id: str,
     date: date,
@@ -54,7 +54,7 @@ async def get_day_meal_report(
             )
 
         return SuccessResponse(
-            message="Day Meal report fetched successfully",
+            message="Daily meal report fetched successfully",
             data=meal_report,
         )
     except HTTPException as http_exc:

@@ -62,7 +62,7 @@ async def fetch_cgm_report(
 
 
 @router.get("/reports/day/{date}")
-async def get_cgm_day_report(
+async def get_cgm_daily_report(
     patient_id: str,
     date: date,
     regenerate: bool = Query(False),
@@ -74,19 +74,19 @@ async def get_cgm_day_report(
     ),
 ):
     try:
-        day_report = await cgm_report_service.fetch_day_report(
+        daily_report = await cgm_report_service.fetch_daily_report(
             patient_id,
             date,
         )
 
-        if not day_report:
+        if not daily_report:
             return InQueueResponse(
                 message="CGM report is being generated. Please check back shortly.",
             )
 
         return SuccessResponse(
-            message="Day Glucose report fetched successfully",
-            data=day_report,
+            message="Daily glucose report fetched successfully",
+            data=daily_report,
         )
     except HTTPException as http_exc:
         raise http_exc

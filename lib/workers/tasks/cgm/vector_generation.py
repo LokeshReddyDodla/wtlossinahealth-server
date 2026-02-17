@@ -29,7 +29,7 @@ async def _filter_reports_needing_vectors(
     report_service = get_cgm_report_service()
     vector_service = get_cgm_vector_service()
 
-    reports = await report_service.fetch_day_wise_reports(
+    reports = await report_service.fetch_daily_reports(
         patient_id=patient_id,
         start_date=start_date,
         end_date=end_date,
