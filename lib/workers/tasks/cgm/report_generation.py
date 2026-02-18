@@ -212,7 +212,8 @@ async def _enqueue_cgm_reports(patient_id: str, periods: List[Dict]) -> Optional
     if not periods:
         return None
 
-    job_id = f"cgm:upload:{patient_id}:{datetime.now().strftime('%Y%m%d%H%M')}"
+    timestamp = datetime.now().strftime("%Y%m%d%H%M")
+    job_id = f"cgm:upload:{patient_id}:{timestamp}"
 
     job = await enqueue_job(
         "process_cgm_upload",

@@ -95,3 +95,15 @@ class LibreViewWorkerSettings(WorkerSettings):
     job_timeout = timedelta(minutes=15)
     max_tries = 2
     keep_result = timedelta(seconds=0)
+
+
+class InstantWorkerSettings(WorkerSettings):
+    """Instant worker - processes jobs and immediately removes results after completion."""
+
+    redis_settings = WorkerSettings.redis_settings
+    functions = WorkerSettings.functions
+    queue_name = Queues.INSTANT
+    max_jobs = 100
+    job_timeout = timedelta(minutes=5)
+    max_tries = 3
+    keep_result = timedelta(seconds=0)
