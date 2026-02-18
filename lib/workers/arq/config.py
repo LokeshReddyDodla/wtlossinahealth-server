@@ -11,6 +11,7 @@ class Queues:
     REPORTS = "arq:queue:reports"
     VECTORS = "arq:queue:vectors"
     LIBREVIEW = "arq:queue:libreview"
+    INSTANT = "arq:queue:instant"
 
 
 def get_arq_redis_settings() -> RedisSettings:
