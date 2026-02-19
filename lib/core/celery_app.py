@@ -20,6 +20,13 @@ celery.conf.update(
             "task": "lib.tasks.weightloss_agent.agentic_orchestrator.schedule_daily_agentic_cycles",
             "schedule": crontab(hour="0", minute="0"),  # Midnight IST daily reset
         },
+        "weightloss-agent-flow-cycle": {
+            "task": "lib.tasks.weightloss_agent.flow_scheduler.schedule_weightloss_agentic_flows",
+            "schedule": crontab(minute="0", hour="*/2"),  # Every 2 hours so time-window nudges fire
+            "options": {
+                "expires": 60 * 60 * 2,  # 2 hours expiration
+            },
+        },
         "patient-daily-summaries": {
             "task": "lib.tasks.patient_summary_tasks.schedule_daily_patient_summaries",
             "schedule": crontab(hour="3", minute="0"),  # 3:00 AM IST daily
@@ -38,4 +45,5 @@ celery.conf.update(
 
 
 from lib.tasks.weightloss_agent.agentic_orchestrator import *
+from lib.tasks.weightloss_agent.flow_scheduler import *
 from lib.tasks.patient_summary_tasks import *
