@@ -27,12 +27,13 @@ class SleepReportService:
             # Iterate through each day in the range
             current_date = start_date.date()
             end_date_obj = end_date.date()
-            
+
             while current_date <= end_date_obj:
                 await mark_summary_stale_and_enqueue(
                     patient_id=patient_id,
                     target_date=current_date,
                     stale_reason=StaleReason.DATA_UPDATED,
+                    enqueue=False,
                 )
                 current_date += timedelta(days=1)
         except Exception as e:
@@ -43,7 +44,9 @@ class SleepReportService:
     ):
         try:
             start_iso = datetime.combine(start_date, time.min).isoformat()
-            end_iso = datetime.combine(end_date, time.max).replace(microsecond=0).isoformat()
+            end_iso = (
+                datetime.combine(end_date, time.max).replace(microsecond=0).isoformat()
+            )
 
             reports = (
                 await self.sleep_report_collection.find(
@@ -61,7 +64,9 @@ class SleepReportService:
 
             return reports
         except Exception as error:
-            logging.error(f"Failed to fetch daily sleep reports for {patient_id} from {start_date} to {end_date}: {error}")
+            logging.error(
+                f"Failed to fetch daily sleep reports for {patient_id} from {start_date} to {end_date}: {error}"
+            )
             return []
 
     async def fetch_daily_report(self, patient_id: str, date: date):
@@ -81,16 +86,18 @@ class SleepReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.DAILY)
+                self._trigger_report_generation(
+                    patient_id, start_date, end_date, SleepReportType.DAILY
+                )
 
             return report
         except Exception as error:
-            logging.error(f"Failed to fetch daily sleep report for {patient_id} on {date}: {error}")
+            logging.error(
+                f"Failed to fetch daily sleep report for {patient_id} on {date}: {error}"
+            )
             return None
 
-    async def fetch_weekly_report(
-        self, patient_id: str, year: int, week_no: int
-    ):
+    async def fetch_weekly_report(self, patient_id: str, year: int, week_no: int):
         try:
             start_date, end_date = get_week_start_and_end_from_week_no(year, week_no)
             start_iso = start_date.isoformat()
@@ -106,16 +113,18 @@ class SleepReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.WEEKLY)
+                self._trigger_report_generation(
+                    patient_id, start_date, end_date, SleepReportType.WEEKLY
+                )
 
             return report
         except Exception as error:
-            logging.error(f"Failed to fetch weekly sleep report for {patient_id} (Year: {year}, Week: {week_no}): {error}")
+            logging.error(
+                f"Failed to fetch weekly sleep report for {patient_id} (Year: {year}, Week: {week_no}): {error}"
+            )
             return None
 
-    async def fetch_monthly_report(
-        self, patient_id: str, year: int, month_no: int
-    ):
+    async def fetch_monthly_report(self, patient_id: str, year: int, month_no: int):
         try:
             start_date, end_date = get_month_start_end(year, month_no)
             start_iso = start_date.isoformat()
@@ -131,10 +140,14 @@ class SleepReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(patient_id, start_date, end_date, SleepReportType.MONTHLY)
+                self._trigger_report_generation(
+                    patient_id, start_date, end_date, SleepReportType.MONTHLY
+                )
             return report
         except Exception as error:
-            logging.error(f"Failed to fetch monthly sleep report for {patient_id} (Year: {year}, Month: {month_no}): {error}")
+            logging.error(
+                f"Failed to fetch monthly sleep report for {patient_id} (Year: {year}, Month: {month_no}): {error}"
+            )
             return None
 
     def _trigger_report_generation(
@@ -149,9 +162,7 @@ class SleepReportService:
                 enqueue_process_sleep_upload_sync,
             )
 
-            enqueue_process_sleep_upload_sync(
-                patient_id, start_date, end_date
-            )
+            enqueue_process_sleep_upload_sync(patient_id, start_date, end_date)
 
             logging.info(
                 f"Triggered sleep report generation for {patient_id} from {start_date} to {end_date}"
@@ -201,7 +212,9 @@ class SleepReportService:
                     }
                 )
 
-                ops.append(UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True))
+                ops.append(
+                    UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                )
 
             await self.sleep_report_collection.bulk_write(ops)
             logging.info(f"Bulk saved {len(ops)} Sleep reports for {patient_id}")
@@ -210,7 +223,9 @@ class SleepReportService:
                 metadata = report.metadata
                 start_dt = parse_datetime(metadata.date_range.start)
                 end_dt = parse_datetime(metadata.date_range.end)
-                await self._mark_summaries_stale_for_range(patient_id=patient_id, start_date=start_dt, end_date=end_dt)
+                await self._mark_summaries_stale_for_range(
+                    patient_id=patient_id, start_date=start_dt, end_date=end_dt
+                )
 
         except Exception as e:
             logging.error(f"Failed to save reports in bulk: {e}")

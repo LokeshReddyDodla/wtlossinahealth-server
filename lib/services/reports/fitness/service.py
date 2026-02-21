@@ -13,6 +13,7 @@ from lib.utils.datetime_utils import parse_datetime
 from lib.utils.patient_summary_stale import mark_summary_stale_and_enqueue
 from .processor import FitnessReportType
 
+
 class FitnessReportService:
     def __init__(self, fitness_report_collection, patient_summary_service=None):
         self.fitness_report_collection = fitness_report_collection
@@ -26,12 +27,13 @@ class FitnessReportService:
             # Iterate through each day in the range
             current_date = start_date.date()
             end_date_obj = end_date.date()
-            
+
             while current_date <= end_date_obj:
                 await mark_summary_stale_and_enqueue(
                     patient_id=patient_id,
                     target_date=current_date,
                     stale_reason=StaleReason.DATA_UPDATED,
+                    enqueue=False,
                 )
                 current_date += timedelta(days=1)
         except Exception as e:
@@ -181,9 +183,7 @@ class FitnessReportService:
                 enqueue_process_fitness_upload_sync,
             )
 
-            enqueue_process_fitness_upload_sync(
-                patient_id, start_date, end_date
-            )
+            enqueue_process_fitness_upload_sync(patient_id, start_date, end_date)
 
             logging.info(
                 f"Triggered fitness report generation for {patient_id} from {start_date} to {end_date}"

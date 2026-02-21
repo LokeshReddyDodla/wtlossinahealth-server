@@ -9,11 +9,8 @@ async def mark_summary_stale_and_enqueue(
     target_date: Optional[date] = None,
     stale_reason: StaleReason = StaleReason.DATA_UPDATED,
     force: bool = False,
+    enqueue: bool = True,
 ) -> Optional[str]:
-    """
-    Mark a patient's summary as stale and enqueue a summary generation job for today (or target_date).
-    Deduplication is handled by ARQ job ID.
-    """
     from lib.dependencies.service_dependencies import get_patient_summary_service
     from lib.workers.tasks.patient_summary.summary_generation import (
         _enqueue_patient_summary,
@@ -29,6 +26,9 @@ async def mark_summary_stale_and_enqueue(
         stale_reason=stale_reason,
     )
 
-    return await _enqueue_patient_summary(
-        patient_id=patient_id, target_date=target_date, forced=force
-    )
+    if enqueue:
+        return await _enqueue_patient_summary(
+            patient_id=patient_id, target_date=target_date, forced=force
+        )
+    
+    return None
