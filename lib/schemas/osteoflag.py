@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OsteoFlagRiskFactors(BaseModel):
@@ -24,6 +24,8 @@ class OsteoFlagBmd(BaseModel):
 
 
 class OsteoFlagInput(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    
     patient_age_years: Optional[int] = Field(None, ge=0)
     sex: Literal["female", "male", "other", "unknown"]
     cxr_view: Literal["PA", "AP", "lateral", "unknown"]
@@ -59,6 +61,8 @@ class OsteoFlagDetectRequest(BaseModel):
 
 
 class OsteoFlagDetectResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    
     result: OsteoFlagResponse
     document_id: str
     document_url: Optional[str] = None
