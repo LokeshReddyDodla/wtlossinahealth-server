@@ -141,6 +141,7 @@ async def _enqueue_patient_summary(
         forced,
         _job_id=job_id,
         _queue_name=Queues.INSTANT,
+        _defer_by=120,
     )
 
     if job:
