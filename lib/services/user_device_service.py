@@ -32,15 +32,11 @@ class UserDeviceService:
         postgres_session: AsyncSession,
     ) -> Optional[datetime]:
         try:
-            stmt = select(UserDeviceModel.last_active_at).where(
+            stmt = select(func.max(UserDeviceModel.last_active_at)).where(
                 UserDeviceModel.user_id == user_id
             )
             if profile_type:
                 stmt = stmt.where(UserDeviceModel.profile_type == profile_type)
-
-            stmt = stmt.order_by(UserDeviceModel.last_active_at.desc()).limit(
-                1
-            )
 
             result = await postgres_session.execute(stmt)
             return result.scalar_one_or_none()
