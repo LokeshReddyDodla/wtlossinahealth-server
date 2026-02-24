@@ -33,7 +33,7 @@ class SleepReportService:
                     patient_id=patient_id,
                     target_date=current_date,
                     stale_reason=StaleReason.DATA_UPDATED,
-                    enqueue=False,
+                    enqueue=True,
                 )
                 current_date += timedelta(days=1)
         except Exception as e:
