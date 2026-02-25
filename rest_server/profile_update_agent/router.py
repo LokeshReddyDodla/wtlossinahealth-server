@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import List
+
+from fastapi import APIRouter, Depends, Query
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
@@ -10,6 +12,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.patient import Patient
 from lib.schemas.profile_update_agent import (
+    ConversationListResponse,
     ProfileUpdateChatRequest,
     ProfileUpdateChatResponse,
 )
@@ -45,3 +48,31 @@ async def chat(
         conversation_id=body.conversation_id,
     )
     return SuccessResponse(data=result, message="Agent response")
+
+
+@router.get(
+    "/conversations",
+    response_model=SuccessResponse[List[ConversationListResponse]],
+    summary="List profile-update conversations",
+    description=(
+        "Returns a paginated list of the patient's profile-update "
+        "conversations, sorted by most recently updated first."
+    ),
+)
+async def list_conversations(
+    limit: int = Query(20, ge=1, le=100, description="Max items to return"),
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    current_patient: Patient = Depends(get_current_patient),
+    service: ProfileUpdateAgentService = Depends(
+        get_profile_update_agent_service
+    ),
+) -> SuccessResponse[List[ConversationListResponse]]:
+    conversations = await service.list_conversations(
+        patient_id=str(current_patient.patient_id),
+        limit=limit,
+        skip=skip,
+    )
+    return SuccessResponse(
+        data=conversations,
+        message="Conversations retrieved successfully",
+    )
