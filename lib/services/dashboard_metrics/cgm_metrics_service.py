@@ -36,12 +36,15 @@ class CGMMetricsService:
         offset: int = 0,
     ) -> List[Dict]:
         try:
+            start_iso = start.isoformat()
+            end_iso = end.isoformat()
+
             query = {
-                "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start},
-                "end_date": {"$lte": end},
+                "metadata.report_type": CGMReportType.DAILY,
+                "metadata.date_range.start": {"$gte": start_iso},
+                "metadata.date_range.end": {"$lte": end_iso},
                 f"hyper_stats.hyper_events": {
-                    "$elemMatch": {"duration": {"$gte": min_duration_minutes}}
+                    "$elemMatch": {"duration_minutes": {"$gte": min_duration_minutes}}
                 },
             }
 
@@ -53,7 +56,7 @@ class CGMMetricsService:
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
-                .sort("start_date", -1)
+                .sort("metadata.date_range.start", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -75,7 +78,7 @@ class CGMMetricsService:
                         "hyper_events": [
                             e
                             for e in report["hyper_stats"]["hyper_events"]
-                            if e["duration"] >= min_duration_minutes
+                            if e.get("duration_minutes", 0) >= min_duration_minutes
                         ],
                         "patient": {
                             "name": patient.first_name
@@ -114,12 +117,15 @@ class CGMMetricsService:
         offset: int = 0,
     ) -> List[Dict]:
         try:
+            start_iso = start.isoformat()
+            end_iso = end.isoformat()
+
             query = {
-                "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start},
-                "end_date": {"$lte": end},
+                "metadata.report_type": CGMReportType.DAILY,
+                "metadata.date_range.start": {"$gte": start_iso},
+                "metadata.date_range.end": {"$lte": end_iso},
                 "hypo_stats.hypo_events": {
-                    "$elemMatch": {"duration": {"$gte": min_duration_minutes}}
+                    "$elemMatch": {"duration_minutes": {"$gte": min_duration_minutes}}
                 },
             }
 
@@ -131,7 +137,7 @@ class CGMMetricsService:
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
-                .sort("start_date", -1)
+                .sort("metadata.date_range.start", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -153,7 +159,7 @@ class CGMMetricsService:
                         "hypo_events": [
                             e
                             for e in report["hypo_stats"]["hypo_events"]
-                            if e["duration"] >= min_duration_minutes
+                            if e.get("duration_minutes", 0) >= min_duration_minutes
                         ],
                         "patient": {
                             "name": patient.first_name
@@ -192,23 +198,26 @@ class CGMMetricsService:
         offset: int = 0,
     ) -> List[Dict]:
         try:
+            start_iso = start.isoformat()
+            end_iso = end.isoformat()
+
             query = {
-                "report_type": CGMReportType.DAILY,
-                "start_date": {"$gte": start},
-                "end_date": {"$lte": end},
-                "cgm_summary_stats.glucose_variability": {"$gt": gv_threshold},
+                "metadata.report_type": CGMReportType.DAILY,
+                "metadata.date_range.start": {"$gte": start_iso},
+                "metadata.date_range.end": {"$lte": end_iso},
+                "cgm_summary_stats.glucose_variability_percent": {"$gt": gv_threshold},
             }
 
             projection = {
                 "_id": 1,
                 "patient_id": 1,
-                "start_date": 1,
-                "cgm_summary_stats.glucose_variability": 1,
+                "metadata.date_range.start": 1,
+                "cgm_summary_stats.glucose_variability_percent": 1,
             }
 
             cursor = (
                 self.cgm_report_collection.find(query, projection)
-                .sort("start_date", -1)
+                .sort("metadata.date_range.start", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -227,10 +236,10 @@ class CGMMetricsService:
                     enrich_payload=lambda report, patient: {
                         "_id": str(report["_id"]),
                         "patient_id": report["patient_id"],
-                        "glucose_variability": report["cgm_summary_stats"][
-                            "glucose_variability"
-                        ],
-                        "date": report["start_date"],
+                        "glucose_variability": report.get("cgm_summary_stats", {}).get(
+                            "glucose_variability_percent"
+                        ),
+                        "date": report.get("metadata", {}).get("date_range", {}).get("start"),
                         "patient": {
                             "name": patient.first_name
                             + " "
