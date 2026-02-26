@@ -124,7 +124,6 @@ async def delete_duplicate_cgm_reports(
         for group in duplicate_groups:
             report_ids = group["ids"]
             patient_id = group["_id"]["patient_id"]
-            start_date = group["_id"]["start_date"]
 
             # Fetch all reports in this duplicate group to get their details
             reports = await cgm_collection.find({"_id": {"$in": report_ids}}).to_list(
