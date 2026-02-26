@@ -100,11 +100,14 @@ async def delete_duplicate_cgm_reports(
 
         # Run aggregation to find duplicates
         pipeline = [
-            {"$match": {"report_type": "custom"}},
+            {"$match": {"metadata.report_type": "custom"}},
             {
                 "$group": {
-                    "_id": {"patient_id": "$patient_id", "start_date": "$start_date"},
-                    "end_dates": {"$addToSet": "$end_date"},
+                    "_id": {
+                        "patient_id": "$patient_id",
+                        "start_iso": "$metadata.date_range.start",
+                    },
+                    "end_dates": {"$addToSet": "$metadata.date_range.end"},
                     "ids": {"$push": "$_id"},
                     "count": {"$sum": 1},
                 }
@@ -135,8 +138,16 @@ async def delete_duplicate_cgm_reports(
                     {
                         "report_id": str(report["_id"]),
                         "patient_id": str(patient_id),
-                        "start_date": report.get("start_date"),
-                        "end_date": report.get("end_date"),
+                        "start_date": (
+                            report.get("metadata", {})
+                            .get("date_range", {})
+                            .get("start")
+                        ),
+                        "end_date": (
+                            report.get("metadata", {})
+                            .get("date_range", {})
+                            .get("end")
+                        ),
                     }
                 )
 
