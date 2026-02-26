@@ -31,7 +31,7 @@ class CGMReportService:
             # Iterate through each day in the range
             current_date = start_date.date()
             end_date_obj = end_date.date()
-            
+
             while current_date <= end_date_obj:
                 await mark_summary_stale_and_enqueue(
                     patient_id=patient_id,
@@ -341,19 +341,38 @@ class CGMReportService:
         report_type: str,
         start_iso: str,
         end_iso: str,
+        include_end: bool = True,
     ) -> str:
-        key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
+        if include_end:
+            key = f"{patient_id}_{report_type}_{start_iso}_{end_iso}"
+        else:
+            key = f"{patient_id}_{report_type}_{start_iso}"
+
         return hashlib.sha256(key.encode()).hexdigest()
+
+    def _compute_report_id_from_metadata(self, patient_id: str, metadata) -> str:
+        """Compute report id from a metadata object.
+
+        This ensures consistent handling of CUSTOM reports (which are
+        deduplicated by start only).
+        """
+        is_custom = (
+            metadata.report_type == CGMReportType.CUSTOM
+            or str(metadata.report_type).lower() == "custom"
+        )
+        include_end = not is_custom
+        return self._generate_report_id(
+            patient_id,
+            metadata.report_type,
+            metadata.date_range.start,
+            metadata.date_range.end,
+            include_end=include_end,
+        )
 
     async def save_report(self, patient_id: str, report: CGMStats):
         try:
             metadata = report.metadata
-            report_id = self._generate_report_id(
-                patient_id,
-                metadata.report_type,
-                metadata.date_range.start,
-                metadata.date_range.end,
-            )
+            report_id = self._compute_report_id_from_metadata(patient_id, metadata)
             now = datetime.now()
             existing_report = await self.cgm_report_collection.find_one(
                 {"_id": report_id}
@@ -404,7 +423,7 @@ class CGMReportService:
         sensor_status: Optional[str] = None,
         termination_reason: Optional[str] = None,
     ):
-        from pymongo import UpdateOne
+        from pymongo import UpdateOne  # type: ignore
 
         if not reports:
             logging.warning("No CGM reports to save")
@@ -416,20 +435,12 @@ class CGMReportService:
         for report in reports:
             metadata = report.metadata
             report_dict = report.model_dump(exclude_none=True)
-            report_id = self._generate_report_id(
-                patient_id,
-                metadata.report_type,
-                metadata.date_range.start,
-                metadata.date_range.end,
-            )
+            report_id = self._compute_report_id_from_metadata(patient_id, metadata)
 
             if report.fitness_report:
                 fitness_metadata = report.fitness_report.metadata
-                fitness_report_id = self._generate_report_id(
-                    patient_id,
-                    fitness_metadata.report_type,
-                    fitness_metadata.date_range.start,
-                    fitness_metadata.date_range.end,
+                fitness_report_id = self._compute_report_id_from_metadata(
+                    patient_id, fitness_metadata
                 )
                 existing_fitness_report = (
                     await self.fitness_report_service.fetch_report_by_id(
@@ -480,10 +491,6 @@ class CGMReportService:
                     f"Could not parse datetime range for CGM report: {metadata.date_range.start} - {metadata.date_range.end}"
                 )
 
-        last_report_id = self._generate_report_id(
-            patient_id,
-            reports[-1].metadata.report_type,
-            reports[-1].metadata.date_range.start,
-            reports[-1].metadata.date_range.end,
-        )
+        last_meta = reports[-1].metadata
+        last_report_id = self._compute_report_id_from_metadata(patient_id, last_meta)
         return last_report_id

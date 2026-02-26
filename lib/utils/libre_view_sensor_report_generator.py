@@ -16,6 +16,7 @@ class SensorLifecycleReportGenerator:
             hist_df["Device Timestamp"]
             .sort_values()
             .dropna()
+            .drop_duplicates()
             .reset_index(drop=True)
         )
 
