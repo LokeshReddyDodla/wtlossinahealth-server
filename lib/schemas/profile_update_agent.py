@@ -13,11 +13,12 @@ from pydantic import BaseModel, Field
 class UpdatableField(str, Enum):
     """Profile fields the agent is allowed to update.
 
-    Values must match the column names on the Patient model / PatientUpdate
-    schema so they can be forwarded directly to
-    ``PatientProfileService.update_basic_patient_profile``.
+    Values must match the column names on the Patient model (for basic fields)
+    or well-known keys that the service maps to the correct child model
+    (for lifestyle / medical-history fields).
     """
 
+    # ── Basic (Patient table columns) ───────────────────────────────────────
     FIRST_NAME = "first_name"
     LAST_NAME = "last_name"
     EMAIL = "email"
@@ -29,10 +30,29 @@ class UpdatableField(str, Enum):
     PROFILE_PICTURE = "profile_picture"
     LOCALE = "locale"
 
+    # ── Lifestyle (child models) ────────────────────────────────────────────
+    ACTIVITY_LEVEL = "activity_level"
+    CONSUME_ALCOHOL = "consume_alcohol"
+    SMOKE_STATUS = "smoke_status"
+    SLEEP_QUALITY = "sleep_quality"
+    MEALS_PER_DAY = "meals_per_day"
+    SNACKS_COUNT = "snacks_count"
+
+    # ── Allergies ───────────────────────────────────────────────────────────
+    FOOD_ALLERGIES = "food_allergies"
+    DRUG_ALLERGIES = "drug_allergies"
+
+    # ── Medical history ─────────────────────────────────────────────────────
+    TYPE_OF_DIABETES = "type_of_diabetes"
+    HAS_MEDICATION = "has_medication"
+    MEDICAL_CONDITIONS = "medical_conditions"
+
+    # ── Helpers ─────────────────────────────────────────────────────────────
     @classmethod
     def human_labels(cls) -> Dict[str, str]:
         """Return a mapping from enum value → human-friendly label."""
         return {
+            # Basic
             cls.FIRST_NAME.value: "First Name",
             cls.LAST_NAME.value: "Last Name",
             cls.EMAIL.value: "Email",
@@ -43,12 +63,73 @@ class UpdatableField(str, Enum):
             cls.WAIST.value: "Waist (cm)",
             cls.PROFILE_PICTURE.value: "Profile Picture URL",
             cls.LOCALE.value: "Locale / Language",
+            # Lifestyle
+            cls.ACTIVITY_LEVEL.value: "Activity Level",
+            cls.CONSUME_ALCOHOL.value: "Alcohol Consumption (yes/no)",
+            cls.SMOKE_STATUS.value: "Smoking Status (yes/no)",
+            cls.SLEEP_QUALITY.value: "Sleep Quality",
+            cls.MEALS_PER_DAY.value: "Meals Per Day",
+            cls.SNACKS_COUNT.value: "Snacks Per Day",
+            # Allergies
+            cls.FOOD_ALLERGIES.value: "Food Allergies",
+            cls.DRUG_ALLERGIES.value: "Drug Allergies",
+            # Medical history
+            cls.TYPE_OF_DIABETES.value: "Type of Diabetes",
+            cls.HAS_MEDICATION.value: "Currently on Medication (yes/no)",
+            cls.MEDICAL_CONDITIONS.value: "Medical Conditions",
         }
 
     @classmethod
     def list_for_prompt(cls) -> str:
         """Comma-separated list suitable for inclusion in an LLM prompt."""
         return ", ".join(cls.human_labels().values())
+
+
+# ── Field → profile_completion section mapping ──────────────────────────────
+FIELD_TO_SECTION: Dict[str, str] = {
+    # Basic
+    UpdatableField.FIRST_NAME.value: "basic",
+    UpdatableField.LAST_NAME.value: "basic",
+    UpdatableField.EMAIL.value: "basic",
+    UpdatableField.DOB.value: "basic",
+    UpdatableField.GENDER.value: "basic",
+    UpdatableField.HEIGHT.value: "basic",
+    UpdatableField.WEIGHT.value: "basic",
+    UpdatableField.WAIST.value: "basic",
+    UpdatableField.PROFILE_PICTURE.value: "basic",
+    UpdatableField.LOCALE.value: "basic",
+    # Lifestyle
+    UpdatableField.ACTIVITY_LEVEL.value: "lifestyle",
+    UpdatableField.CONSUME_ALCOHOL.value: "lifestyle",
+    UpdatableField.SMOKE_STATUS.value: "lifestyle",
+    UpdatableField.SLEEP_QUALITY.value: "lifestyle",
+    UpdatableField.MEALS_PER_DAY.value: "lifestyle",
+    UpdatableField.SNACKS_COUNT.value: "lifestyle",
+    UpdatableField.FOOD_ALLERGIES.value: "lifestyle",
+    # Medical history
+    UpdatableField.DRUG_ALLERGIES.value: "medical_history",
+    UpdatableField.TYPE_OF_DIABETES.value: "medical_history",
+    UpdatableField.HAS_MEDICATION.value: "medical_history",
+    UpdatableField.MEDICAL_CONDITIONS.value: "medical_history",
+}
+
+# Fields that live directly on the Patient table (basic section).
+BASIC_FIELDS: set[str] = {
+    f.value for f in UpdatableField
+    if FIELD_TO_SECTION.get(f.value) == "basic"
+}
+
+# Fields that map to lifestyle child models.
+LIFESTYLE_FIELDS: set[str] = {
+    f.value for f in UpdatableField
+    if FIELD_TO_SECTION.get(f.value) == "lifestyle"
+}
+
+# Fields that map to medical-history child models.
+MEDICAL_HISTORY_FIELDS: set[str] = {
+    f.value for f in UpdatableField
+    if FIELD_TO_SECTION.get(f.value) == "medical_history"
+}
 
 
 # ── Conversation state (persisted in Mongo) ─────────────────────────────────
@@ -103,6 +184,17 @@ class ProfileUpdateChatResponse(BaseModel):
     )
     updated_field: Optional[str] = None
     updated_value: Optional[Any] = None
+
+
+class ConversationListResponse(BaseModel):
+    """Summary of a single conversation, used in the list endpoint."""
+
+    conversation_id: str
+    state: str
+    target_field: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    message_count: int = 0
 
 
 # ── Mongo document shape (for type-safety, not enforced at DB level) ────────

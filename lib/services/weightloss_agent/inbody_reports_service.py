@@ -124,6 +124,11 @@ class InbodyReportsMixin:
             indicators.append(indicator_copy)
         prepared["health_indicators"] = indicators
 
+        # Ensure sections/patient_info/inbody_score are present (may be None for old reports)
+        prepared.setdefault("sections", None)
+        prepared.setdefault("patient_info", None)
+        prepared.setdefault("inbody_score", None)
+
         return prepared
 
     def _extract_report_highlights(
@@ -144,6 +149,7 @@ class InbodyReportsMixin:
                 "body_fat_percentage",
                 "percentage_body_fat",
                 "body_fat",
+                "percent_body_fat",
             ],
             "visceral_fat_level": [
                 "visceral_fat_level",
@@ -152,6 +158,15 @@ class InbodyReportsMixin:
             "basal_metabolic_rate": [
                 "basal_metabolic_rate",
                 "bmr",
+            ],
+            "ecw_ratio": [
+                "ecw_ratio",
+            ],
+            "phase_angle": [
+                "phase_angle",
+            ],
+            "smi": [
+                "smi",
             ],
         }
 
@@ -167,6 +182,27 @@ class InbodyReportsMixin:
         highlights["segment_lean_analysis"] = self._collect_segment_lean_measurements(
             measurements
         )
+
+        # Pull section-level highlights from the stored sections
+        sections = report.get("sections") or {}
+
+        # InBody score
+        highlights["inbody_score"] = report.get("inbody_score") or sections.get("inbody_score")
+
+        # Weight control
+        highlights["weight_control"] = sections.get("weight_control")
+
+        # Nutrition evaluation
+        highlights["nutrition_evaluation"] = sections.get("nutrition_evaluation")
+
+        # Obesity evaluation
+        highlights["obesity_evaluation"] = sections.get("obesity_evaluation")
+
+        # Body balance evaluation
+        highlights["body_balance_evaluation"] = sections.get("body_balance_evaluation")
+
+        # Segmental lean detail (structured with kg + %)
+        highlights["segmental_lean_detail"] = sections.get("segmental_lean_analysis")
 
         return highlights
 
@@ -453,6 +489,16 @@ class InbodyReportsMixin:
             "ecw": "extracellular_water",
             "body_water": "body_water",
             "target_weight": "target_weight",
+            # New metric keys
+            "protein": "protein",
+            "minerals": "minerals",
+            "soft_lean_mass": "soft_lean_mass",
+            "fat_free_mass": "fat_free_mass",
+            "ecw_ratio": "ecw_ratio",
+            "phase_angle": "phase_angle",
+            "obesity_degree": "obesity_degree",
+            "body_cell_mass": "body_cell_mass",
+            "smi": "smi",
         }
         null_tokens = {"null", "n/a", "na", "none"}
 
@@ -497,7 +543,7 @@ class InbodyReportsMixin:
     def _extract_measurements_json(
         self, ai_response_text: str
     ) -> Optional[Dict[str, Any]]:
-        """Parse structured JSON output for measurements and ranges."""
+        """Parse structured JSON output for measurements, ranges, and full sections."""
 
         if not ai_response_text:
             return None
@@ -547,6 +593,15 @@ class InbodyReportsMixin:
             "ecw": "extracellular_water",
             "body_water": "body_water",
             "target_weight": "target_weight",
+            # New metric keys
+            "protein": "protein",
+            "minerals": "minerals",
+            "soft_lean_mass": "soft_lean_mass",
+            "fat_free_mass": "fat_free_mass",
+            "ecw_ratio": "ecw_ratio",
+            "phase_angle": "phase_angle",
+            "obesity_degree": "obesity_degree",
+            "body_cell_mass": "body_cell_mass",
         }
 
         def store_entry(
@@ -567,7 +622,11 @@ class InbodyReportsMixin:
             if normal_min is not None and normal_max is not None:
                 ranges.setdefault(metric_key, f"{normal_min}~{normal_max}")
 
+        # ---- Preserve the raw section-based data for storage ----
+        sections: Dict[str, Any] = {}
+
         if isinstance(data, dict):
+            # 1) Flat measurements array (backward-compat)
             measurements = data.get("measurements") or []
             if isinstance(measurements, list):
                 for item in measurements:
@@ -585,7 +644,8 @@ class InbodyReportsMixin:
                     )
                     metric_key = key_map.get(normalized_key)
                     if not metric_key:
-                        continue
+                        # Still store unknown types using raw normalized key
+                        metric_key = normalized_key
                     store_entry(
                         metric_key,
                         item.get("value"),
@@ -594,17 +654,126 @@ class InbodyReportsMixin:
                         item.get("normal_max"),
                     )
 
+            # 2) Section-based extraction — read values from known sections
+            _section_keys_with_entries = [
+                "body_composition_analysis",
+                "research_parameters",
+                "obesity_analysis",
+            ]
+            for section_key in _section_keys_with_entries:
+                section_data = data.get(section_key)
+                if not isinstance(section_data, dict):
+                    continue
+                sections[section_key] = section_data
+                for field_name, field_payload in section_data.items():
+                    if not isinstance(field_payload, dict):
+                        continue
+                    if "value" not in field_payload:
+                        continue
+                    normalized_key = self._normalize_measurement_key(field_name)
+                    metric_key = key_map.get(normalized_key, normalized_key)
+                    store_entry(
+                        metric_key,
+                        field_payload.get("value"),
+                        field_payload.get("unit"),
+                        field_payload.get("normal_min"),
+                        field_payload.get("normal_max"),
+                    )
+
+            # ECW Ratio / Phase Angle section
+            ecw_section = data.get("ecw_ratio_phase_angle")
+            if isinstance(ecw_section, dict):
+                sections["ecw_ratio_phase_angle"] = ecw_section
+                for field_name, field_payload in ecw_section.items():
+                    if not isinstance(field_payload, dict) or "value" not in field_payload:
+                        continue
+                    normalized_key = self._normalize_measurement_key(field_name)
+                    metric_key = key_map.get(normalized_key, normalized_key)
+                    store_entry(
+                        metric_key,
+                        field_payload.get("value"),
+                        field_payload.get("unit"),
+                        field_payload.get("normal_min"),
+                        field_payload.get("normal_max"),
+                    )
+
+            # SMI
+            smi_data = data.get("smi")
+            if isinstance(smi_data, dict) and "value" in smi_data:
+                sections["smi"] = smi_data
+                store_entry("smi", smi_data.get("value"), smi_data.get("unit"), None, None)
+
+            # Whole Body Phase Angle (may duplicate phase_angle but setdefault prevents overwrite)
+            wbpa = data.get("whole_body_phase_angle")
+            if isinstance(wbpa, dict) and "value" in wbpa:
+                sections["whole_body_phase_angle"] = wbpa
+
+            # Weight Control section — store control deltas as metrics
+            wc = data.get("weight_control")
+            if isinstance(wc, dict):
+                sections["weight_control"] = wc
+                for field_name, field_payload in wc.items():
+                    if not isinstance(field_payload, dict) or "value" not in field_payload:
+                        continue
+                    metric_key = self._normalize_measurement_key(field_name)
+                    store_entry(
+                        metric_key,
+                        field_payload.get("value"),
+                        field_payload.get("unit"),
+                        None,
+                        None,
+                    )
+
+            # Muscle-Fat Analysis
+            mfa = data.get("muscle_fat_analysis")
+            if isinstance(mfa, dict):
+                sections["muscle_fat_analysis"] = mfa
+
+            # Qualitative sections — store as-is
+            for qual_key in [
+                "patient_info",
+                "nutrition_evaluation",
+                "obesity_evaluation",
+                "body_balance_evaluation",
+                "segmental_lean_analysis",
+                "body_composition_history",
+                "impedance",
+            ]:
+                qual_data = data.get(qual_key)
+                if qual_data is not None:
+                    sections[qual_key] = qual_data
+
+            # Segmental lean: also flatten into metrics for measurement storage
+            seg = data.get("segmental_lean_analysis")
+            if isinstance(seg, dict):
+                for segment_name, seg_entry in seg.items():
+                    if not isinstance(seg_entry, dict):
+                        continue
+                    value_kg = seg_entry.get("value_kg")
+                    if value_kg is not None:
+                        label = segment_name.replace("_", " ").title()
+                        full_label = f"{label} Lean Mass"
+                        metrics.setdefault(f"segment_{segment_name}_lean", f"{value_kg} kg")
+                    pct = seg_entry.get("percentage")
+                    if pct is not None:
+                        metrics.setdefault(f"segment_{segment_name}_lean_pct", f"{pct} %")
+
+            # InBody score
+            inbody_score = data.get("inbody_score") or data.get("overall_score")
+            if inbody_score is not None:
+                sections["inbody_score"] = inbody_score
+                metrics.setdefault("inbody_score", str(inbody_score))
+
+            # 3) Fallback: top-level dicts with a "value" key
             for key, payload in data.items():
-                if key == "measurements":
+                if key in ("measurements", "summary") or key in sections:
                     continue
                 if not isinstance(payload, dict):
                     continue
                 if "value" not in payload:
                     continue
                 normalized_key = self._normalize_measurement_key(str(key))
-                metric_key = key_map.get(normalized_key)
-                if not metric_key:
-                    continue
+                metric_key = key_map.get(normalized_key, normalized_key)
                 store_entry(
                     metric_key,
                     payload.get("value"),
@@ -617,6 +786,7 @@ class InbodyReportsMixin:
             "summary": summary,
             "metrics": metrics,
             "ranges": ranges,
+            "sections": sections,
         }
 
     def _build_normalized_inbody_payload(
@@ -646,6 +816,22 @@ class InbodyReportsMixin:
             "visceral_fat_level": "visceral_fat_level",
             "basal_metabolic_rate": "bmr_kcal",
             "target_weight": "target_weight_kg",
+            # New metric mappings
+            "protein": "protein_kg",
+            "minerals": "minerals_kg",
+            "soft_lean_mass": "soft_lean_mass_kg",
+            "fat_free_mass": "fat_free_mass_kg",
+            "body_fat_mass": "body_fat_mass_kg",
+            "total_body_water": "total_body_water_l",
+            "intracellular_water": "intracellular_water_l",
+            "extracellular_water": "extracellular_water_l",
+            "ecw_ratio": "ecw_ratio",
+            "phase_angle": "phase_angle_deg",
+            "smi": "smi_kg_m2",
+            "obesity_degree": "obesity_degree_pct",
+            "body_cell_mass": "body_cell_mass_kg",
+            "bone_mineral_content": "bone_mineral_content_kg",
+            "waist_hip_ratio": "waist_hip_ratio",
         }
 
         for original_key, normalized_key in metric_mappings.items():
@@ -740,31 +926,146 @@ class InbodyReportsMixin:
                 # For base64 images, we need to format it properly
                 image_url = f"data:{content_type};base64,{file_content_b64}"
 
-                # Create a simpler prompt for vision analysis
+                # Comprehensive prompt: extract EVERY section of the InBody printout
                 vision_prompt = """
-Extract data from this InBody report image.
+You are an expert OCR system for InBody body-composition reports.
+Extract EVERY visible section from this InBody report image.
 
-Return ONLY valid JSON (no markdown, no extra text) with this schema:
+Return ONLY valid JSON (no markdown fences, no extra text). Use the exact schema below.
+If a field is not visible, set it to null. Use numeric values only (no text/symbols) for measurements.
+For evaluation fields return the checked/selected option as a string.
+
 {
-  "summary": "short 1-3 sentences",
-  "overall_score": 0-100,
+  "summary": "1-3 sentence overview",
+  "overall_score": 61,
+
+  "patient_info": {
+    "patient_id_on_report": "8147302149",
+    "height_cm": 162,
+    "age": 28,
+    "gender": "Male",
+    "test_date_time": "28.12.2024 16:13"
+  },
+
+  "body_composition_analysis": {
+    "total_body_water": {"value": 34.9, "unit": "L", "normal_min": 32.5, "normal_max": 39.7},
+    "protein":          {"value": 9.5,  "unit": "kg", "normal_min": 8.7, "normal_max": 10.7},
+    "minerals":         {"value": 3.27, "unit": "kg", "normal_min": 3.01, "normal_max": 3.67},
+    "body_fat_mass":    {"value": 26.7, "unit": "kg", "normal_min": 6.9, "normal_max": 13.9},
+    "soft_lean_mass":   {"value": 45.0, "unit": "kg", "normal_min": 41.7, "normal_max": 50.9},
+    "fat_free_mass":    {"value": 47.7, "unit": "kg", "normal_min": 44.2, "normal_max": 54.0},
+    "weight":           {"value": 74.4, "unit": "kg", "normal_min": 49.0, "normal_max": 66.4}
+  },
+
+  "muscle_fat_analysis": {
+    "weight":        {"value": 74.4, "unit": "kg", "bar_evaluation": "Over"},
+    "smm":           {"value": 26.7, "unit": "kg", "bar_evaluation": "Under"},
+    "body_fat_mass": {"value": 26.7, "unit": "kg", "bar_evaluation": "Over"}
+  },
+
+  "obesity_analysis": {
+    "bmi": {"value": 28.3, "unit": "kg/m²", "normal_min": 18.5, "normal_max": 24.9},
+    "pbf": {"value": 35.9, "unit": "%",     "normal_min": 10.0, "normal_max": 20.0}
+  },
+
+  "segmental_lean_analysis": {
+    "right_arm": {"value_kg": 2.65, "percentage": 89.7},
+    "left_arm":  {"value_kg": 2.56, "percentage": 86.6},
+    "trunk":     {"value_kg": 22.1, "percentage": 93.8},
+    "right_leg": {"value_kg": 7.14, "percentage": 86.8},
+    "left_leg":  {"value_kg": 7.12, "percentage": 86.7}
+  },
+
+  "ecw_ratio_phase_angle": {
+    "ecw_ratio":   {"value": 0.370, "unit": "", "normal_min": 0.320, "normal_max": 0.390},
+    "phase_angle": {"value": 6.7,   "unit": "°"}
+  },
+
+  "weight_control": {
+    "target_weight":  {"value": 57.7, "unit": "kg"},
+    "weight_control": {"value": -16.7, "unit": "kg"},
+    "fat_control":    {"value": -18.1, "unit": "kg"},
+    "muscle_control": {"value": 1.4,   "unit": "kg"}
+  },
+
+  "nutrition_evaluation": {
+    "protein":  "Normal",
+    "minerals": "Normal",
+    "body_fat": "Excessive"
+  },
+
+  "obesity_evaluation": {
+    "bmi": "Slightly Over",
+    "pbf": "Over"
+  },
+
+  "body_balance_evaluation": {
+    "upper":       "Balanced",
+    "lower":       "Balanced",
+    "upper_lower": "Balanced"
+  },
+
+  "research_parameters": {
+    "intracellular_water":  {"value": 22.0,  "unit": "L",    "normal_min": 20.2,  "normal_max": 24.6},
+    "extracellular_water":  {"value": 12.9,  "unit": "L",    "normal_min": 12.3,  "normal_max": 15.1},
+    "basal_metabolic_rate": {"value": 1400,  "unit": "kcal", "normal_min": 1599,  "normal_max": 1873},
+    "waist_hip_ratio":      {"value": 0.95,  "unit": "",     "normal_min": 0.80,  "normal_max": 0.90},
+    "visceral_fat_level":   {"value": 12,    "unit": "level","normal_min": 1,     "normal_max": 9},
+    "obesity_degree":       {"value": 129,   "unit": "%",    "normal_min": 90,    "normal_max": 110},
+    "bone_mineral_content": {"value": 2.71,  "unit": "kg",   "normal_min": 2.47,  "normal_max": 3.03},
+    "body_cell_mass":       {"value": 31.5,  "unit": "kg",   "normal_min": 28.8,  "normal_max": 35.2}
+  },
+
+  "smi": {"value": 7.4, "unit": "kg/m²"},
+  "whole_body_phase_angle": {"value": 6.7, "unit": "°"},
+  "inbody_score": 61,
+
+  "body_composition_history": [
+    {"date": "28.12.24 16:13", "weight": 74.4, "smm": 26.7, "bfm": 26.7, "pbf": 35.9, "ecw_ratio": 0.370}
+  ],
+
+  "impedance": [
+    {"frequency_khz": 50,  "right_arm": null, "left_arm": null, "trunk": null, "right_leg": null, "left_leg": null, "trunk_rl": null},
+    {"frequency_khz": 500, "right_arm": null, "left_arm": null, "trunk": null, "right_leg": null, "left_leg": null, "trunk_rl": null}
+  ],
+
   "measurements": [
-    {
-      "measurement_type": "Weight",
-      "value": 99.1,
-      "unit": "kg",
-      "normal_min": 41.8,
-      "normal_max": 56.6
-    }
+    {"measurement_type": "Weight",              "value": 74.4,  "unit": "kg",    "normal_min": 49.0,  "normal_max": 66.4},
+    {"measurement_type": "Skeletal Muscle Mass","value": 26.7,  "unit": "kg",    "normal_min": 32.9,  "normal_max": 37.3},
+    {"measurement_type": "Body Fat Mass",       "value": 26.7,  "unit": "kg",    "normal_min": 6.9,   "normal_max": 13.9},
+    {"measurement_type": "BMI",                 "value": 28.3,  "unit": "kg/m²", "normal_min": 18.5,  "normal_max": 24.9},
+    {"measurement_type": "Percent Body Fat",    "value": 35.9,  "unit": "%",     "normal_min": 10.0,  "normal_max": 20.0},
+    {"measurement_type": "Total Body Water",    "value": 34.9,  "unit": "L",     "normal_min": 32.5,  "normal_max": 39.7},
+    {"measurement_type": "Protein",             "value": 9.5,   "unit": "kg",    "normal_min": 8.7,   "normal_max": 10.7},
+    {"measurement_type": "Minerals",            "value": 3.27,  "unit": "kg",    "normal_min": 3.01,  "normal_max": 3.67},
+    {"measurement_type": "Soft Lean Mass",      "value": 45.0,  "unit": "kg",    "normal_min": 41.7,  "normal_max": 50.9},
+    {"measurement_type": "Fat Free Mass",       "value": 47.7,  "unit": "kg",    "normal_min": 44.2,  "normal_max": 54.0},
+    {"measurement_type": "Intracellular Water", "value": 22.0,  "unit": "L",     "normal_min": 20.2,  "normal_max": 24.6},
+    {"measurement_type": "Extracellular Water", "value": 12.9,  "unit": "L",     "normal_min": 12.3,  "normal_max": 15.1},
+    {"measurement_type": "Basal Metabolic Rate","value": 1400,  "unit": "kcal",  "normal_min": 1599,  "normal_max": 1873},
+    {"measurement_type": "Waist-Hip Ratio",     "value": 0.95,  "unit": "",      "normal_min": 0.80,  "normal_max": 0.90},
+    {"measurement_type": "Visceral Fat Level",  "value": 12,    "unit": "level", "normal_min": 1,     "normal_max": 9},
+    {"measurement_type": "Bone Mineral Content","value": 2.71,  "unit": "kg",    "normal_min": 2.47,  "normal_max": 3.03},
+    {"measurement_type": "Target Weight",       "value": 57.7,  "unit": "kg",    "normal_min": null,  "normal_max": null},
+    {"measurement_type": "ECW Ratio",           "value": 0.370, "unit": "",      "normal_min": 0.320, "normal_max": 0.390},
+    {"measurement_type": "Phase Angle",         "value": 6.7,   "unit": "°",     "normal_min": null,  "normal_max": null},
+    {"measurement_type": "SMI",                 "value": 7.4,   "unit": "kg/m²", "normal_min": null,  "normal_max": null},
+    {"measurement_type": "Obesity Degree",      "value": 129,   "unit": "%",     "normal_min": 90,    "normal_max": 110},
+    {"measurement_type": "Body Cell Mass",      "value": 31.5,  "unit": "kg",    "normal_min": 28.8,  "normal_max": 35.2}
   ]
 }
 
 Rules:
-- Include all visible metrics in measurements, including: Weight, Skeletal Muscle Mass, Body Fat Mass, BMI, Percent Body Fat, Total Body Water, Intracellular Water, Extracellular Water, Basal Metabolic Rate, Waist-Hip Ratio, Visceral Fat Level, Bone Mineral Content, Target Weight.
-- For every metric, capture the normal range if shown on the report; otherwise set normal_min and normal_max to null.
-- Use numeric values for value, normal_min, and normal_max (no text or symbols).
-- Use short units (kg, %, L, kcal, level).
-- If a metric is missing, you may omit it or set value to null (do not invent).
+- The JSON example above shows the STRUCTURE and field names to use. Read the ACTUAL values from the image.
+- Include ALL visible metrics in the flat "measurements" array AND in the appropriate section object.
+- For evaluation fields (nutrition_evaluation, obesity_evaluation, body_balance_evaluation, muscle_fat_analysis bar_evaluation) return only the checked/selected option string.
+- For segmental lean analysis, read both the kg value and the percentage value for each segment.
+- Capture normal ranges wherever shown; otherwise set normal_min/normal_max to null.
+- Use numeric values only for value/normal_min/normal_max (no text/symbols).
+- Use short units: kg, %, L, kcal, level, kg/m², °.
+- Read Body Composition History entries if visible (date, weight, smm, bfm, pbf, ecw_ratio).
+- Read Impedance values if visible per frequency and segment.
+- If a field is not visible on the report, set it to null — do NOT invent values.
 """
 
                 # Create message with image
@@ -809,12 +1110,15 @@ Rules:
                 risk_factors = []
                 analysis_summary = ai_response_text
 
+                extracted_sections = {}  # Will hold full section-separated data
+
                 json_data = self._extract_measurements_json(ai_response_text)
                 if json_data:
                     extracted_metrics.update(json_data.get("metrics", {}))
                     extracted_normal_ranges.update(
                         json_data.get("ranges", {})
                     )
+                    extracted_sections = json_data.get("sections", {})
                     json_summary = json_data.get("summary")
                     if isinstance(json_summary, str) and json_summary.strip():
                         analysis_summary = json_summary
@@ -1151,6 +1455,78 @@ Rules:
                             normal_range
                         )
 
+                # Protein extraction
+                protein_match = re.search(
+                    r"\bprotein\b(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|g)",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if protein_match and "protein" not in extracted_metrics:
+                    extracted_metrics["protein"] = f"{protein_match.group(1)} {protein_match.group(2)}"
+
+                # Minerals extraction
+                minerals_match = re.search(
+                    r"\bminerals?\b(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|g)",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if minerals_match and "minerals" not in extracted_metrics:
+                    extracted_metrics["minerals"] = f"{minerals_match.group(1)} {minerals_match.group(2)}"
+
+                # Soft Lean Mass extraction
+                slm_match = re.search(
+                    r"(?:soft\s+lean\s+mass|slm)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|lbs?)",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if slm_match and "soft_lean_mass" not in extracted_metrics:
+                    extracted_metrics["soft_lean_mass"] = f"{slm_match.group(1)} {slm_match.group(2)}"
+
+                # Fat Free Mass extraction
+                ffm_match = re.search(
+                    r"(?:fat[\s-]*free\s+mass|ffm)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|lbs?)",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if ffm_match and "fat_free_mass" not in extracted_metrics:
+                    extracted_metrics["fat_free_mass"] = f"{ffm_match.group(1)} {ffm_match.group(2)}"
+
+                # ECW Ratio extraction
+                ecw_ratio_match = re.search(
+                    r"(?:ecw\s+ratio)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if ecw_ratio_match and "ecw_ratio" not in extracted_metrics:
+                    extracted_metrics["ecw_ratio"] = ecw_ratio_match.group(1)
+
+                # Phase Angle extraction
+                phase_angle_match = re.search(
+                    r"(?:phase\s+angle)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(?:°|deg)?",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if phase_angle_match and "phase_angle" not in extracted_metrics:
+                    extracted_metrics["phase_angle"] = f"{phase_angle_match.group(1)} °"
+
+                # SMI extraction
+                smi_match = re.search(
+                    r"\bsmi\b(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(?:kg/m²|kg/m2)?",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if smi_match and "smi" not in extracted_metrics:
+                    extracted_metrics["smi"] = f"{smi_match.group(1)} kg/m²"
+
+                # Obesity Degree extraction
+                obesity_deg_match = re.search(
+                    r"(?:obesity\s+degree)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*%?",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if obesity_deg_match and "obesity_degree" not in extracted_metrics:
+                    extracted_metrics["obesity_degree"] = f"{obesity_deg_match.group(1)} %"
+
+                # Body Cell Mass extraction
+                bcm_match = re.search(
+                    r"(?:body\s+cell\s+mass|bcm)(?:\s*\(.*?\))?[:\-\s]+([\d.]+)\s*(kg|lbs?)?",
+                    ai_response_text, re.IGNORECASE,
+                )
+                if bcm_match and "body_cell_mass" not in extracted_metrics:
+                    extracted_metrics["body_cell_mass"] = f"{bcm_match.group(1)} {bcm_match.group(2) or 'kg'}"
+
                 segmental_metrics = self._extract_segmental_lean_from_text(
                     ai_response_text
                 )
@@ -1238,6 +1614,7 @@ Rules:
                         "confidence_score": confidence_score,
                         "extracted_metrics": extracted_metrics,
                         "extracted_normal_ranges": extracted_normal_ranges,
+                        "extracted_sections": extracted_sections,
                         "recommendations": recommendations,
                         "risk_factors": risk_factors,
                     },
@@ -1252,6 +1629,7 @@ Rules:
                         "confidence_score": 0.0,
                         "extracted_metrics": {},
                         "extracted_normal_ranges": {},
+                        "extracted_sections": {},
                     },
                 }
 
@@ -1279,6 +1657,9 @@ Rules:
                     ),
                     "extracted_normal_ranges": ai_response.get("metadata", {}).get(
                         "extracted_normal_ranges", {}
+                    ),
+                    "extracted_sections": ai_response.get("metadata", {}).get(
+                        "extracted_sections", {}
                     ),
                     "recommendations": ai_response.get("metadata", {}).get(
                         "recommendations", []
@@ -1403,6 +1784,20 @@ Rules:
                     "total_body_water": "Total Body Water",
                     "intracellular_water": "Intracellular Water",
                     "extracellular_water": "Extracellular Water",
+                    # New label overrides
+                    "protein": "Protein",
+                    "minerals": "Minerals",
+                    "soft_lean_mass": "Soft Lean Mass",
+                    "fat_free_mass": "Fat Free Mass",
+                    "ecw_ratio": "ECW Ratio",
+                    "phase_angle": "Phase Angle",
+                    "smi": "SMI",
+                    "obesity_degree": "Obesity Degree",
+                    "body_cell_mass": "Body Cell Mass",
+                    "inbody_score": "InBody Score",
+                    "weight_control": "Weight Control",
+                    "fat_control": "Fat Control",
+                    "muscle_control": "Muscle Control",
                 }
 
                 for metric_name, metric_value in extracted_metrics.items():
@@ -1448,6 +1843,16 @@ Rules:
                                     unit = "kg"
                                 elif "bmi" in metric_name_lower:
                                     unit = ""
+                                elif metric_name_lower in ["protein", "minerals", "soft_lean_mass", "fat_free_mass", "body_cell_mass"]:
+                                    unit = "kg"
+                                elif metric_name_lower == "ecw_ratio":
+                                    unit = ""
+                                elif metric_name_lower == "phase_angle":
+                                    unit = "°"
+                                elif metric_name_lower == "smi":
+                                    unit = "kg/m²"
+                                elif metric_name_lower == "obesity_degree":
+                                    unit = "%"
                                 elif (
                                     "fat" in metric_name_lower
                                     or "water" in metric_name_lower
@@ -1549,23 +1954,34 @@ Rules:
                             f"  - Failed to process indicator: {str(indicator_error)}"
                         )
 
-                # Update the report with measurements and indicators in MongoDB
+                # Gather section-separated data for storage
+                sections_to_store = ai_response.get("metadata", {}).get("extracted_sections", {})
+                patient_info = sections_to_store.get("patient_info")
+                inbody_score = sections_to_store.get("inbody_score")
+
+                # Update the report with measurements, indicators, and sections in MongoDB
+                update_fields = {
+                    "measurements": measurements,
+                    "health_indicators": health_indicators,
+                    "ai_summary": analysis_result.ai_analysis.get(
+                        "summary"
+                    ),
+                    "processed": True,
+                    "measurements_count": measurements_created,
+                    "abnormal_indicators_count": indicators_created,
+                    "extraction_confidence": confidence_score,
+                    "updated_at": datetime.now(),
+                }
+                if sections_to_store:
+                    update_fields["sections"] = sections_to_store
+                if patient_info:
+                    update_fields["patient_info"] = patient_info
+                if inbody_score is not None:
+                    update_fields["inbody_score"] = inbody_score
+
                 await self.reports_collection.update_one(
                     {"report_id": report_id},
-                    {
-                        "$set": {
-                            "measurements": measurements,
-                            "health_indicators": health_indicators,
-                            "ai_summary": analysis_result.ai_analysis.get(
-                                "summary"
-                            ),
-                            "processed": True,
-                            "measurements_count": measurements_created,
-                            "abnormal_indicators_count": indicators_created,
-                            "extraction_confidence": confidence_score,
-                            "updated_at": datetime.now(),
-                        }
-                    },
+                    {"$set": update_fields},
                 )
                 print(
                     f"Successfully stored {measurements_created} measurements and {indicators_created} health indicators"

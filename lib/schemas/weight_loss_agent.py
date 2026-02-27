@@ -85,6 +85,10 @@ class InbodyReport(InbodyReportBase, InbodyNormalizedFields):
     abnormal_indicators_count: Optional[int] = 0
     measurements: List[InbodyMeasurement] = Field(default_factory=list)
     health_indicators: List[HealthIndicator] = Field(default_factory=list)
+    # Full section-separated OCR data
+    sections: Optional[Dict[str, Any]] = None
+    patient_info: Optional[Dict[str, Any]] = None
+    inbody_score: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -112,12 +116,197 @@ class MeasurementSummary(BaseModel):
     confidence_score: Optional[float] = None
 
 
+# ---------------------------------------------------------------------------
+# Section models — mirror each section/panel of the InBody printout
+# ---------------------------------------------------------------------------
+
+class PatientInfo(BaseModel):
+    """Header row of the InBody printout."""
+    patient_id_on_report: Optional[str] = None
+    height_cm: Optional[float] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    test_date_time: Optional[str] = None
+
+
+class CompositionEntry(BaseModel):
+    """Single row inside Body Composition Analysis."""
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    normal_min: Optional[float] = None
+    normal_max: Optional[float] = None
+
+
+class BodyCompositionAnalysis(BaseModel):
+    """Body Composition Analysis panel."""
+    total_body_water: Optional[CompositionEntry] = None
+    protein: Optional[CompositionEntry] = None
+    minerals: Optional[CompositionEntry] = None
+    body_fat_mass: Optional[CompositionEntry] = None
+    soft_lean_mass: Optional[CompositionEntry] = None
+    fat_free_mass: Optional[CompositionEntry] = None
+    weight: Optional[CompositionEntry] = None
+
+
+class MuscleFatEntry(BaseModel):
+    """Row in Muscle-Fat Analysis with bar evaluation."""
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    bar_evaluation: Optional[str] = Field(None, description="Under / Normal / Over")
+
+
+class MuscleFatAnalysis(BaseModel):
+    """Muscle-Fat Analysis panel."""
+    weight: Optional[MuscleFatEntry] = None
+    smm: Optional[MuscleFatEntry] = None
+    body_fat_mass: Optional[MuscleFatEntry] = None
+
+
+class ObesityAnalysis(BaseModel):
+    """Obesity Analysis panel (BMI & PBF with bar graphs)."""
+    bmi: Optional[CompositionEntry] = None
+    pbf: Optional[CompositionEntry] = None
+
+
+class WeightControlEntry(BaseModel):
+    value: Optional[float] = None
+    unit: Optional[str] = None
+
+
+class WeightControlSection(BaseModel):
+    """Weight Control panel."""
+    target_weight: Optional[WeightControlEntry] = None
+    weight_control: Optional[WeightControlEntry] = None
+    fat_control: Optional[WeightControlEntry] = None
+    muscle_control: Optional[WeightControlEntry] = None
+
+
+class NutritionEvaluation(BaseModel):
+    """Nutrition Evaluation panel — each field is Normal / Deficient / Excessive."""
+    protein: Optional[str] = None
+    minerals: Optional[str] = None
+    body_fat: Optional[str] = None
+
+
+class ObesityEvaluation(BaseModel):
+    """Obesity Evaluation panel — each field is Normal / Under / Slightly Over / Over."""
+    bmi: Optional[str] = None
+    pbf: Optional[str] = None
+
+
+class SegmentalLeanEntry(BaseModel):
+    """One segment in Segmental Lean Analysis."""
+    value_kg: Optional[float] = None
+    percentage: Optional[float] = Field(None, description="% of ideal for the segment")
+    normal_range_pct: Optional[str] = Field(None, description="e.g. '80-120'")
+
+
+class SegmentalLeanAnalysis(BaseModel):
+    """Segmental Lean Analysis panel."""
+    right_arm: Optional[SegmentalLeanEntry] = None
+    left_arm: Optional[SegmentalLeanEntry] = None
+    trunk: Optional[SegmentalLeanEntry] = None
+    right_leg: Optional[SegmentalLeanEntry] = None
+    left_leg: Optional[SegmentalLeanEntry] = None
+
+
+class BodyBalanceEvaluation(BaseModel):
+    """Body Balance Evaluation panel — each is Balanced / Slightly Unbalanced / Extremely Unbalanced."""
+    upper: Optional[str] = None
+    lower: Optional[str] = None
+    upper_lower: Optional[str] = None
+
+
+class ECWRatioPhaseAngle(BaseModel):
+    """ECW Ratio-Phase Angle panel."""
+    ecw_ratio: Optional[CompositionEntry] = None
+    phase_angle: Optional[CompositionEntry] = None
+
+
+class ResearchParameters(BaseModel):
+    """Research Parameters panel."""
+    intracellular_water: Optional[CompositionEntry] = None
+    extracellular_water: Optional[CompositionEntry] = None
+    basal_metabolic_rate: Optional[CompositionEntry] = None
+    waist_hip_ratio: Optional[CompositionEntry] = None
+    visceral_fat_level: Optional[CompositionEntry] = None
+    obesity_degree: Optional[CompositionEntry] = None
+    bone_mineral_content: Optional[CompositionEntry] = None
+    body_cell_mass: Optional[CompositionEntry] = None
+
+
+class BodyCompositionHistoryEntry(BaseModel):
+    """One row in Body Composition History."""
+    date: Optional[str] = None
+    weight: Optional[float] = None
+    smm: Optional[float] = None
+    bfm: Optional[float] = None
+    pbf: Optional[float] = None
+    ecw_ratio: Optional[float] = None
+
+
+class ImpedanceEntry(BaseModel):
+    """Impedance per segment."""
+    frequency_khz: Optional[float] = None
+    right_arm: Optional[float] = None
+    left_arm: Optional[float] = None
+    trunk: Optional[float] = None
+    right_leg: Optional[float] = None
+    left_leg: Optional[float] = None
+
+
+class SMI(BaseModel):
+    """Skeletal Muscle Index."""
+    value: Optional[float] = None
+    unit: Optional[str] = "kg/m²"
+
+
+class WholeBodyPhaseAngle(BaseModel):
+    """Whole Body Phase Angle."""
+    value: Optional[float] = None
+    unit: Optional[str] = "°"
+
+
+class InbodyReportSections(BaseModel):
+    """All sections of the InBody printout grouped together."""
+    patient_info: Optional[PatientInfo] = None
+    inbody_score: Optional[int] = None
+    body_composition_analysis: Optional[BodyCompositionAnalysis] = None
+    muscle_fat_analysis: Optional[MuscleFatAnalysis] = None
+    obesity_analysis: Optional[ObesityAnalysis] = None
+    weight_control: Optional[WeightControlSection] = None
+    nutrition_evaluation: Optional[NutritionEvaluation] = None
+    obesity_evaluation: Optional[ObesityEvaluation] = None
+    segmental_lean_analysis: Optional[SegmentalLeanAnalysis] = None
+    body_balance_evaluation: Optional[BodyBalanceEvaluation] = None
+    ecw_ratio_phase_angle: Optional[ECWRatioPhaseAngle] = None
+    research_parameters: Optional[ResearchParameters] = None
+    smi: Optional[SMI] = None
+    whole_body_phase_angle: Optional[WholeBodyPhaseAngle] = None
+    body_composition_history: List[BodyCompositionHistoryEntry] = Field(default_factory=list)
+    impedance: List[ImpedanceEntry] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Highlights & Detail (updated)
+# ---------------------------------------------------------------------------
+
 class InbodyReportHighlights(BaseModel):
     skeletal_muscle_mass: Optional[MeasurementSummary] = None
     body_fat_percentage: Optional[MeasurementSummary] = None
     visceral_fat_level: Optional[MeasurementSummary] = None
     basal_metabolic_rate: Optional[MeasurementSummary] = None
     segment_lean_analysis: List[MeasurementSummary] = Field(default_factory=list)
+    # -- new highlights from full-OCR sections --
+    inbody_score: Optional[int] = None
+    weight_control: Optional[WeightControlSection] = None
+    nutrition_evaluation: Optional[NutritionEvaluation] = None
+    obesity_evaluation: Optional[ObesityEvaluation] = None
+    body_balance_evaluation: Optional[BodyBalanceEvaluation] = None
+    segmental_lean_detail: Optional[SegmentalLeanAnalysis] = None
+    ecw_ratio: Optional[MeasurementSummary] = None
+    phase_angle: Optional[MeasurementSummary] = None
+    smi: Optional[MeasurementSummary] = None
 
 
 class InbodyReportDetail(BaseModel):
