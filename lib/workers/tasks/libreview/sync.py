@@ -100,6 +100,8 @@ async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
         "synced": 0,
         "in_queue": 0,
         "cooldown_skipped": 0,
+        "paused_skipped": 0,
+        "inactive_skipped": 0,
         "errors": 0,
         "error_details": [],
     }
@@ -110,15 +112,15 @@ async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
 
         libreview_service = get_libreview_service()
 
-        # Get all patients with LibreView connected
+        # Get patients eligible for sync (active, not paused, with recent activity)
         async with postgres_store.get_session() as session:
-            patients = await libreview_service.get_patients_with_libreview(
+            patients = await libreview_service.get_patients_eligible_for_sync(
                 postgres_session=session
             )  # type: ignore
 
         stats["total_patients"] = len(patients)
         logger.info(
-            f"[sync_all_patients_libreview] Found {len(patients)} patients with LibreView"
+            f"[sync_all_patients_libreview] Found {len(patients)} patients eligible for sync"
         )
 
         # Sync each patient
@@ -157,6 +159,11 @@ async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
                     logger.info(
                         f"[sync_all_patients_libreview] Patient {patient_id} on cooldown, skipping"
                     )
+                elif status == "paused":
+                    stats["paused_skipped"] += 1
+                    logger.info(
+                        f"[sync_all_patients_libreview] Patient {patient_id} sync is paused, skipping"
+                    )
                 elif status == "queued":
                     stats["synced"] += 1
                     logger.info(
@@ -179,8 +186,9 @@ async def sync_all_patients_libreview(ctx: Dict[str, Any]) -> TaskResult:
         # Log summary
         logger.info(
             f"[sync_all_patients_libreview] Completed scheduled sync. "
-            f"Synced: {stats['synced']}, In Queue: {stats['in_queue']}, "
-            f"Cooldown: {stats['cooldown_skipped']}, Errors: {stats['errors']}"
+            f"Eligible: {stats['synced']}, In Queue: {stats['in_queue']}, "
+            f"Cooldown: {stats['cooldown_skipped']}, Paused: {stats['paused_skipped']}, "
+            f"Errors: {stats['errors']}"
         )
 
         return TaskResult(

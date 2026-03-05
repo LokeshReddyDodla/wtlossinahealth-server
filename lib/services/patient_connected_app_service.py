@@ -303,3 +303,163 @@ class PatientConnectedAppService:
                 message=f"Failed to unlink sinocare for patient ID '{patient_id}'.",
                 detail=str(e),
             )
+
+    @with_postgres_session
+    async def pause_libreview_sync(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientLibreViewModel:
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientLibreViewModel).where(
+                    PatientLibreViewModel.connected_app_id == connected_app.id,
+                )
+            )
+            libreview: Optional[PatientLibreViewModel] = result.scalars().first()
+
+            if not libreview:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No LibreView account found for patient ID '{patient_id}'.",
+                )
+
+            libreview.sync_status = "paused"
+            await postgres_session.commit()
+            await postgres_session.refresh(libreview)
+            return libreview
+
+        except HTTPException:
+            raise
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to pause LibreView sync for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def resume_libreview_sync(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientLibreViewModel:
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientLibreViewModel).where(
+                    PatientLibreViewModel.connected_app_id == connected_app.id,
+                )
+            )
+            libreview: Optional[PatientLibreViewModel] = result.scalars().first()
+
+            if not libreview:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No LibreView account found for patient ID '{patient_id}'.",
+                )
+
+            libreview.sync_status = "active"
+            await postgres_session.commit()
+            await postgres_session.refresh(libreview)
+            return libreview
+
+        except HTTPException:
+            raise
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to resume LibreView sync for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def pause_sinocare_sync(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientSinocareModel:
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientSinocareModel).where(
+                    PatientSinocareModel.connected_app_id == connected_app.id,
+                )
+            )
+            sinocare: Optional[PatientSinocareModel] = result.scalars().first()
+
+            if not sinocare:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No Sinocare account found for patient ID '{patient_id}'.",
+                )
+
+            sinocare.sync_status = "paused"
+            await postgres_session.commit()
+            await postgres_session.refresh(sinocare)
+            return sinocare
+
+        except HTTPException:
+            raise
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to pause Sinocare sync for patient ID '{patient_id}'.",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def resume_sinocare_sync(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientSinocareModel:
+        try:
+            connected_app = await self.get_connected_apps_for_patient(
+                patient_id, postgres_session=postgres_session
+            )
+
+            result = await postgres_session.execute(
+                select(PatientSinocareModel).where(
+                    PatientSinocareModel.connected_app_id == connected_app.id,
+                )
+            )
+            sinocare: Optional[PatientSinocareModel] = result.scalars().first()
+
+            if not sinocare:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message=f"No Sinocare account found for patient ID '{patient_id}'.",
+                )
+
+            sinocare.sync_status = "active"
+            await postgres_session.commit()
+            await postgres_session.refresh(sinocare)
+            return sinocare
+
+        except HTTPException:
+            raise
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message=f"Failed to resume Sinocare sync for patient ID '{patient_id}'.",
+                detail=str(e),
+            )

@@ -56,7 +56,7 @@ class CGMUploadService:
 
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
 
-            await self._update_last_sync(postgres_session, patient_id, "libreview")
+            await self._update_last_sync(postgres_session, patient_id, "libreview", end_time)
 
             enqueue_cgm_report_generation_sync(patient_id, report_periods)
 
@@ -103,7 +103,7 @@ class CGMUploadService:
             )
             report_periods = self._generate_report_periods(lifecycle_df)
 
-            await self._update_last_sync(postgres_session, patient_id, "sinocare")
+            await self._update_last_sync(postgres_session, patient_id, "sinocare", end_time)
 
             enqueue_cgm_report_generation_sync(patient_id, report_periods)
 
@@ -221,8 +221,9 @@ class CGMUploadService:
         session: AsyncSession,
         patient_id: str,
         source: str,
+        latest_reading_time: datetime,
     ) -> None:
-        """Update last_sync_timestamp for the connected app."""
+        """Update last_sync_timestamp and last_cgm_reading_at for the connected app."""
         attr_map = {"libreview": "libreview", "sinocare": "sinocare"}
         attr_name = attr_map.get(source)
         if not attr_name:
@@ -239,4 +240,5 @@ class CGMUploadService:
             source_app = getattr(connected_app, attr_name, None)
             if source_app:
                 source_app.last_sync_timestamp = datetime.now()
+                source_app.last_cgm_reading_at = latest_reading_time
                 await session.commit()
