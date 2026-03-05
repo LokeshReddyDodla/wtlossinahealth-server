@@ -34,7 +34,9 @@ class PatientLibreView(Base):
         UUID(as_uuid=True), ForeignKey("patient_connected_apps.id")
     )
     libreview_id = Column(String, nullable=False)
+    sync_status = Column(String, default="active", nullable=True)
     last_sync_timestamp = Column(DateTime, nullable=True)
+    last_cgm_reading_at = Column(DateTime, nullable=True)
     connected_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
@@ -54,7 +56,9 @@ class PatientSinocare(Base):
     sinocare_id = Column(
         String, nullable=False
     )  # could be device serial or user ID
+    sync_status = Column(String, default="active", nullable=True)
     last_sync_timestamp = Column(DateTime, nullable=True)
+    last_cgm_reading_at = Column(DateTime, nullable=True)
     connected_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
