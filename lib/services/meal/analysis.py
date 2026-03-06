@@ -80,7 +80,10 @@ class MealAnalysisService:
                     "5. Suggest culturally relevant and healthier alternatives without compromising taste.\n"
                     "6. Offer personalized feedback to align meals with macronutrient goals based on user factors.\n"
                     "7. Avoid recommending foods that may cause blood sugar spikes, "
-                    "especially during breakfast, lunch, or dinner.\n\n"
+                    "especially during breakfast, lunch, or dinner.\n"
+                    "8. Include carbohydrate distribution in macro values using `simple_carbs` "
+                    "and `complex_carbs` for each item and total; keep `carbohydrates` as total carbs. "
+                    "If unsure, set `simple_carbs` and `complex_carbs` to null instead of guessing.\n\n"
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
@@ -155,6 +158,9 @@ class MealAnalysisService:
                     "to adjust the nutritional analysis and feedback.\n\n"
                     "If there are conflicts between original details and updated details, "
                     "ALWAYS prioritize updated details (especially the description). "
+                    "Include carbohydrate distribution in macro values using `simple_carbs` "
+                    "and `complex_carbs`, while keeping `carbohydrates` as total carbs. "
+                    "If uncertain, leave split fields as null. "
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),

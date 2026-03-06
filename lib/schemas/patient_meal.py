@@ -11,6 +11,14 @@ class PatientMacroNutritionalValue(BaseModel):
     calories: float = Field(description="Total calories")
     proteins: float = Field(description="Total proteins")
     carbohydrates: float = Field(description="Total carbohydrates")
+    simple_carbs: Optional[float] = Field(
+        default=None,
+        description="Simple carbohydrates subset of total carbohydrates",
+    )
+    complex_carbs: Optional[float] = Field(
+        default=None,
+        description="Complex carbohydrates subset of total carbohydrates",
+    )
     fats: float = Field(description="Total fats")
     fiber: float = Field(description="Total fiber")
 

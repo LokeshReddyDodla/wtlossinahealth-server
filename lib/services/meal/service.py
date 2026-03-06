@@ -46,6 +46,8 @@ from .helpers import (
 class MealService:
     """Main meal service that orchestrates meal operations."""
 
+    CARB_SPLIT_TOLERANCE = 1.0
+
     def __init__(
         self,
         postgres_store: PostgresStore,
@@ -403,6 +405,8 @@ class MealService:
         *,
         postgres_session: AsyncSession,
     ) -> PatientMealModel:
+        self._normalize_carb_distribution(analysis_data)
+
         meal.items = [
             create_food_item(meal, item_data) for item_data in analysis_data.items
         ]
@@ -428,6 +432,49 @@ class MealService:
         await postgres_session.commit()
 
         return meal
+
+    @classmethod
+    def _normalize_carb_distribution(
+        cls, analysis_data: MealAnalysisResponse
+    ) -> None:
+        cls._normalize_macro_values(analysis_data.total_macro_nutritional_value)
+        for item in analysis_data.items:
+            cls._normalize_macro_values(item.macro_nutritional_values)
+
+    @classmethod
+    def _normalize_macro_values(cls, macro_values: Any) -> None:
+        total_carbs = getattr(macro_values, "carbohydrates", None)
+        simple_carbs = getattr(macro_values, "simple_carbs", None)
+        complex_carbs = getattr(macro_values, "complex_carbs", None)
+
+        if total_carbs is None or total_carbs < 0:
+            macro_values.simple_carbs = None
+            macro_values.complex_carbs = None
+            return
+
+        if simple_carbs is None or complex_carbs is None:
+            macro_values.simple_carbs = None
+            macro_values.complex_carbs = None
+            return
+
+        if simple_carbs < 0 or complex_carbs < 0:
+            macro_values.simple_carbs = None
+            macro_values.complex_carbs = None
+            return
+
+        split_sum = simple_carbs + complex_carbs
+        if abs(split_sum - total_carbs) <= cls.CARB_SPLIT_TOLERANCE:
+            if split_sum > 0:
+                scale = total_carbs / split_sum
+                macro_values.simple_carbs = round(simple_carbs * scale, 2)
+                macro_values.complex_carbs = round(complex_carbs * scale, 2)
+            else:
+                macro_values.simple_carbs = 0.0
+                macro_values.complex_carbs = 0.0
+            return
+
+        macro_values.simple_carbs = None
+        macro_values.complex_carbs = None
 
     @with_postgres_session
     async def delete_meal(
