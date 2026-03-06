@@ -59,6 +59,12 @@ def build_nutritional_aggregates(meal):
         func.sum(PatientTotalMacroNutritionalValue.carbohydrates).label(
             "carbohydrates"
         ),
+        func.sum(PatientTotalMacroNutritionalValue.simple_carbs).label(
+            "simple_carbs"
+        ),
+        func.sum(PatientTotalMacroNutritionalValue.complex_carbs).label(
+            "complex_carbs"
+        ),
         func.sum(PatientTotalMacroNutritionalValue.fats).label("fats"),
         func.sum(PatientTotalMacroNutritionalValue.fiber).label("fiber"),
         func.sum(PatientTotalMicroNutritionalValue.calcium).label("calcium"),

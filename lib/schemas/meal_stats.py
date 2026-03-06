@@ -10,6 +10,8 @@ class NutritionStats(BaseModel):
     calories: float
     proteins: float
     carbohydrates: float
+    simple_carbs: float = 0.0
+    complex_carbs: float = 0.0
     fats: float
     fiber: float
 
