@@ -83,7 +83,8 @@ class MealAnalysisService:
                     "especially during breakfast, lunch, or dinner.\n"
                     "8. Include carbohydrate distribution in macro values using `simple_carbs` "
                     "and `complex_carbs` for each item and total; keep `carbohydrates` as total carbs. "
-                    "If unsure, set `simple_carbs` and `complex_carbs` to null instead of guessing.\n\n"
+                    "Prefer providing both fields whenever possible, and keep "
+                    "`simple_carbs + complex_carbs ~= carbohydrates`.\n\n"
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
@@ -160,7 +161,8 @@ class MealAnalysisService:
                     "ALWAYS prioritize updated details (especially the description). "
                     "Include carbohydrate distribution in macro values using `simple_carbs` "
                     "and `complex_carbs`, while keeping `carbohydrates` as total carbs. "
-                    "If uncertain, leave split fields as null. "
+                    "Prefer providing both fields whenever possible and keep "
+                    "`simple_carbs + complex_carbs ~= carbohydrates`. "
                     f"Safety Rules: {AI_RESPONSE_SAFETY_DISCLAIMER}"
                 )
             ),
