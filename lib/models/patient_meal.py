@@ -17,6 +17,8 @@ class BaseMacroNutritionalValue(Base):
     calories = Column(Float)
     proteins = Column(Float)
     carbohydrates = Column(Float)
+    simple_carbs = Column(Float, nullable=True)
+    complex_carbs = Column(Float, nullable=True)
     fats = Column(Float)
     fiber = Column(Float)
 

@@ -27,6 +27,8 @@ def get_nutritional_info(
                     "calories": "<calories> kcal",
                     "proteins": "<proteins> g",
                     "carbohydrates": "<carbohydrates> g",
+                    "simple_carbs": "<simple carbs> g or null",
+                    "complex_carbs": "<complex carbs> g or null",
                     "fats": "<fats> g",
                     "fiber": "<fiber> g"
                 }},
@@ -42,6 +44,8 @@ def get_nutritional_info(
             "calories": "<total calories> kcal",
             "proteins": "<total proteins> g",
             "carbohydrates": "<total carbohydrates> g",
+            "simple_carbs": "<total simple carbs> g or null",
+            "complex_carbs": "<total complex carbs> g or null",
             "fats": "<total fats> g",
             "fiber": "<total fiber> g",
             "calcium": "<total calcium> mg",
@@ -63,6 +67,7 @@ def get_nutritional_info(
     4. Ensure serving sizes are realistic and provided in common units such as grams, cups, or pieces. If unsure, make a best guess.
     5. Add only glycemic index tags like 'high', 'low', 'medium' based on the nutritional analysis.
     6. Assign a score (as a float) to each item and the overall meal out of 10 based on its nutritional balance.
+    7. Include carbohydrate distribution using simple_carbs and complex_carbs for each item and total value. If uncertain, set both to null.
 
     Please follow this structure precisely for the response.
     """.format(
