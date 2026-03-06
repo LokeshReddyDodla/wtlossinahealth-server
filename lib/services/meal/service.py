@@ -452,29 +452,61 @@ class MealService:
             macro_values.complex_carbs = None
             return
 
-        if simple_carbs is None or complex_carbs is None:
+        if simple_carbs is None and complex_carbs is None:
             macro_values.simple_carbs = None
             macro_values.complex_carbs = None
             return
 
-        if simple_carbs < 0 or complex_carbs < 0:
+        if simple_carbs is not None and simple_carbs < 0:
+            simple_carbs = None
+        if complex_carbs is not None and complex_carbs < 0:
+            complex_carbs = None
+
+        if simple_carbs is None and complex_carbs is None:
             macro_values.simple_carbs = None
             macro_values.complex_carbs = None
             return
+
+        if simple_carbs is None:
+            inferred_simple = total_carbs - complex_carbs
+            if inferred_simple < 0:
+                macro_values.simple_carbs = None
+                macro_values.complex_carbs = None
+                return
+            simple_carbs = inferred_simple
+
+        if complex_carbs is None:
+            inferred_complex = total_carbs - simple_carbs
+            if inferred_complex < 0:
+                macro_values.simple_carbs = None
+                macro_values.complex_carbs = None
+                return
+            complex_carbs = inferred_complex
 
         split_sum = simple_carbs + complex_carbs
-        if abs(split_sum - total_carbs) <= cls.CARB_SPLIT_TOLERANCE:
-            if split_sum > 0:
-                scale = total_carbs / split_sum
-                macro_values.simple_carbs = round(simple_carbs * scale, 2)
-                macro_values.complex_carbs = round(complex_carbs * scale, 2)
-            else:
-                macro_values.simple_carbs = 0.0
-                macro_values.complex_carbs = 0.0
+
+        if split_sum < 0:
+            macro_values.simple_carbs = None
+            macro_values.complex_carbs = None
             return
 
-        macro_values.simple_carbs = None
-        macro_values.complex_carbs = None
+        if split_sum == 0:
+            if total_carbs == 0:
+                macro_values.simple_carbs = 0.0
+                macro_values.complex_carbs = 0.0
+            else:
+                macro_values.simple_carbs = None
+                macro_values.complex_carbs = None
+            return
+
+        # Always normalize to total carbohydrates so AI mismatch does not
+        # collapse distribution to null and sum remains consistent.
+        scale = total_carbs / split_sum
+        simple_carbs = simple_carbs * scale
+        complex_carbs = complex_carbs * scale
+
+        macro_values.simple_carbs = round(simple_carbs, 2)
+        macro_values.complex_carbs = round(complex_carbs, 2)
 
     @with_postgres_session
     async def delete_meal(
