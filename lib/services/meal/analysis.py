@@ -151,6 +151,9 @@ class MealAnalysisService:
         meal_json: dict,
         update_fields: dict,
     ):
+        meal_json_for_reanalysis = self._sanitize_meal_for_reanalysis(
+            meal_json
+        )
         system_message = [
             SystemMessage(
                 content=(
@@ -167,7 +170,7 @@ class MealAnalysisService:
                 )
             ),
             SystemMessage(
-                content=f"Original Meal Details:\n```json\n{meal_json}\n```"
+                content=f"Original Meal Details:\n```json\n{meal_json_for_reanalysis}\n```"
             ),
         ]
 
@@ -207,3 +210,26 @@ class MealAnalysisService:
             )
 
         return parsed_response
+
+    @staticmethod
+    def _sanitize_meal_for_reanalysis(meal_json: dict) -> dict:
+        """Remove old nutrition payloads so reanalysis is not anchored to prior bad values."""
+        if not isinstance(meal_json, dict):
+            return meal_json
+
+        sanitized = dict(meal_json)
+        sanitized.pop("total_macro_nutritional_value", None)
+        sanitized.pop("total_micro_nutritional_value", None)
+
+        sanitized_items = []
+        for item in sanitized.get("items", []) or []:
+            if not isinstance(item, dict):
+                sanitized_items.append(item)
+                continue
+            sanitized_item = dict(item)
+            sanitized_item.pop("macro_nutritional_values", None)
+            sanitized_item.pop("micro_nutritional_values", None)
+            sanitized_items.append(sanitized_item)
+
+        sanitized["items"] = sanitized_items
+        return sanitized
