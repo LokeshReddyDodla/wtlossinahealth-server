@@ -219,6 +219,8 @@ class CGMReportService:
                 elif report_type == "weekly":
                     week_wise.append(report)
 
+            week_wise = self._deduplicate_weekly_reports(week_wise)
+
             return {
                 "overall": custom_report,
                 "day_wise": daily_reports,
@@ -230,6 +232,46 @@ class CGMReportService:
                 f"Failed to fetch full CGM report for {patient_id} with report_id {report_id}: {error}"
             )
             return None
+
+    def _deduplicate_weekly_reports(self, weekly_reports: List[Dict]) -> List[Dict]:
+        """Keep only the latest snapshot for each ISO week.
+
+        Weekly reports are regenerated as custom report end date extends. Old
+        snapshots can coexist, so we collapse by ISO week and keep the one
+        with the furthest end date.
+        """
+        latest_by_iso_week: Dict[str, Dict] = {}
+
+        for report in weekly_reports:
+            metadata = report.get("metadata", {})
+            date_range = metadata.get("date_range", {})
+            start_dt = parse_datetime(date_range.get("start"))
+            end_dt = parse_datetime(date_range.get("end"))
+
+            if not start_dt:
+                continue
+
+            iso = start_dt.isocalendar()
+            week_key = f"{iso.year}-W{iso.week:02d}"
+
+            existing = latest_by_iso_week.get(week_key)
+            if not existing:
+                latest_by_iso_week[week_key] = report
+                continue
+
+            existing_end_dt = parse_datetime(
+                existing.get("metadata", {}).get("date_range", {}).get("end")
+            )
+            if end_dt and (not existing_end_dt or end_dt > existing_end_dt):
+                latest_by_iso_week[week_key] = report
+
+        return sorted(
+            latest_by_iso_week.values(),
+            key=lambda report: parse_datetime(
+                report.get("metadata", {}).get("date_range", {}).get("start")
+            )
+            or datetime.min,
+        )
 
     async def fetch_daily_report(self, patient_id: str, date: date):
         try:
