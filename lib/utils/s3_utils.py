@@ -60,3 +60,34 @@ def upload_file_to_s3(
     except ClientError as e:
         print(f"ClientError: {e}")
         return None
+
+
+def generate_presigned_download_url(
+    bucket_name: str,
+    object_key: str,
+    expiration: int = 900,
+) -> Optional[str]:
+    """Generate a pre-signed download URL for an existing object."""
+    try:
+        return s3_client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": object_key},
+            ExpiresIn=expiration,
+        )
+    except ClientError as e:
+        print(f"ClientError: {e}")
+        return None
+
+
+def upload_local_file_to_s3(
+    local_path: str,
+    bucket_name: str,
+    object_key: str,
+) -> Optional[str]:
+    """Upload a local file to S3 and return object key on success."""
+    try:
+        s3_client.upload_file(local_path, bucket_name, object_key)
+        return object_key
+    except ClientError as e:
+        print(f"ClientError: {e}")
+        return None

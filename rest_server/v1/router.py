@@ -10,6 +10,7 @@ from .health_query_agent.router import router as health_query_agent_router
 from .uploads.router import router as uploads_router
 from .diet_plans.router import router as diet_plans_router
 from .fitness_plans.router import router as fitness_plans_router
+from .patient_exports.router import router as patient_exports_router
 
 router = APIRouter(prefix="/v1", tags=["V1"])
 
@@ -24,3 +25,4 @@ router.include_router(health_query_agent_router)
 router.include_router(uploads_router)
 router.include_router(diet_plans_router)
 router.include_router(fitness_plans_router)
+router.include_router(patient_exports_router)
