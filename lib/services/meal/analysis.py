@@ -180,6 +180,19 @@ class MealAnalysisService:
             )
         ]
 
+        image_url = (update_fields or {}).get("image_url") or meal_json.get("image_url")
+        if image_url:
+            human_messages.append(
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": str(image_url)},
+                        },
+                    ]
+                )
+            )
+
         if update_fields:
             human_messages.append(
                 HumanMessage(
