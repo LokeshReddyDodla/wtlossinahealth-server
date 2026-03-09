@@ -57,7 +57,7 @@ class PatientDocumentService:
 
         projection = {
             "text_raw": 0,
-            "summary_text": 0,
+            # "summary_text": 0,
             "text_repr": 0,
         }
 
