@@ -134,6 +134,17 @@ class ReportSummary(BaseModel):
     )
 
 
+class SMBGReadingValue(BaseModel):
+    """Individual SMBG reading value."""
+
+    reading_time: str = Field(..., description="Reading timestamp in ISO format")
+    glucose_level: float = Field(..., description="Glucose level in mg/dL")
+    type: str = Field(..., description="Reading type (e.g., pre_meal, post_meal)")
+    source_name: str = Field(..., description="Source name for the reading")
+    source_platform: str = Field(..., description="Source platform for the reading")
+    notes: Optional[str] = Field(None, description="Optional notes for the reading")
+
+
 class SMBGReport(BaseModel):
     """Complete SMBG report with all statistics."""
 
@@ -141,6 +152,10 @@ class SMBGReport(BaseModel):
     summary: ReportSummary = Field(..., description="Overall summary statistics")
     breakdowns: MealWindowBreakdown = Field(..., description="Breakdowns by meal window")
     trends: MonthlyTrends = Field(..., description="Monthly trends")
+    readings_by_date: Dict[str, List[SMBGReadingValue]] = Field(
+        default_factory=dict,
+        description="All SMBG readings grouped by date (YYYY-MM-DD)",
+    )
 
     class Config:
         """Pydantic configuration."""
@@ -188,6 +203,18 @@ class SMBGReport(BaseModel):
                 },
                 "trends": {
                     "monthly": [],
+                },
+                "readings_by_date": {
+                    "2025-01-01": [
+                        {
+                            "reading_time": "2025-01-01T08:00:00",
+                            "glucose_level": 105.0,
+                            "type": "pre_breakfast",
+                            "source_name": "glucometer",
+                            "source_platform": "manual",
+                            "notes": None,
+                        }
+                    ]
                 },
             }
         }

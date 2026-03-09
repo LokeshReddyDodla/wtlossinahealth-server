@@ -16,6 +16,7 @@ from lib.schemas.smbg_stats import (
     OverallScore,
     ReportMetadata,
     ReportSummary,
+    SMBGReadingValue,
     SMBGReport,
     WeeklyTrend,
     WeeklyTrendGlucose,
@@ -86,6 +87,7 @@ class SMBGStatsProcessor:
                 ),
                 breakdowns=MealWindowBreakdown(by_meal_window={}),
                 trends=MonthlyTrends(monthly=[]),
+                readings_by_date={},
             )
 
         buckets = MealWindowBucketer.bucketize_by_meal(smbg_records)
@@ -96,6 +98,7 @@ class SMBGStatsProcessor:
         monthly_summaries = await self._calculate_month_summary(
             patient_id, start_date, end_date, postgres_session
         )
+        readings_by_date = self._group_readings_by_date(smbg_records)
         days_covered = (end_date.date() - start_date.date()).days + 1
 
         return SMBGReport(
@@ -120,7 +123,29 @@ class SMBGStatsProcessor:
             ),
             breakdowns=MealWindowBreakdown(by_meal_window=meal_windows_stats),
             trends=MonthlyTrends(monthly=monthly_summaries),
+            readings_by_date=readings_by_date,
         )
+
+    def _group_readings_by_date(
+        self, smbg_records: list
+    ) -> Dict[str, List[SMBGReadingValue]]:
+        """Group SMBG readings by date."""
+        grouped: Dict[str, List[SMBGReadingValue]] = {}
+
+        for record in sorted(smbg_records, key=lambda r: r.reading_time):
+            reading_date = record.reading_time.date().isoformat()
+            grouped.setdefault(reading_date, []).append(
+                SMBGReadingValue(
+                    reading_time=record.reading_time.isoformat(),
+                    glucose_level=record.glucose_level,
+                    type=record.type,
+                    source_name=record.source_name,
+                    source_platform=record.source_platform,
+                    notes=record.notes,
+                )
+            )
+
+        return grouped
 
     async def _calculate_meal_window_stats(
         self,
@@ -360,4 +385,3 @@ class SMBGStatsProcessor:
             **summary_stats,
             "trend": trend,
         }
-
