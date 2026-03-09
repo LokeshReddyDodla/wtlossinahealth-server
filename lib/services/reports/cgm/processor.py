@@ -76,7 +76,7 @@ class CGMStatsProcessor:
         self,
         patient_id: str,
         meal_time: datetime,
-        before_minutes: int = 15,
+        before_minutes: int = 30,
         after_minutes: int = 90,
     ):
         """Get CGM readings around a meal time."""
