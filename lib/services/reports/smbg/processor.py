@@ -92,7 +92,6 @@ class SMBGStatsProcessor:
                 ),
                 breakdowns=MealWindowBreakdown(by_meal_window={}),
                 trends=MonthlyTrends(monthly=[]),
-                readings_by_date={},
                 by_date=by_date,
             )
 
@@ -133,7 +132,6 @@ class SMBGStatsProcessor:
             ),
             breakdowns=MealWindowBreakdown(by_meal_window=meal_windows_stats),
             trends=MonthlyTrends(monthly=monthly_summaries),
-            readings_by_date=readings_by_date,
             by_date=by_date,
         )
 
