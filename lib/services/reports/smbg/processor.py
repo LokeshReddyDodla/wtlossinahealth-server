@@ -16,6 +16,7 @@ from lib.schemas.smbg_stats import (
     OverallScore,
     ReportMetadata,
     ReportSummary,
+    SMBGDateWiseData,
     SMBGReadingValue,
     SMBGReport,
     WeeklyTrend,
@@ -64,6 +65,10 @@ class SMBGStatsProcessor:
         )
 
         if not smbg_records:
+            meals_by_date = await self._group_meals_by_date(
+                patient_id, start_date, end_date
+            )
+            by_date = self._merge_by_date({}, meals_by_date)
             days_covered = (end_date.date() - start_date.date()).days + 1
             return SMBGReport(
                 metadata=ReportMetadata(
@@ -88,6 +93,7 @@ class SMBGStatsProcessor:
                 breakdowns=MealWindowBreakdown(by_meal_window={}),
                 trends=MonthlyTrends(monthly=[]),
                 readings_by_date={},
+                by_date=by_date,
             )
 
         buckets = MealWindowBucketer.bucketize_by_meal(smbg_records)
@@ -99,6 +105,10 @@ class SMBGStatsProcessor:
             patient_id, start_date, end_date, postgres_session
         )
         readings_by_date = self._group_readings_by_date(smbg_records)
+        meals_by_date = await self._group_meals_by_date(
+            patient_id, start_date, end_date
+        )
+        by_date = self._merge_by_date(readings_by_date, meals_by_date)
         days_covered = (end_date.date() - start_date.date()).days + 1
 
         return SMBGReport(
@@ -124,6 +134,7 @@ class SMBGStatsProcessor:
             breakdowns=MealWindowBreakdown(by_meal_window=meal_windows_stats),
             trends=MonthlyTrends(monthly=monthly_summaries),
             readings_by_date=readings_by_date,
+            by_date=by_date,
         )
 
     def _group_readings_by_date(
@@ -146,6 +157,61 @@ class SMBGStatsProcessor:
             )
 
         return grouped
+
+    async def _group_meals_by_date(
+        self,
+        patient_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Group meals by date from daily meal reports."""
+        if not hasattr(self.meal_stats_processor, "meal_report_service"):
+            return {}
+
+        reports = await self.meal_stats_processor.meal_report_service.fetch_daily_reports_in_range(
+            patient_id=patient_id,
+            start_date=start_date.date(),
+            end_date=end_date.date(),
+        )
+        meals_by_date: Dict[str, List[Dict[str, Any]]] = {}
+
+        for report in reports or []:
+            date_value = report.get("date")
+            if not date_value:
+                date_value = (
+                    report.get("metadata", {})
+                    .get("date_range", {})
+                    .get("start", "")
+                )
+
+            date_key = str(date_value).split("T")[0] if date_value else None
+            if not date_key:
+                continue
+
+            meals = report.get("meals", []) or []
+            if isinstance(meals, list):
+                meals_by_date[date_key] = sorted(
+                    meals, key=lambda meal: meal.get("time", "")
+                )
+
+        return meals_by_date
+
+    def _merge_by_date(
+        self,
+        readings_by_date: Dict[str, List[SMBGReadingValue]],
+        meals_by_date: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, SMBGDateWiseData]:
+        """Create unified date-wise SMBG + meal data."""
+        all_dates = sorted(set(readings_by_date.keys()) | set(meals_by_date.keys()))
+        merged: Dict[str, SMBGDateWiseData] = {}
+
+        for date_key in all_dates:
+            merged[date_key] = SMBGDateWiseData(
+                smbg_readings=readings_by_date.get(date_key, []),
+                meals=meals_by_date.get(date_key, []),
+            )
+
+        return merged
 
     async def _calculate_meal_window_stats(
         self,
