@@ -51,6 +51,7 @@ class Pass1PlannerOutput(BaseModel):
 class Pass2ResponderOutput(BaseModel):
     summary_text: str
     trend_note: str
+    suggested_foods: Optional[List[str]] = None
     next_best_actions: List[str]
     care_provider_evidence_points: Optional[List[Dict[str, Any]]] = None
     care_provider_metrics_table: Optional[Dict[str, Any]] = None
@@ -455,6 +456,12 @@ class AgentMealV1Service:
             "cohort_selection", "none"
         )
         evidence["current_meal_source"] = current_meal_source
+        suggested_food_candidates = self._collect_food_candidates(
+            meal_reports=meal_reports,
+            meal_type=(current_meal.get("meal_type") or "").lower(),
+            time_bucket=current_meal.get("time_bucket"),
+        )
+        evidence["suggested_food_candidates_count"] = len(suggested_food_candidates)
 
         if all(float(target.get(key, 0) or 0) <= 0 for key in ("calories", "carbs", "protein", "fat", "fiber")):
             warnings.append(
@@ -508,6 +515,7 @@ class AgentMealV1Service:
             "target": target,
             "verdicts": verdicts,
             "historical_comparison": historical,
+            "suggested_food_candidates": suggested_food_candidates,
             "glycemic_response": cgm_response,
             "smbg_context": smbg_context,
             "sleep_context": sleep_context,
@@ -850,6 +858,7 @@ class AgentMealV1Service:
             return Pass2ResponderOutput(
                 summary_text=summary,
                 trend_note=trend_note,
+                suggested_foods=self._fallback_suggested_foods(features),
                 next_best_actions=actions,
                 care_provider_evidence_points=[],
                 care_provider_metrics_table={},
@@ -870,15 +879,17 @@ class AgentMealV1Service:
             "You are a meal agent responder. Return strict JSON only and keep the "
             "response concise. Do not reveal chain of thought. "
             + mode_instruction
+            + " Prefer concrete food suggestions from features.suggested_food_candidates "
+            + "when available."
         )
         user_payload = {
             "audience": audience,
             "mode": mode,
             "message": message,
             "pass1": pass1_result.model_dump(mode="json"),
-            "features": features,
-            "history": history,
-        }
+                "features": features,
+                "history": history,
+            }
         try:
             output = retry_request(
                 self.pass2_model.invoke,
@@ -898,6 +909,7 @@ class AgentMealV1Service:
                     "Meal guidance generated from available data and recent history."
                 ),
                 trend_note=trend_note,
+                suggested_foods=self._fallback_suggested_foods(features),
                 next_best_actions=actions,
                 care_provider_evidence_points=[],
                 care_provider_metrics_table={},
@@ -980,6 +992,11 @@ class AgentMealV1Service:
                 trend_note=trend_note,
             ),
             glycemic_response=GlycemicResponse(**gly) if gly else None,
+            suggested_foods=(
+                (pass2_result.suggested_foods or self._fallback_suggested_foods(features))[
+                    :5
+                ]
+            ),
             next_best_actions=(pass2_result.next_best_actions or self._fallback_actions(features))[:3],
             data_used=DataUsedFlags(
                 reports=source_flags.get("reports", False),
@@ -1413,3 +1430,45 @@ class AgentMealV1Service:
         sanitized = sanitized.replace("this meal", "your upcoming meal choice")
         sanitized = sanitized.replace("you ate", "you typically eat")
         return sanitized
+
+    def _collect_food_candidates(
+        self,
+        meal_reports: List[Dict[str, Any]],
+        meal_type: str,
+        time_bucket: Optional[str],
+    ) -> List[str]:
+        candidates: Dict[str, int] = {}
+        for report in meal_reports:
+            for meal in report.get("meals", []) or []:
+                item_type = (meal.get("type") or "").lower()
+                meal_time = self._parse_time_safe(str(meal.get("time", "")))
+                if meal_type and item_type != meal_type:
+                    continue
+                if (
+                    time_bucket
+                    and meal_time
+                    and self._time_bucket(meal_time) != time_bucket
+                ):
+                    continue
+                for item in meal.get("items", []) or []:
+                    name = str(item.get("name", "")).strip()
+                    if not name:
+                        continue
+                    norm = name.lower()
+                    candidates[norm] = candidates.get(norm, 0) + 1
+
+        if not candidates:
+            return []
+        ranked = sorted(candidates.items(), key=lambda x: (-x[1], x[0]))
+        return [name.title() for name, _ in ranked[:8]]
+
+    @staticmethod
+    def _fallback_suggested_foods(features: Dict[str, Any]) -> List[str]:
+        candidates = features.get("suggested_food_candidates", []) or []
+        if candidates:
+            return candidates[:5]
+        return [
+            "Vegetable omelette",
+            "Greek yogurt with berries",
+            "Dal with mixed vegetables",
+        ]
