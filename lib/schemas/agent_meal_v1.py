@@ -74,6 +74,7 @@ class MealAgentResponseData(BaseModel):
     verdicts: MealAgentVerdicts
     historical_comparison: HistoricalComparison
     glycemic_response: Optional[GlycemicResponse] = None
+    suggested_foods: List[str] = Field(default_factory=list, max_length=5)
     next_best_actions: List[str] = Field(default_factory=list, max_length=3)
     data_used: DataUsedFlags
     warnings: List[str] = Field(default_factory=list)
