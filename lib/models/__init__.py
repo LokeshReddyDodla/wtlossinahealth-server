@@ -50,3 +50,5 @@ from .weight_loss_agent import WeightLossAgentEnrollment
 from .user_activity_log import UserActivityLog
 from .patient_report import PatientReport
 from .patient_data_export import PatientDataExport
+from .agent_meal_snapshot import AgentMealSnapshot
+from .agent_meal_feature_cache import AgentMealFeatureCache

@@ -157,6 +157,7 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
 )
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
+from lib.services.agent_meal_v1 import AgentMealV1Service
 
 # Initialize Container
 container = Container()
@@ -358,6 +359,13 @@ container.register(
     "analytics_events_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_analytics_events"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    "agent_meal_messages_v1_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "agent_meal_messages_v1"
     ),
     scope=Scope.singleton,
 )
@@ -772,6 +780,41 @@ container.register(
         ),
         patient_summary_service=cast(
             PatientSummaryService, container.resolve(PatientSummaryService)
+        ),
+    ),
+)
+
+# 🔹 Agent Meal V1 Service
+container.register(
+    AgentMealV1Service,
+    lambda: AgentMealV1Service(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        meal_service=cast(MealService, container.resolve(MealService)),
+        meal_report_service=cast(
+            MealReportService, container.resolve(MealReportService)
+        ),
+        cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
+        fitness_report_service=cast(
+            FitnessReportService, container.resolve(FitnessReportService)
+        ),
+        sleep_report_service=cast(
+            SleepReportService, container.resolve(SleepReportService)
+        ),
+        meal_stats_processor=cast(
+            MealStatsProcessor, container.resolve(MealStatsProcessor)
+        ),
+        cgm_stats_processor=cast(CGMStatsProcessor, container.resolve(CGMStatsProcessor)),
+        fitness_stats_processor=cast(
+            FitnessStatsProcessor, container.resolve(FitnessStatsProcessor)
+        ),
+        patient_sleep_service=cast(
+            PatientSleepService, container.resolve(PatientSleepService)
+        ),
+        qdrant_search_engine=cast(
+            QdrantSearchEngine, container.resolve(QdrantSearchEngine)
+        ),
+        agent_meal_messages_collection=container.resolve(
+            "agent_meal_messages_v1_collection"
         ),
     ),
 )
