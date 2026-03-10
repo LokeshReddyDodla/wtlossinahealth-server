@@ -159,6 +159,7 @@ class AgentMealV1Service:
             message=payload.message,
             audience=payload.audience,
             mode=resolved_mode,
+            meal_id=payload.meal_id,
             pass1_result=pass1_result,
             features=features,
             history_messages=history_messages,
@@ -173,6 +174,8 @@ class AgentMealV1Service:
             pass2_result=pass2_result,
             debug_enabled=payload.debug,
             evidence=evidence,
+            mode=resolved_mode,
+            meal_id=payload.meal_id,
         )
 
         snapshot_id = await self._persist_snapshot(
@@ -356,6 +359,7 @@ class AgentMealV1Service:
         meal_obj = None
         meal_date = window_end.date()
         history_end_date = meal_date
+        current_meal_source = "time_bucket_inference"
         current_meal = {
             "meal_type": "unknown",
             "time_bucket": self._time_bucket(datetime.now().time()),
@@ -384,6 +388,7 @@ class AgentMealV1Service:
                 "fat": float(total_macro.fats if total_macro else 0),
                 "fiber": float(total_macro.fiber if total_macro else 0),
             }
+            current_meal_source = "uploaded_meal"
         else:
             inferred_type = self._infer_meal_type_from_bucket(
                 current_meal["time_bucket"]
@@ -430,6 +435,7 @@ class AgentMealV1Service:
                     "fat": float(macros.get("fats") or 0),
                     "fiber": float(macros.get("fiber") or 0),
                 }
+                current_meal_source = "latest_reported_meal"
                 target = self._pick_meal_target(
                     meal_type=current_meal["meal_type"],
                     diet_recommendation=diet_recommendation.model_dump(mode="json"),
@@ -448,6 +454,12 @@ class AgentMealV1Service:
         evidence["historical_cohort_selection"] = historical.get(
             "cohort_selection", "none"
         )
+        evidence["current_meal_source"] = current_meal_source
+
+        if all(float(target.get(key, 0) or 0) <= 0 for key in ("calories", "carbs", "protein", "fat", "fiber")):
+            warnings.append(
+                "Diet plan targets are not configured; verdicts are based on default neutral thresholds."
+            )
 
         cgm_response = await self._build_cgm_response(
             patient_id=str(patient_id),
@@ -492,6 +504,7 @@ class AgentMealV1Service:
         feature_bundle = {
             "mode": mode,
             "current_meal": current_meal,
+            "current_meal_source": current_meal_source,
             "target": target,
             "verdicts": verdicts,
             "historical_comparison": historical,
@@ -520,7 +533,6 @@ class AgentMealV1Service:
         )
         if cgm_report:
             source_flags["reports"] = True
-            source_flags["cgm"] = True
 
         before_values: List[tuple[datetime, float]] = []
         after_values: List[tuple[datetime, float]] = []
@@ -550,8 +562,11 @@ class AgentMealV1Service:
                 source_flags["cgm"] = True
 
         if not before_values and not after_values:
-            warnings.append("No CGM readings found for meal window.")
+            if meal_obj:
+                warnings.append("No CGM readings found for meal window.")
             return {}
+
+        source_flags["cgm"] = True
 
         baseline = (
             sum(v for _, v in before_values) / len(before_values)
@@ -821,6 +836,7 @@ class AgentMealV1Service:
         message: str,
         audience: str,
         mode: str,
+        meal_id: Optional[UUID],
         pass1_result: Pass1PlannerOutput,
         features: Dict[str, Any],
         history_messages: List[MealAgentMessage],
@@ -843,9 +859,17 @@ class AgentMealV1Service:
             {"role": m.role, "content": m.content}
             for m in history_messages[-6:]
         ]
+        mode_instruction = ""
+        if mode == "pre_meal" and not meal_id:
+            mode_instruction = (
+                "The user has not eaten this meal yet. Frame output as "
+                "forward-looking recommendations based on recent patterns. "
+                "Do not call it the current eaten meal."
+            )
         system_prompt = (
             "You are a meal agent responder. Return strict JSON only and keep the "
-            "response concise. Do not reveal chain of thought."
+            "response concise. Do not reveal chain of thought. "
+            + mode_instruction
         )
         user_payload = {
             "audience": audience,
@@ -889,6 +913,8 @@ class AgentMealV1Service:
         pass2_result: Pass2ResponderOutput,
         debug_enabled: bool,
         evidence: Dict[str, Any],
+        mode: str,
+        meal_id: Optional[UUID],
     ) -> MealAgentResponseData:
         current = features.get("current_meal", {})
         verdicts = features.get("verdicts", {})
@@ -898,6 +924,9 @@ class AgentMealV1Service:
         scores = self._compute_scores(features=features, source_flags=source_flags)
         confidence = self._compute_confidence(source_flags, warnings)
         trend_note = pass2_result.trend_note or hist.get("trend_note", "")
+        summary_text = pass2_result.summary_text
+        if mode == "pre_meal" and not meal_id:
+            summary_text = self._sanitize_premeal_summary(summary_text)
 
         care_provider_view = None
         if audience == "care_provider":
@@ -934,7 +963,7 @@ class AgentMealV1Service:
         return MealAgentResponseData(
             conversation_id=conversation_id,
             snapshot_id=uuid4(),
-            summary_text=pass2_result.summary_text,
+            summary_text=summary_text,
             scores=MealAgentScores(**scores),
             verdicts=MealAgentVerdicts(
                 calories=verdicts.get("calories", "within"),
@@ -1377,3 +1406,10 @@ class AgentMealV1Service:
             "flow": "two_pass_bounded",
             "created_at": datetime.utcnow().isoformat(),
         }
+
+    @staticmethod
+    def _sanitize_premeal_summary(summary_text: str) -> str:
+        sanitized = summary_text.replace("current meal", "recent meal pattern")
+        sanitized = sanitized.replace("this meal", "your upcoming meal choice")
+        sanitized = sanitized.replace("you ate", "you typically eat")
+        return sanitized
