@@ -145,6 +145,17 @@ class SMBGReadingValue(BaseModel):
     notes: Optional[str] = Field(None, description="Optional notes for the reading")
 
 
+class SMBGDateWiseData(BaseModel):
+    """Combined SMBG and meal data for a specific date."""
+
+    smbg_readings: List[SMBGReadingValue] = Field(
+        default_factory=list, description="SMBG readings for the date"
+    )
+    meals: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Meals for the date"
+    )
+
+
 class SMBGReport(BaseModel):
     """Complete SMBG report with all statistics."""
 
@@ -155,6 +166,13 @@ class SMBGReport(BaseModel):
     readings_by_date: Dict[str, List[SMBGReadingValue]] = Field(
         default_factory=dict,
         description="All SMBG readings grouped by date (YYYY-MM-DD)",
+    )
+    by_date: Dict[str, SMBGDateWiseData] = Field(
+        default_factory=dict,
+        description=(
+            "Unified date-wise data with both SMBG readings and meals. "
+            "Preferred over separate top-level date maps."
+        ),
     )
 
     class Config:
@@ -215,6 +233,28 @@ class SMBGReport(BaseModel):
                             "notes": None,
                         }
                     ]
+                },
+                "by_date": {
+                    "2025-01-01": {
+                        "smbg_readings": [
+                            {
+                                "reading_time": "2025-01-01T08:00:00",
+                                "glucose_level": 105.0,
+                                "type": "pre_breakfast",
+                                "source_name": "glucometer",
+                                "source_platform": "manual",
+                                "notes": None,
+                            }
+                        ],
+                        "meals": [
+                            {
+                                "id": "meal-123",
+                                "type": "breakfast",
+                                "time": "08:15:00",
+                                "score": 8.2,
+                            }
+                        ],
+                    }
                 },
             }
         }
