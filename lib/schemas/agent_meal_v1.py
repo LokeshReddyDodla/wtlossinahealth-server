@@ -17,6 +17,7 @@ class MealAgentRequest(BaseModel):
     meal_id: Optional[UUID] = None
     conversation_id: Optional[str] = None
     mode: ModeLiteral = "auto"
+    debug: bool = False
 
 
 class MealAgentScores(BaseModel):
@@ -78,6 +79,7 @@ class MealAgentResponseData(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     confidence: float
     care_provider_view: Optional[CareProviderView] = None
+    debug: Optional[Dict[str, Any]] = None
 
 
 class SnapshotReadResponse(BaseModel):

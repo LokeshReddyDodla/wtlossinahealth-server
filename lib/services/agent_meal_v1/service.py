@@ -171,6 +171,8 @@ class AgentMealV1Service:
             source_flags=source_flags,
             warnings=warnings,
             pass2_result=pass2_result,
+            debug_enabled=payload.debug,
+            evidence=evidence,
         )
 
         snapshot_id = await self._persist_snapshot(
@@ -353,6 +355,7 @@ class AgentMealV1Service:
 
         meal_obj = None
         meal_date = window_end.date()
+        history_end_date = meal_date
         current_meal = {
             "meal_type": "unknown",
             "time_bucket": self._time_bucket(datetime.now().time()),
@@ -381,6 +384,11 @@ class AgentMealV1Service:
                 "fat": float(total_macro.fats if total_macro else 0),
                 "fiber": float(total_macro.fiber if total_macro else 0),
             }
+        else:
+            inferred_type = self._infer_meal_type_from_bucket(
+                current_meal["time_bucket"]
+            )
+            current_meal["meal_type"] = inferred_type
 
         diet_recommendation = await self.meal_stats_processor.get_diet_recommendation(
             str(patient_id), meal_date
@@ -392,15 +400,54 @@ class AgentMealV1Service:
 
         meal_reports = await self.meal_report_service.fetch_daily_reports_in_range(
             str(patient_id),
-            window_start.date(),
-            window_end.date(),
+            history_end_date - timedelta(days=self.HISTORY_WINDOW_DAYS),
+            history_end_date,
         )
         source_flags["reports"] = bool(meal_reports)
+        evidence["meal_reports_count"] = len(meal_reports)
         if not meal_reports:
             warnings.append("Meal reports unavailable; historical comparisons limited.")
+        elif not meal_obj:
+            latest_meal, latest_meal_date = self._select_latest_meal_from_reports(
+                meal_reports
+            )
+            evidence["latest_meal_found"] = latest_meal is not None
+            if latest_meal:
+                macros = latest_meal.get("total_macro_nutritional_value", {}) or {}
+                meal_type = (latest_meal.get("type") or "snack").lower()
+                meal_time = self._parse_time_safe(str(latest_meal.get("time", "")))
+                if latest_meal_date:
+                    meal_date = latest_meal_date
+                    history_end_date = latest_meal_date
+                current_meal = {
+                    "meal_type": meal_type,
+                    "time_bucket": self._time_bucket(
+                        meal_time or datetime.now().time()
+                    ),
+                    "calories": float(macros.get("calories") or 0),
+                    "carbs": float(macros.get("carbohydrates") or 0),
+                    "protein": float(macros.get("proteins") or 0),
+                    "fat": float(macros.get("fats") or 0),
+                    "fiber": float(macros.get("fiber") or 0),
+                }
+                target = self._pick_meal_target(
+                    meal_type=current_meal["meal_type"],
+                    diet_recommendation=diet_recommendation.model_dump(mode="json"),
+                )
+            meal_reports = await self.meal_report_service.fetch_daily_reports_in_range(
+                str(patient_id),
+                history_end_date - timedelta(days=self.HISTORY_WINDOW_DAYS),
+                history_end_date,
+            )
+            source_flags["reports"] = bool(meal_reports)
+            evidence["meal_reports_count"] = len(meal_reports)
 
         historical = self._build_historical_comparison(current_meal, meal_reports)
         evidence["historical_cohort_size"] = historical["cohort_size"]
+        evidence["anchor_date"] = history_end_date.isoformat()
+        evidence["historical_cohort_selection"] = historical.get(
+            "cohort_selection", "none"
+        )
 
         cgm_response = await self._build_cgm_response(
             patient_id=str(patient_id),
@@ -750,14 +797,24 @@ class AgentMealV1Service:
             "features": features,
             "warnings": warnings,
         }
-        output = retry_request(
-            self.pass1_model.invoke,
-            input=[
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=json.dumps(user_payload)),
-            ],
-        )
-        return output
+        try:
+            output = retry_request(
+                self.pass1_model.invoke,
+                input=[
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=json.dumps(user_payload)),
+                ],
+            )
+            return output
+        except Exception:
+            return Pass1PlannerOutput(
+                priority_findings=[
+                    "Evaluate plan adherence and trend against recent history."
+                ],
+                missing_critical_data=warnings,
+                comparison_focus="same_meal_type_time_bucket",
+                action_focus="nutrition_and_glycemic_stability",
+            )
 
     async def _run_pass2(
         self,
@@ -798,14 +855,29 @@ class AgentMealV1Service:
             "features": features,
             "history": history,
         }
-        output = retry_request(
-            self.pass2_model.invoke,
-            input=[
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=json.dumps(user_payload)),
-            ],
-        )
-        return output
+        try:
+            output = retry_request(
+                self.pass2_model.invoke,
+                input=[
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=json.dumps(user_payload)),
+                ],
+            )
+            return output
+        except Exception:
+            trend_note = features.get("historical_comparison", {}).get(
+                "trend_note", ""
+            )
+            actions = self._fallback_actions(features)
+            return Pass2ResponderOutput(
+                summary_text=(
+                    "Meal guidance generated from available data and recent history."
+                ),
+                trend_note=trend_note,
+                next_best_actions=actions,
+                care_provider_evidence_points=[],
+                care_provider_metrics_table={},
+            )
 
     def _build_response(
         self,
@@ -815,6 +887,8 @@ class AgentMealV1Service:
         source_flags: Dict[str, bool],
         warnings: List[str],
         pass2_result: Pass2ResponderOutput,
+        debug_enabled: bool,
+        evidence: Dict[str, Any],
     ) -> MealAgentResponseData:
         current = features.get("current_meal", {})
         verdicts = features.get("verdicts", {})
@@ -835,6 +909,27 @@ class AgentMealV1Service:
                     "glycemic_response": gly or {},
                 },
             )
+
+        debug_payload = None
+        if debug_enabled:
+            historical = features.get("historical_comparison", {}) or {}
+            debug_payload = {
+                "anchor_date": evidence.get("anchor_date"),
+                "source_flags": source_flags,
+                "meal_reports_count": evidence.get("meal_reports_count", 0),
+                "latest_meal_found": evidence.get("latest_meal_found"),
+                "historical_cohort_size": historical.get("cohort_size", 0),
+                "historical_cohort_selection": historical.get("cohort_selection"),
+                "historical_deltas_keys": sorted(
+                    list((historical.get("deltas_pct") or {}).keys())
+                ),
+                "fallback_used": (
+                    "raw_fallback"
+                    if source_flags.get("raw_fallback_used")
+                    else "reports_primary"
+                ),
+                "warnings_count": len(warnings),
+            }
 
         return MealAgentResponseData(
             conversation_id=conversation_id,
@@ -870,6 +965,7 @@ class AgentMealV1Service:
             warnings=warnings,
             confidence=confidence,
             care_provider_view=care_provider_view,
+            debug=debug_payload,
         )
 
     @with_postgres_session
@@ -999,35 +1095,42 @@ class AgentMealV1Service:
         current_meal: Dict[str, Any],
         meal_reports: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        cohort: List[Dict[str, float]] = []
         cur_type = (current_meal.get("meal_type") or "").lower()
+        if cur_type in {"", "unknown"}:
+            cur_type = ""
         cur_bucket = current_meal.get("time_bucket")
 
-        for report in meal_reports:
-            meals = report.get("meals", []) or []
-            for meal in meals:
-                meal_type = (meal.get("type") or "").lower()
-                meal_time = self._parse_time_safe(str(meal.get("time", "")))
-                if cur_type and meal_type != cur_type:
-                    continue
-                if cur_bucket and meal_time and self._time_bucket(meal_time) != cur_bucket:
-                    continue
-                macros = meal.get("total_macro_nutritional_value", {}) or {}
-                cohort.append(
-                    {
-                        "calories": float(macros.get("calories") or 0),
-                        "carbs": float(macros.get("carbohydrates") or 0),
-                        "protein": float(macros.get("proteins") or 0),
-                        "fat": float(macros.get("fats") or 0),
-                        "fiber": float(macros.get("fiber") or 0),
-                    }
+        strict_cohort = self._collect_report_cohort(
+            meal_reports=meal_reports,
+            meal_type=cur_type,
+            time_bucket=cur_bucket,
+        )
+        if strict_cohort:
+            cohort = strict_cohort
+            cohort_selection = "strict_type_time_bucket"
+        else:
+            type_only_cohort = self._collect_report_cohort(
+                meal_reports=meal_reports,
+                meal_type=cur_type,
+                time_bucket=None,
+            )
+            if type_only_cohort:
+                cohort = type_only_cohort
+                cohort_selection = "type_only"
+            else:
+                cohort = self._collect_report_cohort(
+                    meal_reports=meal_reports,
+                    meal_type=None,
+                    time_bucket=None,
                 )
+                cohort_selection = "all_meals"
 
         if not cohort:
             return {
                 "cohort_size": 0,
                 "deltas_pct": {},
                 "trend_note": "Insufficient historical cohort for direct comparison.",
+                "cohort_selection": "none",
             }
 
         med = {
@@ -1055,7 +1158,95 @@ class AgentMealV1Service:
             "cohort_size": len(cohort),
             "deltas_pct": deltas,
             "trend_note": trend_note,
+            "cohort_selection": cohort_selection,
         }
+
+    def _collect_report_cohort(
+        self,
+        meal_reports: List[Dict[str, Any]],
+        meal_type: Optional[str],
+        time_bucket: Optional[str],
+    ) -> List[Dict[str, float]]:
+        cohort: List[Dict[str, float]] = []
+        for report in meal_reports:
+            meals = report.get("meals", []) or []
+            for meal in meals:
+                item_type = (meal.get("type") or "").lower()
+                meal_time = self._parse_time_safe(str(meal.get("time", "")))
+                if meal_type and item_type != meal_type:
+                    continue
+                if (
+                    time_bucket
+                    and meal_time
+                    and self._time_bucket(meal_time) != time_bucket
+                ):
+                    continue
+                macros = meal.get("total_macro_nutritional_value", {}) or {}
+                cohort.append(
+                    {
+                        "calories": float(macros.get("calories") or 0),
+                        "carbs": float(macros.get("carbohydrates") or 0),
+                        "protein": float(macros.get("proteins") or 0),
+                        "fat": float(macros.get("fats") or 0),
+                        "fiber": float(macros.get("fiber") or 0),
+                    }
+                )
+        return cohort
+
+    @staticmethod
+    def _select_latest_meal_from_reports(
+        meal_reports: List[Dict[str, Any]],
+    ) -> tuple[Optional[Dict[str, Any]], Optional[date]]:
+        latest: Optional[Dict[str, Any]] = None
+        latest_dt: Optional[datetime] = None
+        latest_date: Optional[date] = None
+        for report in meal_reports:
+            report_date = AgentMealV1Service._extract_report_date(report)
+            for meal in report.get("meals", []) or []:
+                meal_time = str(meal.get("time", ""))
+                parsed_dt = AgentMealV1Service._parse_meal_datetime(
+                    report_date=report_date,
+                    meal_time=meal_time,
+                )
+                if not parsed_dt:
+                    continue
+                if latest_dt is None or parsed_dt > latest_dt:
+                    latest_dt = parsed_dt
+                    latest = meal
+                    latest_date = parsed_dt.date()
+        return latest, latest_date
+
+    @staticmethod
+    def _extract_report_date(report: Dict[str, Any]) -> str:
+        if report.get("date"):
+            return str(report["date"])
+        metadata = report.get("metadata", {}) or {}
+        date_range = metadata.get("date_range", {}) or {}
+        start = str(date_range.get("start", ""))
+        if "T" in start:
+            return start.split("T")[0]
+        return start
+
+    @staticmethod
+    def _parse_meal_datetime(report_date: str, meal_time: str) -> Optional[datetime]:
+        time_formats = ("%H:%M:%S", "%H:%M")
+        for fmt in time_formats:
+            try:
+                parsed_time = datetime.strptime(meal_time, fmt).time()
+                return datetime.combine(date.fromisoformat(report_date), parsed_time)
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _infer_meal_type_from_bucket(time_bucket: str) -> str:
+        if time_bucket == "breakfast_window":
+            return "breakfast"
+        if time_bucket == "lunch_window":
+            return "lunch"
+        if time_bucket == "dinner_window":
+            return "dinner"
+        return "snack"
 
     def _build_verdicts(
         self,

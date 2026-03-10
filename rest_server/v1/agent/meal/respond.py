@@ -48,6 +48,8 @@ async def respond_meal_agent(
             care_provider_access_service=care_provider_access_service,
         )
         payload.patient_id = target_patient_id
+        if current_actor.role == ProfileTypeEnum.PATIENT:
+            payload.audience = "patient"
         response = await service.respond(payload)
         return SuccessResponse(
             message="Meal agent response generated successfully",

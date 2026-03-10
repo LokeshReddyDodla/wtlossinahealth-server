@@ -22,6 +22,19 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
+def _assert_actor_can_read_patient_data(
+    current_actor: Actor,
+    target_patient_id: UUID,
+) -> None:
+    if current_actor.role == ProfileTypeEnum.PATIENT:
+        actor_patient_id = current_actor.model.patient_id  # type: ignore[attr-defined]
+        if actor_patient_id != target_patient_id:
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="You do not have access to this patient",
+            )
+
+
 @router.get(
     "/snapshots/{snapshot_id}",
     response_model=SuccessResponse[SnapshotReadResponse],
@@ -51,6 +64,7 @@ async def get_meal_agent_snapshot(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Snapshot not found",
             )
+        _assert_actor_can_read_patient_data(current_actor, snapshot.patient_id)
         await resolve_patient_access(
             actor=current_actor,
             patient_id=snapshot.patient_id,
@@ -95,9 +109,11 @@ async def get_meal_agent_conversation_messages(
     try:
         messages = await service.fetch_conversation_messages(conversation_id)
         if messages:
+            target_patient_id = UUID(messages[0].patient_id)
+            _assert_actor_can_read_patient_data(current_actor, target_patient_id)
             await resolve_patient_access(
                 actor=current_actor,
-                patient_id=UUID(messages[0].patient_id),
+                patient_id=target_patient_id,
                 care_provider_access_service=care_provider_access_service,
             )
         return SuccessResponse(
