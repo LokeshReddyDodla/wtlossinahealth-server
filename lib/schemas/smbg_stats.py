@@ -163,16 +163,9 @@ class SMBGReport(BaseModel):
     summary: ReportSummary = Field(..., description="Overall summary statistics")
     breakdowns: MealWindowBreakdown = Field(..., description="Breakdowns by meal window")
     trends: MonthlyTrends = Field(..., description="Monthly trends")
-    readings_by_date: Dict[str, List[SMBGReadingValue]] = Field(
-        default_factory=dict,
-        description="All SMBG readings grouped by date (YYYY-MM-DD)",
-    )
     by_date: Dict[str, SMBGDateWiseData] = Field(
         default_factory=dict,
-        description=(
-            "Unified date-wise data with both SMBG readings and meals. "
-            "Preferred over separate top-level date maps."
-        ),
+        description="Unified date-wise data with both SMBG readings and meals.",
     )
 
     class Config:
@@ -221,18 +214,6 @@ class SMBGReport(BaseModel):
                 },
                 "trends": {
                     "monthly": [],
-                },
-                "readings_by_date": {
-                    "2025-01-01": [
-                        {
-                            "reading_time": "2025-01-01T08:00:00",
-                            "glucose_level": 105.0,
-                            "type": "pre_breakfast",
-                            "source_name": "glucometer",
-                            "source_platform": "manual",
-                            "notes": None,
-                        }
-                    ]
                 },
                 "by_date": {
                     "2025-01-01": {
