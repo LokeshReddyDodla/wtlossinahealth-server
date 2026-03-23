@@ -3,20 +3,32 @@ Agent service for processing user queries and managing conversations.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Optional, Union
-from datetime import datetime
+
+from fastapi import status
 
 from lib.core.cache_store import CacheStore
 from lib.core.constants import ProfileTypeEnum
-from lib.core.qdrant_store import QdrantStore
 from lib.core.mongo_store import MongoStore
+from lib.core.qdrant_store import QdrantStore
 from lib.services.health_query_agent.serialization import to_checkpoint_safe
-from .schemas import QueryResponse, ConversationMessage
-from .workflow import build_workflow
-from .conversation_repository import ConversationRepository
 from lib.utils.http_exceptions import raise_http_exception
-from fastapi import status
-from lib.services.health_query_agent.state_constants import RESET
+from .conversation_repository import ConversationRepository
+from .state_constants import RESET
+from .v2 import (
+    AnalysisSnapshot,
+    ConversationMessage,
+    ConversationCompaction,
+    ConversationResolver,
+    DomainName,
+    HealthAgentMemoryRepository,
+    QueryResponse,
+    ResponseMode,
+    ThreadState,
+)
+from .v2.compaction import build_conversation_compaction
+from .workflow import build_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -31,30 +43,39 @@ class HealthQueryAgentService:
     ):
         self.qdrant_store = qdrant_store
         self.mongo_store = mongo_store
+        self._indexes_initialized = False
         self.conversation_repository = (
             ConversationRepository(mongo_store) if mongo_store else None
         )
-        self.app = app or build_workflow(qdrant_store, cache_store=cache_store)
+        self.memory_repository = HealthAgentMemoryRepository(mongo_store)
+        self.app = app or build_workflow(
+            qdrant_store,
+            mongo_store=mongo_store,
+            cache_store=cache_store,
+        )
 
-    # ---------------------- User/Assistant Message Storage ---------------------- #
+    async def _ensure_storage_indexes(self) -> None:
+        if self._indexes_initialized:
+            return
+
+        if self.conversation_repository:
+            await self.conversation_repository.ensure_indexes()
+        await self.memory_repository.ensure_indexes()
+        self._indexes_initialized = True
 
     async def _save_user_message(self, user_id: str, user_message: str, thread_id: str):
-        """Save a user message to MongoDB."""
         if not self.conversation_repository or not user_id:
             return
 
-        try:
-            await self.conversation_repository.save_message(
-                user_id=user_id,
-                message_type="user",
-                content=user_message,
-                metadata={
-                    "thread_id": thread_id,
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
-            )
-        except Exception as e:
-            logger.warning(f"Failed to save user message: {e}")
+        await self.conversation_repository.save_message(
+            user_id=user_id,
+            message_type="user",
+            content=user_message,
+            metadata={
+                "thread_id": thread_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
 
     async def _save_assistant_message(
         self,
@@ -64,52 +85,46 @@ class HealthQueryAgentService:
         response_data: dict,
         is_ready: bool,
         source_messages: Optional[list] = None,
+        retrieval_metadata: Optional[dict] = None,
     ):
-        """Save an assistant message to MongoDB."""
         if not self.conversation_repository or not user_id:
             return
 
-        try:
-            intent_dict = to_checkpoint_safe(intent)
+        intent_dict = to_checkpoint_safe(intent)
 
-            response_dict = None
-            if is_ready:
-                response_dict = {
-                    "message": response_data["message"],
-                    "is_ready": response_data["is_ready"],
-                    "data_types": response_data["data_types"],
-                }
-                intent_dict.pop("clarification_msg", None)
-            else:
-                intent_dict["clarification_msg"] = getattr(
-                    intent, "clarification_msg", None
-                )
-
-            metadata = {
-                "thread_id": thread_id,
-                "turn_number": response_data.get("turn_number", 0),
-                "timestamp": datetime.utcnow().isoformat(),
+        response_dict = None
+        if is_ready:
+            response_dict = {
+                "message": response_data["message"],
+                "is_ready": response_data["is_ready"],
+                "data_types": response_data["data_types"],
             }
-
-            # Add source messages that were used to generate this response
-            if source_messages:
-                metadata["source_messages"] = source_messages
-
-            await self.conversation_repository.save_message(
-                user_id=user_id,
-                message_type="assistant",
-                content=response_data["message"],
-                intent=intent_dict,
-                response=response_dict,
-                metadata=metadata,
+            intent_dict.pop("clarification_msg", None)
+        else:
+            intent_dict["clarification_msg"] = getattr(
+                intent, "clarification_msg", None
             )
-        except Exception as e:
-            logger.warning(f"Failed to save assistant message: {e}")
 
-    # ---------------------- Conversation State Helpers ---------------------- #
+        metadata = {
+            "thread_id": thread_id,
+            "turn_number": response_data.get("turn_number", 0),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        if source_messages:
+            metadata["source_messages"] = source_messages
+        if retrieval_metadata:
+            metadata["retrieval"] = retrieval_metadata
+
+        await self.conversation_repository.save_message(
+            user_id=user_id,
+            message_type="assistant",
+            content=response_data["message"],
+            intent=intent_dict,
+            response=response_dict,
+            metadata=metadata,
+        )
 
     def _get_conversation_messages(self, thread_id: str) -> list:
-        """Get messages from the current state for a thread."""
         config = {"configurable": {"thread_id": thread_id}}
         try:
             state = self.app.get_state(config)
@@ -122,13 +137,11 @@ class HealthQueryAgentService:
     def _build_response_data(
         self, result: dict, user_message: str, intent, thread_id: str
     ) -> dict:
-        """Construct structured response for the user message."""
         config = {"configurable": {"thread_id": thread_id}}
         state = self.app.get_state(config)
         messages = state.values.get("messages", []) if state and state.values else []
         turn_number = sum(1 for m in messages if m.get("role") == "user")
 
-        # Base response
         response_data = {
             "type": "response",
             "user_message": user_message,
@@ -141,8 +154,11 @@ class HealthQueryAgentService:
         if intent:
             intent_dict = to_checkpoint_safe(intent)
             response_data.update(intent_dict)
-
             response_data["confidence"] = getattr(intent, "confidence", None)
+            if result.get("executed_tools") is not None:
+                response_data["executed_tools"] = result.get("executed_tools")
+            if result.get("retrieval_metrics") is not None:
+                response_data["retrieval_metrics"] = result.get("retrieval_metrics")
 
             if intent.is_ready:
                 final_response = result.get(
@@ -157,11 +173,109 @@ class HealthQueryAgentService:
                 )
                 response_data["message"] = clarification
                 response_data["clarification_msg"] = clarification
-
-                # suggestions already cleaned
                 response_data["suggestions"] = intent_dict.get("suggestions", [])
 
         return response_data
+
+    def _resolve_memory_subject_id(
+        self,
+        user_id: Optional[str],
+        user_role: Optional[str],
+        patient_ids: Optional[list[str]],
+    ) -> Optional[str]:
+        if patient_ids and len(patient_ids) == 1:
+            return patient_ids[0]
+        return user_id if user_role == ProfileTypeEnum.PATIENT.value else None
+
+    async def _get_runtime_thread_state(self, thread_id: str):
+        if hasattr(self.memory_repository, "get_thread_runtime_state"):
+            return await self.memory_repository.get_thread_runtime_state(thread_id)
+
+        thread_state = None
+        if hasattr(self.memory_repository, "get_thread_state"):
+            thread_state = await self.memory_repository.get_thread_state(thread_id)
+        latest_compaction = None
+        if hasattr(self.memory_repository, "get_latest_conversation_compaction"):
+            latest_compaction = await self.memory_repository.get_latest_conversation_compaction(
+                thread_id
+            )
+        return thread_state, latest_compaction
+
+    def _build_thread_state(
+        self,
+        thread_id: str,
+        patient_id: Optional[str],
+        existing_state: Optional[ThreadState],
+        response_message: str,
+        intent,
+        conversation_context,
+        result: dict,
+    ) -> ThreadState:
+        intent_plan = result.get("intent_plan") or {}
+        allowed_domains = {member.value: member for member in DomainName}
+        active_domains = [
+            allowed_domains[domain]
+            for domain in intent_plan.get("domains", [])
+            if domain in allowed_domains
+        ]
+        if not active_domains and existing_state:
+            active_domains = existing_state.active_domains
+
+        active_task_type = None
+        response_mode = intent_plan.get("response_mode")
+        if response_mode and response_mode in {member.value for member in ResponseMode}:
+            active_task_type = ResponseMode(response_mode)
+        elif existing_state:
+            active_task_type = existing_state.active_task_type
+
+        pending_slots: list[str] = []
+        if intent and not intent.is_ready:
+            if not getattr(intent, "data_types", []):
+                pending_slots.append("domain")
+            if not getattr(intent, "date_range", None) and not getattr(
+                intent, "month_filters", None
+            ):
+                pending_slots.append("time")
+
+        return ThreadState(
+            thread_id=thread_id,
+            patient_id=patient_id,
+            active_domains=active_domains,
+            active_task_type=active_task_type,
+            active_goal=intent_plan.get("requested_goal")
+            or conversation_context.inherited_goal
+            or (existing_state.active_goal if existing_state else None),
+            active_date_scope=intent_plan.get("date_scope_label")
+            or conversation_context.inherited_date_scope
+            or (existing_state.active_date_scope if existing_state else None),
+            last_assistant_question=response_message if response_message.strip().endswith("?") else None,
+            pending_slots=pending_slots,
+            summary=conversation_context.system_note(),
+            last_assistant_response=response_message,
+        )
+
+    async def _build_and_save_thread_compaction(
+        self,
+        *,
+        thread_id: str,
+        patient_id: Optional[str],
+        thread_state: ThreadState,
+        conversation_context,
+    ) -> Optional[ConversationCompaction]:
+        if not self.conversation_repository:
+            return None
+        thread_history = await self.conversation_repository.get_thread_history(
+            thread_id, limit=24
+        )
+        compaction = build_conversation_compaction(
+            thread_id=thread_id,
+            patient_id=patient_id,
+            recent_messages=thread_history,
+            thread_state=thread_state,
+            conversation_context=conversation_context,
+        )
+        await self.memory_repository.save_conversation_compaction(compaction)
+        return compaction
 
     def _convert_to_conversation_message(
         self, response_data: dict, user_message: str, thread_id: str
@@ -195,17 +309,17 @@ class HealthQueryAgentService:
             "turn_number": response_data.get("turn_number", 0),
             "message_count": response_data.get("message_count", 0),
         }
+        if response_data.get("retrieval_metrics"):
+            metadata["retrieval"] = response_data["retrieval_metrics"]
 
         return ConversationMessage(
             message_type="assistant",
             content=response_data.get("message", ""),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             intent=intent_dict if intent_dict else None,
             response=response_dict if response_data.get("is_ready") else None,
             metadata=metadata,
         )
-
-    # ---------------------- Public API ---------------------- #
 
     async def process_message(
         self,
@@ -216,10 +330,8 @@ class HealthQueryAgentService:
         patient_ids: Optional[list[str]] = None,
         debug: bool = False,
     ) -> Union[QueryResponse, ConversationMessage]:
-        """Process a user message and return structured response."""
         config = {"configurable": {"thread_id": thread_id}}
 
-        # Validate user_role if provided
         if user_role:
             try:
                 ProfileTypeEnum(user_role)
@@ -228,13 +340,39 @@ class HealthQueryAgentService:
                     status_code=status.HTTP_400_BAD_REQUEST, message="Invalid user role"
                 )
 
+        try:
+            await self._ensure_storage_indexes()
+        except Exception as e:
+            logger.warning(f"Failed to initialize health agent indexes: {e}")
+
         await self._save_user_message(user_id, user_message, thread_id)
+
+        recent_messages = self._get_conversation_messages(thread_id)
+        memory_subject_id = self._resolve_memory_subject_id(user_id, user_role, patient_ids)
+        patient_memory = await self.memory_repository.get_patient_memory(memory_subject_id)
+        stored_thread_state, latest_compaction = await self._get_runtime_thread_state(
+            thread_id
+        )
+        conversation_context = ConversationResolver.resolve(
+            user_message=user_message,
+            recent_messages=recent_messages,
+            thread_state=stored_thread_state,
+            patient_memory=patient_memory,
+            latest_compaction=latest_compaction,
+        )
 
         result = await self.app.ainvoke(
             {
                 "messages": [{"role": "user", "content": user_message}],
                 "patient_ids": patient_ids,
                 "user_role": user_role,
+                "conversation_context": conversation_context.model_dump(mode="json"),
+                "patient_memory_facts": [
+                    fact.model_dump(mode="json") for fact in patient_memory
+                ],
+                "thread_state": stored_thread_state.model_dump(mode="json")
+                if stored_thread_state
+                else None,
             },
             config,
         )
@@ -257,23 +395,53 @@ class HealthQueryAgentService:
             response_data,
             intent.is_ready if intent else False,
             source_messages=source_messages,
+            retrieval_metadata=result.get("retrieval_metrics"),
         )
 
-        # TODO: Experiment without resetting the state
-        # if intent and intent.is_ready:
-        #     try:
-        #         await self.app.aupdate_state(
-        #             config, {"messages": RESET, "intent": None}
-        #         )
-        #     except Exception:
-        #         pass
+        await self.app.aupdate_state(
+            config,
+            {"messages": [{"role": "assistant", "content": response_data["message"]}]},
+        )
+
+        if conversation_context.explicit_facts:
+            await self.memory_repository.upsert_patient_facts(
+                memory_subject_id,
+                conversation_context.explicit_facts,
+            )
+
+        new_thread_state = self._build_thread_state(
+            thread_id=thread_id,
+            patient_id=memory_subject_id,
+            existing_state=stored_thread_state,
+            response_message=response_data["message"],
+            intent=intent,
+            conversation_context=conversation_context,
+            result=result,
+        )
+        await self.memory_repository.upsert_thread_state(new_thread_state)
+
+        analysis_snapshot = result.get("analysis_snapshot")
+        if analysis_snapshot:
+            await self.memory_repository.save_analysis_snapshot(
+                AnalysisSnapshot(**analysis_snapshot)
+            )
+
+        turn_number = response_data.get("turn_number", 0)
+        if turn_number >= 4 and turn_number % 2 == 0:
+            from lib.workers.tasks.health_query_agent.enqueue import (
+                enqueue_health_query_compaction_async,
+            )
+
+            await enqueue_health_query_compaction_async(
+                thread_id=thread_id,
+                patient_id=memory_subject_id,
+            )
 
         if debug:
             return QueryResponse(**response_data)
-        else:
-            return self._convert_to_conversation_message(
-                response_data, user_message, thread_id
-            )
+        return self._convert_to_conversation_message(
+            response_data, user_message, thread_id
+        )
 
     async def get_conversation_history(
         self,
@@ -282,7 +450,6 @@ class HealthQueryAgentService:
         offset: int = 0,
         since: Optional[datetime] = None,
     ):
-        """Get conversation history for a user."""
         if not self.conversation_repository:
             raise ValueError("Conversation repository not initialized")
 
@@ -296,7 +463,6 @@ class HealthQueryAgentService:
     async def reset_conversation(
         self, thread_id: str, user_id: Optional[str] = None
     ) -> None:
-        """Reset a conversation thread (clear active state)."""
         config = {"configurable": {"thread_id": thread_id}}
         try:
             await self.app.aupdate_state(config, {"messages": RESET, "intent": None})
@@ -305,3 +471,28 @@ class HealthQueryAgentService:
             )
         except Exception as e:
             logger.warning(f"Failed to reset conversation state: {e}")
+
+    async def compact_thread(
+        self,
+        thread_id: str,
+        patient_id: Optional[str] = None,
+    ) -> Optional[ConversationCompaction]:
+        thread_state, latest_compaction = await self._get_runtime_thread_state(
+            thread_id
+        )
+        recent_messages = self._get_conversation_messages(thread_id)
+        conversation_context = ConversationResolver.resolve(
+            user_message="",
+            recent_messages=recent_messages,
+            thread_state=thread_state,
+            patient_memory=[],
+            latest_compaction=latest_compaction,
+        )
+        effective_patient_id = patient_id or (thread_state.patient_id if thread_state else None)
+        return await self._build_and_save_thread_compaction(
+            thread_id=thread_id,
+            patient_id=effective_patient_id,
+            thread_state=thread_state
+            or ThreadState(thread_id=thread_id, patient_id=effective_patient_id),
+            conversation_context=conversation_context,
+        )

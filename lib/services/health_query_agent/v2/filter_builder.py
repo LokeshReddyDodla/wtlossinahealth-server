@@ -1,20 +1,20 @@
-from typing import Any, Optional, List, Set
+from __future__ import annotations
+
+from typing import Any, List, Optional, Set
+
 from qdrant_client.http.models import (
     FieldCondition as QdrantFieldCondition,
-    Range as QdrantRange,
-    MatchValue as QdrantMatchValue,
-    MatchAny as QdrantMatchAny,
     Filter as QdrantFilter,
+    MatchAny as QdrantMatchAny,
+    MatchValue as QdrantMatchValue,
     MinShould as QdrantMinShould,
+    Range as QdrantRange,
 )
 
-from lib.services.health_query_agent.intent import NumericRange
-
-from .schemas import QueryIntent, HealthDataType
+from .contracts import HealthDataType, NumericRange, QueryIntent
 
 
 def _pydantic_to_qdrant_condition(key: str, value: Any) -> QdrantFieldCondition:
-    """Convert a Pydantic value to a Qdrant field condition."""
     if isinstance(value, NumericRange):
         return QdrantFieldCondition(key=key, range=QdrantRange(**value.to_dict()))
 
@@ -25,7 +25,7 @@ def _pydantic_to_qdrant_condition(key: str, value: Any) -> QdrantFieldCondition:
         return QdrantFieldCondition(key=key, match=QdrantMatchAny(any=value))
 
     if isinstance(value, (bool, int, float)):
-        return QdrantFieldCondition(key=key, match=QdrantMatchValue(value=value))  # type: ignore
+        return QdrantFieldCondition(key=key, match=QdrantMatchValue(value=value))  # type: ignore[arg-type]
 
     raise ValueError(
         f"Unsupported filter type for key '{key}' with value type {type(value).__name__}"
@@ -33,7 +33,6 @@ def _pydantic_to_qdrant_condition(key: str, value: Any) -> QdrantFieldCondition:
 
 
 class FilterBuilder:
-    # Data types that should NEVER receive time/date filters
     NON_FILTERABLE_TYPES: Set[HealthDataType] = {
         HealthDataType.PROFILE,
         HealthDataType.DOCUMENTS,
@@ -47,7 +46,6 @@ class FilterBuilder:
 
         should_filters: List[QdrantFilter] = []
 
-        # always include profile type
         should_filters.append(
             QdrantFilter(
                 must=[
@@ -57,18 +55,14 @@ class FilterBuilder:
                     QdrantFieldCondition(
                         key="data_type",
                         match=QdrantMatchValue(value=HealthDataType.PROFILE.value),
-                    )
+                    ),
                 ]
             )
         )
 
-        # STATIC TYPES (NO TIME FILTERS)
         static_types = [
-            dt.value
-            for dt in intent.data_types
-            if dt in FilterBuilder.NON_FILTERABLE_TYPES
+            dt.value for dt in intent.data_types if dt in FilterBuilder.NON_FILTERABLE_TYPES
         ]
-
         if static_types:
             should_filters.append(
                 QdrantFilter(
@@ -77,20 +71,15 @@ class FilterBuilder:
                             key="patient_id", match=QdrantMatchAny(any=patient_ids)
                         ),
                         QdrantFieldCondition(
-                            key="data_type",
-                            match=QdrantMatchAny(any=static_types),
-                        )
+                            key="data_type", match=QdrantMatchAny(any=static_types)
+                        ),
                     ]
                 )
             )
 
-        # TIMESERIES TYPES (TIME FILTERS)
         timeseries_types = [
-            dt.value
-            for dt in intent.data_types
-            if dt not in FilterBuilder.NON_FILTERABLE_TYPES
+            dt.value for dt in intent.data_types if dt not in FilterBuilder.NON_FILTERABLE_TYPES
         ]
-
         if timeseries_types:
             must_conditions: List[QdrantFieldCondition] = [
                 QdrantFieldCondition(
@@ -100,12 +89,10 @@ class FilterBuilder:
                     key="data_type", match=QdrantMatchAny(any=timeseries_types)
                 ),
             ]
-
             FilterBuilder._add_month_filter(intent, must_conditions)
             FilterBuilder._add_date_range_filter(intent, must_conditions)
             FilterBuilder._add_time_filters(intent, must_conditions)
             FilterBuilder._add_numeric_filters(intent, must_conditions)
-
             should_filters.append(QdrantFilter(must=must_conditions))
 
         if not should_filters:
@@ -113,16 +100,12 @@ class FilterBuilder:
 
         return QdrantFilter(
             should=should_filters,
-            min_should=QdrantMinShould(
-                min_count=1,
-                conditions=should_filters,
-            ),
+            min_should=QdrantMinShould(min_count=1, conditions=should_filters),
         )
 
     @staticmethod
     def _add_month_filter(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
         if intent.month_filters:
-            # If only one month, match that directly
             if len(intent.month_filters) == 1:
                 conditions.append(
                     QdrantFieldCondition(
@@ -131,7 +114,6 @@ class FilterBuilder:
                     )
                 )
             else:
-                # If multiple months, use MatchAny
                 conditions.append(
                     QdrantFieldCondition(
                         key="month",
@@ -140,13 +122,10 @@ class FilterBuilder:
                 )
 
     @staticmethod
-    def _add_date_range_filter(
-        intent: QueryIntent, conditions: List[QdrantFieldCondition]
-    ):
+    def _add_date_range_filter(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
         if intent.date_range:
             start_ms = int(intent.date_range.start.timestamp() * 1000)
             end_ms = int(intent.date_range.end.timestamp() * 1000)
-
             conditions.append(
                 _pydantic_to_qdrant_condition(
                     "start_time", NumericRange(gte=float(start_ms))
@@ -184,9 +163,7 @@ class FilterBuilder:
             )
 
     @staticmethod
-    def _add_numeric_filters(
-        intent: QueryIntent, conditions: List[QdrantFieldCondition]
-    ):
+    def _add_numeric_filters(intent: QueryIntent, conditions: List[QdrantFieldCondition]):
         for nf in intent.numeric_filters:
             if nf.range_condition.to_dict():
                 conditions.append(

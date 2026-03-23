@@ -1,10 +1,13 @@
 """
-Health Query Agent Service
-
-A conversational agent service for processing user health data queries
-using LangGraph workflows and Qdrant vector search.
+Health Query Agent package.
 """
 
-from .service import HealthQueryAgentService
-
 __all__ = ["HealthQueryAgentService"]
+
+
+def __getattr__(name: str):
+    if name == "HealthQueryAgentService":
+        from .service import HealthQueryAgentService
+
+        return HealthQueryAgentService
+    raise AttributeError(name)

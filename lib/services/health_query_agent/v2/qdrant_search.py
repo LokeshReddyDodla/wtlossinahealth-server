@@ -1,16 +1,19 @@
-"""
-Qdrant search operations for the health query agent.
-"""
+from __future__ import annotations
 
 import logging
 from typing import Optional
 
-from decouple import config
+try:
+    from decouple import config
+except ImportError:  # pragma: no cover - test fallback
+    def config(*_args, default=None, **_kwargs):
+        return default
 
 from lib.core.qdrant_store import QdrantStore
 from lib.utils.vector_utils import embed_text
+
+from .contracts import QueryIntent
 from .filter_builder import FilterBuilder
-from .schemas import QueryIntent
 
 
 logger = logging.getLogger(__name__)
@@ -23,24 +26,19 @@ async def search_qdrant(
     intent: QueryIntent,
     qdrant_store: QdrantStore,
     patient_ids: Optional[list[str]] = None,
+    limit: int = 24,
 ) -> tuple[list, Optional[float]]:
-    # Build filters
     qdrant_filter = FilterBuilder.build(intent, patient_ids)
+    logger.info("Built Qdrant filter: %s", qdrant_filter)
 
-    logger.info(f"Built Qdrant filter: {qdrant_filter}")
-
-    # Generate embedding for semantic search
     query_embedding = await embed_text(query)
 
-    # Perform search directly with Qdrant
-    results = []
-    search_confidence = None
     async with qdrant_store.get_client() as client:
         results = await client.search(
             collection_name=QDRANT_COLLECTION,
             query_vector=query_embedding,
             query_filter=qdrant_filter,
-            limit=999,
+            limit=limit,
         )
 
     search_confidence = results[0].score if results else None

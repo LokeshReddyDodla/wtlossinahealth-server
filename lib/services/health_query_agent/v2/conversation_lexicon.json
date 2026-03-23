@@ -1,0 +1,33 @@
+{
+  "greetings": ["hi", "hello", "hey", "yo", "sup", "hiya"],
+  "acknowledgements": ["thanks", "thank you", "okay", "ok", "cool", "sure", "yeah", "yeah sure"],
+  "goal_aliases": {
+    "fat loss": "fat_loss",
+    "weight loss": "fat_loss",
+    "muscle gain": "muscle_gain",
+    "maintenance": "maintenance",
+    "recomp": "recomposition",
+    "cutting": "fat_loss",
+    "lean bulk": "muscle_gain",
+    "body recomposition": "recomposition"
+  },
+  "date_aliases": {
+    "today": "today",
+    "yesterday": "yesterday",
+    "this week": "this week",
+    "last 7 days": "last 7 days",
+    "last 4 days": "last 4 days",
+    "this month": "this month"
+  },
+  "domain_keywords": {
+    "meal": ["meal", "meals", "food", "ate", "eat", "logged"],
+    "cgm": ["glucose", "cgm", "blood sugar", "tir", "gmi"],
+    "smbg": ["smbg", "fingerstick", "pre-meal", "post-meal"],
+    "fitness": ["fitness", "activity", "steps", "workout", "exercise"],
+    "profile": ["profile", "bmi", "weight", "height"],
+    "documents": ["document", "report", "prescription", "lab", "scan"],
+    "sleep": ["sleep", "bed", "slept"],
+    "vitals": ["vitals", "blood pressure", "heart rate", "spo2", "a1c"],
+    "patient_summary": ["overall", "summary", "how's my today", "how is my today"]
+  }
+}
