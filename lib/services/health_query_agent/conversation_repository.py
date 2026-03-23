@@ -3,13 +3,13 @@ MongoDB repository for storing and retrieving conversation history.
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional, Dict, Any
 
 from lib.core.mongo_store import MongoStore
-from lib.services.health_query_agent.schemas import (
-    ConversationMessage,
+from lib.services.health_query_agent.v2 import (
     ConversationHistoryResponse,
+    ConversationMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,12 @@ class ConversationRepository:
                 name="created_at_idx",
                 background=True,
             )
+            await self.collection.create_index(
+                [("metadata.thread_id", 1), ("created_at", -1)],
+                name="thread_timestamp_idx",
+                background=True,
+                sparse=True,
+            )
 
             logger.info("Created indexes for health_query_conversations collection")
         except Exception as e:
@@ -63,8 +69,8 @@ class ConversationRepository:
                 "intent": intent,
                 "response": response,
                 "metadata": metadata or {},
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
             }
 
             result = await self.mongo_store.insert_document(COLLECTION_NAME, document)
@@ -109,7 +115,7 @@ class ConversationRepository:
                 message = ConversationMessage(
                     message_type=doc.get("message_type", "user"),
                     content=doc.get("content", ""),
-                    timestamp=doc.get("created_at", datetime.utcnow()),
+                    timestamp=doc.get("created_at", datetime.now(UTC)),
                     intent=doc.get("intent"),
                     response=doc.get("response"),
                     metadata=doc.get("metadata"),
@@ -123,6 +129,22 @@ class ConversationRepository:
             )
         except Exception as e:
             logger.error(f"Error retrieving conversation history: {e}")
+            raise
+
+    async def get_thread_history(self, thread_id: str, limit: int = 40) -> list[dict]:
+        try:
+            cursor = (
+                self.collection.find({"metadata.thread_id": thread_id})
+                .sort("created_at", -1)
+                .limit(limit)
+            )
+            messages_docs = []
+            async for doc in cursor:
+                messages_docs.append(doc)
+            messages_docs.reverse()
+            return messages_docs
+        except Exception as e:
+            logger.error(f"Error retrieving thread history: {e}")
             raise
 
     async def delete_user_conversation(self, user_id: str) -> int:
@@ -147,7 +169,7 @@ class ConversationRepository:
             result = await self.mongo_store.update_many_documents(
                 COLLECTION_NAME,
                 {"user_id": user_id},
-                {"$set": {"archived": True, "archived_at": datetime.utcnow()}},
+                {"$set": {"archived": True, "archived_at": datetime.now(UTC)}},
             )
             logger.info(f"Archived {result} messages for user_id: {user_id}")
             return result

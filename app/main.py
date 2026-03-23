@@ -18,7 +18,9 @@ from lib.services.socketio_service import sio
 # -----------------------------------------------------------------------------
 def create_app() -> FastAPI:
     app = FastAPI(
-        swagger_ui_parameters={"persistAuthorization": os.getenv("ENV") == "dev"}
+        swagger_ui_parameters={
+            "persistAuthorization": os.getenv("ENV") == "dev"
+        }
     )
 
     # logging
