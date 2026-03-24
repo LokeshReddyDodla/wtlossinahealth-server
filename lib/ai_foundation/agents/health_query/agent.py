@@ -331,10 +331,24 @@ class HealthQueryAgent(BaseAgent):
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")
         self._prompts_registered = True
 
+    _prompt_cache: dict[str, tuple[str, str]] = {}  # (role, minute) → rendered prompt
+
     def _get_system_prompt(self, user_role: str) -> str:
+        """Get system prompt, cached per role per minute."""
+        now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        cache_key = f"{user_role}:{now_minute}"
+        if cache_key in self._prompt_cache:
+            return self._prompt_cache[cache_key]
+
         name_map = {"admin": "hq_system_admin", "care_provider": "hq_system_care_provider", "patient": "hq_system_patient"}
         template = self.prompts.get(name_map.get(user_role, "hq_system_patient"))
-        return template.render(current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+        rendered = template.render(current_time=f"{now_minute} UTC")
+
+        # Keep only current minute's cache (3 roles max)
+        if len(self._prompt_cache) > 5:
+            self._prompt_cache.clear()
+        self._prompt_cache[cache_key] = rendered
+        return rendered
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:
         return AgentOutput(

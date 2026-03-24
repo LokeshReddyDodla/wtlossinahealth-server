@@ -197,6 +197,20 @@ class MongoMemoryStore:
         doc["thread_id"] = thread_id
         await collection.insert_one(doc)
 
+    async def append_turns_batch(
+        self, thread_id: str, turns: list[ConversationTurn]
+    ) -> None:
+        """Append multiple turns in a single batch write."""
+        if not turns:
+            return
+        collection = self._mongo.get_collection(TURNS_COLLECTION)
+        docs = []
+        for turn in turns:
+            doc = turn.model_dump(mode="json")
+            doc["thread_id"] = thread_id
+            docs.append(doc)
+        await collection.insert_many(docs)
+
     # -- Thread Summaries ---------------------------------------------------
 
     async def get_thread_summary(self, thread_id: str) -> ThreadSummary | None:

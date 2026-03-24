@@ -8,6 +8,7 @@ threads API for UI display (names + profile pics).
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from lib.core.postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
+
+_CACHE_TTL = 300  # 5 minutes
 
 
 class PatientProfile(BaseModel):
@@ -29,23 +32,23 @@ class PatientProfile(BaseModel):
 class PatientNameResolver:
     """Resolves patient UUIDs to names and profile pictures.
 
-    Two methods:
-    - resolve_names() → dict[pid, name] — for LLM context (lightweight)
-    - resolve_profiles() → list[PatientProfile] — for thread list UI (with pics)
+    Caches results for 5 minutes to avoid hitting Postgres every request.
+    After TTL, re-fetches to pick up name/pic changes.
     """
 
     def __init__(self, postgres_store: PostgresStore) -> None:
         self._store = postgres_store
         self._name_cache: dict[str, str] = {}
         self._profile_cache: dict[str, PatientProfile] = {}
+        self._timestamps: dict[str, float] = {}  # pid → monotonic time
 
     # -- Names (for LLM context) -------------------------------------------
 
     async def resolve_names(self, patient_ids: list[str]) -> dict[str, str]:
         """Resolve patient UUIDs to display names."""
-        uncached = [pid for pid in patient_ids if pid not in self._name_cache]
-        if uncached:
-            await self._fetch(uncached)
+        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        if stale:
+            await self._fetch(stale)
         return {pid: self._name_cache.get(pid, f"Patient ({pid[:8]})") for pid in patient_ids}
 
     async def resolve_name(self, patient_id: str) -> str:
@@ -56,9 +59,9 @@ class PatientNameResolver:
 
     async def resolve_profiles(self, patient_ids: list[str]) -> list[PatientProfile]:
         """Resolve patient UUIDs to name + profile_picture."""
-        uncached = [pid for pid in patient_ids if pid not in self._profile_cache]
-        if uncached:
-            await self._fetch(uncached)
+        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        if stale:
+            await self._fetch(stale)
         return [
             self._profile_cache.get(pid, PatientProfile(
                 patient_id=pid, name=f"Patient ({pid[:8]})",
@@ -67,6 +70,13 @@ class PatientNameResolver:
         ]
 
     # -- Internal ----------------------------------------------------------
+
+    def _is_stale(self, pid: str) -> bool:
+        """Check if cache entry is missing or expired."""
+        if pid not in self._name_cache:
+            return True
+        ts = self._timestamps.get(pid, 0)
+        return (time.monotonic() - ts) > _CACHE_TTL
 
     async def _fetch(self, patient_ids: list[str]) -> None:
         """Fetch name + profile_picture from Postgres."""
@@ -99,6 +109,7 @@ class PatientNameResolver:
                         name=name,
                         profile_picture=row.profile_picture,
                     )
+                    self._timestamps[pid] = time.monotonic()
 
             for pid in patient_ids:
                 if pid not in self._name_cache:

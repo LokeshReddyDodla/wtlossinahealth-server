@@ -53,17 +53,27 @@ class PersistenceService:
         from lib.ai_foundation.memory.base import ConversationTurn
 
         try:
-            await self._memory.append_turn(
-                thread_id,
-                ConversationTurn(role="user", content=user_message, agent_id=agent_id),
-            )
-            await self._memory.append_turn(
-                thread_id,
-                ConversationTurn(
-                    role="assistant", content=assistant_message,
-                    agent_id=agent_id, metadata=intent_metadata or {},
-                ),
-            )
+            # Batch write — single Mongo insert_many instead of 2 insert_one
+            if hasattr(self._memory, 'append_turns_batch'):
+                await self._memory.append_turns_batch(thread_id, [
+                    ConversationTurn(role="user", content=user_message, agent_id=agent_id),
+                    ConversationTurn(
+                        role="assistant", content=assistant_message,
+                        agent_id=agent_id, metadata=intent_metadata or {},
+                    ),
+                ])
+            else:
+                await self._memory.append_turn(
+                    thread_id,
+                    ConversationTurn(role="user", content=user_message, agent_id=agent_id),
+                )
+                await self._memory.append_turn(
+                    thread_id,
+                    ConversationTurn(
+                        role="assistant", content=assistant_message,
+                        agent_id=agent_id, metadata=intent_metadata or {},
+                    ),
+                )
         except Exception as exc:
             logger.warning("Failed to persist turns: %s", exc)
 
