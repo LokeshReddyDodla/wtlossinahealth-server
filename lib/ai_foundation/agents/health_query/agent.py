@@ -485,6 +485,13 @@ class HealthQueryAgent(BaseAgent):
         intent: QueryIntent,
     ) -> None:
         """Save any facts the LLM extracted from the user's message."""
+        logger.info(
+            "Fact extraction check: memory=%s, patient_id=%s, extracted_facts=%s",
+            self.memory is not None,
+            input.context.patient_id,
+            intent.extracted_facts,
+        )
+
         if not self.memory or not intent.extracted_facts:
             return
 
