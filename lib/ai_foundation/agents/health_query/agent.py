@@ -462,119 +462,41 @@ class HealthQueryAgent(BaseAgent):
         domains: list[str],
         retrieved: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Single patient, few records — produce readable text the LLM can use directly."""
+        """Single patient, few records — format data readably for the LLM.
+
+        No hardcoded field names. Groups by data_type, strips internal
+        fields (source, data_type), and presents each record as clean
+        key-value text. The LLM interprets the values.
+        """
         by_type: dict[str, list[dict]] = {}
         for item in retrieved:
             dt = item.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(item)
 
-        readable_sections: list[str] = []
-
+        sections: list[str] = []
         for dt, items in by_type.items():
-            if dt == "meal":
-                lines = []
-                for m in items:
-                    date = m.get("date", "")
-                    meal_type = m.get("meal_type", "meal")
-                    name = m.get("meal_name", "")
-                    n = m.get("nutrition") or {}
-                    cal = n.get("calories") or n.get("total_calories")
-                    protein = n.get("protein") or n.get("proteins")
-                    carbs = n.get("carbs") or n.get("carbohydrates") or n.get("total_carbohydrates")
-                    fat = n.get("fat") or n.get("total_fat")
-                    fiber = n.get("fiber")
-                    time = m.get("time", "")
+            label = dt.replace("_", " ").upper()
+            lines = []
+            for item in items:
+                # Strip internal fields, keep everything else
+                clean = {
+                    k: v for k, v in item.items()
+                    if k not in ("data_type", "source", "patient_id") and v is not None
+                }
+                # Flatten one level of nesting for readability
+                flat_parts = []
+                for k, v in clean.items():
+                    if isinstance(v, dict):
+                        inner = ", ".join(f"{ik}: {iv}" for ik, iv in v.items() if iv is not None)
+                        if inner:
+                            flat_parts.append(f"{k}: ({inner})")
+                    else:
+                        flat_parts.append(f"{k}: {v}")
+                lines.append("  - " + ", ".join(flat_parts))
 
-                    parts = []
-                    if cal is not None: parts.append(f"{int(cal)} kcal")
-                    if protein is not None: parts.append(f"{round(float(protein), 1)}g protein")
-                    if carbs is not None: parts.append(f"{round(float(carbs), 1)}g carbs")
-                    if fat is not None: parts.append(f"{round(float(fat), 1)}g fat")
-                    if fiber is not None: parts.append(f"{round(float(fiber), 1)}g fiber")
-                    nutrition_str = ", ".join(parts) if parts else "no nutrition data"
+            sections.append(f"{label} ({len(items)} entries):\n" + "\n".join(lines))
 
-                    time_str = f" at {time}" if time else ""
-                    name_str = f" — {name}" if name else ""
-                    lines.append(f"  - {date} {meal_type}{time_str}{name_str}: {nutrition_str}")
-
-                readable_sections.append(f"MEALS ({len(items)} logged):\n" + "\n".join(lines))
-
-            elif "cgm" in dt or "glucose" in dt:
-                lines = []
-                for c in items:
-                    date = c.get("date", "")
-                    avg = c.get("average_glucose_mgdl") or c.get("average_glucose") or c.get("avg_mgdl")
-                    tir = c.get("in_target_70_180_percent") or c.get("tir_pct")
-                    gmi = c.get("gmi")
-                    cv = c.get("cv")
-                    below = c.get("below_70_percent")
-                    above = c.get("above_180_percent")
-
-                    parts = []
-                    if avg is not None: parts.append(f"avg {round(float(avg))} mg/dL")
-                    if tir is not None: parts.append(f"TIR {round(float(tir))}%")
-                    if gmi is not None: parts.append(f"GMI {round(float(gmi), 1)}%")
-                    if below is not None: parts.append(f"below 70: {round(float(below))}%")
-                    if above is not None: parts.append(f"above 180: {round(float(above))}%")
-                    lines.append(f"  - {date} {dt}: {', '.join(parts) if parts else 'data available'}")
-
-                readable_sections.append(f"GLUCOSE ({len(items)} entries):\n" + "\n".join(lines))
-
-            elif "fitness" in dt:
-                lines = []
-                for f in items:
-                    steps = f.get("steps")
-                    duration = f.get("active_duration") or f.get("active_minutes")
-                    energy = f.get("active_energy")
-                    peak = f.get("peak_hour")
-                    parts = []
-                    if steps is not None: parts.append(f"{int(steps)} steps")
-                    if duration is not None: parts.append(f"{int(duration)} min active")
-                    if energy is not None: parts.append(f"{round(float(energy))} kcal burned")
-                    if peak is not None: parts.append(f"peak hour: {peak}")
-                    lines.append(f"  - {', '.join(parts) if parts else 'activity recorded'}")
-
-                readable_sections.append(f"FITNESS ({len(items)} entries):\n" + "\n".join(lines))
-
-            elif "sleep" in dt:
-                lines = []
-                for s in items:
-                    hours = s.get("duration_hours") or s.get("avg_duration_hours")
-                    eff = s.get("efficiency_pct") or s.get("avg_efficiency_pct")
-                    quality = s.get("sleep_quality")
-                    parts = []
-                    if hours is not None: parts.append(f"{round(float(hours), 1)} hours")
-                    if eff is not None: parts.append(f"{round(float(eff))}% efficiency")
-                    if quality: parts.append(f"quality: {quality}")
-                    lines.append(f"  - {', '.join(parts) if parts else 'sleep recorded'}")
-
-                readable_sections.append(f"SLEEP ({len(items)} entries):\n" + "\n".join(lines))
-
-            elif dt == "patient_summary":
-                for ps in items:
-                    parts = []
-                    g = ps.get("glucose") or {}
-                    if g.get("avg_mgdl"): parts.append(f"Glucose: avg {round(float(g['avg_mgdl']))} mg/dL")
-                    if g.get("tir_pct"): parts.append(f"TIR {round(float(g['tir_pct']))}%")
-                    m = ps.get("meals") or {}
-                    if m.get("meal_count"): parts.append(f"Meals: {m['meal_count']} logged")
-                    a = ps.get("activity") or {}
-                    if a.get("steps"): parts.append(f"Steps: {int(a['steps'])}")
-                    sl = ps.get("sleep") or {}
-                    if sl.get("duration_hours"): parts.append(f"Sleep: {round(float(sl['duration_hours']), 1)}h")
-                    if sl.get("efficiency_pct"): parts.append(f"({round(float(sl['efficiency_pct']))}% eff)")
-                    v = ps.get("vitals") or {}
-                    if v.get("weight_kg"): parts.append(f"Weight: {round(float(v['weight_kg']), 1)} kg")
-                    if v.get("heart_rate_avg"): parts.append(f"HR: {round(float(v['heart_rate_avg']))} bpm")
-
-                    days = ps.get("summary_days", 1)
-                    readable_sections.append(f"HEALTH SUMMARY ({days} day{'s' if days > 1 else ''}):\n  " + "\n  ".join(parts) if parts else "HEALTH SUMMARY: limited data")
-
-            else:
-                # Generic fallback for unknown types
-                readable_sections.append(f"{dt.upper()} ({len(items)} entries): raw data available")
-
-        readable_text = "\n\n".join(readable_sections) if readable_sections else "No health data found for this query."
+        readable_text = "\n\n".join(sections) if sections else "No health data found for this query."
 
         return {
             "mode": "detail",
@@ -588,56 +510,41 @@ class HealthQueryAgent(BaseAgent):
         domains: list[str],
         retrieved: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Single patient, many records — aggregate into readable text."""
+        """Single patient, many records — show first 5 per type + count.
+
+        No hardcoded field names. Uses the same generic formatting as detail
+        mode but caps at 5 records per type and shows the total count.
+        """
         by_type: dict[str, list[dict]] = {}
         for item in retrieved:
             dt = item.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(item)
 
         sections: list[str] = []
-
         for dt, items in by_type.items():
-            if "cgm" in dt:
-                glucose_vals = [i.get("average_glucose_mgdl") or i.get("average_glucose") or i.get("avg_mgdl") for i in items]
-                glucose_vals = [v for v in glucose_vals if v is not None]
-                tir_vals = [i.get("in_target_70_180_percent") or i.get("tir_pct") for i in items]
-                tir_vals = [v for v in tir_vals if v is not None]
-                parts = [f"{len(items)} CGM entries"]
-                if glucose_vals: parts.append(f"avg glucose: {round(sum(glucose_vals)/len(glucose_vals))} mg/dL")
-                if tir_vals: parts.append(f"avg TIR: {round(sum(tir_vals)/len(tir_vals))}%")
-                sections.append(f"GLUCOSE: {', '.join(parts)}")
+            label = dt.replace("_", " ").upper()
+            lines = []
+            for item in items[:5]:  # show first 5
+                clean = {
+                    k: v for k, v in item.items()
+                    if k not in ("data_type", "source", "patient_id") and v is not None
+                }
+                flat_parts = []
+                for k, v in clean.items():
+                    if isinstance(v, dict):
+                        inner = ", ".join(f"{ik}: {iv}" for ik, iv in v.items() if iv is not None)
+                        if inner:
+                            flat_parts.append(f"{k}: ({inner})")
+                    else:
+                        flat_parts.append(f"{k}: {v}")
+                lines.append("  - " + ", ".join(flat_parts))
 
-            elif dt == "meal":
-                cals = []
-                proteins = []
-                for i in items:
-                    n = i.get("nutrition") or {}
-                    c = n.get("calories") or n.get("total_calories")
-                    p = n.get("protein") or n.get("proteins")
-                    if c is not None: cals.append(float(c))
-                    if p is not None: proteins.append(float(p))
-                parts = [f"{len(items)} meals logged"]
-                if cals: parts.append(f"avg {round(sum(cals)/len(cals))} kcal/meal, total {round(sum(cals))} kcal")
-                if proteins: parts.append(f"avg {round(sum(proteins)/len(proteins), 1)}g protein/meal")
-                sections.append(f"MEALS: {', '.join(parts)}")
+            if len(items) > 5:
+                lines.append(f"  ... and {len(items) - 5} more")
 
-            elif "fitness" in dt:
-                steps = [i.get("steps") for i in items if i.get("steps") is not None]
-                parts = [f"{len(items)} activity entries"]
-                if steps: parts.append(f"total {sum(int(s) for s in steps)} steps, avg {round(sum(steps)/len(steps))} steps/day")
-                sections.append(f"FITNESS: {', '.join(parts)}")
+            sections.append(f"{label} ({len(items)} total):\n" + "\n".join(lines))
 
-            elif "sleep" in dt:
-                durations = [i.get("duration_hours") or i.get("avg_duration_hours") for i in items]
-                durations = [float(d) for d in durations if d is not None]
-                parts = [f"{len(items)} sleep entries"]
-                if durations: parts.append(f"avg {round(sum(durations)/len(durations), 1)} hours/night")
-                sections.append(f"SLEEP: {', '.join(parts)}")
-
-            else:
-                sections.append(f"{dt.upper()}: {len(items)} entries")
-
-        readable_text = "\n".join(sections) if sections else "No health data found."
+        readable_text = "\n\n".join(sections) if sections else "No health data found."
 
         return {
             "mode": "summary",
@@ -752,12 +659,13 @@ class HealthQueryAgent(BaseAgent):
         lines = []
         for ps in patient_summaries[:_MAX_PATIENT_SUMMARIES]:
             name = ps.get("name", ps.get("patient_id", "Unknown")[:8])
-            parts = []
-            if "avg_glucose" in ps: parts.append(f"avg glucose {round(ps['avg_glucose'])} mg/dL")
-            if "avg_tir_pct" in ps: parts.append(f"TIR {round(ps['avg_tir_pct'])}%")
-            if "hypo_event_count" in ps: parts.append(f"{ps['hypo_event_count']} hypos")
-            if "meal_count" in ps: parts.append(f"{ps['meal_count']} meals")
-            if "avg_steps" in ps: parts.append(f"{ps['avg_steps']} steps/day")
+            # Show all metrics without hardcoding which ones exist
+            skip_keys = {"patient_id", "name", "record_count"}
+            parts = [
+                f"{k.replace('_', ' ')}: {v}"
+                for k, v in ps.items()
+                if k not in skip_keys and v is not None
+            ]
             detail = ", ".join(parts) if parts else f"{ps.get('record_count', 0)} records"
             lines.append(f"  - {name}: {detail}")
 
