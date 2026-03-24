@@ -178,6 +178,7 @@ from lib.ai_foundation.observability.metrics import MetricsCollector
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
 # Initialize Container
 container = Container()
@@ -1570,6 +1571,20 @@ container.register(
 container.register(
     HealthQueryAgent,
     lambda: HealthQueryAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
+        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Proactive Monitor Agent — background health scanning
+container.register(
+    ProactiveMonitorAgent,
+    lambda: ProactiveMonitorAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
