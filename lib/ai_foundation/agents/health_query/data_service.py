@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 
 if TYPE_CHECKING:
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MAX_RECORDS_PER_TYPE = 10  # cap per data_type to keep LLM context manageable
+# Uses settings.MAX_RECORDS_PER_TYPE and settings.QDRANT_RESULT_LIMIT
 
 
 class HealthDataService:
@@ -93,7 +94,7 @@ class HealthDataService:
             data_types=[dt.value for dt in intent.data_types],
             date_start=intent.date_range.start.isoformat() if intent.date_range else None,
             date_end=intent.date_range.end.isoformat() if intent.date_range else None,
-            limit=30,
+            limit=settings.QDRANT_RESULT_LIMIT,
             filters=filters,
         )
 
@@ -147,7 +148,7 @@ class HealthDataService:
             label = dt.replace("_", " ").upper()
             lines: list[str] = []
 
-            for item in items[:_MAX_RECORDS_PER_TYPE]:
+            for item in items[:settings.MAX_RECORDS_PER_TYPE]:
                 # Strip internal fields, keep everything the LLM should see
                 clean = {
                     k: v for k, v in item.items()
@@ -168,8 +169,8 @@ class HealthDataService:
 
                 lines.append("  - " + ", ".join(parts))
 
-            if len(items) > _MAX_RECORDS_PER_TYPE:
-                lines.append(f"  ... and {len(items) - _MAX_RECORDS_PER_TYPE} more")
+            if len(items) > settings.MAX_RECORDS_PER_TYPE:
+                lines.append(f"  ... and {len(items) - settings.MAX_RECORDS_PER_TYPE} more")
 
             sections.append(f"{label} ({len(items)} entries):\n" + "\n".join(lines))
 

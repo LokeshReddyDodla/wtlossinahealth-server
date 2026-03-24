@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from lib.ai_foundation.config import settings
 from .base import ConversationTurn, MemoryFact, ThreadSummary
 
 if TYPE_CHECKING:
@@ -69,7 +70,7 @@ class MongoMemoryStore:
         await turns.create_index(
             "timestamp",
             name="turns_ttl_idx",
-            expireAfterSeconds=90 * 24 * 3600,  # 90 days
+            expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600,
         )
 
         summaries = self._mongo.get_collection(SUMMARIES_COLLECTION)
@@ -82,7 +83,7 @@ class MongoMemoryStore:
         await summaries.create_index(
             "updated_at",
             name="summaries_ttl_idx",
-            expireAfterSeconds=90 * 24 * 3600,  # 90 days
+            expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600,
         )
 
         # TTL indexes for trace and training collections
@@ -94,7 +95,7 @@ class MongoMemoryStore:
         await traces.create_index(
             "started_at",
             name="traces_ttl_idx",
-            expireAfterSeconds=30 * 24 * 3600,  # 30 days
+            expireAfterSeconds=settings.TRACES_TTL_DAYS * 24 * 3600,
         )
 
         samples = self._mongo.get_collection("ai_finetune_samples")
@@ -105,14 +106,14 @@ class MongoMemoryStore:
         await samples.create_index(
             "created_at",
             name="samples_ttl_idx",
-            expireAfterSeconds=180 * 24 * 3600,  # 180 days (keep training data longer)
+            expireAfterSeconds=settings.SAMPLES_TTL_DAYS * 24 * 3600,
         )
 
         metrics = self._mongo.get_collection("ai_agent_metrics")
         await metrics.create_index(
             "recorded_at",
             name="metrics_ttl_idx",
-            expireAfterSeconds=30 * 24 * 3600,  # 30 days
+            expireAfterSeconds=settings.TRACES_TTL_DAYS * 24 * 3600,
         )
 
         logger.debug("Memory store indexes + TTL indexes ensured.")

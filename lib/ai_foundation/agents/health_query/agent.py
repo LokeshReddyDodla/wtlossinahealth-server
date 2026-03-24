@@ -37,7 +37,7 @@ from .contracts import QueryIntent, QueryResponse
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
-_MAX_ANALYSIS_CHARS = 80_000
+from lib.ai_foundation.config import settings
 
 
 class HealthQueryAgent(BaseAgent):
@@ -273,8 +273,8 @@ class HealthQueryAgent(BaseAgent):
         system_prompt = self._get_system_prompt(input.context.user_role)
         response_prompt = self.prompts.get("hq_response_generation").body
 
-        if len(data_text) > _MAX_ANALYSIS_CHARS:
-            data_text = data_text[:_MAX_ANALYSIS_CHARS] + "\n... (truncated)"
+        if len(data_text) > settings.MAX_ANALYSIS_CHARS:
+            data_text = data_text[:settings.MAX_ANALYSIS_CHARS] + "\n... (truncated)"
 
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},

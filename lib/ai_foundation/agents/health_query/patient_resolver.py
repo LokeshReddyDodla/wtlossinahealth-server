@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.config import settings
+
 if TYPE_CHECKING:
     from lib.core.postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
 
-_CACHE_TTL = 300  # 5 minutes
+settings.PATIENT_CACHE_TTL = 300  # 5 minutes
 
 
 class PatientProfile(BaseModel):
@@ -76,7 +78,7 @@ class PatientNameResolver:
         if pid not in self._name_cache:
             return True
         ts = self._timestamps.get(pid, 0)
-        return (time.monotonic() - ts) > _CACHE_TTL
+        return (time.monotonic() - ts) > settings.PATIENT_CACHE_TTL
 
     async def _fetch(self, patient_ids: list[str]) -> None:
         """Fetch name + profile_picture from Postgres."""
