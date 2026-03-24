@@ -1,0 +1,103 @@
+"""
+Context Loader — loads all context needed before the agent pipeline runs.
+
+Resolves patient facts, conversation history, thread summary, and patient
+names in one call. Everything the agent needs to build LLM messages.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from lib.ai_foundation.memory.base import MemoryStore
+    from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+
+logger = logging.getLogger(__name__)
+
+
+class AgentContext(BaseModel):
+    """All context loaded before the pipeline runs."""
+
+    facts: list[dict] = Field(default_factory=list)
+    history: list[dict[str, str]] = Field(default_factory=list)
+    thread_summary: str | None = None
+    patient_names: dict[str, str] = Field(default_factory=dict)
+
+
+class ContextLoader:
+    """Loads patient facts, conversation history, thread summary, and names.
+
+    One service, one call — replaces 4 separate methods on the agent.
+    """
+
+    def __init__(
+        self,
+        *,
+        memory: MemoryStore | None = None,
+        patient_resolver: PatientNameResolver | None = None,
+    ) -> None:
+        self._memory = memory
+        self._resolver = patient_resolver
+
+    async def load(
+        self,
+        *,
+        patient_id: str | None = None,
+        patient_ids: list[str] | None = None,
+        thread_id: str | None = None,
+    ) -> AgentContext:
+        """Load all context in parallel-safe sequence."""
+        facts = await self._load_facts(patient_id)
+        history = await self._load_history(thread_id)
+        summary = await self._load_summary(thread_id)
+        names = await self._load_names(patient_ids or ([patient_id] if patient_id else []))
+
+        return AgentContext(
+            facts=facts,
+            history=history,
+            thread_summary=summary,
+            patient_names=names,
+        )
+
+    async def _load_facts(self, patient_id: str | None) -> list[dict]:
+        if not self._memory or not patient_id:
+            return []
+        try:
+            facts = await self._memory.get_patient_facts(patient_id)
+            return [f.model_dump(mode="json") for f in facts]
+        except Exception as exc:
+            logger.debug("Failed to load patient facts: %s", exc)
+            return []
+
+    async def _load_history(self, thread_id: str | None) -> list[dict[str, str]]:
+        if not self._memory or not thread_id:
+            return []
+        try:
+            turns = await self._memory.get_thread_turns(thread_id, limit=10)
+            return [{"role": t.role, "content": t.content} for t in turns]
+        except Exception as exc:
+            logger.debug("Failed to load history: %s", exc)
+            return []
+
+    async def _load_summary(self, thread_id: str | None) -> str | None:
+        if not self._memory or not thread_id:
+            return None
+        try:
+            summary = await self._memory.get_thread_summary(thread_id)
+            return summary.summary if summary and summary.summary else None
+        except Exception as exc:
+            logger.debug("Failed to load thread summary: %s", exc)
+            return None
+
+    async def _load_names(self, patient_ids: list[str]) -> dict[str, str]:
+        if not self._resolver or not patient_ids:
+            return {}
+        try:
+            return await self._resolver.resolve_names(patient_ids)
+        except Exception as exc:
+            logger.debug("Failed to resolve patient names: %s", exc)
+            return {pid: f"Patient ({pid[:8]})" for pid in patient_ids}

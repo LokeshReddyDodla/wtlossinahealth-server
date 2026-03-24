@@ -177,6 +177,10 @@ from lib.ai_foundation.observability.metrics import MetricsCollector
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
+from lib.ai_foundation.agents.health_query.data_service import HealthDataService
+from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
+from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
@@ -1597,18 +1601,55 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Health Query Agent v3 — Qdrant as primary data source
+# Health Query Agent v3 services
+container.register(
+    ContextLoader,
+    lambda: ContextLoader(
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    HealthDataService,
+    lambda: HealthDataService(
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        summary_retriever=cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    PersistenceService,
+    lambda: PersistenceService(
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    FactExtractor,
+    lambda: FactExtractor(
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Health Query Agent v3 — thin orchestrator
 container.register(
     HealthQueryAgent,
     lambda: HealthQueryAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
-        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
-        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
-        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
-        summary_retriever=cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
+        context_loader=cast(ContextLoader, container.resolve(ContextLoader)),
+        data_service=cast(HealthDataService, container.resolve(HealthDataService)),
+        persistence=cast(PersistenceService, container.resolve(PersistenceService)),
+        fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
     ),
     scope=Scope.singleton,
 )
