@@ -205,7 +205,7 @@ async def list_conversation_threads(
         threads.append(ThreadInfo(
             thread_id=doc["_id"],
             turn_count=doc["turn_count"],
-            last_turn=doc["last_turn"].isoformat() if doc.get("last_turn") else None,
+            last_turn=str(doc["last_turn"]) if doc.get("last_turn") else None,
         ))
 
     return SuccessResponse(
