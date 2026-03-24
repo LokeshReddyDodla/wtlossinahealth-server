@@ -1429,12 +1429,14 @@ container.register(
 )
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
+# Note: collector is resolved lazily to avoid circular dependency
 container.register(
     ModelGateway,
     lambda: ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
         api_keys={"openai": str(config("OPENAI_API_KEY", default=""))},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
+        collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
     ),
     scope=Scope.singleton,
 )

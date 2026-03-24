@@ -61,6 +61,16 @@ async def on_startup() -> None:
     # external services
     await app.state.qdrant_store.connect()
 
+    # AI Foundation — ensure MongoDB indexes for memory store
+    try:
+        from lib.core.container import container
+        from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+        memory_store: MongoMemoryStore = container.resolve(MongoMemoryStore)
+        await memory_store.ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to init AI Foundation indexes: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
