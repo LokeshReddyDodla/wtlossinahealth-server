@@ -165,9 +165,7 @@ from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-from lib.ai_foundation.retrieval.composite import CompositeRetriever
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
-from lib.ai_foundation.retrieval.mongo import MongoReportRetriever
 from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
 from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
@@ -1434,29 +1432,6 @@ def _build_prompt_registry() -> PromptRegistry:
     return registry
 
 
-def _build_composite_retriever() -> CompositeRetriever:
-    """Build a CompositeRetriever wired with actual Qdrant + Mongo + Summary sources."""
-    composite = CompositeRetriever()
-    composite.register(
-        "mongo_report",
-        cast(MongoReportRetriever, container.resolve(MongoReportRetriever)),
-        timeout_seconds=5.0,
-        required=True,
-    )
-    composite.register(
-        "qdrant",
-        cast(QdrantRetriever, container.resolve(QdrantRetriever)),
-        timeout_seconds=8.0,
-        required=False,
-    )
-    composite.register(
-        "patient_summary",
-        cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
-        timeout_seconds=5.0,
-        required=False,
-    )
-    return composite
-
 # CacheStore namespace for foundation services
 container.register(
     "ai_foundation_cache",
@@ -1523,28 +1498,12 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Mongo Report Retriever — deterministic daily reports
-container.register(
-    MongoReportRetriever,
-    lambda: MongoReportRetriever(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
-# Patient Summary Retriever — sleep, vitals, daily aggregates
+# Patient Summary Retriever — sleep, vitals fallback (only when not in Qdrant)
 container.register(
     PatientSummaryRetriever,
     lambda: PatientSummaryRetriever(
         mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
-    scope=Scope.singleton,
-)
-
-# Composite Retriever — parallel multi-source retrieval (wired with actual sources)
-container.register(
-    CompositeRetriever,
-    lambda: _build_composite_retriever(),
     scope=Scope.singleton,
 )
 
@@ -1638,17 +1597,18 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Health Query Agent v3 — clean foundation agent
+# Health Query Agent v3 — Qdrant as primary data source
 container.register(
     HealthQueryAgent,
     lambda: HealthQueryAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
         tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        summary_retriever=cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
     ),
     scope=Scope.singleton,
 )
@@ -1660,7 +1620,6 @@ container.register(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
         tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
     ),

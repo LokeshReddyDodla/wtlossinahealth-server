@@ -1,9 +1,18 @@
 """
-Qdrant Retriever — semantic vector search over patient health data.
+Qdrant Retriever — primary data source for all health queries.
 
-Wraps the QdrantStore from lib/core and the embed_text utility to provide
-a standard Retriever interface. Uses the actual Qdrant filter models and
-the async context manager pattern from QdrantStore.
+Two retrieval modes:
+1. Filtered Scroll — deterministic queries (90% of queries)
+   Uses qdrant.scroll() with indexed filters. No embedding needed.
+   "Show meals today", "Glucose this week" → exact records with full payloads.
+
+2. Semantic Search — cross-domain/pattern queries (10% of queries)
+   Uses qdrant.search() with vector similarity + filters.
+   "Find patterns between meals and glucose" → relevance-ranked results.
+
+Filter building ported from v2/filter_builder.py — handles date ranges,
+time buckets, hour ranges, month filters, numeric constraints, and the
+stats/events pairing rule.
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     MatchAny,
+    MatchValue,
     Range,
 )
 
@@ -27,16 +37,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Type alias for the embedding function
 EmbedFn = Callable[[str], Awaitable[list[float]]]
+
+# Data types that need stats+events pairing
+_STATS_EVENTS_PAIRS = {
+    "hyper": ["hyper_stats", "hyper_event"],
+    "hypo": ["hypo_stats", "hypo_event"],
+    "rapid_spike": ["rapid_spike_stats", "rapid_spike_event"],
+    "rapid_drop": ["rapid_drop_stats", "rapid_drop_event"],
+}
+
+# Data types that don't support time-based filtering
+_NON_FILTERABLE_TYPES = {"profile", "patient_document"}
+
+
+def _date_to_epoch_ms(dt: datetime) -> float:
+    """Convert datetime to epoch milliseconds."""
+    return dt.timestamp() * 1000
 
 
 def _date_str_to_epoch_ms(date_str: str) -> float | None:
-    """Convert an ISO date string to epoch milliseconds for Qdrant filtering.
-
-    Qdrant stores timestamps as start_time/end_time in epoch milliseconds.
-    Handles both date-only ("2026-03-20") and datetime ("2026-03-20T00:00:00Z") formats.
-    """
+    """Convert ISO date string to epoch milliseconds."""
     try:
         if "T" in date_str:
             dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -47,18 +68,26 @@ def _date_str_to_epoch_ms(date_str: str) -> float | None:
         return None
 
 
-class QdrantRetriever:
-    """Semantic search retriever backed by Qdrant vector database.
+def _expand_data_types(data_types: list[str]) -> list[str]:
+    """Apply stats/events pairing rule.
 
-    Uses QdrantStore's async context manager for the client and proper
-    qdrant_client filter models for type safety.
+    If "hypo" is requested, also include "hypo_stats" and "hypo_event".
+    """
+    expanded = set(data_types)
+    for prefix, pair_types in _STATS_EVENTS_PAIRS.items():
+        if any(prefix in dt for dt in data_types):
+            expanded.update(pair_types)
+    return list(expanded)
+
+
+class QdrantRetriever:
+    """Primary data retriever using Qdrant with two modes.
 
     Args:
-        qdrant_store: The ``QdrantStore`` singleton from ``lib/core``.
-        collection_name: Qdrant collection to search (default: from env).
-        embedding_fn: Async callable ``(text) -> list[float]``. Use
-            ``lib.utils.vector_utils.embed_text``.
-        embedding_cache: Optional cache to skip redundant embedding calls.
+        qdrant_store: QdrantStore singleton from lib/core.
+        collection_name: Qdrant collection (default: from env).
+        embedding_fn: Async callable for semantic search mode.
+        embedding_cache: Optional cache for embeddings.
     """
 
     name: str = "qdrant"
@@ -76,13 +105,49 @@ class QdrantRetriever:
         self._embed_fn = embedding_fn
         self._embed_cache = embedding_cache
 
+    # ── Mode 1: Filtered Scroll (deterministic) ──────────────────────────
+
+    async def retrieve_filtered(self, request: RetrievalRequest) -> list[RetrievalResult]:
+        """Filtered scroll — no embedding, no vector similarity.
+
+        Uses indexed filters for fast exact retrieval. This is the primary
+        mode for 90% of health queries.
+        """
+        scroll_filter = self._build_full_filter(request)
+        if not scroll_filter:
+            return []
+
+        async with self._store.get_client() as client:
+            records, _ = await client.scroll(
+                collection_name=self._collection,
+                scroll_filter=scroll_filter,
+                limit=request.limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+
+        results: list[RetrievalResult] = []
+        for record in records:
+            payload = record.payload or {}
+            results.append(RetrievalResult(
+                payload=payload,
+                source="qdrant_filtered",
+                score=None,
+                data_type=payload.get("data_type"),
+            ))
+
+        logger.debug("Qdrant filtered scroll: %d results", len(results))
+        return results
+
+    # ── Mode 2: Semantic Search (cross-domain) ───────────────────────────
+
     async def retrieve(self, request: RetrievalRequest) -> list[RetrievalResult]:
-        """Execute semantic search against Qdrant."""
+        """Semantic vector search — for pattern/correlation queries."""
         if self._embed_fn is None:
-            raise RuntimeError("QdrantRetriever requires an embedding_fn.")
+            raise RuntimeError("QdrantRetriever requires an embedding_fn for semantic search.")
 
         query_vector = await self._get_embedding(request.query)
-        search_filter = self._build_filter(request)
+        search_filter = self._build_full_filter(request)
 
         async with self._store.get_client() as client:
             search_result = await client.search(
@@ -96,24 +161,135 @@ class QdrantRetriever:
         results: list[RetrievalResult] = []
         for point in search_result:
             payload = point.payload or {}
-            results.append(
-                RetrievalResult(
-                    payload=payload,
-                    source="qdrant",
-                    score=point.score,
-                    data_type=payload.get("data_type"),
-                )
-            )
+            results.append(RetrievalResult(
+                payload=payload,
+                source="qdrant_semantic",
+                score=point.score,
+                data_type=payload.get("data_type"),
+            ))
 
         logger.debug(
-            "Qdrant search: %d results (top_score=%.3f)",
+            "Qdrant semantic search: %d results (top_score=%.3f)",
             len(results),
             results[0].score if results else 0.0,
         )
         return results
 
+    # ── Filter Building ──────────────────────────────────────────────────
+
+    def _build_full_filter(self, request: RetrievalRequest) -> Filter | None:
+        """Build comprehensive Qdrant filter from the retrieval request.
+
+        Ported from v2/filter_builder.py with full support for:
+        - Patient ID, data types (with stats/events expansion)
+        - Date range (epoch ms), month filters
+        - Time buckets, hour ranges
+        - Numeric filters (range conditions)
+        - Non-filterable types (PROFILE, DOCUMENTS) via should/min_should
+        """
+        if not request.patient_ids:
+            return None
+
+        data_types = _expand_data_types(request.data_types) if request.data_types else []
+
+        # Separate filterable vs non-filterable types
+        non_filterable = [dt for dt in data_types if dt in _NON_FILTERABLE_TYPES]
+        filterable = [dt for dt in data_types if dt not in _NON_FILTERABLE_TYPES]
+
+        should_filters: list[Filter] = []
+
+        # Always include profile data
+        should_filters.append(Filter(must=[
+            FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
+            FieldCondition(key="data_type", match=MatchValue(value="profile")),
+        ]))
+
+        # Non-filterable types (documents, etc.)
+        if non_filterable:
+            should_filters.append(Filter(must=[
+                FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
+                FieldCondition(key="data_type", match=MatchAny(any=non_filterable)),
+            ]))
+
+        # Filterable types (timeseries data with date/time filters)
+        if filterable or not data_types:
+            must: list[FieldCondition] = [
+                FieldCondition(key="patient_id", match=MatchAny(any=request.patient_ids)),
+            ]
+
+            if filterable:
+                must.append(FieldCondition(key="data_type", match=MatchAny(any=filterable)))
+
+            # Date range → epoch ms
+            if request.date_start:
+                start_ms = _date_str_to_epoch_ms(request.date_start)
+                if start_ms is not None:
+                    must.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
+
+            if request.date_end:
+                end_ms = _date_str_to_epoch_ms(request.date_end)
+                if end_ms is not None:
+                    must.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
+
+            # Month filters
+            month_filters = request.filters.get("month_filters")
+            if month_filters:
+                if isinstance(month_filters, list) and len(month_filters) == 1:
+                    must.append(FieldCondition(key="month", match=MatchValue(value=month_filters[0])))
+                elif isinstance(month_filters, list):
+                    must.append(FieldCondition(key="month", match=MatchAny(any=month_filters)))
+
+            # Time buckets
+            time_buckets = request.filters.get("time_buckets")
+            if time_buckets and isinstance(time_buckets, list):
+                must.append(FieldCondition(key="time_of_day_bucket", match=MatchAny(any=time_buckets)))
+
+            # Hour range
+            hour_start = request.filters.get("hour_start")
+            hour_end = request.filters.get("hour_end")
+            if hour_start is not None and hour_end is not None:
+                must.append(FieldCondition(key="hour", range=Range(
+                    gte=float(hour_start), lt=float(hour_end),
+                )))
+
+            # Numeric filters (e.g., glucose > 200)
+            numeric_filters = request.filters.get("numeric_filters")
+            if numeric_filters and isinstance(numeric_filters, list):
+                for nf in numeric_filters:
+                    key = nf.get("key")
+                    range_cond = nf.get("range_condition", {})
+                    if key and range_cond:
+                        range_kwargs = {}
+                        for op in ("gte", "lte", "gt", "lt"):
+                            if op in range_cond and range_cond[op] is not None:
+                                range_kwargs[op] = float(range_cond[op])
+                        if range_kwargs:
+                            must.append(FieldCondition(key=key, range=Range(**range_kwargs)))
+
+            # Other pass-through filters
+            for key, value in request.filters.items():
+                if key in ("month_filters", "time_buckets", "hour_start", "hour_end", "numeric_filters"):
+                    continue  # already handled above
+                if isinstance(value, list):
+                    must.append(FieldCondition(key=key, match=MatchAny(any=value)))
+                elif isinstance(value, (int, float, str, bool)):
+                    must.append(FieldCondition(key=key, match=MatchValue(value=value)))
+
+            should_filters.append(Filter(must=must))
+
+        # Combine with should (OR logic: match profile OR timeseries OR documents)
+        if len(should_filters) == 1:
+            return should_filters[0]
+
+        from qdrant_client.models import MinShould
+        return Filter(
+            should=should_filters,
+            min_should=MinShould(min_count=1, conditions=should_filters),
+        )
+
+    # ── Embedding helpers ────────────────────────────────────────────────
+
     async def _get_embedding(self, text: str) -> list[float]:
-        """Get embedding vector, using cache if available."""
         if self._embed_cache:
             cached = self._embed_cache.get(text)
             if cached is not None:
@@ -122,48 +298,3 @@ class QdrantRetriever:
             self._embed_cache.set(text, vector)
             return vector
         return await self._embed_fn(text)
-
-    @staticmethod
-    def _build_filter(request: RetrievalRequest) -> Filter | None:
-        """Build a Qdrant Filter from the retrieval request."""
-        must: list[FieldCondition] = []
-
-        if request.patient_ids:
-            must.append(FieldCondition(
-                key="patient_id",
-                match=MatchAny(any=request.patient_ids),
-            ))
-
-        if request.data_types:
-            must.append(FieldCondition(
-                key="data_type",
-                match=MatchAny(any=request.data_types),
-            ))
-
-        # Qdrant stores dates as epoch milliseconds in start_time/end_time fields
-        if request.date_start:
-            start_ms = _date_str_to_epoch_ms(request.date_start)
-            if start_ms is not None:
-                must.append(FieldCondition(
-                    key="start_time",
-                    range=Range(gte=start_ms),
-                ))
-
-        if request.date_end:
-            end_ms = _date_str_to_epoch_ms(request.date_end)
-            if end_ms is not None:
-                must.append(FieldCondition(
-                    key="end_time",
-                    range=Range(lte=end_ms),
-                ))
-
-        # Pass-through extra filters
-        for key, value in request.filters.items():
-            if isinstance(value, dict) and "range" in value:
-                must.append(FieldCondition(key=key, range=Range(**value["range"])))
-            elif isinstance(value, list):
-                must.append(FieldCondition(key=key, match=MatchAny(any=value)))
-            else:
-                must.append(FieldCondition(key=key, match=MatchAny(any=[value])))
-
-        return Filter(must=must) if must else None

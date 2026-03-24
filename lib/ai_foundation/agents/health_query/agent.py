@@ -87,10 +87,18 @@ class HealthQueryAgent(BaseAgent):
 
     agent_id = "health_query_v3"
 
-    def __init__(self, patient_resolver: Any | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        patient_resolver: Any | None = None,
+        qdrant_retriever: Any | None = None,
+        summary_retriever: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._prompts_registered = False
-        self._patient_resolver = patient_resolver  # PatientNameResolver (optional)
+        self._patient_resolver = patient_resolver
+        self._qdrant = qdrant_retriever  # QdrantRetriever (primary data source)
+        self._summary_retriever = summary_retriever  # PatientSummaryRetriever (sleep/vitals fallback)
 
     # -- Public API ---------------------------------------------------------
 
@@ -384,13 +392,32 @@ class HealthQueryAgent(BaseAgent):
         input: AgentInput,
         intent: QueryIntent,
     ) -> list[dict[str, Any]]:
-        """Retrieve health data using the composite retriever."""
-        if not self.retriever:
+        """Retrieve health data — Qdrant as primary source, two modes.
+
+        Mode 1 (filtered scroll): deterministic queries — no embedding, just filters
+        Mode 2 (semantic search): cross-domain/pattern queries — vector similarity
+        """
+        if not self._qdrant and not self.retriever:
             return []
 
         patient_ids = input.context.patient_ids or (
             [input.context.patient_id] if input.context.patient_id else []
         )
+
+        # Build request with all filters from intent
+        filters: dict[str, Any] = {}
+        if intent.time_buckets:
+            filters["time_buckets"] = intent.time_buckets
+        if intent.hour_range and intent.hour_range.start_hour is not None:
+            filters["hour_start"] = intent.hour_range.start_hour
+            filters["hour_end"] = intent.hour_range.end_hour
+        if intent.month_filters:
+            filters["month_filters"] = intent.month_filters
+        if intent.numeric_filters:
+            filters["numeric_filters"] = [
+                {"key": nf.key, "range_condition": nf.range_condition.model_dump(exclude_none=True)}
+                for nf in intent.numeric_filters
+            ]
 
         request = RetrievalRequest(
             query=input.message,
@@ -398,24 +425,72 @@ class HealthQueryAgent(BaseAgent):
             data_types=[dt.value for dt in intent.data_types],
             date_start=intent.date_range.start.isoformat() if intent.date_range else None,
             date_end=intent.date_range.end.isoformat() if intent.date_range else None,
-            limit=24,
+            limit=30,
+            filters=filters,
         )
 
-        if self.tracer:
-            async with self.tracer.span("data_retrieval") as span:
-                result = await self.retriever.retrieve(request)
-                span.tags["sources"] = ",".join(result.executed_sources)
-                span.tags["result_count"] = str(len(result.items))
-                if result.degraded_sources:
-                    span.tags["degraded"] = ",".join(result.degraded_sources)
-        else:
-            result = await self.retriever.retrieve(request)
+        # Route to the right mode
+        if self._qdrant:
+            is_deterministic = self._is_deterministic_query(intent)
 
-        payloads = [item.payload for item in result.items]
-        print(f"[RETRIEVAL] {len(result.items)} items from sources={result.executed_sources}, degraded={result.degraded_sources}")
-        for item in result.items[:5]:
-            print(f"  [{item.source}] data_type={item.data_type}, keys={list(item.payload.keys())[:8]}")
-        return payloads
+            if self.tracer:
+                mode = "filtered" if is_deterministic else "semantic"
+                async with self.tracer.span(f"qdrant_{mode}") as span:
+                    if is_deterministic:
+                        results = await self._qdrant.retrieve_filtered(request)
+                    else:
+                        results = await self._qdrant.retrieve(request)
+                    span.tags["mode"] = mode
+                    span.tags["result_count"] = str(len(results))
+            else:
+                if is_deterministic:
+                    results = await self._qdrant.retrieve_filtered(request)
+                else:
+                    results = await self._qdrant.retrieve(request)
+
+            # Enrich with patient_summary for sleep/vitals if needed
+            if self._summary_retriever and self._needs_summary_enrichment(intent, results):
+                try:
+                    summary_results = await self._summary_retriever.retrieve(request)
+                    results.extend(summary_results)
+                except Exception as exc:
+                    logger.debug("Summary enrichment failed: %s", exc)
+
+            return [r.payload for r in results]
+
+        # Fallback to composite retriever if qdrant not available
+        if self.retriever:
+            result = await self.retriever.retrieve(request)
+            return [item.payload for item in result.items]
+
+        return []
+
+    @staticmethod
+    def _is_deterministic_query(intent: QueryIntent) -> bool:
+        """Determine if this query should use filtered scroll vs semantic search.
+
+        Deterministic: specific data_types + date range → exact records
+        Semantic: cross-domain, pattern-finding, vague → vector similarity
+        """
+        # If we have specific data types and a date range, it's deterministic
+        if intent.data_types and intent.date_range:
+            return True
+        # If we have specific data types (even without date), still deterministic
+        if intent.data_types:
+            return True
+        # Vague query with no data types → semantic search
+        return False
+
+    @staticmethod
+    def _needs_summary_enrichment(intent: QueryIntent, results: list) -> bool:
+        """Check if we need patient_summary data for sleep/vitals."""
+        requested_types = {dt.value for dt in intent.data_types}
+        sleep_vitals = {"sleep", "sleep_report", "vitals"}
+        if not sleep_vitals.intersection(requested_types):
+            return False
+        # Only enrich if Qdrant didn't return sleep/vitals data
+        result_types = {r.data_type for r in results if hasattr(r, 'data_type')}
+        return not sleep_vitals.intersection(result_types)
 
     async def _build_analysis(
         self,
@@ -735,6 +810,8 @@ class HealthQueryAgent(BaseAgent):
         # Hard cap
         if len(analysis_text) > _MAX_ANALYSIS_CHARS:
             analysis_text = analysis_text[:_MAX_ANALYSIS_CHARS] + "\n... (truncated)"
+
+        print(f"[ANALYSIS_TEXT]\n{analysis_text[:500]}")
 
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
