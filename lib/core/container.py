@@ -1391,6 +1391,47 @@ def _get_embed_fn():
     return embed_text
 
 
+def _build_prompt_registry() -> PromptRegistry:
+    """Build a PromptRegistry pre-loaded with all agent prompts."""
+    from pathlib import Path
+    import logging
+
+    registry = PromptRegistry()
+
+    # Discover and register prompt directories for all foundation agents
+    agents_dir = Path(__file__).parent.parent / "ai_foundation" / "agents"
+    if agents_dir.exists():
+        for agent_dir in agents_dir.iterdir():
+            prompts_dir = agent_dir / "prompts"
+            if prompts_dir.is_dir():
+                try:
+                    count = registry.register_directory(prompts_dir, namespace=agent_dir.name)
+                    logging.getLogger(__name__).info(
+                        "Registered %d prompts from %s", count, agent_dir.name,
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).warning(
+                        "Failed to load prompts from %s: %s", agent_dir.name, e,
+                    )
+
+    # Also register existing health_query_agent prompts/playbooks for backward compat
+    legacy_prompts = Path(__file__).parent.parent / "services" / "health_query_agent" / "prompts"
+    if legacy_prompts.is_dir():
+        try:
+            registry.register_directory(legacy_prompts, namespace="health_query_legacy")
+        except Exception:
+            pass
+
+    legacy_playbooks = Path(__file__).parent.parent / "services" / "health_query_agent" / "v2" / "playbooks"
+    if legacy_playbooks.is_dir():
+        try:
+            registry.register_directory(legacy_playbooks, namespace="health_query_legacy.playbooks")
+        except Exception:
+            pass
+
+    return registry
+
+
 def _build_composite_retriever() -> CompositeRetriever:
     """Build a CompositeRetriever wired with actual Qdrant + Mongo sources."""
     composite = CompositeRetriever()
@@ -1442,10 +1483,10 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Prompt Registry — versioned prompt management
+# Prompt Registry — versioned prompt management (pre-loaded with agent prompts)
 container.register(
     PromptRegistry,
-    lambda: PromptRegistry(),
+    lambda: _build_prompt_registry(),
     scope=Scope.singleton,
 )
 
