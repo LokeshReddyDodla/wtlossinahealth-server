@@ -236,13 +236,11 @@ class TestStreaming:
 
 
 class TestFactExtractor:
-    def test_might_contain_facts(self):
+    def test_extractor_exists(self):
+        """FactExtractor now always runs LLM — no keyword heuristic to test."""
         from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
-        assert FactExtractor._might_contain_facts("this patient is vegetarian")
-        assert FactExtractor._might_contain_facts("note: has increased muscle mass")
-        assert FactExtractor._might_contain_facts("patient weighs 72 kg")
-        assert not FactExtractor._might_contain_facts("show meals today")
-        assert not FactExtractor._might_contain_facts("how was glucose this week")
+        ext = FactExtractor()
+        assert hasattr(ext, "extract_if_needed")
 
 
 class TestPromptLoading:

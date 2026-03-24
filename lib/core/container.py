@@ -160,6 +160,7 @@ from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.services.agent_meal_v1 import AgentMealV1Service
 
 # AI Foundation
+from lib.ai_foundation.config import settings as _ai_settings
 from lib.ai_foundation.models.registry import ModelRegistry, build_default_registry
 from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
 from lib.ai_foundation.models.gateway import ModelGateway
@@ -1453,21 +1454,30 @@ container.register(
 # Circuit Breaker — provider failure detection
 container.register(
     CircuitBreaker,
-    lambda: CircuitBreaker(failure_threshold=5, window_seconds=60, cooldown_seconds=30),
+    lambda: CircuitBreaker(
+        failure_threshold=_ai_settings.CIRCUIT_FAILURE_THRESHOLD,
+        window_seconds=_ai_settings.CIRCUIT_WINDOW_SECONDS,
+        cooldown_seconds=_ai_settings.CIRCUIT_COOLDOWN_SECONDS,
+    ),
     scope=Scope.singleton,
 )
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
 def _build_model_gateway() -> ModelGateway:
-    api_key = str(config("OPENAI_API_KEY", default=""))
-    if not api_key:
-        import logging
-        logging.getLogger(__name__).warning(
-            "OPENAI_API_KEY not set — LLM calls will fail. Set it in your environment."
-        )
+    import logging
+    _log = logging.getLogger(__name__)
+
+    openai_key = _ai_settings.OPENAI_API_KEY or str(config("OPENAI_API_KEY", default=""))
+    google_key = _ai_settings.GOOGLE_API_KEY or str(config("GOOGLE_API_KEY", default=""))
+
+    if not openai_key:
+        _log.warning("OPENAI_API_KEY not set — OpenAI calls will fail.")
+    if not google_key:
+        _log.info("GOOGLE_API_KEY not set — Gemini fallback unavailable.")
+
     return ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
-        api_keys={"openai": api_key},
+        api_keys={"openai": openai_key, "google": google_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
         collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
     )
@@ -1516,7 +1526,7 @@ container.register(
     SemanticCache,
     lambda: SemanticCache(
         cache_store=container.resolve("ai_foundation_cache"),
-        ttl_seconds=900,
+        ttl_seconds=_ai_settings.SEMANTIC_CACHE_TTL,
     ),
     scope=Scope.singleton,
 )
@@ -1526,7 +1536,7 @@ container.register(
     EmbeddingCache,
     lambda: EmbeddingCache(
         cache_store=container.resolve("ai_foundation_cache"),
-        ttl_seconds=86_400,
+        ttl_seconds=_ai_settings.EMBEDDING_CACHE_TTL,
     ),
     scope=Scope.singleton,
 )

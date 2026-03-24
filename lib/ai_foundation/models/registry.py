@@ -345,31 +345,55 @@ def build_default_registry() -> ModelRegistry:
             supports_streaming=False,
             tags=["embedding"],
         ),
+        # Google Gemini models
+        ModelSpec(
+            model_id="gemini-2.5-flash",
+            provider=ModelProvider.GOOGLE,
+            temperature=0.0,
+            timeout_seconds=15.0,
+            cost_per_1k_input=0.00015,
+            cost_per_1k_output=0.0006,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["fast", "cheap", "google"],
+        ),
+        ModelSpec(
+            model_id="gemini-2.5-pro",
+            provider=ModelProvider.GOOGLE,
+            temperature=0.0,
+            timeout_seconds=25.0,
+            cost_per_1k_input=0.00125,
+            cost_per_1k_output=0.005,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["powerful", "reasoning", "google"],
+        ),
     ])
 
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary="gpt-4.1-mini",
-        fallbacks=["gpt-4.1"],
+        fallbacks=["gemini-2.5-flash", "gpt-4.1"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary="gpt-5.1",
-        fallbacks=["gpt-4.1", "gpt-4.1-mini"],
+        fallbacks=["gemini-2.5-pro", "gpt-4.1"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary="gpt-4.1-mini",
-        fallbacks=["gpt-4.1"],
+        fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary="gpt-4.1-mini",
-        fallbacks=["gpt-4.1"],
+        fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,

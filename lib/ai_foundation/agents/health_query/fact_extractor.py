@@ -1,15 +1,15 @@
 """
-Fact Extractor — conditional patient fact extraction from messages.
+Fact Extractor — LLM-based patient fact extraction from every message.
 
-Only runs an LLM call when the message looks like it contains durable facts
-(goals, weight, dietary preferences, etc.). Pure data queries like
-"show meals today" skip the LLM call entirely.
+Runs in the background (asyncio.ensure_future) so it never blocks the
+response. The LLM decides whether facts exist — no hardcoded keywords.
+Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -18,15 +18,6 @@ if TYPE_CHECKING:
     from lib.ai_foundation.models.gateway import ModelGateway
 
 logger = logging.getLogger(__name__)
-
-# Keywords that suggest the message contains patient facts
-_FACT_KEYWORDS = frozenset({
-    "is", "am", "weighs", "weigh", "weight", "goal", "allergic", "allergy",
-    "vegetarian", "vegan", "fasting", "note:", "remember", "preference",
-    "intolerant", "intolerance", "condition", "diabetic", "medication",
-    "metformin", "insulin", "pregnant", "smoking", "alcohol", "keto",
-    "gluten", "lactose", "halal", "kosher", "ramadan",
-})
 
 
 class PatientFact(BaseModel):
@@ -40,7 +31,7 @@ class ExtractedFacts(BaseModel):
 
 
 class FactExtractor:
-    """Extracts and persists patient facts — only when the message warrants it."""
+    """Extracts and persists patient facts via LLM. Runs on every message in background."""
 
     def __init__(
         self,
@@ -58,11 +49,11 @@ class FactExtractor:
         patient_id: str | None,
         agent_id: str = "health_query_v3",
     ) -> None:
-        """Extract facts only if the message might contain them. Fire-and-forget."""
-        if not self._memory or not self._gateway or not patient_id:
-            return
+        """Extract facts from the message. Always runs — LLM decides if facts exist.
 
-        if not self._might_contain_facts(message):
+        This is called via asyncio.ensure_future so it never blocks the response.
+        """
+        if not self._memory or not self._gateway or not patient_id:
             return
 
         try:
@@ -73,8 +64,10 @@ class FactExtractor:
                     {"role": "system", "content": (
                         "Extract ALL durable patient facts from the user's message. "
                         "Facts include: goals, weight, dietary preferences, allergies, "
-                        "body notes, medical conditions, medications, fasting context. "
-                        "Set has_facts=true if ANY facts are found."
+                        "body notes, medical conditions, medications, fasting context, "
+                        "activity preferences, communication style, or any personal health detail. "
+                        "Set has_facts=true if ANY facts are found. "
+                        "Set has_facts=false if the message is just a data query with no personal facts."
                     )},
                     {"role": "user", "content": message},
                 ],
@@ -101,9 +94,3 @@ class FactExtractor:
 
         except Exception as exc:
             logger.debug("Fact extraction failed (non-blocking): %s", exc)
-
-    @staticmethod
-    def _might_contain_facts(message: str) -> bool:
-        """Quick keyword check — no LLM call if message is clearly just a data query."""
-        words = set(message.lower().split())
-        return bool(words & _FACT_KEYWORDS)

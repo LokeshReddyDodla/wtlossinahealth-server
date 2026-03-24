@@ -46,13 +46,31 @@ class PersistenceService:
         patient_ids: list[str] | None = None,
         intent_metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Save user + assistant turns to the memory store."""
+        """Save user + assistant turns to the memory store.
+
+        On first turn, also creates a thread summary with patient_ids
+        so the threads list immediately shows who the conversation is about.
+        """
         if not self._memory or not thread_id:
             return
 
         from lib.ai_foundation.memory.base import ConversationTurn
 
         try:
+            # Ensure thread summary exists with patient_ids (on first turn)
+            if patient_ids:
+                existing = await self._memory.get_thread_summary(thread_id)
+                if not existing:
+                    from lib.ai_foundation.memory.base import ThreadSummary
+                    await self._memory.save_thread_summary(thread_id, ThreadSummary(
+                        thread_id=thread_id,
+                        patient_ids=patient_ids,
+                        summary="",
+                        turn_count=0,
+                    ))
+                elif not existing.patient_ids and patient_ids:
+                    existing.patient_ids = patient_ids
+                    await self._memory.save_thread_summary(thread_id, existing)
             # Batch write — single Mongo insert_many instead of 2 insert_one
             if hasattr(self._memory, 'append_turns_batch'):
                 await self._memory.append_turns_batch(thread_id, [
