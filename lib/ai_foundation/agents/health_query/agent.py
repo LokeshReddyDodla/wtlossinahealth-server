@@ -45,6 +45,11 @@ from .contracts import (
 
 logger = logging.getLogger(__name__)
 
+# Token budget guards
+_MAX_RAW_RECORDS = 20        # detail mode: send raw records up to this count
+_MAX_PATIENT_SUMMARIES = 500  # population mode: ~500 rows ≈ 50K tokens, fits in 128K context
+_MAX_ANALYSIS_CHARS = 80_000  # hard cap on analysis JSON size (~20K tokens)
+
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 # Data type → domain mapping
@@ -123,7 +128,7 @@ class HealthQueryAgent(BaseAgent):
             retrieved = await self._retrieve_data(input, intent)
 
             # 5. Build analysis
-            analysis = self._build_analysis(intent, retrieved)
+            analysis = self._build_analysis(intent, retrieved, input.context.patient_ids)
 
             # 6. Generate response
             response_text = await self._generate_response(input, intent, analysis, memory_facts, history)
@@ -200,7 +205,7 @@ class HealthQueryAgent(BaseAgent):
             yield sse_status(PipelineStage.FETCHING_DATA, "Pulling your health data...")
 
             retrieved = await self._retrieve_data(input, intent)
-            analysis = self._build_analysis(intent, retrieved)
+            analysis = self._build_analysis(intent, retrieved, input.context.patient_ids)
 
             # Stage 3: Generate (streaming)
             yield sse_status(PipelineStage.GENERATING_RESPONSE, "Generating response...")
@@ -382,30 +387,230 @@ class HealthQueryAgent(BaseAgent):
         self,
         intent: QueryIntent,
         retrieved: list[dict[str, Any]],
+        patient_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Build a structured analysis snapshot from retrieved data."""
+        """Build a structured analysis snapshot from retrieved data.
+
+        Handles three scenarios:
+        1. Single patient, few records → send raw records (detail mode)
+        2. Single patient, many records → aggregate by data_type (summary mode)
+        3. Multi-patient → aggregate per-patient summaries (population mode)
+
+        Enforces a token budget so the LLM context window is never exceeded.
+        """
         domains = list({
             _DATA_TYPE_DOMAINS.get(dt.value, DomainName.CGM).value
             for dt in intent.data_types
         })
 
-        # Group by data_type
+        num_patients = len(set(
+            item.get("patient_id", "unknown") for item in retrieved
+        )) if retrieved else (len(patient_ids) if patient_ids else 1)
+
+        is_multi_patient = num_patients > 1 or (patient_ids and len(patient_ids) > 1)
+
+        if is_multi_patient:
+            return self._build_population_analysis(domains, retrieved, patient_ids)
+        elif len(retrieved) > _MAX_RAW_RECORDS:
+            return self._build_summary_analysis(domains, retrieved)
+        else:
+            return self._build_detail_analysis(domains, retrieved)
+
+    @staticmethod
+    def _build_detail_analysis(
+        domains: list[str],
+        retrieved: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Single patient, few records — send raw data."""
         by_type: dict[str, list[dict]] = {}
         for item in retrieved:
             dt = item.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(item)
 
-        # Build highlights
-        highlights: list[str] = []
-        for dt, items in by_type.items():
-            highlights.append(f"{dt}: {len(items)} records found")
+        highlights = [f"{dt}: {len(items)} records" for dt, items in by_type.items()]
 
         return {
+            "mode": "detail",
             "domains": domains,
             "record_count": len(retrieved),
             "by_data_type": {k: len(v) for k, v in by_type.items()},
             "highlights": highlights,
-            "data": retrieved[:20],  # cap for context window
+            "data": retrieved[:_MAX_RAW_RECORDS],
+        }
+
+    @staticmethod
+    def _build_summary_analysis(
+        domains: list[str],
+        retrieved: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Single patient, many records — aggregate by data_type."""
+        by_type: dict[str, list[dict]] = {}
+        for item in retrieved:
+            dt = item.get("data_type", "unknown")
+            by_type.setdefault(dt, []).append(item)
+
+        summaries: dict[str, dict[str, Any]] = {}
+        highlights: list[str] = []
+
+        for dt, items in by_type.items():
+            summary = {"count": len(items)}
+
+            # CGM aggregation
+            if "cgm" in dt:
+                glucose_vals = [i.get("average_glucose_mgdl") or i.get("average_glucose") for i in items]
+                glucose_vals = [v for v in glucose_vals if v is not None]
+                if glucose_vals:
+                    summary["avg_glucose"] = round(sum(glucose_vals) / len(glucose_vals), 1)
+                tir_vals = [i.get("in_target_70_180_percent") for i in items]
+                tir_vals = [v for v in tir_vals if v is not None]
+                if tir_vals:
+                    summary["avg_tir_pct"] = round(sum(tir_vals) / len(tir_vals), 1)
+
+            # Meal aggregation
+            elif dt == "meal":
+                cals = []
+                for i in items:
+                    n = i.get("nutrition") or {}
+                    c = n.get("calories") or n.get("total_calories")
+                    if c is not None:
+                        cals.append(float(c))
+                if cals:
+                    summary["total_calories"] = round(sum(cals))
+                    summary["avg_calories_per_meal"] = round(sum(cals) / len(cals))
+                    summary["meal_count"] = len(cals)
+
+            # Fitness aggregation
+            elif "fitness" in dt:
+                steps = [i.get("steps") for i in items if i.get("steps") is not None]
+                if steps:
+                    summary["total_steps"] = sum(steps)
+                    summary["avg_daily_steps"] = round(sum(steps) / len(steps))
+
+            # Sleep aggregation
+            elif "sleep" in dt:
+                durations = [i.get("duration_hours") for i in items if i.get("duration_hours") is not None]
+                if durations:
+                    summary["avg_sleep_hours"] = round(sum(durations) / len(durations), 1)
+
+            summaries[dt] = summary
+            highlights.append(f"{dt}: {len(items)} records → {summary}")
+
+        return {
+            "mode": "summary",
+            "domains": domains,
+            "record_count": len(retrieved),
+            "by_data_type": {k: len(v) for k, v in by_type.items()},
+            "highlights": highlights,
+            "aggregated": summaries,
+            "sample_records": retrieved[:5],  # a few examples for context
+        }
+
+    @staticmethod
+    def _build_population_analysis(
+        domains: list[str],
+        retrieved: list[dict[str, Any]],
+        patient_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Multi-patient — aggregate per-patient, then produce population summary.
+
+        Instead of sending thousands of records, sends one summary row per patient.
+        """
+        # Group by patient
+        by_patient: dict[str, list[dict]] = {}
+        for item in retrieved:
+            pid = item.get("patient_id", "unknown")
+            by_patient.setdefault(pid, []).append(item)
+
+        # Also track patients with no data
+        all_pids = set(patient_ids or [])
+        pids_with_data = set(by_patient.keys())
+        pids_no_data = all_pids - pids_with_data
+
+        # Per-patient summaries
+        patient_summaries: list[dict[str, Any]] = []
+        for pid, items in by_patient.items():
+            ps: dict[str, Any] = {"patient_id": pid, "record_count": len(items)}
+
+            # CGM
+            glucose_vals = [
+                i.get("average_glucose_mgdl") or i.get("average_glucose")
+                for i in items if "cgm" in (i.get("data_type") or "")
+            ]
+            glucose_vals = [v for v in glucose_vals if v is not None]
+            if glucose_vals:
+                ps["avg_glucose"] = round(sum(glucose_vals) / len(glucose_vals), 1)
+
+            tir_vals = [
+                i.get("in_target_70_180_percent")
+                for i in items if "cgm" in (i.get("data_type") or "")
+            ]
+            tir_vals = [v for v in tir_vals if v is not None]
+            if tir_vals:
+                ps["avg_tir_pct"] = round(sum(tir_vals) / len(tir_vals), 1)
+
+            # Meals
+            meal_items = [i for i in items if i.get("data_type") == "meal"]
+            if meal_items:
+                ps["meal_count"] = len(meal_items)
+
+            # Fitness
+            steps = [
+                i.get("steps") for i in items
+                if "fitness" in (i.get("data_type") or "") and i.get("steps") is not None
+            ]
+            if steps:
+                ps["avg_steps"] = round(sum(steps) / len(steps))
+
+            # Hypo events
+            hypo_items = [i for i in items if "hypo" in (i.get("data_type") or "")]
+            if hypo_items:
+                ps["hypo_event_count"] = len(hypo_items)
+
+            patient_summaries.append(ps)
+
+        # Sort by most concerning first (lowest TIR, most hypos)
+        patient_summaries.sort(
+            key=lambda p: (p.get("avg_tir_pct", 100), -p.get("hypo_event_count", 0)),
+        )
+
+        # Population-level aggregates
+        population: dict[str, Any] = {
+            "total_patients": len(all_pids) or len(by_patient),
+            "patients_with_data": len(pids_with_data),
+            "patients_no_data": len(pids_no_data),
+            "total_records": len(retrieved),
+        }
+
+        all_glucose = [p["avg_glucose"] for p in patient_summaries if "avg_glucose" in p]
+        if all_glucose:
+            population["population_avg_glucose"] = round(sum(all_glucose) / len(all_glucose), 1)
+
+        all_tir = [p["avg_tir_pct"] for p in patient_summaries if "avg_tir_pct" in p]
+        if all_tir:
+            population["population_avg_tir_pct"] = round(sum(all_tir) / len(all_tir), 1)
+            population["patients_below_50_tir"] = sum(1 for t in all_tir if t < 50)
+            population["patients_above_70_tir"] = sum(1 for t in all_tir if t >= 70)
+
+        # Highlights
+        highlights = [
+            f"Population: {population['total_patients']} patients, {len(retrieved)} records",
+        ]
+        if population.get("population_avg_glucose"):
+            highlights.append(f"Avg glucose: {population['population_avg_glucose']} mg/dL")
+        if population.get("patients_below_50_tir"):
+            highlights.append(f"{population['patients_below_50_tir']} patients with TIR < 50% (need attention)")
+        if pids_no_data:
+            highlights.append(f"{len(pids_no_data)} patients with no data in this period")
+
+        # Cap patient summaries for context window
+        return {
+            "mode": "population",
+            "domains": domains,
+            "record_count": len(retrieved),
+            "highlights": highlights,
+            "population": population,
+            "patient_summaries": patient_summaries[:_MAX_PATIENT_SUMMARIES],
+            "patients_omitted": max(0, len(patient_summaries) - _MAX_PATIENT_SUMMARIES),
         }
 
     async def _generate_response(
@@ -451,10 +656,19 @@ class HealthQueryAgent(BaseAgent):
         system_prompt = self._get_system_prompt(input.context.user_role)
         response_prompt = self.prompts.get("hq_response_generation").body
 
+        analysis_json = json.dumps(analysis, default=str)
+        # Hard cap: truncate analysis if it exceeds token budget
+        if len(analysis_json) > _MAX_ANALYSIS_CHARS:
+            logger.warning(
+                "Analysis truncated from %d to %d chars",
+                len(analysis_json), _MAX_ANALYSIS_CHARS,
+            )
+            analysis_json = analysis_json[:_MAX_ANALYSIS_CHARS] + '..."}'
+
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": response_prompt},
-            {"role": "system", "content": f"[Structured analysis: {json.dumps(analysis, default=str)}]"},
+            {"role": "system", "content": f"[Structured analysis: {analysis_json}]"},
         ]
 
         if memory_facts:
