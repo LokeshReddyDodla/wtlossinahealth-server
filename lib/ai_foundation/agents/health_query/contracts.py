@@ -148,6 +148,18 @@ class QueryIntent(BaseModel):
     confidence: float | None = Field(
         None, description="Confidence score 0.0-1.0.",
     )
+    extracted_facts: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Durable facts about the patient mentioned in the message. "
+            "Each item: {\"key\": str, \"value\": str}. "
+            "Examples: {\"key\": \"goal\", \"value\": \"fat loss\"}, "
+            "{\"key\": \"dietary_preference\", \"value\": \"vegetarian\"}, "
+            "{\"key\": \"body_note\", \"value\": \"has increased muscle mass\"}, "
+            "{\"key\": \"fasting_context\", \"value\": \"intermittent fasting 16:8\"}. "
+            "Only extract facts the user explicitly states. Do NOT infer."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

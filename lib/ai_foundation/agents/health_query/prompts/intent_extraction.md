@@ -57,6 +57,21 @@ When conversation context provides active domains, goals, or date scopes, use th
 - "and my meals?" → keep date from context, change domain
 - "more details" → same domain and date, deeper analysis
 
+## Fact Extraction
+
+If the user's message contains durable facts about the patient, extract them into `extracted_facts`. These are things worth remembering across conversations:
+
+- Goals: "I want to lose weight" → `{"key": "goal", "value": "weight loss"}`
+- Dietary preferences: "I'm vegetarian" → `{"key": "dietary_preference", "value": "vegetarian"}`
+- Body notes: "patient has increased muscle mass" → `{"key": "body_note", "value": "increased muscle mass"}`
+- Fasting: "I do 16:8 intermittent fasting" → `{"key": "fasting_context", "value": "intermittent fasting 16:8"}`
+- Medical notes: "patient is on metformin" → `{"key": "medication_note", "value": "on metformin"}`
+- Communication preferences: "explain things simply" → `{"key": "communication_style", "value": "simple explanations"}`
+- Weight: "I weigh 75 kg" → `{"key": "weight", "value": "75 kg"}`
+- Allergies: "I'm allergic to nuts" → `{"key": "food_allergy", "value": "nuts"}`
+
+Only extract facts the user **explicitly states**. Do NOT infer facts from data or context. If no facts are mentioned, leave `extracted_facts` as an empty list.
+
 ## Suggestions
 
 Always provide 2-4 suggested follow-up actions as `SuggestedAction` objects with a short `label` and a complete `description` (full question the user might ask).

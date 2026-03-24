@@ -109,6 +109,9 @@ class HealthQueryAgent(BaseAgent):
             # 2. Extract intent
             intent, intent_meta = await self._extract_intent(input, memory_facts, history)
 
+            # 2b. Persist any extracted facts
+            await self._persist_extracted_facts(input, intent)
+
             # 3. If not ready → clarification
             if not intent.is_ready:
                 output = self._build_clarification_output(intent, intent_meta)
@@ -176,6 +179,9 @@ class HealthQueryAgent(BaseAgent):
             memory_facts = await self._load_patient_facts(input)
             history = await self._load_conversation_history(input)
             intent, intent_meta = await self._extract_intent(input, memory_facts, history)
+
+            # Persist any extracted facts (fire-and-forget)
+            await self._persist_extracted_facts(input, intent)
 
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
 
@@ -472,6 +478,45 @@ class HealthQueryAgent(BaseAgent):
             cost_usd=meta.usage.cost.total_cost if meta else None,
             model_id=meta.model_id if meta else None,
         )
+
+    async def _persist_extracted_facts(
+        self,
+        input: AgentInput,
+        intent: QueryIntent,
+    ) -> None:
+        """Save any facts the LLM extracted from the user's message."""
+        if not self.memory or not intent.extracted_facts:
+            return
+
+        patient_id = input.context.patient_id
+        if not patient_id:
+            return
+
+        from lib.ai_foundation.memory.base import MemoryFact
+
+        facts = []
+        for raw in intent.extracted_facts:
+            key = raw.get("key", "").strip()
+            value = raw.get("value", "").strip()
+            if key and value:
+                facts.append(MemoryFact(
+                    key=key,
+                    value=value,
+                    source="user",
+                    agent_id=self.agent_id,
+                    confidence=1.0,
+                ))
+
+        if facts:
+            try:
+                await self.memory.upsert_patient_facts(patient_id, facts)
+                logger.info(
+                    "Persisted %d facts for patient %s: %s",
+                    len(facts), patient_id,
+                    [f.key for f in facts],
+                )
+            except Exception as exc:
+                logger.warning("Failed to persist extracted facts: %s", exc)
 
     async def _persist_turn(
         self,
