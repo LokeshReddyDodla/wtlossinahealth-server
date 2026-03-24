@@ -105,9 +105,10 @@ class HealthQueryAgent(BaseAgent):
             # 1. Load context
             memory_facts = await self._load_patient_facts(input)
             history = await self._load_conversation_history(input)
+            thread_summary = await self._load_thread_summary(input)
 
             # 2. Extract intent
-            intent, intent_meta = await self._extract_intent(input, memory_facts, history)
+            intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
 
             # 2b. Extract and persist patient facts (separate LLM call, fire-and-forget)
             await self._extract_and_persist_facts(input)
@@ -178,7 +179,8 @@ class HealthQueryAgent(BaseAgent):
 
             memory_facts = await self._load_patient_facts(input)
             history = await self._load_conversation_history(input)
-            intent, intent_meta = await self._extract_intent(input, memory_facts, history)
+            thread_summary = await self._load_thread_summary(input)
+            intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
 
             # Extract and persist patient facts (separate LLM call, fire-and-forget)
             await self._extract_and_persist_facts(input)
@@ -272,11 +274,23 @@ class HealthQueryAgent(BaseAgent):
             logger.warning("Failed to load conversation history: %s", exc)
             return []
 
+    async def _load_thread_summary(self, input: AgentInput) -> str | None:
+        """Load the compacted thread summary if available."""
+        if not self.memory or not input.context.thread_id:
+            return None
+        try:
+            summary = await self.memory.get_thread_summary(input.context.thread_id)
+            return summary.summary if summary else None
+        except Exception as exc:
+            logger.warning("Failed to load thread summary: %s", exc)
+            return None
+
     async def _extract_intent(
         self,
         input: AgentInput,
         memory_facts: list[dict],
         history: list[dict[str, str]],
+        thread_summary: str | None = None,
     ) -> tuple[QueryIntent, Any]:
         """Extract structured intent from the user's message."""
         self._ensure_prompts()
@@ -288,6 +302,13 @@ class HealthQueryAgent(BaseAgent):
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": intent_prompt},
         ]
+
+        # Inject thread summary for long conversations
+        if thread_summary:
+            messages.append({
+                "role": "system",
+                "content": f"Conversation summary so far:\n{thread_summary}",
+            })
 
         # Inject patient memory as context
         if memory_facts:
@@ -585,8 +606,84 @@ class HealthQueryAgent(BaseAgent):
                     },
                 ),
             )
+
+            # Compact thread every 4 turns
+            await self._maybe_compact_thread(input)
+
         except Exception as exc:
             logger.warning("Failed to persist conversation turn: %s", exc)
+
+    async def _maybe_compact_thread(self, input: AgentInput) -> None:
+        """Summarize the conversation thread if it's long enough.
+
+        Runs an LLM call to produce a compact summary of the conversation
+        and saves it to ai_thread_summaries. This summary is loaded on
+        future queries to maintain context without sending all turns.
+        """
+        if not self.memory or not input.context.thread_id:
+            return
+
+        try:
+            turns = await self.memory.get_thread_turns(input.context.thread_id, limit=30)
+            turn_count = len(turns)
+
+            # Only compact after 4+ turns, and every 2 turns after that
+            if turn_count < 4 or turn_count % 2 != 0:
+                return
+
+            # Check if we already have a recent summary
+            existing = await self.memory.get_thread_summary(input.context.thread_id)
+            if existing and existing.turn_count >= turn_count - 1:
+                return  # already summarized recently
+
+            # Build conversation text for summarization
+            conv_lines = []
+            for t in turns[-12:]:  # last 12 turns max
+                conv_lines.append(f"{t.role}: {t.content[:200]}")
+            conv_text = "\n".join(conv_lines)
+
+            from .contracts import DomainName
+            from lib.ai_foundation.memory.base import ThreadSummary
+
+            # Use a cheap LLM call to summarize
+            response = await self.gateway.complete(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Summarize this health conversation in 2-3 sentences. "
+                            "Include: what health topics were discussed, what time period, "
+                            "any patient goals mentioned, and the current state of the conversation. "
+                            "Be concise."
+                        ),
+                    },
+                    {"role": "user", "content": conv_text},
+                ],
+                task=ModelTask.SUMMARIZATION,
+            )
+
+            # Extract domains from turn metadata
+            domains = set()
+            for t in turns:
+                for dt in t.metadata.get("data_types", []):
+                    domain = _DATA_TYPE_DOMAINS.get(dt)
+                    if domain:
+                        domains.add(domain.value)
+
+            summary = ThreadSummary(
+                thread_id=input.context.thread_id,
+                summary=response.content,
+                domains=list(domains),
+                turn_count=turn_count,
+            )
+            await self.memory.save_thread_summary(input.context.thread_id, summary)
+            logger.info(
+                "Compacted thread %s (%d turns): %s",
+                input.context.thread_id, turn_count, response.content[:100],
+            )
+
+        except Exception as exc:
+            logger.warning("Thread compaction failed (non-blocking): %s", exc)
 
     # -- Convenience: build QueryResponse for backward compatibility --------
 
