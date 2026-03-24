@@ -849,8 +849,14 @@ class HealthQueryAgent(BaseAgent):
         intent: QueryIntent,
     ) -> None:
         """Save conversation turns to the shared memory store."""
-        if not self.memory or not input.context.thread_id:
+        if not self.memory:
+            logger.warning("_persist_turn: no memory store, skipping")
             return
+        if not input.context.thread_id:
+            logger.warning("_persist_turn: no thread_id, skipping")
+            return
+
+        logger.info("_persist_turn: saving to thread=%s", input.context.thread_id)
 
         from lib.ai_foundation.memory.base import ConversationTurn
 
