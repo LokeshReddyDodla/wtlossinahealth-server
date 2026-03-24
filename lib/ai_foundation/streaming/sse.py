@@ -29,6 +29,15 @@ class SSEEventType(str, Enum):
     TOKEN = "token"
     DONE = "done"
     ERROR = "error"
+    # Agentic reasoning events
+    REASONING = "reasoning"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    # Multi-agent pipeline events
+    PLAN = "plan"
+    REFLECTION = "reflection"
+    SPECIALIST_START = "specialist_start"
+    SPECIALIST_DONE = "specialist_done"
 
 
 class PipelineStage(str, Enum):
@@ -115,6 +124,62 @@ def sse_error(
     """Convenience: emit an ERROR event."""
     payload = SSEErrorPayload(message=message, code=code, fallback_text=fallback_text)
     return sse_event(SSEEventType.ERROR, payload.model_dump(exclude_none=True))
+
+
+# ---------------------------------------------------------------------------
+# Agentic reasoning events
+# ---------------------------------------------------------------------------
+
+
+def sse_reasoning(step: int, thought: str) -> str:
+    """Emit a REASONING event — the doctor's internal thought process."""
+    return sse_event(SSEEventType.REASONING, {"step": step, "thought": thought})
+
+
+def sse_tool_call(tool: str, args: dict[str, Any], reason: str | None = None) -> str:
+    """Emit a TOOL_CALL event — the doctor deciding to look at specific data."""
+    data: dict[str, Any] = {"tool": tool, "args": args}
+    if reason:
+        data["reason"] = reason
+    return sse_event(SSEEventType.TOOL_CALL, data)
+
+
+def sse_tool_result(tool: str, summary: str) -> str:
+    """Emit a TOOL_RESULT event — brief summary of what the doctor found."""
+    return sse_event(SSEEventType.TOOL_RESULT, {"tool": tool, "summary": summary})
+
+
+# ---------------------------------------------------------------------------
+# Multi-agent pipeline events
+# ---------------------------------------------------------------------------
+
+
+def sse_plan(strategy: str, steps: int, domains: list[str]) -> str:
+    """Emit a PLAN event — the investigation strategy before execution."""
+    return sse_event(SSEEventType.PLAN, {
+        "strategy": strategy, "steps": steps, "domains": domains,
+    })
+
+
+def sse_reflection(confidence: float, gaps: list[str], is_complete: bool) -> str:
+    """Emit a REFLECTION event — the critic's assessment of the investigation."""
+    return sse_event(SSEEventType.REFLECTION, {
+        "confidence": confidence, "gaps": gaps, "is_complete": is_complete,
+    })
+
+
+def sse_specialist_start(domain: str, step_count: int) -> str:
+    """Emit a SPECIALIST_START event — a domain expert begins investigating."""
+    return sse_event(SSEEventType.SPECIALIST_START, {
+        "domain": domain, "steps": step_count,
+    })
+
+
+def sse_specialist_done(domain: str, summary: str) -> str:
+    """Emit a SPECIALIST_DONE event — a domain expert completed its investigation."""
+    return sse_event(SSEEventType.SPECIALIST_DONE, {
+        "domain": domain, "summary": summary,
+    })
 
 
 # ---------------------------------------------------------------------------

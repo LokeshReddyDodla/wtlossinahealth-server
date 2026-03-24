@@ -182,6 +182,12 @@ from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
 from lib.ai_foundation.agents.health_query.data_service import HealthDataService
 from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
 from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+from lib.ai_foundation.agents.health_query.planner import InvestigationPlanner
+from lib.ai_foundation.agents.health_query.reflector import ReflectionEngine
+from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngine
+from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC
+from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
@@ -1648,7 +1654,65 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Health Query Agent v3 — thin orchestrator
+# Tool Executor + Reasoning Engine for agentic health query
+container.register(
+    ToolExecutor,
+    lambda: ToolExecutor(
+        qdrant=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    InvestigationPlanner,
+    lambda: InvestigationPlanner(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    ReflectionEngine,
+    lambda: ReflectionEngine(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    ReasoningEngine,
+    lambda: ReasoningEngine(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        tool_executor=cast(ToolExecutor, container.resolve(ToolExecutor)),
+        planner=cast(InvestigationPlanner, container.resolve(InvestigationPlanner)),
+        reflector=cast(ReflectionEngine, container.resolve(ReflectionEngine)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Domain specialists for multi-agent coordination
+def _build_specialists() -> dict[str, Specialist]:
+    gw = cast(ModelGateway, container.resolve(ModelGateway))
+    te = cast(ToolExecutor, container.resolve(ToolExecutor))
+    return {
+        "glucose": Specialist(domain_spec=GLUCOSE_SPEC, gateway=gw, tool_executor=te),
+        "nutrition": Specialist(domain_spec=NUTRITION_SPEC, gateway=gw, tool_executor=te),
+        "fitness": Specialist(domain_spec=FITNESS_SPEC, gateway=gw, tool_executor=te),
+    }
+
+container.register(
+    Coordinator,
+    lambda: Coordinator(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        tool_executor=cast(ToolExecutor, container.resolve(ToolExecutor)),
+        planner=cast(InvestigationPlanner, container.resolve(InvestigationPlanner)),
+        reflector=cast(ReflectionEngine, container.resolve(ReflectionEngine)),
+        specialists=_build_specialists(),
+    ),
+    scope=Scope.singleton,
+)
+
+# Health Query Agent v3 — multi-agent orchestrator
 container.register(
     HealthQueryAgent,
     lambda: HealthQueryAgent(
@@ -1657,7 +1721,8 @@ container.register(
         tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         context_loader=cast(ContextLoader, container.resolve(ContextLoader)),
-        data_service=cast(HealthDataService, container.resolve(HealthDataService)),
+        reasoning_engine=cast(ReasoningEngine, container.resolve(ReasoningEngine)),
+        coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
         metrics_collector=cast(MetricsCollector, container.resolve(MetricsCollector)),

@@ -1,13 +1,12 @@
 """
-Health Query Agent — thin orchestrator on the AI Foundation.
+Health Query Agent — thin orchestrator powered by agentic reasoning.
 
-The agent coordinates services, it doesn't contain logic:
+The agent coordinates:
   1. ContextLoader → loads facts, history, summary, names
-  2. Gateway.extract → intent extraction
-  3. HealthDataService → fetches data from Qdrant
-  4. Gateway.stream/complete → generates response
-  5. PersistenceService → saves turns (blocking), compacts (background)
-  6. FactExtractor → extracts facts (background, conditional)
+  2. Gateway.extract → intent extraction (is_ready check + suggestions)
+  3. ReasoningEngine → agentic tool-calling loop (thinker → tools → responder)
+  4. PersistenceService → saves turns (blocking), compacts (background)
+  5. FactExtractor → extracts facts (background)
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from typing import Any, AsyncIterator
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
@@ -32,16 +32,17 @@ from lib.ai_foundation.streaming.sse import (
     sse_token,
 )
 
-from .contracts import QueryIntent, QueryResponse
+from .contracts import QueryIntent, QueryResponse, resolve_specialist_domains
+from .coordinator import Coordinator
+from .reasoning_engine import ReasoningEngine, ReasoningTier
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
-from lib.ai_foundation.config import settings
 
 
 class HealthQueryAgent(BaseAgent):
-    """Foundation-native health query agent — thin orchestrator."""
+    """Foundation-native health query agent — thin orchestrator with agentic reasoning."""
 
     agent_id = "health_query_v3"
 
@@ -49,25 +50,30 @@ class HealthQueryAgent(BaseAgent):
         self,
         *,
         context_loader: Any = None,
-        data_service: Any = None,
+        reasoning_engine: ReasoningEngine | None = None,
+        coordinator: Coordinator | None = None,
         persistence: Any = None,
         fact_extractor: Any = None,
         metrics_collector: Any = None,
+        # Legacy — kept for backward compat during transition
+        data_service: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.context_loader = context_loader
-        self.data_service = data_service
+        self.reasoning_engine = reasoning_engine
+        self.coordinator = coordinator
         self.persistence = persistence
         self.fact_extractor = fact_extractor
         self._metrics = metrics_collector
+        self._data_service = data_service  # legacy fallback
         self._prompts_registered = False
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
     async def run(self, input: AgentInput) -> AgentOutput:
         pipeline_start = time.perf_counter()
-        user_timestamp = datetime.now(timezone.utc)  # capture when user sent the message
+        user_timestamp = datetime.now(timezone.utc)
         trace = None
         if self.tracer:
             trace = self.tracer.start_trace(
@@ -84,17 +90,54 @@ class HealthQueryAgent(BaseAgent):
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 return output
 
-            data_text = await self._fetch_data(intent, input)
-            response_text = await self._generate_response(input, intent, data_text, ctx)
+            # ── Route: single-agent vs multi-agent ──
+            patient_ids = self._resolve_patient_ids(input)
+            system_prompt = self._get_system_prompt(input.context.user_role)
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts()
+            tier = self._resolve_tier(input)
+            specialist_domains = resolve_specialist_domains(intent.data_types)
+
+            if self.coordinator and len(specialist_domains) > 1 and tier != ReasoningTier.BASIC:
+                # Multi-agent path
+                result = await self.coordinator.orchestrate(
+                    user_message=input.message,
+                    system_prompt=system_prompt,
+                    reasoning_prompt=reasoning_prompt,
+                    response_prompt=response_prompt,
+                    context=ctx,
+                    patient_ids=patient_ids,
+                    domains=specialist_domains,
+                    tier=tier,
+                )
+            else:
+                # Single-agent path
+                result = await self.reasoning_engine.reason(
+                    user_message=input.message,
+                    system_prompt=system_prompt,
+                    reasoning_prompt=reasoning_prompt,
+                    response_prompt=response_prompt,
+                    context=ctx,
+                    patient_ids=patient_ids,
+                    tier=tier,
+                )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+            total_cost = (meta.usage.cost.total_cost if meta else 0) + result.total_cost
+
             output = AgentOutput(
-                message=response_text, is_ready=True,
+                message=result.response, is_ready=True,
                 suggestions=[s.model_dump() for s in intent.suggestions],
-                data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
+                data={
+                    "data_types": [dt.value for dt in intent.data_types],
+                    "confidence": intent.confidence,
+                    "rounds_used": result.rounds_used,
+                    "tools_called": result.tools_called,
+                    "tier": result.tier,
+                },
                 trace_id=trace.trace_id if trace else None,
-                cost_usd=meta.usage.cost.total_cost if meta else None,
-                latency_ms=elapsed, model_id=meta.model_id if meta else None,
+                cost_usd=total_cost,
+                latency_ms=elapsed,
+                model_id=result.responder_model,
             )
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
@@ -143,37 +186,68 @@ class HealthQueryAgent(BaseAgent):
                 ))
                 return
 
-            yield sse_status(PipelineStage.FETCHING_DATA, "Pulling health data...")
-            data_text = await self._fetch_data(intent, input)
+            # ── Route: single-agent vs multi-agent (streaming) ──
+            patient_ids = self._resolve_patient_ids(input)
+            system_prompt = self._get_system_prompt(input.context.user_role)
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts()
+            tier = self._resolve_tier(input)
+            specialist_domains = resolve_specialist_domains(intent.data_types)
 
-            yield sse_status(PipelineStage.GENERATING_RESPONSE, "Generating response...")
-            messages = self._build_response_messages(input, intent, data_text, ctx)
             full_parts: list[str] = []
-            first_token = False
 
-            async for chunk in self.gateway.stream(messages=messages, task=ModelTask.RESPONSE_GENERATION):
-                if chunk.delta:
-                    if not first_token and self.tracer:
-                        self.tracer.record_first_token()
-                        first_token = True
-                    full_parts.append(chunk.delta)
-                    yield sse_token(chunk.delta)
+            if self.coordinator and len(specialist_domains) > 1 and tier != ReasoningTier.BASIC:
+                event_source = self.coordinator.orchestrate_stream(
+                    user_message=input.message,
+                    system_prompt=system_prompt,
+                    reasoning_prompt=reasoning_prompt,
+                    response_prompt=response_prompt,
+                    context=ctx,
+                    patient_ids=patient_ids,
+                    domains=specialist_domains,
+                    tier=tier,
+                )
+            else:
+                event_source = self.reasoning_engine.reason_stream(
+                    user_message=input.message,
+                    system_prompt=system_prompt,
+                    reasoning_prompt=reasoning_prompt,
+                    response_prompt=response_prompt,
+                    context=ctx,
+                    patient_ids=patient_ids,
+                    tier=tier,
+                )
 
-            full_text = "".join(full_parts)
-            output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
-            await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+            async for event in event_source:
+                # Collect token events to reconstruct full response
+                if 'event: token' in event:
+                    import json as _json
+                    try:
+                        data_line = event.split("data: ", 1)[1].split("\n")[0]
+                        delta = _json.loads(data_line).get("delta", "")
+                        full_parts.append(delta)
+                    except (IndexError, ValueError):
+                        pass
 
-            # Schedule background BEFORE last yield — ensure_future after yield may not execute
-            self._schedule_background(input)
+                # Forward the done event with extra metadata
+                if 'event: done' in event:
+                    full_text = "".join(full_parts)
+                    output = AgentOutput(
+                        message=full_text, is_ready=True,
+                        trace_id=trace.trace_id if trace else None,
+                    )
+                    await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                    self._schedule_background(input)
 
-            elapsed = int((time.perf_counter() - pipeline_start) * 1000)
-            yield sse_done(SSEDonePayload(
-                suggestions=[s.model_dump() for s in intent.suggestions],
-                trace_id=trace.trace_id if trace else None,
-                cost_usd=meta.usage.cost.total_cost if meta else None,
-                latency_ms=elapsed, model_id=meta.model_id if meta else None,
-                data={"data_types": [dt.value for dt in intent.data_types]},
-            ))
+                    # Inject suggestions and trace into the done event
+                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+                    yield sse_done(SSEDonePayload(
+                        suggestions=[s.model_dump() for s in intent.suggestions],
+                        trace_id=trace.trace_id if trace else None,
+                        latency_ms=elapsed,
+                    ))
+                    continue
+
+                yield event
 
         except Exception as exc:
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
@@ -240,61 +314,6 @@ class HealthQueryAgent(BaseAgent):
 
         return intent, meta
 
-    async def _fetch_data(self, intent: QueryIntent, input: AgentInput) -> str:
-        if not self.data_service:
-            return "No data source available."
-        patient_ids = input.context.patient_ids or (
-            [input.context.patient_id] if input.context.patient_id else []
-        )
-        if self.tracer:
-            async with self.tracer.span("data_retrieval") as span:
-                result = await self.data_service.fetch(intent, patient_ids)
-                span.tags["data_length"] = str(len(result))
-        else:
-            result = await self.data_service.fetch(intent, patient_ids)
-        return result
-
-    async def _generate_response(
-        self, input: AgentInput, intent: QueryIntent, data_text: str, ctx: Any,
-    ) -> str:
-        messages = self._build_response_messages(input, intent, data_text, ctx)
-        if self.tracer:
-            async with self.tracer.span("response_generation") as span:
-                response = await self.gateway.complete(messages=messages, task=ModelTask.RESPONSE_GENERATION)
-                span.model_id = response.model_id
-                span.tokens_in = response.usage.input_tokens
-                span.tokens_out = response.usage.output_tokens
-                span.cost_usd = response.usage.cost.total_cost
-        else:
-            response = await self.gateway.complete(messages=messages, task=ModelTask.RESPONSE_GENERATION)
-        return response.content
-
-    def _build_response_messages(
-        self, input: AgentInput, intent: QueryIntent, data_text: str, ctx: Any,
-    ) -> list[dict[str, str]]:
-        self._ensure_prompts()
-        system_prompt = self._get_system_prompt(input.context.user_role)
-        response_prompt = self.prompts.get("hq_response_generation").body
-
-        if len(data_text) > settings.MAX_ANALYSIS_CHARS:
-            data_text = data_text[:settings.MAX_ANALYSIS_CHARS] + "\n... (truncated)"
-
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "system", "content": response_prompt},
-            {"role": "system", "content": f"Health data for this query:\n\n{data_text}"},
-        ]
-        if ctx.patient_names:
-            lines = [f"- {pid}: {name}" for pid, name in ctx.patient_names.items()]
-            messages.append({"role": "system", "content":
-                "Patient name mapping (ALWAYS use these names):\n" + "\n".join(lines)})
-        if ctx.facts:
-            lines = [f"- {f['key']}: {f['value']}" for f in ctx.facts[:8]]
-            messages.append({"role": "system", "content": "Patient context:\n" + "\n".join(lines)})
-        messages.extend(ctx.history[-10:])
-        messages.append({"role": "user", "content": input.message})
-        return messages
-
     # ── Persistence + background ──────────────────────────────────────────
 
     async def _save_turn(
@@ -326,7 +345,6 @@ class HealthQueryAgent(BaseAgent):
                 patient_ids=input.context.patient_ids,
             ))
         if self.fact_extractor:
-            # Resolve patient_id: direct or first from list
             pid = input.context.patient_id
             if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
                 pid = input.context.patient_ids[0]
@@ -344,7 +362,7 @@ class HealthQueryAgent(BaseAgent):
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")
         self._prompts_registered = True
 
-    _prompt_cache: dict[str, tuple[str, str]] = {}  # (role, minute) → rendered prompt
+    _prompt_cache: dict[str, tuple[str, str]] = {}
 
     def _get_system_prompt(self, user_role: str) -> str:
         """Get system prompt, cached per role per minute."""
@@ -357,11 +375,17 @@ class HealthQueryAgent(BaseAgent):
         template = self.prompts.get(name_map.get(user_role, "hq_system_patient"))
         rendered = template.render(current_time=f"{now_minute} UTC")
 
-        # Keep only current minute's cache (3 roles max)
         if len(self._prompt_cache) > 5:
             self._prompt_cache.clear()
         self._prompt_cache[cache_key] = rendered
         return rendered
+
+    def _get_reasoning_prompts(self) -> tuple[str, str]:
+        """Return (reasoning_prompt, response_prompt) for the engine."""
+        self._ensure_prompts()
+        reasoning = self.prompts.get("hq_reasoning").body
+        response = self.prompts.get("hq_final_response").body
+        return reasoning, response
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:
         return AgentOutput(
@@ -373,6 +397,21 @@ class HealthQueryAgent(BaseAgent):
             cost_usd=meta.usage.cost.total_cost if meta else None,
             model_id=meta.model_id if meta else None,
         )
+
+    @staticmethod
+    def _resolve_patient_ids(input: AgentInput) -> list[str]:
+        return input.context.patient_ids or (
+            [input.context.patient_id] if input.context.patient_id else []
+        )
+
+    @staticmethod
+    def _resolve_tier(input: AgentInput) -> ReasoningTier:
+        """Resolve reasoning tier from input context or default."""
+        tier_str = (input.context.metadata or {}).get("tier", settings.REASONING_DEFAULT_TIER)
+        try:
+            return ReasoningTier(tier_str)
+        except ValueError:
+            return ReasoningTier.STANDARD
 
     def to_query_response(self, input: AgentInput, output: AgentOutput) -> QueryResponse:
         return QueryResponse(

@@ -35,13 +35,16 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy imports for modules that depend on external packages (openai, instructor)."""
-    if name in ("LLMResponse", "LLMUsage", "ModelGateway", "StreamChunk", "AllProvidersUnavailableError"):
-        from .gateway import LLMResponse, LLMUsage, ModelGateway, StreamChunk, AllProvidersUnavailableError
+    if name in ("LLMResponse", "LLMUsage", "ModelGateway", "StreamChunk", "AllProvidersUnavailableError",
+                 "ToolCall", "LLMToolResponse"):
+        from .gateway import LLMResponse, LLMUsage, ModelGateway, StreamChunk, AllProvidersUnavailableError, ToolCall, LLMToolResponse
         return {
             "LLMResponse": LLMResponse,
             "LLMUsage": LLMUsage,
             "ModelGateway": ModelGateway,
             "StreamChunk": StreamChunk,
             "AllProvidersUnavailableError": AllProvidersUnavailableError,
+            "ToolCall": ToolCall,
+            "LLMToolResponse": LLMToolResponse,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

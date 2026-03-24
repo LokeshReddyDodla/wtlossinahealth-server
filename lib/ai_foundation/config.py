@@ -65,6 +65,30 @@ class AIFoundationSettings(BaseSettings):
     RATE_LIMIT_LOW: int = Field(default=500, description="Requests/hour for LOW priority")
     RATE_LIMIT_WINDOW: int = Field(default=3600, description="Rate limit window in seconds")
 
+    # ── Reasoning Engine ──────────────────────────────────────────────────
+
+    REASONING_DEFAULT_TIER: str = Field(default="standard", description="Default reasoning tier: basic, standard, advanced, unlimited")
+    REASONING_THINKER_MODEL: str = Field(default="gpt-4.1-mini", description="Model for reasoning/tool decisions")
+    REASONING_RESPONDER_MODEL: str = Field(default="gpt-5.1", description="Model for final response generation")
+    REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
+    REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=2000, description="Max chars per tool result")
+
+    # ── Planning ──────────────────────────────────────────────────────────
+
+    PLANNING_ENABLED: bool = Field(default=True, description="Enable investigation planning for STANDARD+ tiers")
+    PLANNING_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for planning LLM call")
+
+    # ── Reflection ────────────────────────────────────────────────────────
+
+    REFLECTION_ENABLED: bool = Field(default=True, description="Enable reflection/critic for ADVANCED+ tiers")
+    REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
+    REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
+
+    # ── Multi-Agent ───────────────────────────────────────────────────────
+
+    SPECIALIST_MAX_PARALLEL: int = Field(default=3, description="Max specialists running concurrently")
+    SPECIALIST_TIMEOUT_SECONDS: float = Field(default=45.0, description="Timeout for a single specialist investigation")
+
     # ── Circuit Breaker ───────────────────────────────────────────────────
 
     CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, description="Failures before circuit opens")
