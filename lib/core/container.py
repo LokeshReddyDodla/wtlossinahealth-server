@@ -166,6 +166,8 @@ from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.composite import CompositeRetriever
+from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
+from lib.ai_foundation.retrieval.mongo import MongoReportRetriever
 from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
 from lib.ai_foundation.eval.trace import TraceCollector
@@ -1381,6 +1383,30 @@ container.register(
 # AI Foundation Layer
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def _get_embed_fn():
+    """Lazy import of embed_text to avoid circular imports at module level."""
+    from lib.utils.vector_utils import embed_text
+    return embed_text
+
+
+def _build_composite_retriever() -> CompositeRetriever:
+    """Build a CompositeRetriever wired with actual Qdrant + Mongo sources."""
+    composite = CompositeRetriever()
+    composite.register(
+        "mongo_report",
+        cast(MongoReportRetriever, container.resolve(MongoReportRetriever)),
+        timeout_seconds=5.0,
+        required=True,
+    )
+    composite.register(
+        "qdrant",
+        cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        timeout_seconds=8.0,
+        required=False,
+    )
+    return composite
+
 # CacheStore namespace for foundation services
 container.register(
     "ai_foundation_cache",
@@ -1429,10 +1455,31 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Composite Retriever — parallel multi-source retrieval
+# Qdrant Retriever — semantic vector search
+container.register(
+    QdrantRetriever,
+    lambda: QdrantRetriever(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        collection_name=str(config("QDRANT_COLLECTION", default="patient_data")),
+        embedding_fn=_get_embed_fn(),
+        embedding_cache=cast(EmbeddingCache, container.resolve(EmbeddingCache)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Mongo Report Retriever — deterministic daily reports
+container.register(
+    MongoReportRetriever,
+    lambda: MongoReportRetriever(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Composite Retriever — parallel multi-source retrieval (wired with actual sources)
 container.register(
     CompositeRetriever,
-    lambda: CompositeRetriever(),
+    lambda: _build_composite_retriever(),
     scope=Scope.singleton,
 )
 
