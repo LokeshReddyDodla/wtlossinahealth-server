@@ -12,8 +12,6 @@ Endpoints:
 """
 
 from datetime import datetime
-from typing import Optional
-
 from fastapi import Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 
@@ -124,7 +122,6 @@ async def get_conversation_history_v3(
 
 @router.get("/history/v3/threads", response_model=SuccessResponse[ThreadListResponse])
 async def list_conversation_threads(
-    patient_id: Optional[str] = Query(None, description="Admin only: list ALL threads for a patient (across all providers)"),
     limit: int = Query(20, ge=1, le=100, description="Max threads to return"),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -137,20 +134,14 @@ async def list_conversation_threads(
         )
     ),
 ):
-    """List conversation threads.
+    """List all conversation threads for the current user.
 
-    - Patient: all their threads
-    - Care Provider: all their patient threads
-    - Admin: their own threads OR (with patient_id) all threads for a patient across all providers
+    No params needed — threads are scoped to the authenticated user automatically.
     """
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     collection = memory.get_collection("ai_conversation_turns")
 
-    if current_actor.role == ProfileTypeEnum.ADMIN and patient_id:
-        # Admin asking "show me all conversations about patient X"
-        # Matches: bot:*:patient:{patient_id} across all providers/admins
-        match_filter = {"thread_id": {"$regex": f":patient:{patient_id}$"}}
-    elif current_actor.role == ProfileTypeEnum.PATIENT:
+    if current_actor.role == ProfileTypeEnum.PATIENT:
         match_filter = {"thread_id": {"$regex": f"^bot:patient:{current_actor.id}"}}
     elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
         match_filter = {"thread_id": {"$regex": f"^bot:provider:{current_actor.id}"}}
