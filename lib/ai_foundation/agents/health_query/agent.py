@@ -113,6 +113,7 @@ class HealthQueryAgent(BaseAgent):
             history = await self._load_conversation_history(input)
             thread_summary = await self._load_thread_summary(input)
             patient_names = await self._resolve_patient_names(input.context.patient_ids, [])
+            self._last_patient_names = patient_names  # shared with _extract_intent for suggestions
 
             # 2. Extract intent
             intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
@@ -188,6 +189,7 @@ class HealthQueryAgent(BaseAgent):
             history = await self._load_conversation_history(input)
             thread_summary = await self._load_thread_summary(input)
             patient_names = await self._resolve_patient_names(input.context.patient_ids, [])
+            self._last_patient_names = patient_names  # shared with _extract_intent for suggestions
             intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
 
             # Extract and persist patient facts (separate LLM call, fire-and-forget)
@@ -321,6 +323,23 @@ class HealthQueryAgent(BaseAgent):
             messages.append({
                 "role": "system",
                 "content": f"Conversation summary so far:\n{thread_summary}",
+            })
+
+        # Inject role context for suggestions
+        if input.context.user_role in ("care_provider", "admin"):
+            names = []
+            if hasattr(self, '_last_patient_names') and self._last_patient_names:
+                names = [f"{name}" for pid, name in self._last_patient_names.items()]
+            patient_label = ", ".join(names) if names else "the patient(s)"
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"IMPORTANT: The user is a {input.context.user_role}, NOT a patient. "
+                    f"They are asking about: {patient_label}. "
+                    f"In suggestions and clarification messages, refer to patients by name. "
+                    f"NEVER use 'my' or 'your' — use the patient's name or 'the patient'. "
+                    f"Example: 'Show Ahmed's glucose today' NOT 'Show my glucose today'."
+                ),
             })
 
         # Inject patient memory as context

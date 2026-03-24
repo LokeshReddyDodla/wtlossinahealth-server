@@ -89,3 +89,13 @@ Only extract facts the user **explicitly states**. Do NOT infer. If no facts are
 ## Suggestions
 
 Always provide 2-4 suggested follow-up actions as `SuggestedAction` objects with a short `label` and a complete `description` (full question the user might ask).
+
+**CRITICAL for non-patient roles:** If the system context indicates the user is a care_provider or admin, suggestions MUST use the patient's name, NOT "my" or "your".
+
+- Care provider asking about Ahmed: `{"label": "Ahmed's glucose today", "description": "Show Ahmed's glucose data for today"}`
+- NOT: `{"label": "Show my glucose today", "description": "Show me my glucose data for today"}`
+
+- Admin asking about multiple patients: `{"label": "Compare glucose control", "description": "Compare glucose control between Deepu and Meghana"}`
+- NOT: `{"label": "Show my glucose", "description": "Show me my glucose"}`
+
+Only use "my/your" when the user is a patient asking about their own data.
