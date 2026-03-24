@@ -882,8 +882,61 @@ class HealthQueryAgent(BaseAgent):
             # Compact thread every 4 turns
             await self._maybe_compact_thread(input)
 
+            # Record implicit feedback signals
+            await self._record_implicit_signals(input, intent)
+
         except Exception as exc:
             logger.warning("Failed to persist conversation turn: %s", exc)
+
+    async def _record_implicit_signals(
+        self, input: AgentInput, intent: QueryIntent,
+    ) -> None:
+        """Detect and record implicit quality signals for training data.
+
+        If the previous assistant response said is_ready=True but the user
+        is now clarifying (is_ready=False on this turn), that means the
+        previous intent extraction was wrong — record as negative signal.
+        """
+        if not self.memory or not input.context.thread_id:
+            return
+
+        try:
+            turns = await self.memory.get_thread_turns(input.context.thread_id, limit=4)
+            if len(turns) < 3:
+                return
+
+            # Find the previous assistant turn
+            prev_assistant = None
+            for t in reversed(turns[:-2]):  # skip the 2 we just added
+                if t.role == "assistant":
+                    prev_assistant = t
+                    break
+
+            if not prev_assistant or not prev_assistant.metadata:
+                return
+
+            prev_was_ready = prev_assistant.metadata.get("is_ready", False)
+            prev_trace_id = prev_assistant.metadata.get("trace_id")
+
+            if prev_was_ready and not intent.is_ready:
+                # User clarifying after we said is_ready=True → intent was wrong
+                logger.info(
+                    "Implicit negative signal: user clarified after is_ready=True (trace=%s)",
+                    prev_trace_id,
+                )
+                from lib.ai_foundation.eval.collector import FinetuneDataCollector
+                from lib.core.container import container
+                try:
+                    collector: FinetuneDataCollector = container.resolve(FinetuneDataCollector)
+                    if prev_trace_id:
+                        await collector.add_implicit_signal(
+                            prev_trace_id, "user_asked_clarification_after", True,
+                        )
+                except Exception:
+                    pass  # non-blocking
+
+        except Exception as exc:
+            logger.debug("Implicit signal detection failed: %s", exc)
 
     async def _maybe_compact_thread(self, input: AgentInput) -> None:
         """Summarize the conversation thread if it's long enough.

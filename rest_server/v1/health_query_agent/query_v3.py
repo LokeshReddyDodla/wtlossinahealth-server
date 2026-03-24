@@ -29,6 +29,7 @@ from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
+from fastapi import HTTPException
 from rest_server.response_models import SuccessResponse
 from rest_server.v1.utils import resolve_patient_ids_for_query
 
@@ -84,6 +85,27 @@ def _build_agent_input(
     )
 
 
+def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
+    """Check rate limit and raise 429 if exceeded."""
+    try:
+        from lib.core.container import container
+        from lib.ai_foundation.rate_limit.limiter import RateLimiter
+        limiter: RateLimiter = container.resolve(RateLimiter)
+        tenant_id = current_actor.id
+        result = limiter.check(tenant_id, priority)
+        if not result.allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Limit: {result.limit}/hour. Try again later.",
+                headers={"Retry-After": str(int(result.reset_at - __import__('time').time()))},
+            )
+        limiter.record(tenant_id, priority)
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # rate limiter failure should not block requests
+
+
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:
     """Resolve thread_id based on actor role."""
     subject_patient_id = None
@@ -126,6 +148,9 @@ async def process_query_v3(
     - Care Provider: queries assigned patients (patient_ids required)
     - Admin: queries any patient(s) across all facilities
     """
+    priority = _resolve_priority(current_actor.role)
+    _check_rate_limit(current_actor, priority)
+
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,
@@ -169,6 +194,9 @@ async def process_query_v3_stream(
     - Care Provider: queries assigned patients (patient_ids required)
     - Admin: queries any patient(s) across all facilities
     """
+    priority = _resolve_priority(current_actor.role)
+    _check_rate_limit(current_actor, priority)
+
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,

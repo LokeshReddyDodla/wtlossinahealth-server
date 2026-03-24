@@ -47,7 +47,7 @@ class MongoMemoryStore:
         self._mongo = mongo_store
 
     async def ensure_indexes(self) -> None:
-        """Create MongoDB indexes for efficient queries. Idempotent."""
+        """Create MongoDB indexes for efficient queries and TTL cleanup. Idempotent."""
         facts = self._mongo.get_collection(FACTS_COLLECTION)
         await facts.create_index(
             [("patient_id", 1), ("key", 1)],
@@ -61,14 +61,57 @@ class MongoMemoryStore:
             name="thread_time_idx",
         )
 
+        # TTL: conversation turns expire after 90 days
+        await turns.create_index(
+            "timestamp",
+            name="turns_ttl_idx",
+            expireAfterSeconds=90 * 24 * 3600,  # 90 days
+        )
+
         summaries = self._mongo.get_collection(SUMMARIES_COLLECTION)
         await summaries.create_index(
             [("thread_id", 1)],
             name="thread_idx",
             unique=True,
         )
+        # TTL: thread summaries expire after 90 days
+        await summaries.create_index(
+            "updated_at",
+            name="summaries_ttl_idx",
+            expireAfterSeconds=90 * 24 * 3600,  # 90 days
+        )
 
-        logger.debug("Memory store indexes ensured.")
+        # TTL indexes for trace and training collections
+        traces = self._mongo.get_collection("ai_traces")
+        await traces.create_index(
+            [("agent_id", 1), ("started_at", -1)],
+            name="traces_agent_time_idx",
+        )
+        await traces.create_index(
+            "started_at",
+            name="traces_ttl_idx",
+            expireAfterSeconds=30 * 24 * 3600,  # 30 days
+        )
+
+        samples = self._mongo.get_collection("ai_finetune_samples")
+        await samples.create_index(
+            [("agent_id", 1), ("task", 1), ("created_at", -1)],
+            name="samples_agent_task_idx",
+        )
+        await samples.create_index(
+            "created_at",
+            name="samples_ttl_idx",
+            expireAfterSeconds=180 * 24 * 3600,  # 180 days (keep training data longer)
+        )
+
+        metrics = self._mongo.get_collection("ai_agent_metrics")
+        await metrics.create_index(
+            "recorded_at",
+            name="metrics_ttl_idx",
+            expireAfterSeconds=30 * 24 * 3600,  # 30 days
+        )
+
+        logger.debug("Memory store indexes + TTL indexes ensured.")
 
     # -- Patient Facts ------------------------------------------------------
 

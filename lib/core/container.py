@@ -168,6 +168,7 @@ from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.composite import CompositeRetriever
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.ai_foundation.retrieval.mongo import MongoReportRetriever
+from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
 from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
 from lib.ai_foundation.eval.trace import TraceCollector
@@ -1434,7 +1435,7 @@ def _build_prompt_registry() -> PromptRegistry:
 
 
 def _build_composite_retriever() -> CompositeRetriever:
-    """Build a CompositeRetriever wired with actual Qdrant + Mongo sources."""
+    """Build a CompositeRetriever wired with actual Qdrant + Mongo + Summary sources."""
     composite = CompositeRetriever()
     composite.register(
         "mongo_report",
@@ -1446,6 +1447,12 @@ def _build_composite_retriever() -> CompositeRetriever:
         "qdrant",
         cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         timeout_seconds=8.0,
+        required=False,
+    )
+    composite.register(
+        "patient_summary",
+        cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
+        timeout_seconds=5.0,
         required=False,
     )
     return composite
@@ -1516,6 +1523,15 @@ container.register(
 container.register(
     MongoReportRetriever,
     lambda: MongoReportRetriever(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Patient Summary Retriever — sleep, vitals, daily aggregates
+container.register(
+    PatientSummaryRetriever,
+    lambda: PatientSummaryRetriever(
         mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
     scope=Scope.singleton,
