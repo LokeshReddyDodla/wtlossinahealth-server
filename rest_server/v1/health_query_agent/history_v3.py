@@ -20,17 +20,10 @@ from pydantic import BaseModel, Field
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_care_provider_access_service
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-from lib.services.care_provider_access_service import CareProviderAccessService
-from lib.utils.care_provider_permissions import (
-    CareProviderFeature,
-    CareProviderPermissionAction,
-)
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-from .utils import resolve_bot_conversation_id
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +65,7 @@ class ThreadListResponse(BaseModel):
 
 @router.get("/history/v3", response_model=SuccessResponse[ConversationHistoryV3Response])
 async def get_conversation_history_v3(
-    patient_id: Optional[str] = Query(None, description="Patient ID (required for care_provider, optional for admin)"),
-    thread_id: Optional[str] = Query(None, description="Direct thread_id override (admin only)"),
+    thread_id: str = Query(..., description="Thread ID from /history/v3/threads"),
     limit: int = Query(50, ge=1, le=500, description="Number of turns to return"),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -82,57 +74,29 @@ async def get_conversation_history_v3(
                 ProfileTypeEnum.CARE_PROVIDER,
                 ProfileTypeEnum.ADMIN,
             ],
-            care_provider_feature=CareProviderFeature.PATIENTS,
-            care_provider_action=CareProviderPermissionAction.READ,
+            check_permissions=False,
         )
-    ),
-    care_provider_access_service: CareProviderAccessService = Depends(
-        get_care_provider_access_service
     ),
 ):
-    """Retrieve conversation history for a thread.
+    """Retrieve conversation turns for a thread.
 
-    Thread resolution:
-    - Patient: automatically resolves to the patient's own thread
-    - Care Provider: requires patient_id → resolves to provider's thread for that patient
-    - Admin: can use patient_id (own thread with that patient) OR thread_id (view any thread)
+    Flow: GET /history/v3/threads → pick a thread → GET /history/v3?thread_id=...
+
+    Security: users can only access threads that belong to them
+    (thread_id starts with their role:id prefix). Admin can access any thread.
     """
-    resolved_thread_id: str
+    # Security: verify the thread belongs to this user (or user is admin)
+    if current_actor.role != ProfileTypeEnum.ADMIN:
+        expected_prefix = f"bot:{current_actor.role.value}:{current_actor.id}"
+        if current_actor.role == ProfileTypeEnum.PATIENT:
+            expected_prefix = f"bot:patient:{current_actor.id}"
+        elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
+            expected_prefix = f"bot:provider:{current_actor.id}"
 
-    if thread_id and current_actor.role == ProfileTypeEnum.ADMIN:
-        # Admin can directly view any thread
-        resolved_thread_id = thread_id
-    elif current_actor.role == ProfileTypeEnum.PATIENT:
-        resolved_thread_id = resolve_bot_conversation_id(
-            actor_type="patient", actor_id=current_actor.id,
-        )
-    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        if not patient_id:
-            raise HTTPException(status_code=400, detail="patient_id is required for care providers")
-        # Validate access
-        from uuid import UUID
-        accessible = await care_provider_access_service.get_accessible_patients(
-            care_provider_id=UUID(current_actor.id),
-            patient_ids=[UUID(patient_id)],
-        )
-        if not accessible:
-            raise HTTPException(status_code=403, detail="No access to this patient")
-        resolved_thread_id = resolve_bot_conversation_id(
-            actor_type="care_provider", actor_id=current_actor.id,
-            subject_patient_id=patient_id,
-        )
-    elif current_actor.role == ProfileTypeEnum.ADMIN:
-        if patient_id:
-            resolved_thread_id = resolve_bot_conversation_id(
-                actor_type="admin", actor_id=current_actor.id,
-                subject_patient_id=patient_id,
-            )
-        else:
-            resolved_thread_id = resolve_bot_conversation_id(
-                actor_type="admin", actor_id=current_actor.id,
-            )
-    else:
-        raise HTTPException(status_code=403, detail="Unsupported role")
+        if not thread_id.startswith(expected_prefix):
+            raise HTTPException(status_code=403, detail="Access denied to this thread")
+
+    resolved_thread_id = thread_id
 
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     turns = await memory.get_thread_turns(resolved_thread_id, limit=limit)
