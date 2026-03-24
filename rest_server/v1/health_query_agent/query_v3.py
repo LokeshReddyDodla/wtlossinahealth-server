@@ -142,7 +142,9 @@ def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) ->
         group_key = hashlib.sha256(
             ":".join(sorted(resolved_patient_ids)).encode()
         ).hexdigest()[:12]
-        return f"bot:{current_actor.role.value}:{current_actor.id}:group:{group_key}"
+        thread_id = f"bot:{current_actor.role.value}:{current_actor.id}:group:{group_key}"
+        print(f"[THREAD] multi-patient: {len(resolved_patient_ids)} patients → {thread_id}")
+        return thread_id
 
     # Only admin can reach here (0 patients) — general platform questions
     return f"bot:{current_actor.role.value}:{current_actor.id}:general"
@@ -223,16 +225,25 @@ async def process_query_v3_stream(
     priority = _resolve_priority(current_actor.role)
     _check_rate_limit(current_actor, priority)
 
+    print(f"[STREAM_ENDPOINT] role={current_actor.role.value}, provided_patient_ids={payload.patient_ids}")
+
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,
         care_provider_access_service=care_provider_access_service,
     )
 
+    print(f"[STREAM_ENDPOINT] resolved_patient_ids={resolved_patient_ids}")
+
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
+
+    print(f"[STREAM_ENDPOINT] thread_id={thread_id}")
+
     input = _build_agent_input(
         payload, current_actor, resolved_patient_ids, thread_id, stream=True,
     )
+
+    print(f"[STREAM_ENDPOINT] input.context.thread_id={input.context.thread_id}, patient_ids={input.context.patient_ids}")
 
     return StreamingResponse(
         agent.run_stream(input),

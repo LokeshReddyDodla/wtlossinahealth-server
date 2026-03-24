@@ -200,6 +200,7 @@ class HealthQueryAgent(BaseAgent):
             if not intent.is_ready:
                 clarification = intent.clarification_msg or "Could you tell me more about what you'd like to know?"
                 # Persist BEFORE yielding (yields may be the last thing consumed)
+                print(f"[STREAM] not_ready path — persisting clarification turn")
                 output = AgentOutput(message=clarification, is_ready=False, trace_id=trace.trace_id if trace else None)
                 await self._persist_turn(input, output, intent)
 
@@ -237,8 +238,10 @@ class HealthQueryAgent(BaseAgent):
 
             # Persist BEFORE yielding done (connection may close after last yield)
             full_text = "".join(full_text_parts)
+            print(f"[STREAM] ready path — persisting turn, text_len={len(full_text)}")
             output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
             await self._persist_turn(input, output, intent)
+            print("[STREAM] persist done")
 
             # Stage 4: Done
             elapsed_ms = int((time.perf_counter() - pipeline_start) * 1000)
@@ -868,19 +871,21 @@ class HealthQueryAgent(BaseAgent):
         intent: QueryIntent,
     ) -> None:
         """Save conversation turns to the shared memory store."""
+        print(f"[PERSIST_TURN] called. memory={self.memory is not None}, thread_id={input.context.thread_id}")
         if not self.memory:
-            logger.warning("_persist_turn: no memory store, skipping")
+            print("[PERSIST_TURN] SKIP: no memory store")
             return
         if not input.context.thread_id:
-            logger.warning("_persist_turn: no thread_id, skipping")
+            print("[PERSIST_TURN] SKIP: no thread_id")
             return
 
-        logger.info("_persist_turn: saving to thread=%s", input.context.thread_id)
+        print(f"[PERSIST_TURN] saving to thread={input.context.thread_id}")
 
         from lib.ai_foundation.memory.base import ConversationTurn
 
         try:
             # Save user turn
+            print(f"[PERSIST_TURN] appending user turn: {input.message[:50]}...")
             await self.memory.append_turn(
                 input.context.thread_id,
                 ConversationTurn(
@@ -889,7 +894,9 @@ class HealthQueryAgent(BaseAgent):
                     agent_id=self.agent_id,
                 ),
             )
+            print("[PERSIST_TURN] user turn saved")
             # Save assistant turn
+            print(f"[PERSIST_TURN] appending assistant turn: {output.message[:50]}...")
             await self.memory.append_turn(
                 input.context.thread_id,
                 ConversationTurn(
@@ -910,7 +917,9 @@ class HealthQueryAgent(BaseAgent):
             # Record implicit feedback signals
             await self._record_implicit_signals(input, intent)
 
+            print("[PERSIST_TURN] all done — both turns saved + compaction checked")
         except Exception as exc:
+            print(f"[PERSIST_TURN] FAILED: {exc}")
             logger.warning("Failed to persist conversation turn: %s", exc)
 
     async def _record_implicit_signals(
