@@ -303,6 +303,7 @@ class HealthQueryAgent(BaseAgent):
             user_message=input.message,
             assistant_message=output.message,
             agent_id=self.agent_id,
+            patient_ids=input.context.patient_ids,
             intent_metadata={
                 "is_ready": output.is_ready,
                 "data_types": [dt.value for dt in intent.data_types],
