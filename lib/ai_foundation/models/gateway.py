@@ -112,6 +112,30 @@ class _ProviderClients:
             )
         return self._clients[cache_key]
 
+    def get_gemini(self, api_key: str | None = None) -> Any:
+        """Get Google Gemini client. Uses OpenAI-compatible API."""
+        key = api_key or self._api_keys.get("google", "")
+        cache_key = f"gemini:{key[:8]}"
+        if cache_key not in self._clients:
+            # Gemini supports OpenAI-compatible API
+            self._clients[cache_key] = AsyncOpenAI(
+                api_key=key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+        return self._clients[cache_key]
+
+    def get_gemini_instructor(self, api_key: str | None = None) -> Any:
+        """Get Instructor-wrapped Gemini client for structured output."""
+        key = api_key or self._api_keys.get("google", "")
+        cache_key = f"gemini_instructor:{key[:8]}"
+        if cache_key not in self._clients:
+            client = AsyncOpenAI(
+                api_key=key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+            self._clients[cache_key] = instructor.from_openai(client)
+        return self._clients[cache_key]
+
 
 # ---------------------------------------------------------------------------
 # Gateway
@@ -514,15 +538,18 @@ class ModelGateway:
         """Get the appropriate async client for a model spec."""
         if spec.provider == ModelProvider.OPENAI:
             return self._clients.get_openai()
-        # Future: add Anthropic, Google, Local providers
+        if spec.provider == ModelProvider.GOOGLE:
+            return self._clients.get_gemini()
         raise ModelGatewayError(
-            f"Provider {spec.provider.value!r} is not yet supported for async completion."
+            f"Provider {spec.provider.value!r} is not yet supported."
         )
 
     def _get_instructor_client(self, spec: ModelSpec) -> instructor.AsyncInstructor:
         """Get an Instructor-wrapped client for structured extraction."""
         if spec.provider == ModelProvider.OPENAI:
             return self._clients.get_instructor()
+        if spec.provider == ModelProvider.GOOGLE:
+            return self._clients.get_gemini_instructor()
         raise ModelGatewayError(
             f"Provider {spec.provider.value!r} is not yet supported for structured extraction."
         )

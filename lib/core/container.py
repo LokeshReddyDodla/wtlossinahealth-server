@@ -1459,15 +1459,20 @@ container.register(
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
 def _build_model_gateway() -> ModelGateway:
-    api_key = str(config("OPENAI_API_KEY", default=""))
-    if not api_key:
-        import logging
-        logging.getLogger(__name__).warning(
-            "OPENAI_API_KEY not set — LLM calls will fail. Set it in your environment."
-        )
+    import logging
+    _log = logging.getLogger(__name__)
+
+    openai_key = str(config("OPENAI_API_KEY", default=""))
+    google_key = str(config("GOOGLE_API_KEY", default=""))
+
+    if not openai_key:
+        _log.warning("OPENAI_API_KEY not set — OpenAI calls will fail.")
+    if not google_key:
+        _log.info("GOOGLE_API_KEY not set — Gemini fallback unavailable.")
+
     return ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
-        api_keys={"openai": api_key},
+        api_keys={"openai": openai_key, "google": google_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
         collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
     )
