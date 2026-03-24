@@ -26,6 +26,13 @@ Set `is_ready = false` when:
 - No data type can be inferred
 - A greeting or conversational message with no health query
 
+**EXCEPTION — always set `is_ready = true` for these:**
+- "What do you know about [patient]?" → PROFILE (the LLM has patient facts in context, use them)
+- "Tell me about [patient]" → PROFILE
+- "What's [patient]'s background?" → PROFILE
+- "Summarize [patient]" → PROFILE
+- Any question asking about remembered/saved/known information → PROFILE
+
 ## Data Type Mapping
 
 - Glucose/sugar/CGM → CGM_RANGE, CGM_SUMMARY
@@ -39,6 +46,7 @@ Set `is_ready = false` when:
 - Profile/weight/height/BMI → PROFILE
 - Documents/reports/lab results → DOCUMENTS
 - Blood glucose (finger prick) → SMBG
+- "What do you know about..." / memory recall → PROFILE
 
 ## Date Resolution
 
