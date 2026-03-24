@@ -107,18 +107,37 @@ def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
 
 
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:
-    """Resolve thread_id based on actor role."""
-    subject_patient_id = None
-    if (
-        current_actor.role in (ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN)
-        and len(resolved_patient_ids) == 1
-    ):
-        subject_patient_id = resolved_patient_ids[0]
+    """Resolve thread_id based on actor role and patient scope.
+
+    Thread isolation:
+    - Patient: bot:patient:{patient_id}
+    - Provider + 1 patient: bot:provider:{provider_id}:patient:{patient_id}
+    - Provider + N patients: bot:provider:{provider_id}:group:{hash_of_sorted_ids}
+    - Provider + 0 patients: bot:provider:{provider_id}
+    - Admin follows same pattern as provider
+    """
+    if current_actor.role == ProfileTypeEnum.PATIENT:
+        return resolve_bot_conversation_id(
+            actor_type="patient", actor_id=current_actor.id,
+        )
+
+    if len(resolved_patient_ids) == 1:
+        return resolve_bot_conversation_id(
+            actor_type=current_actor.role.value,
+            actor_id=current_actor.id,
+            subject_patient_id=resolved_patient_ids[0],
+        )
+
+    if len(resolved_patient_ids) > 1:
+        import hashlib
+        group_key = hashlib.sha256(
+            ":".join(sorted(resolved_patient_ids)).encode()
+        ).hexdigest()[:12]
+        return f"bot:{current_actor.role.value}:{current_actor.id}:group:{group_key}"
 
     return resolve_bot_conversation_id(
         actor_type=current_actor.role.value,
         actor_id=current_actor.id,
-        subject_patient_id=subject_patient_id,
     )
 
 
