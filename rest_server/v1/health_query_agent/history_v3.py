@@ -19,6 +19,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+from lib.ai_foundation.agents.thread_utils import thread_prefix_for_user
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -85,12 +86,9 @@ async def get_conversation_history_v3(
     """
     # Security: verify the thread belongs to this user (or user is admin)
     if current_actor.role != ProfileTypeEnum.ADMIN:
-        expected_prefix = f"bot:{current_actor.role.value}:{current_actor.id}"
-        if current_actor.role == ProfileTypeEnum.PATIENT:
-            expected_prefix = f"bot:patient:{current_actor.id}"
-        elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-            expected_prefix = f"bot:provider:{current_actor.id}"
-
+        expected_prefix = thread_prefix_for_user(
+            role=current_actor.role.value, actor_id=current_actor.id,
+        )
         if not thread_id.startswith(expected_prefix):
             raise HTTPException(status_code=403, detail="Access denied to this thread")
 
@@ -141,14 +139,8 @@ async def list_conversation_threads(
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     collection = memory.get_collection("ai_conversation_turns")
 
-    if current_actor.role == ProfileTypeEnum.PATIENT:
-        match_filter = {"thread_id": {"$regex": f"^bot:patient:{current_actor.id}"}}
-    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        match_filter = {"thread_id": {"$regex": f"^bot:provider:{current_actor.id}"}}
-    elif current_actor.role == ProfileTypeEnum.ADMIN:
-        match_filter = {"thread_id": {"$regex": f"^bot:admin:{current_actor.id}"}}
-    else:
-        match_filter = {"thread_id": {"$regex": f"^bot:{current_actor.role.value}:{current_actor.id}"}}
+    prefix = thread_prefix_for_user(role=current_actor.role.value, actor_id=current_actor.id)
+    match_filter = {"thread_id": {"$regex": f"^{prefix}"}}
 
     pipeline = [
         {"$match": match_filter},

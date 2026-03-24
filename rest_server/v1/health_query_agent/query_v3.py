@@ -32,10 +32,10 @@ from lib.utils.care_provider_permissions import (
 from fastapi import HTTPException
 from rest_server.response_models import SuccessResponse
 from rest_server.v1.utils import resolve_patient_ids_for_query
+from lib.ai_foundation.agents.thread_utils import resolve_thread_id as _foundation_resolve_thread_id
 
 from .router import router
 from .api_schema import QueryRequest
-from .utils import resolve_bot_conversation_id
 
 
 def _resolve_agent_role(role: ProfileTypeEnum) -> str:
@@ -113,41 +113,12 @@ def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
 
 
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:
-    """Resolve thread_id based on actor role and patient scope.
-
-    Thread isolation:
-    - Patient:              bot:patient:{patient_id}
-    - Provider + 1 patient: bot:provider:{provider_id}:patient:{patient_id}
-    - Provider + N patients: bot:provider:{provider_id}:group:{hash}
-    - Admin + 1 patient:    bot:admin:{admin_id}:patient:{patient_id}
-    - Admin + N patients:   bot:admin:{admin_id}:group:{hash}
-    - Admin + 0 patients:   bot:admin:{admin_id}:general  (platform-wide questions)
-
-    Care providers MUST always have patient_ids (enforced by resolve_patient_ids_for_query).
-    """
-    if current_actor.role == ProfileTypeEnum.PATIENT:
-        return resolve_bot_conversation_id(
-            actor_type="patient", actor_id=current_actor.id,
-        )
-
-    if len(resolved_patient_ids) == 1:
-        return resolve_bot_conversation_id(
-            actor_type=current_actor.role.value,
-            actor_id=current_actor.id,
-            subject_patient_id=resolved_patient_ids[0],
-        )
-
-    if len(resolved_patient_ids) > 1:
-        import hashlib
-        group_key = hashlib.sha256(
-            ":".join(sorted(resolved_patient_ids)).encode()
-        ).hexdigest()[:12]
-        thread_id = f"bot:{current_actor.role.value}:{current_actor.id}:group:{group_key}"
-        print(f"[THREAD] multi-patient: {len(resolved_patient_ids)} patients → {thread_id}")
-        return thread_id
-
-    # Only admin can reach here (0 patients) — general platform questions
-    return f"bot:{current_actor.role.value}:{current_actor.id}:general"
+    """Resolve thread_id — delegates to the single source of truth."""
+    return _foundation_resolve_thread_id(
+        role=current_actor.role.value,
+        actor_id=current_actor.id,
+        patient_ids=resolved_patient_ids,
+    )
 
 
 @router.post("/query/v3")
