@@ -38,6 +38,7 @@ async def submit_feedback(
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN],
+            check_permissions=False,
         )
     ),
 ):
