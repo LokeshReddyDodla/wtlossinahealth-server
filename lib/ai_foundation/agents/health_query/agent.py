@@ -161,6 +161,9 @@ class HealthQueryAgent(BaseAgent):
             output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
             await self._save_turn(input, output, intent)
 
+            # Schedule background BEFORE last yield — ensure_future after yield may not execute
+            self._schedule_background(input)
+
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
             yield sse_done(SSEDonePayload(
                 suggestions=[s.model_dump() for s in intent.suggestions],
@@ -169,8 +172,6 @@ class HealthQueryAgent(BaseAgent):
                 latency_ms=elapsed, model_id=meta.model_id if meta else None,
                 data={"data_types": [dt.value for dt in intent.data_types]},
             ))
-
-            self._schedule_background(input)
 
         except Exception as exc:
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
@@ -318,9 +319,14 @@ class HealthQueryAgent(BaseAgent):
                 patient_ids=input.context.patient_ids,
             ))
         if self.fact_extractor:
-            asyncio.ensure_future(self.fact_extractor.extract_if_needed(
-                message=input.message, patient_id=input.context.patient_id, agent_id=self.agent_id,
-            ))
+            # Resolve patient_id: direct or first from list
+            pid = input.context.patient_id
+            if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
+                pid = input.context.patient_ids[0]
+            if pid:
+                asyncio.ensure_future(self.fact_extractor.extract_if_needed(
+                    message=input.message, patient_id=pid, agent_id=self.agent_id,
+                ))
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
