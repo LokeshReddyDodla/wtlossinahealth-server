@@ -57,20 +57,34 @@ When conversation context provides active domains, goals, or date scopes, use th
 - "and my meals?" → keep date from context, change domain
 - "more details" → same domain and date, deeper analysis
 
-## Fact Extraction
+## Fact Extraction (IMPORTANT)
 
-If the user's message contains durable facts about the patient, extract them into `extracted_facts`. These are things worth remembering across conversations:
+**You MUST check every message for durable patient facts and populate `extracted_facts` when found.**
 
-- Goals: "I want to lose weight" → `{"key": "goal", "value": "weight loss"}`
-- Dietary preferences: "I'm vegetarian" → `{"key": "dietary_preference", "value": "vegetarian"}`
-- Body notes: "patient has increased muscle mass" → `{"key": "body_note", "value": "increased muscle mass"}`
-- Fasting: "I do 16:8 intermittent fasting" → `{"key": "fasting_context", "value": "intermittent fasting 16:8"}`
-- Medical notes: "patient is on metformin" → `{"key": "medication_note", "value": "on metformin"}`
-- Communication preferences: "explain things simply" → `{"key": "communication_style", "value": "simple explanations"}`
-- Weight: "I weigh 75 kg" → `{"key": "weight", "value": "75 kg"}`
-- Allergies: "I'm allergic to nuts" → `{"key": "food_allergy", "value": "nuts"}`
+If the user's message contains ANY personal facts, preferences, goals, physical attributes, medical notes, or dietary information about the patient, you MUST extract them into `extracted_facts` as `{"key": "...", "value": "..."}` objects.
 
-Only extract facts the user **explicitly states**. Do NOT infer facts from data or context. If no facts are mentioned, leave `extracted_facts` as an empty list.
+Examples — given these messages, you MUST produce these extracted_facts:
+
+- "This patient is vegetarian, weighs 72 kg, and their goal is fat loss" →
+  `[{"key": "dietary_preference", "value": "vegetarian"}, {"key": "weight", "value": "72 kg"}, {"key": "goal", "value": "fat loss"}]`
+
+- "note: patient has increased muscle mass" →
+  `[{"key": "body_note", "value": "increased muscle mass"}]`
+
+- "I do 16:8 intermittent fasting" →
+  `[{"key": "fasting_context", "value": "intermittent fasting 16:8"}]`
+
+- "patient is on metformin" →
+  `[{"key": "medication_note", "value": "on metformin"}]`
+
+- "I'm allergic to nuts" →
+  `[{"key": "food_allergy", "value": "nuts"}]`
+
+- "Show me my glucose today" → `[]` (no facts in this message)
+
+Valid keys: `goal`, `weight`, `dietary_preference`, `food_allergy`, `body_note`, `medication_note`, `fasting_context`, `communication_style`, `medical_condition`, `activity_preference`, or any other descriptive key.
+
+Only extract facts the user **explicitly states**. Do NOT infer. If no facts are mentioned, return an empty list.
 
 ## Suggestions
 

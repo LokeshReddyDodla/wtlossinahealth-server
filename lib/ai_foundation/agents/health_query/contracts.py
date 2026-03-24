@@ -150,15 +150,43 @@ class QueryIntent(BaseModel):
     )
     extracted_facts: list[dict[str, Any]] = Field(
         default_factory=list,
+        description="Deprecated — facts are now extracted via a separate LLM call.",
+    )
+
+
+class PatientFact(BaseModel):
+    """A single extracted patient fact."""
+
+    key: str = Field(
+        ...,
         description=(
-            "Durable facts about the patient mentioned in the message. "
-            "Each item: {\"key\": str, \"value\": str}. "
-            "Examples: {\"key\": \"goal\", \"value\": \"fat loss\"}, "
-            "{\"key\": \"dietary_preference\", \"value\": \"vegetarian\"}, "
-            "{\"key\": \"body_note\", \"value\": \"has increased muscle mass\"}, "
-            "{\"key\": \"fasting_context\", \"value\": \"intermittent fasting 16:8\"}. "
-            "Only extract facts the user explicitly states. Do NOT infer."
+            "Fact category. Must be one of: goal, weight, dietary_preference, "
+            "food_allergy, body_note, medication_note, fasting_context, "
+            "communication_style, medical_condition, activity_preference, "
+            "or any other descriptive key."
         ),
+    )
+    value: str = Field(
+        ...,
+        description="The fact value, exactly as stated by the user.",
+    )
+
+
+class ExtractedFacts(BaseModel):
+    """Facts extracted from a user message. Used as response_model for a dedicated LLM call."""
+
+    facts: list[PatientFact] = Field(
+        ...,
+        description=(
+            "ALL durable patient facts found in the message. "
+            "Extract every goal, weight, dietary preference, allergy, body note, "
+            "medical condition, medication, fasting context mentioned. "
+            "Return an empty list ONLY if the message contains NO patient facts."
+        ),
+    )
+    has_facts: bool = Field(
+        ...,
+        description="True if any patient facts were found in the message. False otherwise.",
     )
 
 

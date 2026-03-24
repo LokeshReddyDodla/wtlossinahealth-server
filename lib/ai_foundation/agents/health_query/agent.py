@@ -109,8 +109,8 @@ class HealthQueryAgent(BaseAgent):
             # 2. Extract intent
             intent, intent_meta = await self._extract_intent(input, memory_facts, history)
 
-            # 2b. Persist any extracted facts
-            await self._persist_extracted_facts(input, intent)
+            # 2b. Extract and persist patient facts (separate LLM call, fire-and-forget)
+            await self._extract_and_persist_facts(input)
 
             # 3. If not ready → clarification
             if not intent.is_ready:
@@ -180,8 +180,8 @@ class HealthQueryAgent(BaseAgent):
             history = await self._load_conversation_history(input)
             intent, intent_meta = await self._extract_intent(input, memory_facts, history)
 
-            # Persist any extracted facts (fire-and-forget)
-            await self._persist_extracted_facts(input, intent)
+            # Extract and persist patient facts (separate LLM call, fire-and-forget)
+            await self._extract_and_persist_facts(input)
 
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
 
@@ -479,51 +479,75 @@ class HealthQueryAgent(BaseAgent):
             model_id=meta.model_id if meta else None,
         )
 
-    async def _persist_extracted_facts(
-        self,
-        input: AgentInput,
-        intent: QueryIntent,
-    ) -> None:
-        """Save any facts the LLM extracted from the user's message."""
-        logger.info(
-            "Fact extraction check: memory=%s, patient_id=%s, extracted_facts=%s",
-            self.memory is not None,
-            input.context.patient_id,
-            intent.extracted_facts,
-        )
+    async def _extract_and_persist_facts(self, input: AgentInput) -> None:
+        """Dedicated LLM call to extract patient facts, then persist them.
 
-        if not self.memory or not intent.extracted_facts:
+        Runs as a separate call from intent extraction because small models
+        tend to leave optional list fields empty when the main task is complex.
+        A focused call with a tiny schema forces the model to actually extract.
+        """
+        if not self.memory:
             return
 
         patient_id = input.context.patient_id
         if not patient_id:
             return
 
-        from lib.ai_foundation.memory.base import MemoryFact
+        from .contracts import ExtractedFacts
 
-        facts = []
-        for raw in intent.extracted_facts:
-            key = raw.get("key", "").strip()
-            value = raw.get("value", "").strip()
-            if key and value:
-                facts.append(MemoryFact(
-                    key=key,
-                    value=value,
+        try:
+            result, _ = await self.gateway.extract(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Extract ALL durable patient facts from the user's message. "
+                            "Facts include: goals, weight, dietary preferences, allergies, "
+                            "body notes, medical conditions, medications, fasting context, "
+                            "activity preferences, communication style. "
+                            "Set has_facts=true if ANY facts are found, false otherwise. "
+                            "Only extract what is EXPLICITLY stated. Do not infer."
+                        ),
+                    },
+                    {"role": "user", "content": input.message},
+                ],
+                response_model=ExtractedFacts,
+                task=ModelTask.CLASSIFICATION,
+            )
+
+            logger.info(
+                "Fact extraction: has_facts=%s, facts=%s",
+                result.has_facts,
+                [(f.key, f.value) for f in result.facts],
+            )
+
+            if not result.has_facts or not result.facts:
+                return
+
+            from lib.ai_foundation.memory.base import MemoryFact
+
+            memory_facts = [
+                MemoryFact(
+                    key=f.key.strip(),
+                    value=f.value.strip(),
                     source="user",
                     agent_id=self.agent_id,
                     confidence=1.0,
-                ))
+                )
+                for f in result.facts
+                if f.key.strip() and f.value.strip()
+            ]
 
-        if facts:
-            try:
-                await self.memory.upsert_patient_facts(patient_id, facts)
+            if memory_facts:
+                await self.memory.upsert_patient_facts(patient_id, memory_facts)
                 logger.info(
                     "Persisted %d facts for patient %s: %s",
-                    len(facts), patient_id,
-                    [f.key for f in facts],
+                    len(memory_facts), patient_id,
+                    [f.key for f in memory_facts],
                 )
-            except Exception as exc:
-                logger.warning("Failed to persist extracted facts: %s", exc)
+
+        except Exception as exc:
+            logger.warning("Fact extraction failed (non-blocking): %s", exc)
 
     async def _persist_turn(
         self,
