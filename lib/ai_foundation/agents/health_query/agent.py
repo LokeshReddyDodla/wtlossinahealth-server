@@ -87,9 +87,10 @@ class HealthQueryAgent(BaseAgent):
 
     agent_id = "health_query_v3"
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, patient_resolver: Any | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._prompts_registered = False
+        self._patient_resolver = patient_resolver  # PatientNameResolver (optional)
 
     # -- Public API ---------------------------------------------------------
 
@@ -128,7 +129,7 @@ class HealthQueryAgent(BaseAgent):
             retrieved = await self._retrieve_data(input, intent)
 
             # 5. Build analysis
-            analysis = self._build_analysis(intent, retrieved, input.context.patient_ids)
+            analysis = await self._build_analysis(intent, retrieved, input.context.patient_ids)
 
             # 6. Generate response
             response_text = await self._generate_response(input, intent, analysis, memory_facts, history)
@@ -205,7 +206,7 @@ class HealthQueryAgent(BaseAgent):
             yield sse_status(PipelineStage.FETCHING_DATA, "Pulling your health data...")
 
             retrieved = await self._retrieve_data(input, intent)
-            analysis = self._build_analysis(intent, retrieved, input.context.patient_ids)
+            analysis = await self._build_analysis(intent, retrieved, input.context.patient_ids)
 
             # Stage 3: Generate (streaming)
             yield sse_status(PipelineStage.GENERATING_RESPONSE, "Generating response...")
@@ -383,7 +384,7 @@ class HealthQueryAgent(BaseAgent):
 
         return [item.payload for item in result.items]
 
-    def _build_analysis(
+    async def _build_analysis(
         self,
         intent: QueryIntent,
         retrieved: list[dict[str, Any]],
@@ -395,6 +396,9 @@ class HealthQueryAgent(BaseAgent):
         1. Single patient, few records → send raw records (detail mode)
         2. Single patient, many records → aggregate by data_type (summary mode)
         3. Multi-patient → aggregate per-patient summaries (population mode)
+
+        For multi-patient, resolves patient UUIDs to names so the LLM
+        can respond naturally ("Ahmed had 3 hypos" not "7538e5a0 had 3 hypos").
 
         Enforces a token budget so the LLM context window is never exceeded.
         """
@@ -410,7 +414,9 @@ class HealthQueryAgent(BaseAgent):
         is_multi_patient = num_patients > 1 or (patient_ids and len(patient_ids) > 1)
 
         if is_multi_patient:
-            return self._build_population_analysis(domains, retrieved, patient_ids)
+            # Resolve patient names for natural responses
+            name_map = await self._resolve_patient_names(patient_ids, retrieved)
+            return self._build_population_analysis(domains, retrieved, patient_ids, name_map)
         elif len(retrieved) > _MAX_RAW_RECORDS:
             return self._build_summary_analysis(domains, retrieved)
         else:
@@ -510,11 +516,15 @@ class HealthQueryAgent(BaseAgent):
         domains: list[str],
         retrieved: list[dict[str, Any]],
         patient_ids: list[str] | None = None,
+        name_map: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Multi-patient — aggregate per-patient, then produce population summary.
 
         Instead of sending thousands of records, sends one summary row per patient.
+        Patient UUIDs are replaced with display names when available.
         """
+        name_map = name_map or {}
+
         # Group by patient
         by_patient: dict[str, list[dict]] = {}
         for item in retrieved:
@@ -529,7 +539,8 @@ class HealthQueryAgent(BaseAgent):
         # Per-patient summaries
         patient_summaries: list[dict[str, Any]] = []
         for pid, items in by_patient.items():
-            ps: dict[str, Any] = {"patient_id": pid, "record_count": len(items)}
+            display_name = name_map.get(pid, pid[:8])
+            ps: dict[str, Any] = {"patient_id": pid, "name": display_name, "record_count": len(items)}
 
             # CGM
             glucose_vals = [
@@ -684,6 +695,31 @@ class HealthQueryAgent(BaseAgent):
         return messages
 
     # -- Helpers ------------------------------------------------------------
+
+    async def _resolve_patient_names(
+        self,
+        patient_ids: list[str] | None,
+        retrieved: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        """Resolve patient UUIDs to display names for natural LLM responses."""
+        # Collect all patient IDs from both the request and the data
+        all_pids = set(patient_ids or [])
+        for item in retrieved:
+            pid = item.get("patient_id")
+            if pid:
+                all_pids.add(pid)
+
+        if not all_pids:
+            return {}
+
+        if self._patient_resolver:
+            try:
+                return await self._patient_resolver.resolve_names(list(all_pids))
+            except Exception as exc:
+                logger.warning("Patient name resolution failed: %s", exc)
+
+        # Fallback: shortened UUIDs
+        return {pid: pid[:8] for pid in all_pids}
 
     def _ensure_prompts(self) -> None:
         """Register prompts on first use."""

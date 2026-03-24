@@ -177,6 +177,7 @@ from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.observability.metrics import MetricsCollector
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.training.ab_test import ABTestManager
+from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
@@ -1608,6 +1609,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Patient Name Resolver — resolves UUIDs to display names for natural responses
+container.register(
+    PatientNameResolver,
+    lambda: PatientNameResolver(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Health Query Agent v3 — clean foundation agent
 container.register(
     HealthQueryAgent,
@@ -1618,6 +1628,7 @@ container.register(
         retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
         tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
+        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
     ),
     scope=Scope.singleton,
 )
