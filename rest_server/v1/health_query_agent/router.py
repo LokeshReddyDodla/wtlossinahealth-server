@@ -6,4 +6,5 @@ from .query import *
 from .query_v3 import *
 from .feedback import *
 from .history import *
+from .history_v3 import *
 from .reset import *
