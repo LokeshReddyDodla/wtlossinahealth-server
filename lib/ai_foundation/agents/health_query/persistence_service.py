@@ -43,6 +43,7 @@ class PersistenceService:
         user_message: str,
         assistant_message: str,
         agent_id: str,
+        patient_ids: list[str] | None = None,
         intent_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Save user + assistant turns to the memory store."""
@@ -68,7 +69,7 @@ class PersistenceService:
 
     # -- Thread compaction (non-blocking) ----------------------------------
 
-    async def compact_if_needed(self, *, thread_id: str | None, agent_id: str = "") -> None:
+    async def compact_if_needed(self, *, thread_id: str | None, agent_id: str = "", patient_ids: list[str] | None = None) -> None:
         """Compact thread summary + generate title. Call via asyncio.create_task()."""
         if not self._memory or not self._gateway or not thread_id:
             return
@@ -85,6 +86,8 @@ class PersistenceService:
                 summary = existing or ThreadSummary(thread_id=thread_id, summary="", turn_count=turn_count)
                 summary.title = title
                 summary.turn_count = turn_count
+                if patient_ids:
+                    summary.patient_ids = patient_ids
                 await self._memory.save_thread_summary(thread_id, summary)
                 existing = summary
 
@@ -110,8 +113,9 @@ class PersistenceService:
 
             from lib.ai_foundation.memory.base import ThreadSummary
             title = existing.title if existing and existing.title else ""
+            pids = patient_ids or (existing.patient_ids if existing else [])
             summary = ThreadSummary(
-                thread_id=thread_id, title=title,
+                thread_id=thread_id, title=title, patient_ids=pids,
                 summary=response.content, turn_count=turn_count,
             )
             await self._memory.save_thread_summary(thread_id, summary)

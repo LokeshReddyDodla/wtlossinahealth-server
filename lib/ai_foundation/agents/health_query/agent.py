@@ -315,6 +315,7 @@ class HealthQueryAgent(BaseAgent):
         if self.persistence:
             asyncio.ensure_future(self.persistence.compact_if_needed(
                 thread_id=input.context.thread_id, agent_id=self.agent_id,
+                patient_ids=input.context.patient_ids,
             ))
         if self.fact_extractor:
             asyncio.ensure_future(self.fact_extractor.extract_if_needed(

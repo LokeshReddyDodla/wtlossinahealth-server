@@ -45,9 +45,16 @@ class ConversationHistoryV3Response(BaseModel):
     turns: list[ConversationTurnResponse]
 
 
+class PatientInfo(BaseModel):
+    patient_id: str
+    name: str
+    profile_picture: str | None = None
+
+
 class ThreadInfo(BaseModel):
     thread_id: str
     title: str | None = None
+    patients: list[PatientInfo] = Field(default_factory=list)
     turn_count: int
     last_turn: str | None = None
 
@@ -162,23 +169,50 @@ async def list_conversation_threads(
             "last_turn": str(doc["last_turn"]) if doc.get("last_turn") else None,
         })
 
-    # Fetch titles from thread summaries
+    # Fetch titles + patient_ids from thread summaries
     summaries_collection = memory.get_collection("ai_thread_summaries")
     thread_ids = [r["thread_id"] for r in thread_rows]
     title_map: dict[str, str] = {}
+    patient_ids_map: dict[str, list[str]] = {}
+
     if thread_ids:
         summary_cursor = summaries_collection.find(
             {"thread_id": {"$in": thread_ids}},
-            {"thread_id": 1, "title": 1, "_id": 0},
+            {"thread_id": 1, "title": 1, "patient_ids": 1, "_id": 0},
         )
         async for s in summary_cursor:
             if s.get("title"):
                 title_map[s["thread_id"]] = s["title"]
+            if s.get("patient_ids"):
+                patient_ids_map[s["thread_id"]] = s["patient_ids"]
+
+    # Resolve patient profiles (names + pics) for all unique patient IDs
+    all_patient_ids = set()
+    for pids in patient_ids_map.values():
+        all_patient_ids.update(pids)
+
+    patient_profiles: dict[str, PatientInfo] = {}
+    if all_patient_ids:
+        try:
+            from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+            resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+            profiles = await resolver.resolve_profiles(list(all_patient_ids))
+            for p in profiles:
+                patient_profiles[p.patient_id] = PatientInfo(
+                    patient_id=p.patient_id, name=p.name, profile_picture=p.profile_picture,
+                )
+        except Exception:
+            for pid in all_patient_ids:
+                patient_profiles[pid] = PatientInfo(patient_id=pid, name=f"Patient ({pid[:8]})")
 
     threads = [
         ThreadInfo(
             thread_id=r["thread_id"],
             title=title_map.get(r["thread_id"]),
+            patients=[
+                patient_profiles.get(pid, PatientInfo(patient_id=pid, name=f"Patient ({pid[:8]})"))
+                for pid in patient_ids_map.get(r["thread_id"], [])
+            ],
             turn_count=r["turn_count"],
             last_turn=r["last_turn"],
         )
