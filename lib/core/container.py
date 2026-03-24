@@ -159,6 +159,23 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
 from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.services.agent_meal_v1 import AgentMealV1Service
 
+# AI Foundation
+from lib.ai_foundation.models.registry import ModelRegistry, build_default_registry
+from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
+from lib.ai_foundation.models.gateway import ModelGateway
+from lib.ai_foundation.prompts.registry import PromptRegistry
+from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+from lib.ai_foundation.retrieval.composite import CompositeRetriever
+from lib.ai_foundation.cache.semantic_cache import SemanticCache
+from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
+from lib.ai_foundation.eval.trace import TraceCollector
+from lib.ai_foundation.eval.collector import FinetuneDataCollector
+from lib.ai_foundation.eval.quality import QualityScorer
+from lib.ai_foundation.events.bus import EventBus
+from lib.ai_foundation.observability.metrics import MetricsCollector
+from lib.ai_foundation.rate_limit.limiter import RateLimiter
+from lib.ai_foundation.training.ab_test import ABTestManager
+
 # Initialize Container
 container = Container()
 
@@ -1357,4 +1374,144 @@ container.register(
             "profile_update_conversations_collection"
         ),
     ),
+)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AI Foundation Layer
+# ═══════════════════════════════════════════════════════════════════════════
+
+# CacheStore namespace for foundation services
+container.register(
+    "ai_foundation_cache",
+    lambda: CacheStore(namespace="ai_foundation"),
+    scope=Scope.singleton,
+)
+
+# Model Registry — central model configuration with fallback chains
+container.register(
+    ModelRegistry,
+    lambda: build_default_registry(),
+    scope=Scope.singleton,
+)
+
+# Circuit Breaker — provider failure detection
+container.register(
+    CircuitBreaker,
+    lambda: CircuitBreaker(failure_threshold=5, window_seconds=60, cooldown_seconds=30),
+    scope=Scope.singleton,
+)
+
+# Model Gateway — unified LLM interface (complete, extract, stream)
+container.register(
+    ModelGateway,
+    lambda: ModelGateway(
+        registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
+        api_keys={"openai": str(config("OPENAI_API_KEY", default=""))},
+        circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Prompt Registry — versioned prompt management
+container.register(
+    PromptRegistry,
+    lambda: PromptRegistry(),
+    scope=Scope.singleton,
+)
+
+# Memory Store — cross-agent patient facts and conversation turns
+container.register(
+    MongoMemoryStore,
+    lambda: MongoMemoryStore(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Composite Retriever — parallel multi-source retrieval
+container.register(
+    CompositeRetriever,
+    lambda: CompositeRetriever(),
+    scope=Scope.singleton,
+)
+
+# Semantic Cache — query-level LLM response cache
+container.register(
+    SemanticCache,
+    lambda: SemanticCache(
+        cache_store=container.resolve("ai_foundation_cache"),
+        ttl_seconds=900,
+    ),
+    scope=Scope.singleton,
+)
+
+# Embedding Cache — embedding vector cache
+container.register(
+    EmbeddingCache,
+    lambda: EmbeddingCache(
+        cache_store=container.resolve("ai_foundation_cache"),
+        ttl_seconds=86_400,
+    ),
+    scope=Scope.singleton,
+)
+
+# Trace Collector — span-based pipeline tracing
+container.register(
+    TraceCollector,
+    lambda: TraceCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Fine-tune Data Collector — captures LLM I/O for training
+container.register(
+    FinetuneDataCollector,
+    lambda: FinetuneDataCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Quality Scorer — LLM-as-judge response evaluation
+container.register(
+    QualityScorer,
+    lambda: QualityScorer(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Event Bus — agent-to-agent async pub/sub
+container.register(
+    EventBus,
+    lambda: EventBus(),
+    scope=Scope.singleton,
+)
+
+# Metrics Collector — per-agent performance aggregation
+container.register(
+    MetricsCollector,
+    lambda: MetricsCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Rate Limiter — per-tenant, priority-aware
+container.register(
+    RateLimiter,
+    lambda: RateLimiter(
+        cache_store=container.resolve("ai_foundation_cache"),
+    ),
+    scope=Scope.singleton,
+)
+
+# A/B Test Manager — canary deployment for fine-tuned models
+container.register(
+    ABTestManager,
+    lambda: ABTestManager(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
 )
