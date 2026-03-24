@@ -441,14 +441,14 @@ class ModelGateway:
         async for chunk in stream:
             # Usage comes in the final chunk
             if chunk.usage:
+                cached = 0
+                details = getattr(chunk.usage, "prompt_tokens_details", None)
+                if details is not None:
+                    cached = getattr(details, "cached_tokens", 0) or 0
                 final_usage = TokenUsage(
                     input_tokens=chunk.usage.prompt_tokens or 0,
                     output_tokens=chunk.usage.completion_tokens or 0,
-                    cached_tokens=getattr(
-                        getattr(chunk.usage, "prompt_tokens_details", None),
-                        "cached_tokens",
-                        0,
-                    ) or 0,
+                    cached_tokens=cached,
                 )
 
             if chunk.choices:

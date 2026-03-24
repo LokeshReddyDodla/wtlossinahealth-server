@@ -144,7 +144,7 @@ async def list_conversation_threads(
     - Admin: their own threads OR (with patient_id) all threads for a patient across all providers
     """
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
-    collection = memory._mongo.get_collection("ai_conversation_turns")
+    collection = memory.get_collection("ai_conversation_turns")
 
     if current_actor.role == ProfileTypeEnum.ADMIN and patient_id:
         # Admin asking "show me all conversations about patient X"
@@ -180,7 +180,7 @@ async def list_conversation_threads(
         })
 
     # Fetch titles from thread summaries
-    summaries_collection = memory._mongo.get_collection("ai_thread_summaries")
+    summaries_collection = memory.get_collection("ai_thread_summaries")
     thread_ids = [r["thread_id"] for r in thread_rows]
     title_map: dict[str, str] = {}
     if thread_ids:

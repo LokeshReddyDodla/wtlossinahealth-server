@@ -1479,17 +1479,21 @@ container.register(
 )
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
-# Note: collector is resolved lazily to avoid circular dependency
-container.register(
-    ModelGateway,
-    lambda: ModelGateway(
+def _build_model_gateway() -> ModelGateway:
+    api_key = str(config("OPENAI_API_KEY", default=""))
+    if not api_key:
+        import logging
+        logging.getLogger(__name__).warning(
+            "OPENAI_API_KEY not set — LLM calls will fail. Set it in your environment."
+        )
+    return ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
-        api_keys={"openai": str(config("OPENAI_API_KEY", default=""))},
+        api_keys={"openai": api_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
         collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
-    ),
-    scope=Scope.singleton,
-)
+    )
+
+container.register(ModelGateway, _build_model_gateway, scope=Scope.singleton)
 
 # Prompt Registry — versioned prompt management (pre-loaded with agent prompts)
 container.register(

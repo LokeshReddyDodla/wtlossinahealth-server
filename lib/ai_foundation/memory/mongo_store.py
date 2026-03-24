@@ -46,6 +46,10 @@ class MongoMemoryStore:
     def __init__(self, mongo_store: MongoStore) -> None:
         self._mongo = mongo_store
 
+    def get_collection(self, name: str):
+        """Public accessor for MongoDB collections."""
+        return self._mongo.get_collection(name)
+
     async def ensure_indexes(self) -> None:
         """Create MongoDB indexes for efficient queries and TTL cleanup. Idempotent."""
         facts = self._mongo.get_collection(FACTS_COLLECTION)

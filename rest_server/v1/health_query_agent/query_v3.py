@@ -87,6 +87,9 @@ def _build_agent_input(
 
 def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
     """Check rate limit and raise 429 if exceeded."""
+    import logging
+    import time as _time
+
     try:
         from lib.core.container import container
         from lib.ai_foundation.rate_limit.limiter import RateLimiter
@@ -94,16 +97,19 @@ def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
         tenant_id = current_actor.id
         result = limiter.check(tenant_id, priority)
         if not result.allowed:
+            retry_after = max(1, int(result.reset_at - _time.time()))
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded. Limit: {result.limit}/hour. Try again later.",
-                headers={"Retry-After": str(int(result.reset_at - __import__('time').time()))},
+                headers={"Retry-After": str(retry_after)},
             )
         limiter.record(tenant_id, priority)
     except HTTPException:
         raise
-    except Exception:
-        pass  # rate limiter failure should not block requests
+    except (ConnectionError, TimeoutError, OSError) as exc:
+        logging.getLogger(__name__).warning("Rate limiter unavailable: %s", exc)
+    except Exception as exc:
+        logging.getLogger(__name__).debug("Rate limiter error: %s", exc)
 
 
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:

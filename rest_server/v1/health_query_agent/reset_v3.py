@@ -80,11 +80,11 @@ async def reset_conversation_v3(
     # Delete turns and summary
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
 
-    turns_collection = memory._mongo.get_collection("ai_conversation_turns")
+    turns_collection = memory.get_collection("ai_conversation_turns")
     result = await turns_collection.delete_many({"thread_id": thread_id})
     turns_deleted = result.deleted_count
 
-    summaries_collection = memory._mongo.get_collection("ai_thread_summaries")
+    summaries_collection = memory.get_collection("ai_thread_summaries")
     summary_result = await summaries_collection.delete_one({"thread_id": thread_id})
     summary_deleted = summary_result.deleted_count > 0
 

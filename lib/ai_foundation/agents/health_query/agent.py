@@ -753,7 +753,7 @@ class HealthQueryAgent(BaseAgent):
             "patient": "hq_system_patient",
         }
         name = role_prompt_map.get(user_role, "hq_system_patient")
-        logger.info("System prompt: user_role=%s → prompt=%s", user_role, name)
+        logger.debug("System prompt: user_role=%s → prompt=%s", user_role, name)
         template = self.prompts.get(name)
         return template.render(current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
 
@@ -808,10 +808,9 @@ class HealthQueryAgent(BaseAgent):
                 task=ModelTask.CLASSIFICATION,
             )
 
-            logger.info(
-                "Fact extraction: has_facts=%s, facts=%s",
-                result.has_facts,
-                [(f.key, f.value) for f in result.facts],
+            logger.debug(
+                "Fact extraction: has_facts=%s, count=%d",
+                result.has_facts, len(result.facts),
             )
 
             if not result.has_facts or not result.facts:
@@ -833,11 +832,7 @@ class HealthQueryAgent(BaseAgent):
 
             if memory_facts:
                 await self.memory.upsert_patient_facts(patient_id, memory_facts)
-                logger.info(
-                    "Persisted %d facts for patient %s: %s",
-                    len(memory_facts), patient_id,
-                    [f.key for f in memory_facts],
-                )
+                logger.debug("Persisted %d facts for patient", len(memory_facts))
 
         except Exception as exc:
             logger.warning("Fact extraction failed (non-blocking): %s", exc)
@@ -932,8 +927,8 @@ class HealthQueryAgent(BaseAgent):
                         await collector.add_implicit_signal(
                             prev_trace_id, "user_asked_clarification_after", True,
                         )
-                except Exception:
-                    pass  # non-blocking
+                except Exception as inner_exc:
+                    logger.debug("Implicit signal recording failed: %s", inner_exc)
 
         except Exception as exc:
             logger.debug("Implicit signal detection failed: %s", exc)
@@ -1061,7 +1056,7 @@ class HealthQueryAgent(BaseAgent):
             # Cap at 60 chars
             if len(title) > 60:
                 title = title[:57] + "..."
-            logger.info("Generated thread title: %s", title)
+            logger.debug("Generated thread title: %s", title)
             return title
         except Exception as exc:
             logger.warning("Title generation failed: %s", exc)
