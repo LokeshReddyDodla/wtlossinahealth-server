@@ -939,11 +939,10 @@ class HealthQueryAgent(BaseAgent):
             logger.debug("Implicit signal detection failed: %s", exc)
 
     async def _maybe_compact_thread(self, input: AgentInput) -> None:
-        """Summarize the conversation thread if it's long enough.
+        """Summarize the conversation thread and generate a title.
 
-        Runs an LLM call to produce a compact summary of the conversation
-        and saves it to ai_thread_summaries. This summary is loaded on
-        future queries to maintain context without sending all turns.
+        - Title: generated on turn 2 (first complete exchange), kept forever
+        - Summary: generated at turn 4+, updated every 2 turns
         """
         if not self.memory or not input.context.thread_id:
             return
@@ -952,12 +951,26 @@ class HealthQueryAgent(BaseAgent):
             turns = await self.memory.get_thread_turns(input.context.thread_id, limit=30)
             turn_count = len(turns)
 
-            # Only compact after 4+ turns, and every 2 turns after that
+            existing = await self.memory.get_thread_summary(input.context.thread_id)
+
+            # Generate title on turn 2 (first user+assistant pair)
+            if turn_count >= 2 and (not existing or not existing.title):
+                title = await self._generate_thread_title(turns[:2])
+                from lib.ai_foundation.memory.base import ThreadSummary
+                summary = existing or ThreadSummary(
+                    thread_id=input.context.thread_id,
+                    summary="",
+                    turn_count=turn_count,
+                )
+                summary.title = title
+                summary.turn_count = turn_count
+                await self.memory.save_thread_summary(input.context.thread_id, summary)
+                existing = summary
+
+            # Only compact summary after 4+ turns, and every 2 turns after that
             if turn_count < 4 or turn_count % 2 != 0:
                 return
 
-            # Check if we already have a recent summary
-            existing = await self.memory.get_thread_summary(input.context.thread_id)
             if existing and existing.turn_count >= turn_count - 1:
                 return  # already summarized recently
 
@@ -995,8 +1008,12 @@ class HealthQueryAgent(BaseAgent):
                     if domain:
                         domains.add(domain.value)
 
+            # Preserve existing title
+            title = existing.title if existing and existing.title else ""
+
             summary = ThreadSummary(
                 thread_id=input.context.thread_id,
+                title=title,
                 summary=response.content,
                 domains=list(domains),
                 turn_count=turn_count,
@@ -1009,6 +1026,47 @@ class HealthQueryAgent(BaseAgent):
 
         except Exception as exc:
             logger.warning("Thread compaction failed (non-blocking): %s", exc)
+
+    async def _generate_thread_title(self, first_turns: list) -> str:
+        """Generate a short title from the first user message, like ChatGPT does.
+
+        Returns a 3-8 word title. Uses the cheap classification model.
+        """
+        first_user_msg = ""
+        for t in first_turns:
+            if t.role == "user":
+                first_user_msg = t.content
+                break
+
+        if not first_user_msg:
+            return "New conversation"
+
+        try:
+            response = await self.gateway.complete(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Generate a short title (3-8 words) for a health conversation "
+                            "that starts with this message. The title should be descriptive "
+                            "and human-readable, like a chat title. "
+                            "Return ONLY the title, nothing else. No quotes, no punctuation at the end."
+                        ),
+                    },
+                    {"role": "user", "content": first_user_msg},
+                ],
+                task=ModelTask.CLASSIFICATION,
+            )
+            title = response.content.strip().strip('"').strip("'")
+            # Cap at 60 chars
+            if len(title) > 60:
+                title = title[:57] + "..."
+            logger.info("Generated thread title: %s", title)
+            return title
+        except Exception as exc:
+            logger.warning("Title generation failed: %s", exc)
+            # Fallback: first 50 chars of the message
+            return first_user_msg[:50] + ("..." if len(first_user_msg) > 50 else "")
 
     # -- Convenience: build QueryResponse for backward compatibility --------
 

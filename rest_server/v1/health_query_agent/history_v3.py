@@ -48,12 +48,14 @@ class ConversationTurnResponse(BaseModel):
 
 class ConversationHistoryV3Response(BaseModel):
     thread_id: str
+    title: str | None = None
     total_turns: int
     turns: list[ConversationTurnResponse]
 
 
 class ThreadInfo(BaseModel):
     thread_id: str
+    title: str | None = None
     turn_count: int
     last_turn: str | None = None
 
@@ -135,10 +137,15 @@ async def get_conversation_history_v3(
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     turns = await memory.get_thread_turns(resolved_thread_id, limit=limit)
 
+    # Fetch title from thread summary
+    thread_summary = await memory.get_thread_summary(resolved_thread_id)
+    title = thread_summary.title if thread_summary and thread_summary.title else None
+
     return SuccessResponse(
         message="History retrieved successfully",
         data=ConversationHistoryV3Response(
             thread_id=resolved_thread_id,
+            title=title,
             total_turns=len(turns),
             turns=[
                 ConversationTurnResponse(
@@ -200,13 +207,36 @@ async def list_conversation_threads(
     ]
 
     cursor = collection.aggregate(pipeline)
-    threads = []
+    thread_rows = []
     async for doc in cursor:
-        threads.append(ThreadInfo(
-            thread_id=doc["_id"],
-            turn_count=doc["turn_count"],
-            last_turn=str(doc["last_turn"]) if doc.get("last_turn") else None,
-        ))
+        thread_rows.append({
+            "thread_id": doc["_id"],
+            "turn_count": doc["turn_count"],
+            "last_turn": str(doc["last_turn"]) if doc.get("last_turn") else None,
+        })
+
+    # Fetch titles from thread summaries
+    summaries_collection = memory._mongo.get_collection("ai_thread_summaries")
+    thread_ids = [r["thread_id"] for r in thread_rows]
+    title_map: dict[str, str] = {}
+    if thread_ids:
+        summary_cursor = summaries_collection.find(
+            {"thread_id": {"$in": thread_ids}},
+            {"thread_id": 1, "title": 1, "_id": 0},
+        )
+        async for s in summary_cursor:
+            if s.get("title"):
+                title_map[s["thread_id"]] = s["title"]
+
+    threads = [
+        ThreadInfo(
+            thread_id=r["thread_id"],
+            title=title_map.get(r["thread_id"]),
+            turn_count=r["turn_count"],
+            last_turn=r["last_turn"],
+        )
+        for r in thread_rows
+    ]
 
     return SuccessResponse(
         message="Threads retrieved successfully",
