@@ -50,11 +50,17 @@ class ContextLoader:
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
     ) -> AgentContext:
-        """Load all context in parallel-safe sequence."""
-        facts = await self._load_facts(patient_id)
-        history = await self._load_history(thread_id)
-        summary = await self._load_summary(thread_id)
-        names = await self._load_names(patient_ids or ([patient_id] if patient_id else []))
+        """Load all context in parallel — 4 independent calls via asyncio.gather."""
+        import asyncio
+
+        facts_task = self._load_facts(patient_id)
+        history_task = self._load_history(thread_id)
+        summary_task = self._load_summary(thread_id)
+        names_task = self._load_names(patient_ids or ([patient_id] if patient_id else []))
+
+        facts, history, summary, names = await asyncio.gather(
+            facts_task, history_task, summary_task, names_task,
+        )
 
         return AgentContext(
             facts=facts,

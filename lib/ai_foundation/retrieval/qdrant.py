@@ -115,10 +115,7 @@ class QdrantRetriever:
         """
         scroll_filter = self._build_full_filter(request)
         if not scroll_filter:
-            print("[QDRANT] No filter built — returning empty")
             return []
-
-        print(f"[QDRANT] scroll filter: {scroll_filter}")
 
         async with self._store.get_client() as client:
             records, _ = await client.scroll(

@@ -78,6 +78,10 @@ class ThreadSummary(BaseModel):
         default="",
         description="Short human-readable title for the thread (auto-generated from first message).",
     )
+    patient_ids: list[str] = Field(
+        default_factory=list,
+        description="Patient IDs this thread is about. Resolved to names/pics at query time.",
+    )
     summary: str = Field(description="Natural language summary of the conversation.")
     domains: list[str] = Field(
         default_factory=list,
