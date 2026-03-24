@@ -37,19 +37,22 @@ from .api_schema import QueryRequest
 from .utils import resolve_bot_conversation_id
 
 
-# Role → priority mapping
-_ROLE_PRIORITY = {
-    ProfileTypeEnum.ADMIN: RequestPriority.CRITICAL,
-    ProfileTypeEnum.CARE_PROVIDER: RequestPriority.HIGH,
-    ProfileTypeEnum.PATIENT: RequestPriority.NORMAL,
-}
+def _resolve_agent_role(role: ProfileTypeEnum) -> str:
+    """Map actor role to agent user_role string."""
+    if role == ProfileTypeEnum.ADMIN:
+        return "admin"
+    if role == ProfileTypeEnum.CARE_PROVIDER:
+        return "care_provider"
+    return "patient"
 
-# Role → user_role string for the agent (admin uses care_provider prompts)
-_ROLE_AGENT_ROLE = {
-    ProfileTypeEnum.ADMIN: "care_provider",
-    ProfileTypeEnum.CARE_PROVIDER: "care_provider",
-    ProfileTypeEnum.PATIENT: "patient",
-}
+
+def _resolve_priority(role: ProfileTypeEnum) -> RequestPriority:
+    """Map actor role to request priority."""
+    if role == ProfileTypeEnum.ADMIN:
+        return RequestPriority.CRITICAL
+    if role == ProfileTypeEnum.CARE_PROVIDER:
+        return RequestPriority.HIGH
+    return RequestPriority.NORMAL
 
 
 def _build_agent_input(
@@ -72,10 +75,10 @@ def _build_agent_input(
         context=AgentContext(
             patient_id=patient_id,
             user_id=current_actor.id,
-            user_role=_ROLE_AGENT_ROLE.get(current_actor.role, "patient"),
+            user_role=_resolve_agent_role(current_actor.role),
             thread_id=thread_id,
             patient_ids=resolved_patient_ids,
-            priority=_ROLE_PRIORITY.get(current_actor.role, RequestPriority.NORMAL),
+            priority=_resolve_priority(current_actor.role),
         ),
         stream=stream,
     )

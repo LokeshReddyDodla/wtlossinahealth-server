@@ -731,7 +731,13 @@ class HealthQueryAgent(BaseAgent):
 
     def _get_system_prompt(self, user_role: str) -> str:
         """Get the role-appropriate system prompt."""
-        name = "hq_system_care_provider" if user_role == "care_provider" else "hq_system_patient"
+        role_prompt_map = {
+            "admin": "hq_system_admin",
+            "care_provider": "hq_system_care_provider",
+            "patient": "hq_system_patient",
+        }
+        name = role_prompt_map.get(user_role, "hq_system_patient")
+        logger.info("System prompt: user_role=%s → prompt=%s", user_role, name)
         template = self.prompts.get(name)
         return template.render(current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
 
