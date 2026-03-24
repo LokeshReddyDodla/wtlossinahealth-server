@@ -67,6 +67,7 @@ class HealthQueryAgent(BaseAgent):
 
     async def run(self, input: AgentInput) -> AgentOutput:
         pipeline_start = time.perf_counter()
+        user_timestamp = datetime.now(timezone.utc)  # capture when user sent the message
         trace = None
         if self.tracer:
             trace = self.tracer.start_trace(
@@ -80,7 +81,7 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
-                await self._save_turn(input, output, intent)
+                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 return output
 
             data_text = await self._fetch_data(intent, input)
@@ -96,7 +97,7 @@ class HealthQueryAgent(BaseAgent):
                 latency_ms=elapsed, model_id=meta.model_id if meta else None,
             )
 
-            await self._save_turn(input, output, intent)
+            await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
             self._schedule_background(input)
             return output
 
@@ -116,6 +117,7 @@ class HealthQueryAgent(BaseAgent):
 
     async def run_stream(self, input: AgentInput) -> AsyncIterator[str]:
         pipeline_start = time.perf_counter()
+        user_timestamp = datetime.now(timezone.utc)
         trace = None
         if self.tracer:
             trace = self.tracer.start_trace(
@@ -132,7 +134,7 @@ class HealthQueryAgent(BaseAgent):
             if not intent.is_ready:
                 msg = intent.clarification_msg or "Could you tell me more?"
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace.trace_id if trace else None)
-                await self._save_turn(input, output, intent)
+                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump() for s in intent.suggestions],
@@ -159,7 +161,7 @@ class HealthQueryAgent(BaseAgent):
 
             full_text = "".join(full_parts)
             output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
-            await self._save_turn(input, output, intent)
+            await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
 
             # Schedule background BEFORE last yield — ensure_future after yield may not execute
             self._schedule_background(input)
@@ -295,7 +297,10 @@ class HealthQueryAgent(BaseAgent):
 
     # ── Persistence + background ──────────────────────────────────────────
 
-    async def _save_turn(self, input: AgentInput, output: AgentOutput, intent: QueryIntent) -> None:
+    async def _save_turn(
+        self, input: AgentInput, output: AgentOutput, intent: QueryIntent,
+        user_timestamp: Any = None,
+    ) -> None:
         if not self.persistence:
             return
         await self.persistence.save_turn(
@@ -304,6 +309,7 @@ class HealthQueryAgent(BaseAgent):
             assistant_message=output.message,
             agent_id=self.agent_id,
             patient_ids=input.context.patient_ids,
+            user_timestamp=user_timestamp,
             intent_metadata={
                 "is_ready": output.is_ready,
                 "data_types": [dt.value for dt in intent.data_types],
