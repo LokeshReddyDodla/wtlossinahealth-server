@@ -139,6 +139,7 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.services.agent_meal_v1 import AgentMealV1Service
+from lib.ai_foundation.agents.health_query import HealthQueryAgent
 
 
 def get_libreview_sync_queue() -> SQSService:
@@ -597,6 +598,13 @@ def get_health_query_agent_service() -> HealthQueryAgentService:
     return cast(
         HealthQueryAgentService,
         container.resolve(HealthQueryAgentService),
+    )
+
+
+def get_health_query_agent() -> HealthQueryAgent:
+    return cast(
+        HealthQueryAgent,
+        container.resolve(HealthQueryAgent),
     )
 
 
