@@ -159,6 +159,29 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
 from lib.services.health_query_agent.service import HealthQueryAgentService
 from lib.services.agent_meal_v1 import AgentMealV1Service
 
+# AI Foundation
+from lib.ai_foundation.models.registry import ModelRegistry, build_default_registry
+from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
+from lib.ai_foundation.models.gateway import ModelGateway
+from lib.ai_foundation.prompts.registry import PromptRegistry
+from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+from lib.ai_foundation.retrieval.composite import CompositeRetriever
+from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
+from lib.ai_foundation.retrieval.mongo import MongoReportRetriever
+from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
+from lib.ai_foundation.cache.semantic_cache import SemanticCache
+from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
+from lib.ai_foundation.eval.trace import TraceCollector
+from lib.ai_foundation.eval.collector import FinetuneDataCollector
+from lib.ai_foundation.eval.quality import QualityScorer
+from lib.ai_foundation.events.bus import EventBus
+from lib.ai_foundation.observability.metrics import MetricsCollector
+from lib.ai_foundation.rate_limit.limiter import RateLimiter
+from lib.ai_foundation.training.ab_test import ABTestManager
+from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
+
 # Initialize Container
 container = Container()
 
@@ -1357,4 +1380,289 @@ container.register(
             "profile_update_conversations_collection"
         ),
     ),
+)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AI Foundation Layer
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _get_embed_fn():
+    """Lazy import of embed_text to avoid circular imports at module level."""
+    from lib.utils.vector_utils import embed_text
+    return embed_text
+
+
+def _build_prompt_registry() -> PromptRegistry:
+    """Build a PromptRegistry pre-loaded with all agent prompts."""
+    from pathlib import Path
+    import logging
+
+    registry = PromptRegistry()
+
+    # Discover and register prompt directories for all foundation agents
+    agents_dir = Path(__file__).parent.parent / "ai_foundation" / "agents"
+    if agents_dir.exists():
+        for agent_dir in agents_dir.iterdir():
+            prompts_dir = agent_dir / "prompts"
+            if prompts_dir.is_dir():
+                try:
+                    count = registry.register_directory(prompts_dir, namespace=agent_dir.name)
+                    logging.getLogger(__name__).info(
+                        "Registered %d prompts from %s", count, agent_dir.name,
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).warning(
+                        "Failed to load prompts from %s: %s", agent_dir.name, e,
+                    )
+
+    # Also register existing health_query_agent prompts/playbooks for backward compat
+    legacy_prompts = Path(__file__).parent.parent / "services" / "health_query_agent" / "prompts"
+    if legacy_prompts.is_dir():
+        try:
+            registry.register_directory(legacy_prompts, namespace="health_query_legacy")
+        except Exception:
+            pass
+
+    legacy_playbooks = Path(__file__).parent.parent / "services" / "health_query_agent" / "v2" / "playbooks"
+    if legacy_playbooks.is_dir():
+        try:
+            registry.register_directory(legacy_playbooks, namespace="health_query_legacy.playbooks")
+        except Exception:
+            pass
+
+    return registry
+
+
+def _build_composite_retriever() -> CompositeRetriever:
+    """Build a CompositeRetriever wired with actual Qdrant + Mongo + Summary sources."""
+    composite = CompositeRetriever()
+    composite.register(
+        "mongo_report",
+        cast(MongoReportRetriever, container.resolve(MongoReportRetriever)),
+        timeout_seconds=5.0,
+        required=True,
+    )
+    composite.register(
+        "qdrant",
+        cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        timeout_seconds=8.0,
+        required=False,
+    )
+    composite.register(
+        "patient_summary",
+        cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
+        timeout_seconds=5.0,
+        required=False,
+    )
+    return composite
+
+# CacheStore namespace for foundation services
+container.register(
+    "ai_foundation_cache",
+    lambda: CacheStore(namespace="ai_foundation"),
+    scope=Scope.singleton,
+)
+
+# Model Registry — central model configuration with fallback chains
+container.register(
+    ModelRegistry,
+    lambda: build_default_registry(),
+    scope=Scope.singleton,
+)
+
+# Circuit Breaker — provider failure detection
+container.register(
+    CircuitBreaker,
+    lambda: CircuitBreaker(failure_threshold=5, window_seconds=60, cooldown_seconds=30),
+    scope=Scope.singleton,
+)
+
+# Model Gateway — unified LLM interface (complete, extract, stream)
+def _build_model_gateway() -> ModelGateway:
+    api_key = str(config("OPENAI_API_KEY", default=""))
+    if not api_key:
+        import logging
+        logging.getLogger(__name__).warning(
+            "OPENAI_API_KEY not set — LLM calls will fail. Set it in your environment."
+        )
+    return ModelGateway(
+        registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
+        api_keys={"openai": api_key},
+        circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
+        collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
+    )
+
+container.register(ModelGateway, _build_model_gateway, scope=Scope.singleton)
+
+# Prompt Registry — versioned prompt management (pre-loaded with agent prompts)
+container.register(
+    PromptRegistry,
+    lambda: _build_prompt_registry(),
+    scope=Scope.singleton,
+)
+
+# Memory Store — cross-agent patient facts and conversation turns
+container.register(
+    MongoMemoryStore,
+    lambda: MongoMemoryStore(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Qdrant Retriever — semantic vector search
+container.register(
+    QdrantRetriever,
+    lambda: QdrantRetriever(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        collection_name=str(config("QDRANT_COLLECTION", default="patient_data")),
+        embedding_fn=_get_embed_fn(),
+        embedding_cache=cast(EmbeddingCache, container.resolve(EmbeddingCache)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Mongo Report Retriever — deterministic daily reports
+container.register(
+    MongoReportRetriever,
+    lambda: MongoReportRetriever(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Patient Summary Retriever — sleep, vitals, daily aggregates
+container.register(
+    PatientSummaryRetriever,
+    lambda: PatientSummaryRetriever(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Composite Retriever — parallel multi-source retrieval (wired with actual sources)
+container.register(
+    CompositeRetriever,
+    lambda: _build_composite_retriever(),
+    scope=Scope.singleton,
+)
+
+# Semantic Cache — query-level LLM response cache
+container.register(
+    SemanticCache,
+    lambda: SemanticCache(
+        cache_store=container.resolve("ai_foundation_cache"),
+        ttl_seconds=900,
+    ),
+    scope=Scope.singleton,
+)
+
+# Embedding Cache — embedding vector cache
+container.register(
+    EmbeddingCache,
+    lambda: EmbeddingCache(
+        cache_store=container.resolve("ai_foundation_cache"),
+        ttl_seconds=86_400,
+    ),
+    scope=Scope.singleton,
+)
+
+# Trace Collector — span-based pipeline tracing
+container.register(
+    TraceCollector,
+    lambda: TraceCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Fine-tune Data Collector — captures LLM I/O for training
+container.register(
+    FinetuneDataCollector,
+    lambda: FinetuneDataCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Quality Scorer — LLM-as-judge response evaluation
+container.register(
+    QualityScorer,
+    lambda: QualityScorer(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Event Bus — agent-to-agent async pub/sub
+container.register(
+    EventBus,
+    lambda: EventBus(),
+    scope=Scope.singleton,
+)
+
+# Metrics Collector — per-agent performance aggregation
+container.register(
+    MetricsCollector,
+    lambda: MetricsCollector(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Rate Limiter — per-tenant, priority-aware
+container.register(
+    RateLimiter,
+    lambda: RateLimiter(
+        cache_store=container.resolve("ai_foundation_cache"),
+    ),
+    scope=Scope.singleton,
+)
+
+# A/B Test Manager — canary deployment for fine-tuned models
+container.register(
+    ABTestManager,
+    lambda: ABTestManager(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Patient Name Resolver — resolves UUIDs to display names for natural responses
+container.register(
+    PatientNameResolver,
+    lambda: PatientNameResolver(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Health Query Agent v3 — clean foundation agent
+container.register(
+    HealthQueryAgent,
+    lambda: HealthQueryAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
+        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Proactive Monitor Agent — background health scanning
+container.register(
+    ProactiveMonitorAgent,
+    lambda: ProactiveMonitorAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        retriever=cast(CompositeRetriever, container.resolve(CompositeRetriever)),
+        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+    ),
+    scope=Scope.singleton,
 )
