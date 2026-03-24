@@ -110,11 +110,14 @@ def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) ->
     """Resolve thread_id based on actor role and patient scope.
 
     Thread isolation:
-    - Patient: bot:patient:{patient_id}
+    - Patient:              bot:patient:{patient_id}
     - Provider + 1 patient: bot:provider:{provider_id}:patient:{patient_id}
-    - Provider + N patients: bot:provider:{provider_id}:group:{hash_of_sorted_ids}
-    - Provider + 0 patients: bot:provider:{provider_id}
-    - Admin follows same pattern as provider
+    - Provider + N patients: bot:provider:{provider_id}:group:{hash}
+    - Admin + 1 patient:    bot:admin:{admin_id}:patient:{patient_id}
+    - Admin + N patients:   bot:admin:{admin_id}:group:{hash}
+    - Admin + 0 patients:   bot:admin:{admin_id}:general  (platform-wide questions)
+
+    Care providers MUST always have patient_ids (enforced by resolve_patient_ids_for_query).
     """
     if current_actor.role == ProfileTypeEnum.PATIENT:
         return resolve_bot_conversation_id(
@@ -135,10 +138,8 @@ def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) ->
         ).hexdigest()[:12]
         return f"bot:{current_actor.role.value}:{current_actor.id}:group:{group_key}"
 
-    return resolve_bot_conversation_id(
-        actor_type=current_actor.role.value,
-        actor_id=current_actor.id,
-    )
+    # Only admin can reach here (0 patients) — general platform questions
+    return f"bot:{current_actor.role.value}:{current_actor.id}:general"
 
 
 @router.post("/query/v3")
