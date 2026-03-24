@@ -112,6 +112,7 @@ class HealthQueryAgent(BaseAgent):
             memory_facts = await self._load_patient_facts(input)
             history = await self._load_conversation_history(input)
             thread_summary = await self._load_thread_summary(input)
+            patient_names = await self._resolve_patient_names(input.context.patient_ids, [])
 
             # 2. Extract intent
             intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
@@ -132,7 +133,7 @@ class HealthQueryAgent(BaseAgent):
             analysis = await self._build_analysis(intent, retrieved, input.context.patient_ids)
 
             # 6. Generate response
-            response_text = await self._generate_response(input, intent, analysis, memory_facts, history)
+            response_text = await self._generate_response(input, intent, analysis, memory_facts, history, patient_names)
 
             # 7. Build output
             elapsed_ms = int((time.perf_counter() - pipeline_start) * 1000)
@@ -186,6 +187,7 @@ class HealthQueryAgent(BaseAgent):
             memory_facts = await self._load_patient_facts(input)
             history = await self._load_conversation_history(input)
             thread_summary = await self._load_thread_summary(input)
+            patient_names = await self._resolve_patient_names(input.context.patient_ids, [])
             intent, intent_meta = await self._extract_intent(input, memory_facts, history, thread_summary)
 
             # Extract and persist patient facts (separate LLM call, fire-and-forget)
@@ -212,7 +214,7 @@ class HealthQueryAgent(BaseAgent):
             yield sse_status(PipelineStage.GENERATING_RESPONSE, "Generating response...")
 
             full_text_parts: list[str] = []
-            response_messages = self._build_response_messages(input, intent, analysis, memory_facts, history)
+            response_messages = self._build_response_messages(input, intent, analysis, memory_facts, history, patient_names)
 
             first_token_sent = False
             async for chunk in self.gateway.stream(
@@ -631,9 +633,10 @@ class HealthQueryAgent(BaseAgent):
         analysis: dict[str, Any],
         memory_facts: list[dict],
         history: list[dict[str, str]],
+        patient_names: dict[str, str] | None = None,
     ) -> str:
         """Generate the final conversational response."""
-        messages = self._build_response_messages(input, intent, analysis, memory_facts, history)
+        messages = self._build_response_messages(input, intent, analysis, memory_facts, history, patient_names)
 
         if self.tracer:
             async with self.tracer.span("response_generation") as span:
@@ -660,6 +663,7 @@ class HealthQueryAgent(BaseAgent):
         analysis: dict[str, Any],
         memory_facts: list[dict],
         history: list[dict[str, str]],
+        patient_names: dict[str, str] | None = None,
     ) -> list[dict[str, str]]:
         """Assemble the message list for response generation."""
         self._ensure_prompts()
@@ -681,6 +685,18 @@ class HealthQueryAgent(BaseAgent):
             {"role": "system", "content": response_prompt},
             {"role": "system", "content": f"[Structured analysis: {analysis_json}]"},
         ]
+
+        # Inject patient names so the LLM uses real names instead of UUIDs
+        if patient_names:
+            name_lines = [f"- {pid}: {name}" for pid, name in patient_names.items() if name]
+            if name_lines:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "Patient name mapping (ALWAYS use these names, never UUIDs):\n"
+                        + "\n".join(name_lines)
+                    ),
+                })
 
         if memory_facts:
             compact = [f"- {f['key']}: {f['value']}" for f in memory_facts[:8]]
