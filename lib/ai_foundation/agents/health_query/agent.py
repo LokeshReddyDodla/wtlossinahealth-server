@@ -734,8 +734,8 @@ class HealthQueryAgent(BaseAgent):
             except Exception as exc:
                 logger.warning("Patient name resolution failed: %s", exc)
 
-        # Fallback: shortened UUIDs
-        return {pid: pid[:8] for pid in all_pids}
+        # Fallback: readable identifiers
+        return {pid: f"Patient ({pid[:8]})" for pid in all_pids}
 
     def _ensure_prompts(self) -> None:
         """Register prompts on first use."""

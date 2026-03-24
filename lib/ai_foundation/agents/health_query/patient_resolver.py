@@ -77,16 +77,15 @@ class PatientNameResolver:
                     first = row.first_name or ""
                     last = row.last_name or ""
                     name = f"{first} {last}".strip()
-                    self._cache[pid] = name if name else pid[:8]
+                    self._cache[pid] = name if name else f"Patient ({pid[:8]})"
 
-            # Fill missing IDs with shortened UUIDs
+            # Fill missing IDs (not in Postgres at all)
             for pid in patient_ids:
                 if pid not in self._cache:
-                    self._cache[pid] = pid[:8]
+                    self._cache[pid] = f"Patient ({pid[:8]})"
 
         except Exception as exc:
             logger.warning("Failed to resolve patient names: %s", exc)
-            # Fallback: use shortened UUIDs
             for pid in patient_ids:
                 if pid not in self._cache:
-                    self._cache[pid] = pid[:8]
+                    self._cache[pid] = f"Patient ({pid[:8]})"
