@@ -411,7 +411,11 @@ class HealthQueryAgent(BaseAgent):
         else:
             result = await self.retriever.retrieve(request)
 
-        return [item.payload for item in result.items]
+        payloads = [item.payload for item in result.items]
+        print(f"[RETRIEVAL] {len(result.items)} items from sources={result.executed_sources}, degraded={result.degraded_sources}")
+        for item in result.items[:5]:
+            print(f"  [{item.source}] data_type={item.data_type}, keys={list(item.payload.keys())[:8]}")
+        return payloads
 
     async def _build_analysis(
         self,
@@ -443,12 +447,14 @@ class HealthQueryAgent(BaseAgent):
         is_multi_patient = num_patients > 1 or (patient_ids and len(patient_ids) > 1)
 
         if is_multi_patient:
-            # Resolve patient names for natural responses
             name_map = await self._resolve_patient_names(patient_ids, retrieved)
+            print(f"[ANALYSIS] mode=population, patients={num_patients}, records={len(retrieved)}")
             return self._build_population_analysis(domains, retrieved, patient_ids, name_map)
         elif len(retrieved) > _MAX_RAW_RECORDS:
+            print(f"[ANALYSIS] mode=summary, records={len(retrieved)}")
             return self._build_summary_analysis(domains, retrieved)
         else:
+            print(f"[ANALYSIS] mode=detail, records={len(retrieved)}")
             return self._build_detail_analysis(domains, retrieved)
 
     @staticmethod
@@ -456,21 +462,125 @@ class HealthQueryAgent(BaseAgent):
         domains: list[str],
         retrieved: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Single patient, few records — send raw data."""
+        """Single patient, few records — produce readable text the LLM can use directly."""
         by_type: dict[str, list[dict]] = {}
         for item in retrieved:
             dt = item.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(item)
 
-        highlights = [f"{dt}: {len(items)} records" for dt, items in by_type.items()]
+        readable_sections: list[str] = []
+
+        for dt, items in by_type.items():
+            if dt == "meal":
+                lines = []
+                for m in items:
+                    date = m.get("date", "")
+                    meal_type = m.get("meal_type", "meal")
+                    name = m.get("meal_name", "")
+                    n = m.get("nutrition") or {}
+                    cal = n.get("calories") or n.get("total_calories")
+                    protein = n.get("protein") or n.get("proteins")
+                    carbs = n.get("carbs") or n.get("carbohydrates") or n.get("total_carbohydrates")
+                    fat = n.get("fat") or n.get("total_fat")
+                    fiber = n.get("fiber")
+                    time = m.get("time", "")
+
+                    parts = []
+                    if cal is not None: parts.append(f"{int(cal)} kcal")
+                    if protein is not None: parts.append(f"{round(float(protein), 1)}g protein")
+                    if carbs is not None: parts.append(f"{round(float(carbs), 1)}g carbs")
+                    if fat is not None: parts.append(f"{round(float(fat), 1)}g fat")
+                    if fiber is not None: parts.append(f"{round(float(fiber), 1)}g fiber")
+                    nutrition_str = ", ".join(parts) if parts else "no nutrition data"
+
+                    time_str = f" at {time}" if time else ""
+                    name_str = f" — {name}" if name else ""
+                    lines.append(f"  - {date} {meal_type}{time_str}{name_str}: {nutrition_str}")
+
+                readable_sections.append(f"MEALS ({len(items)} logged):\n" + "\n".join(lines))
+
+            elif "cgm" in dt or "glucose" in dt:
+                lines = []
+                for c in items:
+                    date = c.get("date", "")
+                    avg = c.get("average_glucose_mgdl") or c.get("average_glucose") or c.get("avg_mgdl")
+                    tir = c.get("in_target_70_180_percent") or c.get("tir_pct")
+                    gmi = c.get("gmi")
+                    cv = c.get("cv")
+                    below = c.get("below_70_percent")
+                    above = c.get("above_180_percent")
+
+                    parts = []
+                    if avg is not None: parts.append(f"avg {round(float(avg))} mg/dL")
+                    if tir is not None: parts.append(f"TIR {round(float(tir))}%")
+                    if gmi is not None: parts.append(f"GMI {round(float(gmi), 1)}%")
+                    if below is not None: parts.append(f"below 70: {round(float(below))}%")
+                    if above is not None: parts.append(f"above 180: {round(float(above))}%")
+                    lines.append(f"  - {date} {dt}: {', '.join(parts) if parts else 'data available'}")
+
+                readable_sections.append(f"GLUCOSE ({len(items)} entries):\n" + "\n".join(lines))
+
+            elif "fitness" in dt:
+                lines = []
+                for f in items:
+                    steps = f.get("steps")
+                    duration = f.get("active_duration") or f.get("active_minutes")
+                    energy = f.get("active_energy")
+                    peak = f.get("peak_hour")
+                    parts = []
+                    if steps is not None: parts.append(f"{int(steps)} steps")
+                    if duration is not None: parts.append(f"{int(duration)} min active")
+                    if energy is not None: parts.append(f"{round(float(energy))} kcal burned")
+                    if peak is not None: parts.append(f"peak hour: {peak}")
+                    lines.append(f"  - {', '.join(parts) if parts else 'activity recorded'}")
+
+                readable_sections.append(f"FITNESS ({len(items)} entries):\n" + "\n".join(lines))
+
+            elif "sleep" in dt:
+                lines = []
+                for s in items:
+                    hours = s.get("duration_hours") or s.get("avg_duration_hours")
+                    eff = s.get("efficiency_pct") or s.get("avg_efficiency_pct")
+                    quality = s.get("sleep_quality")
+                    parts = []
+                    if hours is not None: parts.append(f"{round(float(hours), 1)} hours")
+                    if eff is not None: parts.append(f"{round(float(eff))}% efficiency")
+                    if quality: parts.append(f"quality: {quality}")
+                    lines.append(f"  - {', '.join(parts) if parts else 'sleep recorded'}")
+
+                readable_sections.append(f"SLEEP ({len(items)} entries):\n" + "\n".join(lines))
+
+            elif dt == "patient_summary":
+                for ps in items:
+                    parts = []
+                    g = ps.get("glucose") or {}
+                    if g.get("avg_mgdl"): parts.append(f"Glucose: avg {round(float(g['avg_mgdl']))} mg/dL")
+                    if g.get("tir_pct"): parts.append(f"TIR {round(float(g['tir_pct']))}%")
+                    m = ps.get("meals") or {}
+                    if m.get("meal_count"): parts.append(f"Meals: {m['meal_count']} logged")
+                    a = ps.get("activity") or {}
+                    if a.get("steps"): parts.append(f"Steps: {int(a['steps'])}")
+                    sl = ps.get("sleep") or {}
+                    if sl.get("duration_hours"): parts.append(f"Sleep: {round(float(sl['duration_hours']), 1)}h")
+                    if sl.get("efficiency_pct"): parts.append(f"({round(float(sl['efficiency_pct']))}% eff)")
+                    v = ps.get("vitals") or {}
+                    if v.get("weight_kg"): parts.append(f"Weight: {round(float(v['weight_kg']), 1)} kg")
+                    if v.get("heart_rate_avg"): parts.append(f"HR: {round(float(v['heart_rate_avg']))} bpm")
+
+                    days = ps.get("summary_days", 1)
+                    readable_sections.append(f"HEALTH SUMMARY ({days} day{'s' if days > 1 else ''}):\n  " + "\n  ".join(parts) if parts else "HEALTH SUMMARY: limited data")
+
+            else:
+                # Generic fallback for unknown types
+                readable_sections.append(f"{dt.upper()} ({len(items)} entries): raw data available")
+
+        readable_text = "\n\n".join(readable_sections) if readable_sections else "No health data found for this query."
 
         return {
             "mode": "detail",
             "domains": domains,
             "record_count": len(retrieved),
-            "by_data_type": {k: len(v) for k, v in by_type.items()},
-            "highlights": highlights,
-            "data": retrieved[:_MAX_RAW_RECORDS],
+            "readable_summary": readable_text,
         }
 
     @staticmethod
@@ -478,66 +588,62 @@ class HealthQueryAgent(BaseAgent):
         domains: list[str],
         retrieved: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Single patient, many records — aggregate by data_type."""
+        """Single patient, many records — aggregate into readable text."""
         by_type: dict[str, list[dict]] = {}
         for item in retrieved:
             dt = item.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(item)
 
-        summaries: dict[str, dict[str, Any]] = {}
-        highlights: list[str] = []
+        sections: list[str] = []
 
         for dt, items in by_type.items():
-            summary = {"count": len(items)}
-
-            # CGM aggregation
             if "cgm" in dt:
-                glucose_vals = [i.get("average_glucose_mgdl") or i.get("average_glucose") for i in items]
+                glucose_vals = [i.get("average_glucose_mgdl") or i.get("average_glucose") or i.get("avg_mgdl") for i in items]
                 glucose_vals = [v for v in glucose_vals if v is not None]
-                if glucose_vals:
-                    summary["avg_glucose"] = round(sum(glucose_vals) / len(glucose_vals), 1)
-                tir_vals = [i.get("in_target_70_180_percent") for i in items]
+                tir_vals = [i.get("in_target_70_180_percent") or i.get("tir_pct") for i in items]
                 tir_vals = [v for v in tir_vals if v is not None]
-                if tir_vals:
-                    summary["avg_tir_pct"] = round(sum(tir_vals) / len(tir_vals), 1)
+                parts = [f"{len(items)} CGM entries"]
+                if glucose_vals: parts.append(f"avg glucose: {round(sum(glucose_vals)/len(glucose_vals))} mg/dL")
+                if tir_vals: parts.append(f"avg TIR: {round(sum(tir_vals)/len(tir_vals))}%")
+                sections.append(f"GLUCOSE: {', '.join(parts)}")
 
-            # Meal aggregation
             elif dt == "meal":
                 cals = []
+                proteins = []
                 for i in items:
                     n = i.get("nutrition") or {}
                     c = n.get("calories") or n.get("total_calories")
-                    if c is not None:
-                        cals.append(float(c))
-                if cals:
-                    summary["total_calories"] = round(sum(cals))
-                    summary["avg_calories_per_meal"] = round(sum(cals) / len(cals))
-                    summary["meal_count"] = len(cals)
+                    p = n.get("protein") or n.get("proteins")
+                    if c is not None: cals.append(float(c))
+                    if p is not None: proteins.append(float(p))
+                parts = [f"{len(items)} meals logged"]
+                if cals: parts.append(f"avg {round(sum(cals)/len(cals))} kcal/meal, total {round(sum(cals))} kcal")
+                if proteins: parts.append(f"avg {round(sum(proteins)/len(proteins), 1)}g protein/meal")
+                sections.append(f"MEALS: {', '.join(parts)}")
 
-            # Fitness aggregation
             elif "fitness" in dt:
                 steps = [i.get("steps") for i in items if i.get("steps") is not None]
-                if steps:
-                    summary["total_steps"] = sum(steps)
-                    summary["avg_daily_steps"] = round(sum(steps) / len(steps))
+                parts = [f"{len(items)} activity entries"]
+                if steps: parts.append(f"total {sum(int(s) for s in steps)} steps, avg {round(sum(steps)/len(steps))} steps/day")
+                sections.append(f"FITNESS: {', '.join(parts)}")
 
-            # Sleep aggregation
             elif "sleep" in dt:
-                durations = [i.get("duration_hours") for i in items if i.get("duration_hours") is not None]
-                if durations:
-                    summary["avg_sleep_hours"] = round(sum(durations) / len(durations), 1)
+                durations = [i.get("duration_hours") or i.get("avg_duration_hours") for i in items]
+                durations = [float(d) for d in durations if d is not None]
+                parts = [f"{len(items)} sleep entries"]
+                if durations: parts.append(f"avg {round(sum(durations)/len(durations), 1)} hours/night")
+                sections.append(f"SLEEP: {', '.join(parts)}")
 
-            summaries[dt] = summary
-            highlights.append(f"{dt}: {len(items)} records → {summary}")
+            else:
+                sections.append(f"{dt.upper()}: {len(items)} entries")
+
+        readable_text = "\n".join(sections) if sections else "No health data found."
 
         return {
             "mode": "summary",
             "domains": domains,
             "record_count": len(retrieved),
-            "by_data_type": {k: len(v) for k, v in by_type.items()},
-            "highlights": highlights,
-            "aggregated": summaries,
-            "sample_records": retrieved[:5],  # a few examples for context
+            "readable_summary": readable_text,
         }
 
     @staticmethod
@@ -642,15 +748,29 @@ class HealthQueryAgent(BaseAgent):
         if pids_no_data:
             highlights.append(f"{len(pids_no_data)} patients with no data in this period")
 
-        # Cap patient summaries for context window
+        # Build readable text for the LLM
+        lines = []
+        for ps in patient_summaries[:_MAX_PATIENT_SUMMARIES]:
+            name = ps.get("name", ps.get("patient_id", "Unknown")[:8])
+            parts = []
+            if "avg_glucose" in ps: parts.append(f"avg glucose {round(ps['avg_glucose'])} mg/dL")
+            if "avg_tir_pct" in ps: parts.append(f"TIR {round(ps['avg_tir_pct'])}%")
+            if "hypo_event_count" in ps: parts.append(f"{ps['hypo_event_count']} hypos")
+            if "meal_count" in ps: parts.append(f"{ps['meal_count']} meals")
+            if "avg_steps" in ps: parts.append(f"{ps['avg_steps']} steps/day")
+            detail = ", ".join(parts) if parts else f"{ps.get('record_count', 0)} records"
+            lines.append(f"  - {name}: {detail}")
+
+        readable_text = "\n".join(highlights) + "\n\nPer patient:\n" + "\n".join(lines)
+
+        if pids_no_data:
+            readable_text += f"\n\n{len(pids_no_data)} patient(s) have no data in this period."
+
         return {
             "mode": "population",
             "domains": domains,
             "record_count": len(retrieved),
-            "highlights": highlights,
-            "population": population,
-            "patient_summaries": patient_summaries[:_MAX_PATIENT_SUMMARIES],
-            "patients_omitted": max(0, len(patient_summaries) - _MAX_PATIENT_SUMMARIES),
+            "readable_summary": readable_text,
         }
 
     async def _generate_response(
@@ -698,19 +818,20 @@ class HealthQueryAgent(BaseAgent):
         system_prompt = self._get_system_prompt(input.context.user_role)
         response_prompt = self.prompts.get("hq_response_generation").body
 
-        analysis_json = json.dumps(analysis, default=str)
-        # Hard cap: truncate analysis if it exceeds token budget
-        if len(analysis_json) > _MAX_ANALYSIS_CHARS:
-            logger.warning(
-                "Analysis truncated from %d to %d chars",
-                len(analysis_json), _MAX_ANALYSIS_CHARS,
-            )
-            analysis_json = analysis_json[:_MAX_ANALYSIS_CHARS] + '..."}'
+        # Prefer readable_summary (human text) over raw JSON
+        if "readable_summary" in analysis:
+            analysis_text = analysis["readable_summary"]
+        else:
+            analysis_text = json.dumps(analysis, default=str)
+
+        # Hard cap
+        if len(analysis_text) > _MAX_ANALYSIS_CHARS:
+            analysis_text = analysis_text[:_MAX_ANALYSIS_CHARS] + "\n... (truncated)"
 
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": response_prompt},
-            {"role": "system", "content": f"[Structured analysis: {analysis_json}]"},
+            {"role": "system", "content": f"Health data for this query:\n\n{analysis_text}"},
         ]
 
         # Inject patient names so the LLM uses real names instead of UUIDs
