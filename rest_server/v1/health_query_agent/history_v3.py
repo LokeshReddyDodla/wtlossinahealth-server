@@ -1,14 +1,14 @@
 """
 Conversation History v3 — retrieves conversation turns from the foundation memory store.
 
-Supports all roles:
-- Patient: sees own conversations
-- Care Provider: sees conversations for assigned patients
-- Admin: sees conversations for any patient
+Thread isolation:
+- Patient:       bot:patient:{patient_id}                    — one thread per patient
+- Care Provider: bot:provider:{provider_id}:patient:{pid}    — isolated per provider per patient
+- Admin:         bot:admin:{admin_id}:patient:{pid}          — isolated per admin per patient
 
 Endpoints:
-    GET /history/v3         — list conversation turns for a thread
-    GET /history/v3/threads — list all thread IDs for the current user/patient
+    GET /history/v3         — get conversation turns for a thread
+    GET /history/v3/threads — list threads for the current user (or all threads for a patient if admin)
 """
 
 from datetime import datetime
@@ -52,39 +52,15 @@ class ConversationHistoryV3Response(BaseModel):
     turns: list[ConversationTurnResponse]
 
 
+class ThreadInfo(BaseModel):
+    thread_id: str
+    turn_count: int
+    last_turn: str | None = None
+
+
 class ThreadListResponse(BaseModel):
-    threads: list[dict] = Field(description="List of thread info dicts with thread_id and turn_count")
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _resolve_thread_id_for_history(
-    current_actor: Actor,
-    patient_id: str | None,
-) -> str:
-    """Build the thread_id for history lookup."""
-    if current_actor.role == ProfileTypeEnum.PATIENT:
-        return resolve_bot_conversation_id(
-            actor_type="patient",
-            actor_id=current_actor.id,
-        )
-
-    # Care provider or admin querying a specific patient
-    if patient_id:
-        return resolve_bot_conversation_id(
-            actor_type=current_actor.role.value,
-            actor_id=current_actor.id,
-            subject_patient_id=patient_id,
-        )
-
-    # Care provider or admin without patient_id → their own thread
-    return resolve_bot_conversation_id(
-        actor_type=current_actor.role.value,
-        actor_id=current_actor.id,
-    )
+    threads: list[ThreadInfo]
+    total: int
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +71,7 @@ def _resolve_thread_id_for_history(
 @router.get("/history/v3", response_model=SuccessResponse[ConversationHistoryV3Response])
 async def get_conversation_history_v3(
     patient_id: Optional[str] = Query(None, description="Patient ID (required for care_provider, optional for admin)"),
+    thread_id: Optional[str] = Query(None, description="Direct thread_id override (admin only)"),
     limit: int = Query(50, ge=1, le=500, description="Number of turns to return"),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -111,16 +88,26 @@ async def get_conversation_history_v3(
         get_care_provider_access_service
     ),
 ):
-    """Retrieve conversation history from the foundation memory store.
+    """Retrieve conversation history for a thread.
 
-    - Patient: returns own conversation (patient_id ignored)
-    - Care Provider: requires patient_id, must have access
-    - Admin: optional patient_id, can see any patient
+    Thread resolution:
+    - Patient: automatically resolves to the patient's own thread
+    - Care Provider: requires patient_id → resolves to provider's thread for that patient
+    - Admin: can use patient_id (own thread with that patient) OR thread_id (view any thread)
     """
-    # Access control
-    if current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
+    resolved_thread_id: str
+
+    if thread_id and current_actor.role == ProfileTypeEnum.ADMIN:
+        # Admin can directly view any thread
+        resolved_thread_id = thread_id
+    elif current_actor.role == ProfileTypeEnum.PATIENT:
+        resolved_thread_id = resolve_bot_conversation_id(
+            actor_type="patient", actor_id=current_actor.id,
+        )
+    elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
         if not patient_id:
             raise HTTPException(status_code=400, detail="patient_id is required for care providers")
+        # Validate access
         from uuid import UUID
         accessible = await care_provider_access_service.get_accessible_patients(
             care_provider_id=UUID(current_actor.id),
@@ -128,35 +115,45 @@ async def get_conversation_history_v3(
         )
         if not accessible:
             raise HTTPException(status_code=403, detail="No access to this patient")
-
-    thread_id = _resolve_thread_id_for_history(current_actor, patient_id)
+        resolved_thread_id = resolve_bot_conversation_id(
+            actor_type="care_provider", actor_id=current_actor.id,
+            subject_patient_id=patient_id,
+        )
+    elif current_actor.role == ProfileTypeEnum.ADMIN:
+        if patient_id:
+            resolved_thread_id = resolve_bot_conversation_id(
+                actor_type="admin", actor_id=current_actor.id,
+                subject_patient_id=patient_id,
+            )
+        else:
+            resolved_thread_id = resolve_bot_conversation_id(
+                actor_type="admin", actor_id=current_actor.id,
+            )
+    else:
+        raise HTTPException(status_code=403, detail="Unsupported role")
 
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
-    turns = await memory.get_thread_turns(thread_id, limit=limit)
-
-    turn_responses = [
-        ConversationTurnResponse(
-            role=t.role,
-            content=t.content,
-            agent_id=t.agent_id,
-            timestamp=t.timestamp,
-            metadata=t.metadata if t.metadata else None,
-        )
-        for t in turns
-    ]
+    turns = await memory.get_thread_turns(resolved_thread_id, limit=limit)
 
     return SuccessResponse(
         message="History retrieved successfully",
         data=ConversationHistoryV3Response(
-            thread_id=thread_id,
-            total_turns=len(turn_responses),
-            turns=turn_responses,
+            thread_id=resolved_thread_id,
+            total_turns=len(turns),
+            turns=[
+                ConversationTurnResponse(
+                    role=t.role, content=t.content, agent_id=t.agent_id,
+                    timestamp=t.timestamp, metadata=t.metadata or None,
+                )
+                for t in turns
+            ],
         ),
     )
 
 
 @router.get("/history/v3/threads", response_model=SuccessResponse[ThreadListResponse])
 async def list_conversation_threads(
+    patient_id: Optional[str] = Query(None, description="Admin only: list ALL threads for a patient (across all providers)"),
     limit: int = Query(20, ge=1, le=100, description="Max threads to return"),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -169,27 +166,30 @@ async def list_conversation_threads(
         )
     ),
 ):
-    """List all conversation thread IDs for the current user.
+    """List conversation threads.
 
-    Returns thread_id and approximate turn count for each thread.
-    Useful for building a conversation list UI.
+    - Patient: all their threads
+    - Care Provider: all their patient threads
+    - Admin: their own threads OR (with patient_id) all threads for a patient across all providers
     """
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     collection = memory._mongo.get_collection("ai_conversation_turns")
 
-    # Build prefix for this user's threads
-    if current_actor.role == ProfileTypeEnum.PATIENT:
-        prefix = f"bot:patient:{current_actor.id}"
+    if current_actor.role == ProfileTypeEnum.ADMIN and patient_id:
+        # Admin asking "show me all conversations about patient X"
+        # Matches: bot:*:patient:{patient_id} across all providers/admins
+        match_filter = {"thread_id": {"$regex": f":patient:{patient_id}$"}}
+    elif current_actor.role == ProfileTypeEnum.PATIENT:
+        match_filter = {"thread_id": {"$regex": f"^bot:patient:{current_actor.id}"}}
     elif current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        prefix = f"bot:provider:{current_actor.id}"
+        match_filter = {"thread_id": {"$regex": f"^bot:provider:{current_actor.id}"}}
     elif current_actor.role == ProfileTypeEnum.ADMIN:
-        prefix = f"bot:admin:{current_actor.id}"
+        match_filter = {"thread_id": {"$regex": f"^bot:admin:{current_actor.id}"}}
     else:
-        prefix = f"bot:{current_actor.role.value}:{current_actor.id}"
+        match_filter = {"thread_id": {"$regex": f"^bot:{current_actor.role.value}:{current_actor.id}"}}
 
-    # Aggregate: distinct thread_ids matching this prefix, with count
     pipeline = [
-        {"$match": {"thread_id": {"$regex": f"^{prefix}"}}},
+        {"$match": match_filter},
         {"$group": {
             "_id": "$thread_id",
             "turn_count": {"$sum": 1},
@@ -202,13 +202,13 @@ async def list_conversation_threads(
     cursor = collection.aggregate(pipeline)
     threads = []
     async for doc in cursor:
-        threads.append({
-            "thread_id": doc["_id"],
-            "turn_count": doc["turn_count"],
-            "last_turn": doc["last_turn"].isoformat() if doc.get("last_turn") else None,
-        })
+        threads.append(ThreadInfo(
+            thread_id=doc["_id"],
+            turn_count=doc["turn_count"],
+            last_turn=doc["last_turn"].isoformat() if doc.get("last_turn") else None,
+        ))
 
     return SuccessResponse(
         message="Threads retrieved successfully",
-        data=ThreadListResponse(threads=threads),
+        data=ThreadListResponse(threads=threads, total=len(threads)),
     )
