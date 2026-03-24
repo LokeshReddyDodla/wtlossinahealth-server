@@ -196,7 +196,12 @@ class HealthQueryAgent(BaseAgent):
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
 
             if not intent.is_ready:
-                yield sse_token(intent.clarification_msg or "Could you tell me more about what you'd like to know?")
+                clarification = intent.clarification_msg or "Could you tell me more about what you'd like to know?"
+                # Persist BEFORE yielding (yields may be the last thing consumed)
+                output = AgentOutput(message=clarification, is_ready=False, trace_id=trace.trace_id if trace else None)
+                await self._persist_turn(input, output, intent)
+
+                yield sse_token(clarification)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump() for s in intent.suggestions],
                     trace_id=trace.trace_id if trace else None,
@@ -228,6 +233,11 @@ class HealthQueryAgent(BaseAgent):
                     full_text_parts.append(chunk.delta)
                     yield sse_token(chunk.delta)
 
+            # Persist BEFORE yielding done (connection may close after last yield)
+            full_text = "".join(full_text_parts)
+            output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
+            await self._persist_turn(input, output, intent)
+
             # Stage 4: Done
             elapsed_ms = int((time.perf_counter() - pipeline_start) * 1000)
             yield sse_done(SSEDonePayload(
@@ -241,11 +251,6 @@ class HealthQueryAgent(BaseAgent):
                     "retrieval_count": len(retrieved),
                 },
             ))
-
-            # Persist
-            full_text = "".join(full_text_parts)
-            output = AgentOutput(message=full_text, is_ready=True, trace_id=trace.trace_id if trace else None)
-            await self._persist_turn(input, output, intent)
 
         except Exception as exc:
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
