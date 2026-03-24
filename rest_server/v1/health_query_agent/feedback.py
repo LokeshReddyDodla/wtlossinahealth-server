@@ -37,7 +37,7 @@ async def submit_feedback(
     payload: FeedbackRequest,
     current_actor: Actor = Depends(
         get_current_actor(
-            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER],
+            allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN],
         )
     ),
 ):
