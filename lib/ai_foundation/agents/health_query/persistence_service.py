@@ -45,16 +45,23 @@ class PersistenceService:
         agent_id: str,
         patient_ids: list[str] | None = None,
         intent_metadata: dict[str, Any] | None = None,
+        user_timestamp: Any | None = None,
     ) -> None:
         """Save user + assistant turns to the memory store.
 
-        On first turn, also creates a thread summary with patient_ids
-        so the threads list immediately shows who the conversation is about.
+        Args:
+            user_timestamp: When the user sent the message (captured at pipeline start).
+                            If None, uses current time for both turns.
         """
         if not self._memory or not thread_id:
             return
 
+        from datetime import datetime, timezone
         from lib.ai_foundation.memory.base import ConversationTurn
+
+        now = datetime.now(timezone.utc)
+        user_ts = user_timestamp if user_timestamp else now
+        assistant_ts = now  # always "now" — when the response was generated
 
         try:
             # Ensure thread summary exists with patient_ids (on first turn)
@@ -71,27 +78,22 @@ class PersistenceService:
                 elif not existing.patient_ids and patient_ids:
                     existing.patient_ids = patient_ids
                     await self._memory.save_thread_summary(thread_id, existing)
-            # Batch write — single Mongo insert_many instead of 2 insert_one
+
+            user_turn = ConversationTurn(
+                role="user", content=user_message,
+                agent_id=agent_id, timestamp=user_ts,
+            )
+            assistant_turn = ConversationTurn(
+                role="assistant", content=assistant_message,
+                agent_id=agent_id, metadata=intent_metadata or {},
+                timestamp=assistant_ts,
+            )
+
             if hasattr(self._memory, 'append_turns_batch'):
-                await self._memory.append_turns_batch(thread_id, [
-                    ConversationTurn(role="user", content=user_message, agent_id=agent_id),
-                    ConversationTurn(
-                        role="assistant", content=assistant_message,
-                        agent_id=agent_id, metadata=intent_metadata or {},
-                    ),
-                ])
+                await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
             else:
-                await self._memory.append_turn(
-                    thread_id,
-                    ConversationTurn(role="user", content=user_message, agent_id=agent_id),
-                )
-                await self._memory.append_turn(
-                    thread_id,
-                    ConversationTurn(
-                        role="assistant", content=assistant_message,
-                        agent_id=agent_id, metadata=intent_metadata or {},
-                    ),
-                )
+                await self._memory.append_turn(thread_id, user_turn)
+                await self._memory.append_turn(thread_id, assistant_turn)
         except Exception as exc:
             logger.warning("Failed to persist turns: %s", exc)
 
