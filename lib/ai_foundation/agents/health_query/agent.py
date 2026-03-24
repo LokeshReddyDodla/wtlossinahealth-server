@@ -52,6 +52,7 @@ class HealthQueryAgent(BaseAgent):
         data_service: Any = None,
         persistence: Any = None,
         fact_extractor: Any = None,
+        metrics_collector: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -59,6 +60,7 @@ class HealthQueryAgent(BaseAgent):
         self.data_service = data_service
         self.persistence = persistence
         self.fact_extractor = fact_extractor
+        self._metrics = metrics_collector
         self._prompts_registered = False
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
@@ -106,7 +108,9 @@ class HealthQueryAgent(BaseAgent):
             )
         finally:
             if self.tracer and trace:
-                await self.tracer.finish_trace()
+                completed_trace = await self.tracer.finish_trace()
+                if self._metrics and completed_trace:
+                    await self._metrics.record_request(completed_trace)
 
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 
@@ -174,7 +178,9 @@ class HealthQueryAgent(BaseAgent):
                             fallback_text="Please try again in a moment.")
         finally:
             if self.tracer and trace:
-                await self.tracer.finish_trace()
+                completed_trace = await self.tracer.finish_trace()
+                if self._metrics and completed_trace:
+                    await self._metrics.record_request(completed_trace)
 
     # ── Pipeline steps ────────────────────────────────────────────────────
 

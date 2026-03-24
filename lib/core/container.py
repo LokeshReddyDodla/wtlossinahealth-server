@@ -1650,6 +1650,7 @@ container.register(
         data_service=cast(HealthDataService, container.resolve(HealthDataService)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
+        metrics_collector=cast(MetricsCollector, container.resolve(MetricsCollector)),
     ),
     scope=Scope.singleton,
 )

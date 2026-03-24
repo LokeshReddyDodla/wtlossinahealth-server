@@ -103,19 +103,14 @@ class HealthDataService:
         self, intent: QueryIntent, request: RetrievalRequest,
     ) -> list[RetrievalResult]:
         """Route to the right retrieval mode."""
-        mode = "filtered" if self._is_deterministic(intent) else "semantic"
-        print(f"[DATA_SERVICE] mode={mode}, patient_ids={request.patient_ids}, data_types={request.data_types}, date_start={request.date_start}, date_end={request.date_end}")
-
         if self._is_deterministic(intent):
             results = await self._qdrant.retrieve_filtered(request)
         else:
             request.query = intent.clarification_msg or "health data query"
             results = await self._qdrant.retrieve(request)
 
-        print(f"[DATA_SERVICE] got {len(results)} results")
-        for r in results[:3]:
-            print(f"  [{r.source}] data_type={r.data_type}, keys={list(r.payload.keys())[:6]}")
-
+        logger.debug("Data fetch: %d results, mode=%s",
+                     len(results), "filtered" if self._is_deterministic(intent) else "semantic")
         return results
 
     @staticmethod

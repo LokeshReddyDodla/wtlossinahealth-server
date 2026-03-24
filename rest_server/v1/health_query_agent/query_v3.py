@@ -196,25 +196,16 @@ async def process_query_v3_stream(
     priority = _resolve_priority(current_actor.role)
     _check_rate_limit(current_actor, priority)
 
-    print(f"[STREAM_ENDPOINT] role={current_actor.role.value}, provided_patient_ids={payload.patient_ids}")
-
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
         provided_patient_ids=payload.patient_ids,
         care_provider_access_service=care_provider_access_service,
     )
 
-    print(f"[STREAM_ENDPOINT] resolved_patient_ids={resolved_patient_ids}")
-
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
-
-    print(f"[STREAM_ENDPOINT] thread_id={thread_id}")
-
     input = _build_agent_input(
         payload, current_actor, resolved_patient_ids, thread_id, stream=True,
     )
-
-    print(f"[STREAM_ENDPOINT] input.context.thread_id={input.context.thread_id}, patient_ids={input.context.patient_ids}")
 
     return StreamingResponse(
         agent.run_stream(input),
