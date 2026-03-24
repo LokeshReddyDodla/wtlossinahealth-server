@@ -483,12 +483,17 @@ class HealthQueryAgent(BaseAgent):
 
     @staticmethod
     def _needs_summary_enrichment(intent: QueryIntent, results: list) -> bool:
-        """Check if we need patient_summary data for sleep/vitals."""
+        """Check if we need patient_summary data for sleep.
+
+        Vitals ARE in Qdrant (data_type: "vital") — no enrichment needed.
+        Sleep is NOT vectorized — needs patient_summary fallback.
+        """
         requested_types = {dt.value for dt in intent.data_types}
-        sleep_vitals = {"sleep", "sleep_report", "vitals"}
-        if not sleep_vitals.intersection(requested_types):
+        # Only sleep needs enrichment — vitals are in Qdrant
+        sleep_types = {"sleep", "sleep_report"}
+        if not sleep_types.intersection(requested_types):
             return False
-        # Only enrich if Qdrant didn't return sleep/vitals data
+        # Only enrich if Qdrant didn't return sleep data
         result_types = {r.data_type for r in results if hasattr(r, 'data_type')}
         return not sleep_vitals.intersection(result_types)
 
