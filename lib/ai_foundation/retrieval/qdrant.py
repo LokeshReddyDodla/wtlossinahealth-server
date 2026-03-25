@@ -56,13 +56,26 @@ def _date_to_epoch_ms(dt: datetime) -> float:
     return dt.timestamp() * 1000
 
 
-def _date_str_to_epoch_ms(date_str: str) -> float | None:
-    """Convert ISO date string to epoch milliseconds."""
+def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float | None:
+    """Convert ISO date string to epoch milliseconds.
+
+    Args:
+        date_str: ISO date or datetime string.
+        end_of_day: If True and date_str has no time component,
+                    use 23:59:59 UTC instead of 00:00:00 UTC.
+                    This is critical for date_end filters — a date_end
+                    of "2026-03-25" should include the entire day.
+    """
     try:
         if "T" in date_str:
             dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            # Ensure timezone-aware (naive datetimes use local tz in .timestamp())
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
         else:
             dt = datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if end_of_day:
+                dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp() * 1000
     except (ValueError, AttributeError):
         return None
@@ -227,7 +240,7 @@ class QdrantRetriever:
                     must.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
 
             if request.date_end:
-                end_ms = _date_str_to_epoch_ms(request.date_end)
+                end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
                 if end_ms is not None:
                     must.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
 
