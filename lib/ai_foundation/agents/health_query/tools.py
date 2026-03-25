@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -22,15 +23,61 @@ from lib.ai_foundation.config import settings
 from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 
 if TYPE_CHECKING:
+    from lib.ai_foundation.models.gateway import LLMToolResponse, ToolCall
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOOL_RESULT_CHARS = 2000
+from lib.ai_foundation.config import settings as _settings
 
 # Structural sentinel — tool results starting with this prefix indicate empty results.
 # Used by reasoning engine and specialists for early-exit decisions.
 NO_DATA_PREFIX = "[NO_DATA] "
+
+# Warning returned for duplicate tool calls.
+DUP_WARNING = "You already fetched this exact data. Try a different tool or different parameters."
+
+
+# ── Tool round helpers ────────────────────────────────────────────────────
+
+
+def is_no_data(result: str) -> bool:
+    """Check if a tool result indicates no data was found.
+
+    Uses the structural NO_DATA_PREFIX sentinel set by ToolExecutor,
+    not fragile string matching on natural language.
+    """
+    return result.startswith(NO_DATA_PREFIX)
+
+
+def build_assistant_tool_call_msg(response: LLMToolResponse) -> dict[str, Any]:
+    """Build an assistant message with tool_calls in OpenAI format."""
+    return {
+        "role": "assistant",
+        "content": response.content or None,
+        "tool_calls": [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.function_name,
+                    "arguments": json.dumps(tc.arguments),
+                },
+            }
+            for tc in response.tool_calls
+        ],
+    }
+
+
+@dataclass
+class ToolRoundResult:
+    """Result of executing one round of tool calls."""
+
+    tool_messages: list[dict[str, Any]] = dc_field(default_factory=list)
+    assistant_message: dict[str, Any] = dc_field(default_factory=dict)
+    executed_count: int = 0
+    all_no_data: bool = False
+    results: list[str] = dc_field(default_factory=list)
 
 # Maps specialist domain → Qdrant data_type values the specialist should use
 _DOMAIN_DATA_TYPES: dict[str, list[str]] = {
@@ -211,6 +258,64 @@ class ToolExecutor:
         tasks = [self.execute(name, args, patient_ids) for name, args in calls]
         return list(await asyncio.gather(*tasks))
 
+    async def execute_tool_round(
+        self,
+        response: LLMToolResponse,
+        patient_ids: list[str],
+        seen_calls: set[str],
+    ) -> ToolRoundResult:
+        """Execute one round of tool calls with dedup, returning a ToolRoundResult.
+
+        Handles partitioning new vs duplicate calls, parallel execution,
+        and building the assistant + tool messages for the conversation.
+        """
+        assistant_msg = build_assistant_tool_call_msg(response)
+
+        # Partition tool calls: new vs duplicate
+        to_execute: list[tuple[str, dict[str, Any], str]] = []  # (name, args, tc_id)
+        duplicate_ids: list[str] = []
+        for tc in response.tool_calls:
+            call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
+            if call_key in seen_calls:
+                duplicate_ids.append(tc.id)
+            else:
+                seen_calls.add(call_key)
+                to_execute.append((tc.function_name, tc.arguments, tc.id))
+
+        # Execute all non-duplicate calls in parallel
+        if to_execute:
+            results = await self.execute_parallel(
+                [(name, args) for name, args, _ in to_execute],
+                patient_ids,
+            )
+        else:
+            results = []
+
+        # Build tool messages
+        tool_messages: list[dict[str, Any]] = []
+        for (name, args, tc_id), result_text in zip(to_execute, results):
+            tool_messages.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": result_text,
+            })
+
+        # Duplicate warnings
+        for tc_id in duplicate_ids:
+            tool_messages.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": DUP_WARNING,
+            })
+
+        return ToolRoundResult(
+            tool_messages=tool_messages,
+            assistant_message=assistant_msg,
+            executed_count=len(to_execute),
+            all_no_data=bool(results) and all(is_no_data(r) for r in results),
+            results=results,
+        )
+
     def get_openai_schemas(self) -> list[dict[str, Any]]:
         """Return tool definitions in OpenAI function calling format."""
         return TOOL_SCHEMAS
@@ -258,7 +363,7 @@ class ToolExecutor:
         data_types = args.get("data_types", [])
         date_start = args.get("date_start")
         date_end = args.get("date_end")
-        limit = args.get("limit", 15)
+        limit = args.get("limit", _settings.LOOKUP_DEFAULT_LIMIT)
 
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
@@ -287,7 +392,7 @@ class ToolExecutor:
             data_types=[],  # all types
             date_start=date,
             date_end=date + "T23:59:59",
-            limit=50,
+            limit=_settings.QDRANT_RESULT_LIMIT,
             filters={"hour_start": hour_start, "hour_end": hour_end} if hour_start > 0 or hour_end < 24 else {},
         ))
 
@@ -338,7 +443,7 @@ class ToolExecutor:
             data_types=data_types,
             date_start=start,
             date_end=now.isoformat(),
-            limit=50,
+            limit=_settings.QDRANT_RESULT_LIMIT,
         ))
 
         if not results:
@@ -431,6 +536,7 @@ class ToolExecutor:
     @staticmethod
     def _cap_result(text: str) -> str:
         """Cap tool result to prevent context bloat."""
-        if len(text) > _MAX_TOOL_RESULT_CHARS:
-            return text[:_MAX_TOOL_RESULT_CHARS] + "\n... (truncated — ask for a narrower query)"
+        max_chars = _settings.REASONING_MAX_TOOL_RESULT_CHARS
+        if len(text) > max_chars:
+            return text[:max_chars] + "\n... (truncated — ask for a narrower query)"
         return text

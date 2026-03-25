@@ -291,10 +291,10 @@ class HealthQueryAgent(BaseAgent):
             )})
 
         if ctx.facts:
-            lines = [f"- {f['key']}: {f['value']}" for f in ctx.facts[:8]]
+            lines = [f"- {f['key']}: {f['value']}" for f in ctx.facts[:settings.MAX_CONTEXT_FACTS]]
             messages.append({"role": "system", "content": "Patient facts:\n" + "\n".join(lines)})
 
-        messages.extend(ctx.history[-8:])
+        messages.extend(ctx.history[-settings.MAX_HISTORY_MESSAGES:])
         messages.append({"role": "user", "content": input.message})
 
         if self.tracer:
@@ -374,7 +374,7 @@ class HealthQueryAgent(BaseAgent):
         template = self.prompts.get(name_map.get(user_role, "hq_system_patient"))
         rendered = template.render(current_time=f"{now_minute} UTC")
 
-        if len(self._prompt_cache) > 5:
+        if len(self._prompt_cache) > settings.PROMPT_CACHE_MAX_SIZE:
             self._prompt_cache.clear()
         self._prompt_cache[cache_key] = rendered
         return rendered

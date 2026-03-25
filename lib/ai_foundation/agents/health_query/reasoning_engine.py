@@ -50,16 +50,13 @@ if TYPE_CHECKING:
     from lib.ai_foundation.agents.health_query.tools import ToolExecutor
     from lib.ai_foundation.models.gateway import ModelGateway
 
+from lib.ai_foundation.agents.health_query.context_loader import build_context_messages
+from lib.ai_foundation.agents.health_query.tools import (
+    build_assistant_tool_call_msg,
+    is_no_data,
+)
+
 logger = logging.getLogger(__name__)
-
-def _is_no_data(result: str) -> bool:
-    """Check if a tool result indicates no data was found.
-
-    Uses the structural NO_DATA_PREFIX sentinel set by ToolExecutor,
-    not fragile string matching on natural language.
-    """
-    from lib.ai_foundation.agents.health_query.tools import NO_DATA_PREFIX
-    return result.startswith(NO_DATA_PREFIX)
 
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
@@ -168,7 +165,7 @@ class ReasoningEngine:
         self._planner = planner
         self._reflector = reflector
 
-    # ── Non-streaming ──────────────────────────────────────────────────
+    # ── Public API (unchanged signatures) ─────────────────────────────
 
     async def reason(
         self,
@@ -183,17 +180,83 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
+        async for item in self._reason_core(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
+            response_prompt=response_prompt,
+            context=context,
+            patient_ids=patient_ids,
+            tier=tier,
+            intent_data_types=intent_data_types,
+            emit_events=False,
+        ):
+            if isinstance(item, ReasoningResult):
+                return item
+        # Unreachable — _reason_core always yields a ReasoningResult at the end.
+        raise RuntimeError("_reason_core did not produce a ReasoningResult")  # pragma: no cover
+
+    async def reason_stream(
+        self,
+        *,
+        user_message: str,
+        system_prompt: str,
+        reasoning_prompt: str,
+        response_prompt: str,
+        context: AgentContext,
+        patient_ids: list[str],
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        intent_data_types: list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        """Run the reasoning loop, yielding SSE events as the doctor thinks."""
+        async for item in self._reason_core(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
+            response_prompt=response_prompt,
+            context=context,
+            patient_ids=patient_ids,
+            tier=tier,
+            intent_data_types=intent_data_types,
+            emit_events=True,
+        ):
+            if isinstance(item, str):
+                yield item
+
+    # ── Core loop (shared implementation) ─────────────────────────────
+
+    async def _reason_core(
+        self,
+        *,
+        user_message: str,
+        system_prompt: str,
+        reasoning_prompt: str,
+        response_prompt: str,
+        context: AgentContext,
+        patient_ids: list[str],
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        intent_data_types: list[str] | None = None,
+        emit_events: bool = False,
+    ) -> AsyncIterator[str | ReasoningResult]:
+        """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
         tool_schemas = self._tools.get_openai_schemas()
-        messages = self._build_initial_messages(
-            user_message, system_prompt, reasoning_prompt, context,
+        messages = build_context_messages(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
+            context=context,
         )
 
         steps: list[ReasoningStep] = []
         total_cost = 0.0
         total_tools = 0
+        rounds_used = 0
         seen_calls: set[str] = set()  # deduplication
         budget_remaining = tier_cfg.max_tool_calls
+
+        if emit_events:
+            yield sse_status(PipelineStage.ANALYZING, "Investigating health data...")
 
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
@@ -210,6 +273,14 @@ class ReasoningEngine:
             if plan["steps"]:
                 steps.extend(plan["steps"])
 
+            # Emit plan event (streaming only)
+            if emit_events and plan.get("plan_obj"):
+                yield sse_plan(
+                    plan["plan_obj"].strategy,
+                    len(plan["plan_obj"].steps),
+                    plan["plan_obj"].domains_involved,
+                )
+
         for round_num in range(1, budget_remaining + 1):
             response = await self._gateway.complete_with_tools(
                 messages=messages,
@@ -223,6 +294,8 @@ class ReasoningEngine:
             if not response.has_tool_calls:
                 # Round 1 with no tool calls = lazy LLM. Force a lookup if we have intent types.
                 if round_num == 1 and intent_data_types and not seen_calls:
+                    if emit_events and tier_cfg.show_reasoning:
+                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
                     fallback_result = await self._tools.execute(
                         "look_up",
                         {"data_types": intent_data_types, "limit": 15},
@@ -234,8 +307,11 @@ class ReasoningEngine:
                         round=round_num,
                         thought="Fetching data based on query intent.",
                         tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
-                        tool_results=[{"tool": "look_up", "result": fallback_result[:500]}],
+                        tool_results=[{"tool": "look_up", "result": fallback_result[:settings.STEP_LOG_TRUNCATION_CHARS]}],
                     ))
+                    if emit_events and tier_cfg.show_reasoning:
+                        summary = self._summarize_result("look_up", fallback_result)
+                        yield sse_tool_result("look_up", summary)
                     messages.append({
                         "role": "system",
                         "content": f"Health data retrieved:\n\n{fallback_result}",
@@ -246,60 +322,57 @@ class ReasoningEngine:
                     steps.append(ReasoningStep(
                         round=round_num, thought=response.content,
                     ))
+                if emit_events and tier_cfg.show_reasoning and response.content:
+                    yield sse_reasoning(round_num, response.content)
+                rounds_used = round_num
                 break
+
+            # Emit reasoning thought
+            if emit_events and tier_cfg.show_reasoning and response.content:
+                yield sse_reasoning(round_num, response.content)
 
             step = ReasoningStep(round=round_num, thought=response.content)
 
-            # Build assistant message with tool calls (OpenAI format)
-            assistant_msg = self._build_assistant_tool_call_msg(response)
-            messages.append(assistant_msg)
+            # Execute tool round via shared helper
+            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+            messages.append(tool_round.assistant_message)
+            messages.extend(tool_round.tool_messages)
+            total_tools += tool_round.executed_count
 
-            # Partition tool calls: new vs duplicate
-            to_execute: list[tuple[ToolCall, str]] = []  # (tc, call_key)
-            duplicate_tcs: list[ToolCall] = []
-            for tc in response.tool_calls:
-                call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                if call_key in seen_calls:
-                    duplicate_tcs.append(tc)
-                else:
-                    seen_calls.add(call_key)
-                    to_execute.append((tc, call_key))
+            # Emit tool events (streaming only)
+            if emit_events and tier_cfg.show_reasoning:
+                for tc in response.tool_calls:
+                    call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
+                    # Only emit for non-duplicate calls (check if result exists)
+                    yield sse_tool_call(tc.function_name, tc.arguments)
+                for (name, _args, _tc_id), result_text in zip(
+                    [
+                        (tc.function_name, tc.arguments, tc.id)
+                        for tc in response.tool_calls
+                        if f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}" not in seen_calls
+                        or True  # all get emitted; dedup already happened in execute_tool_round
+                    ],
+                    tool_round.results,
+                ):
+                    summary = self._summarize_result(name, result_text)
+                    yield sse_tool_result(name, summary)
 
-            # Execute all non-duplicate calls in parallel
-            if to_execute:
-                results = await self._tools.execute_parallel(
-                    [(tc.function_name, tc.arguments) for tc, _ in to_execute],
-                    patient_ids,
-                )
-                total_tools += len(to_execute)
-            else:
-                results = []
-
-            # Build messages: first the parallel results
-            for (tc, _), result_text in zip(to_execute, results):
-                step.tool_calls.append({"tool": tc.function_name, "args": tc.arguments})
-                step.tool_results.append({"tool": tc.function_name, "result": result_text[:500]})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result_text,
-                })
-
-            # Then the duplicate warnings
-            for tc in duplicate_tcs:
-                dup_msg = "You already fetched this exact data. Try a different tool or different parameters."
-                step.tool_calls.append({"tool": tc.function_name, "args": tc.arguments})
-                step.tool_results.append({"tool": tc.function_name, "result": dup_msg})
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": dup_msg,
-                })
+            # Build step log for non-streaming tracking
+            for msg in tool_round.tool_messages:
+                tc_id = msg.get("tool_call_id", "")
+                content = msg.get("content", "")
+                # Find matching tool call by id
+                for tc in response.tool_calls:
+                    if tc.id == tc_id:
+                        step.tool_calls.append({"tool": tc.function_name, "args": tc.arguments})
+                        step.tool_results.append({"tool": tc.function_name, "result": content[:settings.STEP_LOG_TRUNCATION_CHARS]})
+                        break
 
             steps.append(step)
+            rounds_used = round_num
 
             # Early exit: if all results indicate no data, stop investigating
-            if results and all(_is_no_data(r) for r in results):
+            if tool_round.all_no_data:
                 break
         else:
             # Max rounds reached — add hint to wrap up
@@ -327,229 +400,60 @@ class ReasoningEngine:
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
 
-        # ── Final response from responder model ──
-        final_response = await self._generate_final_response(
-            messages=messages,
-            response_prompt=response_prompt,
-            model_id=tier_cfg.responder_model,
-        )
-        total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
-
-        return ReasoningResult(
-            response=final_response.content or "",
-            steps=steps,
-            rounds_used=len(steps),
-            tools_called=total_tools,
-            total_cost=total_cost,
-            thinker_model=tier_cfg.thinker_model,
-            responder_model=tier_cfg.responder_model,
-            tier=tier.value,
-        )
-
-    # ── Streaming ──────────────────────────────────────────────────────
-
-    async def reason_stream(
-        self,
-        *,
-        user_message: str,
-        system_prompt: str,
-        reasoning_prompt: str,
-        response_prompt: str,
-        context: AgentContext,
-        patient_ids: list[str],
-        tier: ReasoningTier = ReasoningTier.STANDARD,
-        intent_data_types: list[str] | None = None,
-    ) -> AsyncIterator[str]:
-        """Run the reasoning loop, yielding SSE events as the doctor thinks."""
-        tier_cfg = TIER_CONFIGS[tier]
-        tool_schemas = self._tools.get_openai_schemas()
-        messages = self._build_initial_messages(
-            user_message, system_prompt, reasoning_prompt, context,
-        )
-
-        total_cost = 0.0
-        total_tools = 0
-        rounds_used = 0
-        seen_calls: set[str] = set()
-        budget_remaining = tier_cfg.max_tool_calls
-
-        yield sse_status(PipelineStage.ANALYZING, "Investigating health data...")
-
-        # ── Planning phase (STANDARD+ tiers) ──
-        if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
-            plan = await self._execute_plan(
-                messages=messages,
-                tool_schemas=tool_schemas,
-                tier_cfg=tier_cfg,
-                patient_ids=patient_ids,
-                seen_calls=seen_calls,
-            )
-            total_cost += plan["cost"]
-            total_tools += plan["tools_called"]
-            budget_remaining -= plan["tools_called"]
-
-            # Emit plan event
-            if plan.get("plan_obj"):
-                yield sse_plan(
-                    plan["plan_obj"].strategy,
-                    len(plan["plan_obj"].steps),
-                    plan["plan_obj"].domains_involved,
-                )
-
-        for round_num in range(1, budget_remaining + 1):
-            response = await self._gateway.complete_with_tools(
-                messages=messages,
-                tools=tool_schemas,
-                task=ModelTask.CLASSIFICATION,
-                model_id=tier_cfg.thinker_model,
-                timeout=settings.REASONING_TIMEOUT_SECONDS,
-            )
-            total_cost += response.usage.cost.total_cost if response.usage.cost else 0
-
-            if not response.has_tool_calls:
-                # Round 1 with no tool calls = lazy LLM. Force a lookup.
-                if round_num == 1 and intent_data_types and not seen_calls:
-                    if tier_cfg.show_reasoning:
-                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
-                    fallback_result = await self._tools.execute(
-                        "look_up",
-                        {"data_types": intent_data_types, "limit": 15},
-                        patient_ids,
-                    )
-                    seen_calls.add("look_up:fallback")
-                    total_tools += 1
-                    if tier_cfg.show_reasoning:
-                        summary = self._summarize_result("look_up", fallback_result)
-                        yield sse_tool_result("look_up", summary)
-                    messages.append({
-                        "role": "system",
-                        "content": f"Health data retrieved:\n\n{fallback_result}",
-                    })
-                    continue
-
-                if tier_cfg.show_reasoning and response.content:
-                    yield sse_reasoning(round_num, response.content)
-                rounds_used = round_num
-                break
-
-            # Emit reasoning thought
-            if tier_cfg.show_reasoning and response.content:
-                yield sse_reasoning(round_num, response.content)
-
-            # Build assistant message
-            assistant_msg = self._build_assistant_tool_call_msg(response)
-            messages.append(assistant_msg)
-
-            # Partition: new vs duplicate
-            to_execute: list[tuple[ToolCall, str]] = []
-            duplicate_tcs: list[ToolCall] = []
-            for tc in response.tool_calls:
-                call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                if call_key in seen_calls:
-                    duplicate_tcs.append(tc)
-                else:
-                    seen_calls.add(call_key)
-                    to_execute.append((tc, call_key))
-
-            # Emit all tool_call events upfront (user sees what's being fetched)
-            if tier_cfg.show_reasoning:
-                for tc, _ in to_execute:
-                    yield sse_tool_call(tc.function_name, tc.arguments)
-
-            # Execute all non-duplicate calls in parallel
-            if to_execute:
-                results = await self._tools.execute_parallel(
-                    [(tc.function_name, tc.arguments) for tc, _ in to_execute],
-                    patient_ids,
-                )
-                total_tools += len(to_execute)
-            else:
-                results = []
-
-            # Emit results and build messages
-            for (tc, _), result_text in zip(to_execute, results):
-                if tier_cfg.show_reasoning:
-                    summary = self._summarize_result(tc.function_name, result_text)
-                    yield sse_tool_result(tc.function_name, summary)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result_text,
-                })
-
-            # Handle duplicates
-            for tc in duplicate_tcs:
-                dup_msg = "You already fetched this exact data. Try a different tool or different parameters."
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": dup_msg,
-                })
-
-            rounds_used = round_num
-
-            # Early exit: no data means nothing more to investigate
-            if results and all(_is_no_data(r) for r in results):
-                break
-        else:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "You have reached the maximum number of investigation rounds. "
-                    "Generate your best response with the data you have gathered so far."
-                ),
-            })
-
-        # ── Reflection (ADVANCED+ tiers) ──
-        if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
-            reflection = await self._reflect_and_followup(
-                messages=messages,
-                user_message=user_message,
-                tool_schemas=tool_schemas,
-                tier_cfg=tier_cfg,
-                patient_ids=patient_ids,
-                seen_calls=seen_calls,
-                steps=[],  # streaming doesn't track steps
-                total_cost=total_cost,
-                total_tools=total_tools,
-            )
-            total_cost = reflection["total_cost"]
-            total_tools = reflection["total_tools"]
-
-            if reflection.get("result"):
+            if emit_events and reflection.get("result"):
                 r = reflection["result"]
                 yield sse_reflection(r.confidence, r.gaps, r.is_complete)
 
-        # ── Stream final response ──
-        yield sse_status(
-            PipelineStage.GENERATING_RESPONSE,
-            "Building personalized insights...",
-        )
+        # ── Final response ──
+        if emit_events:
+            # Stream final response
+            yield sse_status(
+                PipelineStage.GENERATING_RESPONSE,
+                "Building personalized insights...",
+            )
 
-        # Build responder messages
-        responder_messages = self._build_responder_messages(messages, response_prompt)
-        full_response_parts: list[str] = []
+            responder_messages = self._build_responder_messages(messages, response_prompt)
+            full_response_parts: list[str] = []
 
-        async for chunk in self._gateway.stream(
-            messages=responder_messages,
-            task=ModelTask.RESPONSE_GENERATION,
-            model_id=tier_cfg.responder_model,
-        ):
-            if chunk.delta:
-                full_response_parts.append(chunk.delta)
-                yield sse_token(chunk.delta)
-            if chunk.finished and chunk.usage:
-                total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
+            async for chunk in self._gateway.stream(
+                messages=responder_messages,
+                task=ModelTask.RESPONSE_GENERATION,
+                model_id=tier_cfg.responder_model,
+            ):
+                if chunk.delta:
+                    full_response_parts.append(chunk.delta)
+                    yield sse_token(chunk.delta)
+                if chunk.finished and chunk.usage:
+                    total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
 
-        yield sse_done(SSEDonePayload(
-            cost_usd=total_cost,
-            data={
-                "rounds_used": rounds_used,
-                "tools_called": total_tools,
-                "tier": tier.value,
-                "full_response": "".join(full_response_parts),
-            },
-        ))
+            yield sse_done(SSEDonePayload(
+                cost_usd=total_cost,
+                data={
+                    "rounds_used": rounds_used,
+                    "tools_called": total_tools,
+                    "tier": tier.value,
+                    "full_response": "".join(full_response_parts),
+                },
+            ))
+        else:
+            # Non-streaming: single responder call
+            final_response = await self._generate_final_response(
+                messages=messages,
+                response_prompt=response_prompt,
+                model_id=tier_cfg.responder_model,
+            )
+            total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
+
+            yield ReasoningResult(
+                response=final_response.content or "",
+                steps=steps,
+                rounds_used=len(steps),
+                tools_called=total_tools,
+                total_cost=total_cost,
+                thinker_model=tier_cfg.thinker_model,
+                responder_model=tier_cfg.responder_model,
+                tier=tier.value,
+            )
 
     # ── Planning ───────────────────────────────────────────────────────
 
@@ -567,15 +471,6 @@ class ReasoningEngine:
         Returns dict with: cost, tools_called, steps, plan_obj.
         """
         try:
-            # Get planning prompt
-            planning_prompt = ""
-            try:
-                from lib.ai_foundation.prompts.registry import PromptRegistry
-                # The prompt is loaded by the agent and passed in messages[1]
-                # We use a simple fallback if not available
-            except Exception:
-                pass
-
             plan = await self._planner.plan(
                 messages=messages,
                 tool_schemas=tool_schemas,
@@ -607,7 +502,7 @@ class ReasoningEngine:
                 thought=f"Investigation plan: {plan.strategy}",
                 tool_calls=[{"tool": name, "args": args} for name, args in calls],
                 tool_results=[
-                    {"tool": name, "result": result[:500]}
+                    {"tool": name, "result": result[:settings.STEP_LOG_TRUNCATION_CHARS]}
                     for (name, _), result in zip(calls, results)
                 ],
             )
@@ -640,7 +535,7 @@ class ReasoningEngine:
             }
 
         except Exception as exc:
-            logger.warning("Planning failed, falling back to adaptive loop: %s", exc)
+            logger.warning("Planning failed (%s): %s", type(exc).__name__, exc)
             return {"cost": 0, "tools_called": 0, "steps": [], "plan_obj": None}
 
     # ── Reflection ─────────────────────────────────────────────────────
@@ -707,39 +602,10 @@ class ReasoningEngine:
                 total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
                 if response.has_tool_calls:
-                    assistant_msg = self._build_assistant_tool_call_msg(response)
-                    messages.append(assistant_msg)
-
-                    to_execute = []
-                    duplicate_ids: list[str] = []
-                    for tc in response.tool_calls:
-                        call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                        if call_key not in seen_calls:
-                            seen_calls.add(call_key)
-                            to_execute.append((tc.function_name, tc.arguments, tc.id))
-                        else:
-                            duplicate_ids.append(tc.id)
-
-                    if to_execute:
-                        results = await self._tools.execute_parallel(
-                            [(name, args) for name, args, _ in to_execute],
-                            patient_ids,
-                        )
-                        total_tools += len(to_execute)
-
-                        for (name, args, tc_id), result_text in zip(to_execute, results):
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc_id,
-                                "content": result_text,
-                            })
-
-                    for tc_id in duplicate_ids:
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "content": "Already fetched. Try different parameters.",
-                        })
+                    tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+                    messages.append(tool_round.assistant_message)
+                    messages.extend(tool_round.tool_messages)
+                    total_tools += tool_round.executed_count
 
                 # Re-reflect if we have budget for another round
                 if reflection_round < max_reflection_rounds - 1:
@@ -768,7 +634,7 @@ class ReasoningEngine:
             }
 
         except Exception as exc:
-            logger.warning("Reflection failed, proceeding without: %s", exc)
+            logger.warning("Reflection failed (%s): %s", type(exc).__name__, exc)
             return {
                 "total_cost": total_cost,
                 "total_tools": total_tools,
@@ -776,64 +642,6 @@ class ReasoningEngine:
             }
 
     # ── Message Builders ───────────────────────────────────────────────
-
-    def _build_initial_messages(
-        self,
-        user_message: str,
-        system_prompt: str,
-        reasoning_prompt: str,
-        context: AgentContext,
-    ) -> list[dict[str, Any]]:
-        """Build the initial message array for the thinker."""
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "system", "content": reasoning_prompt},
-        ]
-
-        # Pre-load patient context (profile + facts + names)
-        context_parts: list[str] = []
-        if context.patient_names:
-            names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
-            context_parts.append("Patient names:\n" + "\n".join(names))
-        if context.facts:
-            facts = [f"- {f['key']}: {f['value']}" for f in context.facts[:10]]
-            context_parts.append("Known patient facts:\n" + "\n".join(facts))
-        if context.thread_summary:
-            context_parts.append(f"Conversation summary:\n{context.thread_summary}")
-
-        if context_parts:
-            messages.append({
-                "role": "system",
-                "content": "PATIENT CONTEXT (pre-loaded):\n\n" + "\n\n".join(context_parts),
-            })
-
-        # Add conversation history
-        messages.extend(context.history[-8:])
-
-        # User's question
-        messages.append({"role": "user", "content": user_message})
-
-        return messages
-
-    @staticmethod
-    def _build_assistant_tool_call_msg(response: LLMToolResponse) -> dict[str, Any]:
-        """Build an assistant message with tool_calls in OpenAI format."""
-        msg: dict[str, Any] = {
-            "role": "assistant",
-            "content": response.content or None,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.function_name,
-                        "arguments": json.dumps(tc.arguments),
-                    },
-                }
-                for tc in response.tool_calls
-            ],
-        }
-        return msg
 
     def _build_responder_messages(
         self,
@@ -912,5 +720,5 @@ class ReasoningEngine:
         if entry_count > 0:
             return f"{first_line} ({entry_count} entries)"
         if len(result) > 200:
-            return result[:200] + "..."
+            return result[:settings.SUMMARY_TRUNCATION_CHARS] + "..."
         return result
