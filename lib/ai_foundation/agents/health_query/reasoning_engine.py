@@ -180,6 +180,7 @@ class ReasoningEngine:
         context: AgentContext,
         patient_ids: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
+        intent_data_types: list[str] | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         tier_cfg = TIER_CONFIGS[tier]
@@ -220,7 +221,27 @@ class ReasoningEngine:
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
-                # LLM decided it has enough data — capture final thought
+                # Round 1 with no tool calls = lazy LLM. Force a lookup if we have intent types.
+                if round_num == 1 and intent_data_types and not seen_calls:
+                    fallback_result = await self._tools.execute(
+                        "look_up",
+                        {"data_types": intent_data_types, "limit": 15},
+                        patient_ids,
+                    )
+                    seen_calls.add("look_up:fallback")
+                    total_tools += 1
+                    steps.append(ReasoningStep(
+                        round=round_num,
+                        thought="Fetching data based on query intent.",
+                        tool_calls=[{"tool": "look_up", "args": {"data_types": intent_data_types}}],
+                        tool_results=[{"tool": "look_up", "result": fallback_result[:500]}],
+                    ))
+                    messages.append({
+                        "role": "system",
+                        "content": f"Health data retrieved:\n\n{fallback_result}",
+                    })
+                    continue  # Let the thinker see the data and try again
+
                 if response.content:
                     steps.append(ReasoningStep(
                         round=round_num, thought=response.content,
@@ -337,6 +358,7 @@ class ReasoningEngine:
         context: AgentContext,
         patient_ids: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
+        intent_data_types: list[str] | None = None,
     ) -> AsyncIterator[str]:
         """Run the reasoning loop, yielding SSE events as the doctor thinks."""
         tier_cfg = TIER_CONFIGS[tier]
@@ -385,6 +407,26 @@ class ReasoningEngine:
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
+                # Round 1 with no tool calls = lazy LLM. Force a lookup.
+                if round_num == 1 and intent_data_types and not seen_calls:
+                    if tier_cfg.show_reasoning:
+                        yield sse_tool_call("look_up", {"data_types": intent_data_types})
+                    fallback_result = await self._tools.execute(
+                        "look_up",
+                        {"data_types": intent_data_types, "limit": 15},
+                        patient_ids,
+                    )
+                    seen_calls.add("look_up:fallback")
+                    total_tools += 1
+                    if tier_cfg.show_reasoning:
+                        summary = self._summarize_result("look_up", fallback_result)
+                        yield sse_tool_result("look_up", summary)
+                    messages.append({
+                        "role": "system",
+                        "content": f"Health data retrieved:\n\n{fallback_result}",
+                    })
+                    continue
+
                 if tier_cfg.show_reasoning and response.content:
                     yield sse_reasoning(round_num, response.content)
                 rounds_used = round_num

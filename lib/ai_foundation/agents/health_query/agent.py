@@ -119,6 +119,7 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
+                    intent_data_types=[dt.value for dt in intent.data_types],
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -213,6 +214,7 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
+                    intent_data_types=[dt.value for dt in intent.data_types],
                 )
 
             async for event in event_source:
