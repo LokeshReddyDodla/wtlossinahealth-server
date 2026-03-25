@@ -32,8 +32,8 @@ Set `is_ready = false` when:
 - "What's [patient]'s background/medical history?" → PROFILE
 - "What medications/allergies does [patient] have?" → PROFILE
 - Any question about profile, remembered facts, known information → PROFILE
-- "Prepare a summary for my appointment with [patient]" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW
-- "Give me a full health overview" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW
+- "Prepare a summary for my appointment with [patient]" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP
+- "Give me a full health overview" / "How's [patient] doing?" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP
 
 ## Data Type Mapping
 
@@ -70,12 +70,18 @@ Set `is_ready = false` when:
 - Blood glucose finger prick, SMBG → SMBG
 
 **Multi-domain queries (use ALL relevant types):**
-- "Full health summary" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW
-- "Prepare for appointment" → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW
 - "How are meals affecting glucose?" → MEAL + CGM_RANGE
 - "Is exercise helping glucose?" → FITNESS_OVERVIEW + CGM_RANGE
 - "Compare glucose and meals" → MEAL + CGM_RANGE + CGM_SUMMARY
-- "How is everything going?" (with date scope) → CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW
+
+**Full health overview (use ALL domains — this is a healthcare agent, every data point matters):**
+- "Full health summary" / "Prepare for appointment" / "How is everything going?"
+- "How's [patient] doing?" / "How is [patient]?" / "Give me an overview"
+- "Summarize" / "What's going on?" / "Update me on [patient]"
+- Any general/vague health question without a specific domain
+- → PROFILE + CGM_RANGE + CGM_SUMMARY + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP
+
+**WHY all domains for general queries:** Lab reports may show declining HbA1c or kidney function. Vitals may reveal rising BP. SMBG captures finger-prick patterns CGM missed. Sleep quality directly affects glucose control. Documents contain prescriptions and clinical notes. Missing any domain means missing part of the clinical picture.
 
 ## Date Resolution
 
