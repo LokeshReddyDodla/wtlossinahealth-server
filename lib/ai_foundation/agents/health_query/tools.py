@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 # Used by reasoning engine and specialists for early-exit decisions.
 NO_DATA_PREFIX = "[NO_DATA] "
 
+# Canonical data_type values derived from HealthDataType enum — used in tool schema enums.
+# This ensures the LLM can ONLY pass valid values (OpenAI enforces enum constraints).
+from lib.ai_foundation.agents.health_query.contracts import HealthDataType
+_VALID_DATA_TYPES: list[str] = [dt.value for dt in HealthDataType]
+
 # Warning returned for duplicate tool calls.
 DUP_WARNING = "You already fetched this exact data. Try a different tool or different parameters."
 
@@ -110,13 +115,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "data_types": {
                         "type": "array",
-                        "items": {"type": "string"},
-                        "description": (
-                            "Types of data to fetch. Options: meal, cgm_range_stats, cgm_summary_stats, "
-                            "fitness_overview, vital, smbg, profile, patient_document, "
-                            "hypo_event, hypo_stats, hyper_event, hyper_stats, "
-                            "rapid_spike_event, rapid_spike_stats, rapid_drop_event, rapid_drop_stats"
-                        ),
+                        "items": {"type": "string", "enum": _VALID_DATA_TYPES},
+                        "description": "Types of data to fetch. Use EXACT values from the enum.",
                     },
                     "date_start": {"type": "string", "description": "Start date (ISO format). e.g. '2026-03-18'"},
                     "date_end": {"type": "string", "description": "End date (ISO format). e.g. '2026-03-25'"},
@@ -163,8 +163,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "properties": {
                     "data_types": {
                         "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Data types to get baseline for.",
+                        "items": {"type": "string", "enum": _VALID_DATA_TYPES},
+                        "description": "Data types to get baseline for. Use EXACT values from the enum.",
                     },
                     "days": {"type": "integer", "description": "How many days back to look. Default 30."},
                 },
