@@ -258,7 +258,6 @@ class ReasoningEngine:
         total_tools = 0
         rounds_used = 0
         seen_calls: set[str] = set()  # deduplication
-        has_real_data = False  # True once any tool returns actual data (not NO_DATA)
         budget_remaining = tier_cfg.max_tool_calls
 
         if emit_events:
@@ -279,11 +278,6 @@ class ReasoningEngine:
             budget_remaining -= plan["tools_called"]
             if plan["steps"]:
                 steps.extend(plan["steps"])
-                # Check if plan found any real data
-                for step in plan["steps"]:
-                    for tr in step.tool_results:
-                        if not is_no_data(tr.get("result", "")):
-                            has_real_data = True
 
             # Emit plan event (streaming only)
             if emit_events and plan.get("plan_obj"):
@@ -304,9 +298,8 @@ class ReasoningEngine:
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
-                # Round 1 with no real data = either lazy LLM or plan found nothing.
-                # Force a lookup with the intent's exact data_types.
-                if round_num == 1 and intent_data_types and not has_real_data:
+                # Round 1 with no tool calls = lazy LLM. Force a lookup.
+                if round_num == 1 and intent_data_types and not seen_calls:
                     if emit_events and tier_cfg.show_reasoning:
                         yield sse_tool_call("look_up", {"data_types": intent_data_types})
                     fallback_result = await self._tools.execute(
@@ -384,10 +377,6 @@ class ReasoningEngine:
 
             steps.append(step)
             rounds_used = round_num
-
-            # Track whether we found real data
-            if not tool_round.all_no_data:
-                has_real_data = True
 
             # Early exit: if all results indicate no data, stop investigating
             if tool_round.all_no_data:
@@ -486,7 +475,12 @@ class ReasoningEngine:
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Generate and execute Phase 1 of the investigation plan.
+        """Generate an investigation plan and add it as context for the thinker.
+
+        The plan is GUIDANCE, not execution. The thinker makes the actual
+        tool calls (which are enum-constrained via OpenAI function calling).
+        This prevents the planner from passing invalid data_types like "meals"
+        directly to Qdrant.
 
         Returns dict with: cost, tools_called, steps, plan_obj.
         """
@@ -498,59 +492,24 @@ class ReasoningEngine:
                 model_id=tier_cfg.thinker_model,
             )
 
-            # Execute Phase 1 steps in parallel
-            phase1 = [s for s in plan.steps if s.phase == 1]
-            if not phase1:
-                return {"cost": 0, "tools_called": 0, "steps": [], "plan_obj": plan}
+            # Add plan as context — the thinker reads this and executes with proper tool calls
+            step_lines = []
+            for s in plan.steps:
+                step_lines.append(f"  Phase {s.phase}: {s.tool_name}({json.dumps(s.arguments)}) — {s.reason}")
 
-            # Build calls and execute
-            calls: list[tuple[str, dict[str, Any]]] = []
-            for step in phase1:
-                call_key = f"{step.tool_name}:{json.dumps(step.arguments, sort_keys=True)}"
-                if call_key not in seen_calls:
-                    seen_calls.add(call_key)
-                    calls.append((step.tool_name, step.arguments))
-
-            if not calls:
-                return {"cost": 0, "tools_called": 0, "steps": [], "plan_obj": plan}
-
-            results = await self._tools.execute_parallel(calls, patient_ids, patient_names=patient_names)
-
-            # Build a synthetic reasoning step for the plan execution
-            plan_step = ReasoningStep(
-                round=0,
-                thought=f"Investigation plan: {plan.strategy}",
-                tool_calls=[{"tool": name, "args": args} for name, args in calls],
-                tool_results=[
-                    {"tool": name, "result": result[:settings.STEP_LOG_TRUNCATION_CHARS]}
-                    for (name, _), result in zip(calls, results)
-                ],
-            )
-
-            # Add plan context and results to the conversation
-            # We use a synthetic assistant message explaining the plan
             messages.append({
-                "role": "assistant",
+                "role": "system",
                 "content": (
-                    f"I've planned my investigation: {plan.strategy}\n"
-                    f"Phase 1 results are now available. "
-                    f"Let me analyze what I found and decide on next steps."
+                    f"INVESTIGATION PLAN: {plan.strategy}\n"
+                    f"Planned steps:\n" + "\n".join(step_lines) + "\n\n"
+                    f"Execute these steps using your tools. Start with Phase 1."
                 ),
             })
 
-            # Add tool results as system context (not tool messages, since there's no tool_call)
-            result_parts = []
-            for (name, args), result in zip(calls, results):
-                result_parts.append(f"[{name}] {result}")
-            messages.append({
-                "role": "system",
-                "content": "Phase 1 investigation results:\n\n" + "\n\n---\n\n".join(result_parts),
-            })
-
             return {
-                "cost": 0,  # Planning extraction cost tracked separately
-                "tools_called": len(calls),
-                "steps": [plan_step],
+                "cost": 0,
+                "tools_called": 0,
+                "steps": [],
                 "plan_obj": plan,
             }
 

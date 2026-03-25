@@ -35,6 +35,8 @@ NO_DATA_PREFIX = "[NO_DATA] "
 # Canonical data_type values derived from HealthDataType enum — used in tool schema enums.
 # This ensures the LLM can ONLY pass valid values (OpenAI enforces enum constraints).
 from lib.ai_foundation.agents.health_query.contracts import HealthDataType
+
+# Valid data_type values — derived from enum, used for schema enum + validation.
 _VALID_DATA_TYPES: list[str] = [dt.value for dt in HealthDataType]
 
 # Warning returned for duplicate tool calls.
@@ -374,7 +376,14 @@ class ToolExecutor:
             limit=limit,
         ))
 
-        logger.info("look_up: %d results returned", len(results))
+        # Filter to only results matching the requested data_types.
+        # The Qdrant filter always includes profile as a should-branch,
+        # which returns results even when the requested types have no data.
+        if data_types:
+            requested = set(data_types)
+            results = [r for r in results if (r.data_type or r.payload.get("data_type")) in requested]
+
+        logger.info("look_up: %d matching results (types=%s)", len(results), data_types)
 
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
