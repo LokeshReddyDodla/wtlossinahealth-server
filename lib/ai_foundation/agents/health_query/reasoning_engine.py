@@ -253,6 +253,7 @@ class ReasoningEngine:
         total_tools = 0
         rounds_used = 0
         seen_calls: set[str] = set()  # deduplication
+        has_real_data = False  # True once any tool returns actual data (not NO_DATA)
         budget_remaining = tier_cfg.max_tool_calls
 
         if emit_events:
@@ -272,6 +273,11 @@ class ReasoningEngine:
             budget_remaining -= plan["tools_called"]
             if plan["steps"]:
                 steps.extend(plan["steps"])
+                # Check if plan found any real data
+                for step in plan["steps"]:
+                    for tr in step.tool_results:
+                        if not is_no_data(tr.get("result", "")):
+                            has_real_data = True
 
             # Emit plan event (streaming only)
             if emit_events and plan.get("plan_obj"):
@@ -292,8 +298,9 @@ class ReasoningEngine:
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
-                # Round 1 with no tool calls = lazy LLM. Force a lookup if we have intent types.
-                if round_num == 1 and intent_data_types and not seen_calls:
+                # Round 1 with no real data = either lazy LLM or plan found nothing.
+                # Force a lookup with the intent's exact data_types.
+                if round_num == 1 and intent_data_types and not has_real_data:
                     if emit_events and tier_cfg.show_reasoning:
                         yield sse_tool_call("look_up", {"data_types": intent_data_types})
                     fallback_result = await self._tools.execute(
@@ -370,6 +377,10 @@ class ReasoningEngine:
 
             steps.append(step)
             rounds_used = round_num
+
+            # Track whether we found real data
+            if not tool_round.all_no_data:
+                has_real_data = True
 
             # Early exit: if all results indicate no data, stop investigating
             if tool_round.all_no_data:
