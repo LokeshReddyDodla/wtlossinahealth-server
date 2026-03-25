@@ -41,6 +41,8 @@ class HealthDataType(str, Enum):
     FITNESS_OVERVIEW = "fitness_overview"
     FITNESS_DIST = "fitness_activity_distribution"
     FITNESS_INACTIVE = "fitness_inactive_periods"
+    VITAL = "vital"
+    SLEEP = "sleep"
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
 
@@ -63,6 +65,73 @@ class DomainName(str, Enum):
     SLEEP = "sleep"
     VITALS = "vitals"
     PATIENT_SUMMARY = "patient_summary"
+
+
+# Maps each HealthDataType to its parent domain for specialist routing
+DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
+    DomainName.CGM: [
+        HealthDataType.CGM_RANGE, HealthDataType.CGM_SUMMARY,
+        HealthDataType.HYPER_STATS, HealthDataType.HYPO_STATS,
+        HealthDataType.RAPID_SPIKE, HealthDataType.RAPID_DROP,
+        HealthDataType.HYPER_EVENT, HealthDataType.HYPO_EVENT,
+        HealthDataType.RAPID_SPIKE_EVENT, HealthDataType.RAPID_DROP_EVENT,
+        HealthDataType.TIME_PERIOD, HealthDataType.AGP,
+        HealthDataType.CGM_SEMANTIC_WINDOW,
+    ],
+    DomainName.MEAL: [HealthDataType.MEAL],
+    DomainName.FITNESS: [
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.FITNESS_DIST,
+        HealthDataType.FITNESS_INACTIVE,
+    ],
+    DomainName.SMBG: [HealthDataType.SMBG],
+    DomainName.VITALS: [HealthDataType.VITAL],
+    DomainName.SLEEP: [HealthDataType.SLEEP],
+    DomainName.PROFILE: [HealthDataType.PROFILE],
+    DomainName.DOCUMENTS: [HealthDataType.DOCUMENTS],
+}
+
+# Reverse mapping: HealthDataType → DomainName
+_TYPE_TO_DOMAIN: dict[HealthDataType, DomainName] = {}
+for _domain, _types in DOMAIN_MAPPING.items():
+    for _dt in _types:
+        _TYPE_TO_DOMAIN[_dt] = _domain
+
+# Specialist domain names (domains that have specialist agents)
+SPECIALIST_DOMAINS = {"glucose", "nutrition", "fitness", "vitals", "sleep", "documents"}
+
+# Map DomainName enum to specialist domain key
+_DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
+    DomainName.CGM: "glucose",
+    DomainName.SMBG: "glucose",
+    DomainName.MEAL: "nutrition",
+    DomainName.FITNESS: "fitness",
+    DomainName.VITALS: "vitals",
+    DomainName.SLEEP: "sleep",
+    DomainName.DOCUMENTS: "documents",
+}
+
+
+def resolve_domains(data_types: list[HealthDataType]) -> list[DomainName]:
+    """Map data types from intent extraction to unique domains."""
+    domains: set[DomainName] = set()
+    for dt in data_types:
+        domain = _TYPE_TO_DOMAIN.get(dt)
+        if domain:
+            domains.add(domain)
+    return sorted(domains, key=lambda d: d.value)
+
+
+def resolve_specialist_domains(data_types: list[HealthDataType]) -> list[str]:
+    """Map data types to specialist domain keys (glucose, nutrition, fitness)."""
+    specialists: set[str] = set()
+    for dt in data_types:
+        domain = _TYPE_TO_DOMAIN.get(dt)
+        if domain:
+            specialist = _DOMAIN_TO_SPECIALIST.get(domain)
+            if specialist:
+                specialists.add(specialist)
+    return sorted(specialists)
 
 
 class ResponseMode(str, Enum):

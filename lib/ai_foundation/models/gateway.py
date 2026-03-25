@@ -80,6 +80,33 @@ class StreamChunk(BaseModel):
     usage: LLMUsage | None = None
 
 
+class ToolCall(BaseModel):
+    """A single tool call requested by the LLM."""
+
+    model_config = {"protected_namespaces": ()}
+
+    id: str = Field(description="Unique tool call ID from the API.")
+    function_name: str = Field(description="Name of the function to call.")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="Parsed arguments.")
+
+
+class LLMToolResponse(BaseModel):
+    """Response from complete_with_tools — either text OR tool calls."""
+
+    model_config = {"protected_namespaces": ()}
+
+    content: str | None = Field(default=None, description="Text response (None if tool calls).")
+    tool_calls: list[ToolCall] = Field(default_factory=list, description="Tool calls (empty if text).")
+    usage: LLMUsage = Field(default_factory=LLMUsage)
+    model_id: str = ""
+    provider: str = ""
+    latency_ms: int = 0
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return len(self.tool_calls) > 0
+
+
 class AllProvidersUnavailableError(ModelGatewayError):
     """Raised when all models in the fallback chain have failed."""
 
@@ -260,6 +287,103 @@ class ModelGateway:
 
         raise AllProvidersUnavailableError(
             f"All models failed for task {task.value!r}. Last error: {last_error}"
+        )
+
+    async def complete_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        task: ModelTask = ModelTask.CLASSIFICATION,
+        model_id: str | None = None,
+        temperature: float | None = None,
+        timeout: float | None = None,
+        trace_id: str | None = None,
+    ) -> LLMToolResponse:
+        """Send messages with tool definitions. LLM responds with text OR tool calls.
+
+        This is the core of the agentic reasoning loop. The LLM sees the tools,
+        decides whether to call one (or more) or respond directly.
+        """
+        trace_id = trace_id or str(uuid4())
+        chain = self._resolve_chain(task, model_id)
+
+        last_error: Exception | None = None
+        for spec in chain:
+            if not self._circuit_breaker.is_available(spec.provider.value):
+                continue
+
+            effective_spec = self._apply_overrides(spec, temperature, None, timeout)
+            try:
+                return await self._do_complete_with_tools(
+                    effective_spec, messages, tools, trace_id,
+                )
+            except Exception as exc:
+                last_error = exc
+                self._circuit_breaker.record_failure(spec.provider.value)
+                logger.warning("ModelGateway.complete_with_tools failed for %s: %s", spec.model_id, exc)
+
+        raise AllProvidersUnavailableError(
+            f"All models failed for task {task.value!r}. Last error: {last_error}"
+        )
+
+    async def _do_complete_with_tools(
+        self,
+        spec: ModelSpec,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        trace_id: str,
+    ) -> LLMToolResponse:
+        """Internal: execute function calling against OpenAI/Gemini API."""
+        client = self._get_async_client(spec)
+        start = time.perf_counter()
+
+        kwargs: dict[str, Any] = {
+            "model": spec.model_id,
+            "messages": messages,
+            "temperature": spec.temperature,
+            "tools": tools,
+        }
+        if spec.max_tokens is not None:
+            kwargs["max_tokens"] = spec.max_tokens
+
+        raw = await asyncio.wait_for(
+            client.chat.completions.create(**kwargs),
+            timeout=spec.timeout_seconds,
+        )
+
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        usage = self._extract_usage(raw, spec)
+        self._circuit_breaker.record_success(spec.provider.value)
+
+        choice = raw.choices[0] if raw.choices else None
+        if not choice:
+            return LLMToolResponse(usage=usage, model_id=spec.model_id, latency_ms=elapsed_ms)
+
+        # Parse tool calls if present
+        tool_calls: list[ToolCall] = []
+        if choice.message.tool_calls:
+            import json as _json
+            for tc in choice.message.tool_calls:
+                try:
+                    args = _json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                except (ValueError, TypeError):
+                    args = {}
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    function_name=tc.function.name,
+                    arguments=args,
+                ))
+
+        content = choice.message.content if not tool_calls else None
+
+        return LLMToolResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            model_id=spec.model_id,
+            provider=spec.provider.value,
+            latency_ms=elapsed_ms,
         )
 
     async def stream(
