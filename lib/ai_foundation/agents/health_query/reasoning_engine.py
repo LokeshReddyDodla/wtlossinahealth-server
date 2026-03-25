@@ -351,7 +351,7 @@ class ReasoningEngine:
         seen_calls: set[str] = set()
         budget_remaining = tier_cfg.max_tool_calls
 
-        yield sse_status(PipelineStage.ANALYZING, "Investigating your health data...")
+        yield sse_status(PipelineStage.ANALYZING, "Investigating health data...")
 
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
@@ -481,7 +481,7 @@ class ReasoningEngine:
         # ── Stream final response ──
         yield sse_status(
             PipelineStage.GENERATING_RESPONSE,
-            "Building your personalized insights...",
+            "Building personalized insights...",
         )
 
         # Build responder messages

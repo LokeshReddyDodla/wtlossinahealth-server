@@ -169,7 +169,7 @@ class HealthQueryAgent(BaseAgent):
             )
 
         try:
-            yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding your question...")
+            yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
