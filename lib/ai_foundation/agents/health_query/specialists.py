@@ -210,7 +210,7 @@ class Specialist:
             "content": self._spec.system_prompt,
         })
 
-        tool_schemas = self._tools.get_openai_schemas()
+        tool_schemas = self._tools.get_schemas_for_domain(self._spec.domain)
         findings_parts: list[str] = []
         total_tools = 0
         total_cost = 0.0
@@ -306,7 +306,7 @@ class Specialist:
             "content": self._spec.system_prompt,
         })
 
-        tool_schemas = self._tools.get_openai_schemas()
+        tool_schemas = self._tools.get_schemas_for_domain(self._spec.domain)
         seen_calls: set[str] = set()
 
         for round_num in range(1, max_rounds + 1):

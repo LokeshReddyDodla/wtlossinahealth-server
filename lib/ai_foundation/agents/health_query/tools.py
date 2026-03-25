@@ -28,6 +28,20 @@ logger = logging.getLogger(__name__)
 
 _MAX_TOOL_RESULT_CHARS = 2000
 
+# Maps specialist domain → Qdrant data_type values the specialist should use
+_DOMAIN_DATA_TYPES: dict[str, list[str]] = {
+    "glucose": [
+        "cgm_range_stats", "cgm_summary_stats", "smbg",
+        "hypo_event", "hypo_stats", "hyper_event", "hyper_stats",
+        "rapid_spike_event", "rapid_spike_stats", "rapid_drop_event", "rapid_drop_stats",
+    ],
+    "nutrition": ["meal"],
+    "fitness": ["fitness_overview", "fitness_activity_distribution", "fitness_inactive_periods"],
+    "vitals": ["vital"],
+    "sleep": ["sleep"],
+    "documents": ["patient_document"],
+}
+
 
 # ── Tool Definitions (OpenAI function calling format) ─────────────────────
 
@@ -196,6 +210,42 @@ class ToolExecutor:
     def get_openai_schemas(self) -> list[dict[str, Any]]:
         """Return tool definitions in OpenAI function calling format."""
         return TOOL_SCHEMAS
+
+    def get_schemas_for_domain(self, domain: str) -> list[dict[str, Any]]:
+        """Return tool schemas filtered to a specific specialist domain.
+
+        The look_up and compare_baseline tools get their data_types description
+        narrowed to only the domain's types. investigate_day and find_patterns
+        stay unfiltered (they're cross-domain by nature).
+        """
+        domain_types = _DOMAIN_DATA_TYPES.get(domain)
+        if not domain_types:
+            return TOOL_SCHEMAS
+
+        import copy
+        filtered: list[dict[str, Any]] = []
+        for schema in TOOL_SCHEMAS:
+            func_name = schema.get("function", {}).get("name", "")
+
+            if func_name in ("look_up", "compare_baseline") and domain_types:
+                # Deep copy and replace data_types description
+                s = copy.deepcopy(schema)
+                props = s["function"]["parameters"]["properties"]
+                types_str = ", ".join(domain_types)
+                if func_name == "look_up":
+                    props["data_types"]["description"] = (
+                        f"Types of data to fetch. For this domain use: {types_str}"
+                    )
+                elif func_name == "compare_baseline":
+                    props["data_types"]["description"] = (
+                        f"Data types to get baseline for. For this domain use: {types_str}"
+                    )
+                filtered.append(s)
+            else:
+                # investigate_day and find_patterns are shared across all domains
+                filtered.append(schema)
+
+        return filtered
 
     # ── Tool implementations ──────────────────────────────────────────────
 
