@@ -41,6 +41,7 @@ class HealthDataType(str, Enum):
     FITNESS_OVERVIEW = "fitness_overview"
     FITNESS_DIST = "fitness_activity_distribution"
     FITNESS_INACTIVE = "fitness_inactive_periods"
+    VITAL = "vital"
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
 
@@ -83,6 +84,7 @@ DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
         HealthDataType.FITNESS_INACTIVE,
     ],
     DomainName.SMBG: [HealthDataType.SMBG],
+    DomainName.VITALS: [HealthDataType.VITAL],
     DomainName.PROFILE: [HealthDataType.PROFILE],
     DomainName.DOCUMENTS: [HealthDataType.DOCUMENTS],
 }
@@ -94,7 +96,7 @@ for _domain, _types in DOMAIN_MAPPING.items():
         _TYPE_TO_DOMAIN[_dt] = _domain
 
 # Specialist domain names (domains that have specialist agents)
-SPECIALIST_DOMAINS = {"glucose", "nutrition", "fitness"}
+SPECIALIST_DOMAINS = {"glucose", "nutrition", "fitness", "vitals"}
 
 # Map DomainName enum to specialist domain key
 _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
@@ -102,6 +104,7 @@ _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
     DomainName.SMBG: "glucose",
     DomainName.MEAL: "nutrition",
     DomainName.FITNESS: "fitness",
+    DomainName.VITALS: "vitals",
 }
 
 

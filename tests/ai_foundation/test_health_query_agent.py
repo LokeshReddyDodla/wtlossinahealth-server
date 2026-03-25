@@ -324,13 +324,15 @@ class TestReflector:
 
 class TestSpecialists:
     def test_domain_specs(self):
-        from lib.ai_foundation.agents.health_query.specialists import GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC
+        from lib.ai_foundation.agents.health_query.specialists import GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC
         assert GLUCOSE_SPEC.domain == "glucose"
         assert "cgm_range_stats" in GLUCOSE_SPEC.data_types
         assert NUTRITION_SPEC.domain == "nutrition"
         assert "meal" in NUTRITION_SPEC.data_types
         assert FITNESS_SPEC.domain == "fitness"
         assert "fitness_overview" in FITNESS_SPEC.data_types
+        assert VITALS_SPEC.domain == "vitals"
+        assert "vital" in VITALS_SPEC.data_types
 
     def test_specialist_findings(self):
         from lib.ai_foundation.agents.health_query.specialists import SpecialistFindings

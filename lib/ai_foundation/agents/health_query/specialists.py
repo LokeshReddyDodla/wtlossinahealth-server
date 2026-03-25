@@ -92,10 +92,27 @@ FITNESS_SPEC = DomainSpec(
     ),
 )
 
+VITALS_SPEC = DomainSpec(
+    domain="vitals",
+    data_types=["vital", "profile"],
+    system_prompt=(
+        "You are a vitals and body metrics specialist for diabetic/obese patients. Focus on:\n"
+        "- Blood pressure trends (hypertension is common in diabetes and obesity)\n"
+        "- Resting heart rate patterns and variability\n"
+        "- Weight trends over time — progress toward weight loss goals\n"
+        "- BMI trajectory and body composition changes\n"
+        "- SpO2 readings if available (sleep apnea risk in obese patients)\n"
+        "- Correlation between weight changes and glucose control\n"
+        "- Correlation between BP and meal sodium / stress / activity levels\n"
+        "- Flag concerning trends: rising BP, rapid weight gain, abnormal HR"
+    ),
+)
+
 DEFAULT_SPECS: dict[str, DomainSpec] = {
     "glucose": GLUCOSE_SPEC,
     "nutrition": NUTRITION_SPEC,
     "fitness": FITNESS_SPEC,
+    "vitals": VITALS_SPEC,
 }
 
 
