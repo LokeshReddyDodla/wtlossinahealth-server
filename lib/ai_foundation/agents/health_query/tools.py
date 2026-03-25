@@ -379,7 +379,7 @@ class ToolExecutor:
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
 
-        return self._format_results(results)
+        return self._format_results(results, names)
 
     async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
@@ -513,7 +513,7 @@ class ToolExecutor:
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
-    def _format_results(self, results: list[RetrievalResult]) -> str:
+    def _format_results(self, results: list[RetrievalResult], names: dict[str, str] | None = None) -> str:
         """Format results as readable text grouped by data type."""
         by_type: dict[str, list[dict]] = {}
         for r in results:
