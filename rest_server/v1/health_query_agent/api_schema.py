@@ -10,6 +10,9 @@ class QueryRequest(BaseModel):
     patient_ids: Optional[list[str]] = Field(
         None, description="Optional list of patient IDs to filter search results"
     )
+    tier: Optional[str] = Field(
+        None, description="Reasoning tier: basic, standard, advanced, unlimited. Defaults to config.",
+    )
 
     @field_validator("message")
     @classmethod

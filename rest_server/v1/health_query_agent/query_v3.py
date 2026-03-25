@@ -71,6 +71,10 @@ def _build_agent_input(
     elif len(resolved_patient_ids) == 1:
         patient_id = resolved_patient_ids[0]
 
+    metadata: dict = {}
+    if payload.tier:
+        metadata["tier"] = payload.tier
+
     return AgentInput(
         message=payload.message,
         context=AgentContext(
@@ -80,6 +84,7 @@ def _build_agent_input(
             thread_id=thread_id,
             patient_ids=resolved_patient_ids,
             priority=_resolve_priority(current_actor.role),
+            metadata=metadata,
         ),
         stream=stream,
     )
