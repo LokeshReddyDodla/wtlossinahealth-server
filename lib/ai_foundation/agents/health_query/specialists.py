@@ -21,20 +21,13 @@ from lib.ai_foundation.streaming.sse import (
     sse_tool_result,
 )
 
+from lib.ai_foundation.agents.health_query.tools import is_no_data
+
 if TYPE_CHECKING:
     from lib.ai_foundation.agents.health_query.tools import ToolExecutor
     from lib.ai_foundation.models.gateway import ModelGateway
 
 logger = logging.getLogger(__name__)
-
-def _is_no_data(result: str) -> bool:
-    """Check if a tool result indicates no data was found.
-
-    Uses the structural NO_DATA_PREFIX sentinel set by ToolExecutor,
-    not fragile string matching on natural language.
-    """
-    from lib.ai_foundation.agents.health_query.tools import NO_DATA_PREFIX
-    return result.startswith(NO_DATA_PREFIX)
 
 
 # ── Domain Configuration ───────────────────────────────────────────────────
@@ -212,6 +205,8 @@ class Specialist:
     def domain(self) -> str:
         return self._spec.domain
 
+    # ── Public API (unchanged signatures) ─────────────────────────────
+
     async def investigate(
         self,
         *,
@@ -221,6 +216,49 @@ class Specialist:
         model_id: str,
     ) -> SpecialistFindings:
         """Run a domain-scoped investigation."""
+        async for item in self._investigate_core(
+            messages=messages,
+            patient_ids=patient_ids,
+            max_rounds=max_rounds,
+            model_id=model_id,
+            emit_events=False,
+        ):
+            if isinstance(item, SpecialistFindings):
+                return item
+        # Unreachable — _investigate_core always yields SpecialistFindings at the end.
+        raise RuntimeError("_investigate_core did not produce SpecialistFindings")  # pragma: no cover
+
+    async def investigate_stream(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        patient_ids: list[str],
+        max_rounds: int = 3,
+        model_id: str,
+    ) -> AsyncIterator[str]:
+        """Streaming version that yields SSE events during investigation."""
+        async for item in self._investigate_core(
+            messages=messages,
+            patient_ids=patient_ids,
+            max_rounds=max_rounds,
+            model_id=model_id,
+            emit_events=True,
+        ):
+            if isinstance(item, str):
+                yield item
+
+    # ── Core loop (shared implementation) ─────────────────────────────
+
+    async def _investigate_core(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        patient_ids: list[str],
+        max_rounds: int = 3,
+        model_id: str,
+        emit_events: bool = False,
+    ) -> AsyncIterator[str | SpecialistFindings]:
+        """Unified investigation loop that yields SSE strings and/or SpecialistFindings."""
         # Add domain-specific system prompt
         specialist_messages: list[dict[str, Any]] = list(messages)
         specialist_messages.insert(1, {
@@ -247,169 +285,42 @@ class Specialist:
             if not response.has_tool_calls:
                 if response.content:
                     findings_parts.append(response.content)
-                break
-
-            # Build assistant tool call message
-            specialist_messages.append({
-                "role": "assistant",
-                "content": response.content or None,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function_name,
-                            "arguments": json.dumps(tc.arguments),
-                        },
-                    }
-                    for tc in response.tool_calls
-                ],
-            })
-
-            # Partition: new vs duplicate
-            to_execute: list[tuple[str, dict, str]] = []
-            duplicate_ids: list[str] = []
-            for tc in response.tool_calls:
-                call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                if call_key not in seen_calls:
-                    seen_calls.add(call_key)
-                    to_execute.append((tc.function_name, tc.arguments, tc.id))
-                else:
-                    duplicate_ids.append(tc.id)
-
-            # Execute non-duplicates in parallel
-            if to_execute:
-                results = await self._tools.execute_parallel(
-                    [(name, args) for name, args, _ in to_execute],
-                    patient_ids,
-                )
-                total_tools += len(to_execute)
-
-                for (name, args, tc_id), result_text in zip(to_execute, results):
-                    findings_parts.append(result_text)
-                    specialist_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result_text,
-                    })
-
-                # Early exit: if all results are "no data", stop investigating
-                if all(_is_no_data(r) for r in results):
-                    for tc_id in duplicate_ids:
-                        specialist_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "content": "Already fetched. Try different parameters.",
-                        })
-                    break
-
-            # Every tool_call_id MUST have a tool result — add dup warnings
-            for tc_id in duplicate_ids:
-                specialist_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": "Already fetched. Try different parameters.",
-                })
-
-        return SpecialistFindings(
-            domain=self._spec.domain,
-            findings="\n\n".join(findings_parts),
-            tool_calls_used=total_tools,
-            data_gathered=[f[:200] for f in findings_parts],
-            cost=total_cost,
-        )
-
-    async def investigate_stream(
-        self,
-        *,
-        messages: list[dict[str, Any]],
-        patient_ids: list[str],
-        max_rounds: int = 3,
-        model_id: str,
-    ) -> AsyncIterator[str]:
-        """Streaming version that yields SSE events during investigation."""
-        specialist_messages: list[dict[str, Any]] = list(messages)
-        specialist_messages.insert(1, {
-            "role": "system",
-            "content": self._spec.system_prompt,
-        })
-
-        tool_schemas = self._tools.get_schemas_for_domain(self._spec.domain)
-        seen_calls: set[str] = set()
-
-        for round_num in range(1, max_rounds + 1):
-            response = await self._gateway.complete_with_tools(
-                messages=specialist_messages,
-                tools=tool_schemas,
-                task=ModelTask.CLASSIFICATION,
-                model_id=model_id,
-                timeout=settings.REASONING_TIMEOUT_SECONDS,
-            )
-
-            if not response.has_tool_calls:
-                if response.content:
+                if emit_events and response.content:
                     yield sse_reasoning(round_num, f"[{self._spec.domain}] {response.content}")
                 break
 
-            if response.content:
+            if emit_events and response.content:
                 yield sse_reasoning(round_num, f"[{self._spec.domain}] {response.content}")
 
-            specialist_messages.append({
-                "role": "assistant",
-                "content": response.content or None,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function_name,
-                            "arguments": json.dumps(tc.arguments),
-                        },
-                    }
-                    for tc in response.tool_calls
-                ],
-            })
+            # Execute tool round via shared helper
+            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+            specialist_messages.append(tool_round.assistant_message)
+            specialist_messages.extend(tool_round.tool_messages)
+            total_tools += tool_round.executed_count
 
-            to_execute: list[tuple[str, dict, str]] = []
-            duplicate_ids: list[str] = []
-            for tc in response.tool_calls:
-                call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                if call_key not in seen_calls:
-                    seen_calls.add(call_key)
-                    to_execute.append((tc.function_name, tc.arguments, tc.id))
+            # Collect findings from results
+            findings_parts.extend(tool_round.results)
+
+            # Emit tool events (streaming only)
+            if emit_events:
+                for tc in response.tool_calls:
+                    call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
+                    # Emit only for calls that were actually executed (not dups)
+                    # We check if it's in seen_calls after execute_tool_round added them
                     yield sse_tool_call(tc.function_name, tc.arguments)
-                else:
-                    duplicate_ids.append(tc.id)
-
-            if to_execute:
-                results = await self._tools.execute_parallel(
-                    [(name, args) for name, args, _ in to_execute],
-                    patient_ids,
-                )
-                for (name, args, tc_id), result_text in zip(to_execute, results):
+                for result_text in tool_round.results:
                     lines = result_text.strip().split("\n")
-                    summary = lines[0][:200] if lines else "No data"
-                    yield sse_tool_result(name, summary)
-                    specialist_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result_text,
-                    })
+                    summary = lines[0][:settings.SUMMARY_TRUNCATION_CHARS] if lines else "No data"
+                    yield sse_tool_result(self._spec.domain, summary)
 
-                # Early exit: no data means nothing more to investigate
-                if all(_is_no_data(r) for r in results):
-                    for tc_id in duplicate_ids:
-                        specialist_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "content": "Already fetched. Try different parameters.",
-                        })
-                    break
+            # Early exit: if all results are "no data", stop investigating
+            if tool_round.all_no_data:
+                break
 
-            # Every tool_call_id MUST have a tool result
-            for tc_id in duplicate_ids:
-                specialist_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": "Already fetched. Try different parameters.",
-                })
+        yield SpecialistFindings(
+            domain=self._spec.domain,
+            findings="\n\n".join(findings_parts),
+            tool_calls_used=total_tools,
+            data_gathered=[f[:settings.SUMMARY_TRUNCATION_CHARS] for f in findings_parts],
+            cost=total_cost,
+        )

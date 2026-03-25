@@ -89,6 +89,15 @@ class AIFoundationSettings(BaseSettings):
     SPECIALIST_MAX_PARALLEL: int = Field(default=3, description="Max specialists running concurrently")
     SPECIALIST_TIMEOUT_SECONDS: float = Field(default=45.0, description="Timeout for a single specialist investigation")
 
+    # ── Agentic Loop Limits ───────────────────────────────────────────────
+
+    STEP_LOG_TRUNCATION_CHARS: int = Field(default=500, description="Max chars per tool result in reasoning step logs")
+    SUMMARY_TRUNCATION_CHARS: int = Field(default=200, description="Max chars for display summaries in SSE events")
+    LOOKUP_DEFAULT_LIMIT: int = Field(default=15, description="Default record limit for look_up tool")
+    MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
+    MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
+    PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
+
     # ── Circuit Breaker ───────────────────────────────────────────────────
 
     CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, description="Failures before circuit opens")

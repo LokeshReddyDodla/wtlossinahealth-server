@@ -3,6 +3,10 @@ Context Loader — loads all context needed before the agent pipeline runs.
 
 Resolves patient facts, conversation history, thread summary, and patient
 names in one call. Everything the agent needs to build LLM messages.
+
+Also provides ``build_context_messages`` — the single place that turns an
+AgentContext into the initial LLM message array used by both the
+ReasoningEngine and the Coordinator.
 """
 
 from __future__ import annotations
@@ -11,6 +15,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+from lib.ai_foundation.config import settings
 
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
@@ -26,6 +32,53 @@ class AgentContext(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
     thread_summary: str | None = None
     patient_names: dict[str, str] = Field(default_factory=dict)
+
+
+def build_context_messages(
+    *,
+    user_message: str,
+    system_prompt: str,
+    reasoning_prompt: str,
+    context: AgentContext,
+) -> list[dict[str, Any]]:
+    """Build the initial LLM message array from patient context.
+
+    Shared by both :class:`ReasoningEngine` and :class:`Coordinator` so the
+    message structure stays consistent.  Uses ``settings.MAX_CONTEXT_FACTS``
+    and ``settings.MAX_HISTORY_MESSAGES`` for truncation.
+    """
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": reasoning_prompt},
+    ]
+
+    # Pre-load patient context (profile + facts + names)
+    context_parts: list[str] = []
+    if context.patient_names:
+        names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
+        context_parts.append("Patient names:\n" + "\n".join(names))
+    if context.facts:
+        facts = [
+            f"- {f['key']}: {f['value']}"
+            for f in context.facts[:settings.MAX_CONTEXT_FACTS]
+        ]
+        context_parts.append("Known patient facts:\n" + "\n".join(facts))
+    if context.thread_summary:
+        context_parts.append(f"Conversation summary:\n{context.thread_summary}")
+
+    if context_parts:
+        messages.append({
+            "role": "system",
+            "content": "PATIENT CONTEXT (pre-loaded):\n\n" + "\n\n".join(context_parts),
+        })
+
+    # Add conversation history
+    messages.extend(context.history[-settings.MAX_HISTORY_MESSAGES:])
+
+    # User's question
+    messages.append({"role": "user", "content": user_message})
+
+    return messages
 
 
 class ContextLoader:

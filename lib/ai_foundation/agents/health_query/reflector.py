@@ -146,7 +146,7 @@ class ReflectionEngine:
             if role == "tool" and content:
                 # Truncate individual tool results
                 if len(content) > 500:
-                    content = content[:500] + "..."
+                    content = content[:settings.STEP_LOG_TRUNCATION_CHARS] + "..."
                 parts.append(content)
             elif role == "system" and "Phase 1 investigation results" in content:
                 parts.append(content[:1000])

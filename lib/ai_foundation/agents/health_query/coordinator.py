@@ -31,6 +31,7 @@ from lib.ai_foundation.streaming.sse import (
     sse_token,
 )
 
+from .context_loader import build_context_messages
 from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS
 from .specialists import Specialist, SpecialistFindings
 
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class Coordinator:
-    """Orchestrates: plan → parallel specialists → reflect → respond.
+    """Orchestrates: plan -> parallel specialists -> reflect -> respond.
 
     Usage::
 
@@ -74,7 +75,7 @@ class Coordinator:
         self._reflector = reflector
         self._specialists = specialists or {}
 
-    # ── Non-streaming ──────────────────────────────────────────────────
+    # ── Public API (unchanged signatures) ─────────────────────────────
 
     async def orchestrate(
         self,
@@ -88,108 +89,22 @@ class Coordinator:
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
     ) -> ReasoningResult:
-        """Full orchestration: plan → specialists → reflect → respond."""
-        tier_cfg = TIER_CONFIGS[tier]
-        total_cost = 0.0
-        total_tools = 0
-
-        # Build base messages (shared across specialists)
-        base_messages = self._build_base_messages(
-            user_message, system_prompt, reasoning_prompt, context,
-        )
-
-        # ── 1. Planning ──
-        plan = None
-        if self._planner and settings.PLANNING_ENABLED:
-            try:
-                plan = await self._planner.plan(
-                    messages=base_messages,
-                    tool_schemas=self._tools.get_openai_schemas(),
-                    planning_prompt="Plan the multi-domain investigation.",
-                    model_id=tier_cfg.thinker_model,
-                )
-            except Exception as exc:
-                logger.warning("Coordinator planning failed: %s", exc)
-
-        # ── 2. Dispatch specialists in parallel ──
-        budget_per_specialist = max(1, tier_cfg.max_tool_calls // max(len(domains), 1))
-        specialist_tasks = []
-
-        for domain in domains:
-            specialist = self._specialists.get(domain)
-            if not specialist:
-                continue
-            specialist_tasks.append(
-                specialist.investigate(
-                    messages=base_messages,
-                    patient_ids=patient_ids,
-                    max_rounds=budget_per_specialist,
-                    model_id=tier_cfg.thinker_model,
-                )
-            )
-
-        if specialist_tasks:
-            all_findings: list[SpecialistFindings] = await asyncio.gather(
-                *specialist_tasks, return_exceptions=True,
-            )
-            # Filter out errors
-            findings = [
-                f for f in all_findings
-                if isinstance(f, SpecialistFindings)
-            ]
-            for f in findings:
-                total_cost += f.cost
-                total_tools += f.tool_calls_used
-        else:
-            findings = []
-
-        # ── 3. Reflect on combined findings ──
-        combined_data = self._combine_findings(findings)
-        reflection_result = None
-
-        if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
-            try:
-                reflect_messages = list(base_messages)
-                reflect_messages.append({
-                    "role": "system",
-                    "content": f"Investigation findings:\n\n{combined_data}",
-                })
-                reflection_result = await self._reflector.reflect(
-                    messages=reflect_messages,
-                    user_question=user_message,
-                    reflection_prompt="Review the multi-domain investigation.",
-                    model_id=tier_cfg.thinker_model,
-                )
-            except Exception as exc:
-                logger.warning("Coordinator reflection failed: %s", exc)
-
-        # ── 4. Generate final response ──
-        responder_messages = self._build_responder_messages(
-            base_messages=base_messages,
+        """Full orchestration: plan -> specialists -> reflect -> respond."""
+        async for item in self._orchestrate_core(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
             response_prompt=response_prompt,
-            combined_data=combined_data,
-            reflection=reflection_result,
-        )
-
-        final_response = await self._gateway.complete(
-            messages=responder_messages,
-            task=ModelTask.RESPONSE_GENERATION,
-            model_id=tier_cfg.responder_model,
-        )
-        total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
-
-        return ReasoningResult(
-            response=final_response.content or "",
-            steps=[],
-            rounds_used=len(findings),
-            tools_called=total_tools,
-            total_cost=total_cost,
-            thinker_model=tier_cfg.thinker_model,
-            responder_model=tier_cfg.responder_model,
-            tier=tier.value,
-        )
-
-    # ── Streaming ──────────────────────────────────────────────────────
+            context=context,
+            patient_ids=patient_ids,
+            domains=domains,
+            tier=tier,
+            emit_events=False,
+        ):
+            if isinstance(item, ReasoningResult):
+                return item
+        # Unreachable — _orchestrate_core always yields a ReasoningResult at the end.
+        raise RuntimeError("_orchestrate_core did not produce a ReasoningResult")  # pragma: no cover
 
     async def orchestrate_stream(
         self,
@@ -204,15 +119,50 @@ class Coordinator:
         tier: ReasoningTier = ReasoningTier.STANDARD,
     ) -> AsyncIterator[str]:
         """Streaming orchestration with SSE events."""
+        async for item in self._orchestrate_core(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
+            response_prompt=response_prompt,
+            context=context,
+            patient_ids=patient_ids,
+            domains=domains,
+            tier=tier,
+            emit_events=True,
+        ):
+            if isinstance(item, str):
+                yield item
+
+    # ── Core loop (shared implementation) ─────────────────────────────
+
+    async def _orchestrate_core(
+        self,
+        *,
+        user_message: str,
+        system_prompt: str,
+        reasoning_prompt: str,
+        response_prompt: str,
+        context: AgentContext,
+        patient_ids: list[str],
+        domains: list[str],
+        tier: ReasoningTier = ReasoningTier.STANDARD,
+        emit_events: bool = False,
+    ) -> AsyncIterator[str | ReasoningResult]:
+        """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
         total_cost = 0.0
         total_tools = 0
 
-        base_messages = self._build_base_messages(
-            user_message, system_prompt, reasoning_prompt, context,
+        # Build base messages (shared across specialists)
+        base_messages = build_context_messages(
+            user_message=user_message,
+            system_prompt=system_prompt,
+            reasoning_prompt=reasoning_prompt,
+            context=context,
         )
 
-        yield sse_status(PipelineStage.ANALYZING, "Planning multi-domain investigation...")
+        if emit_events:
+            yield sse_status(PipelineStage.ANALYZING, "Planning multi-domain investigation...")
 
         # ── 1. Planning ──
         plan = None
@@ -224,11 +174,12 @@ class Coordinator:
                     planning_prompt="Plan the multi-domain investigation.",
                     model_id=tier_cfg.thinker_model,
                 )
-                yield sse_plan(plan.strategy, len(plan.steps), plan.domains_involved)
+                if emit_events:
+                    yield sse_plan(plan.strategy, len(plan.steps), plan.domains_involved)
             except Exception as exc:
-                logger.warning("Coordinator planning failed: %s", exc)
+                logger.warning("Coordinator planning failed (%s): %s", type(exc).__name__, exc)
 
-        # ── 2. Dispatch specialists ──
+        # ── 2. Dispatch specialists in parallel ──
         budget_per_specialist = max(1, tier_cfg.max_tool_calls // max(len(domains), 1))
         active_specialists: list[tuple[str, Specialist]] = []
 
@@ -236,7 +187,8 @@ class Coordinator:
             specialist = self._specialists.get(domain)
             if specialist:
                 active_specialists.append((domain, specialist))
-                yield sse_specialist_start(domain, budget_per_specialist)
+                if emit_events:
+                    yield sse_specialist_start(domain, budget_per_specialist)
 
         # Run specialists in parallel, collect findings
         if active_specialists:
@@ -257,15 +209,17 @@ class Coordinator:
                     findings.append(result)
                     total_cost += result.cost
                     total_tools += result.tool_calls_used
-                    summary = result.findings[:200] if result.findings else "No findings"
-                    yield sse_specialist_done(domain, summary)
+                    if emit_events:
+                        summary = result.findings[:settings.SUMMARY_TRUNCATION_CHARS] if result.findings else "No findings"
+                        yield sse_specialist_done(domain, summary)
                 else:
                     logger.warning("Specialist %s failed: %s", domain, result)
-                    yield sse_specialist_done(domain, f"Error: {result}")
+                    if emit_events:
+                        yield sse_specialist_done(domain, f"Error: {result}")
         else:
             findings = []
 
-        # ── 3. Reflect ──
+        # ── 3. Reflect on combined findings ──
         combined_data = self._combine_findings(findings)
         reflection_result = None
 
@@ -282,17 +236,16 @@ class Coordinator:
                     reflection_prompt="Review the multi-domain investigation.",
                     model_id=tier_cfg.thinker_model,
                 )
-                yield sse_reflection(
-                    reflection_result.confidence,
-                    reflection_result.gaps,
-                    reflection_result.is_complete,
-                )
+                if emit_events:
+                    yield sse_reflection(
+                        reflection_result.confidence,
+                        reflection_result.gaps,
+                        reflection_result.is_complete,
+                    )
             except Exception as exc:
-                logger.warning("Coordinator reflection failed: %s", exc)
+                logger.warning("Coordinator reflection failed (%s): %s", type(exc).__name__, exc)
 
-        # ── 4. Stream final response ──
-        yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building personalized insights...")
-
+        # ── 4. Generate final response ──
         responder_messages = self._build_responder_messages(
             base_messages=base_messages,
             response_prompt=response_prompt,
@@ -300,64 +253,54 @@ class Coordinator:
             reflection=reflection_result,
         )
 
-        full_response_parts: list[str] = []
+        if emit_events:
+            # Stream final response
+            yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building personalized insights...")
 
-        async for chunk in self._gateway.stream(
-            messages=responder_messages,
-            task=ModelTask.RESPONSE_GENERATION,
-            model_id=tier_cfg.responder_model,
-        ):
-            if chunk.delta:
-                full_response_parts.append(chunk.delta)
-                yield sse_token(chunk.delta)
-            if chunk.finished and chunk.usage:
-                total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
+            full_response_parts: list[str] = []
 
-        yield sse_done(SSEDonePayload(
-            cost_usd=total_cost,
-            data={
-                "rounds_used": len(findings),
-                "tools_called": total_tools,
-                "tier": tier.value,
-                "domains": domains,
-                "full_response": "".join(full_response_parts),
-            },
-        ))
+            async for chunk in self._gateway.stream(
+                messages=responder_messages,
+                task=ModelTask.RESPONSE_GENERATION,
+                model_id=tier_cfg.responder_model,
+            ):
+                if chunk.delta:
+                    full_response_parts.append(chunk.delta)
+                    yield sse_token(chunk.delta)
+                if chunk.finished and chunk.usage:
+                    total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
+
+            yield sse_done(SSEDonePayload(
+                cost_usd=total_cost,
+                data={
+                    "rounds_used": len(findings),
+                    "tools_called": total_tools,
+                    "tier": tier.value,
+                    "domains": domains,
+                    "full_response": "".join(full_response_parts),
+                },
+            ))
+        else:
+            # Non-streaming: single responder call
+            final_response = await self._gateway.complete(
+                messages=responder_messages,
+                task=ModelTask.RESPONSE_GENERATION,
+                model_id=tier_cfg.responder_model,
+            )
+            total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
+
+            yield ReasoningResult(
+                response=final_response.content or "",
+                steps=[],
+                rounds_used=len(findings),
+                tools_called=total_tools,
+                total_cost=total_cost,
+                thinker_model=tier_cfg.thinker_model,
+                responder_model=tier_cfg.responder_model,
+                tier=tier.value,
+            )
 
     # ── Helpers ────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _build_base_messages(
-        user_message: str,
-        system_prompt: str,
-        reasoning_prompt: str,
-        context: AgentContext,
-    ) -> list[dict[str, Any]]:
-        """Build shared base messages for all specialists."""
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "system", "content": reasoning_prompt},
-        ]
-
-        context_parts: list[str] = []
-        if context.patient_names:
-            names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
-            context_parts.append("Patient names:\n" + "\n".join(names))
-        if context.facts:
-            facts = [f"- {f['key']}: {f['value']}" for f in context.facts[:10]]
-            context_parts.append("Known patient facts:\n" + "\n".join(facts))
-        if context.thread_summary:
-            context_parts.append(f"Conversation summary:\n{context.thread_summary}")
-
-        if context_parts:
-            messages.append({
-                "role": "system",
-                "content": "PATIENT CONTEXT:\n\n" + "\n\n".join(context_parts),
-            })
-
-        messages.extend(context.history[-8:])
-        messages.append({"role": "user", "content": user_message})
-        return messages
 
     @staticmethod
     def _combine_findings(findings: list[SpecialistFindings]) -> str:

@@ -127,7 +127,8 @@ class PersistenceService:
             if existing and existing.turn_count >= turn_count - 1:
                 return
 
-            conv_text = "\n".join(f"{t.role}: {t.content[:200]}" for t in turns[-12:])
+            from lib.ai_foundation.config import settings as _settings
+            conv_text = "\n".join(f"{t.role}: {t.content[:_settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns[-12:])
 
             from lib.ai_foundation.models.registry import ModelTask
             response = await self._gateway.complete(
