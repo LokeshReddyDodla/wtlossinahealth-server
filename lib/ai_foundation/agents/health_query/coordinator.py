@@ -291,7 +291,7 @@ class Coordinator:
                 logger.warning("Coordinator reflection failed: %s", exc)
 
         # ── 4. Stream final response ──
-        yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building your personalized insights...")
+        yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building personalized insights...")
 
         responder_messages = self._build_responder_messages(
             base_messages=base_messages,

@@ -52,10 +52,11 @@ class DomainSpec:
 # Pre-built domain specs
 
 _LANE_RULE = (
-    "\n\nIMPORTANT: You are ONLY responsible for your domain. "
-    "Do NOT fetch or discuss data from other domains (other specialists handle those). "
-    "Only use the data_types listed in your tool descriptions. "
-    "If you find no data in your domain, say so briefly and stop — do not try other data types."
+    "\n\nIMPORTANT RULES:"
+    "\n1. You MUST call at least one tool before responding. NEVER assume data exists or doesn't — always check by calling look_up or another tool. You have NO data in your context until you fetch it."
+    "\n2. You are ONLY responsible for your domain. Do NOT fetch or discuss data from other domains (other specialists handle those)."
+    "\n3. Only use the data_types listed in your tool descriptions."
+    "\n4. If tools return no data, say so briefly and stop."
 )
 
 GLUCOSE_SPEC = DomainSpec(
