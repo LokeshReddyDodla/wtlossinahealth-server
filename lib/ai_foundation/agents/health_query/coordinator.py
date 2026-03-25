@@ -300,12 +300,15 @@ class Coordinator:
             reflection=reflection_result,
         )
 
+        full_response_parts: list[str] = []
+
         async for chunk in self._gateway.stream(
             messages=responder_messages,
             task=ModelTask.RESPONSE_GENERATION,
             model_id=tier_cfg.responder_model,
         ):
             if chunk.delta:
+                full_response_parts.append(chunk.delta)
                 yield sse_token(chunk.delta)
             if chunk.finished and chunk.usage:
                 total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
@@ -317,6 +320,7 @@ class Coordinator:
                 "tools_called": total_tools,
                 "tier": tier.value,
                 "domains": domains,
+                "full_response": "".join(full_response_parts),
             },
         ))
 

@@ -193,8 +193,6 @@ class HealthQueryAgent(BaseAgent):
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
-            full_parts: list[str] = []
-
             if self.coordinator and len(specialist_domains) > 1 and tier != ReasoningTier.BASIC:
                 event_source = self.coordinator.orchestrate_stream(
                     user_message=input.message,
@@ -218,19 +216,18 @@ class HealthQueryAgent(BaseAgent):
                 )
 
             async for event in event_source:
-                # Collect token events to reconstruct full response
-                if 'event: token' in event:
-                    import json as _json
+                # Intercept done event to save turn and inject suggestions
+                if 'event: done' in event:
+                    # Extract full_response from the done payload
+                    full_text = ""
                     try:
+                        import json as _json
                         data_line = event.split("data: ", 1)[1].split("\n")[0]
-                        delta = _json.loads(data_line).get("delta", "")
-                        full_parts.append(delta)
-                    except (IndexError, ValueError):
+                        done_data = _json.loads(data_line)
+                        full_text = done_data.get("data", {}).get("full_response", "")
+                    except (IndexError, ValueError, KeyError):
                         pass
 
-                # Forward the done event with extra metadata
-                if 'event: done' in event:
-                    full_text = "".join(full_parts)
                     output = AgentOutput(
                         message=full_text, is_ready=True,
                         trace_id=trace.trace_id if trace else None,
@@ -238,7 +235,7 @@ class HealthQueryAgent(BaseAgent):
                     await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                     self._schedule_background(input)
 
-                    # Inject suggestions and trace into the done event
+                    # Emit our own done event with suggestions and trace
                     elapsed = int((time.perf_counter() - pipeline_start) * 1000)
                     yield sse_done(SSEDonePayload(
                         suggestions=[s.model_dump() for s in intent.suggestions],

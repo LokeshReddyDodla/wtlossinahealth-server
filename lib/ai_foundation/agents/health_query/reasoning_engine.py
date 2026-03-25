@@ -469,6 +469,7 @@ class ReasoningEngine:
 
         # Build responder messages
         responder_messages = self._build_responder_messages(messages, response_prompt)
+        full_response_parts: list[str] = []
 
         async for chunk in self._gateway.stream(
             messages=responder_messages,
@@ -476,6 +477,7 @@ class ReasoningEngine:
             model_id=tier_cfg.responder_model,
         ):
             if chunk.delta:
+                full_response_parts.append(chunk.delta)
                 yield sse_token(chunk.delta)
             if chunk.finished and chunk.usage:
                 total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
@@ -486,6 +488,7 @@ class ReasoningEngine:
                 "rounds_used": rounds_used,
                 "tools_called": total_tools,
                 "tier": tier.value,
+                "full_response": "".join(full_response_parts),
             },
         ))
 
