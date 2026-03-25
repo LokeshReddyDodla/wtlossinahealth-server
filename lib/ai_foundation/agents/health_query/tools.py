@@ -28,8 +28,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-from lib.ai_foundation.config import settings as _settings
-
 # Structural sentinel — tool results starting with this prefix indicate empty results.
 # Used by reasoning engine and specialists for early-exit decisions.
 NO_DATA_PREFIX = "[NO_DATA] "
@@ -363,12 +361,7 @@ class ToolExecutor:
         data_types = args.get("data_types", [])
         date_start = args.get("date_start")
         date_end = args.get("date_end")
-        limit = args.get("limit", _settings.LOOKUP_DEFAULT_LIMIT)
-
-        logger.info(
-            "look_up: data_types=%s patient_ids=%s date_start=%s date_end=%s limit=%s",
-            data_types, patient_ids, date_start, date_end, limit,
-        )
+        limit = args.get("limit", settings.LOOKUP_DEFAULT_LIMIT)
 
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
@@ -378,8 +371,6 @@ class ToolExecutor:
             date_end=date_end,
             limit=limit,
         ))
-
-        logger.info("look_up: %d results returned", len(results))
 
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
@@ -399,7 +390,7 @@ class ToolExecutor:
             data_types=[],  # all types
             date_start=date,
             date_end=date + "T23:59:59",
-            limit=_settings.QDRANT_RESULT_LIMIT,
+            limit=settings.QDRANT_RESULT_LIMIT,
             filters={"hour_start": hour_start, "hour_end": hour_end} if hour_start > 0 or hour_end < 24 else {},
         ))
 
@@ -450,7 +441,7 @@ class ToolExecutor:
             data_types=data_types,
             date_start=start,
             date_end=now.isoformat(),
-            limit=_settings.QDRANT_RESULT_LIMIT,
+            limit=settings.QDRANT_RESULT_LIMIT,
         ))
 
         if not results:
@@ -543,7 +534,7 @@ class ToolExecutor:
     @staticmethod
     def _cap_result(text: str) -> str:
         """Cap tool result to prevent context bloat."""
-        max_chars = _settings.REASONING_MAX_TOOL_RESULT_CHARS
+        max_chars = settings.REASONING_MAX_TOOL_RESULT_CHARS
         if len(text) > max_chars:
             return text[:max_chars] + "\n... (truncated — ask for a narrower query)"
         return text

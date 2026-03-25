@@ -12,10 +12,13 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from lib.ai_foundation.config import settings
+from lib.ai_foundation.memory.base import ConversationTurn, ThreadSummary
+from lib.ai_foundation.models.registry import ModelTask
+
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
-    from lib.ai_foundation.models.registry import ModelTask
     from lib.ai_foundation.agents.state import AgentInput
     from lib.ai_foundation.agents.health_query.contracts import QueryIntent
 
@@ -56,9 +59,6 @@ class PersistenceService:
         if not self._memory or not thread_id:
             return
 
-        from datetime import datetime, timezone
-        from lib.ai_foundation.memory.base import ConversationTurn
-
         now = datetime.now(timezone.utc)
         user_ts = user_timestamp if user_timestamp else now
         assistant_ts = now  # always "now" — when the response was generated
@@ -68,7 +68,6 @@ class PersistenceService:
             if patient_ids:
                 existing = await self._memory.get_thread_summary(thread_id)
                 if not existing:
-                    from lib.ai_foundation.memory.base import ThreadSummary
                     await self._memory.save_thread_summary(thread_id, ThreadSummary(
                         thread_id=thread_id,
                         patient_ids=patient_ids,
@@ -112,7 +111,6 @@ class PersistenceService:
             # Generate title on turn 2 (first complete exchange)
             if turn_count >= 2 and (not existing or not existing.title):
                 title = await self._generate_title(turns[:2])
-                from lib.ai_foundation.memory.base import ThreadSummary
                 summary = existing or ThreadSummary(thread_id=thread_id, summary="", turn_count=turn_count)
                 summary.title = title
                 summary.turn_count = turn_count
@@ -127,10 +125,8 @@ class PersistenceService:
             if existing and existing.turn_count >= turn_count - 1:
                 return
 
-            from lib.ai_foundation.config import settings as _settings
-            conv_text = "\n".join(f"{t.role}: {t.content[:_settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns[-12:])
+            conv_text = "\n".join(f"{t.role}: {t.content[:settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns[-12:])
 
-            from lib.ai_foundation.models.registry import ModelTask
             response = await self._gateway.complete(
                 messages=[
                     {"role": "system", "content": (
@@ -211,7 +207,6 @@ class PersistenceService:
             return first_user_msg[:50] + ("..." if len(first_user_msg) > 50 else "")
 
         try:
-            from lib.ai_foundation.models.registry import ModelTask
             response = await self._gateway.complete(
                 messages=[
                     {"role": "system", "content": (
