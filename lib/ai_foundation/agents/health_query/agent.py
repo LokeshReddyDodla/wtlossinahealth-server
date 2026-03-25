@@ -119,6 +119,7 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
+                    intent_data_types=[dt.value for dt in intent.data_types],
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -213,6 +214,7 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
+                    intent_data_types=[dt.value for dt in intent.data_types],
                 )
 
             async for event in event_source:
@@ -405,13 +407,10 @@ class HealthQueryAgent(BaseAgent):
     def _resolve_tier(input: AgentInput) -> ReasoningTier:
         """Resolve reasoning tier from input context or default."""
         tier_str = (input.context.metadata or {}).get("tier", settings.REASONING_DEFAULT_TIER)
-        resolved = ReasoningTier.STANDARD
         try:
-            resolved = ReasoningTier(tier_str)
+            return ReasoningTier(tier_str)
         except ValueError:
-            pass
-        logger.info("Reasoning tier: requested=%s resolved=%s", tier_str, resolved.value)
-        return resolved
+            return ReasoningTier.STANDARD
 
     def to_query_response(self, input: AgentInput, output: AgentOutput) -> QueryResponse:
         return QueryResponse(
