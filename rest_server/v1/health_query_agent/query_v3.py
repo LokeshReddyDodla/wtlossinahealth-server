@@ -12,8 +12,12 @@ Endpoints:
     POST /query/v3/stream — SSE streaming (token-by-token)
 """
 
+import logging
+
 from fastapi import Depends
 from starlette.responses import StreamingResponse
+
+_logger = logging.getLogger(__name__)
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
@@ -74,6 +78,8 @@ def _build_agent_input(
     metadata: dict = {}
     if payload.tier:
         metadata["tier"] = payload.tier
+
+    _logger.info("Building agent input: tier=%s metadata=%s", payload.tier, metadata)
 
     return AgentInput(
         message=payload.message,
