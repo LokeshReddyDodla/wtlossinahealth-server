@@ -97,6 +97,7 @@ class HealthQueryAgent(BaseAgent):
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
+
             if self.coordinator and len(specialist_domains) > 1 and tier != ReasoningTier.BASIC:
                 # Multi-agent path
                 result = await self.coordinator.orchestrate(
@@ -120,6 +121,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_ids=patient_ids,
                     tier=tier,
                     intent_data_types=[dt.value for dt in intent.data_types],
+                    patient_names=ctx.patient_names,
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -194,6 +196,7 @@ class HealthQueryAgent(BaseAgent):
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
+
             if self.coordinator and len(specialist_domains) > 1 and tier != ReasoningTier.BASIC:
                 event_source = self.coordinator.orchestrate_stream(
                     user_message=input.message,
@@ -215,6 +218,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_ids=patient_ids,
                     tier=tier,
                     intent_data_types=[dt.value for dt in intent.data_types],
+                    patient_names=ctx.patient_names,
                 )
 
             async for event in event_source:

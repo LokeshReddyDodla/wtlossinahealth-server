@@ -178,6 +178,7 @@ class ReasoningEngine:
         patient_ids: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
+        patient_names: dict[str, str] | None = None,
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         async for item in self._reason_core(
@@ -189,6 +190,7 @@ class ReasoningEngine:
             patient_ids=patient_ids,
             tier=tier,
             intent_data_types=intent_data_types,
+            patient_names=patient_names,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -207,6 +209,7 @@ class ReasoningEngine:
         patient_ids: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
+        patient_names: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Run the reasoning loop, yielding SSE events as the doctor thinks."""
         async for item in self._reason_core(
@@ -218,6 +221,7 @@ class ReasoningEngine:
             patient_ids=patient_ids,
             tier=tier,
             intent_data_types=intent_data_types,
+            patient_names=patient_names,
             emit_events=True,
         ):
             if isinstance(item, str):
@@ -236,6 +240,7 @@ class ReasoningEngine:
         patient_ids: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
+        patient_names: dict[str, str] | None = None,
         emit_events: bool = False,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
@@ -267,6 +272,7 @@ class ReasoningEngine:
                 tier_cfg=tier_cfg,
                 patient_ids=patient_ids,
                 seen_calls=seen_calls,
+                patient_names=patient_names,
             )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -307,6 +313,7 @@ class ReasoningEngine:
                         "look_up",
                         {"data_types": intent_data_types, "limit": 15},
                         patient_ids,
+                        patient_names=patient_names,
                     )
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
@@ -341,7 +348,7 @@ class ReasoningEngine:
             step = ReasoningStep(round=round_num, thought=response.content)
 
             # Execute tool round via shared helper
-            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
             messages.append(tool_round.assistant_message)
             messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
@@ -407,6 +414,7 @@ class ReasoningEngine:
                 steps=steps,
                 total_cost=total_cost,
                 total_tools=total_tools,
+                patient_names=patient_names,
             )
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
@@ -476,6 +484,7 @@ class ReasoningEngine:
         tier_cfg: TierConfig,
         patient_ids: list[str],
         seen_calls: set[str],
+        patient_names: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Generate and execute Phase 1 of the investigation plan.
 
@@ -505,7 +514,7 @@ class ReasoningEngine:
             if not calls:
                 return {"cost": 0, "tools_called": 0, "steps": [], "plan_obj": plan}
 
-            results = await self._tools.execute_parallel(calls, patient_ids)
+            results = await self._tools.execute_parallel(calls, patient_ids, patient_names=patient_names)
 
             # Build a synthetic reasoning step for the plan execution
             plan_step = ReasoningStep(
@@ -563,6 +572,7 @@ class ReasoningEngine:
         steps: list[ReasoningStep],
         total_cost: float,
         total_tools: int,
+        patient_names: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Run reflection and optional gap-filling follow-up.
 
@@ -613,7 +623,7 @@ class ReasoningEngine:
                 total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
                 if response.has_tool_calls:
-                    tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+                    tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
                     messages.append(tool_round.assistant_message)
                     messages.extend(tool_round.tool_messages)
                     total_tools += tool_round.executed_count

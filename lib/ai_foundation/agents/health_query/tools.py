@@ -219,20 +219,22 @@ class ToolExecutor:
         tool_name: str,
         arguments: dict[str, Any],
         patient_ids: list[str],
+        patient_names: dict[str, str] | None = None,
     ) -> str:
         """Execute a tool and return formatted text result."""
         if not self._qdrant:
             return "No data source available."
 
+        names = patient_names or {}
         try:
             if tool_name == "look_up":
-                return await self._look_up(arguments, patient_ids)
+                return await self._look_up(arguments, patient_ids, names)
             elif tool_name == "investigate_day":
-                return await self._investigate_day(arguments, patient_ids)
+                return await self._investigate_day(arguments, patient_ids, names)
             elif tool_name == "compare_baseline":
-                return await self._compare_baseline(arguments, patient_ids)
+                return await self._compare_baseline(arguments, patient_ids, names)
             elif tool_name == "find_patterns":
-                return await self._find_patterns(arguments, patient_ids)
+                return await self._find_patterns(arguments, patient_ids, names)
             else:
                 return f"Unknown tool: {tool_name}"
         except Exception as exc:
@@ -243,17 +245,10 @@ class ToolExecutor:
         self,
         calls: list[tuple[str, dict[str, Any]]],
         patient_ids: list[str],
+        patient_names: dict[str, str] | None = None,
     ) -> list[str]:
-        """Execute multiple tool calls concurrently.
-
-        Args:
-            calls: List of (tool_name, arguments) tuples.
-            patient_ids: Patient IDs to query against.
-
-        Returns:
-            List of result strings in the same order as input calls.
-        """
-        tasks = [self.execute(name, args, patient_ids) for name, args in calls]
+        """Execute multiple tool calls concurrently."""
+        tasks = [self.execute(name, args, patient_ids, patient_names) for name, args in calls]
         return list(await asyncio.gather(*tasks))
 
     async def execute_tool_round(
@@ -261,6 +256,7 @@ class ToolExecutor:
         response: LLMToolResponse,
         patient_ids: list[str],
         seen_calls: set[str],
+        patient_names: dict[str, str] | None = None,
     ) -> ToolRoundResult:
         """Execute one round of tool calls with dedup, returning a ToolRoundResult.
 
@@ -285,6 +281,7 @@ class ToolExecutor:
             results = await self.execute_parallel(
                 [(name, args) for name, args, _ in to_execute],
                 patient_ids,
+                patient_names,
             )
         else:
             results = []
@@ -356,12 +353,17 @@ class ToolExecutor:
 
     # ── Tool implementations ──────────────────────────────────────────────
 
-    async def _look_up(self, args: dict, patient_ids: list[str]) -> str:
+    async def _look_up(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Fetch specific health data records."""
         data_types = args.get("data_types", [])
         date_start = args.get("date_start")
         date_end = args.get("date_end")
         limit = args.get("limit", settings.LOOKUP_DEFAULT_LIMIT)
+
+        logger.info(
+            "look_up: types=%s dates=%s→%s pids=%s limit=%s",
+            data_types, date_start, date_end, patient_ids[:1], limit,
+        )
 
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
@@ -372,12 +374,14 @@ class ToolExecutor:
             limit=limit,
         ))
 
+        logger.info("look_up: %d results returned", len(results))
+
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
 
         return self._format_results(results)
 
-    async def _investigate_day(self, args: dict, patient_ids: list[str]) -> str:
+    async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
         date = args.get("date", "")
         hour_start = args.get("hour_start", 0)
@@ -412,6 +416,10 @@ class ToolExecutor:
             # Build readable line
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
+            pid = p.get("patient_id", "")
+            name = self._patient_names.get(pid)
+            if name:
+                clean["patient"] = name
 
             parts = []
             for k, v in clean.items():
@@ -427,7 +435,7 @@ class ToolExecutor:
 
         return self._cap_result("\n".join(lines))
 
-    async def _compare_baseline(self, args: dict, patient_ids: list[str]) -> str:
+    async def _compare_baseline(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get statistical baseline for comparison."""
         data_types = args.get("data_types", [])
         days = args.get("days", 30)
@@ -455,6 +463,10 @@ class ToolExecutor:
             p = r.payload
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
+            pid = p.get("patient_id", "")
+            name = self._patient_names.get(pid)
+            if name:
+                clean["patient"] = name
             parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
             lines.append(f"  - {', '.join(parts)}")
 
@@ -463,7 +475,7 @@ class ToolExecutor:
 
         return self._cap_result("\n".join(lines))
 
-    async def _find_patterns(self, args: dict, patient_ids: list[str]) -> str:
+    async def _find_patterns(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Semantic search for patterns in patient history."""
         query = args.get("query", "")
         days_back = args.get("days_back", 30)
@@ -490,6 +502,10 @@ class ToolExecutor:
             score = f" (relevance: {r.score:.2f})" if r.score else ""
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
+            pid = p.get("patient_id", "")
+            name = self._patient_names.get(pid)
+            if name:
+                clean["patient"] = name
             parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
             lines.append(f"  - [{dt}]{score} {', '.join(parts)}")
 
@@ -497,8 +513,7 @@ class ToolExecutor:
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
-    @staticmethod
-    def _format_results(results: list[RetrievalResult]) -> str:
+    def _format_results(self, results: list[RetrievalResult]) -> str:
         """Format results as readable text grouped by data type."""
         by_type: dict[str, list[dict]] = {}
         for r in results:
@@ -512,6 +527,11 @@ class ToolExecutor:
             for item in items[:settings.MAX_RECORDS_PER_TYPE]:
                 clean = {k: v for k, v in item.items()
                          if k not in ("data_type", "source", "patient_id", "embedding") and v is not None}
+                # Inject patient name so the LLM knows who this record belongs to
+                pid = item.get("patient_id", "")
+                name = (names or {}).get(pid)
+                if name:
+                    clean["patient"] = name
                 parts: list[str] = []
                 for k, v in clean.items():
                     if isinstance(v, dict):
