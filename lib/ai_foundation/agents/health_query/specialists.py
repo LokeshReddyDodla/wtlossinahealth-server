@@ -108,11 +108,43 @@ VITALS_SPEC = DomainSpec(
     ),
 )
 
+SLEEP_SPEC = DomainSpec(
+    domain="sleep",
+    data_types=["sleep"],
+    system_prompt=(
+        "You are a sleep analysis specialist for diabetic/obese patients. Focus on:\n"
+        "- Sleep duration trends (recommended 7-9 hours for metabolic health)\n"
+        "- Sleep quality patterns and disturbances\n"
+        "- Correlation between poor sleep and next-day glucose control\n"
+        "- Sleep apnea indicators (very common in obese patients)\n"
+        "- Late meal timing impact on sleep quality\n"
+        "- Sleep consistency (regular vs irregular schedule)\n"
+        "- Flag concerning patterns: chronic short sleep, frequent waking, deteriorating quality"
+    ),
+)
+
+DOCUMENTS_SPEC = DomainSpec(
+    domain="documents",
+    data_types=["patient_document"],
+    system_prompt=(
+        "You are a medical documents specialist. Focus on:\n"
+        "- Lab results: HbA1c trends, lipid panel, kidney function (eGFR, creatinine)\n"
+        "- Prescription history: medication changes, dosage adjustments\n"
+        "- Clinical notes: doctor observations, treatment plans\n"
+        "- Test results: thyroid, liver function, vitamin levels\n"
+        "- Connect lab values to the patient's current glucose/weight trends\n"
+        "- Track HbA1c progression over time (the gold standard for diabetes control)\n"
+        "- Flag overdue labs or missing follow-ups based on last test dates"
+    ),
+)
+
 DEFAULT_SPECS: dict[str, DomainSpec] = {
     "glucose": GLUCOSE_SPEC,
     "nutrition": NUTRITION_SPEC,
     "fitness": FITNESS_SPEC,
     "vitals": VITALS_SPEC,
+    "sleep": SLEEP_SPEC,
+    "documents": DOCUMENTS_SPEC,
 }
 
 

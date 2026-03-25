@@ -186,7 +186,7 @@ from lib.ai_foundation.agents.health_query.tools import ToolExecutor
 from lib.ai_foundation.agents.health_query.planner import InvestigationPlanner
 from lib.ai_foundation.agents.health_query.reflector import ReflectionEngine
 from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngine
-from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC
+from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC, SLEEP_SPEC, DOCUMENTS_SPEC
 from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
@@ -1699,6 +1699,8 @@ def _build_specialists() -> dict[str, Specialist]:
         "nutrition": Specialist(domain_spec=NUTRITION_SPEC, gateway=gw, tool_executor=te),
         "fitness": Specialist(domain_spec=FITNESS_SPEC, gateway=gw, tool_executor=te),
         "vitals": Specialist(domain_spec=VITALS_SPEC, gateway=gw, tool_executor=te),
+        "sleep": Specialist(domain_spec=SLEEP_SPEC, gateway=gw, tool_executor=te),
+        "documents": Specialist(domain_spec=DOCUMENTS_SPEC, gateway=gw, tool_executor=te),
     }
 
 container.register(
