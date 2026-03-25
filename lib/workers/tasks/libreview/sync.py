@@ -45,7 +45,7 @@ async def sync_patient_libreview(
                 logger.error(f"[sync_patient_libreview] {error_msg}")
                 return TaskResult(success=False, error=error_msg)
 
-            libreview_id = connected_app.libreview.libreview_id
+            libreview_id = connected_app.libreview.libreview_id.strip()
             logger.info(f"[sync_patient_libreview] Found LibreView ID: {libreview_id}")
 
         # Step 2-5: Sync data from LibreView (solve captcha, request, poll, download)
