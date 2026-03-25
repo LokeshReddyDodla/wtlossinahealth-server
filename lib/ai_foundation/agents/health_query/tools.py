@@ -360,6 +360,11 @@ class ToolExecutor:
         date_end = args.get("date_end")
         limit = args.get("limit", settings.LOOKUP_DEFAULT_LIMIT)
 
+        logger.info(
+            "look_up: types=%s dates=%s→%s pids=%s limit=%s",
+            data_types, date_start, date_end, patient_ids[:1], limit,
+        )
+
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
             patient_ids=patient_ids,
@@ -368,6 +373,8 @@ class ToolExecutor:
             date_end=date_end,
             limit=limit,
         ))
+
+        logger.info("look_up: %d results returned", len(results))
 
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
