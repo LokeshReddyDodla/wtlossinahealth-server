@@ -27,6 +27,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_NO_DATA_MARKERS = ("no ", "no data", "not found", "no recorded", "no recent")
+
+
+def _is_no_data(result: str) -> bool:
+    """Check if a tool result indicates no data was found."""
+    lower = result.strip().lower()[:80]
+    return any(lower.startswith(m) for m in _NO_DATA_MARKERS)
+
 
 # ── Domain Configuration ───────────────────────────────────────────────────
 
@@ -283,6 +291,16 @@ class Specialist:
                         "content": result_text,
                     })
 
+                # Early exit: if all results are "no data", stop investigating
+                if all(_is_no_data(r) for r in results):
+                    for tc_id in duplicate_ids:
+                        specialist_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": "Already fetched. Try different parameters.",
+                        })
+                    break
+
             # Every tool_call_id MUST have a tool result — add dup warnings
             for tc_id in duplicate_ids:
                 specialist_messages.append({
@@ -375,6 +393,16 @@ class Specialist:
                         "tool_call_id": tc_id,
                         "content": result_text,
                     })
+
+                # Early exit: no data means nothing more to investigate
+                if all(_is_no_data(r) for r in results):
+                    for tc_id in duplicate_ids:
+                        specialist_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": "Already fetched. Try different parameters.",
+                        })
+                    break
 
             # Every tool_call_id MUST have a tool result
             for tc_id in duplicate_ids:

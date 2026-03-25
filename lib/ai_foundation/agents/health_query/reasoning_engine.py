@@ -52,6 +52,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_NO_DATA_MARKERS = ("no ", "no data", "not found", "no recorded", "no recent")
+
+
+def _is_no_data(result: str) -> bool:
+    """Check if a tool result indicates no data was found."""
+    lower = result.strip().lower()[:80]
+    return any(lower.startswith(m) for m in _NO_DATA_MARKERS)
+
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
 
@@ -267,6 +275,10 @@ class ReasoningEngine:
                 })
 
             steps.append(step)
+
+            # Early exit: if all results indicate no data, stop investigating
+            if results and all(_is_no_data(r) for r in results):
+                break
         else:
             # Max rounds reached — add hint to wrap up
             messages.append({
@@ -432,6 +444,10 @@ class ReasoningEngine:
                 })
 
             rounds_used = round_num
+
+            # Early exit: no data means nothing more to investigate
+            if results and all(_is_no_data(r) for r in results):
+                break
         else:
             messages.append({
                 "role": "system",
