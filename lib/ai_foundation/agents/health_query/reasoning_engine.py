@@ -652,11 +652,14 @@ class ReasoningEngine:
                     messages.append(assistant_msg)
 
                     to_execute = []
+                    duplicate_ids: list[str] = []
                     for tc in response.tool_calls:
                         call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
                         if call_key not in seen_calls:
                             seen_calls.add(call_key)
                             to_execute.append((tc.function_name, tc.arguments, tc.id))
+                        else:
+                            duplicate_ids.append(tc.id)
 
                     if to_execute:
                         results = await self._tools.execute_parallel(
@@ -671,6 +674,13 @@ class ReasoningEngine:
                                 "tool_call_id": tc_id,
                                 "content": result_text,
                             })
+
+                    for tc_id in duplicate_ids:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc_id,
+                            "content": "Already fetched. Try different parameters.",
+                        })
 
                 # Re-reflect if we have budget for another round
                 if reflection_round < max_reflection_rounds - 1:

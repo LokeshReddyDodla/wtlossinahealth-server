@@ -248,14 +248,18 @@ class Specialist:
                 ],
             })
 
-            # Execute tools in parallel
-            to_execute = []
+            # Partition: new vs duplicate
+            to_execute: list[tuple[str, dict, str]] = []
+            duplicate_ids: list[str] = []
             for tc in response.tool_calls:
                 call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
                 if call_key not in seen_calls:
                     seen_calls.add(call_key)
                     to_execute.append((tc.function_name, tc.arguments, tc.id))
+                else:
+                    duplicate_ids.append(tc.id)
 
+            # Execute non-duplicates in parallel
             if to_execute:
                 results = await self._tools.execute_parallel(
                     [(name, args) for name, args, _ in to_execute],
@@ -270,6 +274,14 @@ class Specialist:
                         "tool_call_id": tc_id,
                         "content": result_text,
                     })
+
+            # Every tool_call_id MUST have a tool result — add dup warnings
+            for tc_id in duplicate_ids:
+                specialist_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": "Already fetched. Try different parameters.",
+                })
 
         return SpecialistFindings(
             domain=self._spec.domain,
@@ -330,13 +342,16 @@ class Specialist:
                 ],
             })
 
-            to_execute = []
+            to_execute: list[tuple[str, dict, str]] = []
+            duplicate_ids: list[str] = []
             for tc in response.tool_calls:
                 call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
                 if call_key not in seen_calls:
                     seen_calls.add(call_key)
                     to_execute.append((tc.function_name, tc.arguments, tc.id))
                     yield sse_tool_call(tc.function_name, tc.arguments)
+                else:
+                    duplicate_ids.append(tc.id)
 
             if to_execute:
                 results = await self._tools.execute_parallel(
@@ -352,3 +367,11 @@ class Specialist:
                         "tool_call_id": tc_id,
                         "content": result_text,
                     })
+
+            # Every tool_call_id MUST have a tool result
+            for tc_id in duplicate_ids:
+                specialist_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": "Already fetched. Try different parameters.",
+                })
