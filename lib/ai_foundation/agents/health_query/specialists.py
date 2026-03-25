@@ -27,13 +27,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_NO_DATA_MARKERS = ("no ", "no data", "not found", "no recorded", "no recent")
-
-
 def _is_no_data(result: str) -> bool:
-    """Check if a tool result indicates no data was found."""
-    lower = result.strip().lower()[:80]
-    return any(lower.startswith(m) for m in _NO_DATA_MARKERS)
+    """Check if a tool result indicates no data was found.
+
+    Uses the structural NO_DATA_PREFIX sentinel set by ToolExecutor,
+    not fragile string matching on natural language.
+    """
+    from lib.ai_foundation.agents.health_query.tools import NO_DATA_PREFIX
+    return result.startswith(NO_DATA_PREFIX)
 
 
 # ── Domain Configuration ───────────────────────────────────────────────────

@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 _MAX_TOOL_RESULT_CHARS = 2000
 
+# Structural sentinel — tool results starting with this prefix indicate empty results.
+# Used by reasoning engine and specialists for early-exit decisions.
+NO_DATA_PREFIX = "[NO_DATA] "
+
 # Maps specialist domain → Qdrant data_type values the specialist should use
 _DOMAIN_DATA_TYPES: dict[str, list[str]] = {
     "glucose": [
@@ -266,7 +270,7 @@ class ToolExecutor:
         ))
 
         if not results:
-            return f"No {', '.join(data_types)} data found for the specified period."
+            return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
 
         return self._format_results(results)
 
@@ -288,7 +292,7 @@ class ToolExecutor:
         ))
 
         if not results:
-            return f"No health data found for {date}."
+            return f"{NO_DATA_PREFIX}No health data found for {date}."
 
         # Sort by time fields for chronological view
         sorted_items = sorted(
@@ -338,7 +342,7 @@ class ToolExecutor:
         ))
 
         if not results:
-            return f"No {', '.join(data_types)} data found in the last {days} days."
+            return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found in the last {days} days."
 
         # Format as baseline summary + individual entries
         lines = [f"Baseline ({days} days, {len(results)} entries):"]
@@ -374,7 +378,7 @@ class ToolExecutor:
         ))
 
         if not results:
-            return f"No matching patterns found for: '{query}'"
+            return f"{NO_DATA_PREFIX}No matching patterns found for: '{query}'"
 
         lines = [f"Pattern search: '{query}' ({len(results)} matches):"]
         for r in results:
