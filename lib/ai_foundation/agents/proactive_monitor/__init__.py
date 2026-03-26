@@ -7,12 +7,13 @@ EventBus for notification delivery.
 """
 
 from .agent import ProactiveMonitorAgent
-from .contracts import HealthInsight, InsightSeverity, InsightCategory, ScanResult
+from .contracts import HealthInsight, InsightSeverity, InsightCategory, ScanInsights, ScanResult
 
 __all__ = [
     "HealthInsight",
     "InsightCategory",
     "InsightSeverity",
     "ProactiveMonitorAgent",
+    "ScanInsights",
     "ScanResult",
 ]

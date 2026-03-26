@@ -49,7 +49,7 @@ class HealthInsight(BaseModel):
     severity: InsightSeverity
     title: str = Field(description="Short title for push notification (< 60 chars).")
     body: str = Field(description="Insight message (< 200 chars for push, longer for in-app).")
-    patient_id: str
+    patient_id: str = ""
     data: dict[str, Any] = Field(
         default_factory=dict,
         description="Supporting data (metrics, comparisons, etc.).",
@@ -63,6 +63,15 @@ class HealthInsight(BaseModel):
         description="A query the patient could ask the health agent for more details.",
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ScanInsights(BaseModel):
+    """Structured extraction model for multiple insights from a scan."""
+
+    insights: list[HealthInsight] = Field(
+        default_factory=list,
+        description="List of noteworthy health insights found during the scan.",
+    )
 
 
 class ScanResult(BaseModel):

@@ -1655,11 +1655,13 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Proactive Monitor Agent — background health scanning
+# Proactive Monitor Agent — background health scanning (ReasoningEngine-powered)
 container.register(
     ProactiveMonitorAgent,
     lambda: ProactiveMonitorAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        reasoning_engine=cast(ReasoningEngine, container.resolve(ReasoningEngine)),
+        tool_executor=cast(ToolExecutor, container.resolve(ToolExecutor)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
