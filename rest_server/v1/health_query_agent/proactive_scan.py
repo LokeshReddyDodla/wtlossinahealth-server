@@ -80,7 +80,7 @@ async def trigger_proactive_scan(
             fcm = FCMService()
             # Send only the most severe insight — avoid notification spam
             severity_rank = {"alert": 4, "warning": 3, "attention": 2, "info": 1}
-            notifiable = [i for i in result.insights if i.severity.value in ("attention", "warning", "alert")]
+            notifiable = list(result.insights)
             if notifiable:
                 top_insight = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
                 is_urgent = top_insight.severity.value in ("warning", "alert")
