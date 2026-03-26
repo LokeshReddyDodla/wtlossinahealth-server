@@ -182,6 +182,7 @@ from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOS
 from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
+from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
 # Initialize Container
 container = Container()
@@ -1655,6 +1656,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Insight Tracker — dedup + escalation for proactive monitor
+container.register(
+    InsightTracker,
+    lambda: InsightTracker(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Proactive Monitor Agent — background health scanning (ReasoningEngine-powered)
 container.register(
     ProactiveMonitorAgent,
@@ -1665,6 +1675,7 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
+        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
     ),
     scope=Scope.singleton,
 )

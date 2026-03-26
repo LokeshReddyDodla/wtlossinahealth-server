@@ -79,10 +79,12 @@ class ProactiveMonitorAgent(BaseAgent):
         event_bus: Any | None = None,
         prompts: Any | None = None,
         memory: Any | None = None,
+        insight_tracker: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._reasoning_engine = reasoning_engine
         self._tools = tool_executor
+        self._insight_tracker = insight_tracker
         self._prompts_registered = False
 
     # -- Public API ---------------------------------------------------------
@@ -132,7 +134,10 @@ class ProactiveMonitorAgent(BaseAgent):
                 result.response, patient_id, patient_name,
             )
 
-            # 5. Publish insights via EventBus
+            # 5. Dedup + escalation via InsightTracker
+            insights = await self._filter_insights(patient_id, insights)
+
+            # 6. Publish insights via EventBus
             for insight in insights:
                 await self._publish_insight(insight)
 
@@ -261,6 +266,43 @@ class ProactiveMonitorAgent(BaseAgent):
         except Exception as exc:
             logger.warning("Insight extraction failed: %s", exc)
             return []
+
+    async def _filter_insights(
+        self,
+        patient_id: str,
+        insights: list[HealthInsight],
+    ) -> list[HealthInsight]:
+        """Filter insights through dedup + escalation via InsightTracker."""
+        if not self._insight_tracker:
+            return insights
+
+        filtered: list[HealthInsight] = []
+        for insight in insights:
+            try:
+                should_send, escalated_severity = await self._insight_tracker.should_send(
+                    patient_id, insight.category.value,
+                )
+                if should_send:
+                    # Update severity based on escalation
+                    if escalated_severity != "info":
+                        insight.severity = InsightSeverity(escalated_severity)
+                    filtered.append(insight)
+                    await self._insight_tracker.record(
+                        patient_id,
+                        insight.category.value,
+                        insight.severity.value,
+                        insight.body,
+                    )
+                else:
+                    logger.debug(
+                        "Dedup: skipping %s for patient %s (sent recently)",
+                        insight.category.value, patient_id,
+                    )
+            except Exception as exc:
+                logger.warning("InsightTracker error for %s: %s", patient_id, exc)
+                filtered.append(insight)  # fail-open: send anyway
+
+        return filtered
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
         """Publish an insight to the EventBus for notification delivery."""
