@@ -391,8 +391,8 @@ class ToolExecutor:
     async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
         date = args.get("date", "")
-        hour_start = args.get("hour_start", 0)
-        hour_end = args.get("hour_end", 24)
+        hour_start = int(args.get("hour_start", 0))
+        hour_end = int(args.get("hour_end", 24))
 
         # Fetch ALL data types for this day
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
@@ -409,9 +409,10 @@ class ToolExecutor:
             return f"{NO_DATA_PREFIX}No health data found for {date}."
 
         # Sort by time fields for chronological view
+        # str() ensures consistent type — start_time (epoch int) vs time (string) won't crash
         sorted_items = sorted(
             results,
-            key=lambda r: r.payload.get("start_time") or r.payload.get("time") or r.payload.get("date") or "",
+            key=lambda r: str(r.payload.get("start_time") or r.payload.get("time") or r.payload.get("date") or ""),
         )
 
         lines = [f"Timeline for {date}:"]
