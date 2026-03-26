@@ -38,6 +38,11 @@ services:
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
       # OpenAI
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Langfuse
+      - AI_LANGFUSE_ENABLED=${AI_LANGFUSE_ENABLED:-false}
+      - AI_LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - AI_LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - AI_LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-server:3000}
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
@@ -323,7 +328,6 @@ services:
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
       # LibreView
-      - LIBREVIEW_AUTH_TOKEN=${LIBREVIEW_AUTH_TOKEN}
       - LIBREVIEW_ACCOUNT_ID=${LIBREVIEW_ACCOUNT_ID}
       - LIBREVIEW_SITE_KEY=${LIBREVIEW_SITE_KEY}
       - LIBREVIEW_API_BASE_URL=${LIBREVIEW_API_BASE_URL}
@@ -525,6 +529,43 @@ services:
       - loki
     mem_limit: 512m
 
+  # ==========================================
+  # AI Observability
+  # ==========================================
+  langfuse-server:
+    container_name: langfuse-server
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    ports:
+      - 3001:3000
+    environment:
+      - DATABASE_URL=postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      - NEXTAUTH_URL=${LANGFUSE_NEXTAUTH_URL:-http://localhost:3001}
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-langfuse-prod-secret-change-me}
+      - SALT=${LANGFUSE_SALT:-langfuse-prod-salt-change-me}
+      - TELEMETRY_ENABLED=false
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    mem_limit: 512m
+
+  langfuse-db:
+    container_name: langfuse-db
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${LANGFUSE_DB_USER:-langfuse}
+      - POSTGRES_PASSWORD=${LANGFUSE_DB_PASSWORD:-langfuse}
+      - POSTGRES_DB=${LANGFUSE_DB_NAME:-langfuse}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    mem_limit: 256m
+
 volumes:
   # Application
   api_logs:
@@ -536,6 +577,8 @@ volumes:
   clickhouse_data:
   qdrant_data:
   arq_redis_data:
+  # AI Observability
+  langfuse_db_data:
   # Workers
   celery_logs:
   celery_data:
