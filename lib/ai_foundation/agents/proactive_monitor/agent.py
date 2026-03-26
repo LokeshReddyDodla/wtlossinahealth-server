@@ -170,6 +170,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 patient_id=patient_id,
                 error=str(exc),
                 scan_duration_ms=int((time.perf_counter() - start) * 1000),
+                data_available=False,
             )
 
     async def scan_batch(

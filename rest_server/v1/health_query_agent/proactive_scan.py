@@ -80,10 +80,10 @@ async def trigger_proactive_scan(
             from lib.services.fcm_service import FCMService
             fcm = FCMService()
             # Send only the most severe insight — avoid notification spam
-            severity_rank = {"alert": 4, "warning": 3, "attention": 2, "info": 1}
+            from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
             notifiable = list(result.insights)
             if notifiable:
-                top_insight = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+                top_insight = max(notifiable, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
                 is_urgent = top_insight.severity.value in ("warning", "alert")
                 await fcm.send_fcm_notification_to_user_devices(
                     user_id=notification_target,
@@ -93,9 +93,11 @@ async def trigger_proactive_scan(
                     group_key="alert_group" if is_urgent else "reminder_group",
                     data={
                         "type": "proactive_insight",
+                        "insight_id": top_insight.insight_id,
                         "category": top_insight.category.value,
                         "severity": top_insight.severity.value,
                         "patient_id": payload.patient_id,
+                        "suggested_query": top_insight.suggested_query or "",
                         "total_insights": str(len(result.insights)),
                     },
                 )

@@ -22,6 +22,14 @@ class InsightSeverity(str, Enum):
     ALERT = "alert"          # needs immediate attention
 
 
+SEVERITY_RANK: dict[str, int] = {
+    "info": 1,
+    "attention": 2,
+    "warning": 3,
+    "alert": 4,
+}
+
+
 class InsightCategory(str, Enum):
     """What kind of insight this is."""
 

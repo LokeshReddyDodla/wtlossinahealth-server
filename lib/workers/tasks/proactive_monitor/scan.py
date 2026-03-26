@@ -218,11 +218,11 @@ async def _send_patient_notifications(patient_id: str, insights: list) -> None:
         from lib.services.fcm_service import FCMService
 
         fcm = FCMService()
-        severity_rank = {"alert": 4, "warning": 3, "attention": 2, "info": 1}
+        from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
         notifiable = list(insights)
 
         if notifiable:
-            top = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+            top = max(notifiable, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
             is_urgent = top.severity.value in ("warning", "alert")
             await fcm.send_fcm_notification_to_user_devices(
                 user_id=patient_id,
