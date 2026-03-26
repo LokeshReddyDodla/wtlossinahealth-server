@@ -168,12 +168,10 @@ from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
-from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
 from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
-from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
 from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
@@ -1527,16 +1525,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Semantic Cache — query-level LLM response cache
-container.register(
-    SemanticCache,
-    lambda: SemanticCache(
-        cache_store=container.resolve("ai_foundation_cache"),
-        ttl_seconds=_ai_settings.SEMANTIC_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
 # Embedding Cache — embedding vector cache
 container.register(
     EmbeddingCache,
@@ -1568,15 +1556,6 @@ container.register(
     RateLimiter,
     lambda: RateLimiter(
         cache_store=container.resolve("ai_foundation_cache"),
-    ),
-    scope=Scope.singleton,
-)
-
-# A/B Test Manager — canary deployment for fine-tuned models
-container.register(
-    ABTestManager,
-    lambda: ABTestManager(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
     scope=Scope.singleton,
 )

@@ -26,11 +26,6 @@ class AIFoundationSettings(BaseSettings):
 
     model_config = {"env_prefix": "AI_", "case_sensitive": False}
 
-    # ── LLM ───────────────────────────────────────────────────────────────
-
-    OPENAI_API_KEY: str = Field(default="", description="OpenAI API key")
-    GOOGLE_API_KEY: str = Field(default="", description="Google Gemini API key")
-
     # ── Retrieval ─────────────────────────────────────────────────────────
 
     QDRANT_COLLECTION: str = Field(default="patient_data", description="Qdrant collection name")
@@ -48,14 +43,6 @@ class AIFoundationSettings(BaseSettings):
 
     TURNS_TTL_DAYS: int = Field(default=90, description="Conversation turns TTL in days")
     SUMMARIES_TTL_DAYS: int = Field(default=90, description="Thread summaries TTL in days")
-    TRACES_TTL_DAYS: int = Field(default=30, description="Pipeline traces TTL in days")
-    SAMPLES_TTL_DAYS: int = Field(default=180, description="Training samples TTL in days")
-    METRICS_TTL_DAYS: int = Field(default=30, description="Agent metrics TTL in days")
-
-    # ── Compaction ────────────────────────────────────────────────────────
-
-    COMPACT_AFTER_TURNS: int = Field(default=4, description="Start compaction after this many turns")
-    COMPACT_EVERY_N_TURNS: int = Field(default=2, description="Compact every N turns after threshold")
 
     # ── Rate Limiting ─────────────────────────────────────────────────────
 
@@ -83,11 +70,6 @@ class AIFoundationSettings(BaseSettings):
     REFLECTION_ENABLED: bool = Field(default=True, description="Enable reflection/critic for ADVANCED+ tiers")
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
-
-    # ── Multi-Agent ───────────────────────────────────────────────────────
-
-    SPECIALIST_MAX_PARALLEL: int = Field(default=3, description="Max specialists running concurrently")
-    SPECIALIST_TIMEOUT_SECONDS: float = Field(default=45.0, description="Timeout for a single specialist investigation")
 
     # ── Agentic Loop Limits ───────────────────────────────────────────────
 
