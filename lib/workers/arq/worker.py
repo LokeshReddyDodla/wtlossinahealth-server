@@ -25,6 +25,7 @@ def _get_all_cron_jobs():
         get_cron_jobs as get_patient_export_cron_jobs,
     )
     from lib.workers.tasks.weightloss_agent_tasks import get_cron_jobs as get_weightloss_agent_cron_jobs
+    from lib.workers.tasks.proactive_monitor import get_cron_jobs as get_proactive_monitor_cron_jobs
 
     cron_jobs.extend(get_device_cron_jobs())
     cron_jobs.extend(get_libreview_cron_jobs())
@@ -33,6 +34,7 @@ def _get_all_cron_jobs():
     cron_jobs.extend(get_patient_summary_cron_jobs())
     cron_jobs.extend(get_patient_export_cron_jobs())
     cron_jobs.extend(get_weightloss_agent_cron_jobs())
+    cron_jobs.extend(get_proactive_monitor_cron_jobs())
 
     return cron_jobs
 
