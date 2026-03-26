@@ -181,7 +181,7 @@ class ModelGateway:
         """
         from lib.ai_foundation.config import settings
         if not settings.LANGFUSE_ENABLED:
-            logger.info("Langfuse disabled (AI_LANGFUSE_ENABLED=false)")
+            logger.info("Langfuse disabled (LANGFUSE_ENABLED=false)")
             return None
         if not settings.LANGFUSE_PUBLIC_KEY:
             logger.warning("Langfuse enabled but AI_LANGFUSE_PUBLIC_KEY is empty")
