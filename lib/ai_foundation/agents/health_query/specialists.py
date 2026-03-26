@@ -214,6 +214,7 @@ class Specialist:
         patient_ids: list[str],
         max_rounds: int = 3,
         model_id: str,
+        patient_names: dict[str, str] | None = None,
     ) -> SpecialistFindings:
         """Run a domain-scoped investigation."""
         async for item in self._investigate_core(
@@ -221,6 +222,7 @@ class Specialist:
             patient_ids=patient_ids,
             max_rounds=max_rounds,
             model_id=model_id,
+            patient_names=patient_names,
             emit_events=False,
         ):
             if isinstance(item, SpecialistFindings):
@@ -235,6 +237,7 @@ class Specialist:
         patient_ids: list[str],
         max_rounds: int = 3,
         model_id: str,
+        patient_names: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Streaming version that yields SSE events during investigation."""
         async for item in self._investigate_core(
@@ -242,6 +245,7 @@ class Specialist:
             patient_ids=patient_ids,
             max_rounds=max_rounds,
             model_id=model_id,
+            patient_names=patient_names,
             emit_events=True,
         ):
             if isinstance(item, str):
@@ -256,6 +260,7 @@ class Specialist:
         patient_ids: list[str],
         max_rounds: int = 3,
         model_id: str,
+        patient_names: dict[str, str] | None = None,
         emit_events: bool = False,
     ) -> AsyncIterator[str | SpecialistFindings]:
         """Unified investigation loop that yields SSE strings and/or SpecialistFindings."""
@@ -293,7 +298,7 @@ class Specialist:
                 yield sse_reasoning(round_num, f"[{self._spec.domain}] {response.content}")
 
             # Execute tool round via shared helper
-            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls)
+            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
             specialist_messages.append(tool_round.assistant_message)
             specialist_messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
