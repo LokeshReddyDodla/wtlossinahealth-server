@@ -48,7 +48,8 @@ class QdrantStore:
         logger.info(f"🔌 Connecting to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
         try:
             self.client = AsyncQdrantClient(
-                host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
+                host=QDRANT_HOST, port=QDRANT_PORT, timeout=60,
+                check_compatibility=False,
             )
             logger.info("✅ Qdrant connected")
 
@@ -130,8 +131,8 @@ class QdrantStore:
                         field_name=field_name,
                         field_schema=index_params,
                     )
-                    logger.info(
-                        f"✅ Indexed payload field: {field_name} ({index_type_str})"
+                    logger.debug(
+                        f"Indexed payload field: {field_name} ({index_type_str})"
                     )
                 except Exception as e:
                     if "already exists" not in str(e):
