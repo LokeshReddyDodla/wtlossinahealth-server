@@ -614,19 +614,20 @@ class ModelGateway:
         final_usage: TokenUsage | None = None
 
         async for chunk in stream:
-            # Usage comes in the final chunk
-            if chunk.usage:
+            # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage and getattr(chunk_usage, "prompt_tokens", None) is not None:
                 cached = 0
-                details = getattr(chunk.usage, "prompt_tokens_details", None)
+                details = getattr(chunk_usage, "prompt_tokens_details", None)
                 if details is not None:
                     cached = getattr(details, "cached_tokens", 0) or 0
                 final_usage = TokenUsage(
-                    input_tokens=chunk.usage.prompt_tokens or 0,
-                    output_tokens=chunk.usage.completion_tokens or 0,
+                    input_tokens=chunk_usage.prompt_tokens or 0,
+                    output_tokens=chunk_usage.completion_tokens or 0,
                     cached_tokens=cached,
                 )
 
-            if chunk.choices:
+            if getattr(chunk, "choices", None):
                 delta = chunk.choices[0].delta
                 text = delta.content if delta and delta.content else ""
                 if text:
