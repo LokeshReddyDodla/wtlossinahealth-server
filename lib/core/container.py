@@ -167,9 +167,7 @@ from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
-from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
-from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
@@ -1516,30 +1514,12 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Patient Summary Retriever — sleep, vitals fallback (only when not in Qdrant)
-container.register(
-    PatientSummaryRetriever,
-    lambda: PatientSummaryRetriever(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
 # Embedding Cache — embedding vector cache
 container.register(
     EmbeddingCache,
     lambda: EmbeddingCache(
         cache_store=container.resolve("ai_foundation_cache"),
         ttl_seconds=_ai_settings.EMBEDDING_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
-# Quality Scorer — LLM-as-judge response evaluation
-container.register(
-    QualityScorer,
-    lambda: QualityScorer(
-        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
     ),
     scope=Scope.singleton,
 )
