@@ -97,8 +97,9 @@ async def trigger_proactive_scan(
                         "total_insights": str(len(result.insights)),
                     },
                 )
-        except Exception:
-            pass  # Notification is best-effort
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("FCM notification failed: %s", exc, exc_info=True)
 
     return SuccessResponse(
         message=f"Scan complete — {len(result.insights)} insights found",

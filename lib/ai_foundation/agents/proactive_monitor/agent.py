@@ -112,9 +112,15 @@ class ProactiveMonitorAgent(BaseAgent):
 
             result = await self._reasoning_engine.reason(
                 user_message=(
-                    "Scan this patient's health data from the last 48 hours. "
-                    "Find noteworthy patterns, concerns, or positive trends. "
-                    "Check glucose, meals, activity, and look for cross-domain connections."
+                    "You are running a scheduled health check. The current time is in the system prompt. "
+                    "Choose your scan window based on the time of day:\n"
+                    "- If MORNING (before noon): Review YESTERDAY's full day + overnight. "
+                    "This is the daily briefing — summarize yesterday's glucose control, meals, activity.\n"
+                    "- If AFTERNOON (noon-5pm): Review TODAY so far. "
+                    "Check post-breakfast and post-lunch glucose, any missed meals, morning activity.\n"
+                    "- If EVENING (after 5pm): Summarize TODAY. "
+                    "What stood out? End-of-day wrap-up with actionable insights for tomorrow.\n\n"
+                    "Only flag what's NOTEWORTHY. Check glucose, meals, activity, and cross-domain connections."
                 ),
                 system_prompt=system_prompt,
                 reasoning_prompt=reasoning_prompt,
