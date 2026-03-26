@@ -212,8 +212,10 @@ class ModelGateway:
             logger.info("LiteLLM Langfuse callbacks enabled")
         # Drop unsupported params (e.g., gpt-5 doesn't support temperature=0.0)
         litellm.drop_params = True
-        # Suppress LiteLLM's noisy default logging
+        # Suppress LiteLLM's noisy logging
         litellm.set_verbose = False
+        logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+        logging.getLogger("litellm").setLevel(logging.WARNING)
 
     # -- Langfuse context (set per-request by the agent) --------------------
 
