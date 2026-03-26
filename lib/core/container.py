@@ -1401,11 +1401,26 @@ def _get_embed_fn():
 
 
 def _build_prompt_registry() -> PromptRegistry:
-    """Build a PromptRegistry pre-loaded with all agent prompts."""
+    """Build a PromptRegistry with Langfuse backend (if enabled) + local fallback."""
     from pathlib import Path
     import logging
+    from lib.ai_foundation.config import settings as _ai_settings
 
-    registry = PromptRegistry()
+    # Initialize Langfuse client for prompt management (if enabled)
+    langfuse_client = None
+    if _ai_settings.LANGFUSE_ENABLED and _ai_settings.LANGFUSE_PUBLIC_KEY:
+        try:
+            from langfuse import Langfuse
+            langfuse_client = Langfuse(
+                public_key=_ai_settings.LANGFUSE_PUBLIC_KEY,
+                secret_key=_ai_settings.LANGFUSE_SECRET_KEY,
+                host=_ai_settings.LANGFUSE_HOST,
+            )
+            logging.getLogger(__name__).info("PromptRegistry: Langfuse backend enabled")
+        except Exception as exc:
+            logging.getLogger(__name__).warning("PromptRegistry: Langfuse init failed: %s", exc)
+
+    registry = PromptRegistry(langfuse_client=langfuse_client)
 
     # Discover and register prompt directories for all foundation agents
     agents_dir = Path(__file__).parent.parent / "ai_foundation" / "agents"
