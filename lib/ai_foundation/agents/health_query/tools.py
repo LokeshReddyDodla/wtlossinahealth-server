@@ -240,8 +240,12 @@ class ToolExecutor:
             else:
                 return f"Unknown tool: {tool_name}"
         except Exception as exc:
-            logger.warning("Tool %s failed: %s", tool_name, exc)
-            return f"Tool error: {exc}"
+            logger.warning("Tool %s failed: %s", tool_name, exc, exc_info=True)
+            return (
+                f"SYSTEM ERROR: {tool_name} failed to retrieve data. "
+                f"The data may exist but could not be loaded. "
+                f"Do NOT conclude that data is missing based on this error."
+            )
 
     async def execute_parallel(
         self,
