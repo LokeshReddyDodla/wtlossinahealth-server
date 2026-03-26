@@ -197,6 +197,8 @@ async def _send_notifications(batch) -> None:
 async def _send_patient_notifications(patient_id: str, insights: list) -> None:
     """Send ONE push notification per patient — the most severe insight only."""
     try:
+        from lib.core.container import container
+        from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
         from lib.services.fcm_service import FCMService
 
         fcm = FCMService()
@@ -221,5 +223,8 @@ async def _send_patient_notifications(patient_id: str, insights: list) -> None:
                     "total_insights": str(len(insights)),
                 },
             )
+            # Record only the insight we actually sent
+            monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
+            await monitor.record_insight(patient_id, top)
     except Exception as e:
         logger.warning(f"Failed to send notifications for {patient_id}: {e}")

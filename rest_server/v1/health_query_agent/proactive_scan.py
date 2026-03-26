@@ -98,6 +98,8 @@ async def trigger_proactive_scan(
                         "total_insights": str(len(result.insights)),
                     },
                 )
+                # Record only the insight we actually sent
+                await monitor.record_insight(payload.patient_id, top_insight)
         except Exception as exc:
             import logging
             logging.getLogger(__name__).error("FCM notification failed: %s", exc, exc_info=True)
