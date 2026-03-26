@@ -83,12 +83,13 @@ async def trigger_proactive_scan(
             notifiable = [i for i in result.insights if i.severity.value in ("attention", "warning", "alert")]
             if notifiable:
                 top_insight = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+                is_urgent = top_insight.severity.value in ("warning", "alert")
                 await fcm.send_fcm_notification_to_user_devices(
                     user_id=notification_target,
                     title=top_insight.title,
                     body=top_insight.body,
-                    channel_key="health_insights",
-                    group_key="health_insights_group",
+                    channel_key="alerts" if is_urgent else "reminders",
+                    group_key="alert_group" if is_urgent else "reminder_group",
                     data={
                         "type": "proactive_insight",
                         "category": top_insight.category.value,
