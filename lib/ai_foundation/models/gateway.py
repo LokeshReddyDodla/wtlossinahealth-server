@@ -5,7 +5,7 @@ Every LLM interaction in the platform goes through this gateway, which provides:
 - Three calling modes: complete (full), extract (structured), stream (token-by-token)
 - Automatic model routing via ModelRegistry
 - Fallback chain execution via CircuitBreaker
-- Cost tracking via PricingCalculator
+- Cost tracking via LiteLLM (automatic)
 - Observability via Langfuse (generation-level via LiteLLM callbacks, trace-level via Langfuse client)
 
 All provider-specific routing is handled by LiteLLM — no direct OpenAI/Gemini SDK calls.
@@ -29,7 +29,7 @@ import litellm
 from pydantic import BaseModel, Field
 
 from .circuit_breaker import CircuitBreaker
-from .pricing import CostBreakdown, PricingCalculator, TokenUsage
+from .pricing import CostBreakdown, TokenUsage
 from .registry import (
     ModelGatewayError,
     ModelProvider,
@@ -637,12 +637,11 @@ class ModelGateway:
 
         llm_usage = LLMUsage()
         if final_usage:
-            cost = PricingCalculator.calculate(spec, final_usage)
             llm_usage = LLMUsage(
                 input_tokens=final_usage.input_tokens,
                 output_tokens=final_usage.output_tokens,
                 cached_tokens=final_usage.cached_tokens,
-                cost=cost,
+                cost=CostBreakdown(total_cost=0),
             )
 
         self._circuit_breaker.record_success(spec.provider.value)
@@ -657,7 +656,7 @@ class ModelGateway:
     # -- Internal: usage extraction -----------------------------------------
 
     def _extract_usage(self, raw: Any, spec: ModelSpec) -> LLMUsage:
-        """Extract token usage and calculate cost from a raw API response."""
+        """Extract token usage and cost from a raw LiteLLM response."""
         if not hasattr(raw, "usage") or raw.usage is None:
             return LLMUsage()
 
@@ -667,18 +666,16 @@ class ModelGateway:
             if details and hasattr(details, "cached_tokens"):
                 cached = details.cached_tokens or 0
 
-        token_usage = TokenUsage(
+        # LiteLLM provides cost automatically
+        response_cost = 0.0
+        if hasattr(raw, "_hidden_params"):
+            response_cost = raw._hidden_params.get("response_cost", 0) or 0
+
+        return LLMUsage(
             input_tokens=raw.usage.prompt_tokens or 0,
             output_tokens=raw.usage.completion_tokens or 0,
             cached_tokens=cached,
-        )
-        cost = PricingCalculator.calculate(spec, token_usage)
-
-        return LLMUsage(
-            input_tokens=token_usage.input_tokens,
-            output_tokens=token_usage.output_tokens,
-            cached_tokens=token_usage.cached_tokens,
-            cost=cost,
+            cost=CostBreakdown(total_cost=response_cost),
         )
 
     # -- Langfuse trace-level methods (kept, not generation-level) ----------

@@ -12,7 +12,7 @@ from .registry import (
     build_default_registry,
 )
 from .circuit_breaker import CircuitBreaker, CircuitState, CircuitStats
-from .pricing import CostBreakdown, PricingCalculator, TokenUsage
+from .pricing import CostBreakdown, TokenUsage
 
 __all__ = [
     "CircuitBreaker",
@@ -26,7 +26,6 @@ __all__ = [
     "ModelSpec",
     "ModelTask",
     "NoRouteError",
-    "PricingCalculator",
     "TaskRoute",
     "TokenUsage",
     "build_default_registry",
