@@ -1467,25 +1467,15 @@ container.register(
 )
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
-def _build_model_gateway() -> ModelGateway:
-    import logging
-    _log = logging.getLogger(__name__)
-
-    openai_key = _ai_settings.OPENAI_API_KEY or str(config("OPENAI_API_KEY", default=""))
-    google_key = _ai_settings.GOOGLE_API_KEY or str(config("GOOGLE_API_KEY", default=""))
-
-    if not openai_key:
-        _log.warning("OPENAI_API_KEY not set — OpenAI calls will fail.")
-    if not google_key:
-        _log.info("GOOGLE_API_KEY not set — Gemini fallback unavailable.")
-
-    return ModelGateway(
+# LiteLLM reads API keys from env vars (OPENAI_API_KEY, GEMINI_API_KEY) directly.
+container.register(
+    ModelGateway,
+    lambda: ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
-        api_keys={"openai": openai_key, "google": google_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
-    )
-
-container.register(ModelGateway, _build_model_gateway, scope=Scope.singleton)
+    ),
+    scope=Scope.singleton,
+)
 
 # Prompt Registry — versioned prompt management (pre-loaded with agent prompts)
 container.register(

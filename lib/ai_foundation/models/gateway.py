@@ -6,7 +6,9 @@ Every LLM interaction in the platform goes through this gateway, which provides:
 - Automatic model routing via ModelRegistry
 - Fallback chain execution via CircuitBreaker
 - Cost tracking via PricingCalculator
-- Observability via Langfuse
+- Observability via Langfuse (generation-level via LiteLLM callbacks, trace-level via Langfuse client)
+
+All provider-specific routing is handled by LiteLLM — no direct OpenAI/Gemini SDK calls.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from typing import (
 from uuid import uuid4
 
 import instructor
-from openai import AsyncOpenAI
+import litellm
 from pydantic import BaseModel, Field
 
 from .circuit_breaker import CircuitBreaker
@@ -112,56 +114,19 @@ class AllProvidersUnavailableError(ModelGatewayError):
 
 
 # ---------------------------------------------------------------------------
-# Provider client factory
+# LiteLLM model-id helper
 # ---------------------------------------------------------------------------
 
 
-class _ProviderClients:
-    """Lazily creates and caches async provider clients."""
+def _litellm_model_id(spec: ModelSpec) -> str:
+    """Convert a ModelSpec into the model string LiteLLM expects.
 
-    def __init__(self, api_keys: dict[str, str] | None = None) -> None:
-        self._api_keys = api_keys or {}
-        self._clients: dict[str, Any] = {}
-
-    def get_openai(self, api_key: str | None = None) -> AsyncOpenAI:
-        key = api_key or self._api_keys.get("openai", "")
-        cache_key = f"openai:{key[:8]}"
-        if cache_key not in self._clients:
-            self._clients[cache_key] = AsyncOpenAI(api_key=key)
-        return self._clients[cache_key]
-
-    def get_instructor(self, api_key: str | None = None) -> instructor.AsyncInstructor:
-        key = api_key or self._api_keys.get("openai", "")
-        cache_key = f"instructor:{key[:8]}"
-        if cache_key not in self._clients:
-            self._clients[cache_key] = instructor.from_openai(
-                AsyncOpenAI(api_key=key)
-            )
-        return self._clients[cache_key]
-
-    def get_gemini(self, api_key: str | None = None) -> Any:
-        """Get Google Gemini client. Uses OpenAI-compatible API."""
-        key = api_key or self._api_keys.get("google", "")
-        cache_key = f"gemini:{key[:8]}"
-        if cache_key not in self._clients:
-            # Gemini supports OpenAI-compatible API
-            self._clients[cache_key] = AsyncOpenAI(
-                api_key=key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-        return self._clients[cache_key]
-
-    def get_gemini_instructor(self, api_key: str | None = None) -> Any:
-        """Get Instructor-wrapped Gemini client for structured output."""
-        key = api_key or self._api_keys.get("google", "")
-        cache_key = f"gemini_instructor:{key[:8]}"
-        if cache_key not in self._clients:
-            client = AsyncOpenAI(
-                api_key=key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            self._clients[cache_key] = instructor.from_openai(client)
-        return self._clients[cache_key]
+    - OpenAI models: use model_id as-is (e.g. "gpt-4.1-mini")
+    - Google Gemini: prefix with "gemini/" (e.g. "gemini/gemini-2.5-flash")
+    """
+    if spec.provider == ModelProvider.GOOGLE:
+        return f"gemini/{spec.model_id}"
+    return spec.model_id
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +139,7 @@ class ModelGateway:
 
     Example::
 
-        gateway = ModelGateway(registry=build_default_registry(), api_keys={"openai": "sk-..."})
+        gateway = ModelGateway(registry=build_default_registry())
 
         # Full response
         response = await gateway.complete(
@@ -201,17 +166,19 @@ class ModelGateway:
         self,
         *,
         registry: ModelRegistry,
-        api_keys: dict[str, str] | None = None,
         circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         self._registry = registry
         self._circuit_breaker = circuit_breaker or CircuitBreaker()
-        self._clients = _ProviderClients(api_keys)
-        self._langfuse = self._init_langfuse()
+        self._langfuse_client = self._init_langfuse_client()
+        self._setup_litellm()
 
     @staticmethod
-    def _init_langfuse() -> Any | None:
-        """Initialize Langfuse client if enabled."""
+    def _init_langfuse_client() -> Any | None:
+        """Initialize Langfuse client for trace-level operations only.
+
+        Generation-level logging is handled by LiteLLM callbacks.
+        """
         from lib.ai_foundation.config import settings
         if not settings.LANGFUSE_ENABLED:
             logger.info("Langfuse disabled (AI_LANGFUSE_ENABLED=false)")
@@ -226,14 +193,25 @@ class ModelGateway:
                 secret_key=settings.LANGFUSE_SECRET_KEY,
                 host=settings.LANGFUSE_HOST,
             )
-            logger.info("Langfuse initialized → %s", settings.LANGFUSE_HOST)
+            logger.info("Langfuse client initialized → %s", settings.LANGFUSE_HOST)
             return client
         except ImportError:
             logger.warning("langfuse package not installed — run: pip install langfuse")
             return None
         except Exception as exc:
-            logger.warning("Langfuse init failed: %s", exc)
+            logger.warning("Langfuse client init failed: %s", exc)
             return None
+
+    @staticmethod
+    def _setup_litellm() -> None:
+        """Configure LiteLLM callbacks for Langfuse generation-level logging."""
+        from lib.ai_foundation.config import settings
+        if settings.LANGFUSE_ENABLED:
+            litellm.success_callback = ["langfuse"]
+            litellm.failure_callback = ["langfuse"]
+            logger.info("LiteLLM Langfuse callbacks enabled")
+        # Suppress LiteLLM's noisy default logging
+        litellm.set_verbose = False
 
     # -- Langfuse context (set per-request by the agent) --------------------
 
@@ -247,10 +225,10 @@ class ModelGateway:
 
     def langfuse_trace_input(self, *, trace_id: str, input_text: str, metadata: dict | None = None) -> None:
         """Set the trace-level input (user message). Called at start of request."""
-        if not self._langfuse:
+        if not self._langfuse_client:
             return
         try:
-            self._langfuse.trace(
+            self._langfuse_client.trace(
                 id=trace_id,
                 input=input_text,
                 session_id=self._langfuse_session_id,
@@ -262,10 +240,10 @@ class ModelGateway:
 
     def langfuse_trace_output(self, *, trace_id: str, output_text: str) -> None:
         """Set the trace-level output (agent response). Called at end of request."""
-        if not self._langfuse:
+        if not self._langfuse_client:
             return
         try:
-            self._langfuse.trace(id=trace_id, output=output_text)
+            self._langfuse_client.trace(id=trace_id, output=output_text)
         except Exception:
             pass
 
@@ -393,21 +371,22 @@ class ModelGateway:
         tools: list[dict[str, Any]],
         trace_id: str,
     ) -> LLMToolResponse:
-        """Internal: execute function calling against OpenAI/Gemini API."""
-        client = self._get_async_client(spec)
+        """Internal: execute function calling via LiteLLM."""
+        model = _litellm_model_id(spec)
         start = time.perf_counter()
 
         kwargs: dict[str, Any] = {
-            "model": spec.model_id,
+            "model": model,
             "messages": messages,
             "temperature": spec.temperature,
             "tools": tools,
+            "metadata": {"trace_id": trace_id},
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
         raw = await asyncio.wait_for(
-            client.chat.completions.create(**kwargs),
+            litellm.acompletion(**kwargs),
             timeout=spec.timeout_seconds,
         )
 
@@ -436,7 +415,7 @@ class ModelGateway:
 
         content = choice.message.content if not tool_calls else None
 
-        tool_response = LLMToolResponse(
+        return LLMToolResponse(
             content=content,
             tool_calls=tool_calls,
             usage=usage,
@@ -444,14 +423,6 @@ class ModelGateway:
             provider=spec.provider.value,
             latency_ms=elapsed_ms,
         )
-        self._log_to_langfuse(
-            trace_id=trace_id, task="complete_with_tools", model_id=spec.model_id,
-            messages=messages,
-            response=content or f"[{len(tool_calls)} tool calls]",
-            usage=usage, latency_ms=elapsed_ms,
-            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
-        )
-        return tool_response
 
     async def stream(
         self,
@@ -529,7 +500,7 @@ class ModelGateway:
             overrides["timeout_seconds"] = timeout
         return spec.with_overrides(**overrides) if overrides else spec
 
-    # -- Internal: OpenAI complete ------------------------------------------
+    # -- Internal: LiteLLM complete -----------------------------------------
 
     async def _do_complete(
         self,
@@ -537,19 +508,20 @@ class ModelGateway:
         messages: list[dict[str, str]],
         trace_id: str,
     ) -> LLMResponse:
-        client = self._get_async_client(spec)
+        model = _litellm_model_id(spec)
         start = time.perf_counter()
 
         kwargs: dict[str, Any] = {
-            "model": spec.model_id,
+            "model": model,
             "messages": messages,
             "temperature": spec.temperature,
+            "metadata": {"trace_id": trace_id},
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
         raw = await asyncio.wait_for(
-            client.chat.completions.create(**kwargs),
+            litellm.acompletion(**kwargs),
             timeout=spec.timeout_seconds,
         )
 
@@ -559,7 +531,7 @@ class ModelGateway:
         usage = self._extract_usage(raw, spec)
         self._circuit_breaker.record_success(spec.provider.value)
 
-        response = LLMResponse(
+        return LLMResponse(
             content=content,
             model_id=spec.model_id,
             provider=spec.provider.value,
@@ -568,14 +540,7 @@ class ModelGateway:
             trace_id=trace_id,
         )
 
-        self._log_to_langfuse(
-            trace_id=trace_id, task="complete", model_id=spec.model_id,
-            messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
-            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
-        )
-        return response
-
-    # -- Internal: OpenAI extract (Instructor) ------------------------------
+    # -- Internal: LiteLLM extract (Instructor) ----------------------------
 
     async def _do_extract(
         self,
@@ -584,14 +549,14 @@ class ModelGateway:
         response_model: type[T],
         trace_id: str,
     ) -> tuple[T, LLMResponse]:
-        client = self._get_instructor_client(spec)
+        model = _litellm_model_id(spec)
         start = time.perf_counter()
 
-        raw_response_holder: dict[str, Any] = {}
+        client = instructor.from_litellm(litellm.acompletion)
 
         parsed, raw = await asyncio.wait_for(
             client.chat.completions.create_with_completion(
-                model=spec.model_id,
+                model=model,
                 response_model=response_model,
                 messages=messages,
                 temperature=spec.temperature,
@@ -614,14 +579,9 @@ class ModelGateway:
             trace_id=trace_id,
         )
 
-        self._log_to_langfuse(
-            trace_id=trace_id, task="extract", model_id=spec.model_id,
-            messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
-            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
-        )
         return parsed, meta
 
-    # -- Internal: OpenAI stream -------------------------------------------
+    # -- Internal: LiteLLM stream ------------------------------------------
 
     async def _do_stream(
         self,
@@ -629,21 +589,22 @@ class ModelGateway:
         messages: list[dict[str, str]],
         trace_id: str,
     ) -> AsyncIterator[StreamChunk]:
-        client = self._get_async_client(spec)
+        model = _litellm_model_id(spec)
         start = time.perf_counter()
 
         kwargs: dict[str, Any] = {
-            "model": spec.model_id,
+            "model": model,
             "messages": messages,
             "temperature": spec.temperature,
             "stream": True,
             "stream_options": {"include_usage": True},
+            "metadata": {"trace_id": trace_id},
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
 
         stream = await asyncio.wait_for(
-            client.chat.completions.create(**kwargs),
+            litellm.acompletion(**kwargs),
             timeout=spec.timeout_seconds,
         )
 
@@ -686,13 +647,6 @@ class ModelGateway:
 
         self._circuit_breaker.record_success(spec.provider.value)
 
-        # Log streamed response to Langfuse
-        self._log_to_langfuse(
-            trace_id=trace_id, task="stream", model_id=spec.model_id,
-            messages=messages, response=combined, usage=llm_usage, latency_ms=elapsed_ms,
-            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
-        )
-
         yield StreamChunk(
             delta="",
             finished=True,
@@ -727,76 +681,7 @@ class ModelGateway:
             cost=cost,
         )
 
-    # -- Internal: client factories -----------------------------------------
-
-    def _get_async_client(self, spec: ModelSpec) -> AsyncOpenAI:
-        """Get the appropriate async client for a model spec."""
-        if spec.provider == ModelProvider.OPENAI:
-            return self._clients.get_openai()
-        if spec.provider == ModelProvider.GOOGLE:
-            return self._clients.get_gemini()
-        raise ModelGatewayError(
-            f"Provider {spec.provider.value!r} is not yet supported."
-        )
-
-    def _get_instructor_client(self, spec: ModelSpec) -> instructor.AsyncInstructor:
-        """Get an Instructor-wrapped client for structured extraction."""
-        if spec.provider == ModelProvider.OPENAI:
-            return self._clients.get_instructor()
-        if spec.provider == ModelProvider.GOOGLE:
-            return self._clients.get_gemini_instructor()
-        raise ModelGatewayError(
-            f"Provider {spec.provider.value!r} is not yet supported for structured extraction."
-        )
-
-    def _log_to_langfuse(
-        self,
-        *,
-        trace_id: str,
-        task: str,
-        model_id: str,
-        messages: list[dict[str, Any]],
-        response: str,
-        usage: LLMUsage,
-        latency_ms: int,
-        session_id: str | None = None,
-        user_id: str | None = None,
-    ) -> None:
-        """Log an LLM generation to Langfuse. Fire-and-forget, never raises."""
-        if not self._langfuse:
-            return
-        try:
-            from datetime import datetime, timedelta, timezone
-
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(milliseconds=latency_ms)
-            cost_usd = usage.cost.total_cost if usage.cost else 0
-
-            trace = self._langfuse.trace(
-                id=trace_id,
-                name=task,
-                session_id=session_id,
-                user_id=user_id,
-            )
-            trace.generation(
-                name=task,
-                model=model_id,
-                input=messages,
-                output=response,
-                start_time=start_time,
-                end_time=end_time,
-                usage={
-                    "input": usage.input_tokens,
-                    "output": usage.output_tokens,
-                    "total": usage.input_tokens + usage.output_tokens,
-                },
-                model_parameters={"cost": cost_usd},
-                metadata={
-                    "cached_tokens": usage.cached_tokens,
-                },
-            )
-        except Exception as exc:
-            logger.debug("Langfuse log failed: %s", exc)
+    # -- Langfuse trace-level methods (kept, not generation-level) ----------
 
     def log_score(
         self,
@@ -807,10 +692,10 @@ class ModelGateway:
         comment: str | None = None,
     ) -> None:
         """Log a score (user feedback) to Langfuse."""
-        if not self._langfuse:
+        if not self._langfuse_client:
             return
         try:
-            self._langfuse.score(
+            self._langfuse_client.score(
                 trace_id=trace_id,
                 name=name,
                 value=value,
