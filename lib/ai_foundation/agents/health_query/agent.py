@@ -82,11 +82,27 @@ class HealthQueryAgent(BaseAgent):
             )
 
         try:
+            # Set Langfuse context for this request
+            self.gateway.set_langfuse_context(
+                session_id=input.context.thread_id,
+                user_id=input.context.user_id,
+            )
+
+            # Set trace-level input
+            if trace:
+                self.gateway.langfuse_trace_input(
+                    trace_id=trace.trace_id,
+                    input_text=input.message,
+                    metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
+                )
+
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
+                if trace:
+                    self.gateway.langfuse_trace_output(trace_id=trace.trace_id, output_text=output.message)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 return output
 
@@ -143,6 +159,9 @@ class HealthQueryAgent(BaseAgent):
                 model_id=result.responder_model,
             )
 
+            if trace:
+                self.gateway.langfuse_trace_output(trace_id=trace.trace_id, output_text=output.message)
+
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
             self._schedule_background(input)
             return output
@@ -172,6 +191,20 @@ class HealthQueryAgent(BaseAgent):
             )
 
         try:
+            # Set Langfuse context for this request
+            self.gateway.set_langfuse_context(
+                session_id=input.context.thread_id,
+                user_id=input.context.user_id,
+            )
+
+            # Set trace-level input
+            if trace:
+                self.gateway.langfuse_trace_input(
+                    trace_id=trace.trace_id,
+                    input_text=input.message,
+                    metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
+                )
+
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
@@ -238,6 +271,8 @@ class HealthQueryAgent(BaseAgent):
                         message=full_text, is_ready=True,
                         trace_id=trace.trace_id if trace else None,
                     )
+                    if trace and full_text:
+                        self.gateway.langfuse_trace_output(trace_id=trace.trace_id, output_text=full_text)
                     await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                     self._schedule_background(input)
 

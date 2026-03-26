@@ -56,6 +56,19 @@ async def submit_feedback(
         notes=payload.comment,
     )
 
+    # Log score to Langfuse
+    try:
+        from lib.ai_foundation.models.gateway import ModelGateway
+        gateway: ModelGateway = container.resolve(ModelGateway)
+        gateway.log_score(
+            trace_id=payload.trace_id,
+            name="user_feedback",
+            value=score,
+            comment=payload.comment,
+        )
+    except Exception:
+        pass  # Langfuse scoring is optional
+
     return SuccessResponse(
         message="Feedback recorded" if recorded else "Feedback noted (sample not found)",
         data=FeedbackResponse(recorded=recorded, trace_id=payload.trace_id),

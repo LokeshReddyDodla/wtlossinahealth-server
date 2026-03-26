@@ -215,21 +215,61 @@ class ModelGateway:
     def _init_langfuse() -> Any | None:
         """Initialize Langfuse client if enabled."""
         from lib.ai_foundation.config import settings
-        if not settings.LANGFUSE_ENABLED or not settings.LANGFUSE_PUBLIC_KEY:
+        if not settings.LANGFUSE_ENABLED:
+            logger.info("Langfuse disabled (AI_LANGFUSE_ENABLED=false)")
+            return None
+        if not settings.LANGFUSE_PUBLIC_KEY:
+            logger.warning("Langfuse enabled but AI_LANGFUSE_PUBLIC_KEY is empty")
             return None
         try:
             from langfuse import Langfuse
-            return Langfuse(
+            client = Langfuse(
                 public_key=settings.LANGFUSE_PUBLIC_KEY,
                 secret_key=settings.LANGFUSE_SECRET_KEY,
                 host=settings.LANGFUSE_HOST,
             )
+            logger.info("Langfuse initialized → %s", settings.LANGFUSE_HOST)
+            return client
         except ImportError:
-            logger.debug("langfuse package not installed — tracing disabled")
+            logger.warning("langfuse package not installed — run: pip install langfuse")
             return None
         except Exception as exc:
             logger.warning("Langfuse init failed: %s", exc)
             return None
+
+    # -- Langfuse context (set per-request by the agent) --------------------
+
+    _langfuse_session_id: str | None = None
+    _langfuse_user_id: str | None = None
+
+    def set_langfuse_context(self, *, session_id: str | None = None, user_id: str | None = None) -> None:
+        """Set session/user context for Langfuse traces. Called once per request."""
+        self._langfuse_session_id = session_id
+        self._langfuse_user_id = user_id
+
+    def langfuse_trace_input(self, *, trace_id: str, input_text: str, metadata: dict | None = None) -> None:
+        """Set the trace-level input (user message). Called at start of request."""
+        if not self._langfuse:
+            return
+        try:
+            self._langfuse.trace(
+                id=trace_id,
+                input=input_text,
+                session_id=self._langfuse_session_id,
+                user_id=self._langfuse_user_id,
+                metadata=metadata,
+            )
+        except Exception:
+            pass
+
+    def langfuse_trace_output(self, *, trace_id: str, output_text: str) -> None:
+        """Set the trace-level output (agent response). Called at end of request."""
+        if not self._langfuse:
+            return
+        try:
+            self._langfuse.trace(id=trace_id, output=output_text)
+        except Exception:
+            pass
 
     # -- Public API ---------------------------------------------------------
 
@@ -411,6 +451,7 @@ class ModelGateway:
             messages=messages,
             response=content or f"[{len(tool_calls)} tool calls]",
             usage=usage, latency_ms=elapsed_ms,
+            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
         )
         return tool_response
 
@@ -538,6 +579,7 @@ class ModelGateway:
         self._log_to_langfuse(
             trace_id=trace_id, task="complete", model_id=spec.model_id,
             messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
+            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
         )
         return response
 
@@ -590,6 +632,7 @@ class ModelGateway:
         self._log_to_langfuse(
             trace_id=trace_id, task="extract", model_id=spec.model_id,
             messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
+            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
         )
         return parsed, meta
 
@@ -657,6 +700,13 @@ class ModelGateway:
             )
 
         self._circuit_breaker.record_success(spec.provider.value)
+
+        # Log streamed response to Langfuse
+        self._log_to_langfuse(
+            trace_id=trace_id, task="stream", model_id=spec.model_id,
+            messages=messages, response=combined, usage=llm_usage, latency_ms=elapsed_ms,
+            session_id=self._langfuse_session_id, user_id=self._langfuse_user_id,
+        )
 
         yield StreamChunk(
             delta="",
@@ -756,27 +806,62 @@ class ModelGateway:
         response: str,
         usage: LLMUsage,
         latency_ms: int,
+        session_id: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         """Log an LLM generation to Langfuse. Fire-and-forget, never raises."""
         if not self._langfuse:
             return
         try:
-            trace = self._langfuse.trace(id=trace_id, name=task)
+            from datetime import datetime, timedelta, timezone
+
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(milliseconds=latency_ms)
+            cost_usd = usage.cost.total_cost if usage.cost else 0
+
+            trace = self._langfuse.trace(
+                id=trace_id,
+                name=task,
+                session_id=session_id,
+                user_id=user_id,
+            )
             trace.generation(
                 name=task,
                 model=model_id,
                 input=messages,
                 output=response,
+                start_time=start_time,
+                end_time=end_time,
                 usage={
                     "input": usage.input_tokens,
                     "output": usage.output_tokens,
                     "total": usage.input_tokens + usage.output_tokens,
                 },
+                model_parameters={"cost": cost_usd},
                 metadata={
-                    "latency_ms": latency_ms,
-                    "cost_usd": usage.cost.total_cost if usage.cost else 0,
                     "cached_tokens": usage.cached_tokens,
                 },
             )
         except Exception as exc:
             logger.debug("Langfuse log failed: %s", exc)
+
+    def log_score(
+        self,
+        *,
+        trace_id: str,
+        name: str,
+        value: float,
+        comment: str | None = None,
+    ) -> None:
+        """Log a score (user feedback) to Langfuse."""
+        if not self._langfuse:
+            return
+        try:
+            self._langfuse.score(
+                trace_id=trace_id,
+                name=name,
+                value=value,
+                comment=comment,
+            )
+        except Exception as exc:
+            logger.debug("Langfuse score failed: %s", exc)
