@@ -101,11 +101,11 @@ class ProactiveMonitorAgent(BaseAgent):
             # 1. Load patient context (facts, names)
             context = await self._load_patient_context(patient_id, patient_name)
 
-            # 2. Get system + reasoning + response prompts
+            # 2. Use the SAME prompts as health query agent — battle-tested, no hallucination
             self._ensure_prompts()
             system_prompt = self._get_scan_prompt()
-            reasoning_prompt = self.prompts.get("pm_scan_reasoning").body
-            response_prompt = self.prompts.get("pm_scan_response").body
+            reasoning_prompt = self.prompts.get("hq_reasoning").body
+            response_prompt = self.prompts.get("hq_final_response").body
 
             # 3. Use reasoning engine with BASIC tier (fast — 2 tool calls max)
             from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
@@ -335,8 +335,13 @@ class ProactiveMonitorAgent(BaseAgent):
     def _ensure_prompts(self) -> None:
         if self._prompts_registered or not self.prompts:
             return
+        # Load proactive monitor prompts (for system prompt)
         if "pm_scan_system" not in self.prompts:
             self.prompts.register_directory(_PROMPTS_DIR, namespace="proactive_monitor")
+        # Load health query prompts (for reasoning + response — battle-tested)
+        hq_prompts_dir = Path(__file__).parent.parent / "health_query" / "prompts"
+        if "hq_reasoning" not in self.prompts and hq_prompts_dir.is_dir():
+            self.prompts.register_directory(hq_prompts_dir, namespace="health_query")
         self._prompts_registered = True
 
     def _get_scan_prompt(self) -> str:
