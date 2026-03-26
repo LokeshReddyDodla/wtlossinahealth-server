@@ -167,17 +167,11 @@ from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
-from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
-from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
-from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
-from lib.ai_foundation.observability.metrics import MetricsCollector
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
-from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
-from lib.ai_foundation.agents.health_query.data_service import HealthDataService
 from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
 from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query.tools import ToolExecutor
@@ -1520,40 +1514,12 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Patient Summary Retriever — sleep, vitals fallback (only when not in Qdrant)
-container.register(
-    PatientSummaryRetriever,
-    lambda: PatientSummaryRetriever(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
-# Semantic Cache — query-level LLM response cache
-container.register(
-    SemanticCache,
-    lambda: SemanticCache(
-        cache_store=container.resolve("ai_foundation_cache"),
-        ttl_seconds=_ai_settings.SEMANTIC_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
 # Embedding Cache — embedding vector cache
 container.register(
     EmbeddingCache,
     lambda: EmbeddingCache(
         cache_store=container.resolve("ai_foundation_cache"),
         ttl_seconds=_ai_settings.EMBEDDING_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
-# Quality Scorer — LLM-as-judge response evaluation
-container.register(
-    QualityScorer,
-    lambda: QualityScorer(
-        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
     ),
     scope=Scope.singleton,
 )
@@ -1565,29 +1531,11 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Metrics Collector — per-agent performance aggregation
-container.register(
-    MetricsCollector,
-    lambda: MetricsCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
 # Rate Limiter — per-tenant, priority-aware
 container.register(
     RateLimiter,
     lambda: RateLimiter(
         cache_store=container.resolve("ai_foundation_cache"),
-    ),
-    scope=Scope.singleton,
-)
-
-# A/B Test Manager — canary deployment for fine-tuned models
-container.register(
-    ABTestManager,
-    lambda: ABTestManager(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
     scope=Scope.singleton,
 )
@@ -1611,14 +1559,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-container.register(
-    HealthDataService,
-    lambda: HealthDataService(
-        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
-        summary_retriever=cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
-    ),
-    scope=Scope.singleton,
-)
 
 container.register(
     PersistenceService,
@@ -1711,7 +1651,6 @@ container.register(
         coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
-        metrics_collector=cast(MetricsCollector, container.resolve(MetricsCollector)),
     ),
     scope=Scope.singleton,
 )
