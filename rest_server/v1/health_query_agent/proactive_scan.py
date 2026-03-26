@@ -34,6 +34,7 @@ class ProactiveScanRequest(BaseModel):
 
 class ProactiveScanResponse(BaseModel):
     patient_id: str
+    scan_date: str
     notification_sent_to: str
     insight_count: int
     insights: list[dict] = Field(default_factory=list)
@@ -108,6 +109,7 @@ async def trigger_proactive_scan(
         message=f"Scan complete — {len(result.insights)} insights found",
         data=ProactiveScanResponse(
             patient_id=payload.patient_id,
+            scan_date=result.scan_date,
             notification_sent_to=notification_target,
             insight_count=len(result.insights),
             insights=[i.model_dump(mode="json") for i in result.insights],

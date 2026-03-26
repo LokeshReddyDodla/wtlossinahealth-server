@@ -70,9 +70,12 @@ async def run_proactive_scan(
                 },
             )
 
-        batch = await monitor.scan_batch(eligible_ids)
+        # Resolve patient names so notifications are personalized
+        patient_names = await _resolve_patient_names(eligible_ids)
 
-        # Send notifications for insights with severity >= attention
+        batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names)
+
+        # Send notifications
         await _send_notifications(batch)
 
         return TaskResult(
@@ -164,6 +167,19 @@ async def _get_patient_timezone(patient_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _resolve_patient_names(patient_ids: list[str]) -> dict[str, str]:
+    """Resolve patient names for personalized notifications."""
+    try:
+        from lib.core.container import container
+        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+
+        resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+        return await resolver.resolve_names(patient_ids)
+    except Exception as e:
+        logger.warning(f"Failed to resolve patient names: {e}")
+        return {}
 
 
 async def _get_active_patient_ids() -> list[str]:

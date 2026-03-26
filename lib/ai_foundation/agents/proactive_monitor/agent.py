@@ -17,14 +17,13 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
 from lib.ai_foundation.models.registry import ModelTask
-from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
+from lib.ai_foundation.retrieval.base import RetrievalRequest
 
 from .contracts import (
     BatchScanResult,
@@ -36,8 +35,6 @@ from .contracts import (
 )
 
 logger = logging.getLogger(__name__)
-
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 # Data types to check in each scan
 _SCAN_DATA_TYPES = [
@@ -161,6 +158,7 @@ class ProactiveMonitorAgent(BaseAgent):
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             return ScanResult(
                 patient_id=patient_id,
+                scan_date=scan_date,
                 insights=insights,
                 scan_duration_ms=elapsed_ms,
                 data_available=bool(data_text),
@@ -350,8 +348,13 @@ class ProactiveMonitorAgent(BaseAgent):
             "3. If a domain has no records, you may note the absence (e.g. no activity logged).\n"
             "4. Address the patient DIRECTLY using 'you/your' — like a friendly coach. "
             "Use their first name naturally (e.g. 'Asish, you had...' not 'Dr Asish Satapathy had...').\n"
-            "5. Title must be under 45 characters. Body must be under 180 characters.\n\n"
-            f"Available categories: {all_categories}\n"
+            "5. Title must be under 45 characters. Body must be under 180 characters.\n"
+            "6. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
+            "CATEGORIES — pick the one that fits best:\n"
+            "Concerns: glucose_spike, glucose_hypo, glucose_worsening, meal_missed, "
+            "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor, engagement_drop\n"
+            "Positives: glucose_improving, fitness_streak, sleep_improving, goal_progress\n"
+            "Neutral: general\n\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
             "warning (needs attention), alert (urgent)"
         )
