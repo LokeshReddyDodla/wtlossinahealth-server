@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
@@ -101,37 +99,51 @@ class ProactiveMonitorAgent(BaseAgent):
             # 1. Load patient context (facts, names)
             context = await self._load_patient_context(patient_id, patient_name)
 
-            # 2. Use the SAME prompts as health query agent — battle-tested, no hallucination
+            # 2. Use the SAME prompts as health query agent — battle-tested
             self._ensure_prompts()
             system_prompt = self._get_scan_prompt()
             reasoning_prompt = self.prompts.get("hq_reasoning").body
             response_prompt = self.prompts.get("hq_final_response").body
 
-            # 3. Use reasoning engine with BASIC tier (fast — 2 tool calls max)
+            # 3. Determine scan window based on time of day
+            now = datetime.now(timezone.utc)
+            hour = now.hour
+            if hour < 12:
+                # Morning: review yesterday
+                scan_msg = (
+                    f"Give me a brief health summary for this patient for yesterday "
+                    f"({(now - timedelta(days=1)).strftime('%Y-%m-%d')}). "
+                    f"Only mention noteworthy findings — glucose issues, meal concerns, or activity patterns. "
+                    f"If nothing noteworthy, say so."
+                )
+                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
+            elif hour < 17:
+                # Afternoon: review today so far
+                scan_msg = (
+                    f"Give me a brief health check for this patient for today "
+                    f"({now.strftime('%Y-%m-%d')}). "
+                    f"Only mention noteworthy findings. If nothing noteworthy, say so."
+                )
+                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
+            else:
+                # Evening: day wrap-up
+                scan_msg = (
+                    f"Summarize this patient's day today ({now.strftime('%Y-%m-%d')}). "
+                    f"What stood out? Only noteworthy patterns. If nothing noteworthy, say so."
+                )
+                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
+
             from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 
             result = await self._reasoning_engine.reason(
-                user_message=(
-                    "You are running a scheduled health check. The current time is in the system prompt. "
-                    "Choose your scan window based on the time of day:\n"
-                    "- If MORNING (before noon): Review YESTERDAY's full day + overnight. "
-                    "This is the daily briefing — summarize yesterday's glucose control, meals, activity.\n"
-                    "- If AFTERNOON (noon-5pm): Review TODAY so far. "
-                    "Check post-breakfast and post-lunch glucose, any missed meals, morning activity.\n"
-                    "- If EVENING (after 5pm): Summarize TODAY. "
-                    "What stood out? End-of-day wrap-up with actionable insights for tomorrow.\n\n"
-                    "Only flag what's NOTEWORTHY. Check glucose, meals, activity, and cross-domain connections."
-                ),
+                user_message=scan_msg,
                 system_prompt=system_prompt,
                 reasoning_prompt=reasoning_prompt,
                 response_prompt=response_prompt,
                 context=context,
                 patient_ids=[patient_id],
                 tier=ReasoningTier.BASIC,
-                intent_data_types=[
-                    "cgm_range_stats", "cgm_summary_stats", "smbg",
-                    "meal", "fitness_overview", "vital", "sleep",
-                ],
+                intent_data_types=date_types,
                 patient_names={patient_id: patient_name} if patient_name else None,
             )
 
