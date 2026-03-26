@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from lib.ai_foundation.config import settings
 from .loader import PromptMeta, PromptTemplate, load_prompt_directory
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,9 @@ class PromptRegistry:
         # Try Langfuse first (if enabled)
         if self._langfuse:
             try:
-                langfuse_prompt = self._langfuse.get_prompt(name, cache_ttl_seconds=300)
+                langfuse_prompt = self._langfuse.get_prompt(
+                    name, cache_ttl_seconds=settings.LANGFUSE_PROMPT_CACHE_TTL,
+                )
                 return PromptTemplate(
                     meta=PromptMeta(name=name),
                     body=langfuse_prompt.prompt,
