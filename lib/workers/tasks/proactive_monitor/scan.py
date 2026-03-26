@@ -196,27 +196,30 @@ async def _send_notifications(batch) -> None:
 
 
 async def _send_patient_notifications(patient_id: str, insights: list) -> None:
-    """Send push notifications for a patient's insights."""
+    """Send ONE push notification per patient — the most severe insight only."""
     try:
         from lib.services.fcm_service import FCMService
 
         fcm = FCMService()
-        for insight in insights:
-            # Only send push for attention+ severity
-            if insight.severity.value in ("attention", "warning", "alert"):
-                await fcm.send_fcm_notification_to_user_devices(
-                    user_id=patient_id,
-                    title=insight.title,
-                    body=insight.body,
-                    channel_key="health_insights",
-                    group_key="health_insights_group",
-                    data={
-                        "type": "proactive_insight",
-                        "insight_id": insight.insight_id,
-                        "category": insight.category.value,
-                        "severity": insight.severity.value,
-                        "suggested_query": insight.suggested_query or "",
-                    },
-                )
+        severity_rank = {"alert": 4, "warning": 3, "attention": 2, "info": 1}
+        notifiable = [i for i in insights if i.severity.value in ("attention", "warning", "alert")]
+
+        if notifiable:
+            top = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+            await fcm.send_fcm_notification_to_user_devices(
+                user_id=patient_id,
+                title=top.title,
+                body=top.body,
+                channel_key="health_insights",
+                group_key="health_insights_group",
+                data={
+                    "type": "proactive_insight",
+                    "insight_id": top.insight_id,
+                    "category": top.category.value,
+                    "severity": top.severity.value,
+                    "suggested_query": top.suggested_query or "",
+                    "total_insights": str(len(insights)),
+                },
+            )
     except Exception as e:
         logger.warning(f"Failed to send notifications for {patient_id}: {e}")
