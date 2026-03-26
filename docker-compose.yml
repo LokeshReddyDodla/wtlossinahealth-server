@@ -38,7 +38,7 @@ services:
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
       # OpenAI
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Langfuse (shared by our config + LiteLLM native callbacks)
+      # Langfuse
       - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
