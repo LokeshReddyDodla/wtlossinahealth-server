@@ -10,3 +10,4 @@ from .history_v3 import *
 from .reset import *
 from .reset_v3 import *
 from .admin_config import *
+from .proactive_scan import *
