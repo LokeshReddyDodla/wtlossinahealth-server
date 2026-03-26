@@ -1,16 +1,15 @@
 """
-Proactive Monitor Agent — background health monitoring via ReasoningEngine.
+Proactive Monitor Agent — background health monitoring with direct data fetch.
 
-Scans patient data periodically, uses the shared ReasoningEngine + ToolExecutor
-to investigate health patterns, and publishes structured insights via the
-EventBus. Designed to run as a background task (arq cron) rather than
-responding to user queries.
+Fetches patient data directly from Qdrant (deterministic, no LLM tool-calling),
+then uses a single LLM call to analyze the data and produce structured insights.
 
 Pipeline:
-    1. Load patient context (facts, names)
-    2. Run ReasoningEngine with BASIC tier (fast — 2 tool calls max)
-    3. Extract structured HealthInsight objects from the analysis
-    4. Publish insights to EventBus
+    1. Fetch data directly from Qdrant (glucose, meals, activity)
+    2. Format into readable text
+    3. Single LLM call → structured ScanInsights
+    4. Dedup + escalation via InsightTracker
+    5. Publish insights to EventBus
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
 from lib.ai_foundation.models.registry import ModelTask
+from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 
 from .contracts import (
     BatchScanResult,
@@ -39,22 +39,32 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+# Data types to check in each scan
+_SCAN_DATA_TYPES = ["cgm_summary_stats", "meal", "fitness_overview"]
+
+# Keys to strip from payloads before sending to LLM (noise reduction)
+_STRIP_KEYS = frozenset({
+    "data_type", "source", "patient_id", "embedding", "text_repr",
+    "patient_age", "patient_gender", "vector_updated_at",
+    "start_time", "end_time", "day_of_week", "is_weekend",
+    "week_number", "month", "time_of_day_bucket", "report_id",
+})
+
 
 class ProactiveMonitorAgent(BaseAgent):
-    """Background health monitor that detects patterns and sends notifications.
+    """Background health monitor that fetches data and classifies insights.
 
-    Unlike the HealthQueryAgent which responds to user queries, this agent
-    runs on a schedule (or triggered by events) and proactively surfaces
-    insights using the shared ReasoningEngine and ToolExecutor.
+    Unlike the HealthQueryAgent which uses the ReasoningEngine for interactive
+    queries, this agent fetches data directly from Qdrant (deterministic) and
+    uses a single LLM call to produce structured insights. This is faster,
+    cheaper, and more reliable for background monitoring.
 
     Example::
 
         monitor = ProactiveMonitorAgent(
             gateway=gateway,
-            reasoning_engine=engine,
-            tool_executor=tool_executor,
+            qdrant=qdrant_retriever,
             event_bus=event_bus,
-            prompts=prompts,
         )
 
         # Scan a single patient
@@ -72,18 +82,15 @@ class ProactiveMonitorAgent(BaseAgent):
         self,
         *,
         gateway: Any,
-        reasoning_engine: Any,
-        tool_executor: Any,
+        qdrant: Any,
         event_bus: Any | None = None,
         prompts: Any | None = None,
         memory: Any | None = None,
         insight_tracker: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
-        self._reasoning_engine = reasoning_engine
-        self._tools = tool_executor
+        self._qdrant = qdrant
         self._insight_tracker = insight_tracker
-        self._prompts_registered = False
 
     # -- Public API ---------------------------------------------------------
 
@@ -96,62 +103,42 @@ class ProactiveMonitorAgent(BaseAgent):
         start = time.perf_counter()
 
         try:
-            # 1. Load patient context (facts, names)
-            context = await self._load_patient_context(patient_id, patient_name)
-
-            # 2. Use the SAME prompts as health query agent — battle-tested
-            self._ensure_prompts()
-            system_prompt = self._get_scan_prompt()
-            reasoning_prompt = self.prompts.get("hq_reasoning").body
-            response_prompt = self.prompts.get("hq_final_response").body
-
-            # 3. Determine scan window based on time of day
+            # 1. Determine scan window
             now = datetime.now(timezone.utc)
             hour = now.hour
             yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
             today = now.strftime("%Y-%m-%d")
 
             if hour < 12:
-                # Morning: review yesterday
-                scan_msg = (
-                    f"Review this patient's health data for yesterday ({yesterday}). "
-                    f"Check glucose control, meals logged, and activity. "
-                    f"Highlight any concerns (spikes, hypos, missed meals) AND any positives "
-                    f"(good glucose control, consistent logging, active day)."
-                )
-            elif hour < 17:
-                # Afternoon: check-in on today
-                scan_msg = (
-                    f"Check this patient's health data for today ({today}) so far. "
-                    f"How is their glucose? Did they log meals? Any activity? "
-                    f"Report both concerns and positive observations."
-                )
+                scan_date = yesterday
+                scan_label = f"yesterday ({yesterday})"
             else:
-                # Evening: day wrap-up
-                scan_msg = (
-                    f"Summarize this patient's day today ({today}). "
-                    f"Review glucose, meals, and activity. "
-                    f"What went well? What needs attention? Give a balanced summary."
-                )
-            date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
+                scan_date = today
+                scan_label = f"today ({today})"
 
-            from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
-
-            result = await self._reasoning_engine.reason(
-                user_message=scan_msg,
-                system_prompt=system_prompt,
-                reasoning_prompt=reasoning_prompt,
-                response_prompt=response_prompt,
-                context=context,
-                patient_ids=[patient_id],
-                tier=ReasoningTier.BASIC,
-                intent_data_types=date_types,
-                patient_names={patient_id: patient_name} if patient_name else None,
+            # 2. Fetch data directly from Qdrant — deterministic, no LLM
+            data_text, domain_counts = await self._fetch_patient_data(
+                patient_id, patient_name, scan_date,
             )
 
-            # 4. Extract structured insights from the text response
-            insights = await self._extract_insights(
-                result.response, patient_id, patient_name,
+            logger.info(
+                "Scan %s: %s — %s",
+                patient_id, scan_label,
+                ", ".join(f"{k}={v}" for k, v in domain_counts.items()) or "no data",
+            )
+
+            # 3. Load patient facts for context
+            facts_text = await self._load_facts(patient_id)
+
+            # 4. Single LLM call → structured ScanInsights
+            display_name = patient_name or "this patient"
+            insights = await self._analyze_data(
+                data_text=data_text,
+                patient_id=patient_id,
+                patient_name=display_name,
+                scan_label=scan_label,
+                facts_text=facts_text,
+                has_data=bool(data_text),
             )
 
             # 5. Dedup + escalation via InsightTracker
@@ -166,10 +153,11 @@ class ProactiveMonitorAgent(BaseAgent):
                 patient_id=patient_id,
                 insights=insights,
                 scan_duration_ms=elapsed_ms,
+                data_available=bool(data_text),
             )
 
         except Exception as exc:
-            logger.error("Scan failed for patient %s: %s", patient_id, exc)
+            logger.error("Scan failed for patient %s: %s", patient_id, exc, exc_info=True)
             return ScanResult(
                 patient_id=patient_id,
                 error=str(exc),
@@ -236,64 +224,141 @@ class ProactiveMonitorAgent(BaseAgent):
 
     # -- Pipeline steps (private) -------------------------------------------
 
-    async def _load_patient_context(
-        self, patient_id: str, patient_name: str | None,
-    ):
-        """Build a minimal AgentContext for the scan."""
-        from lib.ai_foundation.agents.health_query.context_loader import AgentContext
-
-        facts: list[dict] = []
-        if self.memory:
-            try:
-                raw_facts = await self.memory.get_patient_facts(patient_id)
-                facts = [f.model_dump(mode="json") for f in raw_facts[:6]]
-            except Exception:
-                pass
-
-        names = {patient_id: patient_name} if patient_name else {}
-        return AgentContext(
-            facts=facts,
-            history=[],
-            thread_summary=None,
-            patient_names=names,
-        )
-
-    async def _extract_insights(
+    async def _fetch_patient_data(
         self,
-        analysis_text: str,
         patient_id: str,
         patient_name: str | None,
+        scan_date: str,
+    ) -> tuple[str, dict[str, int]]:
+        """Fetch health data directly from Qdrant for the scan date.
+
+        Returns (formatted_text, domain_counts) where domain_counts
+        maps data_type → number of records found.
+        """
+        results = await self._qdrant.retrieve_filtered(RetrievalRequest(
+            query="",
+            patient_ids=[patient_id],
+            data_types=_SCAN_DATA_TYPES,
+            date_start=scan_date,
+            date_end=scan_date,
+            limit=50,
+        ))
+
+        # Filter out profile records (Qdrant always includes them)
+        results = [r for r in results if r.data_type != "profile"]
+
+        if not results:
+            return "", {}
+
+        # Group by data type and format
+        domain_counts: dict[str, int] = {}
+        by_type: dict[str, list[dict]] = {}
+        for r in results:
+            dt = r.data_type or r.payload.get("data_type", "unknown")
+            domain_counts[dt] = domain_counts.get(dt, 0) + 1
+            by_type.setdefault(dt, []).append(r.payload)
+
+        sections: list[str] = []
+        name = patient_name or "Patient"
+
+        for dt, items in by_type.items():
+            label = dt.replace("_", " ").upper()
+            lines: list[str] = [f"## {label} ({len(items)} records)"]
+            for item in items:
+                clean = {
+                    k: v for k, v in item.items()
+                    if k not in _STRIP_KEYS and v is not None
+                }
+                parts: list[str] = []
+                for k, v in clean.items():
+                    if isinstance(v, dict):
+                        inner = ", ".join(
+                            f"{ik}: {iv}" for ik, iv in v.items() if iv is not None
+                        )
+                        if inner:
+                            parts.append(f"{k}: ({inner})")
+                    elif isinstance(v, list) and v and isinstance(v[0], dict):
+                        parts.append(f"{k}: {len(v)} items")
+                    else:
+                        parts.append(f"{k}: {v}")
+                lines.append("- " + ", ".join(parts))
+
+            sections.append("\n".join(lines))
+
+        header = f"# Health Data for {name} on {scan_date}\n"
+        return header + "\n\n".join(sections), domain_counts
+
+    async def _load_facts(self, patient_id: str) -> str:
+        """Load patient facts from memory for context."""
+        if not self.memory:
+            return ""
+        try:
+            raw_facts = await self.memory.get_patient_facts(patient_id)
+            if not raw_facts:
+                return ""
+            lines = []
+            for f in raw_facts[:6]:
+                lines.append(f"- {f.fact_type}: {f.value}")
+            return "Patient facts:\n" + "\n".join(lines)
+        except Exception:
+            return ""
+
+    async def _analyze_data(
+        self,
+        data_text: str,
+        patient_id: str,
+        patient_name: str,
+        scan_label: str,
+        facts_text: str,
+        has_data: bool,
     ) -> list[HealthInsight]:
-        """Extract structured HealthInsight objects from the reasoning text."""
+        """Single LLM call: data → structured ScanInsights."""
         all_categories = ", ".join(c.value for c in InsightCategory)
+
+        if not has_data:
+            # No data at all — produce an engagement insight without LLM
+            return [HealthInsight(
+                category=InsightCategory.ENGAGEMENT_DROP,
+                severity=InsightSeverity.ATTENTION,
+                title="No health data recorded",
+                body=f"{patient_name}, no data was logged for {scan_label}. Keep logging to help us help you!",
+                patient_id=patient_id,
+                suggested_query="Why is it important to log my health data regularly?",
+            )]
+
+        context_parts = [data_text]
+        if facts_text:
+            context_parts.append(facts_text)
+
+        system_prompt = (
+            "You are a health monitoring system analyzing a patient's daily data. "
+            "Produce 1-3 structured health insights from the data provided.\n\n"
+            "RULES:\n"
+            "1. EVERY insight must reference specific data from the records below.\n"
+            "2. Include BOTH concerns AND positives. If glucose is in range, that's worth noting. "
+            "If meals were logged consistently, acknowledge it.\n"
+            "3. If a domain has no records, you may note the absence (e.g. no activity logged).\n"
+            "4. Use the patient's name in the body.\n"
+            "5. Title must be under 45 characters. Body must be under 180 characters.\n\n"
+            f"Available categories: {all_categories}\n"
+            "Severity levels: info (positive/FYI), attention (worth noting), "
+            "warning (needs attention), alert (urgent)"
+        )
+
         try:
             scan_insights, _ = await self.gateway.extract(
                 messages=[
-                    {"role": "system", "content": (
-                        "Extract structured health insights from this analysis. "
-                        "Include BOTH concerns AND positive findings. "
-                        "ONLY create insights backed by real data in the analysis. "
-                        "If the analysis says no data was found or a SYSTEM ERROR occurred, "
-                        "return zero insights.\n\n"
-                        "For each insight:\n"
-                        "- title: SHORT push notification title, max 45 characters\n"
-                        "- body: notification text using patient name, max 180 characters\n"
-                        f"- category: one of {all_categories}\n"
-                        "- severity: info (positive/FYI), attention (worth noting), "
-                        "warning (needs attention), alert (urgent)\n"
-                        "- suggested_query: a follow-up question the patient could ask"
-                    )},
-                    {"role": "user", "content": analysis_text},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "\n\n".join(context_parts)},
                 ],
                 response_model=ScanInsights,
                 task=ModelTask.CLASSIFICATION,
             )
-            # Stamp patient_id on all insights
             for insight in scan_insights.insights:
                 insight.patient_id = patient_id
             return scan_insights.insights
         except Exception as exc:
-            logger.warning("Insight extraction failed: %s", exc)
+            logger.warning("Insight analysis failed: %s", exc, exc_info=True)
             return []
 
     async def _filter_insights(
@@ -352,23 +417,3 @@ class ProactiveMonitorAgent(BaseAgent):
             },
             source_agent=self.agent_id,
         ))
-
-    # -- Helpers ------------------------------------------------------------
-
-    def _ensure_prompts(self) -> None:
-        if self._prompts_registered or not self.prompts:
-            return
-        # Load proactive monitor prompts (for system prompt)
-        if "pm_scan_system" not in self.prompts:
-            self.prompts.register_directory(_PROMPTS_DIR, namespace="proactive_monitor")
-        # Load health query prompts (for reasoning + response — battle-tested)
-        hq_prompts_dir = Path(__file__).parent.parent / "health_query" / "prompts"
-        if "hq_reasoning" not in self.prompts and hq_prompts_dir.is_dir():
-            self.prompts.register_directory(hq_prompts_dir, namespace="health_query")
-        self._prompts_registered = True
-
-    def _get_scan_prompt(self) -> str:
-        """Get the system prompt for scanning with current time."""
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        template = self.prompts.get("pm_scan_system")
-        return template.render(current_time=now)
