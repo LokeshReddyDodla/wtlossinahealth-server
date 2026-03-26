@@ -383,8 +383,6 @@ class ToolExecutor:
             requested = set(data_types)
             results = [r for r in results if (r.data_type or r.payload.get("data_type")) in requested]
 
-        logger.info("look_up: %d matching results (types=%s)", len(results), data_types)
-
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
 
