@@ -22,6 +22,14 @@ class InsightSeverity(str, Enum):
     ALERT = "alert"          # needs immediate attention
 
 
+SEVERITY_RANK: dict[str, int] = {
+    "info": 1,
+    "attention": 2,
+    "warning": 3,
+    "alert": 4,
+}
+
+
 class InsightCategory(str, Enum):
     """What kind of insight this is."""
 
@@ -78,6 +86,7 @@ class ScanResult(BaseModel):
     """Result from scanning a single patient."""
 
     patient_id: str
+    scan_date: str = ""
     insights: list[HealthInsight] = Field(default_factory=list)
     scanned_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     scan_duration_ms: int = 0
