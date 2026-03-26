@@ -377,7 +377,11 @@ class ProactiveMonitorAgent(BaseAgent):
         patient_id: str,
         insights: list[HealthInsight],
     ) -> list[HealthInsight]:
-        """Filter insights through dedup + escalation via InsightTracker."""
+        """Filter insights through dedup + escalation via InsightTracker.
+
+        Only checks dedup — does NOT record. The caller must call
+        record_insight() for the insight it actually sends as a notification.
+        """
         if not self._insight_tracker:
             return insights
 
@@ -388,16 +392,9 @@ class ProactiveMonitorAgent(BaseAgent):
                     patient_id, insight.category.value,
                 )
                 if should_send:
-                    # Update severity based on escalation
                     if escalated_severity != "info":
                         insight.severity = InsightSeverity(escalated_severity)
                     filtered.append(insight)
-                    await self._insight_tracker.record(
-                        patient_id,
-                        insight.category.value,
-                        insight.severity.value,
-                        insight.body,
-                    )
                 else:
                     logger.debug(
                         "Dedup: skipping %s for patient %s (sent recently)",
@@ -405,9 +402,20 @@ class ProactiveMonitorAgent(BaseAgent):
                     )
             except Exception as exc:
                 logger.warning("InsightTracker error for %s: %s", patient_id, exc)
-                filtered.append(insight)  # fail-open: send anyway
+                filtered.append(insight)
 
         return filtered
+
+    async def record_insight(self, patient_id: str, insight: HealthInsight) -> None:
+        """Record that an insight was actually sent as a notification."""
+        if not self._insight_tracker:
+            return
+        await self._insight_tracker.record(
+            patient_id,
+            insight.category.value,
+            insight.severity.value,
+            insight.body,
+        )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
         """Publish an insight to the EventBus for notification delivery."""
