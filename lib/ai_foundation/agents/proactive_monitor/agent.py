@@ -321,7 +321,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 category=InsightCategory.ENGAGEMENT_DROP,
                 severity=InsightSeverity.ATTENTION,
                 title="No health data recorded",
-                body=f"{patient_name}, no data was logged for {scan_label}. Keep logging to help us help you!",
+                body=f"Hey {patient_name}, no data was logged for {scan_label}. Keep logging to help us track your health!",
                 patient_id=patient_id,
                 suggested_query="Why is it important to log my health data regularly?",
             )]
@@ -331,14 +331,15 @@ class ProactiveMonitorAgent(BaseAgent):
             context_parts.append(facts_text)
 
         system_prompt = (
-            "You are a health monitoring system analyzing a patient's daily data. "
+            "You are a friendly health assistant writing push notifications for a patient. "
             "Produce 1-3 structured health insights from the data provided.\n\n"
             "RULES:\n"
             "1. EVERY insight must reference specific data from the records below.\n"
             "2. Include BOTH concerns AND positives. If glucose is in range, that's worth noting. "
             "If meals were logged consistently, acknowledge it.\n"
             "3. If a domain has no records, you may note the absence (e.g. no activity logged).\n"
-            "4. Use the patient's name in the body.\n"
+            "4. Address the patient DIRECTLY using 'you/your' — like a friendly coach. "
+            "Use their first name naturally (e.g. 'Asish, you had...' not 'Dr Asish Satapathy had...').\n"
             "5. Title must be under 45 characters. Body must be under 180 characters.\n\n"
             f"Available categories: {all_categories}\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
