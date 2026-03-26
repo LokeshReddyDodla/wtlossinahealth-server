@@ -67,8 +67,10 @@ class InsightTracker:
         if not last:
             return True, "info"  # First time — send as INFO
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         last_sent: datetime = last.get("created_at", now)
+        if last_sent.tzinfo is not None:
+            last_sent = last_sent.replace(tzinfo=None)
         hours_since = (now - last_sent).total_seconds() / 3600
 
         # Don't repeat within 24 hours
@@ -96,7 +98,7 @@ class InsightTracker:
         """Record that an insight was sent."""
         await self._maybe_ensure_indexes()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
         # Determine consecutive-day count
         last = await self._collection.find_one(
@@ -107,6 +109,8 @@ class InsightTracker:
         consecutive = 1
         if last:
             last_sent: datetime = last.get("created_at", now)
+            if last_sent.tzinfo is not None:
+                last_sent = last_sent.replace(tzinfo=None)
             hours_since = (now - last_sent).total_seconds() / 3600
             if hours_since < _CONSECUTIVE_TOLERANCE_HOURS:
                 consecutive = last.get("consecutive_days", 0) + 1
