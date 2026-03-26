@@ -40,7 +40,17 @@ logger = logging.getLogger(__name__)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 # Data types to check in each scan
-_SCAN_DATA_TYPES = ["cgm_summary_stats", "meal", "fitness_overview"]
+_SCAN_DATA_TYPES = [
+    "cgm_summary_stats",    # daily glucose overview (TIR, avg, variability)
+    "cgm_range_stats",      # time in range breakdown
+    "hyper_event",          # specific glucose spike events
+    "hypo_event",           # specific hypo events (safety critical)
+    "meal",                 # meals logged
+    "smbg",                 # finger-prick readings
+    "fitness_overview",     # steps, active minutes
+    "sleep",                # sleep duration/quality
+    "vital",                # weight, BP, heart rate
+]
 
 # Keys to strip from payloads before sending to LLM (noise reduction)
 _STRIP_KEYS = frozenset({
