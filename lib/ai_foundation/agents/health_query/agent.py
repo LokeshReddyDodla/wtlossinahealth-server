@@ -56,8 +56,6 @@ class HealthQueryAgent(BaseAgent):
         persistence: Any = None,
         fact_extractor: Any = None,
         metrics_collector: Any = None,
-        # Legacy — kept for backward compat during transition
-        data_service: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -67,7 +65,6 @@ class HealthQueryAgent(BaseAgent):
         self.persistence = persistence
         self.fact_extractor = fact_extractor
         self._metrics = metrics_collector
-        self._data_service = data_service  # legacy fallback
         self._prompts_registered = False
 
     # ── Public: Non-streaming ─────────────────────────────────────────────

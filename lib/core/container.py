@@ -177,7 +177,6 @@ from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
-from lib.ai_foundation.agents.health_query.data_service import HealthDataService
 from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
 from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query.tools import ToolExecutor
@@ -1611,14 +1610,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-container.register(
-    HealthDataService,
-    lambda: HealthDataService(
-        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
-        summary_retriever=cast(PatientSummaryRetriever, container.resolve(PatientSummaryRetriever)),
-    ),
-    scope=Scope.singleton,
-)
 
 container.register(
     PersistenceService,
