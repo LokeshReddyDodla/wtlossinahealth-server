@@ -104,6 +104,7 @@ class AIFoundationSettings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: str = Field(default="", description="Langfuse public key")
     LANGFUSE_SECRET_KEY: str = Field(default="", description="Langfuse secret key")
     LANGFUSE_HOST: str = Field(default="http://langfuse-server:3000", description="Langfuse server URL")
+    LANGFUSE_PROMPT_CACHE_TTL: int = Field(default=300, description="Langfuse prompt cache TTL in seconds (300 = 5 min)")
 
     # ── Circuit Breaker ───────────────────────────────────────────────────
 

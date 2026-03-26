@@ -210,6 +210,8 @@ class ModelGateway:
             litellm.success_callback = ["langfuse"]
             litellm.failure_callback = ["langfuse"]
             logger.info("LiteLLM Langfuse callbacks enabled")
+        # Drop unsupported params (e.g., gpt-5 doesn't support temperature=0.0)
+        litellm.drop_params = True
         # Suppress LiteLLM's noisy default logging
         litellm.set_verbose = False
 
