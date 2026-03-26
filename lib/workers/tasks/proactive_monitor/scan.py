@@ -205,12 +205,13 @@ async def _send_patient_notifications(patient_id: str, insights: list) -> None:
 
         if notifiable:
             top = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+            is_urgent = top.severity.value in ("warning", "alert")
             await fcm.send_fcm_notification_to_user_devices(
                 user_id=patient_id,
                 title=top.title,
                 body=top.body,
-                channel_key="health_insights",
-                group_key="health_insights_group",
+                channel_key="alerts" if is_urgent else "reminders",
+                group_key="alert_group" if is_urgent else "reminder_group",
                 data={
                     "type": "proactive_insight",
                     "insight_id": top.insight_id,
