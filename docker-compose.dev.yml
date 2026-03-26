@@ -36,10 +36,10 @@ services:
       # OpenAI
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Langfuse
-      - AI_LANGFUSE_ENABLED=${AI_LANGFUSE_ENABLED:-false}
-      - AI_LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - AI_LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - AI_LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-server:3000}
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-server:3000}
     volumes:
       - api_logs:/src/logs
       - alembic_data:/src/alembic/versions
