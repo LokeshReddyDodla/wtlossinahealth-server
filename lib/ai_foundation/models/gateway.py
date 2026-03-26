@@ -209,6 +209,27 @@ class ModelGateway:
         self._circuit_breaker = circuit_breaker or CircuitBreaker()
         self._clients = _ProviderClients(api_keys)
         self._collector = collector  # FinetuneDataCollector (optional)
+        self._langfuse = self._init_langfuse()
+
+    @staticmethod
+    def _init_langfuse() -> Any | None:
+        """Initialize Langfuse client if enabled."""
+        from lib.ai_foundation.config import settings
+        if not settings.LANGFUSE_ENABLED or not settings.LANGFUSE_PUBLIC_KEY:
+            return None
+        try:
+            from langfuse import Langfuse
+            return Langfuse(
+                public_key=settings.LANGFUSE_PUBLIC_KEY,
+                secret_key=settings.LANGFUSE_SECRET_KEY,
+                host=settings.LANGFUSE_HOST,
+            )
+        except ImportError:
+            logger.debug("langfuse package not installed — tracing disabled")
+            return None
+        except Exception as exc:
+            logger.warning("Langfuse init failed: %s", exc)
+            return None
 
     # -- Public API ---------------------------------------------------------
 
@@ -377,7 +398,7 @@ class ModelGateway:
 
         content = choice.message.content if not tool_calls else None
 
-        return LLMToolResponse(
+        tool_response = LLMToolResponse(
             content=content,
             tool_calls=tool_calls,
             usage=usage,
@@ -385,6 +406,13 @@ class ModelGateway:
             provider=spec.provider.value,
             latency_ms=elapsed_ms,
         )
+        self._log_to_langfuse(
+            trace_id=trace_id, task="complete_with_tools", model_id=spec.model_id,
+            messages=messages,
+            response=content or f"[{len(tool_calls)} tool calls]",
+            usage=usage, latency_ms=elapsed_ms,
+        )
+        return tool_response
 
     async def stream(
         self,
@@ -507,6 +535,10 @@ class ModelGateway:
             trace_id=trace_id, latency_ms=elapsed_ms,
             cost_usd=usage.cost.total_cost,
         )
+        self._log_to_langfuse(
+            trace_id=trace_id, task="complete", model_id=spec.model_id,
+            messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
+        )
         return response
 
     # -- Internal: OpenAI extract (Instructor) ------------------------------
@@ -554,6 +586,10 @@ class ModelGateway:
             structured_output=parsed.model_dump(mode="json") if hasattr(parsed, "model_dump") else None,
             trace_id=trace_id, latency_ms=elapsed_ms,
             cost_usd=usage.cost.total_cost,
+        )
+        self._log_to_langfuse(
+            trace_id=trace_id, task="extract", model_id=spec.model_id,
+            messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
         )
         return parsed, meta
 
@@ -709,3 +745,38 @@ class ModelGateway:
             )
         except Exception as exc:
             logger.debug("Failed to record training sample: %s", exc)
+
+    def _log_to_langfuse(
+        self,
+        *,
+        trace_id: str,
+        task: str,
+        model_id: str,
+        messages: list[dict[str, Any]],
+        response: str,
+        usage: LLMUsage,
+        latency_ms: int,
+    ) -> None:
+        """Log an LLM generation to Langfuse. Fire-and-forget, never raises."""
+        if not self._langfuse:
+            return
+        try:
+            trace = self._langfuse.trace(id=trace_id, name=task)
+            trace.generation(
+                name=task,
+                model=model_id,
+                input=messages,
+                output=response,
+                usage={
+                    "input": usage.input_tokens,
+                    "output": usage.output_tokens,
+                    "total": usage.input_tokens + usage.output_tokens,
+                },
+                metadata={
+                    "latency_ms": latency_ms,
+                    "cost_usd": usage.cost.total_cost if usage.cost else 0,
+                    "cached_tokens": usage.cached_tokens,
+                },
+            )
+        except Exception as exc:
+            logger.debug("Langfuse log failed: %s", exc)

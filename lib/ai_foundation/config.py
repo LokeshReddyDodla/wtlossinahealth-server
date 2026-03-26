@@ -98,6 +98,13 @@ class AIFoundationSettings(BaseSettings):
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
+    # ── Langfuse Observability ────────────────────────────────────────────
+
+    LANGFUSE_ENABLED: bool = Field(default=False, description="Enable Langfuse LLM tracing")
+    LANGFUSE_PUBLIC_KEY: str = Field(default="", description="Langfuse public key")
+    LANGFUSE_SECRET_KEY: str = Field(default="", description="Langfuse secret key")
+    LANGFUSE_HOST: str = Field(default="http://langfuse-server:3000", description="Langfuse server URL")
+
     # ── Circuit Breaker ───────────────────────────────────────────────────
 
     CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, description="Failures before circuit opens")
