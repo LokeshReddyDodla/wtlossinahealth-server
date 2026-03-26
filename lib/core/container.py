@@ -172,7 +172,6 @@ from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
 from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
-from lib.ai_foundation.observability.metrics import MetricsCollector
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
 from lib.ai_foundation.training.ab_test import ABTestManager
 from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
@@ -1564,15 +1563,6 @@ container.register(
     scope=Scope.singleton,
 )
 
-# Metrics Collector — per-agent performance aggregation
-container.register(
-    MetricsCollector,
-    lambda: MetricsCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
 # Rate Limiter — per-tenant, priority-aware
 container.register(
     RateLimiter,
@@ -1702,7 +1692,6 @@ container.register(
         coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
-        metrics_collector=cast(MetricsCollector, container.resolve(MetricsCollector)),
     ),
     scope=Scope.singleton,
 )

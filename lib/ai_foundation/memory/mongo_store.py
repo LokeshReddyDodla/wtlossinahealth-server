@@ -86,37 +86,7 @@ class MongoMemoryStore:
             expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600,
         )
 
-        # TTL indexes for trace and training collections
-        traces = self._mongo.get_collection("ai_traces")
-        await traces.create_index(
-            [("agent_id", 1), ("started_at", -1)],
-            name="traces_agent_time_idx",
-        )
-        await traces.create_index(
-            "started_at",
-            name="traces_ttl_idx",
-            expireAfterSeconds=settings.TRACES_TTL_DAYS * 24 * 3600,
-        )
-
-        samples = self._mongo.get_collection("ai_finetune_samples")
-        await samples.create_index(
-            [("agent_id", 1), ("task", 1), ("created_at", -1)],
-            name="samples_agent_task_idx",
-        )
-        await samples.create_index(
-            "created_at",
-            name="samples_ttl_idx",
-            expireAfterSeconds=settings.SAMPLES_TTL_DAYS * 24 * 3600,
-        )
-
-        metrics = self._mongo.get_collection("ai_agent_metrics")
-        await metrics.create_index(
-            "recorded_at",
-            name="metrics_ttl_idx",
-            expireAfterSeconds=settings.TRACES_TTL_DAYS * 24 * 3600,
-        )
-
-        logger.debug("Memory store indexes + TTL indexes ensured.")
+        logger.debug("Memory store indexes ensured.")
 
     # -- Patient Facts ------------------------------------------------------
 

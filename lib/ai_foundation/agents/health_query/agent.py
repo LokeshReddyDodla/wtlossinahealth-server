@@ -55,7 +55,6 @@ class HealthQueryAgent(BaseAgent):
         coordinator: Coordinator | None = None,
         persistence: Any = None,
         fact_extractor: Any = None,
-        metrics_collector: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -64,7 +63,6 @@ class HealthQueryAgent(BaseAgent):
         self.coordinator = coordinator
         self.persistence = persistence
         self.fact_extractor = fact_extractor
-        self._metrics = metrics_collector
         self._prompts_registered = False
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
