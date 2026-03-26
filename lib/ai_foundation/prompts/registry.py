@@ -1,17 +1,21 @@
 """
-Prompt Registry — central index for all prompt templates across the platform.
+Prompt Registry — central index for all prompt templates.
 
-Agents register their prompt directories at startup. The registry makes
-prompts discoverable by name, domain, task, or role — enabling prompt
-reuse across agents and version tracking for evaluation.
+Supports two backends:
+1. Local .md files (development, fallback)
+2. Langfuse Prompt Management (production — edit prompts from dashboard)
+
+When Langfuse is enabled, prompts are fetched from Langfuse with a 5-minute
+cache. If Langfuse is unavailable, falls back to local .md files.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
-from .loader import PromptTemplate, load_prompt_directory
+from .loader import PromptMeta, PromptTemplate, load_prompt_directory
 
 logger = logging.getLogger(__name__)
 
@@ -21,34 +25,26 @@ class PromptNotFoundError(Exception):
 
 
 class PromptRegistry:
-    """Global prompt registry that agents register their prompts into.
-
-    Thread-safe for reads after initial configuration.
+    """Prompt registry with Langfuse-first, local-fallback strategy.
 
     Example::
 
+        # Local only (development)
         registry = PromptRegistry()
+        registry.register_directory(Path("prompts/"), namespace="hq")
 
-        # Register entire directories
-        registry.register_directory(
-            Path("lib/services/health_query_agent/prompts"),
-            namespace="health_query",
-        )
-        registry.register_directory(
-            Path("lib/services/health_query_agent/v2/playbooks"),
-            namespace="health_query.playbooks",
-        )
+        # Langfuse + local fallback (production)
+        registry = PromptRegistry(langfuse_client=langfuse)
+        registry.register_directory(Path("prompts/"), namespace="hq")  # fallback
 
-        # Look up by name
-        prompt = registry.get("system_patient")
-
-        # Search by criteria
-        playbooks = registry.select(domain="cgm", task="playbook")
+        # Same interface either way
+        prompt = registry.get("hq_system_patient")
     """
 
-    def __init__(self) -> None:
-        self._prompts: dict[str, PromptTemplate] = {}
+    def __init__(self, *, langfuse_client: Any | None = None) -> None:
+        self._prompts: dict[str, PromptTemplate] = {}  # local .md files
         self._namespaces: dict[str, list[str]] = {}
+        self._langfuse = langfuse_client
 
     # -- Registration -------------------------------------------------------
 
@@ -103,16 +99,32 @@ class PromptRegistry:
     # -- Lookup -------------------------------------------------------------
 
     def get(self, name: str, *, version: str | None = None) -> PromptTemplate:
-        """Retrieve a prompt by exact name.
+        """Retrieve a prompt by name. Tries Langfuse first, falls back to local.
+
+        When Langfuse is enabled:
+        1. Fetch from Langfuse (cached for 5 minutes)
+        2. If Langfuse fails, fall back to local .md file
 
         Args:
-            name: The prompt name (e.g. ``"system_patient"``).
-            version: Optional version filter. If provided and the registered
-                prompt's version doesn't match, raises ``PromptNotFoundError``.
+            name: The prompt name (e.g. ``"hq_system_patient"``).
+            version: Optional version filter (local only).
 
         Raises:
-            PromptNotFoundError: If the prompt doesn't exist or version mismatches.
+            PromptNotFoundError: If the prompt doesn't exist in either backend.
         """
+        # Try Langfuse first (if enabled)
+        if self._langfuse:
+            try:
+                langfuse_prompt = self._langfuse.get_prompt(name, cache_ttl_seconds=300)
+                return PromptTemplate(
+                    meta=PromptMeta(name=name),
+                    body=langfuse_prompt.prompt,
+                    content_hash="langfuse",
+                )
+            except Exception:
+                pass  # Fall back to local
+
+        # Fall back to local .md files
         template = self._prompts.get(name)
         if template is None:
             raise PromptNotFoundError(

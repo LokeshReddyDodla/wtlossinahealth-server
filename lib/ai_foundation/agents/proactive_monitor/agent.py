@@ -59,7 +59,7 @@ class ProactiveMonitorAgent(BaseAgent):
 
         monitor = ProactiveMonitorAgent(
             gateway=gateway, memory=memory, retriever=retriever,
-            tracer=tracer, event_bus=event_bus, prompts=prompts,
+            event_bus=event_bus, prompts=prompts,
         )
 
         # Scan a single patient
@@ -83,12 +83,6 @@ class ProactiveMonitorAgent(BaseAgent):
     async def scan_patient(self, patient_id: str) -> ScanResult:
         """Scan a single patient's recent data for noteworthy patterns."""
         start = time.perf_counter()
-        trace = None
-
-        if self.tracer:
-            trace = self.tracer.start_trace(
-                self.agent_id, patient_id=patient_id,
-            )
 
         try:
             # 1. Fetch recent data
@@ -124,9 +118,6 @@ class ProactiveMonitorAgent(BaseAgent):
                 error=str(exc),
                 scan_duration_ms=int((time.perf_counter() - start) * 1000),
             )
-        finally:
-            if self.tracer and trace:
-                await self.tracer.finish_trace()
 
     async def scan_batch(self, patient_ids: list[str]) -> BatchScanResult:
         """Scan multiple patients. Used by cron jobs."""
@@ -195,12 +186,7 @@ class ProactiveMonitorAgent(BaseAgent):
             limit=30,
         )
 
-        if self.tracer:
-            async with self.tracer.span("fetch_patient_data") as span:
-                result = await self.retriever.retrieve(request)
-                span.tags["result_count"] = str(len(result.items))
-        else:
-            result = await self.retriever.retrieve(request)
+        result = await self.retriever.retrieve(request)
 
         return [item.payload for item in result.items]
 
@@ -244,23 +230,11 @@ class ProactiveMonitorAgent(BaseAgent):
             "content": f"Analyze this patient's recent health data and return insights:\n\n{data_summary}",
         })
 
-        if self.tracer:
-            async with self.tracer.span("insight_analysis") as span:
-                result, meta = await self.gateway.extract(
-                    messages=messages,
-                    response_model=_InsightList,
-                    task=ModelTask.CLASSIFICATION,
-                )
-                span.model_id = meta.model_id
-                span.tokens_in = meta.usage.input_tokens
-                span.tokens_out = meta.usage.output_tokens
-                span.cost_usd = meta.usage.cost.total_cost
-        else:
-            result, meta = await self.gateway.extract(
-                messages=messages,
-                response_model=_InsightList,
-                task=ModelTask.CLASSIFICATION,
-            )
+        result, meta = await self.gateway.extract(
+            messages=messages,
+            response_model=_InsightList,
+            task=ModelTask.CLASSIFICATION,
+        )
 
         # Stamp patient_id on all insights
         for insight in result.insights:

@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
+from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
@@ -74,19 +75,28 @@ class HealthQueryAgent(BaseAgent):
     async def run(self, input: AgentInput) -> AgentOutput:
         pipeline_start = time.perf_counter()
         user_timestamp = datetime.now(timezone.utc)
-        trace = None
-        if self.tracer:
-            trace = self.tracer.start_trace(
-                self.agent_id, patient_id=input.context.patient_id,
-                thread_id=input.context.thread_id, user_role=input.context.user_role,
-            )
+        trace_id = f"trc_{uuid4().hex[:16]}"
 
         try:
+            # Set Langfuse context for this request
+            self.gateway.set_langfuse_context(
+                session_id=input.context.thread_id,
+                user_id=input.context.user_id,
+            )
+
+            # Set trace-level input
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                input_text=input.message,
+                metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
+            )
+
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
+                self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 return output
 
@@ -137,11 +147,13 @@ class HealthQueryAgent(BaseAgent):
                     "tools_called": result.tools_called,
                     "tier": result.tier,
                 },
-                trace_id=trace.trace_id if trace else None,
+                trace_id=trace_id,
                 cost_usd=total_cost,
                 latency_ms=elapsed,
                 model_id=result.responder_model,
             )
+
+            self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
             self._schedule_background(input)
@@ -151,27 +163,30 @@ class HealthQueryAgent(BaseAgent):
             logger.exception("HealthQueryAgent.run failed: %s", exc)
             return AgentOutput(
                 message="I'm having trouble processing your request right now. Please try again.",
-                is_ready=False, trace_id=trace.trace_id if trace else None,
+                is_ready=False, trace_id=trace_id,
             )
-        finally:
-            if self.tracer and trace:
-                completed_trace = await self.tracer.finish_trace()
-                if self._metrics and completed_trace:
-                    await self._metrics.record_request(completed_trace)
 
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 
     async def run_stream(self, input: AgentInput) -> AsyncIterator[str]:
         pipeline_start = time.perf_counter()
         user_timestamp = datetime.now(timezone.utc)
-        trace = None
-        if self.tracer:
-            trace = self.tracer.start_trace(
-                self.agent_id, patient_id=input.context.patient_id,
-                thread_id=input.context.thread_id,
-            )
+        trace_id = f"trc_{uuid4().hex[:16]}"
 
         try:
+            # Set Langfuse context for this request
+            self.gateway.set_langfuse_context(
+                session_id=input.context.thread_id,
+                user_id=input.context.user_id,
+            )
+
+            # Set trace-level input
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                input_text=input.message,
+                metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
+            )
+
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
@@ -179,12 +194,12 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 msg = intent.clarification_msg or "Could you tell me more?"
-                output = AgentOutput(message=msg, is_ready=False, trace_id=trace.trace_id if trace else None)
+                output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump() for s in intent.suggestions],
-                    trace_id=trace.trace_id if trace else None,
+                    trace_id=trace_id,
                     latency_ms=int((time.perf_counter() - pipeline_start) * 1000),
                 ))
                 return
@@ -236,8 +251,10 @@ class HealthQueryAgent(BaseAgent):
 
                     output = AgentOutput(
                         message=full_text, is_ready=True,
-                        trace_id=trace.trace_id if trace else None,
+                        trace_id=trace_id,
                     )
+                    if full_text:
+                        self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text)
                     await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                     self._schedule_background(input)
 
@@ -245,7 +262,7 @@ class HealthQueryAgent(BaseAgent):
                     elapsed = int((time.perf_counter() - pipeline_start) * 1000)
                     yield sse_done(SSEDonePayload(
                         suggestions=[s.model_dump() for s in intent.suggestions],
-                        trace_id=trace.trace_id if trace else None,
+                        trace_id=trace_id,
                         latency_ms=elapsed,
                     ))
                     continue
@@ -256,11 +273,6 @@ class HealthQueryAgent(BaseAgent):
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
             yield sse_error(message="I'm having trouble right now.", code="agent_error",
                             fallback_text="Please try again in a moment.")
-        finally:
-            if self.tracer and trace:
-                completed_trace = await self.tracer.finish_trace()
-                if self._metrics and completed_trace:
-                    await self._metrics.record_request(completed_trace)
 
     # ── Pipeline steps ────────────────────────────────────────────────────
 
@@ -301,19 +313,9 @@ class HealthQueryAgent(BaseAgent):
         messages.extend(ctx.history[-settings.MAX_HISTORY_MESSAGES:])
         messages.append({"role": "user", "content": input.message})
 
-        if self.tracer:
-            async with self.tracer.span("intent_extraction") as span:
-                intent, meta = await self.gateway.extract(
-                    messages=messages, response_model=QueryIntent, task=ModelTask.INTENT_EXTRACTION,
-                )
-                span.model_id = meta.model_id
-                span.tokens_in = meta.usage.input_tokens
-                span.tokens_out = meta.usage.output_tokens
-                span.cost_usd = meta.usage.cost.total_cost
-        else:
-            intent, meta = await self.gateway.extract(
-                messages=messages, response_model=QueryIntent, task=ModelTask.INTENT_EXTRACTION,
-            )
+        intent, meta = await self.gateway.extract(
+            messages=messages, response_model=QueryIntent, task=ModelTask.INTENT_EXTRACTION,
+        )
 
         return intent, meta
 

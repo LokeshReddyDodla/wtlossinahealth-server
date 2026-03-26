@@ -170,8 +170,6 @@ from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
 from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
-from lib.ai_foundation.eval.trace import TraceCollector
-from lib.ai_foundation.eval.collector import FinetuneDataCollector
 from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.observability.metrics import MetricsCollector
@@ -1403,11 +1401,26 @@ def _get_embed_fn():
 
 
 def _build_prompt_registry() -> PromptRegistry:
-    """Build a PromptRegistry pre-loaded with all agent prompts."""
+    """Build a PromptRegistry with Langfuse backend (if enabled) + local fallback."""
     from pathlib import Path
     import logging
+    from lib.ai_foundation.config import settings as _ai_settings
 
-    registry = PromptRegistry()
+    # Initialize Langfuse client for prompt management (if enabled)
+    langfuse_client = None
+    if _ai_settings.LANGFUSE_ENABLED and _ai_settings.LANGFUSE_PUBLIC_KEY:
+        try:
+            from langfuse import Langfuse
+            langfuse_client = Langfuse(
+                public_key=_ai_settings.LANGFUSE_PUBLIC_KEY,
+                secret_key=_ai_settings.LANGFUSE_SECRET_KEY,
+                host=_ai_settings.LANGFUSE_HOST,
+            )
+            logging.getLogger(__name__).info("PromptRegistry: Langfuse backend enabled")
+        except Exception as exc:
+            logging.getLogger(__name__).warning("PromptRegistry: Langfuse init failed: %s", exc)
+
+    registry = PromptRegistry(langfuse_client=langfuse_client)
 
     # Discover and register prompt directories for all foundation agents
     agents_dir = Path(__file__).parent.parent / "ai_foundation" / "agents"
@@ -1469,26 +1482,15 @@ container.register(
 )
 
 # Model Gateway — unified LLM interface (complete, extract, stream)
-def _build_model_gateway() -> ModelGateway:
-    import logging
-    _log = logging.getLogger(__name__)
-
-    openai_key = _ai_settings.OPENAI_API_KEY or str(config("OPENAI_API_KEY", default=""))
-    google_key = _ai_settings.GOOGLE_API_KEY or str(config("GOOGLE_API_KEY", default=""))
-
-    if not openai_key:
-        _log.warning("OPENAI_API_KEY not set — OpenAI calls will fail.")
-    if not google_key:
-        _log.info("GOOGLE_API_KEY not set — Gemini fallback unavailable.")
-
-    return ModelGateway(
+# LiteLLM reads API keys from env vars (OPENAI_API_KEY, GEMINI_API_KEY) directly.
+container.register(
+    ModelGateway,
+    lambda: ModelGateway(
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
-        api_keys={"openai": openai_key, "google": google_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
-        collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
-    )
-
-container.register(ModelGateway, _build_model_gateway, scope=Scope.singleton)
+    ),
+    scope=Scope.singleton,
+)
 
 # Prompt Registry — versioned prompt management (pre-loaded with agent prompts)
 container.register(
@@ -1543,24 +1545,6 @@ container.register(
     lambda: EmbeddingCache(
         cache_store=container.resolve("ai_foundation_cache"),
         ttl_seconds=_ai_settings.EMBEDDING_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
-# Trace Collector — span-based pipeline tracing
-container.register(
-    TraceCollector,
-    lambda: TraceCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
-# Fine-tune Data Collector — captures LLM I/O for training
-container.register(
-    FinetuneDataCollector,
-    lambda: FinetuneDataCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
     scope=Scope.singleton,
 )
@@ -1721,7 +1705,6 @@ container.register(
     lambda: HealthQueryAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         context_loader=cast(ContextLoader, container.resolve(ContextLoader)),
         reasoning_engine=cast(ReasoningEngine, container.resolve(ReasoningEngine)),
@@ -1740,7 +1723,6 @@ container.register(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
     ),
     scope=Scope.singleton,

@@ -95,14 +95,12 @@ class TestBaseAgent:
             memory="fake_memory",
             prompts="fake_prompts",
             retriever="fake_retriever",
-            tracer="fake_tracer",
             event_bus="fake_bus",
         )
         assert agent.gateway == "fake_gateway"
         assert agent.memory == "fake_memory"
         assert agent.prompts == "fake_prompts"
         assert agent.retriever == "fake_retriever"
-        assert agent.tracer == "fake_tracer"
         assert agent.event_bus == "fake_bus"
 
     @pytest.mark.asyncio

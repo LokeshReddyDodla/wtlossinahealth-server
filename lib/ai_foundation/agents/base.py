@@ -2,7 +2,7 @@
 Base Agent — foundation base class with all shared services injected.
 
 All agents built on the foundation extend ``BaseAgent`` to get automatic
-access to the model gateway, memory, prompts, retrieval, tracing, events,
+access to the model gateway, memory, prompts, retrieval, events,
 and streaming. This eliminates boilerplate and ensures consistent behaviour.
 """
 
@@ -15,7 +15,6 @@ from .state import AgentInput, AgentOutput
 
 if TYPE_CHECKING:
     from lib.ai_foundation.events.bus import EventBus
-    from lib.ai_foundation.eval.trace import TraceCollector
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
     from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -62,14 +61,12 @@ class BaseAgent:
         memory: MemoryStore | None = None,
         prompts: PromptRegistry | None = None,
         retriever: CompositeRetriever | None = None,
-        tracer: TraceCollector | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self.gateway = gateway
         self.memory = memory
         self.prompts = prompts
         self.retriever = retriever
-        self.tracer = tracer
         self.event_bus = event_bus
 
     async def run(self, input: AgentInput) -> AgentOutput:
