@@ -256,9 +256,16 @@ class ProactiveMonitorAgent(BaseAgent):
                 messages=[
                     {"role": "system", "content": (
                         "Extract structured health insights from this analysis. "
-                        "Each insight should have a category, severity, title (short), "
-                        "body (personalized notification text using patient name), "
-                        "and a suggested_query the patient could ask for more details."
+                        "ONLY create insights backed by real data in the analysis. "
+                        "If the analysis says no data was found, return zero insights.\n\n"
+                        "For each insight:\n"
+                        "- title: SHORT push notification title, max 45 characters\n"
+                        "- body: notification text using patient name, max 180 characters\n"
+                        "- category: one of glucose_spike, glucose_hypo, glucose_improving, "
+                        "glucose_worsening, meal_missed, meal_high_carb, fitness_inactive, "
+                        "fitness_streak, sleep_poor, engagement_low\n"
+                        "- severity: info, attention, warning, or alert\n"
+                        "- suggested_query: a follow-up question the patient could ask"
                     )},
                     {"role": "user", "content": analysis_text},
                 ],
