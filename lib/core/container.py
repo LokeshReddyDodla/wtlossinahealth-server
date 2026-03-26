@@ -170,8 +170,6 @@ from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.ai_foundation.retrieval.patient_summary import PatientSummaryRetriever
 from lib.ai_foundation.cache.semantic_cache import SemanticCache
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
-from lib.ai_foundation.eval.trace import TraceCollector
-from lib.ai_foundation.eval.collector import FinetuneDataCollector
 from lib.ai_foundation.eval.quality import QualityScorer
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.observability.metrics import MetricsCollector
@@ -1485,7 +1483,6 @@ def _build_model_gateway() -> ModelGateway:
         registry=cast(ModelRegistry, container.resolve(ModelRegistry)),
         api_keys={"openai": openai_key, "google": google_key},
         circuit_breaker=cast(CircuitBreaker, container.resolve(CircuitBreaker)),
-        collector=cast(FinetuneDataCollector, container.resolve(FinetuneDataCollector)),
     )
 
 container.register(ModelGateway, _build_model_gateway, scope=Scope.singleton)
@@ -1543,24 +1540,6 @@ container.register(
     lambda: EmbeddingCache(
         cache_store=container.resolve("ai_foundation_cache"),
         ttl_seconds=_ai_settings.EMBEDDING_CACHE_TTL,
-    ),
-    scope=Scope.singleton,
-)
-
-# Trace Collector — span-based pipeline tracing
-container.register(
-    TraceCollector,
-    lambda: TraceCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-    ),
-    scope=Scope.singleton,
-)
-
-# Fine-tune Data Collector — captures LLM I/O for training
-container.register(
-    FinetuneDataCollector,
-    lambda: FinetuneDataCollector(
-        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
     ),
     scope=Scope.singleton,
 )
@@ -1721,7 +1700,6 @@ container.register(
     lambda: HealthQueryAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         context_loader=cast(ContextLoader, container.resolve(ContextLoader)),
         reasoning_engine=cast(ReasoningEngine, container.resolve(ReasoningEngine)),
@@ -1740,7 +1718,6 @@ container.register(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
-        tracer=cast(TraceCollector, container.resolve(TraceCollector)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
     ),
     scope=Scope.singleton,

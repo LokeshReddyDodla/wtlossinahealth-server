@@ -183,13 +183,6 @@ class PersistenceService:
 
             if prev_was_ready and not current_is_ready and prev_trace_id:
                 logger.debug("Implicit negative signal: clarification after is_ready=True")
-                try:
-                    from lib.ai_foundation.eval.collector import FinetuneDataCollector
-                    from lib.core.container import container
-                    collector: FinetuneDataCollector = container.resolve(FinetuneDataCollector)
-                    await collector.add_implicit_signal(prev_trace_id, "user_asked_clarification_after", True)
-                except Exception:
-                    pass
         except Exception:
             pass
 

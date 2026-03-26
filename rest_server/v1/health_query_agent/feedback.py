@@ -1,8 +1,7 @@
 """
 Feedback endpoint — collects user thumbs up/down on agent responses.
 
-Feeds the fine-tuning pipeline by recording explicit quality signals
-against captured training samples (matched by trace_id).
+Logs feedback scores to Langfuse for observability and evaluation.
 """
 
 from typing import Optional
@@ -11,7 +10,7 @@ from fastapi import Depends
 from pydantic import BaseModel, Field
 
 from lib.core.container import container
-from lib.ai_foundation.eval.collector import FinetuneDataCollector
+from lib.ai_foundation.models.gateway import ModelGateway
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.core.constants import ProfileTypeEnum
 from rest_server.response_models import SuccessResponse
@@ -44,21 +43,13 @@ async def submit_feedback(
 ):
     """Submit thumbs up/down feedback on an agent response.
 
-    The feedback is recorded against the training sample identified by
-    trace_id, which feeds the fine-tuning quality filter.
+    The feedback is logged to Langfuse as a score against the trace.
     """
-    collector: FinetuneDataCollector = container.resolve(FinetuneDataCollector)
-
     score = 1.0 if payload.thumbs_up else 0.0
-    recorded = await collector.add_feedback(
-        sample_id=payload.trace_id,
-        score=score,
-        notes=payload.comment,
-    )
 
     # Log score to Langfuse
+    recorded = False
     try:
-        from lib.ai_foundation.models.gateway import ModelGateway
         gateway: ModelGateway = container.resolve(ModelGateway)
         gateway.log_score(
             trace_id=payload.trace_id,
@@ -66,10 +57,11 @@ async def submit_feedback(
             value=score,
             comment=payload.comment,
         )
+        recorded = True
     except Exception:
-        pass  # Langfuse scoring is optional
+        pass  # Langfuse scoring is best-effort
 
     return SuccessResponse(
-        message="Feedback recorded" if recorded else "Feedback noted (sample not found)",
+        message="Feedback recorded" if recorded else "Feedback noted",
         data=FeedbackResponse(recorded=recorded, trace_id=payload.trace_id),
     )

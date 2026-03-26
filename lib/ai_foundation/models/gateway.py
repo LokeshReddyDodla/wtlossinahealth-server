@@ -6,7 +6,7 @@ Every LLM interaction in the platform goes through this gateway, which provides:
 - Automatic model routing via ModelRegistry
 - Fallback chain execution via CircuitBreaker
 - Cost tracking via PricingCalculator
-- Automatic data capture for training (via optional TraceCollector / FinetuneDataCollector)
+- Observability via Langfuse
 """
 
 from __future__ import annotations
@@ -203,12 +203,10 @@ class ModelGateway:
         registry: ModelRegistry,
         api_keys: dict[str, str] | None = None,
         circuit_breaker: CircuitBreaker | None = None,
-        collector: Any | None = None,
     ) -> None:
         self._registry = registry
         self._circuit_breaker = circuit_breaker or CircuitBreaker()
         self._clients = _ProviderClients(api_keys)
-        self._collector = collector  # FinetuneDataCollector (optional)
         self._langfuse = self._init_langfuse()
 
     @staticmethod
@@ -570,12 +568,6 @@ class ModelGateway:
             trace_id=trace_id,
         )
 
-        await self._record_sample(
-            task="response_generation", messages=messages,
-            response=content, model_id=spec.model_id,
-            trace_id=trace_id, latency_ms=elapsed_ms,
-            cost_usd=usage.cost.total_cost,
-        )
         self._log_to_langfuse(
             trace_id=trace_id, task="complete", model_id=spec.model_id,
             messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
@@ -622,13 +614,6 @@ class ModelGateway:
             trace_id=trace_id,
         )
 
-        await self._record_sample(
-            task="intent_extraction", messages=messages,
-            response=content, model_id=spec.model_id,
-            structured_output=parsed.model_dump(mode="json") if hasattr(parsed, "model_dump") else None,
-            trace_id=trace_id, latency_ms=elapsed_ms,
-            cost_usd=usage.cost.total_cost,
-        )
         self._log_to_langfuse(
             trace_id=trace_id, task="extract", model_id=spec.model_id,
             messages=messages, response=content, usage=usage, latency_ms=elapsed_ms,
@@ -763,38 +748,6 @@ class ModelGateway:
         raise ModelGatewayError(
             f"Provider {spec.provider.value!r} is not yet supported for structured extraction."
         )
-
-    # -- Internal: training data capture ------------------------------------
-
-    async def _record_sample(
-        self,
-        *,
-        task: str,
-        messages: list[dict[str, str]],
-        response: str,
-        model_id: str,
-        structured_output: dict | None = None,
-        trace_id: str | None = None,
-        latency_ms: int | None = None,
-        cost_usd: float | None = None,
-    ) -> None:
-        """Record an LLM interaction for future fine-tuning. Fire-and-forget."""
-        if not self._collector:
-            return
-        try:
-            await self._collector.record_sample(
-                agent_id="gateway",
-                task=task,
-                model_id=model_id,
-                messages=messages,
-                response=response,
-                structured_output=structured_output,
-                trace_id=trace_id,
-                latency_ms=latency_ms,
-                cost_usd=cost_usd,
-            )
-        except Exception as exc:
-            logger.debug("Failed to record training sample: %s", exc)
 
     def _log_to_langfuse(
         self,

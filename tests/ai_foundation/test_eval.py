@@ -1,10 +1,8 @@
-"""Tests for Evaluation — trace, collector, schemas, quality judges."""
+"""Tests for Evaluation — schemas, quality judges."""
 
 import pytest
 import asyncio
 
-from lib.ai_foundation.eval.trace import Span, Trace, TraceCollector
-from lib.ai_foundation.eval.collector import FinetuneDataCollector, TrainingSample, ImplicitSignals
 from lib.ai_foundation.eval.schemas import (
     EvalCase,
     EvalResult,
@@ -20,100 +18,6 @@ from lib.ai_foundation.eval.quality import (
     judge_set_precision,
     judge_set_recall,
 )
-
-
-class TestTrace:
-    def test_trace_has_id(self):
-        t = Trace(agent_id="test")
-        assert t.trace_id.startswith("trc_")
-        assert t.agent_id == "test"
-
-    def test_span_defaults(self):
-        s = Span(name="intent_extraction")
-        assert s.name == "intent_extraction"
-        assert s.cache_hit is False
-        assert s.error is None
-
-
-class TestTraceCollector:
-    @pytest.mark.asyncio
-    async def test_start_and_finish(self):
-        collector = TraceCollector()
-        trace = collector.start_trace("test_agent", patient_id="p123")
-        assert trace.agent_id == "test_agent"
-        assert trace.patient_id_hash is not None
-        assert trace.patient_id_hash != "p123"  # hashed
-
-        async with collector.span("step_1") as s:
-            s.cost_usd = 0.001
-        async with collector.span("step_2") as s:
-            s.cost_usd = 0.002
-
-        finished = await collector.finish_trace()
-        assert len(finished.spans) == 2
-        assert finished.total_cost_usd == pytest.approx(0.003)
-        assert finished.total_latency_ms >= 0
-
-    @pytest.mark.asyncio
-    async def test_span_records_error(self):
-        collector = TraceCollector()
-        collector.start_trace("test_agent")
-
-        with pytest.raises(ValueError):
-            async with collector.span("failing") as s:
-                raise ValueError("test error")
-
-        finished = await collector.finish_trace()
-        assert finished.spans[0].error
-        assert "test error" in finished.spans[0].error
-
-    @pytest.mark.asyncio
-    async def test_no_active_trace_raises(self):
-        collector = TraceCollector()
-        with pytest.raises(RuntimeError, match="No active trace"):
-            async with collector.span("orphan"):
-                pass
-
-    @pytest.mark.asyncio
-    async def test_first_token_recording(self):
-        collector = TraceCollector()
-        collector.start_trace("test")
-        collector.record_first_token()
-        assert collector.active_trace.first_token_ms is not None
-
-
-class TestTrainingSample:
-    def test_sample_id_generated(self):
-        s = TrainingSample(
-            agent_id="test", task="intent", model_id="gpt-4.1-mini",
-            messages=[], response="test",
-        )
-        assert s.sample_id.startswith("smp_")
-
-    def test_implicit_signals_default_none(self):
-        signals = ImplicitSignals()
-        assert signals.user_asked_clarification_after is None
-        assert signals.care_provider_flagged is None
-
-
-class TestFinetuneDataCollector:
-    @pytest.mark.asyncio
-    async def test_disabled_returns_none(self):
-        collector = FinetuneDataCollector(enabled=False)
-        result = await collector.record_sample(
-            agent_id="test", task="intent", model_id="m",
-            messages=[], response="r",
-        )
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_no_mongo_returns_none(self):
-        collector = FinetuneDataCollector(mongo_store=None, enabled=True)
-        result = await collector.record_sample(
-            agent_id="test", task="intent", model_id="m",
-            messages=[], response="r",
-        )
-        assert result is None
 
 
 class TestEvalSchemas:

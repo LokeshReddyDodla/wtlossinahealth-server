@@ -128,7 +128,6 @@ def _make_agent(**overrides):
         memory=overrides.get("memory", _make_memory()),
         prompts=overrides.get("prompts", prompts),
         retriever=overrides.get("retriever", _make_retriever()),
-        tracer=overrides.get("tracer", None),
         event_bus=overrides.get("event_bus", _make_event_bus()),
     )
 
