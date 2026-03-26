@@ -47,8 +47,8 @@ class HealthInsight(BaseModel):
     insight_id: str = Field(default_factory=lambda: f"ins_{uuid4().hex[:12]}")
     category: InsightCategory
     severity: InsightSeverity
-    title: str = Field(description="Short title for push notification (< 60 chars).")
-    body: str = Field(description="Insight message (< 200 chars for push, longer for in-app).")
+    title: str = Field(max_length=50, description="Push notification title. Max 50 characters.")
+    body: str = Field(max_length=200, description="Push notification body. Max 200 characters.")
     patient_id: str = ""
     data: dict[str, Any] = Field(
         default_factory=dict,

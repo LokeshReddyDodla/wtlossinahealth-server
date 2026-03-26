@@ -177,11 +177,10 @@ async def _get_active_patient_ids() -> list[str]:
 
         # Check meal_reports for recent activity (most commonly logged)
         collection = mongo.get_collection("meal_reports")
-        cursor = collection.distinct(
+        patient_ids = await collection.distinct(
             "patient_id",
             {"date": {"$gte": week_ago[:10]}},
         )
-        patient_ids = await cursor if hasattr(cursor, '__await__') else cursor
         return list(set(patient_ids)) if patient_ids else []
     except Exception as e:
         logger.warning(f"Failed to fetch active patients: {e}")
