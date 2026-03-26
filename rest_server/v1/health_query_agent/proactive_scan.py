@@ -86,7 +86,7 @@ async def trigger_proactive_scan(
                 await fcm.send_fcm_notification_to_user_devices(
                     user_id=notification_target,
                     title=top_insight.title,
-                    body=top_insight.message,
+                    body=top_insight.body,
                     channel_key="health_insights",
                     group_key="health_insights_group",
                     data={
