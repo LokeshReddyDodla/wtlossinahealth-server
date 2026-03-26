@@ -28,7 +28,6 @@ class AIFoundationSettings(BaseSettings):
 
     # ── Retrieval ─────────────────────────────────────────────────────────
 
-    QDRANT_COLLECTION: str = Field(default="patient_data", description="Qdrant collection name")
     QDRANT_RESULT_LIMIT: int = Field(default=30, description="Max results per Qdrant query")
     MAX_RECORDS_PER_TYPE: int = Field(default=10, description="Max records per data_type in LLM context")
     MAX_ANALYSIS_CHARS: int = Field(default=80_000, description="Hard cap on analysis text sent to LLM")
@@ -36,21 +35,11 @@ class AIFoundationSettings(BaseSettings):
     # ── Cache ─────────────────────────────────────────────────────────────
 
     PATIENT_CACHE_TTL: int = Field(default=300, description="Patient name/pic cache TTL in seconds")
-    SEMANTIC_CACHE_TTL: int = Field(default=900, description="Semantic response cache TTL in seconds")
     EMBEDDING_CACHE_TTL: int = Field(default=86_400, description="Embedding vector cache TTL in seconds")
 
     # ── Persistence ───────────────────────────────────────────────────────
 
     TURNS_TTL_DAYS: int = Field(default=90, description="Conversation turns TTL in days")
-    SUMMARIES_TTL_DAYS: int = Field(default=90, description="Thread summaries TTL in days")
-
-    # ── Rate Limiting ─────────────────────────────────────────────────────
-
-    RATE_LIMIT_CRITICAL: int = Field(default=10_000, description="Requests/hour for CRITICAL priority")
-    RATE_LIMIT_HIGH: int = Field(default=5_000, description="Requests/hour for HIGH priority")
-    RATE_LIMIT_NORMAL: int = Field(default=1_000, description="Requests/hour for NORMAL priority")
-    RATE_LIMIT_LOW: int = Field(default=500, description="Requests/hour for LOW priority")
-    RATE_LIMIT_WINDOW: int = Field(default=3600, description="Rate limit window in seconds")
 
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
