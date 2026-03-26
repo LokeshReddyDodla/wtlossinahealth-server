@@ -424,7 +424,7 @@ class ToolExecutor:
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
             pid = p.get("patient_id", "")
-            name = self._patient_names.get(pid)
+            name = (names or {}).get(pid)
             if name:
                 clean["patient"] = name
 
@@ -471,7 +471,7 @@ class ToolExecutor:
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
             pid = p.get("patient_id", "")
-            name = self._patient_names.get(pid)
+            name = (names or {}).get(pid)
             if name:
                 clean["patient"] = name
             parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
@@ -510,7 +510,7 @@ class ToolExecutor:
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
             pid = p.get("patient_id", "")
-            name = self._patient_names.get(pid)
+            name = (names or {}).get(pid)
             if name:
                 clean["patient"] = name
             parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
