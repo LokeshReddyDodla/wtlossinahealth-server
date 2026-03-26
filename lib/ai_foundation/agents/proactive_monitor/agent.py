@@ -123,8 +123,8 @@ class ProactiveMonitorAgent(BaseAgent):
                 patient_ids=[patient_id],
                 tier=ReasoningTier.BASIC,
                 intent_data_types=[
-                    "cgm_range_stats", "cgm_summary_stats", "meal",
-                    "fitness_overview", "vital", "sleep",
+                    "cgm_range_stats", "cgm_summary_stats", "smbg",
+                    "meal", "fitness_overview", "vital", "sleep",
                 ],
                 patient_names={patient_id: patient_name} if patient_name else None,
             )
