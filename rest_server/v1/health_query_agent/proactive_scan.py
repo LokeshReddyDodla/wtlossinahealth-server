@@ -78,21 +78,25 @@ async def trigger_proactive_scan(
         try:
             from lib.services.fcm_service import FCMService
             fcm = FCMService()
-            for insight in result.insights:
-                if insight.severity.value in ("attention", "warning", "alert"):
-                    await fcm.send_fcm_notification_to_user_devices(
-                        user_id=notification_target,
-                        title=insight.title,
-                        body=insight.message,
-                        channel_key="health_insights",
-                        group_key="health_insights_group",
-                        data={
-                            "type": "proactive_insight",
-                            "category": insight.category.value,
-                            "severity": insight.severity.value,
-                            "patient_id": payload.patient_id,
-                        },
-                    )
+            # Send only the most severe insight — avoid notification spam
+            severity_rank = {"alert": 4, "warning": 3, "attention": 2, "info": 1}
+            notifiable = [i for i in result.insights if i.severity.value in ("attention", "warning", "alert")]
+            if notifiable:
+                top_insight = max(notifiable, key=lambda i: severity_rank.get(i.severity.value, 0))
+                await fcm.send_fcm_notification_to_user_devices(
+                    user_id=notification_target,
+                    title=top_insight.title,
+                    body=top_insight.message,
+                    channel_key="health_insights",
+                    group_key="health_insights_group",
+                    data={
+                        "type": "proactive_insight",
+                        "category": top_insight.category.value,
+                        "severity": top_insight.severity.value,
+                        "patient_id": payload.patient_id,
+                        "total_insights": str(len(result.insights)),
+                    },
+                )
         except Exception:
             pass  # Notification is best-effort
 
