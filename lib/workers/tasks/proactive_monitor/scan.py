@@ -3,14 +3,22 @@ Proactive Monitor Worker Task — runs patient health scans on a cron schedule.
 
 Designed to be registered as an arq cron job. Fetches active patient IDs
 and runs the ProactiveMonitorAgent.scan_batch() pipeline.
+
+Includes timezone-aware scheduling: patients are only scanned between 7 AM
+and 10 PM in their local timezone (defaults to Asia/Kolkata).
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from lib.ai_foundation.agents.proactive_monitor.scheduling import (
+    DEFAULT_TIMEZONE,
+    is_within_scan_window,
+)
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
@@ -22,6 +30,7 @@ async def run_proactive_scan(
     """Scan patients for proactive health insights.
 
     If patient_ids is None, scans all active patients (last 7 days of data).
+    Patients outside their local scan window (7 AM - 10 PM) are skipped.
     """
     try:
         from lib.core.container import container
@@ -36,7 +45,32 @@ async def run_proactive_scan(
         if not patient_ids:
             return TaskResult(success=True, data={"message": "No active patients to scan"})
 
-        batch = await monitor.scan_batch(patient_ids)
+        # Filter to patients within their scan window
+        eligible_ids = []
+        skipped = 0
+        for pid in patient_ids:
+            if await _is_within_scan_window(pid):
+                eligible_ids.append(pid)
+            else:
+                skipped += 1
+
+        if skipped:
+            logger.info(
+                "Timezone filter: %d/%d patients outside scan window, skipping",
+                skipped, len(patient_ids),
+            )
+
+        if not eligible_ids:
+            return TaskResult(
+                success=True,
+                data={
+                    "message": "All patients outside scan window",
+                    "total": len(patient_ids),
+                    "skipped_timezone": skipped,
+                },
+            )
+
+        batch = await monitor.scan_batch(eligible_ids)
 
         # Send notifications for insights with severity >= attention
         await _send_notifications(batch)
@@ -50,6 +84,7 @@ async def run_proactive_scan(
                 "total_alerts": batch.total_alerts,
                 "errors": batch.errors,
                 "duration_ms": batch.duration_ms,
+                "skipped_timezone": skipped,
             },
         )
     except Exception as e:
@@ -87,12 +122,55 @@ async def run_proactive_scan_single(
         return TaskResult(success=False, error=str(e), data={"patient_id": patient_id})
 
 
+# ---------------------------------------------------------------------------
+# Timezone-aware scheduling
+# ---------------------------------------------------------------------------
+
+
+async def _is_within_scan_window(patient_id: str) -> bool:
+    """Check if it's between 7 AM and 10 PM in the patient's timezone.
+
+    Delegates to :func:`scheduling.is_within_scan_window` with the patient's
+    timezone looked up from their profile.  Defaults to Asia/Kolkata.
+    """
+    try:
+        tz_name = await _get_patient_timezone(patient_id)
+        return is_within_scan_window(tz_name)
+    except Exception:
+        # Fail-open: if we can't determine timezone, allow the scan
+        logger.debug("Could not determine timezone for %s, allowing scan", patient_id)
+        return True
+
+
+async def _get_patient_timezone(patient_id: str) -> str:
+    """Look up the patient's timezone from their profile.
+
+    Returns the IANA timezone string (e.g. 'Asia/Kolkata', 'America/New_York').
+    Falls back to DEFAULT_TIMEZONE.
+    """
+    try:
+        from lib.core.container import container
+        from lib.services.patient_profile_service import PatientProfileService
+
+        profile_svc: PatientProfileService = container.resolve(PatientProfileService)
+        profile = await profile_svc.get_patient_profile(patient_id)
+        if profile and hasattr(profile, "timezone") and profile.timezone:
+            return profile.timezone
+    except Exception:
+        pass
+    return DEFAULT_TIMEZONE
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 async def _get_active_patient_ids() -> list[str]:
     """Fetch patient IDs who have logged data in the last 7 days."""
     try:
         from lib.core.container import container
         from lib.core.mongo_store import MongoStore
-        from datetime import datetime, timedelta, timezone
 
         mongo: MongoStore = container.resolve(MongoStore)
         week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()

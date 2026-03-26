@@ -10,21 +10,21 @@ def get_cron_jobs():
         daily_cron(
             coroutine=sync_all_patients_libreview,
             name="libreview-sync-8am",
-            hour=8,
+            hour=7,
             minute=0,
             timeout_s=3600,  # 1 hour timeout for syncing all patients
         ),
         daily_cron(
             coroutine=sync_all_patients_libreview,
             name="libreview-sync-11am",
-            hour=11,
+            hour=10,
             minute=0,
             timeout_s=3600,
         ),
         daily_cron(
             coroutine=sync_all_patients_libreview,
             name="libreview-sync-6pm",
-            hour=18,
+            hour=17,
             minute=0,
             timeout_s=3600,
         ),
