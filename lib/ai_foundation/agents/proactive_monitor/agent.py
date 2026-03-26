@@ -108,30 +108,32 @@ class ProactiveMonitorAgent(BaseAgent):
             # 3. Determine scan window based on time of day
             now = datetime.now(timezone.utc)
             hour = now.hour
+            yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+            today = now.strftime("%Y-%m-%d")
+
             if hour < 12:
                 # Morning: review yesterday
                 scan_msg = (
-                    f"Give me a brief health summary for this patient for yesterday "
-                    f"({(now - timedelta(days=1)).strftime('%Y-%m-%d')}). "
-                    f"Only mention noteworthy findings — glucose issues, meal concerns, or activity patterns. "
-                    f"If nothing noteworthy, say so."
+                    f"Review this patient's health data for yesterday ({yesterday}). "
+                    f"Check glucose control, meals logged, and activity. "
+                    f"Highlight any concerns (spikes, hypos, missed meals) AND any positives "
+                    f"(good glucose control, consistent logging, active day)."
                 )
-                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
             elif hour < 17:
-                # Afternoon: review today so far
+                # Afternoon: check-in on today
                 scan_msg = (
-                    f"Give me a brief health check for this patient for today "
-                    f"({now.strftime('%Y-%m-%d')}). "
-                    f"Only mention noteworthy findings. If nothing noteworthy, say so."
+                    f"Check this patient's health data for today ({today}) so far. "
+                    f"How is their glucose? Did they log meals? Any activity? "
+                    f"Report both concerns and positive observations."
                 )
-                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
             else:
                 # Evening: day wrap-up
                 scan_msg = (
-                    f"Summarize this patient's day today ({now.strftime('%Y-%m-%d')}). "
-                    f"What stood out? Only noteworthy patterns. If nothing noteworthy, say so."
+                    f"Summarize this patient's day today ({today}). "
+                    f"Review glucose, meals, and activity. "
+                    f"What went well? What needs attention? Give a balanced summary."
                 )
-                date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
+            date_types = ["cgm_summary_stats", "meal", "fitness_overview"]
 
             from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningTier
 
@@ -263,20 +265,22 @@ class ProactiveMonitorAgent(BaseAgent):
         patient_name: str | None,
     ) -> list[HealthInsight]:
         """Extract structured HealthInsight objects from the reasoning text."""
+        all_categories = ", ".join(c.value for c in InsightCategory)
         try:
             scan_insights, _ = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": (
                         "Extract structured health insights from this analysis. "
+                        "Include BOTH concerns AND positive findings. "
                         "ONLY create insights backed by real data in the analysis. "
-                        "If the analysis says no data was found, return zero insights.\n\n"
+                        "If the analysis says no data was found or a SYSTEM ERROR occurred, "
+                        "return zero insights.\n\n"
                         "For each insight:\n"
                         "- title: SHORT push notification title, max 45 characters\n"
                         "- body: notification text using patient name, max 180 characters\n"
-                        "- category: one of glucose_spike, glucose_hypo, glucose_improving, "
-                        "glucose_worsening, meal_missed, meal_high_carb, fitness_inactive, "
-                        "fitness_streak, sleep_poor, engagement_low\n"
-                        "- severity: info, attention, warning, or alert\n"
+                        f"- category: one of {all_categories}\n"
+                        "- severity: info (positive/FYI), attention (worth noting), "
+                        "warning (needs attention), alert (urgent)\n"
                         "- suggested_query: a follow-up question the patient could ask"
                     )},
                     {"role": "user", "content": analysis_text},
