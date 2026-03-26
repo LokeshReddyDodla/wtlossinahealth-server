@@ -114,6 +114,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_ids=patient_ids,
                     domains=specialist_domains,
                     tier=tier,
+                    patient_names=ctx.patient_names,
                 )
             else:
                 # Single-agent path
@@ -217,6 +218,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_ids=patient_ids,
                     domains=specialist_domains,
                     tier=tier,
+                    patient_names=ctx.patient_names,
                 )
             else:
                 event_source = self.reasoning_engine.reason_stream(

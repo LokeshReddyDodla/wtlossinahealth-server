@@ -88,6 +88,7 @@ class Coordinator:
         patient_ids: list[str],
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
+        patient_names: dict[str, str] | None = None,
     ) -> ReasoningResult:
         """Full orchestration: plan -> specialists -> reflect -> respond."""
         async for item in self._orchestrate_core(
@@ -99,6 +100,7 @@ class Coordinator:
             patient_ids=patient_ids,
             domains=domains,
             tier=tier,
+            patient_names=patient_names,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -117,6 +119,7 @@ class Coordinator:
         patient_ids: list[str],
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
+        patient_names: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Streaming orchestration with SSE events."""
         async for item in self._orchestrate_core(
@@ -128,6 +131,7 @@ class Coordinator:
             patient_ids=patient_ids,
             domains=domains,
             tier=tier,
+            patient_names=patient_names,
             emit_events=True,
         ):
             if isinstance(item, str):
@@ -146,6 +150,7 @@ class Coordinator:
         patient_ids: list[str],
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
+        patient_names: dict[str, str] | None = None,
         emit_events: bool = False,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
@@ -198,6 +203,7 @@ class Coordinator:
                     patient_ids=patient_ids,
                     max_rounds=budget_per_specialist,
                     model_id=tier_cfg.thinker_model,
+                    patient_names=patient_names,
                 )
                 for _, spec in active_specialists
             ]
