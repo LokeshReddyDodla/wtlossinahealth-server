@@ -68,11 +68,11 @@ class DomainName(str, Enum):
 
 
 # Human-readable domain list for prompts — derived from DomainName enum.
-# Excludes internal-only domains (profile, patient_summary).
+# Excludes internal-only domains (patient_summary).
 AVAILABLE_HEALTH_DOMAINS = ", ".join(
     d.value for d in DomainName
-    if d not in (DomainName.PROFILE, DomainName.PATIENT_SUMMARY)
-)  # → "meal, cgm, smbg, fitness, documents, sleep, vitals"
+    if d != DomainName.PATIENT_SUMMARY
+)  # → "meal, cgm, smbg, fitness, profile, documents, sleep, vitals"
 
 
 # Maps each HealthDataType to its parent domain for specialist routing
