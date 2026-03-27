@@ -286,7 +286,7 @@ class HealthQueryAgent(BaseAgent):
     async def _extract_intent(self, input: AgentInput, ctx: Any) -> tuple[QueryIntent, Any]:
         self._ensure_prompts()
         system_prompt = self._get_system_prompt(input.context.user_role)
-        intent_prompt = self.prompts.get("hq_intent_extraction").body
+        intent_prompt = self._render("hq_intent_extraction")
 
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
@@ -366,6 +366,16 @@ class HealthQueryAgent(BaseAgent):
 
     _prompt_cache: dict[str, tuple[str, str]] = {}
 
+    def _render(self, template_name: str, **extra_vars: str) -> str:
+        """Render a prompt with common variables (available_data_types, current_time)."""
+        from lib.ai_foundation.agents.health_query.contracts import AVAILABLE_HEALTH_DOMAINS
+        template = self.prompts.get(template_name)
+        return template.render(
+            available_data_types=AVAILABLE_HEALTH_DOMAINS,
+            current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            **extra_vars,
+        )
+
     def _get_system_prompt(self, user_role: str) -> str:
         """Get system prompt, cached per role per minute."""
         now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
@@ -374,8 +384,7 @@ class HealthQueryAgent(BaseAgent):
             return self._prompt_cache[cache_key]
 
         name_map = {"admin": "hq_system_admin", "care_provider": "hq_system_care_provider", "patient": "hq_system_patient"}
-        template = self.prompts.get(name_map.get(user_role, "hq_system_patient"))
-        rendered = template.render(current_time=f"{now_minute} UTC")
+        rendered = self._render(name_map.get(user_role, "hq_system_patient"))
 
         if len(self._prompt_cache) > settings.PROMPT_CACHE_MAX_SIZE:
             self._prompt_cache.clear()
@@ -385,8 +394,8 @@ class HealthQueryAgent(BaseAgent):
     def _get_reasoning_prompts(self) -> tuple[str, str]:
         """Return (reasoning_prompt, response_prompt) for the engine."""
         self._ensure_prompts()
-        reasoning = self.prompts.get("hq_reasoning").body
-        response = self.prompts.get("hq_final_response").body
+        reasoning = self._render("hq_reasoning")
+        response = self._render("hq_final_response")
         return reasoning, response
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:

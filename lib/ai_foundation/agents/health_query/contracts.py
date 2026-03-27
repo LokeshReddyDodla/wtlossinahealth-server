@@ -67,6 +67,14 @@ class DomainName(str, Enum):
     PATIENT_SUMMARY = "patient_summary"
 
 
+# Human-readable domain list for prompts — derived from DomainName enum.
+# Excludes internal-only domains (patient_summary).
+AVAILABLE_HEALTH_DOMAINS = ", ".join(
+    d.value for d in DomainName
+    if d != DomainName.PATIENT_SUMMARY
+)  # → "meal, cgm, smbg, fitness, profile, documents, sleep, vitals"
+
+
 # Maps each HealthDataType to its parent domain for specialist routing
 DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
     DomainName.CGM: [

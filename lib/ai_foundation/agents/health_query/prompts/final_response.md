@@ -8,7 +8,7 @@ You are generating a PERSONALIZED health response. The investigation engine has 
 
 ## What You Have
 
-1. **Gathered health data** — all the data the investigator fetched (meals, glucose, fitness, vitals, patterns)
+1. **Gathered health data** — all the data the investigator fetched ($available_data_types, patterns)
 2. **Patient context** — names, known facts, goals, preferences, conversation history
 3. **The original question** — what the patient/provider actually asked
 

@@ -11,7 +11,7 @@ You are planning an investigation into a patient's health data. Given the user's
 Produce an `InvestigationPlan` with:
 - **strategy**: 1-2 sentence summary of your approach
 - **steps**: ordered list of tool calls, each with phase (1, 2, or 3)
-- **domains_involved**: which health domains are needed (glucose, nutrition, fitness, profile, etc.)
+- **domains_involved**: which health domains are needed ($available_data_types, profile, etc.)
 
 ## Phase Rules
 
