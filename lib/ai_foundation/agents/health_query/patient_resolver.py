@@ -29,6 +29,7 @@ class PatientProfile(BaseModel):
     patient_id: str
     name: str
     profile_picture: str | None = None
+    locale: str | None = None
 
 
 class PatientNameResolver:
@@ -56,6 +57,19 @@ class PatientNameResolver:
     async def resolve_name(self, patient_id: str) -> str:
         names = await self.resolve_names([patient_id])
         return names.get(patient_id, f"Patient ({patient_id[:8]})")
+
+    # -- Timezones (for proactive monitor) ---------------------------------
+
+    async def resolve_timezones(self, patient_ids: list[str]) -> dict[str, str]:
+        """Resolve patient UUIDs to IANA timezone strings (from locale field)."""
+        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        if stale:
+            await self._fetch(stale)
+        return {
+            pid: self._profile_cache[pid].locale or "Asia/Kolkata"
+            for pid in patient_ids
+            if pid in self._profile_cache
+        }
 
     # -- Profiles (for thread list UI) -------------------------------------
 
@@ -93,6 +107,7 @@ class PatientNameResolver:
                         Patient.first_name,
                         Patient.last_name,
                         Patient.profile_picture,
+                        Patient.locale,
                     )
                     .where(Patient.patient_id.in_(patient_ids))
                 )
@@ -110,6 +125,7 @@ class PatientNameResolver:
                         patient_id=pid,
                         name=name,
                         profile_picture=row.profile_picture,
+                        locale=row.locale,
                     )
                     self._timestamps[pid] = time.monotonic()
 

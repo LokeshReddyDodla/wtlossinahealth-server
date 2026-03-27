@@ -45,15 +45,16 @@ async def run_proactive_scan(
         if not patient_ids:
             return TaskResult(success=True, data={"message": "No active patients to scan"})
 
-        # Filter to patients within their scan window, collecting timezones
+        # Batch-resolve names + timezones in one DB call (cached 5 min)
+        all_names, all_timezones = await _resolve_patient_metadata(patient_ids)
+
+        # Filter to patients within their scan window
         eligible_ids = []
-        patient_timezones: dict[str, str] = {}
         skipped = 0
         for pid in patient_ids:
-            tz = await _get_patient_timezone(pid)
+            tz = all_timezones.get(pid, DEFAULT_TIMEZONE)
             if is_within_scan_window(tz):
                 eligible_ids.append(pid)
-                patient_timezones[pid] = tz
             else:
                 skipped += 1
 
@@ -73,8 +74,9 @@ async def run_proactive_scan(
                 },
             )
 
-        # Resolve patient names so notifications are personalized
-        patient_names = await _resolve_patient_names(eligible_ids)
+        # Filter metadata to eligible patients only
+        patient_names = {pid: all_names[pid] for pid in eligible_ids if pid in all_names}
+        patient_timezones = {pid: all_timezones.get(pid, DEFAULT_TIMEZONE) for pid in eligible_ids}
 
         batch = await monitor.scan_batch(
             eligible_ids,
@@ -133,60 +135,28 @@ async def run_proactive_scan_single(
 
 
 # ---------------------------------------------------------------------------
-# Timezone-aware scheduling
-# ---------------------------------------------------------------------------
-
-
-async def _is_within_scan_window(patient_id: str) -> bool:
-    """Check if it's between 7 AM and 10 PM in the patient's timezone.
-
-    Delegates to :func:`scheduling.is_within_scan_window` with the patient's
-    timezone looked up from their profile.  Defaults to Asia/Kolkata.
-    """
-    try:
-        tz_name = await _get_patient_timezone(patient_id)
-        return is_within_scan_window(tz_name)
-    except Exception:
-        # Fail-open: if we can't determine timezone, allow the scan
-        logger.debug("Could not determine timezone for %s, allowing scan", patient_id)
-        return True
-
-
-async def _get_patient_timezone(patient_id: str) -> str:
-    """Look up the patient's timezone from their profile.
-
-    Returns the IANA timezone string (e.g. 'Asia/Kolkata', 'America/New_York').
-    Falls back to DEFAULT_TIMEZONE.
-    """
-    try:
-        from lib.core.container import container
-        from lib.services.patient_profile_service import PatientProfileService
-
-        profile_svc: PatientProfileService = container.resolve(PatientProfileService)
-        profile = await profile_svc.get_patient_profile(patient_id)
-        if profile and hasattr(profile, "timezone") and profile.timezone:
-            return profile.timezone
-    except Exception:
-        pass
-    return DEFAULT_TIMEZONE
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_patient_names(patient_ids: list[str]) -> dict[str, str]:
-    """Resolve patient names for personalized notifications."""
+async def _resolve_patient_metadata(
+    patient_ids: list[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Batch-resolve patient names and timezones in one DB call (cached 5 min).
+
+    Returns (names_dict, timezones_dict).
+    """
     try:
         from lib.core.container import container
         from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 
         resolver: PatientNameResolver = container.resolve(PatientNameResolver)
-        return await resolver.resolve_names(patient_ids)
+        names = await resolver.resolve_names(patient_ids)
+        timezones = await resolver.resolve_timezones(patient_ids)
+        return names, timezones
     except Exception as e:
-        logger.warning(f"Failed to resolve patient names: {e}")
-        return {}
+        logger.warning(f"Failed to resolve patient metadata: {e}")
+        return {}, {}
 
 
 async def _get_active_patient_ids() -> list[str]:
