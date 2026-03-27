@@ -548,9 +548,25 @@ class ToolExecutor:
 
     async def _get_recent_insights(self, args: dict, patient_ids: list[str]) -> str:
         """Fetch recent proactive insights from InsightTracker."""
+        from zoneinfo import ZoneInfo
+
         if not self._insight_tracker:
             return "No insight history available."
         limit = args.get("limit", 5)
+
+        # Resolve patient timezone for timestamp display
+        tz_name = "Asia/Kolkata"
+        if patient_ids:
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+                resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+                tzs = await resolver.resolve_timezones(patient_ids[:1])
+                tz_name = tzs.get(patient_ids[0], tz_name)
+            except Exception:
+                pass
+        tz = ZoneInfo(tz_name)
+
         all_insights: list[dict] = []
         for pid in patient_ids:
             try:
@@ -560,11 +576,22 @@ class ToolExecutor:
                 pass
         if not all_insights:
             return "No recent insights found for this patient."
+
         lines = ["Recent health insights (notifications):"]
         for ins in all_insights:
+            created = ins.get("created_at")
+            ts = ""
+            if created:
+                try:
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    local = created.astimezone(tz)
+                    ts = f" (sent {local.strftime('%I:%M %p, %b %d').lstrip('0')})"
+                except Exception:
+                    pass
             lines.append(
                 f"- [{ins.get('severity')}] {ins.get('title', 'Insight')}: "
-                f"{ins.get('message', '')} (sent {ins.get('created_at', '')})"
+                f"{ins.get('message', '')}{ts}"
             )
         return "\n".join(lines)
 
