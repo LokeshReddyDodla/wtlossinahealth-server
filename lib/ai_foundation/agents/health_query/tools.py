@@ -561,12 +561,35 @@ class ToolExecutor:
         if not all_insights:
             return "No recent insights found for this patient."
         lines = ["Recent health insights (notifications):"]
+        now = datetime.now(timezone.utc)
         for ins in all_insights:
+            age = self._relative_time(ins.get("created_at"), now)
             lines.append(
                 f"- [{ins.get('severity')}] {ins.get('title', 'Insight')}: "
-                f"{ins.get('message', '')} (sent {ins.get('created_at', '')})"
+                f"{ins.get('message', '')} ({age})"
             )
         return "\n".join(lines)
+
+    @staticmethod
+    def _relative_time(dt: Any, now: datetime) -> str:
+        """Convert a datetime to a human-readable relative time string."""
+        if not dt:
+            return "recently"
+        try:
+            if hasattr(dt, "tzinfo") and dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            delta = now - dt
+            hours = delta.total_seconds() / 3600
+            if hours < 1:
+                return "just now"
+            if hours < 24:
+                return f"{int(hours)}h ago"
+            days = int(hours / 24)
+            if days == 1:
+                return "yesterday"
+            return f"{days} days ago"
+        except Exception:
+            return "recently"
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
