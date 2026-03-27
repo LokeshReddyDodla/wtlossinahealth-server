@@ -76,7 +76,7 @@ async def run_proactive_scan(
 
         batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names, patient_timezones=patient_timezones)
 
-        # 5. Send notifications (patient + care provider for severe)
+        # 5. Send notifications
         for result in batch.results:
             if result.insights:
                 await _send_notification(result.patient_id, result.insights, monitor)
@@ -153,20 +153,14 @@ async def _send_notification(
     insights: list,
     monitor: Any,
 ) -> None:
-    """Send ONE push notification to the patient (most severe insight) and record it.
-
-    For warning/alert severity, also notifies the patient's care providers.
-    """
+    """Send ONE push notification — the most severe insight — and record it."""
     try:
         from lib.services.fcm_service import FCMService
 
         top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
         is_urgent = top.severity.value in ("warning", "alert")
 
-        fcm = FCMService()
-
-        # Send to patient
-        await fcm.send_fcm_notification_to_user_devices(
+        await FCMService().send_fcm_notification_to_user_devices(
             user_id=patient_id,
             title=top.title,
             body=top.body,
@@ -183,50 +177,8 @@ async def _send_notification(
             },
         )
         await monitor.record_insight(patient_id, top)
-
-        # For warning/alert — also notify care providers
-        if is_urgent:
-            await _notify_care_providers(fcm, patient_id, top)
-
     except Exception as e:
         logger.warning(f"Failed to send notification for {patient_id}: {e}")
-
-
-async def _notify_care_providers(fcm: Any, patient_id: str, insight: Any) -> None:
-    """Send alert notification to the patient's care providers."""
-    try:
-        from lib.core.container import container
-        from lib.dependencies.database import postgres_store
-        from sqlalchemy import select
-        from lib.models.associations import patient_care_provider_association
-
-        async with postgres_store.session_local() as session:
-            stmt = select(patient_care_provider_association.c.care_provider_id).where(
-                patient_care_provider_association.c.patient_id == patient_id,
-            )
-            result = await session.execute(stmt)
-            cp_ids = [str(row[0]) for row in result.fetchall()]
-
-        for cp_id in cp_ids:
-            try:
-                await fcm.send_fcm_notification_to_user_devices(
-                    user_id=cp_id,
-                    title=f"Patient Alert: {insight.title}",
-                    body=insight.body,
-                    channel_key="alerts",
-                    group_key="alert_group",
-                    data={
-                        "type": "care_provider_alert",
-                        "insight_id": insight.insight_id,
-                        "category": insight.category.value,
-                        "severity": insight.severity.value,
-                        "patient_id": patient_id,
-                    },
-                )
-            except Exception:
-                logger.debug(f"Failed to notify care provider {cp_id} for patient {patient_id}")
-    except Exception as e:
-        logger.warning(f"Failed to fetch care providers for {patient_id}: {e}")
 
 
 async def _get_active_patient_ids() -> list[str]:

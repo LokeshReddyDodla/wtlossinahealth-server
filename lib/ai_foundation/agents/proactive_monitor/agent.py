@@ -492,6 +492,9 @@ class ProactiveMonitorAgent(BaseAgent):
             insight.category.value,
             insight.severity.value,
             insight.body,
+            insight_id=insight.insight_id,
+            title=insight.title,
+            suggested_query=insight.suggested_query,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
