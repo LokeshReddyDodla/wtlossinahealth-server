@@ -111,7 +111,6 @@ class ContextLoader:
         patient_id: str | None = None,
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
-        metadata: dict | None = None,
     ) -> AgentContext:
         """Load all context in parallel — 5 independent calls via asyncio.gather."""
         import asyncio
