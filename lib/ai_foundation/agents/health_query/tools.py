@@ -548,13 +548,23 @@ class ToolExecutor:
 
     async def _get_recent_insights(self, args: dict, patient_ids: list[str]) -> str:
         """Fetch recent proactive insights from InsightTracker."""
+        from zoneinfo import ZoneInfo
+
         if not self._insight_tracker:
             return "No insight history available."
         limit = args.get("limit", 5)
 
-        # Resolve patient timezone for display
-        tz_name = await self._resolve_patient_tz(patient_ids[0] if patient_ids else None)
-        from zoneinfo import ZoneInfo
+        # Resolve patient timezone for timestamp display
+        tz_name = "Asia/Kolkata"
+        if patient_ids:
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+                resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+                tzs = await resolver.resolve_timezones(patient_ids[:1])
+                tz_name = tzs.get(patient_ids[0], tz_name)
+            except Exception:
+                pass
         tz = ZoneInfo(tz_name)
 
         all_insights: list[dict] = []
@@ -566,41 +576,24 @@ class ToolExecutor:
                 pass
         if not all_insights:
             return "No recent insights found for this patient."
+
         lines = ["Recent health insights (notifications):"]
         for ins in all_insights:
-            ts = self._format_local_time(ins.get("created_at"), tz)
+            created = ins.get("created_at")
+            ts = ""
+            if created:
+                try:
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    local = created.astimezone(tz)
+                    ts = f" (sent {local.strftime('%I:%M %p, %b %d').lstrip('0')})"
+                except Exception:
+                    pass
             lines.append(
                 f"- [{ins.get('severity')}] {ins.get('title', 'Insight')}: "
-                f"{ins.get('message', '')} (sent {ts})"
+                f"{ins.get('message', '')}{ts}"
             )
         return "\n".join(lines)
-
-    @staticmethod
-    def _format_local_time(dt: Any, tz: Any) -> str:
-        """Convert a UTC datetime to patient's local time string."""
-        if not dt:
-            return ""
-        try:
-            if hasattr(dt, "tzinfo") and dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            local = dt.astimezone(tz)
-            return local.strftime("%-I:%M %p, %b %-d")  # e.g. "8:04 AM, Mar 27"
-        except Exception:
-            return str(dt)
-
-    @staticmethod
-    async def _resolve_patient_tz(patient_id: str | None) -> str:
-        """Resolve patient timezone from cached PatientNameResolver."""
-        if not patient_id:
-            return "Asia/Kolkata"
-        try:
-            from lib.core.container import container
-            from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
-            resolver: PatientNameResolver = container.resolve(PatientNameResolver)
-            tzs = await resolver.resolve_timezones([patient_id])
-            return tzs.get(patient_id, "Asia/Kolkata")
-        except Exception:
-            return "Asia/Kolkata"
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
