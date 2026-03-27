@@ -193,8 +193,8 @@ async def _get_active_patient_ids() -> list[str]:
         from sqlalchemy import select, and_
         from lib.models.user_device import UserDevice
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-        min_signup = datetime.now(timezone.utc) - timedelta(days=_MIN_HISTORY_DAYS)
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        min_signup = datetime.utcnow() - timedelta(days=_MIN_HISTORY_DAYS)
 
         async with postgres_store.get_session() as session:
             stmt = (
