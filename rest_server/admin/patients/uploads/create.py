@@ -80,3 +80,32 @@ async def upload_sinocare_raw_excel(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.post("/linx-raw-csv", response_model=SuccessResponse)
+async def upload_linx_raw_csv(
+    request: Request,
+    patient_id: str = Query(...),
+    file: UploadFile = File(...),
+    cgm_upload_service: CGMUploadService = Depends(get_cgm_service),
+    current_admin: Admin = Depends(get_current_admin),
+):
+    try:
+        await cgm_upload_service.parse_and_upload_linx_csv_data(
+            patient_id=patient_id,
+            file_contents=await file.read(),
+        )
+
+        return SuccessResponse(
+            message="CGM data uploaded and stored successfully."
+        )
+
+    except HTTPException as http_exc:
+        raise http_exc
+
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
