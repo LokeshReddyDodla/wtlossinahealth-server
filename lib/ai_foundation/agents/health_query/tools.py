@@ -551,6 +551,12 @@ class ToolExecutor:
         if not self._insight_tracker:
             return "No insight history available."
         limit = args.get("limit", 5)
+
+        # Resolve patient timezone for display
+        tz_name = await self._resolve_patient_tz(patient_ids[0] if patient_ids else None)
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+
         all_insights: list[dict] = []
         for pid in patient_ids:
             try:
@@ -561,35 +567,40 @@ class ToolExecutor:
         if not all_insights:
             return "No recent insights found for this patient."
         lines = ["Recent health insights (notifications):"]
-        now = datetime.now(timezone.utc)
         for ins in all_insights:
-            age = self._relative_time(ins.get("created_at"), now)
+            ts = self._format_local_time(ins.get("created_at"), tz)
             lines.append(
                 f"- [{ins.get('severity')}] {ins.get('title', 'Insight')}: "
-                f"{ins.get('message', '')} ({age})"
+                f"{ins.get('message', '')} (sent {ts})"
             )
         return "\n".join(lines)
 
     @staticmethod
-    def _relative_time(dt: Any, now: datetime) -> str:
-        """Convert a datetime to a human-readable relative time string."""
+    def _format_local_time(dt: Any, tz: Any) -> str:
+        """Convert a UTC datetime to patient's local time string."""
         if not dt:
-            return "recently"
+            return ""
         try:
             if hasattr(dt, "tzinfo") and dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            delta = now - dt
-            hours = delta.total_seconds() / 3600
-            if hours < 1:
-                return "just now"
-            if hours < 24:
-                return f"{int(hours)}h ago"
-            days = int(hours / 24)
-            if days == 1:
-                return "yesterday"
-            return f"{days} days ago"
+            local = dt.astimezone(tz)
+            return local.strftime("%-I:%M %p, %b %-d")  # e.g. "8:04 AM, Mar 27"
         except Exception:
-            return "recently"
+            return str(dt)
+
+    @staticmethod
+    async def _resolve_patient_tz(patient_id: str | None) -> str:
+        """Resolve patient timezone from cached PatientNameResolver."""
+        if not patient_id:
+            return "Asia/Kolkata"
+        try:
+            from lib.core.container import container
+            from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+            resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+            tzs = await resolver.resolve_timezones([patient_id])
+            return tzs.get(patient_id, "Asia/Kolkata")
+        except Exception:
+            return "Asia/Kolkata"
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
