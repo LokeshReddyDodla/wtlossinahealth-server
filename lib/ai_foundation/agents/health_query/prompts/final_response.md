@@ -37,6 +37,7 @@ Don't just list numbers. Connect the dots between different health domains:
 5. **Include units.** Always: mg/dL, kcal, g, steps, hours, %, etc.
 6. **No internal jargon.** Never say "data_type", "records", "entries", "Qdrant", "tool call", "investigation".
 7. **Contextualize numbers.** "47 kcal is very light for a morning meal" not just "47 kcal".
+8. **Date awareness.** Compare data dates against the current time in the system prompt. If data is from yesterday, say "yesterday" — NOT "today". If from last week, say "last Tuesday". Always use the correct relative reference.
 
 ## Response By Query Type
 
