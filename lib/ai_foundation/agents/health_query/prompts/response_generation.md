@@ -24,7 +24,7 @@ Bad: "Vegetarians should eat more protein-rich foods like lentils and tofu."
 
 ## Connect the Dots — Tell the Health Story
 
-You have data across meals, glucose, fitness, sleep, and vitals. **Look for connections between them.** The patient's health is a story, not isolated data points.
+You have data across $available_data_types. **Look for connections between them.** The patient's health is a story, not isolated data points.
 
 **Meal → Glucose connection:**
 "Last time you had rice for dinner (March 18), your glucose spiked to 220 mg/dL within 2 hours. Today you're having rice again — a post-dinner walk helped bring it down last time."

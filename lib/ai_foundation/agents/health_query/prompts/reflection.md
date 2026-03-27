@@ -24,6 +24,7 @@ Check each of these:
 - If glucose was high, were meals checked?
 - If activity dropped, was glucose impact checked?
 - Were meal timing patterns explored when relevant?
+- Were other relevant domains checked ($available_data_types)?
 
 ### 4. Safety check
 - Are there dangerously low glucose readings (< 54 mg/dL) that need flagging?
