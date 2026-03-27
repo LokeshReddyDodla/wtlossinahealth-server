@@ -13,7 +13,7 @@ POST /health-query-agent/proactive-scan
 
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
@@ -60,18 +60,21 @@ async def trigger_proactive_scan(
 
     monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
 
-    # Resolve patient name
+    # Resolve patient name + timezone
     patient_name = None
+    tz_name = None
     try:
         from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
         resolver: PatientNameResolver = container.resolve(PatientNameResolver)
         names = await resolver.resolve_names([payload.patient_id])
+        timezones = await resolver.resolve_timezones([payload.patient_id])
         patient_name = names.get(payload.patient_id)
+        tz_name = timezones.get(payload.patient_id)
     except Exception:
         pass
 
     # Run the scan
-    result = await monitor.scan_patient(payload.patient_id, patient_name)
+    result = await monitor.scan_patient(payload.patient_id, patient_name, tz_name=tz_name)
 
     # Send notifications
     notification_target = payload.notification_id or payload.patient_id

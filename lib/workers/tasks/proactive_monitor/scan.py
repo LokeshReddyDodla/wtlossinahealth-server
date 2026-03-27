@@ -171,6 +171,7 @@ async def _send_notification(
                 "insight_id": top.insight_id,
                 "category": top.category.value,
                 "severity": top.severity.value,
+                "patient_id": patient_id,
                 "suggested_query": top.suggested_query or "",
                 "total_insights": str(len(insights)),
             },

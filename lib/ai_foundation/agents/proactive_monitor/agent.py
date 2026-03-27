@@ -337,8 +337,6 @@ class ProactiveMonitorAgent(BaseAgent):
         has_data: bool,
     ) -> list[HealthInsight]:
         """Single LLM call: data → structured ScanInsights."""
-        all_categories = ", ".join(c.value for c in InsightCategory)
-
         greetings = {
             "morning": "Good morning",
             "afternoon": "Hi",
