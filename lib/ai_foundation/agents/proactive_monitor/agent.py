@@ -32,6 +32,7 @@ from .contracts import (
     HealthInsight,
     InsightCategory,
     InsightSeverity,
+    LLM_INSIGHT_CATEGORIES_PROMPT,
     ScanInsights,
     ScanResult,
 )
@@ -388,7 +389,7 @@ class ProactiveMonitorAgent(BaseAgent):
             return [HealthInsight(
                 category=InsightCategory.ENGAGEMENT_DROP,
                 severity=InsightSeverity.ATTENTION,
-                title="No health data recorded",
+                title="📋 No health data recorded",
                 body=f"{greeting} {patient_name}! No data was logged {scan_label}. Keep logging to help us track your health!",
                 patient_id=patient_id,
                 suggested_query="Why is it important to log my health data regularly?",
@@ -414,12 +415,10 @@ class ProactiveMonitorAgent(BaseAgent):
             "Keep it natural, not forced.\n"
             f"6. Refer to the time as '{scan_label}' — don't include full dates like 2026-03-26.\n"
             "7. Title must be under 45 characters. Body must be under 180 characters.\n"
-            "8. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
-            "CATEGORIES — pick the one that fits best:\n"
-            "Concerns: glucose_spike, glucose_hypo, glucose_worsening, "
-            "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor\n"
-            "Positives: glucose_improving, fitness_streak, sleep_improving, goal_progress\n"
-            "Neutral: general\n\n"
+            "8. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n"
+            "9. Use 1 relevant emoji at the start of the title to make it engaging "
+            "(e.g. 🍽️ for meals, 📈 for glucose, 🏃 for activity, 😴 for sleep, ⚠️ for alerts, ✅ for positives).\n\n"
+            f"{LLM_INSIGHT_CATEGORIES_PROMPT}\n\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
             "warning (needs attention), alert (urgent)"
         )
@@ -444,7 +443,7 @@ class ProactiveMonitorAgent(BaseAgent):
             return [HealthInsight(
                 category=InsightCategory.GENERAL,
                 severity=InsightSeverity.INFO,
-                title="Your daily health check",
+                title="📊 Your daily health check",
                 body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
                 patient_id=patient_id,
                 suggested_query=f"How was my health {scan_label}?",
