@@ -45,8 +45,11 @@ async def run_proactive_scan(
         if not patient_ids:
             return TaskResult(success=True, data={"message": "No active patients to scan"})
 
-        # Batch-resolve names + timezones in one DB call (cached 5 min)
-        all_names, all_timezones = await _resolve_patient_metadata(patient_ids)
+        # Batch-resolve names + timezones (cached 5 min via PatientNameResolver)
+        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+        resolver: PatientNameResolver = container.resolve(PatientNameResolver)
+        all_names = await resolver.resolve_names(patient_ids)
+        all_timezones = await resolver.resolve_timezones(patient_ids)
 
         # Filter to patients within their scan window
         eligible_ids = []
@@ -137,26 +140,6 @@ async def run_proactive_scan_single(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-async def _resolve_patient_metadata(
-    patient_ids: list[str],
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Batch-resolve patient names and timezones in one DB call (cached 5 min).
-
-    Returns (names_dict, timezones_dict).
-    """
-    try:
-        from lib.core.container import container
-        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
-
-        resolver: PatientNameResolver = container.resolve(PatientNameResolver)
-        names = await resolver.resolve_names(patient_ids)
-        timezones = await resolver.resolve_timezones(patient_ids)
-        return names, timezones
-    except Exception as e:
-        logger.warning(f"Failed to resolve patient metadata: {e}")
-        return {}, {}
 
 
 async def _get_active_patient_ids() -> list[str]:
