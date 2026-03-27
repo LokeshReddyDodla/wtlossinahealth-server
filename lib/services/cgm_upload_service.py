@@ -120,6 +120,51 @@ class CGMUploadService:
                 detail=str(e),
             )
 
+    @with_postgres_session
+    async def parse_and_upload_linx_csv_data(
+        self,
+        patient_id: str,
+        file_contents: bytes,
+        *,
+        postgres_session: AsyncSession,
+    ):
+        try:
+            df = self._parse_linx_file(file_contents)
+
+            start_time = df["timestamp"].min()
+            end_time = df["timestamp"].max()
+
+            self.clickhouse_store.delete_existing_cgm_data(
+                "aihealth.cgm_data", patient_id, start_time, end_time, "linx"
+            )
+
+            data_points = self._extract_linx_data_points(df, patient_id)
+            self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
+
+            lifecycle_df = pd.DataFrame(
+                {
+                    "Device Timestamp": df["timestamp"],
+                    "Historic Glucose mg/dL": df["glucose_mgdl"],
+                }
+            )
+            report_periods = self._generate_report_periods(lifecycle_df)
+
+            await self._update_last_sync(postgres_session, patient_id, "linx", end_time)
+            enqueue_cgm_report_generation_sync(patient_id, report_periods)
+
+            logger.info(
+                f"Uploaded Linx data for {patient_id} "
+                f"({len(data_points)} records, {len(report_periods)} periods)"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to upload Linx data for {patient_id}: {e}")
+            raise_http_exception(
+                status_code=500,
+                message="Failed to upload Linx CSV CGM data",
+                detail=str(e),
+            )
+
     def _extract_libreview_data_points(
         self, df: pd.DataFrame, patient_id: str
     ) -> List[dict]:
@@ -178,6 +223,40 @@ class CGMUploadService:
 
         return df
 
+    def _parse_linx_file(self, file_contents: bytes) -> pd.DataFrame:
+        """Parse Linx CSV file and normalize data."""
+        df_raw = pd.read_csv(BytesIO(file_contents))
+        df_raw.columns = [str(c).strip().lower() for c in df_raw.columns]
+
+        time_candidates = ["device_time", "device time", "timestamp", "time"]
+        value_candidates = [
+            "value(mg/dl)",
+            "value (mg/dl)",
+            "glucose(mg/dl)",
+            "glucose (mg/dl)",
+            "value",
+        ]
+
+        time_col = next((c for c in time_candidates if c in df_raw.columns), None)
+        value_col = next((c for c in value_candidates if c in df_raw.columns), None)
+
+        if not time_col or not value_col:
+            raise ValueError(
+                "Linx file missing required columns: device_time and value(mg/dL)"
+            )
+
+        df = df_raw[[time_col, value_col]].copy()
+        df["timestamp"] = pd.to_datetime(
+            df[time_col], format="%Y/%m/%d %H:%M", errors="coerce"
+        ).dt.tz_localize(None)
+        df = df.dropna(subset=["timestamp"])
+
+        df["glucose_mgdl"] = pd.to_numeric(df[value_col], errors="coerce")
+        df = df.dropna(subset=["glucose_mgdl"])
+        df["glucose_mgdl"] = df["glucose_mgdl"].astype(int)
+
+        return df
+
     @staticmethod
     def _convert_to_mgdl(value, unit: str) -> int | None:
         """Convert glucose value to mg/dL."""
@@ -203,6 +282,19 @@ class CGMUploadService:
                 "glucose_level": row["glucose_mgdl"],
                 "record_type": "historic",
                 "source": "sinocare",
+            }
+            for _, row in df.iterrows()
+        ]
+
+    def _extract_linx_data_points(self, df: pd.DataFrame, patient_id: str) -> List[dict]:
+        """Extract CGM data points from Linx DataFrame."""
+        return [
+            {
+                "patient_id": str(patient_id),
+                "time": row["timestamp"],
+                "glucose_level": row["glucose_mgdl"],
+                "record_type": "historic",
+                "source": "linx",
             }
             for _, row in df.iterrows()
         ]
