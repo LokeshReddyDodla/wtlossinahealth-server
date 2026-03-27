@@ -11,10 +11,11 @@ and 10 PM in their local timezone (defaults to Asia/Kolkata).
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from loguru import logger
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 from lib.ai_foundation.agents.proactive_monitor.scheduling import (
     DEFAULT_TIMEZONE,
     is_within_scan_window,
@@ -22,10 +23,15 @@ from lib.ai_foundation.agents.proactive_monitor.scheduling import (
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
 
+# ---------------------------------------------------------------------------
+# Task entry points
+# ---------------------------------------------------------------------------
+
+
 @task_with_logging
 async def run_proactive_scan(
-    ctx: Dict[str, Any],
-    patient_ids: Optional[list[str]] = None,
+    ctx: dict[str, Any],
+    patient_ids: list[str] | None = None,
 ) -> TaskResult:
     """Scan patients for proactive health insights.
 
@@ -35,48 +41,42 @@ async def run_proactive_scan(
     try:
         from lib.core.container import container
         from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
+        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 
-        monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
+        monitor = container.resolve(ProactiveMonitorAgent)
+        resolver = container.resolve(PatientNameResolver)
 
-        # If no patient_ids provided, fetch active patients
+        # 1. Get active patients
         if not patient_ids:
             patient_ids = await _get_active_patient_ids()
-
         if not patient_ids:
             return TaskResult(success=True, data={"message": "No active patients to scan"})
 
-        # Filter to patients within their scan window
-        eligible_ids = []
-        skipped = 0
-        for pid in patient_ids:
-            if await _is_within_scan_window(pid):
-                eligible_ids.append(pid)
-            else:
-                skipped += 1
+        # 2. Batch-resolve names + timezones (single query, cached 5 min)
+        all_names = await resolver.resolve_names(patient_ids)
+        all_timezones = await resolver.resolve_timezones(patient_ids)
+
+        # 3. Filter to patients within their local scan window
+        eligible_ids, skipped = _filter_by_scan_window(patient_ids, all_timezones)
 
         if skipped:
-            logger.info(
-                "Timezone filter: %d/%d patients outside scan window, skipping",
-                skipped, len(patient_ids),
-            )
-
+            logger.info("Timezone filter: %d/%d patients outside scan window", skipped, len(patient_ids))
         if not eligible_ids:
             return TaskResult(
                 success=True,
-                data={
-                    "message": "All patients outside scan window",
-                    "total": len(patient_ids),
-                    "skipped_timezone": skipped,
-                },
+                data={"message": "All patients outside scan window", "total": len(patient_ids), "skipped_timezone": skipped},
             )
 
-        # Resolve patient names so notifications are personalized
-        patient_names = await _resolve_patient_names(eligible_ids)
+        # 4. Scan eligible patients
+        patient_names = {pid: all_names[pid] for pid in eligible_ids if pid in all_names}
+        patient_timezones = {pid: all_timezones.get(pid, DEFAULT_TIMEZONE) for pid in eligible_ids}
 
-        batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names)
+        batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names, patient_timezones=patient_timezones)
 
-        # Send notifications
-        await _send_notifications(batch)
+        # 5. Send notifications
+        for result in batch.results:
+            if result.insights:
+                await _send_notification(result.patient_id, result.insights, monitor)
 
         return TaskResult(
             success=True,
@@ -97,7 +97,7 @@ async def run_proactive_scan(
 
 @task_with_logging
 async def run_proactive_scan_single(
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
     patient_id: str,
 ) -> TaskResult:
     """Scan a single patient. Useful for event-triggered scans."""
@@ -105,11 +105,11 @@ async def run_proactive_scan_single(
         from lib.core.container import container
         from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
-        monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
+        monitor = container.resolve(ProactiveMonitorAgent)
         result = await monitor.scan_patient(patient_id)
 
         if result.insights:
-            await _send_patient_notifications(patient_id, result.insights)
+            await _send_notification(patient_id, result.insights, monitor)
 
         return TaskResult(
             success=True,
@@ -126,60 +126,58 @@ async def run_proactive_scan_single(
 
 
 # ---------------------------------------------------------------------------
-# Timezone-aware scheduling
-# ---------------------------------------------------------------------------
-
-
-async def _is_within_scan_window(patient_id: str) -> bool:
-    """Check if it's between 7 AM and 10 PM in the patient's timezone.
-
-    Delegates to :func:`scheduling.is_within_scan_window` with the patient's
-    timezone looked up from their profile.  Defaults to Asia/Kolkata.
-    """
-    try:
-        tz_name = await _get_patient_timezone(patient_id)
-        return is_within_scan_window(tz_name)
-    except Exception:
-        # Fail-open: if we can't determine timezone, allow the scan
-        logger.debug("Could not determine timezone for %s, allowing scan", patient_id)
-        return True
-
-
-async def _get_patient_timezone(patient_id: str) -> str:
-    """Look up the patient's timezone from their profile.
-
-    Returns the IANA timezone string (e.g. 'Asia/Kolkata', 'America/New_York').
-    Falls back to DEFAULT_TIMEZONE.
-    """
-    try:
-        from lib.core.container import container
-        from lib.services.patient_profile_service import PatientProfileService
-
-        profile_svc: PatientProfileService = container.resolve(PatientProfileService)
-        profile = await profile_svc.get_patient_profile(patient_id)
-        if profile and hasattr(profile, "timezone") and profile.timezone:
-            return profile.timezone
-    except Exception:
-        pass
-    return DEFAULT_TIMEZONE
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_patient_names(patient_ids: list[str]) -> dict[str, str]:
-    """Resolve patient names for personalized notifications."""
-    try:
-        from lib.core.container import container
-        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+def _filter_by_scan_window(
+    patient_ids: list[str],
+    timezones: dict[str, str],
+) -> tuple[list[str], int]:
+    """Filter patients to those within their local scan window (7 AM - 10 PM).
 
-        resolver: PatientNameResolver = container.resolve(PatientNameResolver)
-        return await resolver.resolve_names(patient_ids)
+    Returns (eligible_ids, skipped_count).
+    """
+    eligible: list[str] = []
+    skipped = 0
+    for pid in patient_ids:
+        if is_within_scan_window(timezones.get(pid, DEFAULT_TIMEZONE)):
+            eligible.append(pid)
+        else:
+            skipped += 1
+    return eligible, skipped
+
+
+async def _send_notification(
+    patient_id: str,
+    insights: list,
+    monitor: Any,
+) -> None:
+    """Send ONE push notification — the most severe insight — and record it."""
+    try:
+        from lib.services.fcm_service import FCMService
+
+        top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
+        is_urgent = top.severity.value in ("warning", "alert")
+
+        await FCMService().send_fcm_notification_to_user_devices(
+            user_id=patient_id,
+            title=top.title,
+            body=top.body,
+            channel_key="alerts" if is_urgent else "reminders",
+            group_key="alert_group" if is_urgent else "reminder_group",
+            data={
+                "type": "proactive_insight",
+                "insight_id": top.insight_id,
+                "category": top.category.value,
+                "severity": top.severity.value,
+                "suggested_query": top.suggested_query or "",
+                "total_insights": str(len(insights)),
+            },
+        )
+        await monitor.record_insight(patient_id, top)
     except Exception as e:
-        logger.warning(f"Failed to resolve patient names: {e}")
-        return {}
+        logger.warning(f"Failed to send notification for {patient_id}: {e}")
 
 
 async def _get_active_patient_ids() -> list[str]:
@@ -191,56 +189,9 @@ async def _get_active_patient_ids() -> list[str]:
         mongo: MongoStore = container.resolve(MongoStore)
         week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
-        # Check meal_reports for recent activity (most commonly logged)
         collection = mongo.get_collection("meal_reports")
-        patient_ids = await collection.distinct(
-            "patient_id",
-            {"date": {"$gte": week_ago[:10]}},
-        )
+        patient_ids = await collection.distinct("patient_id", {"date": {"$gte": week_ago[:10]}})
         return list(set(patient_ids)) if patient_ids else []
     except Exception as e:
         logger.warning(f"Failed to fetch active patients: {e}")
         return []
-
-
-async def _send_notifications(batch) -> None:
-    """Send push notifications for all insights in a batch."""
-    for result in batch.results:
-        if result.insights:
-            await _send_patient_notifications(result.patient_id, result.insights)
-
-
-async def _send_patient_notifications(patient_id: str, insights: list) -> None:
-    """Send ONE push notification per patient — the most severe insight only."""
-    try:
-        from lib.core.container import container
-        from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
-        from lib.services.fcm_service import FCMService
-
-        fcm = FCMService()
-        from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
-        notifiable = list(insights)
-
-        if notifiable:
-            top = max(notifiable, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
-            is_urgent = top.severity.value in ("warning", "alert")
-            await fcm.send_fcm_notification_to_user_devices(
-                user_id=patient_id,
-                title=top.title,
-                body=top.body,
-                channel_key="alerts" if is_urgent else "reminders",
-                group_key="alert_group" if is_urgent else "reminder_group",
-                data={
-                    "type": "proactive_insight",
-                    "insight_id": top.insight_id,
-                    "category": top.category.value,
-                    "severity": top.severity.value,
-                    "suggested_query": top.suggested_query or "",
-                    "total_insights": str(len(insights)),
-                },
-            )
-            # Record only the insight we actually sent
-            monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
-            await monitor.record_insight(patient_id, top)
-    except Exception as e:
-        logger.warning(f"Failed to send notifications for {patient_id}: {e}")

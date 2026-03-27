@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from lib.ai_foundation.agents.base import BaseAgent
@@ -105,23 +105,34 @@ class ProactiveMonitorAgent(BaseAgent):
         self,
         patient_id: str,
         patient_name: str | None = None,
+        tz_name: str | None = None,
     ) -> ScanResult:
         """Scan a single patient's recent data and generate insights."""
+        from zoneinfo import ZoneInfo
+        from .scheduling import DEFAULT_TIMEZONE
+
         start = time.perf_counter()
 
         try:
-            # 1. Determine scan window
-            now = datetime.now(timezone.utc)
+            # 1. Determine scan window in patient's local timezone
+            tz = ZoneInfo(tz_name or DEFAULT_TIMEZONE)
+            now = datetime.now(tz)
             hour = now.hour
             yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
             today = now.strftime("%Y-%m-%d")
 
             if hour < 12:
                 scan_date = yesterday
-                scan_label = f"yesterday ({yesterday})"
+                scan_label = "yesterday"
+                scan_period = "morning"
+            elif hour < 17:
+                scan_date = today
+                scan_label = "today so far"
+                scan_period = "afternoon"
             else:
                 scan_date = today
-                scan_label = f"today ({today})"
+                scan_label = "today"
+                scan_period = "evening"
 
             # 2. Fetch data directly from Qdrant — deterministic, no LLM
             data_text, domain_counts = await self._fetch_patient_data(
@@ -144,6 +155,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 patient_id=patient_id,
                 patient_name=display_name,
                 scan_label=scan_label,
+                scan_period=scan_period,
                 facts_text=facts_text,
                 has_data=bool(data_text),
             )
@@ -177,15 +189,17 @@ class ProactiveMonitorAgent(BaseAgent):
         self,
         patient_ids: list[str],
         patient_names: dict[str, str] | None = None,
+        patient_timezones: dict[str, str] | None = None,
     ) -> BatchScanResult:
         """Scan multiple patients. Runs sequentially to avoid overwhelming the LLM."""
         start = time.perf_counter()
         names = patient_names or {}
+        tzs = patient_timezones or {}
         batch = BatchScanResult(total_patients=len(patient_ids))
 
         for pid in patient_ids:
             try:
-                result = await self.scan_patient(pid, names.get(pid))
+                result = await self.scan_patient(pid, names.get(pid), tz_name=tzs.get(pid))
                 batch.results.append(result)
                 batch.scanned += 1
                 if result.error:
@@ -318,11 +332,19 @@ class ProactiveMonitorAgent(BaseAgent):
         patient_id: str,
         patient_name: str,
         scan_label: str,
+        scan_period: str,
         facts_text: str,
         has_data: bool,
     ) -> list[HealthInsight]:
         """Single LLM call: data → structured ScanInsights."""
         all_categories = ", ".join(c.value for c in InsightCategory)
+
+        greetings = {
+            "morning": "Good morning",
+            "afternoon": "Hi",
+            "evening": "Here's your day wrap-up",
+        }
+        greeting = greetings.get(scan_period, "Hi")
 
         if not has_data:
             # No data at all — produce an engagement insight without LLM
@@ -330,7 +352,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 category=InsightCategory.ENGAGEMENT_DROP,
                 severity=InsightSeverity.ATTENTION,
                 title="No health data recorded",
-                body=f"Hey {patient_name}, no data was logged for {scan_label}. Keep logging to help us track your health!",
+                body=f"{greeting} {patient_name}! No data was logged {scan_label}. Keep logging to help us track your health!",
                 patient_id=patient_id,
                 suggested_query="Why is it important to log my health data regularly?",
             )]
@@ -342,6 +364,7 @@ class ProactiveMonitorAgent(BaseAgent):
         system_prompt = (
             "You are a friendly health assistant writing push notifications for a patient. "
             "Produce 1-3 structured health insights from the data provided.\n\n"
+            f"Time of day: {scan_period}. Data is from {scan_label}.\n\n"
             "RULES:\n"
             "1. EVERY insight must reference specific data from the records below.\n"
             "2. Include BOTH concerns AND positives. If glucose is in range, that's worth noting. "
@@ -349,8 +372,11 @@ class ProactiveMonitorAgent(BaseAgent):
             "3. If a domain has no records, you may note the absence (e.g. no activity logged).\n"
             "4. Address the patient DIRECTLY using 'you/your' — like a friendly coach. "
             "Use their first name naturally (e.g. 'Asish, you had...' not 'Dr Asish Satapathy had...').\n"
-            "5. Title must be under 45 characters. Body must be under 180 characters.\n"
-            "6. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
+            f"5. Start the body with an appropriate greeting ('{greeting}' for {scan_period}). "
+            "Keep it natural, not forced.\n"
+            f"6. Refer to the time as '{scan_label}' — don't include full dates like 2026-03-26.\n"
+            "7. Title must be under 45 characters. Body must be under 180 characters.\n"
+            "8. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
             "CATEGORIES — pick the one that fits best:\n"
             "Concerns: glucose_spike, glucose_hypo, glucose_worsening, meal_missed, "
             "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor, engagement_drop\n"
