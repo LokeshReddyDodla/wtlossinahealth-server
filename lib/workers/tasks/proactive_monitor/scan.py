@@ -22,6 +22,9 @@ from lib.ai_foundation.agents.proactive_monitor.scheduling import (
 )
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
+# Skip patients who signed up less than this many days ago
+_MIN_HISTORY_DAYS = 3
+
 
 # ---------------------------------------------------------------------------
 # Task entry points
@@ -35,7 +38,7 @@ async def run_proactive_scan(
 ) -> TaskResult:
     """Scan patients for proactive health insights.
 
-    If patient_ids is None, scans all active patients (last 7 days of data).
+    If patient_ids is None, scans all active patients (active device in last 7 days).
     Patients outside their local scan window (7 AM - 10 PM) are skipped.
     """
     try:
@@ -46,7 +49,7 @@ async def run_proactive_scan(
         monitor = container.resolve(ProactiveMonitorAgent)
         resolver = container.resolve(PatientNameResolver)
 
-        # 1. Get active patients
+        # 1. Get active patients (from UserDevice, not meal_reports)
         if not patient_ids:
             patient_ids = await _get_active_patient_ids()
         if not patient_ids:
@@ -56,7 +59,7 @@ async def run_proactive_scan(
         all_names = await resolver.resolve_names(patient_ids)
         all_timezones = await resolver.resolve_timezones(patient_ids)
 
-        # 3. Filter to patients within their local scan window
+        # 3. Filter: scan window + minimum history
         eligible_ids, skipped = _filter_by_scan_window(patient_ids, all_timezones)
 
         if skipped:
@@ -134,10 +137,7 @@ def _filter_by_scan_window(
     patient_ids: list[str],
     timezones: dict[str, str],
 ) -> tuple[list[str], int]:
-    """Filter patients to those within their local scan window (7 AM - 10 PM).
-
-    Returns (eligible_ids, skipped_count).
-    """
+    """Filter patients to those within their local scan window (7 AM - 10 PM)."""
     eligible: list[str] = []
     skipped = 0
     for pid in patient_ids:
@@ -182,17 +182,33 @@ async def _send_notification(
 
 
 async def _get_active_patient_ids() -> list[str]:
-    """Fetch patient IDs who have logged data in the last 7 days."""
+    """Fetch patient IDs with active devices in the last 7 days.
+
+    Uses UserDevice table instead of meal_reports — catches patients
+    with CGM sync, vitals, or any app activity (not just meal logs).
+    Also filters out patients with less than _MIN_HISTORY_DAYS of history.
+    """
     try:
-        from lib.core.container import container
-        from lib.core.mongo_store import MongoStore
+        from lib.dependencies.database import postgres_store
+        from sqlalchemy import select, and_
+        from lib.models.user_device import UserDevice
 
-        mongo: MongoStore = container.resolve(MongoStore)
-        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        min_signup = datetime.now(timezone.utc) - timedelta(days=_MIN_HISTORY_DAYS)
 
-        collection = mongo.get_collection("meal_reports")
-        patient_ids = await collection.distinct("patient_id", {"date": {"$gte": week_ago[:10]}})
-        return list(set(patient_ids)) if patient_ids else []
+        async with postgres_store.session_local() as session:
+            stmt = (
+                select(UserDevice.user_id)
+                .where(and_(
+                    UserDevice.profile_type == "patient",
+                    UserDevice.is_active == True,  # noqa: E712
+                    UserDevice.last_active_at >= cutoff,
+                    UserDevice.created_at <= min_signup,
+                ))
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return [str(row[0]) for row in result.fetchall()]
     except Exception as e:
         logger.warning(f"Failed to fetch active patients: {e}")
         return []

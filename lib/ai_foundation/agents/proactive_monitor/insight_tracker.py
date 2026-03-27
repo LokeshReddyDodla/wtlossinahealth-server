@@ -94,6 +94,10 @@ class InsightTracker:
         category: str,
         severity: str,
         message: str,
+        *,
+        insight_id: str | None = None,
+        title: str | None = None,
+        suggested_query: str | None = None,
     ) -> None:
         """Record that an insight was sent."""
         await self._maybe_ensure_indexes()
@@ -115,14 +119,40 @@ class InsightTracker:
             if hours_since < _CONSECUTIVE_TOLERANCE_HOURS:
                 consecutive = last.get("consecutive_days", 0) + 1
 
-        await self._collection.insert_one({
+        doc: dict = {
             "patient_id": patient_id,
             "category": category,
             "severity": severity,
             "message": message,
             "consecutive_days": consecutive,
             "created_at": now,
-        })
+        }
+        if insight_id:
+            doc["insight_id"] = insight_id
+        if title:
+            doc["title"] = title
+        if suggested_query:
+            doc["suggested_query"] = suggested_query
+
+        await self._collection.insert_one(doc)
+
+    async def get_history(
+        self,
+        patient_id: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Get recent insight history for a patient (newest first)."""
+        await self._maybe_ensure_indexes()
+        cursor = self._collection.find(
+            {"patient_id": patient_id},
+            sort=[("created_at", -1)],
+            limit=limit,
+        )
+        results = []
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            results.append(doc)
+        return results
 
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""

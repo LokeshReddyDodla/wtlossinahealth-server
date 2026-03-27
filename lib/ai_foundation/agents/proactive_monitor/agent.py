@@ -7,17 +7,19 @@ then uses a single LLM call to analyze the data and produce structured insights.
 Pipeline:
     1. Fetch data directly from Qdrant (glucose, meals, activity)
     2. Format into readable text
-    3. Single LLM call → structured ScanInsights
+    3. Single LLM call → structured ScanInsights (with static fallback)
     4. Dedup + escalation via InsightTracker
     5. Publish insights to EventBus
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
@@ -56,6 +58,9 @@ _STRIP_KEYS = frozenset({
     "start_time", "end_time", "day_of_week", "is_weekend",
     "week_number", "month", "time_of_day_bucket", "report_id",
 })
+
+# Max concurrent patient scans in a batch
+_SCAN_CONCURRENCY = 5
 
 
 class ProactiveMonitorAgent(BaseAgent):
@@ -112,6 +117,7 @@ class ProactiveMonitorAgent(BaseAgent):
         from .scheduling import DEFAULT_TIMEZONE
 
         start = time.perf_counter()
+        trace_id = f"pm_{uuid4().hex[:16]}"
 
         try:
             # 1. Determine scan window in patient's local timezone
@@ -148,7 +154,24 @@ class ProactiveMonitorAgent(BaseAgent):
             # 3. Load patient facts for context
             facts_text = await self._load_facts(patient_id)
 
-            # 4. Single LLM call → structured ScanInsights
+            # 4. Langfuse tracing — log what the LLM will see
+            self.gateway.set_langfuse_context(
+                session_id=f"proactive_scan_{scan_date}",
+                user_id=patient_id,
+            )
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                input_text=data_text[:500] if data_text else "(no data)",
+                metadata={
+                    "agent": self.agent_id,
+                    "scan_date": scan_date,
+                    "scan_period": scan_period,
+                    "domain_counts": domain_counts,
+                    "patient_name": patient_name,
+                },
+            )
+
+            # 5. Single LLM call → structured ScanInsights
             display_name = patient_name or "this patient"
             insights = await self._analyze_data(
                 data_text=data_text,
@@ -158,14 +181,21 @@ class ProactiveMonitorAgent(BaseAgent):
                 scan_period=scan_period,
                 facts_text=facts_text,
                 has_data=bool(data_text),
+                domain_counts=domain_counts,
             )
 
-            # 5. Dedup + escalation via InsightTracker
+            # 6. Dedup + escalation via InsightTracker
             insights = await self._filter_insights(patient_id, insights)
 
-            # 6. Publish insights via EventBus
+            # 7. Publish insights via EventBus
             for insight in insights:
                 await self._publish_insight(insight)
+
+            # 8. Log trace output
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text="; ".join(f"[{i.severity.value}] {i.title}" for i in insights) or "(no insights)",
+            )
 
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             return ScanResult(
@@ -191,27 +221,35 @@ class ProactiveMonitorAgent(BaseAgent):
         patient_names: dict[str, str] | None = None,
         patient_timezones: dict[str, str] | None = None,
     ) -> BatchScanResult:
-        """Scan multiple patients. Runs sequentially to avoid overwhelming the LLM."""
+        """Scan multiple patients with controlled concurrency."""
         start = time.perf_counter()
         names = patient_names or {}
         tzs = patient_timezones or {}
         batch = BatchScanResult(total_patients=len(patient_ids))
+        semaphore = asyncio.Semaphore(_SCAN_CONCURRENCY)
 
-        for pid in patient_ids:
-            try:
-                result = await self.scan_patient(pid, names.get(pid), tz_name=tzs.get(pid))
-                batch.results.append(result)
-                batch.scanned += 1
-                if result.error:
-                    batch.errors += 1
-                if result.has_insights:
-                    batch.with_insights += 1
-                    batch.total_insights += len(result.insights)
-                    batch.total_alerts += result.alert_count
-            except Exception as exc:
-                logger.warning("Scan failed for %s: %s", pid, exc)
-                batch.scanned += 1
+        async def _scan_one(pid: str) -> ScanResult | None:
+            async with semaphore:
+                try:
+                    return await self.scan_patient(pid, names.get(pid), tz_name=tzs.get(pid))
+                except Exception as exc:
+                    logger.warning("Scan failed for %s: %s", pid, exc)
+                    return None
+
+        results = await asyncio.gather(*[_scan_one(pid) for pid in patient_ids])
+
+        for result in results:
+            batch.scanned += 1
+            if result is None:
                 batch.errors += 1
+                continue
+            batch.results.append(result)
+            if result.error:
+                batch.errors += 1
+            if result.has_insights:
+                batch.with_insights += 1
+                batch.total_insights += len(result.insights)
+                batch.total_alerts += result.alert_count
 
         batch.duration_ms = int((time.perf_counter() - start) * 1000)
 
@@ -335,6 +373,7 @@ class ProactiveMonitorAgent(BaseAgent):
         scan_period: str,
         facts_text: str,
         has_data: bool,
+        domain_counts: dict[str, int] | None = None,
     ) -> list[HealthInsight]:
         """Single LLM call: data → structured ScanInsights."""
         greetings = {
@@ -367,7 +406,8 @@ class ProactiveMonitorAgent(BaseAgent):
             "1. EVERY insight must reference specific data from the records below.\n"
             "2. Include BOTH concerns AND positives. If glucose is in range, that's worth noting. "
             "If meals were logged consistently, acknowledge it.\n"
-            "3. If a domain has no records, you may note the absence (e.g. no activity logged).\n"
+            "3. ONLY comment on domains that have data below. If a domain (glucose, activity, sleep, etc.) "
+            "has NO records, stay silent about it — data may not have synced yet.\n"
             "4. Address the patient DIRECTLY using 'you/your' — like a friendly coach. "
             "Use their first name naturally (e.g. 'Asish, you had...' not 'Dr Asish Satapathy had...').\n"
             f"5. Start the body with an appropriate greeting ('{greeting}' for {scan_period}). "
@@ -376,8 +416,8 @@ class ProactiveMonitorAgent(BaseAgent):
             "7. Title must be under 45 characters. Body must be under 180 characters.\n"
             "8. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
             "CATEGORIES — pick the one that fits best:\n"
-            "Concerns: glucose_spike, glucose_hypo, glucose_worsening, meal_missed, "
-            "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor, engagement_drop\n"
+            "Concerns: glucose_spike, glucose_hypo, glucose_worsening, "
+            "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor\n"
             "Positives: glucose_improving, fitness_streak, sleep_improving, goal_progress\n"
             "Neutral: general\n\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
@@ -398,7 +438,17 @@ class ProactiveMonitorAgent(BaseAgent):
             return scan_insights.insights
         except Exception as exc:
             logger.warning("Insight analysis failed: %s", exc, exc_info=True)
-            return []
+            # Fallback: static insight so patient still gets something
+            counts = domain_counts or {}
+            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
+            return [HealthInsight(
+                category=InsightCategory.GENERAL,
+                severity=InsightSeverity.INFO,
+                title="Your daily health check",
+                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
+                patient_id=patient_id,
+                suggested_query=f"How was my health {scan_label}?",
+            )]
 
     async def _filter_insights(
         self,
@@ -443,6 +493,9 @@ class ProactiveMonitorAgent(BaseAgent):
             insight.category.value,
             insight.severity.value,
             insight.body,
+            insight_id=insight.insight_id,
+            title=insight.title,
+            suggested_query=insight.suggested_query,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
