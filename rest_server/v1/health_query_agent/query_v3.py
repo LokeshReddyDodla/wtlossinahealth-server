@@ -74,6 +74,8 @@ def _build_agent_input(
     metadata: dict = {}
     if payload.tier:
         metadata["tier"] = payload.tier
+    if payload.metadata:
+        metadata.update(payload.metadata)
 
     return AgentInput(
         message=payload.message,
