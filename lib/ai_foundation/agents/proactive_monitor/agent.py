@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from lib.ai_foundation.agents.base import BaseAgent

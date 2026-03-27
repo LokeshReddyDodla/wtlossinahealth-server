@@ -45,12 +45,15 @@ async def run_proactive_scan(
         if not patient_ids:
             return TaskResult(success=True, data={"message": "No active patients to scan"})
 
-        # Filter to patients within their scan window
+        # Filter to patients within their scan window, collecting timezones
         eligible_ids = []
+        patient_timezones: dict[str, str] = {}
         skipped = 0
         for pid in patient_ids:
-            if await _is_within_scan_window(pid):
+            tz = await _get_patient_timezone(pid)
+            if is_within_scan_window(tz):
                 eligible_ids.append(pid)
+                patient_timezones[pid] = tz
             else:
                 skipped += 1
 
@@ -73,7 +76,11 @@ async def run_proactive_scan(
         # Resolve patient names so notifications are personalized
         patient_names = await _resolve_patient_names(eligible_ids)
 
-        batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names)
+        batch = await monitor.scan_batch(
+            eligible_ids,
+            patient_names=patient_names,
+            patient_timezones=patient_timezones,
+        )
 
         # Send notifications
         await _send_notifications(batch)
