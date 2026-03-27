@@ -33,20 +33,47 @@ SEVERITY_RANK: dict[str, int] = {
 class InsightCategory(str, Enum):
     """What kind of insight this is."""
 
+    # Concerns (LLM-generated)
     GLUCOSE_SPIKE = "glucose_spike"
     GLUCOSE_HYPO = "glucose_hypo"
-    GLUCOSE_IMPROVING = "glucose_improving"
     GLUCOSE_WORSENING = "glucose_worsening"
-    MEAL_MISSED = "meal_missed"
     MEAL_HIGH_CARB = "meal_high_carb"
     MEAL_LOW_PROTEIN = "meal_low_protein"
     FITNESS_INACTIVE = "fitness_inactive"
-    FITNESS_STREAK = "fitness_streak"
     SLEEP_POOR = "sleep_poor"
+
+    # Positives (LLM-generated)
+    GLUCOSE_IMPROVING = "glucose_improving"
+    FITNESS_STREAK = "fitness_streak"
     SLEEP_IMPROVING = "sleep_improving"
-    ENGAGEMENT_DROP = "engagement_drop"
     GOAL_PROGRESS = "goal_progress"
+
+    # Static only (generated without LLM, never by LLM)
+    MEAL_MISSED = "meal_missed"
+    ENGAGEMENT_DROP = "engagement_drop"
+
+    # Neutral
     GENERAL = "general"
+
+
+# Categories the LLM can pick from (excludes static-only ones)
+_CONCERN_CATEGORIES = [
+    InsightCategory.GLUCOSE_SPIKE, InsightCategory.GLUCOSE_HYPO,
+    InsightCategory.GLUCOSE_WORSENING, InsightCategory.MEAL_HIGH_CARB,
+    InsightCategory.MEAL_LOW_PROTEIN, InsightCategory.FITNESS_INACTIVE,
+    InsightCategory.SLEEP_POOR,
+]
+_POSITIVE_CATEGORIES = [
+    InsightCategory.GLUCOSE_IMPROVING, InsightCategory.FITNESS_STREAK,
+    InsightCategory.SLEEP_IMPROVING, InsightCategory.GOAL_PROGRESS,
+]
+
+LLM_INSIGHT_CATEGORIES_PROMPT = (
+    "CATEGORIES — pick the one that fits best:\n"
+    f"Concerns: {', '.join(c.value for c in _CONCERN_CATEGORIES)}\n"
+    f"Positives: {', '.join(c.value for c in _POSITIVE_CATEGORIES)}\n"
+    "Neutral: general"
+)
 
 
 class HealthInsight(BaseModel):

@@ -32,6 +32,7 @@ from .contracts import (
     HealthInsight,
     InsightCategory,
     InsightSeverity,
+    LLM_INSIGHT_CATEGORIES_PROMPT,
     ScanInsights,
     ScanResult,
 )
@@ -415,11 +416,7 @@ class ProactiveMonitorAgent(BaseAgent):
             f"6. Refer to the time as '{scan_label}' — don't include full dates like 2026-03-26.\n"
             "7. Title must be under 45 characters. Body must be under 180 characters.\n"
             "8. ALWAYS include a suggested_query — a follow-up question the patient could ask.\n\n"
-            "CATEGORIES — pick the one that fits best:\n"
-            "Concerns: glucose_spike, glucose_hypo, glucose_worsening, "
-            "meal_high_carb, meal_low_protein, fitness_inactive, sleep_poor\n"
-            "Positives: glucose_improving, fitness_streak, sleep_improving, goal_progress\n"
-            "Neutral: general\n\n"
+            f"{LLM_INSIGHT_CATEGORIES_PROMPT}\n\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
             "warning (needs attention), alert (urgent)"
         )
