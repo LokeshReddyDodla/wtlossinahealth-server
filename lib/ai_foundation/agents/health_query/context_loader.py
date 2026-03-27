@@ -21,6 +21,7 @@ from lib.ai_foundation.config import settings
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class AgentContext(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
     thread_summary: str | None = None
     patient_names: dict[str, str] = Field(default_factory=dict)
+    recent_insights: list[dict] = Field(default_factory=list)
 
 
 def build_context_messages(
@@ -65,6 +67,11 @@ def build_context_messages(
         context_parts.append("Known patient facts:\n" + "\n".join(facts))
     if context.thread_summary:
         context_parts.append(f"Conversation summary:\n{context.thread_summary}")
+    if context.recent_insights:
+        lines = ["Recent health insights (notifications sent to this patient):"]
+        for ins in context.recent_insights[:5]:
+            lines.append(f"- [{ins.get('severity', '')}] {ins.get('title', '')}: {ins.get('message', '')}")
+        context_parts.append("\n".join(lines))
 
     if context_parts:
         messages.append({
@@ -92,9 +99,11 @@ class ContextLoader:
         *,
         memory: MemoryStore | None = None,
         patient_resolver: PatientNameResolver | None = None,
+        insight_tracker: InsightTracker | None = None,
     ) -> None:
         self._memory = memory
         self._resolver = patient_resolver
+        self._insight_tracker = insight_tracker
 
     async def load(
         self,
@@ -103,16 +112,17 @@ class ContextLoader:
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
     ) -> AgentContext:
-        """Load all context in parallel — 4 independent calls via asyncio.gather."""
+        """Load all context in parallel — 5 independent calls via asyncio.gather."""
         import asyncio
 
         facts_task = self._load_facts(patient_id)
         history_task = self._load_history(thread_id)
         summary_task = self._load_summary(thread_id)
         names_task = self._load_names(patient_ids or ([patient_id] if patient_id else []))
+        insights_task = self._load_recent_insights(patient_id)
 
-        facts, history, summary, names = await asyncio.gather(
-            facts_task, history_task, summary_task, names_task,
+        facts, history, summary, names, insights = await asyncio.gather(
+            facts_task, history_task, summary_task, names_task, insights_task,
         )
 
         return AgentContext(
@@ -120,6 +130,7 @@ class ContextLoader:
             history=history,
             thread_summary=summary,
             patient_names=names,
+            recent_insights=insights,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -160,3 +171,12 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to resolve patient names: %s", exc)
             return {pid: f"Patient ({pid[:8]})" for pid in patient_ids}
+
+    async def _load_recent_insights(self, patient_id: str | None) -> list[dict]:
+        if not self._insight_tracker or not patient_id:
+            return []
+        try:
+            return await self._insight_tracker.get_history(patient_id, limit=5)
+        except Exception as exc:
+            logger.debug("Failed to load recent insights: %s", exc)
+            return []

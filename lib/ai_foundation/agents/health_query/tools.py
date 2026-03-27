@@ -25,6 +25,7 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 if TYPE_CHECKING:
     from lib.ai_foundation.models.gateway import LLMToolResponse, ToolCall
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
+    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,23 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recent_insights",
+            "description": (
+                "Fetch recent proactive health insights (notifications) sent to this patient. "
+                "Use when the patient asks about their notifications, alerts, or what the system detected."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Max insights to return. Default 5."},
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -213,8 +231,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 class ToolExecutor:
     """Executes tool calls against Qdrant and formats results as readable text."""
 
-    def __init__(self, qdrant: QdrantRetriever | None = None) -> None:
+    def __init__(self, qdrant: QdrantRetriever | None = None, insight_tracker: InsightTracker | None = None) -> None:
         self._qdrant = qdrant
+        self._insight_tracker = insight_tracker
 
     async def execute(
         self,
@@ -224,6 +243,10 @@ class ToolExecutor:
         patient_names: dict[str, str] | None = None,
     ) -> str:
         """Execute a tool and return formatted text result."""
+        # Insight tool doesn't need Qdrant — handle first
+        if tool_name == "get_recent_insights":
+            return await self._get_recent_insights(arguments, patient_ids)
+
         if not self._qdrant:
             return "No data source available."
 
@@ -522,6 +545,28 @@ class ToolExecutor:
             lines.append(f"  - [{dt}]{score} {', '.join(parts)}")
 
         return self._cap_result("\n".join(lines))
+
+    async def _get_recent_insights(self, args: dict, patient_ids: list[str]) -> str:
+        """Fetch recent proactive insights from InsightTracker."""
+        if not self._insight_tracker:
+            return "No insight history available."
+        limit = args.get("limit", 5)
+        all_insights: list[dict] = []
+        for pid in patient_ids:
+            try:
+                history = await self._insight_tracker.get_history(pid, limit=limit)
+                all_insights.extend(history)
+            except Exception:
+                pass
+        if not all_insights:
+            return "No recent insights found for this patient."
+        lines = ["Recent health insights (notifications):"]
+        for ins in all_insights:
+            lines.append(
+                f"- [{ins.get('severity')}] {ins.get('title', 'Insight')}: "
+                f"{ins.get('message', '')} (sent {ins.get('created_at', '')})"
+            )
+        return "\n".join(lines)
 
     # ── Formatting helpers ────────────────────────────────────────────────
 

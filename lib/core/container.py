@@ -1556,6 +1556,7 @@ container.register(
     lambda: ContextLoader(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
     ),
     scope=Scope.singleton,
 )
@@ -1584,6 +1585,7 @@ container.register(
     ToolExecutor,
     lambda: ToolExecutor(
         qdrant=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
     ),
     scope=Scope.singleton,
 )

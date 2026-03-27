@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
 
@@ -12,6 +12,9 @@ class QueryRequest(BaseModel):
     )
     tier: Optional[str] = Field(
         None, description="Reasoning tier: basic, standard, advanced, unlimited. Defaults to config.",
+    )
+    metadata: Optional[dict[str, Any]] = Field(
+        None, description="Optional context — e.g. insight_id from a notification tap.",
     )
 
     @field_validator("message")
