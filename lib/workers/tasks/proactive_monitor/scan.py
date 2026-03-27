@@ -196,7 +196,7 @@ async def _get_active_patient_ids() -> list[str]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         min_signup = datetime.now(timezone.utc) - timedelta(days=_MIN_HISTORY_DAYS)
 
-        async with postgres_store.session_local() as session:
+        async with postgres_store.get_session() as session:
             stmt = (
                 select(UserDevice.user_id)
                 .where(and_(
