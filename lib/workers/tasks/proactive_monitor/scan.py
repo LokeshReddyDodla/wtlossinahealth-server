@@ -22,6 +22,9 @@ from lib.ai_foundation.agents.proactive_monitor.scheduling import (
 )
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
+# Skip patients who signed up less than this many days ago
+_MIN_HISTORY_DAYS = 3
+
 
 # ---------------------------------------------------------------------------
 # Task entry points
@@ -35,7 +38,7 @@ async def run_proactive_scan(
 ) -> TaskResult:
     """Scan patients for proactive health insights.
 
-    If patient_ids is None, scans all active patients (last 7 days of data).
+    If patient_ids is None, scans all active patients (active device in last 7 days).
     Patients outside their local scan window (7 AM - 10 PM) are skipped.
     """
     try:
@@ -46,7 +49,7 @@ async def run_proactive_scan(
         monitor = container.resolve(ProactiveMonitorAgent)
         resolver = container.resolve(PatientNameResolver)
 
-        # 1. Get active patients
+        # 1. Get active patients (from UserDevice, not meal_reports)
         if not patient_ids:
             patient_ids = await _get_active_patient_ids()
         if not patient_ids:
@@ -56,7 +59,7 @@ async def run_proactive_scan(
         all_names = await resolver.resolve_names(patient_ids)
         all_timezones = await resolver.resolve_timezones(patient_ids)
 
-        # 3. Filter to patients within their local scan window
+        # 3. Filter: scan window + minimum history
         eligible_ids, skipped = _filter_by_scan_window(patient_ids, all_timezones)
 
         if skipped:
@@ -73,7 +76,7 @@ async def run_proactive_scan(
 
         batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names, patient_timezones=patient_timezones)
 
-        # 5. Send notifications
+        # 5. Send notifications (patient + care provider for severe)
         for result in batch.results:
             if result.insights:
                 await _send_notification(result.patient_id, result.insights, monitor)
@@ -134,10 +137,7 @@ def _filter_by_scan_window(
     patient_ids: list[str],
     timezones: dict[str, str],
 ) -> tuple[list[str], int]:
-    """Filter patients to those within their local scan window (7 AM - 10 PM).
-
-    Returns (eligible_ids, skipped_count).
-    """
+    """Filter patients to those within their local scan window (7 AM - 10 PM)."""
     eligible: list[str] = []
     skipped = 0
     for pid in patient_ids:
@@ -153,14 +153,20 @@ async def _send_notification(
     insights: list,
     monitor: Any,
 ) -> None:
-    """Send ONE push notification — the most severe insight — and record it."""
+    """Send ONE push notification to the patient (most severe insight) and record it.
+
+    For warning/alert severity, also notifies the patient's care providers.
+    """
     try:
         from lib.services.fcm_service import FCMService
 
         top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
         is_urgent = top.severity.value in ("warning", "alert")
 
-        await FCMService().send_fcm_notification_to_user_devices(
+        fcm = FCMService()
+
+        # Send to patient
+        await fcm.send_fcm_notification_to_user_devices(
             user_id=patient_id,
             title=top.title,
             body=top.body,
@@ -177,22 +183,80 @@ async def _send_notification(
             },
         )
         await monitor.record_insight(patient_id, top)
+
+        # For warning/alert — also notify care providers
+        if is_urgent:
+            await _notify_care_providers(fcm, patient_id, top)
+
     except Exception as e:
         logger.warning(f"Failed to send notification for {patient_id}: {e}")
 
 
-async def _get_active_patient_ids() -> list[str]:
-    """Fetch patient IDs who have logged data in the last 7 days."""
+async def _notify_care_providers(fcm: Any, patient_id: str, insight: Any) -> None:
+    """Send alert notification to the patient's care providers."""
     try:
         from lib.core.container import container
-        from lib.core.mongo_store import MongoStore
+        from lib.dependencies.database import postgres_store
+        from sqlalchemy import select
+        from lib.models.associations import patient_care_provider_association
 
-        mongo: MongoStore = container.resolve(MongoStore)
-        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        async with postgres_store.session_local() as session:
+            stmt = select(patient_care_provider_association.c.care_provider_id).where(
+                patient_care_provider_association.c.patient_id == patient_id,
+            )
+            result = await session.execute(stmt)
+            cp_ids = [str(row[0]) for row in result.fetchall()]
 
-        collection = mongo.get_collection("meal_reports")
-        patient_ids = await collection.distinct("patient_id", {"date": {"$gte": week_ago[:10]}})
-        return list(set(patient_ids)) if patient_ids else []
+        for cp_id in cp_ids:
+            try:
+                await fcm.send_fcm_notification_to_user_devices(
+                    user_id=cp_id,
+                    title=f"Patient Alert: {insight.title}",
+                    body=insight.body,
+                    channel_key="alerts",
+                    group_key="alert_group",
+                    data={
+                        "type": "care_provider_alert",
+                        "insight_id": insight.insight_id,
+                        "category": insight.category.value,
+                        "severity": insight.severity.value,
+                        "patient_id": patient_id,
+                    },
+                )
+            except Exception:
+                logger.debug(f"Failed to notify care provider {cp_id} for patient {patient_id}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch care providers for {patient_id}: {e}")
+
+
+async def _get_active_patient_ids() -> list[str]:
+    """Fetch patient IDs with active devices in the last 7 days.
+
+    Uses UserDevice table instead of meal_reports — catches patients
+    with CGM sync, vitals, or any app activity (not just meal logs).
+    Also filters out patients with less than _MIN_HISTORY_DAYS of history.
+    """
+    try:
+        from lib.dependencies.database import postgres_store
+        from sqlalchemy import select, and_
+        from lib.models.user_device import UserDevice
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        min_signup = datetime.now(timezone.utc) - timedelta(days=_MIN_HISTORY_DAYS)
+
+        async with postgres_store.session_local() as session:
+            stmt = (
+                select(UserDevice.user_id)
+                .where(and_(
+                    UserDevice.profile_type == "patient",
+                    UserDevice.is_active == True,  # noqa: E712
+                    UserDevice.last_active_at >= cutoff,
+                    UserDevice.created_at <= min_signup,
+                ))
+                .distinct()
+            )
+            result = await session.execute(stmt)
+            return [str(row[0]) for row in result.fetchall()]
     except Exception as e:
         logger.warning(f"Failed to fetch active patients: {e}")
         return []
