@@ -419,6 +419,9 @@ class ProactiveMonitorAgent(BaseAgent):
             "9. Use 1 relevant emoji at the start of the title to make it engaging "
             "(e.g. 🍽️ for meals, 📈 for glucose, 🏃 for activity, 😴 for sleep, ⚠️ for alerts, ✅ for positives).\n\n"
             f"{LLM_INSIGHT_CATEGORIES_PROMPT}\n\n"
+            "IMPORTANT: Concern categories are for NEGATIVE findings only. "
+            "If the finding is positive, use a Positive category or 'general'. "
+            "Example: good protein intake → 'goal_progress' NOT 'meal_low_protein'.\n\n"
             "Severity levels: info (positive/FYI), attention (worth noting), "
             "warning (needs attention), alert (urgent)"
         )
