@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
     from lib.ai_foundation.prompts.registry import PromptRegistry
-    from lib.ai_foundation.retrieval.composite import CompositeRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +59,11 @@ class BaseAgent:
         gateway: ModelGateway,
         memory: MemoryStore | None = None,
         prompts: PromptRegistry | None = None,
-        retriever: CompositeRetriever | None = None,
         event_bus: EventBus | None = None,
     ) -> None:
         self.gateway = gateway
         self.memory = memory
         self.prompts = prompts
-        self.retriever = retriever
         self.event_bus = event_bus
 
     async def run(self, input: AgentInput) -> AgentOutput:

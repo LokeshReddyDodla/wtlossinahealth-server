@@ -1,9 +1,6 @@
 """
 Shared Retrieval Protocol — defines the interface for data retrieval
-from any source (Qdrant, MongoDB, patient summaries, etc.).
-
-All retrievers implement the same protocol so they can be composed
-into a CompositeRetriever that runs them in parallel with timeouts.
+from any source (Qdrant, etc.).
 """
 
 from __future__ import annotations
