@@ -188,9 +188,19 @@ class ProactiveMonitorAgent(BaseAgent):
             # 6. Dedup + escalation via InsightTracker
             insights = await self._filter_insights(patient_id, insights)
 
-            # 7. Publish insights via EventBus
-            for insight in insights:
-                await self._publish_insight(insight)
+            # 7. Publish insights via EventBus (concurrently)
+            publish_results = await asyncio.gather(
+                *[self._publish_insight(insight) for insight in insights],
+                return_exceptions=True,
+            )
+            for insight, pub_result in zip(insights, publish_results):
+                if isinstance(pub_result, Exception):
+                    logger.warning(
+                        "Failed to publish insight %s for patient %s: %s",
+                        insight.insight_id,
+                        patient_id,
+                        pub_result,
+                    )
 
             # 8. Log trace output
             self.gateway.langfuse_trace_output(

@@ -8,6 +8,7 @@ Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -191,7 +192,6 @@ class FactExtractor:
 
                 # Split: keep recent, summarize old
                 # Facts are sorted newest-first from get_patient_facts
-                keep = facts[:self._KEEP_RECENT_PER_CATEGORY]
                 to_summarize = [
                     f for f in facts[self._KEEP_RECENT_PER_CATEGORY:]
                     if not getattr(f, "is_permanent", False) and not f.key.endswith("_summary")
@@ -214,9 +214,13 @@ class FactExtractor:
                         task=ModelTask.SUMMARIZATION,
                     )
 
-                    # Delete old individual memories
-                    for f in to_summarize:
-                        await self._memory.delete_patient_fact(patient_id, f.key)
+                    # Delete old individual memories concurrently.
+                    # These are independent I/O calls and order does not matter.
+                    delete_tasks = [
+                        self._memory.delete_patient_fact(patient_id, f.key)
+                        for f in to_summarize
+                    ]
+                    await asyncio.gather(*delete_tasks, return_exceptions=True)
 
                     # Insert summary memory
                     summary_fact = MemoryFact(
