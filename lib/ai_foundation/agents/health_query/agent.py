@@ -92,6 +92,7 @@ class HealthQueryAgent(BaseAgent):
             # ── Memory commands (remember/forget/list) ──
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
+                self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 return output
 
@@ -393,6 +394,12 @@ class HealthQueryAgent(BaseAgent):
 
         action = intent.memory_action
 
+        if action == "add" and not (intent.memory_key and intent.memory_value):
+            return AgentOutput(
+                message="I'd like to remember that for you, but I'm not sure what to save. Could you say something like \"remember that I'm vegetarian\"?",
+                is_ready=True, trace_id=trace_id,
+            )
+
         if action == "add" and intent.memory_key and intent.memory_value:
             key = intent.memory_key.strip().lower().replace(" ", "_")
             meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
@@ -408,6 +415,12 @@ class HealthQueryAgent(BaseAgent):
             await self.memory.upsert_patient_facts(pid, [fact])
             return AgentOutput(
                 message=f"Got it! I'll remember that: **{key.replace('_', ' ')}** = {intent.memory_value}.",
+                is_ready=True, trace_id=trace_id,
+            )
+
+        if action == "delete" and not intent.memory_key:
+            return AgentOutput(
+                message="What would you like me to forget? Try \"forget my weight\" or \"forget my dietary preference\".",
                 is_ready=True, trace_id=trace_id,
             )
 
