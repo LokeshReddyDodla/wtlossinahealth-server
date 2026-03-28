@@ -236,8 +236,9 @@ class HealthQueryAgent(BaseAgent):
             async for event in event_source:
                 # Intercept done event to save turn and inject suggestions
                 if 'event: done' in event:
-                    # Extract full_response from the done payload
+                    # Extract full_response + metadata from the done payload
                     full_text = ""
+                    done_data: dict = {}
                     try:
                         import json as _json
                         data_line = event.split("data: ", 1)[1].split("\n")[0]
@@ -246,9 +247,23 @@ class HealthQueryAgent(BaseAgent):
                     except (IndexError, ValueError, KeyError):
                         pass
 
+                    engine_data = done_data.get("data", {})
+                    engine_cost = done_data.get("cost_usd")
+                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+
                     output = AgentOutput(
                         message=full_text, is_ready=True,
                         trace_id=trace_id,
+                        cost_usd=engine_cost,
+                        latency_ms=elapsed,
+                        model_id=done_data.get("model_id"),
+                        data={
+                            "data_types": [dt.value for dt in intent.data_types],
+                            "confidence": intent.confidence,
+                            "rounds_used": engine_data.get("rounds_used"),
+                            "tools_called": engine_data.get("tools_called"),
+                            "tier": engine_data.get("tier"),
+                        },
                     )
                     if full_text:
                         self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text)
@@ -256,10 +271,10 @@ class HealthQueryAgent(BaseAgent):
                     self._schedule_background(input)
 
                     # Emit our own done event with suggestions and trace
-                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
                     yield sse_done(SSEDonePayload(
                         suggestions=[s.model_dump() for s in intent.suggestions],
                         trace_id=trace_id,
+                        cost_usd=engine_cost,
                         latency_ms=elapsed,
                     ))
                     continue
@@ -336,6 +351,12 @@ class HealthQueryAgent(BaseAgent):
                 "data_types": [dt.value for dt in intent.data_types],
                 "confidence": intent.confidence,
                 "trace_id": output.trace_id,
+                "tier": (output.data or {}).get("tier"),
+                "rounds_used": (output.data or {}).get("rounds_used"),
+                "tools_called": (output.data or {}).get("tools_called"),
+                "cost_usd": output.cost_usd,
+                "latency_ms": output.latency_ms,
+                "model_id": output.model_id,
             },
         )
 
@@ -364,7 +385,7 @@ class HealthQueryAgent(BaseAgent):
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")
         self._prompts_registered = True
 
-    _prompt_cache: dict[str, tuple[str, str]] = {}
+    _prompt_cache: dict[str, str] = {}
 
     def _render(self, template_name: str, **extra_vars: str) -> str:
         """Render a prompt with common variables (available_data_types, current_time)."""
@@ -378,6 +399,7 @@ class HealthQueryAgent(BaseAgent):
 
     def _get_system_prompt(self, user_role: str) -> str:
         """Get system prompt, cached per role per minute."""
+        self._ensure_prompts()
         now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
         cache_key = f"{user_role}:{now_minute}"
         if cache_key in self._prompt_cache:

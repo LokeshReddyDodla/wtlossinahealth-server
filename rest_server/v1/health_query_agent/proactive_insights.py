@@ -6,6 +6,7 @@ POST /health-query-agent/proactive-insights/feedback
 """
 
 from typing import Optional
+from uuid import UUID
 
 from fastapi import Depends, Query
 from pydantic import BaseModel, Field
@@ -13,6 +14,9 @@ from pydantic import BaseModel, Field
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.patient_access import resolve_patient_access
+from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -43,16 +47,25 @@ async def get_insight_history(
             check_permissions=False,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Get recent proactive insight history for a patient.
 
     Returns insights newest-first. Patients see their own insights,
     care providers see their assigned patients' insights.
     """
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
     tracker: InsightTracker = container.resolve(InsightTracker)
-    docs = await tracker.get_history(patient_id, limit=limit)
+    docs = await tracker.get_history(str(verified_pid), limit=limit)
 
     items = [
         InsightHistoryItem(
@@ -108,7 +121,6 @@ async def submit_insight_feedback(
     recorded = False
     try:
         gateway: ModelGateway = container.resolve(ModelGateway)
-        # Insight trace_id follows pattern pm_<hash> — use insight_id to find it
         gateway.log_score(
             trace_id=payload.insight_id,
             name="insight_feedback",

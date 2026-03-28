@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from lib.ai_foundation.config import settings
 
@@ -19,8 +19,6 @@ if TYPE_CHECKING:
     from lib.core.postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
-
-settings.PATIENT_CACHE_TTL = 300  # 5 minutes
 
 
 class PatientProfile(BaseModel):
@@ -100,7 +98,7 @@ class PatientNameResolver:
             from sqlalchemy import select
             from lib.models.patient import Patient
 
-            async with self._store.session_local() as session:
+            async with self._store.get_session() as session:
                 stmt = (
                     select(
                         Patient.patient_id,

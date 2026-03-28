@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from lib.ai_foundation.models.gateway import LLMToolResponse, ToolCall
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+    from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
 
 logger = logging.getLogger(__name__)
 
@@ -231,9 +232,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 class ToolExecutor:
     """Executes tool calls against Qdrant and formats results as readable text."""
 
-    def __init__(self, qdrant: QdrantRetriever | None = None, insight_tracker: InsightTracker | None = None) -> None:
+    def __init__(
+        self,
+        qdrant: QdrantRetriever | None = None,
+        insight_tracker: InsightTracker | None = None,
+        patient_resolver: PatientNameResolver | None = None,
+    ) -> None:
         self._qdrant = qdrant
         self._insight_tracker = insight_tracker
+        self._patient_resolver = patient_resolver
 
     async def execute(
         self,
@@ -556,12 +563,9 @@ class ToolExecutor:
 
         # Resolve patient timezone for timestamp display
         tz_name = "Asia/Kolkata"
-        if patient_ids:
+        if patient_ids and self._patient_resolver:
             try:
-                from lib.core.container import container
-                from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
-                resolver: PatientNameResolver = container.resolve(PatientNameResolver)
-                tzs = await resolver.resolve_timezones(patient_ids[:1])
+                tzs = await self._patient_resolver.resolve_timezones(patient_ids[:1])
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
                 pass
