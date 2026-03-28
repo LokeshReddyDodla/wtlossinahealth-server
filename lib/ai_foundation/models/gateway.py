@@ -14,6 +14,7 @@ All provider-specific routing is handled by LiteLLM — no direct OpenAI/Gemini 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import (
@@ -171,6 +172,8 @@ class ModelGateway:
         self._registry = registry
         self._circuit_breaker = circuit_breaker or CircuitBreaker()
         self._langfuse_client = self._init_langfuse_client()
+        # Reuse the Instructor wrapper — constructing it per-call adds avoidable overhead.
+        self._instructor_client = instructor.from_litellm(litellm.acompletion)
         self._setup_litellm()
 
     @staticmethod
@@ -405,10 +408,13 @@ class ModelGateway:
         # Parse tool calls if present
         tool_calls: list[ToolCall] = []
         if choice.message.tool_calls:
-            import json as _json
             for tc in choice.message.tool_calls:
                 try:
-                    args = _json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                    args = (
+                        json.loads(tc.function.arguments)
+                        if isinstance(tc.function.arguments, str)
+                        else tc.function.arguments
+                    )
                 except (ValueError, TypeError):
                     args = {}
                 tool_calls.append(ToolCall(
@@ -556,10 +562,8 @@ class ModelGateway:
         model = _litellm_model_id(spec)
         start = time.perf_counter()
 
-        client = instructor.from_litellm(litellm.acompletion)
-
         parsed, raw = await asyncio.wait_for(
-            client.chat.completions.create_with_completion(
+            self._instructor_client.chat.completions.create_with_completion(
                 model=model,
                 response_model=response_model,
                 messages=messages,
@@ -618,19 +622,20 @@ class ModelGateway:
         async for chunk in stream:
             # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
             chunk_usage = getattr(chunk, "usage", None)
-            if chunk_usage and getattr(chunk_usage, "prompt_tokens", None) is not None:
-                cached = 0
-                details = getattr(chunk_usage, "prompt_tokens_details", None)
-                if details is not None:
-                    cached = getattr(details, "cached_tokens", 0) or 0
-                final_usage = TokenUsage(
-                    input_tokens=chunk_usage.prompt_tokens or 0,
-                    output_tokens=chunk_usage.completion_tokens or 0,
-                    cached_tokens=cached,
-                )
+            if chunk_usage is not None:
+                prompt_tokens = getattr(chunk_usage, "prompt_tokens", None)
+                if prompt_tokens is not None:
+                    details = getattr(chunk_usage, "prompt_tokens_details", None)
+                    cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+                    final_usage = TokenUsage(
+                        input_tokens=prompt_tokens or 0,
+                        output_tokens=getattr(chunk_usage, "completion_tokens", 0) or 0,
+                        cached_tokens=cached or 0,
+                    )
 
-            if getattr(chunk, "choices", None):
-                delta = chunk.choices[0].delta
+            choices = getattr(chunk, "choices", None)
+            if choices:
+                delta = choices[0].delta
                 text = delta.content if delta and delta.content else ""
                 if text:
                     full_content.append(text)
@@ -662,25 +667,22 @@ class ModelGateway:
 
     def _extract_usage(self, raw: Any, spec: ModelSpec) -> LLMUsage:
         """Extract token usage and cost from a raw LiteLLM response."""
-        if not hasattr(raw, "usage") or raw.usage is None:
+        usage = getattr(raw, "usage", None)
+        if usage is None:
             return LLMUsage()
 
-        cached = 0
-        if hasattr(raw.usage, "prompt_tokens_details"):
-            details = raw.usage.prompt_tokens_details
-            if details and hasattr(details, "cached_tokens"):
-                cached = details.cached_tokens or 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", 0) if details is not None else 0
 
         # LiteLLM provides cost automatically
-        response_cost = 0.0
-        if hasattr(raw, "_hidden_params"):
-            response_cost = raw._hidden_params.get("response_cost", 0) or 0
+        hidden_params = getattr(raw, "_hidden_params", None)
+        response_cost = hidden_params.get("response_cost", 0) if isinstance(hidden_params, dict) else 0.0
 
         return LLMUsage(
-            input_tokens=raw.usage.prompt_tokens or 0,
-            output_tokens=raw.usage.completion_tokens or 0,
-            cached_tokens=cached,
-            cost=CostBreakdown(total_cost=response_cost),
+            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            cached_tokens=cached or 0,
+            cost=CostBreakdown(total_cost=response_cost or 0.0),
         )
 
     # -- Langfuse trace-level methods (kept, not generation-level) ----------

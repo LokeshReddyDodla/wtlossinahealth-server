@@ -572,12 +572,16 @@ class ToolExecutor:
         tz = ZoneInfo(tz_name)
 
         all_insights: list[dict] = []
-        for pid in patient_ids:
-            try:
-                history = await self._insight_tracker.get_history(pid, limit=limit)
-                all_insights.extend(history)
-            except Exception:
-                pass
+        unique_patient_ids = list(dict.fromkeys(patient_ids))
+        history_tasks = [
+            self._insight_tracker.get_history(pid, limit=limit)
+            for pid in unique_patient_ids
+        ]
+        histories = await asyncio.gather(*history_tasks, return_exceptions=True)
+        for history in histories:
+            if isinstance(history, Exception):
+                continue
+            all_insights.extend(history)
         if not all_insights:
             return "No recent insights found for this patient."
 

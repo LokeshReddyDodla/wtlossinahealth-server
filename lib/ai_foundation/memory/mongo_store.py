@@ -58,37 +58,18 @@ class MongoMemoryStore:
 
     async def ensure_indexes(self) -> None:
         """Create MongoDB indexes for efficient queries and TTL cleanup. Idempotent."""
+        import asyncio
+
         facts = self._mongo.get_collection(FACTS_COLLECTION)
-        await facts.create_index(
-            [("patient_id", 1), ("key", 1)],
-            name="patient_key_idx",
-            unique=True,
-        )
-
         turns = self._mongo.get_collection(TURNS_COLLECTION)
-        await turns.create_index(
-            [("thread_id", 1), ("timestamp", 1)],
-            name="thread_time_idx",
-        )
-
-        # TTL: conversation turns expire after 90 days
-        await turns.create_index(
-            "timestamp",
-            name="turns_ttl_idx",
-            expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600,
-        )
-
         summaries = self._mongo.get_collection(SUMMARIES_COLLECTION)
-        await summaries.create_index(
-            [("thread_id", 1)],
-            name="thread_idx",
-            unique=True,
-        )
-        # TTL: thread summaries expire after 90 days
-        await summaries.create_index(
-            "updated_at",
-            name="summaries_ttl_idx",
-            expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600,
+
+        await asyncio.gather(
+            facts.create_index([("patient_id", 1), ("key", 1)], name="patient_key_idx", unique=True),
+            turns.create_index([("thread_id", 1), ("timestamp", 1)], name="thread_time_idx"),
+            turns.create_index("timestamp", name="turns_ttl_idx", expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600),
+            summaries.create_index([("thread_id", 1)], name="thread_idx", unique=True),
+            summaries.create_index("updated_at", name="summaries_ttl_idx", expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600),
         )
 
         logger.debug("Memory store indexes ensured.")
@@ -166,6 +147,29 @@ class MongoMemoryStore:
             logger.debug("Deleted memory: %s.%s", patient_id, normalized_key)
             return True
         return False
+
+    async def delete_patient_facts(self, patient_id: str, keys: list[str]) -> int:
+        """Delete multiple memories by keys. Returns number of deleted records."""
+        if not keys:
+            return 0
+
+        collection = self._mongo.get_collection(FACTS_COLLECTION)
+        normalized_keys = list({_normalize_key(k) for k in keys if k})
+        if not normalized_keys:
+            return 0
+
+        result = await collection.delete_many(
+            {"patient_id": patient_id, "key": {"$in": normalized_keys}},
+        )
+        deleted = result.deleted_count or 0
+        if deleted > 0:
+            logger.debug(
+                "Deleted %d memories for %s (keys=%d)",
+                deleted,
+                patient_id,
+                len(normalized_keys),
+            )
+        return deleted
 
     # -- Conversation Turns -------------------------------------------------
 

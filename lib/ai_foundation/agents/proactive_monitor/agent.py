@@ -188,9 +188,19 @@ class ProactiveMonitorAgent(BaseAgent):
             # 6. Dedup + escalation via InsightTracker
             insights = await self._filter_insights(patient_id, insights)
 
-            # 7. Publish insights via EventBus
-            for insight in insights:
-                await self._publish_insight(insight)
+            # 7. Publish insights via EventBus (concurrently)
+            publish_results = await asyncio.gather(
+                *[self._publish_insight(insight) for insight in insights],
+                return_exceptions=True,
+            )
+            for insight, pub_result in zip(insights, publish_results):
+                if isinstance(pub_result, Exception):
+                    logger.warning(
+                        "Failed to publish insight %s for patient %s: %s",
+                        insight.insight_id,
+                        patient_id,
+                        pub_result,
+                    )
 
             # 8. Log trace output
             self.gateway.langfuse_trace_output(
@@ -464,11 +474,17 @@ class ProactiveMonitorAgent(BaseAgent):
             return insights
 
         filtered: list[HealthInsight] = []
+        dedup_cache: dict[str, tuple[bool, str]] = {}
+
         for insight in insights:
+            category = insight.category.value
             try:
-                should_send, escalated_severity = await self._insight_tracker.should_send(
-                    patient_id, insight.category.value,
-                )
+                check = dedup_cache.get(category)
+                if check is None:
+                    check = await self._insight_tracker.should_send(patient_id, category)
+                    dedup_cache[category] = check
+
+                should_send, escalated_severity = check
                 if should_send:
                     if escalated_severity != "info":
                         insight.severity = InsightSeverity(escalated_severity)
@@ -476,7 +492,8 @@ class ProactiveMonitorAgent(BaseAgent):
                 else:
                     logger.debug(
                         "Dedup: skipping %s for patient %s (sent recently)",
-                        insight.category.value, patient_id,
+                        category,
+                        patient_id,
                     )
             except Exception as exc:
                 logger.warning("InsightTracker error for %s: %s", patient_id, exc)

@@ -88,11 +88,7 @@ class PersistenceService:
                 timestamp=assistant_ts,
             )
 
-            if hasattr(self._memory, 'append_turns_batch'):
-                await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
-            else:
-                await self._memory.append_turn(thread_id, user_turn)
-                await self._memory.append_turn(thread_id, assistant_turn)
+            await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
         except Exception as exc:
             logger.warning("Failed to persist turns: %s", exc)
 
@@ -104,9 +100,12 @@ class PersistenceService:
             return
 
         try:
-            turns = await self._memory.get_thread_turns(thread_id, limit=30)
+            import asyncio
+            turns, existing = await asyncio.gather(
+                self._memory.get_thread_turns(thread_id, limit=30),
+                self._memory.get_thread_summary(thread_id),
+            )
             turn_count = len(turns)
-            existing = await self._memory.get_thread_summary(thread_id)
 
             # Generate title on turn 2 (first complete exchange)
             if turn_count >= 2 and (not existing or not existing.title):

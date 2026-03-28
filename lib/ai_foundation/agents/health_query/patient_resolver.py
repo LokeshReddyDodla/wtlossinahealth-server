@@ -47,7 +47,7 @@ class PatientNameResolver:
 
     async def resolve_names(self, patient_ids: list[str]) -> dict[str, str]:
         """Resolve patient UUIDs to display names."""
-        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        stale = self._collect_stale(patient_ids)
         if stale:
             await self._fetch(stale)
         return {pid: self._name_cache.get(pid, f"Patient ({pid[:8]})") for pid in patient_ids}
@@ -60,7 +60,7 @@ class PatientNameResolver:
 
     async def resolve_timezones(self, patient_ids: list[str]) -> dict[str, str]:
         """Resolve patient UUIDs to IANA timezone strings (from locale field)."""
-        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        stale = self._collect_stale(patient_ids)
         if stale:
             await self._fetch(stale)
         return {
@@ -73,7 +73,7 @@ class PatientNameResolver:
 
     async def resolve_profiles(self, patient_ids: list[str]) -> list[PatientProfile]:
         """Resolve patient UUIDs to name + profile_picture."""
-        stale = [pid for pid in patient_ids if self._is_stale(pid)]
+        stale = self._collect_stale(patient_ids)
         if stale:
             await self._fetch(stale)
         return [
@@ -85,15 +85,31 @@ class PatientNameResolver:
 
     # -- Internal ----------------------------------------------------------
 
-    def _is_stale(self, pid: str) -> bool:
+    def _is_stale(self, pid: str, now: float) -> bool:
         """Check if cache entry is missing or expired."""
         if pid not in self._name_cache:
             return True
-        ts = self._timestamps.get(pid, 0)
-        return (time.monotonic() - ts) > settings.PATIENT_CACHE_TTL
+        ts = self._timestamps.get(pid)
+        if ts is None:
+            return True
+        return (now - ts) > settings.PATIENT_CACHE_TTL
+
+    def _collect_stale(self, patient_ids: list[str]) -> list[str]:
+        """Return stale patient IDs, deduplicated while preserving order."""
+        now = time.monotonic()
+        seen: set[str] = set()
+        stale: list[str] = []
+        for pid in patient_ids:
+            if pid in seen:
+                continue
+            seen.add(pid)
+            if self._is_stale(pid, now):
+                stale.append(pid)
+        return stale
 
     async def _fetch(self, patient_ids: list[str]) -> None:
         """Fetch name + profile_picture from Postgres."""
+        fetched_at = time.monotonic()
         try:
             from sqlalchemy import select
             from lib.models.patient import Patient
@@ -125,7 +141,7 @@ class PatientNameResolver:
                         profile_picture=row.profile_picture,
                         locale=row.locale,
                     )
-                    self._timestamps[pid] = time.monotonic()
+                    self._timestamps[pid] = fetched_at
 
             for pid in patient_ids:
                 if pid not in self._name_cache:
@@ -133,6 +149,8 @@ class PatientNameResolver:
                     self._profile_cache[pid] = PatientProfile(
                         patient_id=pid, name=f"Patient ({pid[:8]})",
                     )
+                # Cache misses too so unknown IDs do not trigger repeated DB hits.
+                self._timestamps[pid] = fetched_at
 
         except Exception as exc:
             logger.warning("Failed to resolve patients: %s", exc)
@@ -142,3 +160,4 @@ class PatientNameResolver:
                     self._profile_cache[pid] = PatientProfile(
                         patient_id=pid, name=f"Patient ({pid[:8]})",
                     )
+                self._timestamps[pid] = fetched_at
