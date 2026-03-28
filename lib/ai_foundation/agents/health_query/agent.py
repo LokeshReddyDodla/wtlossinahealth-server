@@ -336,6 +336,12 @@ class HealthQueryAgent(BaseAgent):
                 "data_types": [dt.value for dt in intent.data_types],
                 "confidence": intent.confidence,
                 "trace_id": output.trace_id,
+                "tier": (output.data or {}).get("tier"),
+                "rounds_used": (output.data or {}).get("rounds_used"),
+                "tools_called": (output.data or {}).get("tools_called"),
+                "cost_usd": output.cost_usd,
+                "latency_ms": output.latency_ms,
+                "model_id": output.model_id,
             },
         )
 
