@@ -52,7 +52,7 @@ _SCAN_DATA_TYPES = [
     "fitness_overview",     # steps, active minutes
     "sleep",                # sleep duration/quality
     "vital",                # weight, BP, heart rate
-    "patient_document",     # new reports, prescriptions, lab results
+    # "patient_document",     # new reports, prescriptions, lab results
 ]
 
 # Keys to strip from payloads before sending to LLM (noise reduction)
