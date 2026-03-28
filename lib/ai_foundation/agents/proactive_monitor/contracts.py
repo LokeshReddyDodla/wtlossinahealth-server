@@ -36,6 +36,8 @@ class InsightCategory(str, Enum):
     # Concerns (LLM-generated)
     GLUCOSE_SPIKE = "glucose_spike"
     GLUCOSE_HYPO = "glucose_hypo"
+    GLUCOSE_RAPID_SPIKE = "glucose_rapid_spike"
+    GLUCOSE_RAPID_DROP = "glucose_rapid_drop"
     GLUCOSE_WORSENING = "glucose_worsening"
     MEAL_HIGH_CARB = "meal_high_carb"
     MEAL_LOW_PROTEIN = "meal_low_protein"
@@ -59,6 +61,7 @@ class InsightCategory(str, Enum):
 # Categories the LLM can pick from (excludes static-only ones)
 _CONCERN_CATEGORIES = [
     InsightCategory.GLUCOSE_SPIKE, InsightCategory.GLUCOSE_HYPO,
+    InsightCategory.GLUCOSE_RAPID_SPIKE, InsightCategory.GLUCOSE_RAPID_DROP,
     InsightCategory.GLUCOSE_WORSENING, InsightCategory.MEAL_HIGH_CARB,
     InsightCategory.MEAL_LOW_PROTEIN, InsightCategory.FITNESS_INACTIVE,
     InsightCategory.SLEEP_POOR,

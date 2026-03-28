@@ -92,6 +92,7 @@ _DOMAIN_DATA_TYPES: dict[str, list[str]] = {
         "cgm_range_stats", "cgm_summary_stats", "smbg",
         "hypo_event", "hypo_stats", "hyper_event", "hyper_stats",
         "rapid_spike_event", "rapid_spike_stats", "rapid_drop_event", "rapid_drop_stats",
+        "time_period_stats", "agp_point", "cgm_semantic_window",
     ],
     "nutrition": ["meal"],
     "fitness": ["fitness_overview", "fitness_activity_distribution", "fitness_inactive_periods"],
