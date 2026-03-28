@@ -76,6 +76,8 @@ def _build_agent_input(
         metadata["tier"] = payload.tier
     if payload.metadata:
         metadata.update(payload.metadata)
+    if payload.local_time:
+        metadata["local_time"] = payload.local_time
 
     return AgentInput(
         message=payload.message,

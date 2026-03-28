@@ -16,6 +16,9 @@ class QueryRequest(BaseModel):
     metadata: Optional[dict[str, Any]] = Field(
         None, description="Optional context — e.g. insight_id from a notification tap.",
     )
+    local_time: Optional[str] = Field(
+        None, description="Device local time as ISO string (e.g. '2026-03-28T14:27:00+05:30'). Used for resolving 'today', 'yesterday', etc.",
+    )
 
     @field_validator("message")
     @classmethod

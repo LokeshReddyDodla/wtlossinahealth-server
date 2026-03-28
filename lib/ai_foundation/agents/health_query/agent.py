@@ -87,6 +87,7 @@ class HealthQueryAgent(BaseAgent):
             )
 
             ctx = await self._load_context(input)
+            ctx.local_time = (input.context.metadata or {}).get("local_time")
             intent, meta = await self._extract_intent(input, ctx)
 
             # ── Memory commands (remember/forget/list) ──
@@ -194,6 +195,7 @@ class HealthQueryAgent(BaseAgent):
 
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
             ctx = await self._load_context(input)
+            ctx.local_time = (input.context.metadata or {}).get("local_time")
             intent, meta = await self._extract_intent(input, ctx)
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
 
@@ -326,6 +328,14 @@ class HealthQueryAgent(BaseAgent):
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": intent_prompt},
         ]
+
+        # Inject device local time for accurate date resolution
+        local_time = (input.context.metadata or {}).get("local_time")
+        if local_time:
+            messages.append({"role": "system", "content": (
+                f"User's local time: {local_time}. "
+                f"Use THIS for resolving 'today', 'yesterday', 'this week', etc."
+            )})
 
         if ctx.thread_summary:
             messages.append({"role": "system", "content": f"Conversation summary:\n{ctx.thread_summary}"})
