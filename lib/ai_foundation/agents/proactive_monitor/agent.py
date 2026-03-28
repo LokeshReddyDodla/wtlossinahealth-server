@@ -45,11 +45,14 @@ _SCAN_DATA_TYPES = [
     "cgm_range_stats",      # time in range breakdown
     "hyper_event",          # specific glucose spike events
     "hypo_event",           # specific hypo events (safety critical)
+    "rapid_spike_event",    # rapid glucose spikes (safety critical)
+    "rapid_drop_event",     # rapid glucose drops (safety critical)
     "meal",                 # meals logged
     "smbg",                 # finger-prick readings
     "fitness_overview",     # steps, active minutes
     "sleep",                # sleep duration/quality
     "vital",                # weight, BP, heart rate
+    "patient_document",     # new reports, prescriptions, lab results
 ]
 
 # Keys to strip from payloads before sending to LLM (noise reduction)
