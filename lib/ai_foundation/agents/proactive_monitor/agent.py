@@ -474,11 +474,17 @@ class ProactiveMonitorAgent(BaseAgent):
             return insights
 
         filtered: list[HealthInsight] = []
+        dedup_cache: dict[str, tuple[bool, str]] = {}
+
         for insight in insights:
+            category = insight.category.value
             try:
-                should_send, escalated_severity = await self._insight_tracker.should_send(
-                    patient_id, insight.category.value,
-                )
+                check = dedup_cache.get(category)
+                if check is None:
+                    check = await self._insight_tracker.should_send(patient_id, category)
+                    dedup_cache[category] = check
+
+                should_send, escalated_severity = check
                 if should_send:
                     if escalated_severity != "info":
                         insight.severity = InsightSeverity(escalated_severity)
@@ -486,7 +492,8 @@ class ProactiveMonitorAgent(BaseAgent):
                 else:
                     logger.debug(
                         "Dedup: skipping %s for patient %s (sent recently)",
-                        insight.category.value, patient_id,
+                        category,
+                        patient_id,
                     )
             except Exception as exc:
                 logger.warning("InsightTracker error for %s: %s", patient_id, exc)
