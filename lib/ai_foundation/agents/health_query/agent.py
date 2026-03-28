@@ -246,9 +246,24 @@ class HealthQueryAgent(BaseAgent):
                     except (IndexError, ValueError, KeyError):
                         pass
 
+                    # Extract metadata from the reasoning engine's done event
+                    engine_data = done_data.get("data", {})
+                    engine_cost = done_data.get("cost_usd")
+                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+
                     output = AgentOutput(
                         message=full_text, is_ready=True,
                         trace_id=trace_id,
+                        cost_usd=engine_cost,
+                        latency_ms=elapsed,
+                        model_id=done_data.get("model_id"),
+                        data={
+                            "data_types": [dt.value for dt in intent.data_types],
+                            "confidence": intent.confidence,
+                            "rounds_used": engine_data.get("rounds_used"),
+                            "tools_called": engine_data.get("tools_called"),
+                            "tier": engine_data.get("tier"),
+                        },
                     )
                     if full_text:
                         self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text)
@@ -256,10 +271,10 @@ class HealthQueryAgent(BaseAgent):
                     self._schedule_background(input)
 
                     # Emit our own done event with suggestions and trace
-                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
                     yield sse_done(SSEDonePayload(
                         suggestions=[s.model_dump() for s in intent.suggestions],
                         trace_id=trace_id,
+                        cost_usd=engine_cost,
                         latency_ms=elapsed,
                     ))
                     continue
