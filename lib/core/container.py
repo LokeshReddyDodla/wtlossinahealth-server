@@ -1586,6 +1586,7 @@ container.register(
     lambda: ToolExecutor(
         qdrant=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
     ),
     scope=Scope.singleton,
 )
