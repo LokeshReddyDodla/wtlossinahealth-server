@@ -1,15 +1,15 @@
 """
 MongoDB Memory Store — production implementation of the MemoryStore protocol.
 
-Stores patient facts, conversation turns, and thread summaries in MongoDB.
-Uses upsert semantics for facts (newer/higher-confidence wins).
+Stores patient memories, conversation turns, and thread summaries in MongoDB.
+Uses upsert semantics for memories (newer/higher-confidence wins).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from lib.ai_foundation.config import settings
 from .base import ConversationTurn, MemoryFact, ThreadSummary
@@ -25,6 +25,11 @@ TURNS_COLLECTION = "ai_conversation_turns"
 SUMMARIES_COLLECTION = "ai_thread_summaries"
 
 
+def _normalize_key(key: str) -> str:
+    """Normalize a memory key: lowercase, strip, spaces → underscores."""
+    return key.strip().lower().replace(" ", "_").replace("-", "_")
+
+
 class MongoMemoryStore:
     """MongoDB-backed implementation of the MemoryStore protocol.
 
@@ -35,12 +40,12 @@ class MongoMemoryStore:
         store = MongoMemoryStore(mongo_store)
         await store.ensure_indexes()
 
-        # Store a fact
+        # Store a memory
         await store.upsert_patient_facts("p123", [
-            MemoryFact(key="goal", value="fat_loss", source="user", agent_id="health_query_v2"),
+            MemoryFact(key="health_goal", value="fat loss", category="goal"),
         ])
 
-        # Retrieve facts (from any agent)
+        # Retrieve memories (from any agent)
         facts = await store.get_patient_facts("p123")
     """
 
@@ -88,10 +93,10 @@ class MongoMemoryStore:
 
         logger.debug("Memory store indexes ensured.")
 
-    # -- Patient Facts ------------------------------------------------------
+    # -- Patient Memories ---------------------------------------------------
 
     async def get_patient_facts(self, patient_id: str) -> list[MemoryFact]:
-        """Retrieve all known facts about a patient."""
+        """Retrieve all known memories about a patient."""
         collection = self._mongo.get_collection(FACTS_COLLECTION)
         cursor = collection.find(
             {"patient_id": patient_id},
@@ -104,39 +109,63 @@ class MongoMemoryStore:
     async def upsert_patient_facts(
         self, patient_id: str, facts: list[MemoryFact]
     ) -> None:
-        """Merge facts into the patient's fact store.
+        """Merge memories into the patient's store.
 
-        For each fact:
+        For each memory:
+        - Key is normalized (lowercase, underscores).
         - If the key doesn't exist → insert.
-        - If the key exists and new fact is more recent or higher confidence → update.
-        - Otherwise → skip (existing fact is better).
+        - If the key exists and new memory is more recent or higher confidence → update.
+        - Otherwise → skip (existing memory is better).
         """
         collection = self._mongo.get_collection(FACTS_COLLECTION)
 
         for fact in facts:
+            normalized_key = _normalize_key(fact.key)
             doc = fact.model_dump(mode="json")
+            doc["key"] = normalized_key
             doc["patient_id"] = patient_id
 
-            # Upsert: update only if new fact is more recent or higher confidence
             existing = await collection.find_one(
-                {"patient_id": patient_id, "key": fact.key},
+                {"patient_id": patient_id, "key": normalized_key},
                 {"_id": 0, "confidence": 1, "updated_at": 1},
             )
 
             if existing is None:
                 await collection.insert_one(doc)
-                logger.debug("New fact: %s.%s = %s", patient_id, fact.key, fact.value)
+                logger.debug("New memory: %s.%s = %s", patient_id, normalized_key, fact.value)
             else:
+                # Compare properly — handle both datetime objects and strings
+                existing_time = existing.get("updated_at")
+                new_time = fact.updated_at
+                if isinstance(existing_time, str):
+                    existing_time = datetime.fromisoformat(existing_time)
+                if existing_time and existing_time.tzinfo is None:
+                    existing_time = existing_time.replace(tzinfo=timezone.utc)
+                if new_time.tzinfo is None:
+                    new_time = new_time.replace(tzinfo=timezone.utc)
+
                 should_update = (
                     fact.confidence > existing.get("confidence", 0)
-                    or fact.updated_at.isoformat() > str(existing.get("updated_at", ""))
+                    or new_time > (existing_time or datetime.min.replace(tzinfo=timezone.utc))
                 )
                 if should_update:
                     await collection.replace_one(
-                        {"patient_id": patient_id, "key": fact.key},
+                        {"patient_id": patient_id, "key": normalized_key},
                         doc,
                     )
-                    logger.debug("Updated fact: %s.%s = %s", patient_id, fact.key, fact.value)
+                    logger.debug("Updated memory: %s.%s = %s", patient_id, normalized_key, fact.value)
+
+    async def delete_patient_fact(self, patient_id: str, key: str) -> bool:
+        """Delete a specific memory by key. Returns True if deleted."""
+        collection = self._mongo.get_collection(FACTS_COLLECTION)
+        normalized_key = _normalize_key(key)
+        result = await collection.delete_one(
+            {"patient_id": patient_id, "key": normalized_key},
+        )
+        if result.deleted_count > 0:
+            logger.debug("Deleted memory: %s.%s", patient_id, normalized_key)
+            return True
+        return False
 
     # -- Conversation Turns -------------------------------------------------
 

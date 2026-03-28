@@ -60,11 +60,15 @@ def build_context_messages(
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
     if context.facts:
-        facts = [
-            f"- {f['key']}: {f['value']}"
-            for f in context.facts[:settings.MAX_CONTEXT_FACTS]
-        ]
-        context_parts.append("Known patient facts:\n" + "\n".join(facts))
+        # Group by category for cleaner LLM context
+        by_category: dict[str, list[str]] = {}
+        for f in context.facts[:settings.MAX_CONTEXT_FACTS]:
+            cat = f.get("category", "other")
+            by_category.setdefault(cat, []).append(f"{f['key']}: {f['value']}")
+        lines = ["Patient memories:"]
+        for cat, items in by_category.items():
+            lines.append(f"  {cat.title()}: {', '.join(items)}")
+        context_parts.append("\n".join(lines))
     if context.thread_summary:
         context_parts.append(f"Conversation summary:\n{context.thread_summary}")
     if context.recent_insights:

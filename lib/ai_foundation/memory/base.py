@@ -10,42 +10,66 @@ others (e.g. the health query agent when recommending foods).
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
-# Models
+# Memory Models
 # ---------------------------------------------------------------------------
 
 
-class MemoryFact(BaseModel):
-    """A single fact about a patient, stored long-term across agents.
+class MemoryCategory(str, Enum):
+    """Categories for patient memories."""
 
-    Facts are keyed by ``key`` (e.g. "goal", "weight", "dietary_preference").
-    Multiple agents can contribute facts; ``agent_id`` tracks the source.
+    CONDITION = "condition"      # diabetes type, allergies, medical conditions
+    GOAL = "goal"               # health goals, weight targets
+    PREFERENCE = "preference"   # diet, cuisine, activity preferences
+    HEALTH = "health"           # measurements: weight, height, BMI
+    LIFESTYLE = "lifestyle"     # activity level, sleep, smoking, alcohol
+    OTHER = "other"             # uncategorized
+
+
+class MemorySource(str, Enum):
+    """How a memory was created."""
+
+    USER_EXPLICIT = "user_explicit"     # "remember that I'm vegetarian"
+    AUTO_EXTRACTED = "auto_extracted"   # extracted from conversation
+    SYSTEM = "system"                   # from profile sync
+
+
+class MemoryFact(BaseModel):
+    """A single memory about a patient, stored long-term across agents.
+
+    Memories are keyed by ``key`` (e.g. "health_goal", "dietary_preference").
+    Keys are normalized: lowercase, stripped, underscores for spaces.
     """
 
-    key: str = Field(description="Fact key, e.g. 'goal', 'weight', 'fasting_context'.")
-    value: Any = Field(description="Fact value (any JSON-serializable type).")
+    key: str = Field(description="Normalized memory key, e.g. 'health_goal', 'dietary_preference'.")
+    value: Any = Field(description="Memory value (any JSON-serializable type).")
+    category: str = Field(
+        default=MemoryCategory.OTHER.value,
+        description="Memory category: condition, goal, preference, health, lifestyle, other.",
+    )
     source: str = Field(
-        default="user",
-        description="Where this fact came from: 'user', 'agent', 'system'.",
+        default=MemorySource.AUTO_EXTRACTED.value,
+        description="How this memory was created: user_explicit, auto_extracted, system.",
     )
     agent_id: str | None = Field(
         default=None,
-        description="Which agent produced this fact.",
+        description="Which agent produced this memory.",
     )
     confidence: float = Field(
         default=1.0,
         ge=0.0,
         le=1.0,
-        description="Confidence in this fact. 1.0 = confirmed by user.",
+        description="Confidence in this memory. 1.0 = confirmed by user.",
     )
-    confirmed: bool = Field(
-        default=True,
-        description="Whether the user has explicitly confirmed this fact.",
+    is_permanent: bool = Field(
+        default=False,
+        description="Permanent memories (allergies, diabetes type) are never auto-expired.",
     )
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -114,20 +138,24 @@ class MemoryStore(Protocol):
     as their memory store.
     """
 
-    # -- Patient Facts (cross-agent, long-term) ---
+    # -- Patient Memories (cross-agent, long-term) ---
 
     async def get_patient_facts(self, patient_id: str) -> list[MemoryFact]:
-        """Retrieve all known facts about a patient."""
+        """Retrieve all known memories about a patient."""
         ...
 
     async def upsert_patient_facts(
         self, patient_id: str, facts: list[MemoryFact]
     ) -> None:
-        """Merge facts into the patient's fact store.
+        """Merge memories into the patient's store.
 
-        Existing facts with the same key are updated if the new fact
+        Existing memories with the same key are updated if the new memory
         has higher confidence or is more recent.
         """
+        ...
+
+    async def delete_patient_fact(self, patient_id: str, key: str) -> bool:
+        """Delete a specific memory by key. Returns True if deleted."""
         ...
 
     # -- Conversation Turns ---

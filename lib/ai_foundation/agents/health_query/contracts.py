@@ -229,6 +229,16 @@ class QueryIntent(BaseModel):
         default_factory=list,
         description="Deprecated — facts are now extracted via a separate LLM call.",
     )
+    # Memory management — detected from user messages like "remember X", "forget X"
+    memory_action: str | None = Field(
+        None, description="Memory action: 'add', 'delete', 'list', or null if not a memory command.",
+    )
+    memory_key: str | None = Field(
+        None, description="For add/delete: the memory key (e.g. 'dietary_preference').",
+    )
+    memory_value: str | None = Field(
+        None, description="For add: the memory value (e.g. 'vegetarian').",
+    )
 
 
 class PatientFact(BaseModel):

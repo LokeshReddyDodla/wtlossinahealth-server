@@ -360,7 +360,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 return ""
             lines = []
             for f in raw_facts[:6]:
-                lines.append(f"- {f.fact_type}: {f.value}")
+                lines.append(f"- {f.key}: {f.value}")
             return "Patient facts:\n" + "\n".join(lines)
         except Exception:
             return ""

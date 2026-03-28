@@ -131,14 +131,12 @@ class RateLimiter:
         key = self._build_key(tenant_id, priority)
 
         try:
-            raw = self._store.get_key(key)
-            if raw is None:
-                self._store.set_key(key, "1", expire=config.window_seconds)
-            else:
-                # Increment using Redis INCR semantics via set
-                new_val = int(raw) + 1
-                # Preserve remaining TTL by setting with same expiry
-                self._store.set_key(key, str(new_val), expire=config.window_seconds)
+            # Use SET NX to create with TTL only if key doesn't exist
+            created = self._store.set_key(key, "1", expire=config.window_seconds, nx=True)
+            if not created:
+                # Key exists — increment without resetting TTL
+                namespaced_key = f"{self._store._get_namespace()}:{key.strip()}"
+                self._store._get_client().incr(namespaced_key)
         except Exception as exc:
             logger.warning("Rate limiter record failed for %s: %s", tenant_id, exc)
 
