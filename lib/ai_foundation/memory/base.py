@@ -158,6 +158,10 @@ class MemoryStore(Protocol):
         """Delete a specific memory by key. Returns True if deleted."""
         ...
 
+    async def delete_patient_facts(self, patient_id: str, keys: list[str]) -> int:
+        """Delete multiple memories by keys. Returns number of deleted records."""
+        ...
+
     # -- Conversation Turns ---
 
     async def get_thread_turns(

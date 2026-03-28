@@ -361,9 +361,10 @@ class ReasoningEngine:
             messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
 
+            tc_by_id = {tc.id: tc for tc in response.tool_calls}
+
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
-                tc_by_id = {tc.id: tc for tc in response.tool_calls}
                 for tc in response.tool_calls:
                     yield sse_tool_call(tc.function_name, tc.arguments)
                 for msg in tool_round.tool_messages:
@@ -375,7 +376,6 @@ class ReasoningEngine:
                     yield sse_tool_result(tc.function_name, summary)
 
             # Build step log for non-streaming tracking
-            tc_by_id = {tc.id: tc for tc in response.tool_calls}
             for msg in tool_round.tool_messages:
                 tc_id = msg.get("tool_call_id", "")
                 content = msg.get("content", "")

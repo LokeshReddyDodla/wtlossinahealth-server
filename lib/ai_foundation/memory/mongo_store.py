@@ -167,6 +167,29 @@ class MongoMemoryStore:
             return True
         return False
 
+    async def delete_patient_facts(self, patient_id: str, keys: list[str]) -> int:
+        """Delete multiple memories by keys. Returns number of deleted records."""
+        if not keys:
+            return 0
+
+        collection = self._mongo.get_collection(FACTS_COLLECTION)
+        normalized_keys = list({_normalize_key(k) for k in keys if k})
+        if not normalized_keys:
+            return 0
+
+        result = await collection.delete_many(
+            {"patient_id": patient_id, "key": {"$in": normalized_keys}},
+        )
+        deleted = result.deleted_count or 0
+        if deleted > 0:
+            logger.debug(
+                "Deleted %d memories for %s (keys=%d)",
+                deleted,
+                patient_id,
+                len(normalized_keys),
+            )
+        return deleted
+
     # -- Conversation Turns -------------------------------------------------
 
     async def get_thread_turns(
