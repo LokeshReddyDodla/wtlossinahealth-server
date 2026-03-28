@@ -389,6 +389,8 @@ class HealthQueryAgent(BaseAgent):
         from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS
 
         pid = input.context.patient_id
+        if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
+            pid = input.context.patient_ids[0]
         if not pid or not self.memory:
             return AgentOutput(message="I can't manage memories without knowing which patient.", is_ready=True, trace_id=trace_id)
 
@@ -401,7 +403,7 @@ class HealthQueryAgent(BaseAgent):
             )
 
         if action == "add" and intent.memory_key and intent.memory_value:
-            key = intent.memory_key.strip().lower().replace(" ", "_")
+            key = intent.memory_key.strip().lower().replace(" ", "_").replace("-", "_")
             meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
             fact = MemoryFact(
                 key=key,
@@ -425,7 +427,7 @@ class HealthQueryAgent(BaseAgent):
             )
 
         if action == "delete" and intent.memory_key:
-            key = intent.memory_key.strip().lower().replace(" ", "_")
+            key = intent.memory_key.strip().lower().replace(" ", "_").replace("-", "_")
             deleted = await self.memory.delete_patient_fact(pid, key)
             if deleted:
                 return AgentOutput(message=f"Done — I've forgotten your **{key.replace('_', ' ')}**.", is_ready=True, trace_id=trace_id)
