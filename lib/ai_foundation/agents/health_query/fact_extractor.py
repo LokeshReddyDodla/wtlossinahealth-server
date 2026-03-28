@@ -144,5 +144,94 @@ class FactExtractor:
                 await self._memory.upsert_patient_facts(patient_id, facts)
                 logger.debug("Persisted %d memories for patient %s", len(facts), patient_id[:8])
 
+            # Compact if memory is getting large
+            await self._compact_if_needed(patient_id)
+
         except Exception as exc:
             logger.debug("Memory extraction failed (non-blocking): %s", exc)
+
+    # -- Memory compaction --------------------------------------------------
+
+    _COMPACT_THRESHOLD = 50
+    _KEEP_RECENT_PER_CATEGORY = 5
+
+    async def _compact_if_needed(self, patient_id: str) -> None:
+        """Compact memories when they exceed the threshold.
+
+        Strategy:
+        - Group memories by category
+        - For categories with > _KEEP_RECENT_PER_CATEGORY items:
+          - Keep the N most recent as-is
+          - Summarize the rest into one "summary" memory via LLM
+          - Delete the old individual memories
+        - Permanent memories are never compacted
+        """
+        if not self._memory or not self._gateway:
+            return
+
+        try:
+            all_facts = await self._memory.get_patient_facts(patient_id)
+            if len(all_facts) <= self._COMPACT_THRESHOLD:
+                return
+
+            logger.info("Compacting memories for %s: %d items", patient_id[:8], len(all_facts))
+
+            # Group by category
+            by_cat: dict[str, list] = {}
+            for f in all_facts:
+                cat = getattr(f, "category", "other") or "other"
+                by_cat.setdefault(cat, []).append(f)
+
+            from lib.ai_foundation.memory.base import MemoryFact, MemorySource
+            from lib.ai_foundation.models.registry import ModelTask
+
+            for cat, facts in by_cat.items():
+                if len(facts) <= self._KEEP_RECENT_PER_CATEGORY:
+                    continue
+
+                # Split: keep recent, summarize old
+                # Facts are sorted newest-first from get_patient_facts
+                keep = facts[:self._KEEP_RECENT_PER_CATEGORY]
+                to_summarize = [
+                    f for f in facts[self._KEEP_RECENT_PER_CATEGORY:]
+                    if not getattr(f, "is_permanent", False) and not f.key.endswith("_summary")
+                ]
+
+                if not to_summarize:
+                    continue
+
+                # Summarize old memories via LLM
+                items_text = "\n".join(f"- {f.key}: {f.value}" for f in to_summarize)
+                try:
+                    response = await self._gateway.complete(
+                        messages=[
+                            {"role": "system", "content": (
+                                f"Summarize these {cat} memories into one concise sentence. "
+                                "Keep all important details. Return ONLY the summary."
+                            )},
+                            {"role": "user", "content": items_text},
+                        ],
+                        task=ModelTask.SUMMARIZATION,
+                    )
+
+                    # Delete old individual memories
+                    for f in to_summarize:
+                        await self._memory.delete_patient_fact(patient_id, f.key)
+
+                    # Insert summary memory
+                    summary_fact = MemoryFact(
+                        key=f"{cat}_summary",
+                        value=response.content.strip(),
+                        category=cat,
+                        source=MemorySource.SYSTEM.value,
+                        confidence=0.8,
+                        is_permanent=False,
+                    )
+                    await self._memory.upsert_patient_facts(patient_id, [summary_fact])
+                    logger.info("Compacted %d %s memories → summary for %s", len(to_summarize), cat, patient_id[:8])
+
+                except Exception as exc:
+                    logger.debug("Compaction failed for category %s: %s", cat, exc)
+
+        except Exception as exc:
+            logger.debug("Memory compaction check failed: %s", exc)
