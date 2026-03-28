@@ -7,12 +7,14 @@ POST /health-query-agent/proactive-insights/feedback
 
 from typing import Optional
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -43,12 +45,18 @@ async def get_insight_history(
             check_permissions=False,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Get recent proactive insight history for a patient.
 
     Returns insights newest-first. Patients see their own insights,
     care providers see their assigned patients' insights.
     """
+    # Access control: patients can only see their own, care providers only assigned patients
+    await _verify_patient_access(current_actor, patient_id, care_provider_access_service)
+
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
     tracker: InsightTracker = container.resolve(InsightTracker)
@@ -108,7 +116,6 @@ async def submit_insight_feedback(
     recorded = False
     try:
         gateway: ModelGateway = container.resolve(ModelGateway)
-        # Insight trace_id follows pattern pm_<hash> — use insight_id to find it
         gateway.log_score(
             trace_id=payload.insight_id,
             name="insight_feedback",
@@ -123,3 +130,32 @@ async def submit_insight_feedback(
         message="Feedback recorded" if recorded else "Feedback noted",
         data=InsightFeedbackResponse(recorded=recorded, insight_id=payload.insight_id),
     )
+
+
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+
+
+async def _verify_patient_access(
+    actor: Actor,
+    patient_id: str,
+    access_service: CareProviderAccessService,
+) -> None:
+    """Verify the actor can access this patient's data."""
+    if actor.role == ProfileTypeEnum.ADMIN:
+        return  # Admins can access anyone
+
+    if actor.role == ProfileTypeEnum.PATIENT:
+        if actor.id != patient_id:
+            raise HTTPException(status_code=403, detail="Patients can only access their own insights")
+        return
+
+    if actor.role == ProfileTypeEnum.CARE_PROVIDER:
+        from uuid import UUID
+        accessible = await access_service.get_accessible_patients(
+            care_provider_id=UUID(actor.id),
+            patient_ids=[UUID(patient_id)],
+        )
+        if not accessible:
+            raise HTTPException(status_code=403, detail="You don't have access to this patient's insights")
