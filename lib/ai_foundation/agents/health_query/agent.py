@@ -89,6 +89,12 @@ class HealthQueryAgent(BaseAgent):
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
 
+            # ── Memory commands (remember/forget/list) ──
+            if intent.memory_action:
+                output = await self._handle_memory_action(input, intent, ctx, trace_id)
+                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                return output
+
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
                 self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
@@ -187,6 +193,14 @@ class HealthQueryAgent(BaseAgent):
             ctx = await self._load_context(input)
             intent, meta = await self._extract_intent(input, ctx)
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
+
+            # ── Memory commands (remember/forget/list) ──
+            if intent.memory_action:
+                output = await self._handle_memory_action(input, intent, ctx, trace_id)
+                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                yield sse_token(output.message)
+                yield sse_done(SSEDonePayload(trace_id=trace_id, latency_ms=int((time.perf_counter() - pipeline_start) * 1000)))
+                return
 
             if not intent.is_ready:
                 msg = intent.clarification_msg or "Could you tell me more?"
@@ -319,8 +333,14 @@ class HealthQueryAgent(BaseAgent):
             )})
 
         if ctx.facts:
-            lines = [f"- {f['key']}: {f['value']}" for f in ctx.facts[:settings.MAX_CONTEXT_FACTS]]
-            messages.append({"role": "system", "content": "Patient facts:\n" + "\n".join(lines)})
+            by_cat: dict[str, list[str]] = {}
+            for f in ctx.facts[:settings.MAX_CONTEXT_FACTS]:
+                cat = f.get("category", "other")
+                by_cat.setdefault(cat, []).append(f"{f['key']}: {f['value']}")
+            lines = ["Patient memories:"]
+            for cat, items in by_cat.items():
+                lines.append(f"  {cat.title()}: {', '.join(items)}")
+            messages.append({"role": "system", "content": "\n".join(lines)})
 
         messages.extend(ctx.history[-settings.MAX_HISTORY_MESSAGES:])
         messages.append({"role": "user", "content": input.message})
@@ -359,6 +379,65 @@ class HealthQueryAgent(BaseAgent):
                 "model_id": output.model_id,
             },
         )
+
+    async def _handle_memory_action(
+        self, input: AgentInput, intent: QueryIntent, ctx: Any, trace_id: str,
+    ) -> AgentOutput:
+        """Handle memory commands: add, delete, list."""
+        from lib.ai_foundation.memory.base import MemoryFact, MemorySource
+        from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS
+
+        pid = input.context.patient_id
+        if not pid or not self.memory:
+            return AgentOutput(message="I can't manage memories without knowing which patient.", is_ready=True, trace_id=trace_id)
+
+        action = intent.memory_action
+
+        if action == "add" and intent.memory_key and intent.memory_value:
+            key = intent.memory_key.strip().lower().replace(" ", "_")
+            meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
+            fact = MemoryFact(
+                key=key,
+                value=intent.memory_value.strip(),
+                category=meta["category"],
+                source=MemorySource.USER_EXPLICIT.value,
+                agent_id=self.agent_id,
+                confidence=1.0,
+                is_permanent=meta["permanent"],
+            )
+            await self.memory.upsert_patient_facts(pid, [fact])
+            return AgentOutput(
+                message=f"Got it! I'll remember that: **{key.replace('_', ' ')}** = {intent.memory_value}.",
+                is_ready=True, trace_id=trace_id,
+            )
+
+        if action == "delete" and intent.memory_key:
+            key = intent.memory_key.strip().lower().replace(" ", "_")
+            deleted = await self.memory.delete_patient_fact(pid, key)
+            if deleted:
+                return AgentOutput(message=f"Done — I've forgotten your **{key.replace('_', ' ')}**.", is_ready=True, trace_id=trace_id)
+            return AgentOutput(message=f"I don't have a memory for \"{key.replace('_', ' ')}\".", is_ready=True, trace_id=trace_id)
+
+        if action == "list":
+            facts = await self.memory.get_patient_facts(pid)
+            if not facts:
+                return AgentOutput(message="I don't have any memories about you yet. As we chat, I'll learn your preferences and goals!", is_ready=True, trace_id=trace_id)
+
+            by_cat: dict[str, list[str]] = {}
+            for f in facts:
+                cat = getattr(f, "category", "other") or "other"
+                by_cat.setdefault(cat, []).append(f"**{f.key.replace('_', ' ')}**: {f.value}")
+            lines = ["Here's what I remember about you:\n"]
+            for cat, items in by_cat.items():
+                lines.append(f"**{cat.title()}**")
+                for item in items:
+                    lines.append(f"- {item}")
+                lines.append("")
+            lines.append("You can say \"forget [topic]\" to remove any of these.")
+            return AgentOutput(message="\n".join(lines), is_ready=True, trace_id=trace_id)
+
+        # Unknown action — fall through to normal query
+        return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
     def _schedule_background(self, input: AgentInput) -> None:
         """Fire-and-forget background tasks."""

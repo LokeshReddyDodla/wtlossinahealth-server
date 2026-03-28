@@ -1,8 +1,8 @@
 """
-Fact Extractor — LLM-based patient fact extraction from every message.
+Fact Extractor — LLM-based patient memory extraction from every message.
 
 Runs in the background (asyncio.ensure_future) so it never blocks the
-response. The LLM decides whether facts exist — no hardcoded keywords.
+response. The LLM decides whether memories exist — no hardcoded keywords.
 Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 """
 
@@ -20,18 +20,65 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PatientFact(BaseModel):
+# Canonical memory keys — the LLM should use these exact keys.
+# Maps key → (category, is_permanent)
+CANONICAL_MEMORY_KEYS: dict[str, dict] = {
+    # Conditions (permanent)
+    "diabetes_type": {"category": "condition", "permanent": True},
+    "medical_condition": {"category": "condition", "permanent": True},
+    "medication": {"category": "condition", "permanent": False},
+    "food_allergy": {"category": "condition", "permanent": True},
+    "drug_allergy": {"category": "condition", "permanent": True},
+    # Goals (mutable)
+    "health_goal": {"category": "goal", "permanent": False},
+    "weight_goal": {"category": "goal", "permanent": False},
+    # Preferences (mutable)
+    "dietary_preference": {"category": "preference", "permanent": False},
+    "cuisine_preference": {"category": "preference", "permanent": False},
+    "meal_timing": {"category": "preference", "permanent": False},
+    "activity_preference": {"category": "preference", "permanent": False},
+    # Measurements (mutable)
+    "weight": {"category": "health", "permanent": False},
+    "height": {"category": "health", "permanent": True},
+    # Lifestyle (mutable)
+    "activity_level": {"category": "lifestyle", "permanent": False},
+    "sleep_pattern": {"category": "lifestyle", "permanent": False},
+    "fasting_context": {"category": "lifestyle", "permanent": False},
+    "smoking_status": {"category": "lifestyle", "permanent": False},
+    "alcohol_status": {"category": "lifestyle", "permanent": False},
+}
+
+_CANONICAL_KEYS_LIST = ", ".join(CANONICAL_MEMORY_KEYS.keys())
+
+_EXTRACTION_PROMPT = (
+    "Extract patient memories from the user's message. Memories are durable personal "
+    "facts — NOT data queries or conversational filler.\n\n"
+    f"Use these exact keys: {_CANONICAL_KEYS_LIST}\n"
+    "If a fact doesn't fit any key, use a descriptive snake_case key.\n\n"
+    "Examples:\n"
+    '- "I\'m vegetarian" → key: dietary_preference, value: vegetarian\n'
+    '- "My goal is to lose 5 kg" → key: weight_goal, value: lose 5 kg\n'
+    '- "I\'m allergic to peanuts" → key: food_allergy, value: peanuts\n'
+    '- "I have type 2 diabetes" → key: diabetes_type, value: type 2\n'
+    '- "I walk every morning" → key: activity_preference, value: morning walks\n'
+    '- "Show me my meals" → no memories (this is a data query)\n\n'
+    "Set has_facts=true if ANY memories are found. "
+    "Set has_facts=false if the message is just a data query with no personal facts."
+)
+
+
+class ExtractedFact(BaseModel):
     key: str
     value: str
 
 
 class ExtractedFacts(BaseModel):
-    facts: list[PatientFact] = Field(default_factory=list)
+    facts: list[ExtractedFact] = Field(default_factory=list)
     has_facts: bool = False
 
 
 class FactExtractor:
-    """Extracts and persists patient facts via LLM. Runs on every message in background."""
+    """Extracts and persists patient memories via LLM. Runs on every message in background."""
 
     def __init__(
         self,
@@ -49,7 +96,7 @@ class FactExtractor:
         patient_id: str | None,
         agent_id: str = "health_query_v3",
     ) -> None:
-        """Extract facts from the message. Always runs — LLM decides if facts exist.
+        """Extract memories from the message. Always runs — LLM decides if facts exist.
 
         This is called via asyncio.ensure_future so it never blocks the response.
         """
@@ -61,14 +108,7 @@ class FactExtractor:
 
             result, _ = await self._gateway.extract(
                 messages=[
-                    {"role": "system", "content": (
-                        "Extract ALL durable patient facts from the user's message. "
-                        "Facts include: goals, weight, dietary preferences, allergies, "
-                        "body notes, medical conditions, medications, fasting context, "
-                        "activity preferences, communication style, or any personal health detail. "
-                        "Set has_facts=true if ANY facts are found. "
-                        "Set has_facts=false if the message is just a data query with no personal facts."
-                    )},
+                    {"role": "system", "content": _EXTRACTION_PROMPT},
                     {"role": "user", "content": message},
                 ],
                 response_model=ExtractedFacts,
@@ -78,19 +118,31 @@ class FactExtractor:
             if not result.has_facts or not result.facts:
                 return
 
-            from lib.ai_foundation.memory.base import MemoryFact
+            from lib.ai_foundation.memory.base import MemoryFact, MemorySource
 
-            facts = [
-                MemoryFact(
-                    key=f.key.strip(), value=f.value.strip(),
-                    source="user", agent_id=agent_id, confidence=1.0,
-                )
-                for f in result.facts if f.key.strip() and f.value.strip()
-            ]
+            facts = []
+            for f in result.facts:
+                key = f.key.strip().lower().replace(" ", "_").replace("-", "_")
+                value = f.value.strip()
+                if not key or not value:
+                    continue
+
+                # Look up canonical metadata
+                meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
+
+                facts.append(MemoryFact(
+                    key=key,
+                    value=value,
+                    category=meta["category"],
+                    source=MemorySource.AUTO_EXTRACTED.value,
+                    agent_id=agent_id,
+                    confidence=0.9,  # auto-extracted = slightly less than user-explicit
+                    is_permanent=meta["permanent"],
+                ))
 
             if facts:
                 await self._memory.upsert_patient_facts(patient_id, facts)
-                logger.debug("Persisted %d facts for patient", len(facts))
+                logger.debug("Persisted %d memories for patient %s", len(facts), patient_id[:8])
 
         except Exception as exc:
-            logger.debug("Fact extraction failed (non-blocking): %s", exc)
+            logger.debug("Memory extraction failed (non-blocking): %s", exc)

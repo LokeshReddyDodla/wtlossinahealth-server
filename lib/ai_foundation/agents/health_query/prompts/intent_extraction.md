@@ -103,26 +103,23 @@ When conversation context provides active domains, goals, or date scopes, use th
 - "more details" → same domain and date, deeper analysis
 - "yes" / "show me" → execute the previously suggested query
 
-## Fact Extraction (IMPORTANT)
+## Memory Commands
 
-**You MUST check every message for durable patient facts and populate `extracted_facts` when found.**
+Detect if the user is asking to manage their memories. Set `memory_action` accordingly:
 
-If the user's message contains ANY personal facts, preferences, goals, physical attributes, medical notes, or dietary information about the patient, you MUST extract them into `extracted_facts` as `{"key": "...", "value": "..."}` objects.
+- **"Remember that I'm vegetarian"** → memory_action: "add", memory_key: "dietary_preference", memory_value: "vegetarian"
+- **"Remember my goal is fat loss"** → memory_action: "add", memory_key: "health_goal", memory_value: "fat loss"
+- **"Forget my weight"** / **"Delete my weight"** → memory_action: "delete", memory_key: "weight"
+- **"What do you know about me?"** / **"What do you remember?"** / **"Show my memories"** → memory_action: "list"
+- **"Show me my glucose today"** → memory_action: null (this is a data query, not a memory command)
 
-Examples — given these messages, you MUST produce these extracted_facts:
+When memory_action is set, set is_ready=true (memory commands don't need data types).
 
-- "This patient is vegetarian, weighs 72 kg, and their goal is fat loss" →
-  `[{"key": "dietary_preference", "value": "vegetarian"}, {"key": "weight", "value": "72 kg"}, {"key": "goal", "value": "fat loss"}]`
+Use snake_case keys: dietary_preference, health_goal, weight, food_allergy, medication, diabetes_type, activity_preference, etc.
 
-- "she got type 2 diabetes" →
-  `[{"key": "medical_condition", "value": "type 2 diabetes"}]`
+## Fact Extraction (Background)
 
-- "patient is on metformin" →
-  `[{"key": "medication_note", "value": "on metformin"}]`
-
-- "Show me my glucose today" → `[]` (no facts in this message)
-
-Only extract facts the user **explicitly states**. Do NOT infer. If no facts are mentioned, return an empty list.
+The system also auto-extracts memories in the background from every message. You do NOT need to populate `extracted_facts` — it's deprecated. Focus on memory_action detection instead.
 
 ## Suggestions
 
