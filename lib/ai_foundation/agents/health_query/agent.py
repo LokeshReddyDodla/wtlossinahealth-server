@@ -94,12 +94,14 @@ class HealthQueryAgent(BaseAgent):
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input)
                 return output
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
                 self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input)
                 return output
 
             # ── Route: single-agent vs multi-agent ──
@@ -199,6 +201,7 @@ class HealthQueryAgent(BaseAgent):
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input)
                 yield sse_token(output.message)
                 yield sse_done(SSEDonePayload(trace_id=trace_id, latency_ms=int((time.perf_counter() - pipeline_start) * 1000)))
                 return
@@ -207,6 +210,7 @@ class HealthQueryAgent(BaseAgent):
                 msg = intent.clarification_msg or "Could you tell me more?"
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump() for s in intent.suggestions],
