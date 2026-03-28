@@ -13,7 +13,7 @@ Tracks sent insights per patient per category in MongoDB collection
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

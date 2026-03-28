@@ -9,7 +9,7 @@ and streaming. This eliminates boilerplate and ensures consistent behaviour.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
 from .state import AgentInput, AgentOutput
 
