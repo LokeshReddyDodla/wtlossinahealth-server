@@ -6,10 +6,9 @@ POST   /health-query-agent/memories                    — add a memory manually
 DELETE /health-query-agent/memories/{key}?patient_id=... — delete a memory
 """
 
-from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Path, Query
+from fastapi import Depends, Path, Query
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
