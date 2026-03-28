@@ -34,6 +34,7 @@ class AgentContext(BaseModel):
     thread_summary: str | None = None
     patient_names: dict[str, str] = Field(default_factory=dict)
     recent_insights: list[dict] = Field(default_factory=list)
+    local_time: str | None = None  # device local time for date resolution
 
 
 def build_context_messages(
@@ -54,8 +55,13 @@ def build_context_messages(
         {"role": "system", "content": reasoning_prompt},
     ]
 
-    # Pre-load patient context (profile + facts + names)
+    # Pre-load patient context
     context_parts: list[str] = []
+    if context.local_time:
+        context_parts.append(
+            f"User's local time: {context.local_time}. "
+            f"Use THIS for resolving 'today', 'yesterday', 'this week', etc."
+        )
     if context.patient_names:
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
