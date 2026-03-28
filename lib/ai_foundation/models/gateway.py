@@ -14,6 +14,7 @@ All provider-specific routing is handled by LiteLLM — no direct OpenAI/Gemini 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import (
@@ -171,6 +172,8 @@ class ModelGateway:
         self._registry = registry
         self._circuit_breaker = circuit_breaker or CircuitBreaker()
         self._langfuse_client = self._init_langfuse_client()
+        # Reuse the Instructor wrapper — constructing it per-call adds avoidable overhead.
+        self._instructor_client = instructor.from_litellm(litellm.acompletion)
         self._setup_litellm()
 
     @staticmethod
@@ -405,10 +408,13 @@ class ModelGateway:
         # Parse tool calls if present
         tool_calls: list[ToolCall] = []
         if choice.message.tool_calls:
-            import json as _json
             for tc in choice.message.tool_calls:
                 try:
-                    args = _json.loads(tc.function.arguments) if isinstance(tc.function.arguments, str) else tc.function.arguments
+                    args = (
+                        json.loads(tc.function.arguments)
+                        if isinstance(tc.function.arguments, str)
+                        else tc.function.arguments
+                    )
                 except (ValueError, TypeError):
                     args = {}
                 tool_calls.append(ToolCall(
@@ -556,10 +562,8 @@ class ModelGateway:
         model = _litellm_model_id(spec)
         start = time.perf_counter()
 
-        client = instructor.from_litellm(litellm.acompletion)
-
         parsed, raw = await asyncio.wait_for(
-            client.chat.completions.create_with_completion(
+            self._instructor_client.chat.completions.create_with_completion(
                 model=model,
                 response_model=response_model,
                 messages=messages,

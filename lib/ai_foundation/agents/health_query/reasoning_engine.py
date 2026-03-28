@@ -51,10 +51,6 @@ if TYPE_CHECKING:
     from lib.ai_foundation.models.gateway import ModelGateway
 
 from lib.ai_foundation.agents.health_query.context_loader import build_context_messages
-from lib.ai_foundation.agents.health_query.tools import (
-    build_assistant_tool_call_msg,
-    is_no_data,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +128,7 @@ class ReasoningResult:
     thinker_model: str = ""
     responder_model: str = ""
     tier: str = ""
+    perf: dict[str, int] = field(default_factory=dict)
 
 
 # ── Engine ─────────────────────────────────────────────────────────────────
@@ -260,11 +257,22 @@ class ReasoningEngine:
         seen_calls: set[str] = set()  # deduplication
         budget_remaining = tier_cfg.max_tool_calls
 
+        pipeline_start = time.perf_counter()
+        perf: dict[str, int] = {
+            "planning_ms": 0,
+            "thinker_llm_ms": 0,
+            "tool_exec_ms": 0,
+            "reflection_ms": 0,
+            "responder_ms": 0,
+            "total_ms": 0,
+        }
+
         if emit_events:
             yield sse_status(PipelineStage.ANALYZING, "Investigating health data...")
 
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
+            planning_start = time.perf_counter()
             plan = await self._execute_plan(
                 messages=messages,
                 tool_schemas=tool_schemas,
@@ -273,6 +281,7 @@ class ReasoningEngine:
                 seen_calls=seen_calls,
                 patient_names=patient_names,
             )
+            perf["planning_ms"] += int((time.perf_counter() - planning_start) * 1000)
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
             budget_remaining -= plan["tools_called"]
@@ -288,6 +297,7 @@ class ReasoningEngine:
                 )
 
         for round_num in range(1, budget_remaining + 1):
+            thinker_start = time.perf_counter()
             response = await self._gateway.complete_with_tools(
                 messages=messages,
                 tools=tool_schemas,
@@ -295,6 +305,7 @@ class ReasoningEngine:
                 model_id=tier_cfg.thinker_model,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
             )
+            perf["thinker_llm_ms"] += int((time.perf_counter() - thinker_start) * 1000)
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
@@ -302,12 +313,14 @@ class ReasoningEngine:
                 if round_num == 1 and intent_data_types and not seen_calls:
                     if emit_events and tier_cfg.show_reasoning:
                         yield sse_tool_call("look_up", {"data_types": intent_data_types})
+                    tool_start = time.perf_counter()
                     fallback_result = await self._tools.execute(
                         "look_up",
                         {"data_types": intent_data_types, "limit": 15},
                         patient_ids,
                         patient_names=patient_names,
                     )
+                    perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
                     steps.append(ReasoningStep(
@@ -341,39 +354,36 @@ class ReasoningEngine:
             step = ReasoningStep(round=round_num, thought=response.content)
 
             # Execute tool round via shared helper
+            tool_start = time.perf_counter()
             tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
+            perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
             messages.append(tool_round.assistant_message)
             messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
 
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
+                tc_by_id = {tc.id: tc for tc in response.tool_calls}
                 for tc in response.tool_calls:
-                    call_key = f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}"
-                    # Only emit for non-duplicate calls (check if result exists)
                     yield sse_tool_call(tc.function_name, tc.arguments)
-                for (name, _args, _tc_id), result_text in zip(
-                    [
-                        (tc.function_name, tc.arguments, tc.id)
-                        for tc in response.tool_calls
-                        if f"{tc.function_name}:{json.dumps(tc.arguments, sort_keys=True)}" not in seen_calls
-                        or True  # all get emitted; dedup already happened in execute_tool_round
-                    ],
-                    tool_round.results,
-                ):
-                    summary = self._summarize_result(name, result_text)
-                    yield sse_tool_result(name, summary)
+                for msg in tool_round.tool_messages:
+                    tc_id = msg.get("tool_call_id", "")
+                    tc = tc_by_id.get(tc_id)
+                    if not tc:
+                        continue
+                    summary = self._summarize_result(tc.function_name, msg.get("content", ""))
+                    yield sse_tool_result(tc.function_name, summary)
 
             # Build step log for non-streaming tracking
+            tc_by_id = {tc.id: tc for tc in response.tool_calls}
             for msg in tool_round.tool_messages:
                 tc_id = msg.get("tool_call_id", "")
                 content = msg.get("content", "")
-                # Find matching tool call by id
-                for tc in response.tool_calls:
-                    if tc.id == tc_id:
-                        step.tool_calls.append({"tool": tc.function_name, "args": tc.arguments})
-                        step.tool_results.append({"tool": tc.function_name, "result": content[:settings.STEP_LOG_TRUNCATION_CHARS]})
-                        break
+                tc = tc_by_id.get(tc_id)
+                if not tc:
+                    continue
+                step.tool_calls.append({"tool": tc.function_name, "args": tc.arguments})
+                step.tool_results.append({"tool": tc.function_name, "result": content[:settings.STEP_LOG_TRUNCATION_CHARS]})
 
             steps.append(step)
             rounds_used = round_num
@@ -393,6 +403,7 @@ class ReasoningEngine:
 
         # ── Reflection (ADVANCED+ tiers) ──
         if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
+            reflection_start = time.perf_counter()
             reflection = await self._reflect_and_followup(
                 messages=messages,
                 user_message=user_message,
@@ -405,6 +416,7 @@ class ReasoningEngine:
                 total_tools=total_tools,
                 patient_names=patient_names,
             )
+            perf["reflection_ms"] += int((time.perf_counter() - reflection_start) * 1000)
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
 
@@ -422,6 +434,7 @@ class ReasoningEngine:
 
             responder_messages = self._build_responder_messages(messages, response_prompt)
             full_response_parts: list[str] = []
+            responder_start = time.perf_counter()
 
             async for chunk in self._gateway.stream(
                 messages=responder_messages,
@@ -434,6 +447,18 @@ class ReasoningEngine:
                 if chunk.finished and chunk.usage:
                     total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
 
+            perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
+            perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
+            logger.debug(
+                "Reasoning perf(ms): planning=%d thinker=%d tools=%d reflection=%d responder=%d total=%d",
+                perf["planning_ms"],
+                perf["thinker_llm_ms"],
+                perf["tool_exec_ms"],
+                perf["reflection_ms"],
+                perf["responder_ms"],
+                perf["total_ms"],
+            )
+
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
                 data={
@@ -441,26 +466,40 @@ class ReasoningEngine:
                     "tools_called": total_tools,
                     "tier": tier.value,
                     "full_response": "".join(full_response_parts),
+                    "perf": perf,
                 },
             ))
         else:
             # Non-streaming: single responder call
+            responder_start = time.perf_counter()
             final_response = await self._generate_final_response(
                 messages=messages,
                 response_prompt=response_prompt,
                 model_id=tier_cfg.responder_model,
             )
+            perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
+            perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
             total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
+            logger.debug(
+                "Reasoning perf(ms): planning=%d thinker=%d tools=%d reflection=%d responder=%d total=%d",
+                perf["planning_ms"],
+                perf["thinker_llm_ms"],
+                perf["tool_exec_ms"],
+                perf["reflection_ms"],
+                perf["responder_ms"],
+                perf["total_ms"],
+            )
 
             yield ReasoningResult(
                 response=final_response.content or "",
                 steps=steps,
-                rounds_used=len(steps),
+                rounds_used=rounds_used,
                 tools_called=total_tools,
                 total_cost=total_cost,
                 thinker_model=tier_cfg.thinker_model,
                 responder_model=tier_cfg.responder_model,
                 tier=tier.value,
+                perf=perf,
             )
 
     # ── Planning ───────────────────────────────────────────────────────
