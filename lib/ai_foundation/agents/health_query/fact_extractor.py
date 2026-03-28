@@ -192,7 +192,10 @@ class FactExtractor:
                 # Split: keep recent, summarize old
                 # Facts are sorted newest-first from get_patient_facts
                 keep = facts[:self._KEEP_RECENT_PER_CATEGORY]
-                to_summarize = [f for f in facts[self._KEEP_RECENT_PER_CATEGORY:] if not getattr(f, "is_permanent", False)]
+                to_summarize = [
+                    f for f in facts[self._KEEP_RECENT_PER_CATEGORY:]
+                    if not getattr(f, "is_permanent", False) and not f.key.endswith("_summary")
+                ]
 
                 if not to_summarize:
                     continue
