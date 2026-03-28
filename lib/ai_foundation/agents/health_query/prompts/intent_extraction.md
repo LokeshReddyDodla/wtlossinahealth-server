@@ -40,11 +40,15 @@ Set `is_ready = false` when:
 **Glucose / CGM:**
 - Glucose, sugar, CGM, blood sugar, readings → CGM_RANGE, CGM_SUMMARY
 - Spikes, rapid spikes → RAPID_SPIKE, RAPID_SPIKE_EVENT
+- Drops, rapid drops → RAPID_DROP, RAPID_DROP_EVENT
 - Lows, hypos, hypoglycemia → HYPO_STATS, HYPO_EVENT
 - Highs, hypers, hyperglycemia → HYPER_STATS, HYPER_EVENT
 - Time in range, TIR → CGM_RANGE
 - GMI, glucose management indicator → CGM_SUMMARY
 - Variability, CV → CGM_SUMMARY
+- AGP, ambulatory glucose profile → AGP
+- Glucose by time of day, morning/afternoon/evening glucose → TIME_PERIOD
+- Glucose patterns, windows → CGM_SEMANTIC_WINDOW
 
 **Meals / Nutrition:**
 - Meals, food, nutrition, diet, calories, protein, carbs, fat → MEAL
