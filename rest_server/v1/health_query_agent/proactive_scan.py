@@ -11,6 +11,7 @@ POST /health-query-agent/proactive-scan
 }
 """
 
+import logging
 from typing import Optional
 
 from fastapi import Depends
@@ -18,8 +19,11 @@ from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
+from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 from lib.dependencies.actor import Actor, get_current_actor
 from rest_server.response_models import SuccessResponse
+
+logger = logging.getLogger(__name__)
 
 from .router import router
 
@@ -52,9 +56,8 @@ async def trigger_proactive_scan(
 ):
     """Manually trigger a proactive health scan for a patient. Admin only.
 
-    Scans the patient's recent data using the reasoning engine and returns
-    structured health insights. Optionally sends FCM notification to a
-    different user (for testing).
+    Scans the patient's recent data and returns structured health insights.
+    Optionally sends FCM notification to a different user (for testing).
     """
     from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 
@@ -83,7 +86,6 @@ async def trigger_proactive_scan(
             from lib.services.fcm_service import FCMService
             fcm = FCMService()
             # Send only the most severe insight — avoid notification spam
-            from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
             notifiable = list(result.insights)
             if notifiable:
                 top_insight = max(notifiable, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
@@ -107,8 +109,7 @@ async def trigger_proactive_scan(
                 # Record only the insight we actually sent
                 await monitor.record_insight(payload.patient_id, top_insight)
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).error("FCM notification failed: %s", exc, exc_info=True)
+            logger.error("FCM notification failed: %s", exc, exc_info=True)
 
     return SuccessResponse(
         message=f"Scan complete — {len(result.insights)} insights found",

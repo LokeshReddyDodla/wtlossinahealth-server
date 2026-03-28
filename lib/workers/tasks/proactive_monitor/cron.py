@@ -7,8 +7,8 @@ from lib.workers.tasks.proactive_monitor.scan import run_proactive_scan
 def get_cron_jobs():
     """Return cron jobs for proactive health monitoring.
 
-    Runs at 8am, 12pm, 4pm, 8pm UTC. No night scans.
-    Each scan checks all active patients (data uploaded in last 7 days).
+    Runs at 8am, 12pm, 4pm, 8pm in the worker's timezone (TZ=Asia/Kolkata).
+    Each scan checks all active patients (active device in last 7 days).
     """
     return [
         daily_cron(
