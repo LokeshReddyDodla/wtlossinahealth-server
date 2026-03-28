@@ -2,8 +2,7 @@
 Base Agent — foundation base class with all shared services injected.
 
 All agents built on the foundation extend ``BaseAgent`` to get automatic
-access to the model gateway, memory, prompts, retrieval, events,
-and streaming. This eliminates boilerplate and ensures consistent behaviour.
+access to the model gateway, memory, prompts, events, and streaming. This eliminates boilerplate and ensures consistent behaviour.
 """
 
 from __future__ import annotations
