@@ -236,8 +236,9 @@ class HealthQueryAgent(BaseAgent):
             async for event in event_source:
                 # Intercept done event to save turn and inject suggestions
                 if 'event: done' in event:
-                    # Extract full_response from the done payload
+                    # Extract full_response + metadata from the done payload
                     full_text = ""
+                    done_data: dict = {}
                     try:
                         import json as _json
                         data_line = event.split("data: ", 1)[1].split("\n")[0]
@@ -246,7 +247,6 @@ class HealthQueryAgent(BaseAgent):
                     except (IndexError, ValueError, KeyError):
                         pass
 
-                    # Extract metadata from the reasoning engine's done event
                     engine_data = done_data.get("data", {})
                     engine_cost = done_data.get("cost_usd")
                     elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -385,7 +385,7 @@ class HealthQueryAgent(BaseAgent):
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")
         self._prompts_registered = True
 
-    _prompt_cache: dict[str, tuple[str, str]] = {}
+    _prompt_cache: dict[str, str] = {}
 
     def _render(self, template_name: str, **extra_vars: str) -> str:
         """Render a prompt with common variables (available_data_types, current_time)."""
@@ -399,6 +399,7 @@ class HealthQueryAgent(BaseAgent):
 
     def _get_system_prompt(self, user_role: str) -> str:
         """Get system prompt, cached per role per minute."""
+        self._ensure_prompts()
         now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
         cache_key = f"{user_role}:{now_minute}"
         if cache_key in self._prompt_cache:
