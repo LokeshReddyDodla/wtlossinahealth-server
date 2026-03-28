@@ -63,24 +63,6 @@ class RetrievalResult(BaseModel):
     )
 
 
-class CompositeResult(BaseModel):
-    """Aggregated result from multiple retrievers run in parallel."""
-
-    items: list[RetrievalResult] = Field(default_factory=list)
-    executed_sources: list[str] = Field(
-        default_factory=list,
-        description="Sources that completed successfully.",
-    )
-    degraded_sources: list[str] = Field(
-        default_factory=list,
-        description="Sources that timed out or errored.",
-    )
-    warnings: list[str] = Field(default_factory=list)
-    best_score: float | None = Field(
-        default=None,
-        description="Highest relevance score across all results.",
-    )
-
 
 # ---------------------------------------------------------------------------
 # Protocol
