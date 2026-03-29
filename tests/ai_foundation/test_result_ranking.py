@@ -115,7 +115,7 @@ class TestCapAtRecordBoundaries:
         result = cap_at_record_boundaries(text, 120)
         assert "MEAL (10 entries):" in result
         assert "meal 0" in result  # at least first record kept
-        assert "more lines" in result
+        assert "truncated" in result
         assert len(result) <= 120
 
     def test_preserves_header(self):
@@ -127,7 +127,7 @@ class TestCapAtRecordBoundaries:
         lines = ["Header:"] + [f"  - record {i}" for i in range(20)]
         text = "\n".join(lines)
         result = cap_at_record_boundaries(text, 100)
-        assert "more lines" in result
+        assert "truncated" in result
 
     def test_exact_fit(self):
         text = "line1\nline2"

@@ -108,8 +108,8 @@ def cap_at_record_boundaries(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
 
-    suffix = "\n... (truncated — narrow your query)"
-    budget = max_chars - len(suffix)
+    _TRUNCATION_SUFFIX = "\n... (truncated — narrow your query)"
+    budget = max_chars - len(_TRUNCATION_SUFFIX)
 
     if budget <= 0:
         return text[:max_chars]
@@ -125,12 +125,11 @@ def cap_at_record_boundaries(text: str, max_chars: int) -> str:
         kept.append(line)
         total += line_cost
 
-    omitted = len(lines) - len(kept)
-    if omitted > 0:
-        kept.append(f"... ({omitted} more lines — narrow your query)")
-
+    if len(kept) < len(lines):
+        kept.append(_TRUNCATION_SUFFIX.lstrip("\n"))
     result = "\n".join(kept)
-    # Final safety: hard-cap if somehow still over (e.g. single very long first line)
+
+    # Final safety: hard-cap if a single long first line exceeds budget
     if len(result) > max_chars:
         return result[:max_chars]
     return result
