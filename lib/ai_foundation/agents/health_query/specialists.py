@@ -293,6 +293,27 @@ class Specialist:
             total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
             if not response.has_tool_calls:
+                if round_num == 1 and self._spec.data_types and not seen_calls:
+                    fallback_result = await self._tools.execute(
+                        "look_up",
+                        {"data_types": self._spec.data_types, "limit": 10},
+                        patient_ids,
+                        patient_names=patient_names,
+                    )
+                    seen_calls.add("look_up:fallback")
+                    total_tools += 1
+                    findings_parts.append(fallback_result)
+                    specialist_messages.append({
+                        "role": "system",
+                        "content": f"Health data retrieved:\n\n{fallback_result}",
+                    })
+                    if emit_events:
+                        yield sse_tool_call("look_up", {"data_types": self._spec.data_types, "limit": 10})
+                        lines = fallback_result.strip().split("\n")
+                        summary = lines[0][:settings.SUMMARY_TRUNCATION_CHARS] if lines else "No data"
+                        yield sse_tool_result("look_up", summary)
+                    continue
+
                 if response.content:
                     findings_parts.append(response.content)
                 if emit_events and response.content:

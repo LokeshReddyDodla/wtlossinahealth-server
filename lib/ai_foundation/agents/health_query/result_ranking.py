@@ -7,6 +7,7 @@ so the most relevant records reach the LLM context window.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from lib.ai_foundation.retrieval.base import RetrievalResult
@@ -31,8 +32,6 @@ def _extract_time_key(payload: dict[str, Any], base_date: str = "") -> float:
         base_date: Optional ISO date (e.g. "2026-03-25") to anchor time-only
             records. Used by investigate_day to ensure correct chronological sort.
     """
-    from datetime import datetime, timezone
-
     # 1. start_time (epoch ms)
     start_time = payload.get("start_time")
     if start_time is not None:

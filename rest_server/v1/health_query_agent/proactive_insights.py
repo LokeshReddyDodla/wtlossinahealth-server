@@ -8,7 +8,7 @@ POST /health-query-agent/proactive-insights/feedback
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
@@ -22,6 +22,13 @@ from rest_server.response_models import SuccessResponse
 from .router import router
 
 
+def _parse_patient_uuid(patient_id: str) -> UUID:
+    try:
+        return UUID(patient_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid patient ID format — expected UUID") from exc
+
+
 # ---------------------------------------------------------------------------
 # History — "Your health insights this week"
 # ---------------------------------------------------------------------------
@@ -29,6 +36,7 @@ from .router import router
 
 class InsightHistoryItem(BaseModel):
     insight_id: str | None = None
+    trace_id: str | None = None
     category: str
     severity: str
     title: str | None = None
@@ -58,7 +66,7 @@ async def get_insight_history(
     """
     verified_pid = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(patient_id),
+        patient_id=_parse_patient_uuid(patient_id),
         care_provider_access_service=care_provider_access_service,
     )
 
@@ -70,6 +78,7 @@ async def get_insight_history(
     items = [
         InsightHistoryItem(
             insight_id=doc.get("insight_id"),
+            trace_id=doc.get("trace_id"),
             category=doc.get("category", ""),
             severity=doc.get("severity", ""),
             title=doc.get("title"),
@@ -111,23 +120,41 @@ async def submit_insight_feedback(
             check_permissions=False,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Submit feedback on a proactive insight.
 
     Logs to Langfuse as a score for quality tracking.
     """
+    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.models.gateway import ModelGateway
 
     recorded = False
     try:
+        tracker: InsightTracker = container.resolve(InsightTracker)
+        doc = await tracker.get_by_insight_id(payload.insight_id)
+        if not doc or not doc.get("patient_id"):
+            raise HTTPException(status_code=404, detail="Insight not found")
+        await resolve_patient_access(
+            actor=current_actor,
+            patient_id=_parse_patient_uuid(str(doc["patient_id"])),
+            care_provider_access_service=care_provider_access_service,
+        )
+        trace_id = doc.get("trace_id") if doc else None
+        if not trace_id:
+            raise ValueError("No trace_id found for insight feedback")
         gateway: ModelGateway = container.resolve(ModelGateway)
         gateway.log_score(
-            trace_id=payload.insight_id,
+            trace_id=trace_id,
             name="insight_feedback",
             value=1.0 if payload.thumbs_up else 0.0,
             comment=payload.comment,
         )
         recorded = True
+    except HTTPException:
+        raise
     except Exception:
         pass  # Langfuse scoring is best-effort
 

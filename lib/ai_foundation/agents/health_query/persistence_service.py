@@ -28,16 +28,18 @@ logger = logging.getLogger(__name__)
 class PersistenceService:
     """Handles all post-response persistence: turns, compaction, titles, signals."""
 
-    _compacting: set[str] = set()  # in-memory lock to prevent concurrent compaction
+    _compacting: set[str] = set()  # in-memory fast path (single-process)
 
     def __init__(
         self,
         *,
         memory: MemoryStore | None = None,
         gateway: ModelGateway | None = None,
+        cache_store: Any | None = None,
     ) -> None:
         self._memory = memory
         self._gateway = gateway
+        self._cache = cache_store  # CacheStore for distributed Redis lock
 
     # -- Turn persistence --------------------------------------------------
 
@@ -101,10 +103,23 @@ class PersistenceService:
         if not self._memory or not self._gateway or not thread_id:
             return
 
-        # Prevent concurrent compaction on the same thread
+        # Prevent concurrent compaction — in-memory fast path + distributed Redis lock
         if thread_id in self._compacting:
-            logger.debug("Skipping compaction for %s — already in progress", thread_id)
+            logger.debug("Skipping compaction for %s — already in progress (local)", thread_id)
             return
+
+        # Distributed lock via Redis SET NX (multi-instance safe)
+        lock_key = f"compaction:lock:{thread_id}"
+        if self._cache:
+            try:
+                # TTL = 2x task timeout so lock outlives the task even under slow LLM calls
+                lock_ttl = int(settings.BACKGROUND_TASK_TIMEOUT_SECONDS * 2)
+                acquired = self._cache.set_key(lock_key, "1", expire=lock_ttl, nx=True)
+                if not acquired:
+                    logger.debug("Skipping compaction for %s — locked by another instance", thread_id)
+                    return
+            except Exception as exc:
+                logger.debug("Redis lock unavailable, falling back to local lock: %s", exc)
 
         self._compacting.add(thread_id)
         try:
@@ -166,6 +181,11 @@ class PersistenceService:
             logger.warning("Compaction failed (thread=%s): %s", thread_id, exc)
         finally:
             self._compacting.discard(thread_id)
+            if self._cache:
+                try:
+                    self._cache.delete_key(lock_key)
+                except Exception:
+                    pass  # TTL will clean up
 
     # -- Implicit feedback signals -----------------------------------------
 

@@ -15,6 +15,7 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from datetime import datetime, timedelta
@@ -35,9 +36,16 @@ from .contracts import (
     LLM_INSIGHT_CATEGORIES_PROMPT,
     ScanInsights,
     ScanResult,
+    SEVERITY_RANK,
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _maybe_await(result: Any) -> None:
+    """Await values only when a dependency returns an awaitable."""
+    if inspect.isawaitable(result):
+        await result
 
 # Data types to check in each scan
 _SCAN_DATA_TYPES = [
@@ -159,11 +167,11 @@ class ProactiveMonitorAgent(BaseAgent):
             facts_text = await self._load_facts(patient_id)
 
             # 4. Langfuse tracing — log what the LLM will see
-            self.gateway.set_langfuse_context(
+            await _maybe_await(self.gateway.set_langfuse_context(
                 session_id=f"proactive_scan_{scan_date}",
                 user_id=patient_id,
-            )
-            self.gateway.langfuse_trace_input(
+            ))
+            await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
                 input_text=data_text[:500] if data_text else "(no data)",
                 metadata={
@@ -173,7 +181,7 @@ class ProactiveMonitorAgent(BaseAgent):
                     "domain_counts": domain_counts,
                     "patient_name": patient_name,
                 },
-            )
+            ))
 
             # 5. Single LLM call → structured ScanInsights
             display_name = patient_name or "this patient"
@@ -190,6 +198,8 @@ class ProactiveMonitorAgent(BaseAgent):
 
             # 6. Dedup + escalation via InsightTracker
             insights = await self._filter_insights(patient_id, insights)
+            for insight in insights:
+                insight.data.setdefault("trace_id", trace_id)
 
             # 7. Publish insights via EventBus (concurrently)
             publish_results = await asyncio.gather(
@@ -206,10 +216,10 @@ class ProactiveMonitorAgent(BaseAgent):
                     )
 
             # 8. Log trace output
-            self.gateway.langfuse_trace_output(
+            await _maybe_await(self.gateway.langfuse_trace_output(
                 trace_id=trace_id,
                 output_text="; ".join(f"[{i.severity.value}] {i.title}" for i in insights) or "(no insights)",
-            )
+            ))
 
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             return ScanResult(
@@ -489,8 +499,9 @@ class ProactiveMonitorAgent(BaseAgent):
 
                 should_send, escalated_severity = check
                 if should_send:
-                    if escalated_severity != "info":
-                        insight.severity = InsightSeverity(escalated_severity)
+                    escalated = InsightSeverity(escalated_severity)
+                    if SEVERITY_RANK[escalated.value] > SEVERITY_RANK[insight.severity.value]:
+                        insight.severity = escalated
                     filtered.append(insight)
                 else:
                     logger.debug(
@@ -516,6 +527,7 @@ class ProactiveMonitorAgent(BaseAgent):
             insight_id=insight.insight_id,
             title=insight.title,
             suggested_query=insight.suggested_query,
+            trace_id=insight.data.get("trace_id"),
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
@@ -534,6 +546,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 "body": insight.body,
                 "actionable": insight.actionable,
                 "suggested_query": insight.suggested_query,
+                "trace_id": insight.data.get("trace_id"),
             },
             source_agent=self.agent_id,
         ))

@@ -185,6 +185,55 @@ class TestBackgroundTaskWrapper:
 # ── Test: Compaction guard ───────────────────────────────────────────────
 
 
+class TestDistributedLock:
+    @pytest.mark.asyncio
+    async def test_redis_lock_prevents_compaction(self):
+        """If Redis lock is held, compaction should skip."""
+        svc = _make_service(turn_count=6, title="Title")
+        cache = MagicMock()
+        cache.set_key = MagicMock(return_value=False)  # lock NOT acquired
+        svc._cache = cache
+
+        await svc.compact_if_needed(thread_id="t1")
+
+        # Gateway should NOT have been called (lock not acquired)
+        svc._gateway.complete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_redis_lock_acquired_and_released(self):
+        """Lock should be acquired before compaction and released after."""
+        svc = _make_service(turn_count=6, title="Title")
+        cache = MagicMock()
+        cache.set_key = MagicMock(return_value=True)  # lock acquired
+        cache.delete_key = MagicMock()
+        svc._cache = cache
+        svc._memory.get_thread_turns = AsyncMock(return_value=[
+            MagicMock(role="user", content="msg"),
+            MagicMock(role="assistant", content="resp"),
+        ] * 6)
+
+        await svc.compact_if_needed(thread_id="t1")
+
+        cache.set_key.assert_called_once()
+        cache.delete_key.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_failure_falls_back_to_local(self):
+        """If Redis is down, should fall back to in-memory lock (not crash)."""
+        svc = _make_service(turn_count=6, title="Title")
+        cache = MagicMock()
+        cache.set_key = MagicMock(side_effect=ConnectionError("Redis down"))
+        svc._cache = cache
+        svc._memory.get_thread_turns = AsyncMock(return_value=[
+            MagicMock(role="user", content="msg"),
+            MagicMock(role="assistant", content="resp"),
+        ] * 6)
+
+        # Should still run compaction via local lock fallback
+        await svc.compact_if_needed(thread_id="t1")
+        svc._gateway.complete.assert_called_once()
+
+
 class TestCompactionGuard:
     @pytest.mark.asyncio
     async def test_skips_if_already_compacted(self):

@@ -50,6 +50,24 @@ class TestNoPruning:
         result = engine._prune_if_needed(messages, "gpt-4.1-mini")
         assert result == messages
 
+
+class TestResponderMessageBuilding:
+    def test_responder_drops_old_instruction_prompt(self):
+        engine = _make_engine()
+        messages = [
+            _msg("system", "persona", "context"),
+            _msg("system", "reasoning prompt", "instruction"),
+            _msg("tool", "meal data"),
+            _msg("user", "what happened", "user_question"),
+        ]
+
+        result = engine._build_responder_messages(messages, "response prompt")
+        system_contents = [m.get("content", "") for m in result if m.get("role") == "system"]
+
+        assert "reasoning prompt" not in system_contents
+        assert "persona" in system_contents
+        assert "response prompt" in system_contents
+
     def test_exact_budget_returns_unchanged(self):
         """At budget boundary, no pruning needed."""
         engine = _make_engine(model_window=100)

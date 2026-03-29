@@ -8,7 +8,7 @@ DELETE /health-query-agent/memories/{key}?patient_id=... — delete a memory
 
 from uuid import UUID
 
-from fastapi import Depends, Path, Query
+from fastapi import Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
@@ -20,6 +20,13 @@ from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+
+
+def _parse_patient_uuid(patient_id: str) -> UUID:
+    try:
+        return UUID(patient_id)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid patient ID format — expected UUID") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +81,7 @@ async def list_memories(
     """List all memories for a patient."""
     verified_pid = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(patient_id),
+        patient_id=_parse_patient_uuid(patient_id),
         care_provider_access_service=care_provider_access_service,
     )
 
@@ -116,7 +123,7 @@ async def add_memory(
     """Manually add a memory for a patient."""
     verified_pid = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(payload.patient_id),
+        patient_id=_parse_patient_uuid(payload.patient_id),
         care_provider_access_service=care_provider_access_service,
     )
 
@@ -168,7 +175,7 @@ async def delete_memory(
     """Delete a specific memory by key."""
     verified_pid = await resolve_patient_access(
         actor=current_actor,
-        patient_id=UUID(patient_id),
+        patient_id=_parse_patient_uuid(patient_id),
         care_provider_access_service=care_provider_access_service,
     )
 

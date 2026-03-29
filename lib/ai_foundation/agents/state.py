@@ -30,7 +30,7 @@ class AgentContext(BaseModel):
     user_id: str | None = None
     user_role: str = Field(
         default="patient",
-        description="'patient' or 'care_provider'.",
+        description="'patient', 'care_provider', or 'research'.",
     )
     thread_id: str | None = None
     trace_id: str | None = None

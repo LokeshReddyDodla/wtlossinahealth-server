@@ -370,6 +370,61 @@ def format_data_gaps(summary: InvestigationSummary) -> list[str] | None:
     return [_DOMAIN_PATIENT_LABELS.get(d, f"{d} data") for d in summary.domains_without_data]
 
 
+# ── Conflict Detection ───────────────────────────────────────────────────
+
+
+def detect_conflicts(evidence_ledger: list[EvidenceItem]) -> list[str]:
+    """Detect contradictions in the evidence trail. Deterministic, no LLM.
+
+    Checks:
+    1. Data-exists contradiction: one tool found NO_DATA for a type, another found data.
+    2. Count discrepancy: same domain queried by different tools with >3x record count difference.
+
+    Returns human-readable conflict notes, or empty list.
+    """
+    if len(evidence_ledger) < 2:
+        return []
+
+    type_to_domain = _get_type_to_domain()
+    conflicts: list[str] = []
+
+    # Group items by domain (dedup: same item only counted once per domain)
+    domain_items: dict[str, list[EvidenceItem]] = {}
+    for item in evidence_ledger:
+        seen_domains: set[str] = set()
+        for dt in item.data_types:
+            domain = type_to_domain.get(dt, dt)
+            if domain not in seen_domains:
+                seen_domains.add(domain)
+                domain_items.setdefault(domain, []).append(item)
+
+    for domain, items in domain_items.items():
+        has_data_items = [i for i in items if i.had_data]
+        no_data_items = [i for i in items if not i.had_data]
+        label = _DOMAIN_PATIENT_LABELS.get(domain, f"{domain} data")
+
+        # Type 1: data-exists contradiction
+        if has_data_items and no_data_items:
+            conflicts.append(
+                f"Conflicting availability for {label}: one query found data "
+                f"but another returned no results. The data may depend on the "
+                f"date range or filters used."
+            )
+
+        # Type 2: count discrepancy (>3x difference between tools with data)
+        counts = [i.record_count for i in has_data_items if i.record_count and i.record_count > 0]
+        if len(counts) >= 2:
+            min_c, max_c = min(counts), max(counts)
+            if min_c > 0 and max_c / min_c > 3:
+                conflicts.append(
+                    f"Record count discrepancy for {label}: queries returned "
+                    f"{min_c} and {max_c} records. Different date ranges or "
+                    f"filters may explain the difference."
+                )
+
+    return conflicts
+
+
 # ── Internal helpers ─────────────────────────────────────────────────────
 
 
@@ -378,15 +433,22 @@ def _parse_data_types_from_result(text: str) -> list[str]:
 
     investigate_day has lines like: "  08:00 [meal] ..."
     _format_results has headers like: "MEAL (5 entries):"
+    Validates against known data types to avoid false matches from log tags.
     """
+    type_to_domain = _get_type_to_domain()
+    valid_types = set(type_to_domain.keys())
+
     # Try timeline format: [data_type] tags
     types_from_tags = set(re.findall(r"\[(\w+)\]", text))
-    if types_from_tags:
-        return sorted(types_from_tags)
+    # Filter to known data types only (excludes [NO_DATA], [info], etc.)
+    valid_tags = sorted(t for t in types_from_tags if t in valid_types)
+    if valid_tags:
+        return valid_tags
     # Try section headers: "DATA_TYPE (N entries):"
     types_from_headers = set(re.findall(r"^(\w[\w ]+)\s+\(\d+ entries\)", text, re.MULTILINE))
     if types_from_headers:
-        return sorted(h.lower().replace(" ", "_") for h in types_from_headers)
+        normalized = [h.lower().replace(" ", "_") for h in types_from_headers]
+        return sorted(t for t in normalized if t in valid_types)
     return []
 
 

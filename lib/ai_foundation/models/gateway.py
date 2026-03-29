@@ -30,7 +30,7 @@ import litellm
 from pydantic import BaseModel, Field
 
 from .circuit_breaker import CircuitBreaker
-from .pricing import CostBreakdown, TokenUsage
+from .pricing import CostBreakdown, PricingCalculator, TokenUsage
 from .registry import (
     ModelGatewayError,
     ModelProvider,
@@ -45,6 +45,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _circuit_key(spec: ModelSpec) -> str:
+    """Scope breaker state to a concrete model so same-provider fallbacks still work."""
+    return f"{spec.provider.value}:{spec.model_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -306,8 +311,9 @@ class ModelGateway:
 
         last_error: Exception | None = None
         for spec in chain:
-            if not self._circuit_breaker.is_available(spec.provider.value):
-                logger.debug("Skipping %s — circuit open for %s", spec.model_id, spec.provider.value)
+            circuit_key = _circuit_key(spec)
+            if not self._circuit_breaker.is_available(circuit_key):
+                logger.debug("Skipping %s — circuit open for %s", spec.model_id, circuit_key)
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
@@ -315,7 +321,7 @@ class ModelGateway:
                 return await self._do_complete(effective_spec, messages, trace_id)
             except Exception as exc:
                 last_error = exc
-                self._circuit_breaker.record_failure(spec.provider.value)
+                self._circuit_breaker.record_failure(circuit_key)
                 logger.warning(
                     "ModelGateway.complete failed for %s: %s", spec.model_id, exc
                 )
@@ -344,7 +350,8 @@ class ModelGateway:
 
         last_error: Exception | None = None
         for spec in chain:
-            if not self._circuit_breaker.is_available(spec.provider.value):
+            circuit_key = _circuit_key(spec)
+            if not self._circuit_breaker.is_available(circuit_key):
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, None, timeout)
@@ -354,7 +361,7 @@ class ModelGateway:
                 )
             except Exception as exc:
                 last_error = exc
-                self._circuit_breaker.record_failure(spec.provider.value)
+                self._circuit_breaker.record_failure(circuit_key)
                 logger.warning(
                     "ModelGateway.extract failed for %s: %s", spec.model_id, exc
                 )
@@ -384,7 +391,8 @@ class ModelGateway:
 
         last_error: Exception | None = None
         for spec in chain:
-            if not self._circuit_breaker.is_available(spec.provider.value):
+            circuit_key = _circuit_key(spec)
+            if not self._circuit_breaker.is_available(circuit_key):
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, None, timeout)
@@ -394,7 +402,7 @@ class ModelGateway:
                 )
             except Exception as exc:
                 last_error = exc
-                self._circuit_breaker.record_failure(spec.provider.value)
+                self._circuit_breaker.record_failure(circuit_key)
                 logger.warning("ModelGateway.complete_with_tools failed for %s: %s", spec.model_id, exc)
 
         raise AllProvidersUnavailableError(
@@ -429,7 +437,7 @@ class ModelGateway:
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         usage = self._extract_usage(raw, spec)
-        self._circuit_breaker.record_success(spec.provider.value)
+        self._circuit_breaker.record_success(_circuit_key(spec))
 
         choice = raw.choices[0] if raw.choices else None
         if not choice:
@@ -485,7 +493,8 @@ class ModelGateway:
 
         last_error: Exception | None = None
         for spec in chain:
-            if not self._circuit_breaker.is_available(spec.provider.value):
+            circuit_key = _circuit_key(spec)
+            if not self._circuit_breaker.is_available(circuit_key):
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
@@ -495,7 +504,7 @@ class ModelGateway:
                 return  # stream completed successfully
             except Exception as exc:
                 last_error = exc
-                self._circuit_breaker.record_failure(spec.provider.value)
+                self._circuit_breaker.record_failure(circuit_key)
                 logger.warning(
                     "ModelGateway.stream failed for %s: %s", spec.model_id, exc
                 )
@@ -569,7 +578,7 @@ class ModelGateway:
         content = raw.choices[0].message.content or "" if raw.choices else ""
 
         usage = self._extract_usage(raw, spec)
-        self._circuit_breaker.record_success(spec.provider.value)
+        self._circuit_breaker.record_success(_circuit_key(spec))
 
         return LLMResponse(
             content=content,
@@ -606,7 +615,7 @@ class ModelGateway:
         content = raw.choices[0].message.content or "" if raw.choices else ""
 
         usage = self._extract_usage(raw, spec)
-        self._circuit_breaker.record_success(spec.provider.value)
+        self._circuit_breaker.record_success(_circuit_key(spec))
 
         meta = LLMResponse(
             content=content,
@@ -681,10 +690,10 @@ class ModelGateway:
                 input_tokens=final_usage.input_tokens,
                 output_tokens=final_usage.output_tokens,
                 cached_tokens=final_usage.cached_tokens,
-                cost=CostBreakdown(total_cost=0),
+                cost=PricingCalculator.calculate(spec, final_usage),
             )
 
-        self._circuit_breaker.record_success(spec.provider.value)
+        self._circuit_breaker.record_success(_circuit_key(spec))
 
         yield StreamChunk(
             delta="",

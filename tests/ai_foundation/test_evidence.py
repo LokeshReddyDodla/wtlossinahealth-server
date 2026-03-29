@@ -10,6 +10,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
     build_summary,
     build_summary_from_findings,
     compute_coverage_confidence,
+    detect_conflicts,
     extract_evidence_from_fallback,
     extract_evidence_from_tool_round,
     format_coverage_note,
@@ -350,14 +351,15 @@ class TestGracefulFallback:
         assert items[0].date_range == "2026-03-25"
 
     def test_find_patterns_no_data_types_in_args(self):
-        """find_patterns has no data_types arg — parse from result text."""
+        """find_patterns has no data_types arg — parse from result text using [type] tags."""
         tc = _make_tool_call("tc1", "find_patterns", {"query": "glucose spikes", "days_back": 14})
         resp = _make_response([tc])
-        msgs = [_make_tool_msg("tc1", "CGM_RANGE (3 entries):\n  - ...\n\nMEAL (2 entries):\n  - ...")]
+        # find_patterns output uses [data_type] tags per line
+        msgs = [_make_tool_msg("tc1", "Pattern search: 'glucose spikes' (5 matches):\n  - [cgm_range_stats] avg: 200\n  - [meal] carbs: 80")]
 
         items = extract_evidence_from_tool_round(resp, msgs)
         assert len(items) == 1
-        assert "cgm_range" in items[0].data_types
+        assert "cgm_range_stats" in items[0].data_types
         assert "meal" in items[0].data_types
         assert items[0].date_range == "last 14 days"
 
@@ -464,3 +466,67 @@ class TestDataGaps:
         gaps = format_data_gaps(summary)
         assert gaps is not None
         assert "glucose readings" in gaps  # human label, not "cgm"
+
+
+# ── Test: Conflict detection ─────────────────────────────────────────────
+
+
+class TestConflictDetection:
+    def test_data_exists_contradiction(self):
+        """One tool found NO_DATA, another found data for same domain."""
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25–27", record_count=0, had_data=False),
+            EvidenceItem(tool="investigate_day", data_types=["meal"], date_range="Mar 26", record_count=3, had_data=True),
+        ]
+        conflicts = detect_conflicts(items)
+        assert len(conflicts) == 1
+        assert "conflicting" in conflicts[0].lower() or "availability" in conflicts[0].lower()
+
+    def test_count_discrepancy(self):
+        """Same domain with >3x record count difference between tools."""
+        items = [
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="Mar 25–27", record_count=2, had_data=True),
+            EvidenceItem(tool="compare_baseline", data_types=["cgm_range_stats"], date_range="last 30 days", record_count=25, had_data=True),
+        ]
+        conflicts = detect_conflicts(items)
+        assert len(conflicts) == 1
+        assert "discrepancy" in conflicts[0].lower()
+
+    def test_no_conflict_consistent_data(self):
+        """All tools agree — no conflicts."""
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25–27", record_count=5, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="Mar 25–27", record_count=10, had_data=True),
+        ]
+        conflicts = detect_conflicts(items)
+        assert len(conflicts) == 0
+
+    def test_no_conflict_single_item(self):
+        """Single evidence item can't conflict with itself."""
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25", record_count=5, had_data=True)]
+        assert detect_conflicts(items) == []
+
+    def test_no_conflict_empty(self):
+        assert detect_conflicts([]) == []
+
+    def test_small_count_difference_no_conflict(self):
+        """2x difference should not trigger (threshold is 3x)."""
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=5, had_data=True),
+            EvidenceItem(tool="compare_baseline", data_types=["meal"], date_range="", record_count=10, had_data=True),
+        ]
+        conflicts = detect_conflicts(items)
+        assert len(conflicts) == 0
+
+    def test_multiple_conflicts(self):
+        """Both contradiction types can fire for different domains."""
+        items = [
+            # Domain 1: data-exists contradiction
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=0, had_data=False),
+            EvidenceItem(tool="investigate_day", data_types=["meal"], date_range="Mar 25", record_count=2, had_data=True),
+            # Domain 2: count discrepancy
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="", record_count=1, had_data=True),
+            EvidenceItem(tool="compare_baseline", data_types=["cgm_range_stats"], date_range="", record_count=20, had_data=True),
+        ]
+        conflicts = detect_conflicts(items)
+        assert len(conflicts) == 2

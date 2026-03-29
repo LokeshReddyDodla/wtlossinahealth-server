@@ -51,7 +51,7 @@ def build_context_messages(
     and ``settings.MAX_HISTORY_MESSAGES`` for truncation.
     """
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt, "_meta": {"type": "instruction"}},
+        {"role": "system", "content": system_prompt, "_meta": {"type": "system_prompt"}},
         {"role": "system", "content": reasoning_prompt, "_meta": {"type": "instruction"}},
     ]
 

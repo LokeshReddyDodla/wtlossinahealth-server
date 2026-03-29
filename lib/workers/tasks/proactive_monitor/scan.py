@@ -22,10 +22,6 @@ from lib.ai_foundation.agents.proactive_monitor.scheduling import (
 )
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
-# Skip patients who signed up less than this many days ago
-_MIN_HISTORY_DAYS = 3
-
-
 # ---------------------------------------------------------------------------
 # Task entry points
 # ---------------------------------------------------------------------------
@@ -110,6 +106,8 @@ async def run_proactive_scan_single(
 
         monitor = container.resolve(ProactiveMonitorAgent)
         result = await monitor.scan_patient(patient_id)
+        if result.error:
+            return TaskResult(success=False, error=result.error, data={"patient_id": patient_id})
 
         if result.insights:
             await _send_notification(patient_id, result.insights, monitor)
@@ -186,15 +184,13 @@ async def _get_active_patient_ids() -> list[str]:
 
     Uses UserDevice table instead of meal_reports — catches patients
     with CGM sync, vitals, or any app activity (not just meal logs).
-    Also filters out patients with less than _MIN_HISTORY_DAYS of history.
     """
     try:
         from lib.dependencies.database import postgres_store
         from sqlalchemy import select, and_
         from lib.models.user_device import UserDevice
 
-        cutoff = datetime.utcnow() - timedelta(days=7)
-        min_signup = datetime.utcnow() - timedelta(days=_MIN_HISTORY_DAYS)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
         async with postgres_store.get_session() as session:
             stmt = (
@@ -203,7 +199,6 @@ async def _get_active_patient_ids() -> list[str]:
                     UserDevice.profile_type == "patient",
                     UserDevice.is_active == True,  # noqa: E712
                     UserDevice.last_active_at >= cutoff,
-                    UserDevice.created_at <= min_signup,
                 ))
                 .distinct()
             )

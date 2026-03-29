@@ -26,14 +26,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
-from lib.ai_foundation.models.gateway import LLMToolResponse, LLMUsage, ToolCall
-from lib.ai_foundation.models.pricing import CostBreakdown
+from lib.ai_foundation.models.gateway import LLMToolResponse
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
     sse_done,
-    sse_error,
     sse_plan,
     sse_reasoning,
     sse_reflection,
@@ -55,7 +53,7 @@ from lib.ai_foundation.agents.health_query.context_loader import build_context_m
 logger = logging.getLogger(__name__)
 
 # Meta types that must NEVER be pruned (system instructions + current question)
-_CRITICAL_TYPES = frozenset({"instruction", "user_question", "evidence_summary"})
+_CRITICAL_TYPES = frozenset({"system_prompt", "instruction", "user_question", "evidence_summary"})
 
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
@@ -135,6 +133,7 @@ class ReasoningResult:
     coverage_confidence: float | None = None
     reflection_confidence: float | None = None
     data_gaps: list[str] | None = None
+    data_conflicts: list[str] | None = None
 
 
 # ── Engine ─────────────────────────────────────────────────────────────────
@@ -173,10 +172,10 @@ class ReasoningEngine:
     def _get_input_budget(self, model: str) -> int:
         """Calculate the max input tokens for a model."""
         window = self._gateway.get_model_window(model)
-        return min(
+        return max(1, min(
             int(window * settings.CONTEXT_BUDGET_RATIO),
             window - settings.CONTEXT_RESPONSE_RESERVE,
-        )
+        ))
 
     def _prune_if_needed(self, messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
         """Prune messages to fit within the model's context window.
@@ -710,10 +709,11 @@ class ReasoningEngine:
             )
 
             # Compute evidence confidence for SSE done payload
-            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg
+            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg, detect_conflicts as _dc
             _s = _bs(evidence_ledger)
             _cov = _cc(_s)
             _refl = reflection_result.confidence if reflection_result else None
+            _conflicts = _dc(evidence_ledger) or None
 
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
@@ -726,6 +726,7 @@ class ReasoningEngine:
                     "coverage_confidence": _cov,
                     "reflection_confidence": _refl,
                     "data_gaps": _fg(_s),
+                    "data_conflicts": _conflicts,
                 },
             ))
         else:
@@ -752,10 +753,11 @@ class ReasoningEngine:
             )
 
             # Compute evidence confidence for client
-            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, format_data_gaps
+            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, detect_conflicts, format_data_gaps
             _summary = build_summary(evidence_ledger)
             _confidence = compute_coverage_confidence(_summary)
             _gaps = format_data_gaps(_summary)
+            _conflicts = detect_conflicts(evidence_ledger) or None
 
             yield ReasoningResult(
                 response=final_response.content or "",
@@ -770,6 +772,7 @@ class ReasoningEngine:
                 coverage_confidence=_confidence,
                 reflection_confidence=reflection_result.confidence if reflection_result else None,
                 data_gaps=_gaps,
+                data_conflicts=_conflicts,
             )
 
     # ── Planning ───────────────────────────────────────────────────────
@@ -959,6 +962,7 @@ class ReasoningEngine:
         """
         from lib.ai_foundation.agents.health_query.evidence import (
             build_summary,
+            detect_conflicts,
             format_coverage_note,
             format_patient,
             format_provider,
@@ -975,7 +979,8 @@ class ReasoningEngine:
             meta = msg.get("_meta", {})
 
             if role == "system":
-                system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
+                if meta.get("type") != "instruction":
+                    system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
             elif role == "user":
                 user_msg = content
             elif role == "tool":
@@ -1007,10 +1012,15 @@ class ReasoningEngine:
         # Inject evidence summary (pruning-safe — built from ledger, not messages)
         if evidence_ledger is not None:
             summary = build_summary(evidence_ledger)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
             coverage_note = format_coverage_note(summary)
             if coverage_note:
                 evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
+            # Append conflict notes if any
+            conflicts = detect_conflicts(evidence_ledger)
+            if conflicts:
+                conflict_text = "\n".join(f"- {c}" for c in conflicts)
+                evidence_text = f"{evidence_text}\n⚠ DATA NOTES:\n{conflict_text}" if evidence_text else f"⚠ DATA NOTES:\n{conflict_text}"
             if evidence_text:
                 messages.append({
                     "role": "system",

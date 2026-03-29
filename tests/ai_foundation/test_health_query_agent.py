@@ -1,6 +1,7 @@
 """Tests for the Health Query Agent with agentic reasoning."""
 
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -349,6 +350,81 @@ class TestSpecialists:
         )
         assert findings.domain == "glucose"
         assert findings.tool_calls_used == 2
+
+    def test_domain_schemas_are_sandboxed(self):
+        from unittest.mock import MagicMock
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+
+        tools = ToolExecutor(qdrant=MagicMock())
+        schemas = tools.get_schemas_for_domain("nutrition")
+        names = [s["function"]["name"] for s in schemas]
+        assert names == ["look_up", "compare_baseline"]
+        lookup_enum = schemas[0]["function"]["parameters"]["properties"]["data_types"]["items"]["enum"]
+        assert lookup_enum == ["meal"]
+
+    @pytest.mark.asyncio
+    async def test_specialist_forces_lookup_on_first_round(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from lib.ai_foundation.agents.health_query.specialists import Specialist, NUTRITION_SPEC
+
+        gateway = MagicMock()
+        gateway.complete_with_tools = AsyncMock(side_effect=[
+            MagicMock(has_tool_calls=False, content="", usage=MagicMock(cost=MagicMock(total_cost=0.0))),
+            MagicMock(has_tool_calls=False, content="Found one meal.", usage=MagicMock(cost=MagicMock(total_cost=0.0))),
+        ])
+        tools = MagicMock()
+        tools.get_schemas_for_domain.return_value = []
+        tools.execute = AsyncMock(return_value="MEAL (1 entries):\n  - date: 2026-03-27, carbs: 80")
+
+        specialist = Specialist(domain_spec=NUTRITION_SPEC, gateway=gateway, tool_executor=tools)
+        findings = await specialist.investigate(
+            messages=[{"role": "system", "content": "base"}, {"role": "user", "content": "check meals"}],
+            patient_ids=["p1"],
+            model_id="gpt-4.1-mini",
+        )
+
+        tools.execute.assert_awaited_once()
+        assert findings.tool_calls_used == 1
+        assert any("MEAL (1 entries)" in item for item in findings.data_gathered)
+
+
+class TestToolExecutorEdgeCases:
+    @pytest.mark.asyncio
+    async def test_find_patterns_filters_profile_noise(self):
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+        from lib.ai_foundation.retrieval.base import RetrievalResult
+
+        qdrant = MagicMock()
+        qdrant.retrieve = AsyncMock(return_value=[
+            RetrievalResult(payload={"data_type": "profile", "goal": "fat loss"}, source="qdrant", data_type="profile"),
+            RetrievalResult(payload={"data_type": "meal", "date": "2026-03-27", "name": "Lunch"}, source="qdrant", data_type="meal"),
+        ])
+        tools = ToolExecutor(qdrant=qdrant)
+
+        result = await tools._find_patterns({"query": "lunch", "days_back": 7}, ["p1"])
+
+        assert "[meal]" in result
+        assert "[profile]" not in result
+
+    @pytest.mark.asyncio
+    async def test_recent_insights_invalid_timezone_falls_back(self):
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+
+        tracker = MagicMock()
+        tracker.get_history = AsyncMock(return_value=[{
+            "severity": "info",
+            "title": "Nice work",
+            "message": "Steps improved",
+            "created_at": datetime(2026, 3, 28, 9, 0, tzinfo=timezone.utc),
+        }])
+        resolver = MagicMock()
+        resolver.resolve_timezones = AsyncMock(return_value={"p1": "Mars/OlympusMons"})
+        tools = ToolExecutor(insight_tracker=tracker, patient_resolver=resolver)
+
+        result = await tools._get_recent_insights({"limit": 5}, ["p1"])
+
+        assert "Nice work" in result
+        assert "Steps improved" in result
 
 
 class TestDomainMapping:

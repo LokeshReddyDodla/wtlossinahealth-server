@@ -259,6 +259,33 @@ class Coordinator:
             except Exception as exc:
                 logger.warning("Coordinator reflection failed (%s): %s", type(exc).__name__, exc)
 
+        # ── 3.5. Cross-domain synthesis (ADVANCED+ tiers) ──
+        cross_domain_connections = self._detect_cross_domain_connections(findings)
+        if (
+            settings.CROSS_DOMAIN_SYNTHESIS_ENABLED
+            and tier_cfg.max_tool_calls >= 10
+            and (cross_domain_connections or (reflection_result and not reflection_result.is_complete))
+        ):
+            try:
+                synthesis = await self._cross_domain_synthesis(
+                    base_messages=base_messages,
+                    combined_data=combined_data,
+                    cross_domain_connections=cross_domain_connections,
+                    reflection_result=reflection_result,
+                    user_message=user_message,
+                    tier_cfg=tier_cfg,
+                    patient_ids=patient_ids,
+                    patient_names=patient_names,
+                )
+                if synthesis["findings"]:
+                    combined_data += f"\n\n---\n\n## CROSS-DOMAIN ANALYSIS\n\n{synthesis['findings']}"
+                total_cost += synthesis["cost"]
+                total_tools += synthesis["tools_called"]
+                if emit_events:
+                    yield sse_status(PipelineStage.ANALYZING, "Cross-domain analysis complete.")
+            except Exception as exc:
+                logger.warning("Cross-domain synthesis failed (%s): %s", type(exc).__name__, exc)
+
         # ── 4. Generate final response ──
         responder_messages = self._build_responder_messages(
             base_messages=base_messages,
@@ -292,10 +319,12 @@ class Coordinator:
             from lib.ai_foundation.agents.health_query.evidence import (
                 build_summary_from_findings as _bsf,
                 compute_coverage_confidence as _cc,
+                detect_conflicts as _dc,
                 format_data_gaps as _fg,
             )
             _s = _bsf(findings) if findings else None
             _refl_conf = reflection_result.confidence if reflection_result else None
+            _conflicts = _dc(_s.items) if _s and _s.items else None
 
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
@@ -308,6 +337,7 @@ class Coordinator:
                     "coverage_confidence": _cc(_s, skip_date_penalty=True) if _s else None,
                     "reflection_confidence": _refl_conf,
                     "data_gaps": _fg(_s) if _s else None,
+                    "data_conflicts": _conflicts or None,
                 },
             ))
         else:
@@ -323,11 +353,13 @@ class Coordinator:
             from lib.ai_foundation.agents.health_query.evidence import (
                 build_summary_from_findings,
                 compute_coverage_confidence,
+                detect_conflicts,
                 format_data_gaps,
             )
             _summary = build_summary_from_findings(findings) if findings else None
             _confidence = compute_coverage_confidence(_summary, skip_date_penalty=True) if _summary else None
             _gaps = format_data_gaps(_summary) if _summary else None
+            _conflicts = detect_conflicts(_summary.items) if _summary and _summary.items else None
 
             yield ReasoningResult(
                 response=final_response.content or "",
@@ -341,6 +373,7 @@ class Coordinator:
                 coverage_confidence=_confidence,
                 reflection_confidence=reflection_result.confidence if reflection_result else None,
                 data_gaps=_gaps,
+                data_conflicts=_conflicts or None,
             )
 
     # ── Context window protection ────────────────────────────────────
@@ -395,13 +428,124 @@ class Coordinator:
         logger.warning("Coordinator pruning exhausted — still at %d/%d tokens", tokens, budget)
         return messages  # best effort
 
+    # ── Cross-domain synthesis ─────────────────────────────────────────
+
+    async def _cross_domain_synthesis(
+        self,
+        *,
+        base_messages: list[dict[str, Any]],
+        combined_data: str,
+        cross_domain_connections: str,
+        reflection_result: Any,
+        user_message: str,
+        tier_cfg: Any,
+        patient_ids: list[str],
+        patient_names: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """LLM-driven cross-domain follow-up after specialists complete.
+
+        The thinker sees all specialist findings and can make 1-2 tool calls
+        across domain boundaries to investigate correlations.
+        """
+        tool_schemas = self._tools.get_openai_schemas()
+        seen_calls: set[str] = set()
+
+        # Build synthesis context
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": (
+                "You are a cross-domain health data analyst. Multiple domain specialists "
+                "have already investigated independently. You now see ALL their findings.\n\n"
+                "Your job: identify and investigate connections between domains that individual "
+                "specialists could not see. Focus on:\n"
+                "- Temporal correlations (meal timing → glucose spike timing)\n"
+                "- Activity level → glucose control relationships\n"
+                "- Sleep quality → next-day glucose patterns\n"
+                "- Medication/document changes → health metric shifts\n\n"
+                "Make 1-2 TARGETED tool calls to verify cross-domain hypotheses. "
+                "Do NOT re-investigate what specialists already covered."
+            )},
+        ]
+
+        # Add patient context from base messages
+        for msg in base_messages:
+            meta = msg.get("_meta", {})
+            if meta.get("type") in ("context", "fact"):
+                messages.append(msg)
+
+        # Add specialist findings
+        messages.append({
+            "role": "system",
+            "content": f"SPECIALIST FINDINGS:\n\n{combined_data}",
+        })
+
+        # Add detected connections as hypotheses to investigate
+        if cross_domain_connections:
+            messages.append({
+                "role": "system",
+                "content": f"POSSIBLE CONNECTIONS (verify with data):\n{cross_domain_connections}",
+            })
+
+        # Add reflection gaps if any
+        if reflection_result and reflection_result.gaps:
+            gap_text = "\n".join(f"- {g}" for g in reflection_result.gaps)
+            messages.append({
+                "role": "system",
+                "content": f"INVESTIGATION GAPS:\n{gap_text}",
+            })
+
+        messages.append({"role": "user", "content": user_message})
+
+        # Prune before sending
+        messages = self._prune_for_budget(messages, tier_cfg.thinker_model)
+
+        # Run thinker loop with limited budget
+        synthesis_parts: list[str] = []
+        cost = 0.0
+        tools_called = 0
+        max_calls = settings.CROSS_DOMAIN_MAX_TOOL_CALLS
+
+        for round_num in range(1, max_calls + 1):
+            response = await self._gateway.complete_with_tools(
+                messages=messages,
+                tools=tool_schemas,
+                task=ModelTask.CLASSIFICATION,
+                model_id=tier_cfg.thinker_model,
+                timeout=settings.REASONING_TIMEOUT_SECONDS,
+            )
+            cost += response.usage.cost.total_cost if response.usage.cost else 0
+
+            if not response.has_tool_calls:
+                if response.content:
+                    synthesis_parts.append(response.content)
+                break
+
+            # Execute tools
+            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
+            messages.append(tool_round.assistant_message)
+            messages.extend(tool_round.tool_messages)
+            tools_called += tool_round.executed_count
+
+            # Collect tool results
+            for result_text in tool_round.results:
+                if result_text and not result_text.startswith("[NO_DATA]"):
+                    synthesis_parts.append(result_text)
+
+            if response.content:
+                synthesis_parts.append(f"Analysis: {response.content}")
+
+        findings = "\n\n".join(synthesis_parts) if synthesis_parts else ""
+        if findings:
+            logger.info("Cross-domain synthesis: %d tool calls, found %d chars of analysis", tools_called, len(findings))
+
+        return {"findings": findings, "cost": cost, "tools_called": tools_called}
+
     def _get_input_budget(self, model: str) -> int:
         """Calculate the max input tokens for a model."""
         window = self._gateway.get_model_window(model)
-        return min(
+        return max(1, min(
             int(window * settings.CONTEXT_BUDGET_RATIO),
             window - settings.CONTEXT_RESPONSE_RESERVE,
-        )
+        ))
 
     # ── Helpers ────────────────────────────────────────────────────────
 
@@ -544,7 +688,7 @@ class Coordinator:
 
         # Keep system messages from base (system prompt, context)
         for msg in base_messages:
-            if msg.get("role") == "system":
+            if msg.get("role") == "system" and msg.get("_meta", {}).get("type") != "instruction":
                 messages.append(msg)
 
         messages.append({"role": "system", "content": response_prompt, "_meta": {"type": "instruction"}})
@@ -571,7 +715,7 @@ class Coordinator:
         # Inject evidence summary from specialist findings
         if findings:
             summary = build_summary_from_findings(findings)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
             coverage_note = format_coverage_note(summary)
             if coverage_note:
                 evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note

@@ -5,17 +5,17 @@ All thread IDs in the foundation use these functions. No other code
 should construct thread IDs manually.
 
 Convention:
-    Patient:              bot:patient:{patient_id}
-    Provider + 1 patient: bot:provider:{provider_id}:patient:{patient_id}
-    Provider + N patients: bot:provider:{provider_id}:group:{hash}
-    Admin + 1 patient:    bot:admin:{admin_id}:patient:{patient_id}
-    Admin + N patients:   bot:admin:{admin_id}:group:{hash}
-    Admin + 0 patients:   bot:admin:{admin_id}:general
+    Patient:                bot:patient:{patient_id}
+    Provider + 1 patient:   bot:provider:{provider_id}:patient:{patient_id}
+    Provider + N patients:  bot:provider:{provider_id}:group:{hash}
+    Research + 1 patient:   bot:research:{researcher_id}:patient:{patient_id}
+    Research + N patients:  bot:research:{researcher_id}:group:{hash}
+    Research + 0 patients:  bot:research:{researcher_id}:general
 
 Thread list prefix (for querying all threads for a user):
     Patient:       bot:patient:{id}
     Care Provider: bot:provider:{id}
-    Admin:         bot:admin:{id}
+    Research:      bot:research:{id}
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def resolve_thread_id(
     """Generate a thread ID from role + actor + patients.
 
     Args:
-        role: "patient", "care_provider", or "admin"
+        role: "patient", "care_provider", or "research"
         actor_id: The authenticated user's ID
         patient_ids: List of patient IDs being queried
 
@@ -54,7 +54,7 @@ def resolve_thread_id(
         ).hexdigest()[:12]
         return f"bot:{prefix}:{actor_id}:group:{group_key}"
 
-    # 0 patients (admin only — general platform questions)
+    # 0 patients (research — general platform questions)
     return f"bot:{prefix}:{actor_id}:general"
 
 

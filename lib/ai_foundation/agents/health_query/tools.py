@@ -355,9 +355,8 @@ class ToolExecutor:
     def get_schemas_for_domain(self, domain: str) -> list[dict[str, Any]]:
         """Return tool schemas filtered to a specific specialist domain.
 
-        The look_up and compare_baseline tools get their data_types description
-        narrowed to only the domain's types. investigate_day and find_patterns
-        stay unfiltered (they're cross-domain by nature).
+        Specialists stay inside their domain sandbox. Only domain-safe tools are
+        exposed, and the data_types enum is narrowed to the domain's types.
         """
         domain_types = _DOMAIN_DATA_TYPES.get(domain)
         if not domain_types:
@@ -369,22 +368,19 @@ class ToolExecutor:
             func_name = schema.get("function", {}).get("name", "")
 
             if func_name in ("look_up", "compare_baseline") and domain_types:
-                # Deep copy and replace data_types description
                 s = copy.deepcopy(schema)
                 props = s["function"]["parameters"]["properties"]
                 types_str = ", ".join(domain_types)
+                props["data_types"]["items"]["enum"] = list(domain_types)
                 if func_name == "look_up":
                     props["data_types"]["description"] = (
                         f"Types of data to fetch. For this domain use: {types_str}"
                     )
-                elif func_name == "compare_baseline":
+                else:
                     props["data_types"]["description"] = (
                         f"Data types to get baseline for. For this domain use: {types_str}"
                     )
                 filtered.append(s)
-            else:
-                # investigate_day and find_patterns are shared across all domains
-                filtered.append(schema)
 
         return filtered
 
@@ -431,17 +427,22 @@ class ToolExecutor:
         hour_start = int(args.get("hour_start", 0))
         hour_end = int(args.get("hour_end", 24))
 
-        # Fetch ALL data types for this day
+        # Fetch a larger window for day timelines so busy days don't silently drop earlier events.
+        timeline_limit = max(settings.QDRANT_RESULT_LIMIT, 200)
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
             patient_ids=patient_ids,
             data_types=[],  # all types
             date_start=date,
             date_end=date + "T23:59:59",
-            limit=settings.QDRANT_RESULT_LIMIT,
+            limit=timeline_limit,
             filters={"hour_start": hour_start, "hour_end": hour_end} if hour_start > 0 or hour_end < 24 else {},
         ))
 
+        if not results:
+            return f"{NO_DATA_PREFIX}No health data found for {date}."
+
+        results = [r for r in results if (r.data_type or r.payload.get("data_type")) != "profile"]
         if not results:
             return f"{NO_DATA_PREFIX}No health data found for {date}."
 
@@ -450,6 +451,8 @@ class ToolExecutor:
         sorted_items = sort_by_time(results, ascending=True, base_date=date)
 
         lines = [f"Timeline for {date}:"]
+        if len(sorted_items) >= timeline_limit:
+            lines.append(f"Note: showing the most recent {timeline_limit} events for this day.")
         for r in sorted_items:
             p = r.payload
             dt = r.data_type or p.get("data_type", "unknown")
@@ -543,6 +546,10 @@ class ToolExecutor:
             limit=limit,
         ))
 
+        # Semantic retrieval may still surface profile rows via broad indexing.
+        # Keep pattern search focused on event/data records.
+        results = [r for r in results if (r.data_type or r.payload.get("data_type")) != "profile"]
+
         if not results:
             return f"{NO_DATA_PREFIX}No matching patterns found for: '{query}'"
 
@@ -578,7 +585,10 @@ class ToolExecutor:
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
                 pass
-        tz = ZoneInfo(tz_name)
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
 
         all_insights: list[dict] = []
         unique_patient_ids = list(dict.fromkeys(patient_ids))
@@ -643,7 +653,10 @@ class ToolExecutor:
         for dt in ordered_keys:
             items = by_type[dt]
             # Sort within group: most recent first
-            items.sort(key=lambda p: _extract_time_key(p), reverse=True)
+            try:
+                items.sort(key=lambda p: _extract_time_key(p), reverse=True)
+            except (TypeError, ValueError):
+                pass  # keep original order if sort fails on malformed payload
 
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"{label} ({len(items)} entries):"]

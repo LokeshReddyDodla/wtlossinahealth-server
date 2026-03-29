@@ -1567,6 +1567,7 @@ container.register(
     lambda: PersistenceService(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        cache_store=container.resolve("ai_foundation_cache"),
     ),
     scope=Scope.singleton,
 )
@@ -1648,6 +1649,7 @@ container.register(
     HealthQueryAgent,
     lambda: HealthQueryAgent(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         context_loader=cast(ContextLoader, container.resolve(ContextLoader)),
