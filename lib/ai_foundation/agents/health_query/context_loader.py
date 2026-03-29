@@ -79,9 +79,9 @@ def build_context_messages(
         pinned_keys: list[str] = []
         for f in context.facts[:settings.MAX_CONTEXT_FACTS]:
             cat = f.get("category", "other")
-            by_category.setdefault(cat, []).append(f"{f['key']}: {f['value']}")
+            by_category.setdefault(cat, []).append(f"{f.get('key', 'unknown')}: {f.get('value', '')}")
             if f.get("is_permanent") or f.get("source") == "user_explicit":
-                pinned_keys.append(f["key"])
+                pinned_keys.append(f.get("key", ""))
         lines = ["Patient memories:"]
         for cat, items in by_category.items():
             lines.append(f"  {cat.title()}: {', '.join(items)}")

@@ -37,11 +37,23 @@ class PatientNameResolver:
     After TTL, re-fetches to pick up name/pic changes.
     """
 
+    _MAX_CACHE_SIZE = 1000
+
     def __init__(self, postgres_store: PostgresStore) -> None:
         self._store = postgres_store
         self._name_cache: dict[str, str] = {}
         self._profile_cache: dict[str, PatientProfile] = {}
         self._timestamps: dict[str, float] = {}  # pid → monotonic time
+
+    def _evict_if_needed(self) -> None:
+        """Prune oldest 200 entries when cache exceeds max size."""
+        if len(self._timestamps) <= self._MAX_CACHE_SIZE:
+            return
+        oldest = sorted(self._timestamps, key=self._timestamps.get)[:200]  # type: ignore[arg-type]
+        for pid in oldest:
+            self._name_cache.pop(pid, None)
+            self._profile_cache.pop(pid, None)
+            self._timestamps.pop(pid, None)
 
     # -- Names (for LLM context) -------------------------------------------
 
@@ -151,6 +163,8 @@ class PatientNameResolver:
                     )
                 # Cache misses too so unknown IDs do not trigger repeated DB hits.
                 self._timestamps[pid] = fetched_at
+
+            self._evict_if_needed()
 
         except Exception as exc:
             logger.warning("Failed to resolve patients: %s", exc)

@@ -4,6 +4,7 @@ Feedback endpoint — collects user thumbs up/down on agent responses.
 Logs feedback scores to Langfuse for observability and evaluation.
 """
 
+import logging
 from typing import Optional
 
 from fastapi import Depends
@@ -21,7 +22,7 @@ from .router import router
 class FeedbackRequest(BaseModel):
     """Request body for submitting feedback on an agent response."""
 
-    trace_id: str = Field(..., description="The trace_id from the agent response.")
+    trace_id: str = Field(..., min_length=1, max_length=100, description="The trace_id from the agent response.")
     thumbs_up: bool = Field(..., description="True for positive feedback, False for negative.")
     comment: Optional[str] = Field(None, max_length=1000, description="Optional free-text feedback.")
 
@@ -58,8 +59,8 @@ async def submit_feedback(
             comment=payload.comment,
         )
         recorded = True
-    except Exception:
-        pass  # Langfuse scoring is best-effort
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Feedback scoring failed for trace %s: %s", payload.trace_id, exc)
 
     return SuccessResponse(
         message="Feedback recorded" if recorded else "Feedback noted",

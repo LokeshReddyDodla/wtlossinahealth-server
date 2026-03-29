@@ -10,10 +10,11 @@ monitor insights. Fast (<200ms) — queries stored insights, no live scans.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.agents.health_query.provider_panel_utils import has_partial_access
@@ -64,13 +65,10 @@ async def get_provider_panel(
     - Care providers: must provide their assigned patient IDs
     - Admins: can query any patient IDs
     """
-    import time
     start = time.perf_counter()
 
     # Access control
     if current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        from fastapi import HTTPException
-
         try:
             patient_uuids = [UUID(pid) for pid in payload.patient_ids]
         except (ValueError, TypeError):
@@ -84,10 +82,13 @@ async def get_provider_panel(
                 status_code=403,
                 detail="Access denied for one or more requested patients",
             )
-        patient_ids = [str(pid) for pid in accessible]
+        patient_ids = [str(pid) for pid in patient_uuids]
     else:
-        # Admin — all requested patients
-        patient_ids = payload.patient_ids
+        # Admin — validate UUID format
+        try:
+            patient_ids = [str(UUID(pid)) for pid in payload.patient_ids]
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid patient ID format — expected UUID")
 
     if not patient_ids:
         from lib.ai_foundation.agents.health_query.triage import ProviderPanelResponse

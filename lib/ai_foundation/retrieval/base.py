@@ -33,7 +33,7 @@ class RetrievalRequest(BaseModel):
     )
     date_end: str | None = Field(
         default=None,
-        description="Exclusive end date (ISO 8601).",
+        description="Inclusive (full day) end date (ISO 8601).",
     )
     limit: int = Field(
         default=24,

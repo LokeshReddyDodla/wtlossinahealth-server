@@ -12,6 +12,9 @@ Endpoints:
     POST /query/v3/stream — SSE streaming (token-by-token)
 """
 
+import logging
+import time as _time
+
 from fastapi import Depends
 from starlette.responses import StreamingResponse
 
@@ -100,15 +103,12 @@ def _build_agent_input(
 
 def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
     """Check rate limit and raise 429 if exceeded."""
-    import logging
-    import time as _time
-
     try:
         from lib.core.container import container
         from lib.ai_foundation.rate_limit.limiter import RateLimiter
         limiter: RateLimiter = container.resolve(RateLimiter)
         tenant_id = current_actor.id
-        result = limiter.check(tenant_id, priority)
+        result = limiter.check_and_record(tenant_id, priority)
         if not result.allowed:
             retry_after = max(1, int(result.reset_at - _time.time()))
             raise HTTPException(
@@ -116,7 +116,6 @@ def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
                 detail=f"Rate limit exceeded. Limit: {result.limit}/hour. Try again later.",
                 headers={"Retry-After": str(retry_after)},
             )
-        limiter.record(tenant_id, priority)
     except HTTPException:
         raise
     except (ConnectionError, TimeoutError, OSError) as exc:
@@ -170,9 +169,9 @@ async def process_query_v3(
     )
 
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
-    input = _build_agent_input(payload, current_actor, resolved_patient_ids, thread_id)
-    output = await agent.run(input)
-    response = agent.to_query_response(input, output)
+    agent_input = _build_agent_input(payload, current_actor, resolved_patient_ids, thread_id)
+    output = await agent.run(agent_input)
+    response = agent.to_query_response(agent_input, output)
 
     return SuccessResponse(
         message="Query processed successfully",
@@ -216,12 +215,12 @@ async def process_query_v3_stream(
     )
 
     thread_id = _resolve_thread_id(current_actor, resolved_patient_ids)
-    input = _build_agent_input(
+    agent_input = _build_agent_input(
         payload, current_actor, resolved_patient_ids, thread_id, stream=True,
     )
 
     return StreamingResponse(
-        agent.run_stream(input),
+        agent.run_stream(agent_input),
         media_type="text/event-stream",
         headers=SSE_RESPONSE_HEADERS,
     )

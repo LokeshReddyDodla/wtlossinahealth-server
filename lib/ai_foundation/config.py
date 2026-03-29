@@ -40,6 +40,7 @@ class AIFoundationSettings(BaseSettings):
     # ── Persistence ───────────────────────────────────────────────────────
 
     TURNS_TTL_DAYS: int = Field(default=90, description="Conversation turns TTL in days")
+    SUMMARIES_TTL_DAYS: int = Field(default=90, description="TTL in days for thread summaries")
 
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ class AIFoundationSettings(BaseSettings):
     REFLECTION_ENABLED: bool = Field(default=True, description="Enable reflection/critic for ADVANCED+ tiers")
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
+
+    REASONING_ADVANCED_THINKER_MODEL: str = Field(default="gpt-4.1", description="Thinker model for ADVANCED/UNLIMITED tiers")
 
     # ── Agentic Loop Limits ───────────────────────────────────────────────
 

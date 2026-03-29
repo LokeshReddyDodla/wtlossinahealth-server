@@ -63,6 +63,11 @@ class CacheStore:
 
         return self.__client.set(name=key, value=value)
 
+    def incr_key(self, key: str) -> int:
+        """Atomically increment a key and return the new value."""
+        key = f"{self.__namespace}:{key.strip()}"
+        return self.__client.incr(key)
+
     def delete_key(self, key: str) -> Optional[int]:
         key = f"{self.__namespace}:{key.strip()}"
         return self.__client.delete(key)

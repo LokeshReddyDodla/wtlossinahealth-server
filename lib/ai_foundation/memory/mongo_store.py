@@ -69,7 +69,7 @@ class MongoMemoryStore:
             turns.create_index([("thread_id", 1), ("timestamp", 1)], name="thread_time_idx"),
             turns.create_index("timestamp", name="turns_ttl_idx", expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600),
             summaries.create_index([("thread_id", 1)], name="thread_idx", unique=True),
-            summaries.create_index("updated_at", name="summaries_ttl_idx", expireAfterSeconds=settings.TURNS_TTL_DAYS * 24 * 3600),
+            summaries.create_index("updated_at", name="summaries_ttl_idx", expireAfterSeconds=settings.SUMMARIES_TTL_DAYS * 24 * 3600),
         )
 
         logger.debug("Memory store indexes ensured.")
@@ -84,7 +84,9 @@ class MongoMemoryStore:
             {"_id": 0, "patient_id": 0},
         ).sort("updated_at", -1)
 
-        docs = await cursor.to_list(length=100)
+        docs = await cursor.to_list(length=500)
+        if len(docs) == 500:
+            logger.warning("Patient %s has 500+ memories — consider compaction", patient_id[:8])
         return [MemoryFact(**doc) for doc in docs]
 
     async def upsert_patient_facts(
@@ -112,8 +114,19 @@ class MongoMemoryStore:
             )
 
             if existing is None:
-                await collection.insert_one(doc)
-                logger.debug("New memory: %s.%s = %s", patient_id, normalized_key, fact.value)
+                try:
+                    await collection.insert_one(doc)
+                except Exception as insert_exc:
+                    # Handle race condition: another request inserted between find_one and insert_one
+                    if "duplicate key" in str(insert_exc).lower() or "E11000" in str(insert_exc):
+                        await collection.replace_one(
+                            {"patient_id": patient_id, "key": normalized_key}, doc,
+                        )
+                        logger.debug("Raced on insert, replaced: %s.%s", patient_id, normalized_key)
+                    else:
+                        raise
+                else:
+                    logger.debug("New memory: %s.%s = %s", patient_id, normalized_key, fact.value)
             else:
                 # Compare properly — handle both datetime objects and strings
                 existing_time = existing.get("updated_at")

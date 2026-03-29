@@ -79,7 +79,8 @@ async def trigger_proactive_scan(
     # Run the scan
     result = await monitor.scan_patient(payload.patient_id, patient_name, tz_name=tz_name)
     if result.error:
-        raise HTTPException(status_code=503, detail=f"Proactive scan failed: {result.error}")
+        logger.error("Proactive scan failed for %s: %s", payload.patient_id, result.error)
+        raise HTTPException(status_code=503, detail="Proactive scan failed. Check server logs.")
 
     # Send notifications
     notification_target = payload.notification_id or payload.patient_id

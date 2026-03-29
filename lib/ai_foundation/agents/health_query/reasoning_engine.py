@@ -91,13 +91,13 @@ TIER_CONFIGS: dict[ReasoningTier, TierConfig] = {
     ),
     ReasoningTier.ADVANCED: TierConfig(
         max_tool_calls=10,
-        thinker_model="gpt-4.1",
+        thinker_model=settings.REASONING_ADVANCED_THINKER_MODEL,
         responder_model=settings.REASONING_RESPONDER_MODEL,
         show_reasoning=True,
     ),
     ReasoningTier.UNLIMITED: TierConfig(
         max_tool_calls=20,
-        thinker_model="gpt-4.1",
+        thinker_model=settings.REASONING_ADVANCED_THINKER_MODEL,
         responder_model=settings.REASONING_RESPONDER_MODEL,
         show_reasoning=True,
     ),
@@ -494,6 +494,7 @@ class ReasoningEngine:
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
             budget_remaining -= plan["tools_called"]
+            budget_remaining = max(1, budget_remaining)  # ensure at least 1 investigation round
             if plan["steps"]:
                 steps.extend(plan["steps"])
 
@@ -637,6 +638,7 @@ class ReasoningEngine:
             })
 
         # ── Reflection (ADVANCED+ tiers) ──
+        reflection_result = None
         if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
             reflection_start = time.perf_counter()
             reflection = await self._reflect_and_followup(
@@ -660,8 +662,7 @@ class ReasoningEngine:
                 r = reflection["result"]
                 yield sse_reflection(r.confidence, r.gaps, r.is_complete)
 
-        # Capture reflection result for confidence propagation
-        reflection_result = reflection.get("result") if "reflection" in locals() else None
+            reflection_result = reflection.get("result")
 
         # ── Final response ──
         if emit_events:

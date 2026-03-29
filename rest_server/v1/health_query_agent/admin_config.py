@@ -5,9 +5,12 @@ No code changes needed to switch models or add new providers. Just call
 these endpoints.
 """
 
+from __future__ import annotations
+
+import logging
 from typing import Any
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
@@ -105,13 +108,15 @@ async def update_task_route(
         task = ModelTask(payload.task)
     except ValueError:
         valid = [t.value for t in ModelTask]
-        return SuccessResponse(message=f"Invalid task. Valid: {valid}", data={"error": True})
+        raise HTTPException(status_code=400, detail=f"Invalid task. Valid: {valid}")
 
     try:
         registry.set_task_route(task, primary=payload.primary, fallbacks=payload.fallbacks)
     except Exception as e:
-        return SuccessResponse(message=str(e), data={"error": True})
+        logging.getLogger(__name__).warning("Admin route update failed: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to update route. Check model IDs.")
 
+    logging.getLogger(__name__).info("Admin config: %s updated route for %s → %s", current_actor.id, payload.task, payload.primary)
     return SuccessResponse(
         message=f"Route updated: {payload.task} → {payload.primary} (fallbacks: {payload.fallbacks})",
         data={"task": payload.task, "primary": payload.primary, "fallbacks": payload.fallbacks},
@@ -142,8 +147,10 @@ async def register_model(
         spec = ModelSpec(**data)
         registry.register(spec)
     except Exception as e:
-        return SuccessResponse(message=str(e), data={"error": True})
+        logging.getLogger(__name__).warning("Admin model registration failed: %s", e)
+        raise HTTPException(status_code=400, detail="Failed to register model. Check payload.")
 
+    logging.getLogger(__name__).info("Admin config: %s registered model %s", current_actor.id, spec.model_id)
     return SuccessResponse(
         message=f"Model registered: {spec.model_id} ({spec.provider.value})",
         data={"model_id": spec.model_id, "provider": spec.provider.value},

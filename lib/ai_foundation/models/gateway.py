@@ -14,6 +14,7 @@ All provider-specific routing is handled by LiteLLM — no direct OpenAI/Gemini 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import time
@@ -225,15 +226,15 @@ class ModelGateway:
         logging.getLogger("LiteLLM").setLevel(logging.WARNING)
         logging.getLogger("litellm").setLevel(logging.WARNING)
 
-    # -- Langfuse context (set per-request by the agent) --------------------
+    # -- Langfuse context (set per-request via contextvars for concurrency safety) --
 
-    _langfuse_session_id: str | None = None
-    _langfuse_user_id: str | None = None
+    _langfuse_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_session", default=None)
+    _langfuse_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_user", default=None)
 
     def set_langfuse_context(self, *, session_id: str | None = None, user_id: str | None = None) -> None:
         """Set session/user context for Langfuse traces. Called once per request."""
-        self._langfuse_session_id = session_id
-        self._langfuse_user_id = user_id
+        self._langfuse_session_id.set(session_id)
+        self._langfuse_user_id.set(user_id)
 
     def langfuse_trace_input(self, *, trace_id: str, input_text: str, metadata: dict | None = None) -> None:
         """Set the trace-level input (user message). Called at start of request."""
@@ -243,12 +244,12 @@ class ModelGateway:
             self._langfuse_client.trace(
                 id=trace_id,
                 input=input_text,
-                session_id=self._langfuse_session_id,
-                user_id=self._langfuse_user_id,
+                session_id=self._langfuse_session_id.get(),
+                user_id=self._langfuse_user_id.get(),
                 metadata=metadata,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Langfuse trace_input failed: %s", exc)
 
     def langfuse_trace_output(self, *, trace_id: str, output_text: str) -> None:
         """Set the trace-level output (agent response). Called at end of request."""
@@ -256,8 +257,8 @@ class ModelGateway:
             return
         try:
             self._langfuse_client.trace(id=trace_id, output=output_text)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Langfuse trace_output failed: %s", exc)
 
     # -- Token counting & context window ------------------------------------
 
@@ -487,6 +488,9 @@ class ModelGateway:
 
         Tries the primary model first. On failure, falls back and restarts
         streaming from the fallback model (does NOT resume mid-stream).
+
+        Warning: if fallback occurs, the consumer receives partial output
+        from the failed model followed by a full stream from the fallback model.
         """
         trace_id = trace_id or str(uuid4())
         chain = self._resolve_chain(task, model_id)
@@ -658,27 +662,28 @@ class ModelGateway:
         full_content: list[str] = []
         final_usage: TokenUsage | None = None
 
-        async for chunk in stream:
-            # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
-            chunk_usage = getattr(chunk, "usage", None)
-            if chunk_usage is not None:
-                prompt_tokens = getattr(chunk_usage, "prompt_tokens", None)
-                if prompt_tokens is not None:
-                    details = getattr(chunk_usage, "prompt_tokens_details", None)
-                    cached = getattr(details, "cached_tokens", 0) if details is not None else 0
-                    final_usage = TokenUsage(
-                        input_tokens=prompt_tokens or 0,
-                        output_tokens=getattr(chunk_usage, "completion_tokens", 0) or 0,
-                        cached_tokens=cached or 0,
-                    )
+        async with asyncio.timeout(spec.timeout_seconds):
+            async for chunk in stream:
+                # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    prompt_tokens = getattr(chunk_usage, "prompt_tokens", None)
+                    if prompt_tokens is not None:
+                        details = getattr(chunk_usage, "prompt_tokens_details", None)
+                        cached = getattr(details, "cached_tokens", 0) if details is not None else 0
+                        final_usage = TokenUsage(
+                            input_tokens=prompt_tokens or 0,
+                            output_tokens=getattr(chunk_usage, "completion_tokens", 0) or 0,
+                            cached_tokens=cached or 0,
+                        )
 
-            choices = getattr(chunk, "choices", None)
-            if choices:
-                delta = choices[0].delta
-                text = delta.content if delta and delta.content else ""
-                if text:
-                    full_content.append(text)
-                    yield StreamChunk(delta=text, finished=False)
+                choices = getattr(chunk, "choices", None)
+                if choices:
+                    delta = choices[0].delta
+                    text = delta.content if delta and delta.content else ""
+                    if text:
+                        full_content.append(text)
+                        yield StreamChunk(delta=text, finished=False)
 
         # Final chunk with metadata
         elapsed_ms = int((time.perf_counter() - start) * 1000)

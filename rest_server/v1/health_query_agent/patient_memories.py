@@ -51,8 +51,8 @@ class MemoryListResponse(BaseModel):
 
 class AddMemoryRequest(BaseModel):
     patient_id: str = Field(..., description="Patient ID")
-    key: str = Field(..., description="Memory key (e.g. 'dietary_preference')")
-    value: str = Field(..., description="Memory value (e.g. 'vegetarian')")
+    key: str = Field(..., max_length=100, pattern=r"^[a-z0-9_]+$", description="Memory key (e.g. 'dietary_preference')")
+    value: str = Field(..., max_length=2000, description="Memory value (e.g. 'vegetarian')")
 
 
 class DeleteMemoryResponse(BaseModel):
@@ -160,7 +160,7 @@ async def add_memory(
 
 @router.delete("/memories/{key}", response_model=SuccessResponse[DeleteMemoryResponse])
 async def delete_memory(
-    key: str = Path(..., description="Memory key to delete"),
+    key: str = Path(..., pattern=r"^[a-z0-9_]+$", description="Memory key to delete"),
     patient_id: str = Query(..., description="Patient ID"),
     current_actor: Actor = Depends(
         get_current_actor(

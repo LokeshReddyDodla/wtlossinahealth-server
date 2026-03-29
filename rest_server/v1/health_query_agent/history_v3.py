@@ -11,6 +11,7 @@ Endpoints:
     GET /history/v3/threads — list threads for the current user (or all threads for a patient if admin)
 """
 
+import re
 from datetime import datetime
 from fastapi import Depends, Query, HTTPException
 from pydantic import BaseModel, Field
@@ -147,7 +148,7 @@ async def list_conversation_threads(
     collection = memory.get_collection("ai_conversation_turns")
 
     prefix = thread_prefix_for_user(role=current_actor.role.value, actor_id=current_actor.id)
-    match_filter = {"thread_id": {"$regex": f"^{prefix}"}}
+    match_filter = {"thread_id": {"$regex": f"^{re.escape(prefix)}"}}
 
     pipeline = [
         {"$match": match_filter},

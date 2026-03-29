@@ -1,3 +1,5 @@
+import json as _json
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Any, Optional
 from datetime import datetime
@@ -26,6 +28,17 @@ class QueryRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Message cannot be empty")
         return v.strip()
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is None:
+            return v
+        if len(v) > 10:
+            raise ValueError("metadata must have at most 10 keys")
+        if len(_json.dumps(v, default=str)) > 2048:
+            raise ValueError("metadata payload too large (max 2 KB)")
+        return v
 
 
 class ConversationMessage(BaseModel):
