@@ -262,11 +262,16 @@ class ModelGateway:
         return [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages]
 
     def count_tokens(self, messages: list[dict], model: str | None = None) -> int:
-        """Count tokens in a message list. Falls back to char/4 estimate."""
+        """Count tokens in a message list. Falls back to char/4 estimate.
+
+        Strips internal metadata (_meta) before counting so the result
+        matches what the LLM API actually receives.
+        """
+        clean = self._clean_messages(messages)
         try:
-            return litellm.token_counter(model=model or "gpt-4.1-mini", messages=messages)
+            return litellm.token_counter(model=model or "gpt-4.1-mini", messages=clean)
         except Exception:
-            return sum(len(m.get("content", "") or "") for m in messages) // 4
+            return sum(len(m.get("content", "") or "") for m in clean) // 4
 
     def get_model_window(self, model: str) -> int:
         """Get context window size with fallback chain: litellm → config override → default."""
