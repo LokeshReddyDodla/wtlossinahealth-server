@@ -299,6 +299,7 @@ class QueryResponse(BaseModel):
     coverage_confidence: float | None = None
     reflection_confidence: float | None = None
     data_gaps: list[str] | None = None
+    data_conflicts: list[str] | None = None
     trace_id: str | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None

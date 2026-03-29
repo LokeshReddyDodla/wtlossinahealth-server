@@ -292,10 +292,12 @@ class Coordinator:
             from lib.ai_foundation.agents.health_query.evidence import (
                 build_summary_from_findings as _bsf,
                 compute_coverage_confidence as _cc,
+                detect_conflicts as _dc,
                 format_data_gaps as _fg,
             )
             _s = _bsf(findings) if findings else None
             _refl_conf = reflection_result.confidence if reflection_result else None
+            _conflicts = _dc(_s.items) if _s and _s.items else None
 
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
@@ -308,6 +310,7 @@ class Coordinator:
                     "coverage_confidence": _cc(_s, skip_date_penalty=True) if _s else None,
                     "reflection_confidence": _refl_conf,
                     "data_gaps": _fg(_s) if _s else None,
+                    "data_conflicts": _conflicts or None,
                 },
             ))
         else:
@@ -323,11 +326,13 @@ class Coordinator:
             from lib.ai_foundation.agents.health_query.evidence import (
                 build_summary_from_findings,
                 compute_coverage_confidence,
+                detect_conflicts,
                 format_data_gaps,
             )
             _summary = build_summary_from_findings(findings) if findings else None
             _confidence = compute_coverage_confidence(_summary, skip_date_penalty=True) if _summary else None
             _gaps = format_data_gaps(_summary) if _summary else None
+            _conflicts = detect_conflicts(_summary.items) if _summary and _summary.items else None
 
             yield ReasoningResult(
                 response=final_response.content or "",
@@ -341,6 +346,7 @@ class Coordinator:
                 coverage_confidence=_confidence,
                 reflection_confidence=reflection_result.confidence if reflection_result else None,
                 data_gaps=_gaps,
+                data_conflicts=_conflicts or None,
             )
 
     # ── Context window protection ────────────────────────────────────

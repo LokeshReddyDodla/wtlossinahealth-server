@@ -135,6 +135,7 @@ class ReasoningResult:
     coverage_confidence: float | None = None
     reflection_confidence: float | None = None
     data_gaps: list[str] | None = None
+    data_conflicts: list[str] | None = None
 
 
 # ── Engine ─────────────────────────────────────────────────────────────────
@@ -710,10 +711,11 @@ class ReasoningEngine:
             )
 
             # Compute evidence confidence for SSE done payload
-            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg
+            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg, detect_conflicts as _dc
             _s = _bs(evidence_ledger)
             _cov = _cc(_s)
             _refl = reflection_result.confidence if reflection_result else None
+            _conflicts = _dc(evidence_ledger) or None
 
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
@@ -726,6 +728,7 @@ class ReasoningEngine:
                     "coverage_confidence": _cov,
                     "reflection_confidence": _refl,
                     "data_gaps": _fg(_s),
+                    "data_conflicts": _conflicts,
                 },
             ))
         else:
@@ -752,10 +755,11 @@ class ReasoningEngine:
             )
 
             # Compute evidence confidence for client
-            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, format_data_gaps
+            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, detect_conflicts, format_data_gaps
             _summary = build_summary(evidence_ledger)
             _confidence = compute_coverage_confidence(_summary)
             _gaps = format_data_gaps(_summary)
+            _conflicts = detect_conflicts(evidence_ledger) or None
 
             yield ReasoningResult(
                 response=final_response.content or "",
@@ -770,6 +774,7 @@ class ReasoningEngine:
                 coverage_confidence=_confidence,
                 reflection_confidence=reflection_result.confidence if reflection_result else None,
                 data_gaps=_gaps,
+                data_conflicts=_conflicts,
             )
 
     # ── Planning ───────────────────────────────────────────────────────
@@ -959,6 +964,7 @@ class ReasoningEngine:
         """
         from lib.ai_foundation.agents.health_query.evidence import (
             build_summary,
+            detect_conflicts,
             format_coverage_note,
             format_patient,
             format_provider,
@@ -1011,6 +1017,11 @@ class ReasoningEngine:
             coverage_note = format_coverage_note(summary)
             if coverage_note:
                 evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
+            # Append conflict notes if any
+            conflicts = detect_conflicts(evidence_ledger)
+            if conflicts:
+                conflict_text = "\n".join(f"- {c}" for c in conflicts)
+                evidence_text = f"{evidence_text}\n⚠ DATA NOTES:\n{conflict_text}" if evidence_text else f"⚠ DATA NOTES:\n{conflict_text}"
             if evidence_text:
                 messages.append({
                     "role": "system",
