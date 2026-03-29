@@ -1567,6 +1567,7 @@ container.register(
     lambda: PersistenceService(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        cache_store=container.resolve("ai_foundation_cache"),
     ),
     scope=Scope.singleton,
 )
