@@ -288,6 +288,15 @@ class Coordinator:
                 if chunk.finished and chunk.usage:
                     total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
 
+            # Compute evidence confidence for SSE done payload
+            from lib.ai_foundation.agents.health_query.evidence import (
+                build_summary_from_findings as _bsf,
+                compute_coverage_confidence as _cc,
+                format_data_gaps as _fg,
+            )
+            _s = _bsf(findings) if findings else None
+            _refl_conf = reflection_result.confidence if reflection_result else None
+
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
                 data={
@@ -296,6 +305,9 @@ class Coordinator:
                     "tier": tier.value,
                     "domains": domains,
                     "full_response": "".join(full_response_parts),
+                    "coverage_confidence": _cc(_s, skip_date_penalty=True) if _s else None,
+                    "reflection_confidence": _refl_conf,
+                    "data_gaps": _fg(_s) if _s else None,
                 },
             ))
         else:
@@ -307,6 +319,16 @@ class Coordinator:
             )
             total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
 
+            # Compute evidence confidence from specialist findings
+            from lib.ai_foundation.agents.health_query.evidence import (
+                build_summary_from_findings,
+                compute_coverage_confidence,
+                format_data_gaps,
+            )
+            _summary = build_summary_from_findings(findings) if findings else None
+            _confidence = compute_coverage_confidence(_summary, skip_date_penalty=True) if _summary else None
+            _gaps = format_data_gaps(_summary) if _summary else None
+
             yield ReasoningResult(
                 response=final_response.content or "",
                 steps=[],
@@ -316,6 +338,9 @@ class Coordinator:
                 thinker_model=tier_cfg.thinker_model,
                 responder_model=tier_cfg.responder_model,
                 tier=tier.value,
+                coverage_confidence=_confidence,
+                reflection_confidence=reflection_result.confidence if reflection_result else None,
+                data_gaps=_gaps,
             )
 
     # ── Context window protection ────────────────────────────────────
@@ -510,6 +535,7 @@ class Coordinator:
         """Build messages for the responder model."""
         from lib.ai_foundation.agents.health_query.evidence import (
             build_summary_from_findings,
+            format_coverage_note,
             format_patient,
             format_provider,
         )
@@ -546,6 +572,9 @@ class Coordinator:
         if findings:
             summary = build_summary_from_findings(findings)
             evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            coverage_note = format_coverage_note(summary)
+            if coverage_note:
+                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
             if evidence_text:
                 messages.append({
                     "role": "system",

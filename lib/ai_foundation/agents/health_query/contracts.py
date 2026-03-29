@@ -296,6 +296,9 @@ class QueryResponse(BaseModel):
     suggestions: list[dict] | None = None
     confidence: float | None = None
     search_confidence: float | None = None
+    coverage_confidence: float | None = None
+    reflection_confidence: float | None = None
+    data_gaps: list[str] | None = None
     trace_id: str | None = None
     cost_usd: float | None = None
     latency_ms: int | None = None

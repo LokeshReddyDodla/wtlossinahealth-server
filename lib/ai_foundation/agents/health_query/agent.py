@@ -150,7 +150,10 @@ class HealthQueryAgent(BaseAgent):
                 suggestions=[s.model_dump() for s in intent.suggestions],
                 data={
                     "data_types": [dt.value for dt in intent.data_types],
-                    "confidence": intent.confidence,
+                    "intent_confidence": intent.confidence,
+                    "coverage_confidence": result.coverage_confidence,
+                    "reflection_confidence": result.reflection_confidence,
+                    "data_gaps": result.data_gaps,
                     "rounds_used": result.rounds_used,
                     "tools_called": result.tools_called,
                     "tier": result.tier,
@@ -284,7 +287,10 @@ class HealthQueryAgent(BaseAgent):
                         model_id=done_data.get("model_id"),
                         data={
                             "data_types": [dt.value for dt in intent.data_types],
-                            "confidence": intent.confidence,
+                            "intent_confidence": intent.confidence,
+                            "coverage_confidence": engine_data.get("coverage_confidence"),
+                            "reflection_confidence": engine_data.get("reflection_confidence"),
+                            "data_gaps": engine_data.get("data_gaps"),
                             "rounds_used": engine_data.get("rounds_used"),
                             "tools_called": engine_data.get("tools_called"),
                             "tier": engine_data.get("tier"),
@@ -561,7 +567,11 @@ class HealthQueryAgent(BaseAgent):
     def to_query_response(self, input: AgentInput, output: AgentOutput) -> QueryResponse:
         return QueryResponse(
             is_ready=output.is_ready, user_message=input.message, message=output.message,
-            data_types=output.data.get("data_types"), confidence=output.data.get("confidence"),
+            data_types=output.data.get("data_types"),
+            confidence=output.data.get("intent_confidence"),
+            coverage_confidence=output.data.get("coverage_confidence"),
+            reflection_confidence=output.data.get("reflection_confidence"),
+            data_gaps=output.data.get("data_gaps"),
             final_response=output.message if output.is_ready else None,
             clarification_msg=output.message if not output.is_ready else None,
             suggestions=output.suggestions, trace_id=output.trace_id,
