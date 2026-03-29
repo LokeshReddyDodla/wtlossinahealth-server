@@ -112,7 +112,9 @@ class PersistenceService:
         lock_key = f"compaction:lock:{thread_id}"
         if self._cache:
             try:
-                acquired = self._cache.set_key(lock_key, "1", expire=settings.BACKGROUND_TASK_TIMEOUT_SECONDS, nx=True)
+                # TTL = 2x task timeout so lock outlives the task even under slow LLM calls
+                lock_ttl = int(settings.BACKGROUND_TASK_TIMEOUT_SECONDS * 2)
+                acquired = self._cache.set_key(lock_key, "1", expire=lock_ttl, nx=True)
                 if not acquired:
                     logger.debug("Skipping compaction for %s — locked by another instance", thread_id)
                     return

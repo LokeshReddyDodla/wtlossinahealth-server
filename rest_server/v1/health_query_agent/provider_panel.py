@@ -20,7 +20,7 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_care_provider_access_service
 from lib.services.care_provider_access_service import CareProviderAccessService
-from rest_server.response import SuccessResponse
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 

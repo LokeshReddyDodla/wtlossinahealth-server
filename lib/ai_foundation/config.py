@@ -70,8 +70,6 @@ class AIFoundationSettings(BaseSettings):
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
-    # ── Conversation Compaction ────────────────────────────────────────────
-
     # ── Cross-Domain Synthesis ─────────────────────────────────────────────
 
     CROSS_DOMAIN_SYNTHESIS_ENABLED: bool = Field(default=True, description="Enable LLM cross-domain follow-up in coordinator")

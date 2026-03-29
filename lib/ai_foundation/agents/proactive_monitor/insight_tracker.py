@@ -175,7 +175,7 @@ class InsightTracker:
 
         cursor = self._collection.find(
             {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}},
-            sort=[("created_at", -1)],
+            sort=[("patient_id", 1), ("created_at", -1)],
         )
 
         # Group by patient, limit per patient

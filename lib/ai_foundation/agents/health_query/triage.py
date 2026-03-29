@@ -120,16 +120,26 @@ def rank_patients(
 
     # Sort: highest severity first, then by alert count, then by recency
     def _sort_key(t: PatientTriage) -> tuple:
-        most_recent = datetime.min
+        most_recent_ts = 0.0
         if t.recent_insights:
             for ins in t.recent_insights:
                 ts = ins.get("created_at")
-                if isinstance(ts, datetime) and ts > most_recent:
-                    most_recent = ts
+                # Handle both datetime objects and ISO strings from MongoDB
+                if isinstance(ts, datetime):
+                    val = ts.timestamp()
+                elif isinstance(ts, str):
+                    try:
+                        val = datetime.fromisoformat(ts).timestamp()
+                    except (ValueError, TypeError):
+                        val = 0.0
+                else:
+                    val = 0.0
+                if val > most_recent_ts:
+                    most_recent_ts = val
         return (
             -SEVERITY_RANK.get(t.top_severity, 0),
             -t.alert_count,
-            -most_recent.timestamp() if most_recent != datetime.min else 0,
+            -most_recent_ts,
         )
 
     triage_list.sort(key=_sort_key)

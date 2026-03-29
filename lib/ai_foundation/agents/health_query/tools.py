@@ -643,7 +643,10 @@ class ToolExecutor:
         for dt in ordered_keys:
             items = by_type[dt]
             # Sort within group: most recent first
-            items.sort(key=lambda p: _extract_time_key(p), reverse=True)
+            try:
+                items.sort(key=lambda p: _extract_time_key(p), reverse=True)
+            except (TypeError, ValueError):
+                pass  # keep original order if sort fails on malformed payload
 
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"{label} ({len(items)} entries):"]
