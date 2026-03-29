@@ -70,6 +70,13 @@ class AIFoundationSettings(BaseSettings):
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
+    # ── Conversation Compaction ────────────────────────────────────────────
+
+    COMPACTION_TRIGGER_INTERVAL: int = Field(default=2, description="Compact every N turns after threshold")
+    COMPACTION_TRIGGER_THRESHOLD: int = Field(default=4, description="Minimum turns before first compaction")
+    COMPACTION_HISTORY_WINDOW: int = Field(default=12, description="Turns to include in summary LLM call")
+    BACKGROUND_TASK_TIMEOUT_SECONDS: float = Field(default=30.0, description="Timeout for background tasks (compaction, fact extraction)")
+
     # ── Langfuse Observability ────────────────────────────────────────────
 
     # Note: Langfuse fields use validation_alias to read LANGFUSE_* (no AI_ prefix)
