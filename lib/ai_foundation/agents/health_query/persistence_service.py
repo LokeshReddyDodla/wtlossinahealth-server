@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 class PersistenceService:
     """Handles all post-response persistence: turns, compaction, titles, signals."""
 
+    _compacting: set[str] = set()  # in-memory lock to prevent concurrent compaction
+
     def __init__(
         self,
         *,
@@ -90,7 +92,7 @@ class PersistenceService:
 
             await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
         except Exception as exc:
-            logger.warning("Failed to persist turns: %s", exc)
+            logger.warning("Failed to persist turns (thread=%s): %s", thread_id, exc)
 
     # -- Thread compaction (non-blocking) ----------------------------------
 
@@ -99,32 +101,45 @@ class PersistenceService:
         if not self._memory or not self._gateway or not thread_id:
             return
 
+        # Prevent concurrent compaction on the same thread
+        if thread_id in self._compacting:
+            logger.debug("Skipping compaction for %s — already in progress", thread_id)
+            return
+
+        self._compacting.add(thread_id)
         try:
-            import asyncio
-            turns, existing = await asyncio.gather(
-                self._memory.get_thread_turns(thread_id, limit=30),
+            import time as _time
+            start = _time.perf_counter()
+
+            # Get real turn count + summary in parallel
+            turn_count, existing = await asyncio.gather(
+                self._memory.count_thread_turns(thread_id),
                 self._memory.get_thread_summary(thread_id),
             )
-            turn_count = len(turns)
 
-            # Generate title on turn 2 (first complete exchange)
+            # Generate title from the first exchange (not most recent)
             if turn_count >= 2 and (not existing or not existing.title):
-                title = await self._generate_title(turns[:2])
+                first_turns = await self._memory.get_first_thread_turns(thread_id, limit=2)
+                title = await self._generate_title(first_turns)
                 summary = existing or ThreadSummary(thread_id=thread_id, summary="", turn_count=turn_count)
                 summary.title = title
-                summary.turn_count = turn_count
                 if patient_ids:
                     summary.patient_ids = patient_ids
                 await self._memory.save_thread_summary(thread_id, summary)
                 existing = summary
 
-            # Compact summary every 2 turns after turn 4
-            if turn_count < 4 or turn_count % 2 != 0:
-                return
-            if existing and existing.turn_count >= turn_count - 1:
+            # Compact summary at configured intervals
+            threshold = settings.COMPACTION_TRIGGER_THRESHOLD
+            interval = settings.COMPACTION_TRIGGER_INTERVAL
+            if turn_count < threshold or turn_count % interval != 0:
                 return
 
-            conv_text = "\n".join(f"{t.role}: {t.content[:settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns[-12:])
+            # Guard: don't re-compact if already done for this turn count
+            if existing and existing.summary and existing.turn_count >= turn_count - 1:
+                return
+
+            turns_for_summary = await self._memory.get_thread_turns(thread_id, limit=settings.COMPACTION_HISTORY_WINDOW)
+            conv_text = "\n".join(f"{t.role}: {t.content[:settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns_for_summary)
 
             response = await self._gateway.complete(
                 messages=[
@@ -137,7 +152,6 @@ class PersistenceService:
                 task=ModelTask.SUMMARIZATION,
             )
 
-            from lib.ai_foundation.memory.base import ThreadSummary
             title = existing.title if existing and existing.title else ""
             pids = patient_ids or (existing.patient_ids if existing else [])
             summary = ThreadSummary(
@@ -145,10 +159,13 @@ class PersistenceService:
                 summary=response.content, turn_count=turn_count,
             )
             await self._memory.save_thread_summary(thread_id, summary)
-            logger.debug("Compacted thread %s (%d turns)", thread_id, turn_count)
+            elapsed_ms = int((_time.perf_counter() - start) * 1000)
+            logger.info("Compacted thread %s (%d turns, %dms)", thread_id, turn_count, elapsed_ms)
 
         except Exception as exc:
-            logger.debug("Compaction failed (non-blocking): %s", exc)
+            logger.warning("Compaction failed (thread=%s): %s", thread_id, exc)
+        finally:
+            self._compacting.discard(thread_id)
 
     # -- Implicit feedback signals -----------------------------------------
 

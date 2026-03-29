@@ -173,6 +173,25 @@ class MongoMemoryStore:
 
     # -- Conversation Turns -------------------------------------------------
 
+    async def count_thread_turns(self, thread_id: str) -> int:
+        """Count total turns in a thread without loading them."""
+        collection = self._mongo.get_collection(TURNS_COLLECTION)
+        return await collection.count_documents({"thread_id": thread_id})
+
+    async def get_first_thread_turns(self, thread_id: str, *, limit: int = 2) -> list[ConversationTurn]:
+        """Retrieve the earliest turns from a thread (for title generation)."""
+        collection = self._mongo.get_collection(TURNS_COLLECTION)
+        cursor = (
+            collection.find(
+                {"thread_id": thread_id},
+                {"_id": 0, "thread_id": 0},
+            )
+            .sort("timestamp", 1)
+            .limit(limit)
+        )
+        docs = await cursor.to_list(length=limit)
+        return [ConversationTurn(**doc) for doc in docs]
+
     async def get_thread_turns(
         self, thread_id: str, *, limit: int = 20
     ) -> list[ConversationTurn]:

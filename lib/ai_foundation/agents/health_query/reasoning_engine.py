@@ -132,6 +132,9 @@ class ReasoningResult:
     responder_model: str = ""
     tier: str = ""
     perf: dict[str, int] = field(default_factory=dict)
+    coverage_confidence: float | None = None
+    reflection_confidence: float | None = None
+    data_gaps: list[str] | None = None
 
 
 # ── Engine ─────────────────────────────────────────────────────────────────
@@ -658,6 +661,9 @@ class ReasoningEngine:
                 r = reflection["result"]
                 yield sse_reflection(r.confidence, r.gaps, r.is_complete)
 
+        # Capture reflection result for confidence propagation
+        reflection_result = reflection.get("result") if "reflection" in locals() else None
+
         # ── Final response ──
         if emit_events:
             # Stream final response
@@ -703,6 +709,12 @@ class ReasoningEngine:
                 perf["total_ms"],
             )
 
+            # Compute evidence confidence for SSE done payload
+            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg
+            _s = _bs(evidence_ledger)
+            _cov = _cc(_s)
+            _refl = reflection_result.confidence if reflection_result else None
+
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
                 data={
@@ -711,6 +723,9 @@ class ReasoningEngine:
                     "tier": tier.value,
                     "full_response": "".join(full_response_parts),
                     "perf": perf,
+                    "coverage_confidence": _cov,
+                    "reflection_confidence": _refl,
+                    "data_gaps": _fg(_s),
                 },
             ))
         else:
@@ -736,6 +751,12 @@ class ReasoningEngine:
                 perf["total_ms"],
             )
 
+            # Compute evidence confidence for client
+            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, format_data_gaps
+            _summary = build_summary(evidence_ledger)
+            _confidence = compute_coverage_confidence(_summary)
+            _gaps = format_data_gaps(_summary)
+
             yield ReasoningResult(
                 response=final_response.content or "",
                 steps=steps,
@@ -746,6 +767,9 @@ class ReasoningEngine:
                 responder_model=tier_cfg.responder_model,
                 tier=tier.value,
                 perf=perf,
+                coverage_confidence=_confidence,
+                reflection_confidence=reflection_result.confidence if reflection_result else None,
+                data_gaps=_gaps,
             )
 
     # ── Planning ───────────────────────────────────────────────────────
@@ -935,6 +959,7 @@ class ReasoningEngine:
         """
         from lib.ai_foundation.agents.health_query.evidence import (
             build_summary,
+            format_coverage_note,
             format_patient,
             format_provider,
         )
@@ -983,6 +1008,9 @@ class ReasoningEngine:
         if evidence_ledger is not None:
             summary = build_summary(evidence_ledger)
             evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            coverage_note = format_coverage_note(summary)
+            if coverage_note:
+                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
             if evidence_text:
                 messages.append({
                     "role": "system",

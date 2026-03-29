@@ -9,8 +9,11 @@ from lib.ai_foundation.agents.health_query.evidence import (
     InvestigationSummary,
     build_summary,
     build_summary_from_findings,
+    compute_coverage_confidence,
     extract_evidence_from_fallback,
     extract_evidence_from_tool_round,
+    format_coverage_note,
+    format_data_gaps,
     format_patient,
     format_provider,
     _parse_record_count,
@@ -357,3 +360,107 @@ class TestGracefulFallback:
         assert "cgm_range" in items[0].data_types
         assert "meal" in items[0].data_types
         assert items[0].date_range == "last 14 days"
+
+
+# ── Test: Coverage confidence scoring ────────────────────────────────────
+
+
+class TestCoverageConfidence:
+    def test_full_coverage_high_score(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25–27", record_count=10, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="Mar 25–27", record_count=15, had_data=True),
+        ]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) >= 0.9
+
+    def test_missing_domains_reduces_score(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25–27", record_count=5, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["sleep"], date_range="", record_count=0, had_data=False),
+            EvidenceItem(tool="look_up", data_types=["vital"], date_range="", record_count=0, had_data=False),
+        ]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) < 0.8
+
+    def test_thin_records_reduces_score(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25", record_count=2, had_data=True)]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) < 0.9
+
+    def test_all_no_data_floor(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=0, had_data=False)]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) == 0.1
+
+    def test_empty_summary_floor(self):
+        assert compute_coverage_confidence(InvestigationSummary()) == 0.1
+
+    def test_no_date_coverage_penalty(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=5, had_data=True)]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) <= 0.9
+
+    def test_score_never_below_floor(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=0, had_data=False),
+            EvidenceItem(tool="look_up", data_types=["sleep"], date_range="", record_count=0, had_data=False),
+            EvidenceItem(tool="look_up", data_types=["vital"], date_range="", record_count=0, had_data=False),
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="", record_count=0, had_data=False),
+        ]
+        summary = build_summary(items)
+        assert compute_coverage_confidence(summary) == 0.1
+
+
+class TestCoverageNote:
+    def test_good_coverage_empty_note(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25–27", record_count=10, had_data=True)]
+        summary = build_summary(items)
+        assert format_coverage_note(summary) == ""
+
+    def test_thin_records_note(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="Mar 25", record_count=2, had_data=True)]
+        summary = build_summary(items)
+        note = format_coverage_note(summary)
+        assert "Limited data" in note
+        assert "2 records" in note
+
+    def test_missing_domains_note(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=10, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["sleep"], date_range="", record_count=0, had_data=False),
+        ]
+        summary = build_summary(items)
+        note = format_coverage_note(summary)
+        assert "Partial coverage" in note
+        assert "sleep" in note.lower()
+
+    def test_combined_thin_and_missing(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=2, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["sleep"], date_range="", record_count=0, had_data=False),
+        ]
+        summary = build_summary(items)
+        note = format_coverage_note(summary)
+        assert "Limited data" in note
+        assert "Partial coverage" in note
+
+    def test_empty_summary(self):
+        assert format_coverage_note(InvestigationSummary()) == ""
+
+
+class TestDataGaps:
+    def test_no_gaps(self):
+        items = [EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=5, had_data=True)]
+        summary = build_summary(items)
+        assert format_data_gaps(summary) is None
+
+    def test_gaps_use_human_labels(self):
+        items = [
+            EvidenceItem(tool="look_up", data_types=["meal"], date_range="", record_count=5, had_data=True),
+            EvidenceItem(tool="look_up", data_types=["cgm_range_stats"], date_range="", record_count=0, had_data=False),
+        ]
+        summary = build_summary(items)
+        gaps = format_data_gaps(summary)
+        assert gaps is not None
+        assert "glucose readings" in gaps  # human label, not "cgm"

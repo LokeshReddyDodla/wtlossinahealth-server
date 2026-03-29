@@ -164,6 +164,14 @@ class MemoryStore(Protocol):
 
     # -- Conversation Turns ---
 
+    async def count_thread_turns(self, thread_id: str) -> int:
+        """Count total turns in a thread without loading them."""
+        ...
+
+    async def get_first_thread_turns(self, thread_id: str, *, limit: int = 2) -> list[ConversationTurn]:
+        """Retrieve the earliest turns from a thread (for title generation)."""
+        ...
+
     async def get_thread_turns(
         self, thread_id: str, *, limit: int = 20
     ) -> list[ConversationTurn]:

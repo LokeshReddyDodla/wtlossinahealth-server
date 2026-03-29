@@ -150,7 +150,10 @@ class HealthQueryAgent(BaseAgent):
                 suggestions=[s.model_dump() for s in intent.suggestions],
                 data={
                     "data_types": [dt.value for dt in intent.data_types],
-                    "confidence": intent.confidence,
+                    "intent_confidence": intent.confidence,
+                    "coverage_confidence": result.coverage_confidence,
+                    "reflection_confidence": result.reflection_confidence,
+                    "data_gaps": result.data_gaps,
                     "rounds_used": result.rounds_used,
                     "tools_called": result.tools_called,
                     "tier": result.tier,
@@ -284,7 +287,10 @@ class HealthQueryAgent(BaseAgent):
                         model_id=done_data.get("model_id"),
                         data={
                             "data_types": [dt.value for dt in intent.data_types],
-                            "confidence": intent.confidence,
+                            "intent_confidence": intent.confidence,
+                            "coverage_confidence": engine_data.get("coverage_confidence"),
+                            "reflection_confidence": engine_data.get("reflection_confidence"),
+                            "data_gaps": engine_data.get("data_gaps"),
                             "rounds_used": engine_data.get("rounds_used"),
                             "tools_called": engine_data.get("tools_called"),
                             "tier": engine_data.get("tier"),
@@ -473,20 +479,38 @@ class HealthQueryAgent(BaseAgent):
         return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
     def _schedule_background(self, input: AgentInput) -> None:
-        """Fire-and-forget background tasks."""
+        """Schedule background tasks with timeout and error handling."""
+        thread_id = input.context.thread_id or ""
         if self.persistence:
-            asyncio.ensure_future(self.persistence.compact_if_needed(
-                thread_id=input.context.thread_id, agent_id=self.agent_id,
-                patient_ids=input.context.patient_ids,
+            asyncio.create_task(self._run_background(
+                self.persistence.compact_if_needed(
+                    thread_id=input.context.thread_id, agent_id=self.agent_id,
+                    patient_ids=input.context.patient_ids,
+                ),
+                name="compaction", thread_id=thread_id,
             ))
         if self.fact_extractor:
             pid = input.context.patient_id
             if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
                 pid = input.context.patient_ids[0]
             if pid:
-                asyncio.ensure_future(self.fact_extractor.extract_if_needed(
-                    message=input.message, patient_id=pid, agent_id=self.agent_id,
+                asyncio.create_task(self._run_background(
+                    self.fact_extractor.extract_if_needed(
+                        message=input.message, patient_id=pid, agent_id=self.agent_id,
+                    ),
+                    name="fact_extraction", thread_id=thread_id,
                 ))
+
+    async def _run_background(self, coro: Any, *, name: str, thread_id: str) -> None:
+        """Run a background coroutine with timeout and error handling."""
+        try:
+            await asyncio.wait_for(coro, timeout=settings.BACKGROUND_TASK_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("Background task %s timed out (thread=%s)", name, thread_id)
+        except asyncio.CancelledError:
+            raise  # never swallow cancellation
+        except Exception as exc:
+            logger.warning("Background task %s failed (thread=%s): %s", name, thread_id, exc)
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -561,7 +585,11 @@ class HealthQueryAgent(BaseAgent):
     def to_query_response(self, input: AgentInput, output: AgentOutput) -> QueryResponse:
         return QueryResponse(
             is_ready=output.is_ready, user_message=input.message, message=output.message,
-            data_types=output.data.get("data_types"), confidence=output.data.get("confidence"),
+            data_types=output.data.get("data_types"),
+            confidence=output.data.get("intent_confidence"),
+            coverage_confidence=output.data.get("coverage_confidence"),
+            reflection_confidence=output.data.get("reflection_confidence"),
+            data_gaps=output.data.get("data_gaps"),
             final_response=output.message if output.is_ready else None,
             clarification_msg=output.message if not output.is_ready else None,
             suggestions=output.suggestions, trace_id=output.trace_id,

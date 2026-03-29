@@ -305,6 +305,71 @@ def format_provider(summary: InvestigationSummary) -> str:
     return result
 
 
+# ── Confidence & Coverage ─────────────────────────────────────────────────
+
+
+def compute_coverage_confidence(summary: InvestigationSummary, *, skip_date_penalty: bool = False) -> float:
+    """Compute a deterministic data-coverage confidence score (0.1–1.0).
+
+    Measures how complete the supporting data is, not truthfulness or quality.
+    No LLM call — pure math from the investigation summary.
+
+    Args:
+        skip_date_penalty: If True, don't penalize for missing date_coverage.
+            Used by coordinator path where specialists don't expose date args.
+    """
+    if not summary.items:
+        return 0.1
+
+    # All NO_DATA
+    if not any(item.had_data for item in summary.items):
+        return 0.1
+
+    score = 1.0
+
+    # Penalty for missing domains: -0.15 each
+    score -= len(summary.domains_without_data) * 0.15
+
+    # Penalty for thin coverage: fewer than 3 total records
+    if summary.total_records is not None and summary.total_records < 3:
+        score -= 0.2
+
+    # Penalty for no date range context (skip for coordinator/specialist path)
+    if not skip_date_penalty and not summary.date_coverage:
+        score -= 0.1
+
+    return max(round(score, 2), 0.1)
+
+
+def format_coverage_note(summary: InvestigationSummary) -> str:
+    """Return a coverage note when data is thin or incomplete. Empty if coverage is good."""
+    if not summary.items:
+        return ""
+
+    parts: list[str] = []
+
+    # Thin record count
+    if summary.total_records is not None and summary.total_records < 5:
+        if not any(item.had_data for item in summary.items):
+            parts.append("No health data was found for the requested period.")
+        else:
+            parts.append(f"Limited data: only {summary.total_records} record{'s' if summary.total_records != 1 else ''} found.")
+
+    # Missing domains
+    if summary.domains_without_data:
+        gap_labels = [_DOMAIN_PATIENT_LABELS.get(d, f"{d} data") for d in summary.domains_without_data]
+        parts.append(f"Partial coverage: no {_join_natural(gap_labels)} available.")
+
+    return " ".join(parts)
+
+
+def format_data_gaps(summary: InvestigationSummary) -> list[str] | None:
+    """Return human-readable list of missing domains, or None if no gaps."""
+    if not summary.domains_without_data:
+        return None
+    return [_DOMAIN_PATIENT_LABELS.get(d, f"{d} data") for d in summary.domains_without_data]
+
+
 # ── Internal helpers ─────────────────────────────────────────────────────
 
 
