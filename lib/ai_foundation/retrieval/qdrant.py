@@ -131,14 +131,6 @@ class QdrantRetriever:
             return []
 
         async with self._store.get_client() as client:
-            # Order by start_time DESC so the limit keeps the most recent records.
-            # Falls back gracefully if the field is missing or order_by is unsupported.
-            try:
-                from qdrant_client.models import OrderBy
-                order_by = OrderBy(key="start_time", direction="desc")
-            except (ImportError, Exception):
-                order_by = None
-
             scroll_kwargs: dict[str, Any] = {
                 "collection_name": self._collection,
                 "scroll_filter": scroll_filter,
@@ -146,10 +138,16 @@ class QdrantRetriever:
                 "with_payload": True,
                 "with_vectors": False,
             }
-            if order_by is not None:
-                scroll_kwargs["order_by"] = order_by
 
-            records, _ = await client.scroll(**scroll_kwargs)
+            # Order by start_time DESC so the limit keeps the most recent records.
+            # Falls back to unordered scroll if OrderBy is unavailable or server rejects it.
+            try:
+                from qdrant_client.models import OrderBy
+                scroll_kwargs["order_by"] = OrderBy(key="start_time", direction="desc")
+                records, _ = await client.scroll(**scroll_kwargs)
+            except Exception:
+                scroll_kwargs.pop("order_by", None)
+                records, _ = await client.scroll(**scroll_kwargs)
 
         results: list[RetrievalResult] = []
         for record in records:
