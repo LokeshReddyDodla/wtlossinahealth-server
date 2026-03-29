@@ -16,6 +16,7 @@ from uuid import UUID
 from fastapi import Depends, Query
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.agents.health_query.provider_panel_utils import has_partial_access
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_care_provider_access_service
@@ -78,7 +79,7 @@ async def get_provider_panel(
             care_provider_id=UUID(current_actor.id),
             patient_ids=patient_uuids,
         )
-        if len(accessible) != len(patient_uuids):
+        if has_partial_access(len(patient_uuids), len(accessible)):
             raise HTTPException(
                 status_code=403,
                 detail="Access denied for one or more requested patients",

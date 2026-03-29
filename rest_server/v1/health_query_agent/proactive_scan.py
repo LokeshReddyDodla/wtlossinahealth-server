@@ -14,7 +14,7 @@ POST /health-query-agent/proactive-scan
 import logging
 from typing import Optional
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
@@ -78,6 +78,8 @@ async def trigger_proactive_scan(
 
     # Run the scan
     result = await monitor.scan_patient(payload.patient_id, patient_name, tz_name=tz_name)
+    if result.error:
+        raise HTTPException(status_code=503, detail=f"Proactive scan failed: {result.error}")
 
     # Send notifications
     notification_target = payload.notification_id or payload.patient_id

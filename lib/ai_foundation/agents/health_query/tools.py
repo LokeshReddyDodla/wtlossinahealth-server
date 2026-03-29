@@ -546,6 +546,10 @@ class ToolExecutor:
             limit=limit,
         ))
 
+        # Semantic retrieval may still surface profile rows via broad indexing.
+        # Keep pattern search focused on event/data records.
+        results = [r for r in results if (r.data_type or r.payload.get("data_type")) != "profile"]
+
         if not results:
             return f"{NO_DATA_PREFIX}No matching patterns found for: '{query}'"
 
@@ -581,7 +585,10 @@ class ToolExecutor:
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
                 pass
-        tz = ZoneInfo(tz_name)
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
 
         all_insights: list[dict] = []
         unique_patient_ids = list(dict.fromkeys(patient_ids))

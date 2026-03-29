@@ -214,6 +214,10 @@ class InsightTracker:
             name="insight_ttl_idx",
             expireAfterSeconds=_TTL_SECONDS,
         )
+        await self._collection.create_index(
+            "insight_id",
+            name="insight_id_idx",
+        )
         self._indexes_ensured = True
 
     # -- Internal -----------------------------------------------------------

@@ -1,6 +1,7 @@
 """Tests for the Health Query Agent with agentic reasoning."""
 
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -385,6 +386,45 @@ class TestSpecialists:
         tools.execute.assert_awaited_once()
         assert findings.tool_calls_used == 1
         assert any("MEAL (1 entries)" in item for item in findings.data_gathered)
+
+
+class TestToolExecutorEdgeCases:
+    @pytest.mark.asyncio
+    async def test_find_patterns_filters_profile_noise(self):
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+        from lib.ai_foundation.retrieval.base import RetrievalResult
+
+        qdrant = MagicMock()
+        qdrant.retrieve = AsyncMock(return_value=[
+            RetrievalResult(payload={"data_type": "profile", "goal": "fat loss"}, source="qdrant", data_type="profile"),
+            RetrievalResult(payload={"data_type": "meal", "date": "2026-03-27", "name": "Lunch"}, source="qdrant", data_type="meal"),
+        ])
+        tools = ToolExecutor(qdrant=qdrant)
+
+        result = await tools._find_patterns({"query": "lunch", "days_back": 7}, ["p1"])
+
+        assert "[meal]" in result
+        assert "[profile]" not in result
+
+    @pytest.mark.asyncio
+    async def test_recent_insights_invalid_timezone_falls_back(self):
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+
+        tracker = MagicMock()
+        tracker.get_history = AsyncMock(return_value=[{
+            "severity": "info",
+            "title": "Nice work",
+            "message": "Steps improved",
+            "created_at": datetime(2026, 3, 28, 9, 0, tzinfo=timezone.utc),
+        }])
+        resolver = MagicMock()
+        resolver.resolve_timezones = AsyncMock(return_value={"p1": "Mars/OlympusMons"})
+        tools = ToolExecutor(insight_tracker=tracker, patient_resolver=resolver)
+
+        result = await tools._get_recent_insights({"limit": 5}, ["p1"])
+
+        assert "Nice work" in result
+        assert "Steps improved" in result
 
 
 class TestDomainMapping:

@@ -106,6 +106,8 @@ async def run_proactive_scan_single(
 
         monitor = container.resolve(ProactiveMonitorAgent)
         result = await monitor.scan_patient(patient_id)
+        if result.error:
+            return TaskResult(success=False, error=result.error, data={"patient_id": patient_id})
 
         if result.insights:
             await _send_notification(patient_id, result.insights, monitor)
@@ -188,7 +190,7 @@ async def _get_active_patient_ids() -> list[str]:
         from sqlalchemy import select, and_
         from lib.models.user_device import UserDevice
 
-        cutoff = datetime.utcnow() - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
         async with postgres_store.get_session() as session:
             stmt = (
