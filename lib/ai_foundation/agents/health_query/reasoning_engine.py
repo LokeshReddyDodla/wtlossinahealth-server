@@ -53,7 +53,7 @@ from lib.ai_foundation.agents.health_query.context_loader import build_context_m
 logger = logging.getLogger(__name__)
 
 # Meta types that must NEVER be pruned (system instructions + current question)
-_CRITICAL_TYPES = frozenset({"instruction", "user_question", "evidence_summary"})
+_CRITICAL_TYPES = frozenset({"system_prompt", "instruction", "user_question", "evidence_summary"})
 
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
@@ -172,10 +172,10 @@ class ReasoningEngine:
     def _get_input_budget(self, model: str) -> int:
         """Calculate the max input tokens for a model."""
         window = self._gateway.get_model_window(model)
-        return min(
+        return max(1, min(
             int(window * settings.CONTEXT_BUDGET_RATIO),
             window - settings.CONTEXT_RESPONSE_RESERVE,
-        )
+        ))
 
     def _prune_if_needed(self, messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
         """Prune messages to fit within the model's context window.
@@ -979,7 +979,8 @@ class ReasoningEngine:
             meta = msg.get("_meta", {})
 
             if role == "system":
-                system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
+                if meta.get("type") != "instruction":
+                    system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
             elif role == "user":
                 user_msg = content
             elif role == "tool":
