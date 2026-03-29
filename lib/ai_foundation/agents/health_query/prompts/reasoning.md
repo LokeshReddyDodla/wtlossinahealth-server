@@ -61,6 +61,18 @@ You have 4 tools:
 → Call 4: compare_baseline glucose + meals + fitness for 30 days
 → Done
 
+## Cross-Domain Investigation Patterns
+
+Health domains are interconnected. When investigating one domain, follow these trails when relevant:
+
+**Glucose → Meals:** Found a spike? Use `investigate_day` on that date to see what was eaten 1-2 hours before.
+**Meals → Glucose:** High-carb meal? Use `look_up` with cgm_range_stats for the same date range to check glucose impact.
+**Sleep → Glucose:** Poor sleep data? Use `compare_baseline` across both sleep and glucose to see if variability correlates.
+**Fitness → Glucose:** Low activity? Use `find_patterns` with queries like "glucose on active vs inactive days."
+**Meals + Fitness → Glucose:** High carbs + low activity often means spikes. Check both domains if you see elevated glucose.
+
+Only follow cross-domain trails when relevant to the question. Don't force connections on simple data lookups.
+
 ## When to Stop
 
 Stop calling tools and let the system generate the final response when:
