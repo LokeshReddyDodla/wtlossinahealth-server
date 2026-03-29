@@ -72,6 +72,13 @@ class AIFoundationSettings(BaseSettings):
 
     # ── Conversation Compaction ────────────────────────────────────────────
 
+    # ── Cross-Domain Synthesis ─────────────────────────────────────────────
+
+    CROSS_DOMAIN_SYNTHESIS_ENABLED: bool = Field(default=True, description="Enable LLM cross-domain follow-up in coordinator")
+    CROSS_DOMAIN_MAX_TOOL_CALLS: int = Field(default=2, description="Max tool calls in cross-domain synthesis round")
+
+    # ── Conversation Compaction ────────────────────────────────────────────
+
     COMPACTION_TRIGGER_INTERVAL: int = Field(default=2, description="Compact every N turns after threshold")
     COMPACTION_TRIGGER_THRESHOLD: int = Field(default=4, description="Minimum turns before first compaction")
     COMPACTION_HISTORY_WINDOW: int = Field(default=12, description="Turns to include in summary LLM call")
