@@ -571,7 +571,7 @@ class Coordinator:
         # Inject evidence summary from specialist findings
         if findings:
             summary = build_summary_from_findings(findings)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
             coverage_note = format_coverage_note(summary)
             if coverage_note:
                 evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note

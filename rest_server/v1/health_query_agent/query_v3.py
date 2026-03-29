@@ -39,9 +39,13 @@ from .api_schema import QueryRequest
 
 
 def _resolve_agent_role(role: ProfileTypeEnum) -> str:
-    """Map actor role to agent user_role string."""
+    """Map actor role to agent user_role string.
+
+    Auth role ADMIN maps to query persona 'research' — infrastructure
+    admin privileges (config, thread bypass) stay at the REST layer.
+    """
     if role == ProfileTypeEnum.ADMIN:
-        return "admin"
+        return "research"
     if role == ProfileTypeEnum.CARE_PROVIDER:
         return "care_provider"
     return "patient"

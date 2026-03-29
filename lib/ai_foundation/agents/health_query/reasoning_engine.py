@@ -1007,7 +1007,7 @@ class ReasoningEngine:
         # Inject evidence summary (pruning-safe — built from ledger, not messages)
         if evidence_ledger is not None:
             summary = build_summary(evidence_ledger)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
             coverage_note = format_coverage_note(summary)
             if coverage_note:
                 evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note

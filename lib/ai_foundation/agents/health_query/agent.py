@@ -350,7 +350,7 @@ class HealthQueryAgent(BaseAgent):
         if ctx.thread_summary:
             messages.append({"role": "system", "content": f"Conversation summary:\n{ctx.thread_summary}"})
 
-        if input.context.user_role in ("care_provider", "admin") and ctx.patient_names:
+        if input.context.user_role in ("care_provider", "research") and ctx.patient_names:
             names = list(ctx.patient_names.values())
             messages.append({"role": "system", "content": (
                 f"The user is a {input.context.user_role} asking about: {', '.join(names)}. "
@@ -541,7 +541,7 @@ class HealthQueryAgent(BaseAgent):
         if cache_key in self._prompt_cache:
             return self._prompt_cache[cache_key]
 
-        name_map = {"admin": "hq_system_admin", "care_provider": "hq_system_care_provider", "patient": "hq_system_patient"}
+        name_map = {"research": "hq_system_research", "admin": "hq_system_research", "care_provider": "hq_system_care_provider", "patient": "hq_system_patient"}
         rendered = self._render(name_map.get(user_role, "hq_system_patient"))
 
         if len(self._prompt_cache) > settings.PROMPT_CACHE_MAX_SIZE:

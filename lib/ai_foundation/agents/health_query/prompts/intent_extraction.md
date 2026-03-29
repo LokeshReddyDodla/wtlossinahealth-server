@@ -137,7 +137,7 @@ The system also auto-extracts memories in the background from every message. You
 
 Always provide 2-4 suggested follow-up actions as `SuggestedAction` objects with a short `label` and a complete `description` (full question the user might ask).
 
-**CRITICAL for non-patient roles:** If the system context indicates the user is a care_provider or admin, suggestions MUST use the patient's name, NOT "my" or "your".
+**CRITICAL for non-patient roles:** If the system context indicates the user is a care_provider or research analyst, suggestions MUST use the patient's name, NOT "my" or "your".
 
 - Care provider asking about Ahmed: `{"label": "Ahmed's glucose today", "description": "Show Ahmed's glucose data for today"}`
 - NOT: `{"label": "Show my glucose today", "description": "Show me my glucose data for today"}`
