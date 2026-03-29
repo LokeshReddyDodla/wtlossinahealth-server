@@ -65,6 +65,7 @@ class AIFoundationSettings(BaseSettings):
     STEP_LOG_TRUNCATION_CHARS: int = Field(default=500, description="Max chars per tool result in reasoning step logs")
     SUMMARY_TRUNCATION_CHARS: int = Field(default=200, description="Max chars for display summaries in SSE events")
     LOOKUP_DEFAULT_LIMIT: int = Field(default=15, description="Default record limit for look_up tool")
+    BASELINE_DISPLAY_LIMIT: int = Field(default=20, description="Max individual records shown in compare_baseline")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
