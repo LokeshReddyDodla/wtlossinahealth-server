@@ -254,6 +254,31 @@ class ModelGateway:
         except Exception:
             pass
 
+    # -- Token counting & context window ------------------------------------
+
+    @staticmethod
+    def _clean_messages(messages: list[dict]) -> list[dict]:
+        """Strip internal metadata keys (e.g. _meta) before sending to LLM API."""
+        return [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages]
+
+    def count_tokens(self, messages: list[dict], model: str | None = None) -> int:
+        """Count tokens in a message list. Falls back to char/4 estimate."""
+        try:
+            return litellm.token_counter(model=model or "gpt-4.1-mini", messages=messages)
+        except Exception:
+            return sum(len(m.get("content", "") or "") for m in messages) // 4
+
+    def get_model_window(self, model: str) -> int:
+        """Get context window size with fallback chain: litellm → config override → default."""
+        from lib.ai_foundation.config import settings
+        try:
+            info = litellm.get_model_info(model)
+            if info and info.get("max_input_tokens"):
+                return info["max_input_tokens"]
+        except Exception:
+            pass
+        return settings.CONTEXT_WINDOW_OVERRIDE.get(model, settings.CONTEXT_WINDOW_DEFAULT)
+
     # -- Public API ---------------------------------------------------------
 
     async def complete(
@@ -384,7 +409,7 @@ class ModelGateway:
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
             "tools": tools,
             "metadata": {"trace_id": trace_id},
@@ -523,7 +548,7 @@ class ModelGateway:
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
             "metadata": {"trace_id": trace_id},
         }
@@ -602,7 +627,7 @@ class ModelGateway:
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
             "stream": True,
             "stream_options": {"include_usage": True},
