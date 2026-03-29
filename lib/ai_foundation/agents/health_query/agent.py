@@ -12,6 +12,7 @@ The agent coordinates:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from datetime import datetime, timezone
@@ -40,6 +41,15 @@ from .reasoning_engine import ReasoningEngine, ReasoningTier
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+async def _maybe_await(result: Any) -> None:
+    """Await values only when a dependency returns an awaitable.
+
+    Gateway observability hooks are sync in production but often AsyncMock'd in tests.
+    """
+    if inspect.isawaitable(result):
+        await result
 
 
 class HealthQueryAgent(BaseAgent):
@@ -74,17 +84,17 @@ class HealthQueryAgent(BaseAgent):
 
         try:
             # Set Langfuse context for this request
-            self.gateway.set_langfuse_context(
+            await _maybe_await(self.gateway.set_langfuse_context(
                 session_id=input.context.thread_id,
                 user_id=input.context.user_id,
-            )
+            ))
 
             # Set trace-level input
-            self.gateway.langfuse_trace_input(
+            await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
                 input_text=input.message,
                 metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
-            )
+            ))
 
             ctx = await self._load_context(input)
             ctx.local_time = (input.context.metadata or {}).get("local_time")
@@ -93,14 +103,14 @@ class HealthQueryAgent(BaseAgent):
             # ── Memory commands (remember/forget/list) ──
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
-                self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
+                await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 self._schedule_background(input)
                 return output
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
-                self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
+                await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                 self._schedule_background(input)
                 return output
@@ -165,7 +175,7 @@ class HealthQueryAgent(BaseAgent):
                 model_id=result.responder_model,
             )
 
-            self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message)
+            await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
             self._schedule_background(input)
@@ -187,17 +197,17 @@ class HealthQueryAgent(BaseAgent):
 
         try:
             # Set Langfuse context for this request
-            self.gateway.set_langfuse_context(
+            await _maybe_await(self.gateway.set_langfuse_context(
                 session_id=input.context.thread_id,
                 user_id=input.context.user_id,
-            )
+            ))
 
             # Set trace-level input
-            self.gateway.langfuse_trace_input(
+            await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
                 input_text=input.message,
                 metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
-            )
+            ))
 
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
             ctx = await self._load_context(input)
@@ -277,13 +287,15 @@ class HealthQueryAgent(BaseAgent):
                         pass
 
                     engine_data = done_data.get("data", {})
+                    intent_cost = meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else 0.0
                     engine_cost = done_data.get("cost_usd")
+                    total_cost = (engine_cost or 0.0) + intent_cost
                     elapsed = int((time.perf_counter() - pipeline_start) * 1000)
 
                     output = AgentOutput(
                         message=full_text, is_ready=True,
                         trace_id=trace_id,
-                        cost_usd=engine_cost,
+                        cost_usd=total_cost,
                         latency_ms=elapsed,
                         model_id=done_data.get("model_id"),
                         data={
@@ -299,7 +311,7 @@ class HealthQueryAgent(BaseAgent):
                         },
                     )
                     if full_text:
-                        self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text)
+                        await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text))
                     await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                     self._schedule_background(input)
 
@@ -307,8 +319,10 @@ class HealthQueryAgent(BaseAgent):
                     yield sse_done(SSEDonePayload(
                         suggestions=[s.model_dump() for s in intent.suggestions],
                         trace_id=trace_id,
-                        cost_usd=engine_cost,
+                        cost_usd=total_cost,
                         latency_ms=elapsed,
+                        model_id=done_data.get("model_id"),
+                        data=engine_data,
                     ))
                     continue
 
@@ -588,7 +602,7 @@ class HealthQueryAgent(BaseAgent):
         return QueryResponse(
             is_ready=output.is_ready, user_message=input.message, message=output.message,
             data_types=output.data.get("data_types"),
-            confidence=output.data.get("intent_confidence"),
+            confidence=output.data.get("intent_confidence") or output.data.get("confidence"),
             coverage_confidence=output.data.get("coverage_confidence"),
             reflection_confidence=output.data.get("reflection_confidence"),
             data_gaps=output.data.get("data_gaps"),

@@ -124,7 +124,7 @@ def _make_default_insights() -> list[HealthInsight]:
 def _make_qdrant(results: list[RetrievalResult] | None = None):
     """Mock QdrantRetriever that returns fake results."""
     qdrant = AsyncMock()
-    qdrant.retrieve_filtered = AsyncMock(return_value=results or [
+    qdrant.retrieve_filtered = AsyncMock(return_value=results if results is not None else [
         RetrievalResult(
             payload={"data_type": "meal", "date": "2026-03-27", "name": "Lunch", "nutrition": {"carbs": 80}},
             source="qdrant_filtered",
@@ -391,6 +391,21 @@ class TestDedupEscalationIntegration:
         for insight in result.insights:
             assert insight.severity == InsightSeverity.ATTENTION
 
+    @pytest.mark.asyncio
+    async def test_tracker_never_downgrades_warning(self):
+        tracker = _make_insight_tracker(should_send_result=(True, "attention"))
+        warning_only = [
+            HealthInsight(
+                category=InsightCategory.GLUCOSE_SPIKE,
+                severity=InsightSeverity.WARNING,
+                title="Spike",
+                body="High glucose after lunch.",
+            ),
+        ]
+        agent = _make_agent(insight_tracker=tracker, gateway=_make_gateway(insights=warning_only))
+        result = await agent.scan_patient("p1")
+        assert result.insights[0].severity == InsightSeverity.WARNING
+
 
 # ---------------------------------------------------------------------------
 # InsightTracker
@@ -410,7 +425,7 @@ class TestInsightTracker:
     @pytest.mark.asyncio
     async def test_dedup_within_24h(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=12),
             "severity": "info",
@@ -423,7 +438,7 @@ class TestInsightTracker:
     @pytest.mark.asyncio
     async def test_allow_after_24h(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=25),
             "severity": "info",
@@ -437,7 +452,7 @@ class TestInsightTracker:
     @pytest.mark.asyncio
     async def test_escalate_to_attention_after_3_days(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=25),
             "severity": "info",
@@ -450,7 +465,7 @@ class TestInsightTracker:
     @pytest.mark.asyncio
     async def test_escalate_to_warning_after_5_days(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=25),
             "severity": "attention",
@@ -459,6 +474,20 @@ class TestInsightTracker:
         tracker = InsightTracker(store)
         _, severity = await tracker.should_send("p1", "glucose_spike")
         assert severity == "warning"
+
+    @pytest.mark.asyncio
+    async def test_should_send_resets_stale_consecutive_days(self):
+        store, collection = _make_mock_mongo_store()
+        now = datetime.now(timezone.utc)
+        collection.find_one = AsyncMock(return_value={
+            "created_at": now - timedelta(hours=60),
+            "severity": "warning",
+            "consecutive_days": 5,
+        })
+        tracker = InsightTracker(store)
+        should_send, severity = await tracker.should_send("p1", "glucose_spike")
+        assert should_send is True
+        assert severity == "info"
 
     @pytest.mark.asyncio
     async def test_record_first_insight(self):
@@ -482,9 +511,26 @@ class TestInsightTracker:
         assert doc["suggested_query"] == "How?"
 
     @pytest.mark.asyncio
+    async def test_record_stores_trace_id(self):
+        store, collection = _make_mock_mongo_store()
+        tracker = InsightTracker(store)
+        await tracker.record("p1", "glucose_spike", "info", "test", trace_id="pm_trace_1")
+        doc = collection.insert_one.call_args[0][0]
+        assert doc["trace_id"] == "pm_trace_1"
+
+    @pytest.mark.asyncio
+    async def test_get_by_insight_id(self):
+        store, collection = _make_mock_mongo_store()
+        collection.find_one = AsyncMock(return_value={"_id": "mongo1", "insight_id": "ins_abc", "trace_id": "pm_trace_1"})
+        tracker = InsightTracker(store)
+        doc = await tracker.get_by_insight_id("ins_abc")
+        assert doc["insight_id"] == "ins_abc"
+        assert doc["trace_id"] == "pm_trace_1"
+
+    @pytest.mark.asyncio
     async def test_record_consecutive_within_48h(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=25),
             "consecutive_days": 2,
@@ -497,7 +543,7 @@ class TestInsightTracker:
     @pytest.mark.asyncio
     async def test_record_resets_after_48h_gap(self):
         store, collection = _make_mock_mongo_store()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collection.find_one = AsyncMock(return_value={
             "created_at": now - timedelta(hours=50),
             "consecutive_days": 5,

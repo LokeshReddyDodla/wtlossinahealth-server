@@ -66,6 +66,7 @@ class _ProviderCircuit:
         "_failure_threshold",
         "_window_seconds",
         "_cooldown_seconds",
+        "_probe_in_flight",
     )
 
     def __init__(
@@ -86,6 +87,7 @@ class _ProviderCircuit:
         self._failure_threshold = failure_threshold
         self._window_seconds = window_seconds
         self._cooldown_seconds = cooldown_seconds
+        self._probe_in_flight = False
 
     def _prune_window(self, dq: deque[float], now: float) -> None:
         cutoff = now - self._window_seconds
@@ -113,6 +115,7 @@ class _ProviderCircuit:
             self.successes.append(now)
 
             if self.state == CircuitState.HALF_OPEN:
+                self._probe_in_flight = False
                 self._transition(CircuitState.CLOSED)
                 self.failures.clear()
 
@@ -124,6 +127,7 @@ class _ProviderCircuit:
             self.failures.append(now)
 
             if self.state == CircuitState.HALF_OPEN:
+                self._probe_in_flight = False
                 self._transition(CircuitState.OPEN)
             elif self.state == CircuitState.CLOSED:
                 if len(self.failures) >= self._failure_threshold:
@@ -138,9 +142,13 @@ class _ProviderCircuit:
                 elapsed = now - self.last_state_change_at
                 if elapsed >= self._cooldown_seconds:
                     self._transition(CircuitState.HALF_OPEN)
+                    self._probe_in_flight = True
                     return True  # allow one probe request
                 return False
-            # HALF_OPEN — allow (probe in progress)
+            # HALF_OPEN — allow only a single in-flight probe
+            if self._probe_in_flight:
+                return False
+            self._probe_in_flight = True
             return True
 
     def get_stats(self) -> CircuitStats:

@@ -350,6 +350,42 @@ class TestSpecialists:
         assert findings.domain == "glucose"
         assert findings.tool_calls_used == 2
 
+    def test_domain_schemas_are_sandboxed(self):
+        from unittest.mock import MagicMock
+        from lib.ai_foundation.agents.health_query.tools import ToolExecutor
+
+        tools = ToolExecutor(qdrant=MagicMock())
+        schemas = tools.get_schemas_for_domain("nutrition")
+        names = [s["function"]["name"] for s in schemas]
+        assert names == ["look_up", "compare_baseline"]
+        lookup_enum = schemas[0]["function"]["parameters"]["properties"]["data_types"]["items"]["enum"]
+        assert lookup_enum == ["meal"]
+
+    @pytest.mark.asyncio
+    async def test_specialist_forces_lookup_on_first_round(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from lib.ai_foundation.agents.health_query.specialists import Specialist, NUTRITION_SPEC
+
+        gateway = MagicMock()
+        gateway.complete_with_tools = AsyncMock(side_effect=[
+            MagicMock(has_tool_calls=False, content="", usage=MagicMock(cost=MagicMock(total_cost=0.0))),
+            MagicMock(has_tool_calls=False, content="Found one meal.", usage=MagicMock(cost=MagicMock(total_cost=0.0))),
+        ])
+        tools = MagicMock()
+        tools.get_schemas_for_domain.return_value = []
+        tools.execute = AsyncMock(return_value="MEAL (1 entries):\n  - date: 2026-03-27, carbs: 80")
+
+        specialist = Specialist(domain_spec=NUTRITION_SPEC, gateway=gateway, tool_executor=tools)
+        findings = await specialist.investigate(
+            messages=[{"role": "system", "content": "base"}, {"role": "user", "content": "check meals"}],
+            patient_ids=["p1"],
+            model_id="gpt-4.1-mini",
+        )
+
+        tools.execute.assert_awaited_once()
+        assert findings.tool_calls_used == 1
+        assert any("MEAL (1 entries)" in item for item in findings.data_gathered)
+
 
 class TestDomainMapping:
     def test_resolve_specialist_domains(self):

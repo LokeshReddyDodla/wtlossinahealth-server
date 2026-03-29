@@ -39,6 +39,13 @@ class TestCircuitBreaker:
         cb.record_failure("openai")
         assert cb.state("openai") == CircuitState.OPEN
 
+    def test_half_open_allows_only_one_probe(self):
+        cb = CircuitBreaker(failure_threshold=1, cooldown_seconds=0.01)
+        cb.record_failure("openai")
+        time.sleep(0.02)
+        assert cb.is_available("openai") is True
+        assert cb.is_available("openai") is False
+
     def test_independent_providers(self):
         cb = CircuitBreaker(failure_threshold=2)
         cb.record_failure("openai")

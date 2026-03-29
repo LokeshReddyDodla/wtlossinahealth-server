@@ -29,6 +29,7 @@ from .router import router
 
 class InsightHistoryItem(BaseModel):
     insight_id: str | None = None
+    trace_id: str | None = None
     category: str
     severity: str
     title: str | None = None
@@ -70,6 +71,7 @@ async def get_insight_history(
     items = [
         InsightHistoryItem(
             insight_id=doc.get("insight_id"),
+            trace_id=doc.get("trace_id"),
             category=doc.get("category", ""),
             severity=doc.get("severity", ""),
             title=doc.get("title"),
@@ -116,13 +118,19 @@ async def submit_insight_feedback(
 
     Logs to Langfuse as a score for quality tracking.
     """
+    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.models.gateway import ModelGateway
 
     recorded = False
     try:
+        tracker: InsightTracker = container.resolve(InsightTracker)
+        doc = await tracker.get_by_insight_id(payload.insight_id)
+        trace_id = doc.get("trace_id") if doc else None
+        if not trace_id:
+            raise ValueError("No trace_id found for insight feedback")
         gateway: ModelGateway = container.resolve(ModelGateway)
         gateway.log_score(
-            trace_id=payload.insight_id,
+            trace_id=trace_id,
             name="insight_feedback",
             value=1.0 if payload.thumbs_up else 0.0,
             comment=payload.comment,

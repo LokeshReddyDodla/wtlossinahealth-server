@@ -542,10 +542,10 @@ class Coordinator:
     def _get_input_budget(self, model: str) -> int:
         """Calculate the max input tokens for a model."""
         window = self._gateway.get_model_window(model)
-        return min(
+        return max(1, min(
             int(window * settings.CONTEXT_BUDGET_RATIO),
             window - settings.CONTEXT_RESPONSE_RESERVE,
-        )
+        ))
 
     # ── Helpers ────────────────────────────────────────────────────────
 
@@ -688,7 +688,7 @@ class Coordinator:
 
         # Keep system messages from base (system prompt, context)
         for msg in base_messages:
-            if msg.get("role") == "system":
+            if msg.get("role") == "system" and msg.get("_meta", {}).get("type") != "instruction":
                 messages.append(msg)
 
         messages.append({"role": "system", "content": response_prompt, "_meta": {"type": "instruction"}})

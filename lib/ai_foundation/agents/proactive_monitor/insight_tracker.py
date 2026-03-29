@@ -13,7 +13,7 @@ Tracks sent insights per patient per category in MongoDB collection
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -67,10 +67,10 @@ class InsightTracker:
         if not last:
             return True, "info"  # First time — send as INFO
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last_sent: datetime = last.get("created_at", now)
-        if last_sent.tzinfo is not None:
-            last_sent = last_sent.replace(tzinfo=None)
+        if last_sent.tzinfo is None:
+            last_sent = last_sent.replace(tzinfo=timezone.utc)
         hours_since = (now - last_sent).total_seconds() / 3600
 
         # Don't repeat within 24 hours
@@ -78,7 +78,10 @@ class InsightTracker:
             return False, last.get("severity", "info")
 
         # Escalation: count consecutive days
-        consecutive_days = last.get("consecutive_days", 0) + 1
+        if hours_since >= _CONSECUTIVE_TOLERANCE_HOURS:
+            consecutive_days = 1
+        else:
+            consecutive_days = last.get("consecutive_days", 0) + 1
         if consecutive_days >= _ESCALATE_WARNING_DAYS:
             severity = "warning"
         elif consecutive_days >= _ESCALATE_ATTENTION_DAYS:
@@ -98,11 +101,12 @@ class InsightTracker:
         insight_id: str | None = None,
         title: str | None = None,
         suggested_query: str | None = None,
+        trace_id: str | None = None,
     ) -> None:
         """Record that an insight was sent."""
         await self._maybe_ensure_indexes()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Determine consecutive-day count
         last = await self._collection.find_one(
@@ -113,8 +117,8 @@ class InsightTracker:
         consecutive = 1
         if last:
             last_sent: datetime = last.get("created_at", now)
-            if last_sent.tzinfo is not None:
-                last_sent = last_sent.replace(tzinfo=None)
+            if last_sent.tzinfo is None:
+                last_sent = last_sent.replace(tzinfo=timezone.utc)
             hours_since = (now - last_sent).total_seconds() / 3600
             if hours_since < _CONSECUTIVE_TOLERANCE_HOURS:
                 consecutive = last.get("consecutive_days", 0) + 1
@@ -133,8 +137,18 @@ class InsightTracker:
             doc["title"] = title
         if suggested_query:
             doc["suggested_query"] = suggested_query
+        if trace_id:
+            doc["trace_id"] = trace_id
 
         await self._collection.insert_one(doc)
+
+    async def get_by_insight_id(self, insight_id: str) -> dict | None:
+        """Look up a recorded proactive insight by its public insight id."""
+        await self._maybe_ensure_indexes()
+        doc = await self._collection.find_one({"insight_id": insight_id})
+        if doc and "_id" in doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
 
     async def get_history(
         self,
@@ -170,8 +184,7 @@ class InsightTracker:
             return {}
 
         await self._maybe_ensure_indexes()
-        from datetime import timedelta
-        since = datetime.utcnow() - timedelta(days=since_days)
+        since = datetime.now(timezone.utc) - timedelta(days=since_days)
 
         cursor = self._collection.find(
             {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}},
@@ -211,4 +224,4 @@ class InsightTracker:
                 await self.ensure_indexes()
             except Exception:
                 logger.debug("Index creation deferred — may not be connected yet")
-                self._indexes_ensured = True  # don't retry every call
+                self._indexes_ensured = False

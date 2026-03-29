@@ -184,6 +184,12 @@ class MemoryStore(Protocol):
         """Append a turn to a conversation thread."""
         ...
 
+    async def append_turns_batch(
+        self, thread_id: str, turns: list[ConversationTurn]
+    ) -> None:
+        """Append multiple turns to a conversation thread in one write when supported."""
+        ...
+
     # -- Thread Summaries ---
 
     async def get_thread_summary(self, thread_id: str) -> ThreadSummary | None:
