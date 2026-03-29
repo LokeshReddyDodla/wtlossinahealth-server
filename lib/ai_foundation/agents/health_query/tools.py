@@ -421,7 +421,9 @@ class ToolExecutor:
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found for the specified period."
 
-        return self._format_results(results, names)
+        from lib.ai_foundation.agents.health_query.result_ranking import sort_by_time
+        results = sort_by_time(results)
+        return self._format_results(results, names, requested_types=data_types)
 
     async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
@@ -443,12 +445,9 @@ class ToolExecutor:
         if not results:
             return f"{NO_DATA_PREFIX}No health data found for {date}."
 
-        # Sort by time fields for chronological view
-        # str() ensures consistent type — start_time (epoch int) vs time (string) won't crash
-        sorted_items = sorted(
-            results,
-            key=lambda r: str(r.payload.get("start_time") or r.payload.get("time") or r.payload.get("date") or ""),
-        )
+        # Sort chronologically using robust numeric time key
+        from lib.ai_foundation.agents.health_query.result_ranking import sort_by_time
+        sorted_items = sort_by_time(results, ascending=True, base_date=date)
 
         lines = [f"Timeline for {date}:"]
         for r in sorted_items:
@@ -495,14 +494,23 @@ class ToolExecutor:
             limit=settings.QDRANT_RESULT_LIMIT,
         ))
 
+        # Post-filter to requested types (Qdrant may include profile/other via should-branch)
+        if data_types:
+            requested = set(data_types)
+            results = [r for r in results if (r.data_type or r.payload.get("data_type")) in requested]
+
         if not results:
             return f"{NO_DATA_PREFIX}No {', '.join(data_types)} data found in the last {days} days."
 
+        from lib.ai_foundation.agents.health_query.result_ranking import sort_by_time
+        results = sort_by_time(results)
+
         # Format as baseline summary + individual entries
+        display_limit = settings.BASELINE_DISPLAY_LIMIT
         lines = [f"Baseline ({days} days, {len(results)} entries):"]
 
         # Show individual records (the LLM can compute averages)
-        for r in results[:20]:
+        for r in results[:display_limit]:
             p = r.payload
             clean = {k: v for k, v in p.items()
                      if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
@@ -513,8 +521,8 @@ class ToolExecutor:
             parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
             lines.append(f"  - {', '.join(parts)}")
 
-        if len(results) > 20:
-            lines.append(f"  ... and {len(results) - 20} more entries")
+        if len(results) > display_limit:
+            lines.append(f"  ... and {len(results) - display_limit} more entries")
 
         return self._cap_result("\n".join(lines))
 
@@ -606,15 +614,37 @@ class ToolExecutor:
 
     # ── Formatting helpers ────────────────────────────────────────────────
 
-    def _format_results(self, results: list[RetrievalResult], names: dict[str, str] | None = None) -> str:
-        """Format results as readable text grouped by data type."""
+    def _format_results(
+        self,
+        results: list[RetrievalResult],
+        names: dict[str, str] | None = None,
+        requested_types: list[str] | None = None,
+    ) -> str:
+        """Format results as readable text grouped by data type.
+
+        Groups are ordered by ``requested_types`` if provided, otherwise by
+        first-seen order. Records within each group are sorted most-recent-first.
+        """
+        from lib.ai_foundation.agents.health_query.result_ranking import _extract_time_key
+
         by_type: dict[str, list[dict]] = {}
         for r in results:
             dt = r.data_type or r.payload.get("data_type", "unknown")
             by_type.setdefault(dt, []).append(r.payload)
 
+        # Determine section order: requested types first, then remaining
+        if requested_types:
+            ordered_keys = [dt for dt in requested_types if dt in by_type]
+            ordered_keys += [dt for dt in by_type if dt not in ordered_keys]
+        else:
+            ordered_keys = list(by_type.keys())
+
         sections: list[str] = []
-        for dt, items in by_type.items():
+        for dt in ordered_keys:
+            items = by_type[dt]
+            # Sort within group: most recent first
+            items.sort(key=lambda p: _extract_time_key(p), reverse=True)
+
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"{label} ({len(items)} entries):"]
             for item in items[:settings.MAX_RECORDS_PER_TYPE]:
@@ -646,8 +676,6 @@ class ToolExecutor:
 
     @staticmethod
     def _cap_result(text: str) -> str:
-        """Cap tool result to prevent context bloat."""
-        max_chars = settings.REASONING_MAX_TOOL_RESULT_CHARS
-        if len(text) > max_chars:
-            return text[:max_chars] + "\n... (truncated — ask for a narrower query)"
-        return text
+        """Cap tool result to prevent context bloat. Truncates at line boundaries."""
+        from lib.ai_foundation.agents.health_query.result_ranking import cap_at_record_boundaries
+        return cap_at_record_boundaries(text, settings.REASONING_MAX_TOOL_RESULT_CHARS)
