@@ -381,7 +381,7 @@ class ToolExecutor:
                         f"Data types to get baseline for. For this domain use: {types_str}"
                     )
                 filtered.append(s)
-            elif func_name in ("investigate_day", "find_patterns"):
+            elif func_name in ("investigate_day", "find_patterns", "get_recent_insights"):
                 # These tools are domain-agnostic — pass through without data_type filtering
                 filtered.append(schema)
 

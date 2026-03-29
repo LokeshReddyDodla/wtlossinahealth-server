@@ -662,7 +662,10 @@ class ModelGateway:
         full_content: list[str] = []
         final_usage: TokenUsage | None = None
 
-        async with asyncio.timeout(spec.timeout_seconds):
+        # Use remaining budget so total wall-clock never exceeds timeout_seconds
+        elapsed = time.perf_counter() - start
+        remaining = max(1.0, spec.timeout_seconds - elapsed)
+        async with asyncio.timeout(remaining):
             async for chunk in stream:
                 # Usage comes in the final chunk (LiteLLM may not have .usage on every chunk)
                 chunk_usage = getattr(chunk, "usage", None)

@@ -121,7 +121,7 @@ def _check_rate_limit(current_actor: Actor, priority: RequestPriority) -> None:
     except (ConnectionError, TimeoutError, OSError) as exc:
         logging.getLogger(__name__).warning("Rate limiter unavailable: %s", exc)
     except Exception as exc:
-        logging.getLogger(__name__).debug("Rate limiter error: %s", exc)
+        logging.getLogger(__name__).warning("Rate limiter unexpected error: %s", exc)
 
 
 def _resolve_thread_id(current_actor: Actor, resolved_patient_ids: list[str]) -> str:

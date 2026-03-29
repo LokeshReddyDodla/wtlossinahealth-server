@@ -487,7 +487,7 @@ class ProactiveMonitorAgent(BaseAgent):
             return insights
 
         filtered: list[HealthInsight] = []
-        dedup_cache: dict[str, tuple[bool, str]] = {}
+        dedup_cache: dict[str, tuple[bool, str, int]] = {}
 
         for insight in insights:
             category = insight.category.value
@@ -497,7 +497,7 @@ class ProactiveMonitorAgent(BaseAgent):
                     check = await self._insight_tracker.should_send(patient_id, category)
                     dedup_cache[category] = check
 
-                should_send, escalated_severity = check
+                should_send, escalated_severity, _consecutive_days = check
                 if should_send:
                     escalated = InsightSeverity(escalated_severity)
                     if SEVERITY_RANK[escalated.value] > SEVERITY_RANK[insight.severity.value]:

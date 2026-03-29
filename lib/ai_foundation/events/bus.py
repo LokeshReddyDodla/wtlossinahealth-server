@@ -72,6 +72,13 @@ class EventBus:
         """Subscribe a handler to ALL event types (e.g. for logging/tracing)."""
         self._global_handlers.append(handler)
 
+    def unsubscribe_all(self, handler: EventHandler) -> None:
+        """Remove a global handler previously registered via subscribe_all."""
+        try:
+            self._global_handlers.remove(handler)
+        except ValueError:
+            pass
+
     async def publish(self, event: HealthEvent) -> None:
         """Publish an event to all matching subscribers.
 

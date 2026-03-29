@@ -54,6 +54,7 @@ _FITNESS_LOW_CUES = re.compile(r"\b(?:low activity|inactive|sedentary|few steps|
 _FITNESS_ACTIVE_CUES = re.compile(r"\b(?:active|exercise|workout|walking|running|high activity|good activity)")
 _SLEEP_POOR_CUES = re.compile(r"\b(?:poor sleep|short sleep|disrupted|insomnia|restless|waking)")
 _HIGH_CAL_CUES = re.compile(r"\b(?:high calori|excess|over.?eat)")
+_NEGATION_PREFIX = re.compile(r"\b(?:no|not|without|zero|none)\s+")
 
 
 class Coordinator:
@@ -559,14 +560,14 @@ class Coordinator:
     # ── Helpers ────────────────────────────────────────────────────────
 
     @staticmethod
-    def _combine_findings(findings: list[SpecialistFindings]) -> str:
+    def _combine_findings(findings: list[SpecialistFindings]) -> tuple[str, str]:
         """Combine findings from multiple specialists into a single text block.
 
         Appends a POSSIBLE CROSS-DOMAIN CONNECTIONS section when deterministic
         pattern matching detects overlapping health signals across domains.
         """
         if not findings:
-            return "No data gathered."
+            return "No data gathered.", ""
 
         sections: list[str] = []
         for f in findings:
@@ -600,8 +601,6 @@ class Coordinator:
             return ""
 
         # Negation guard — if the cue word appears only in negated context, skip
-        _NEGATION_PREFIX = re.compile(r"\b(?:no|not|without|zero|none)\s+")
-
         def _has_cue(text: str, cue_pattern: re.Pattern, negation_sensitive: bool = False) -> bool:
             """Check if text contains a cue pattern, optionally filtering negations."""
             matches = list(cue_pattern.finditer(text))
