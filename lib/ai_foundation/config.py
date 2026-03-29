@@ -79,6 +79,13 @@ class AIFoundationSettings(BaseSettings):
     LANGFUSE_HOST: str = Field(default="http://langfuse-server:3000", description="Langfuse server URL", validation_alias="LANGFUSE_HOST")
     LANGFUSE_PROMPT_CACHE_TTL: int = Field(default=300, description="Langfuse prompt cache TTL in seconds", validation_alias="LANGFUSE_PROMPT_CACHE_TTL")
 
+    # ── Context Window Management ────────────────────────────────────────
+
+    CONTEXT_BUDGET_RATIO: float = Field(default=0.75, description="Fraction of context window to use as input budget")
+    CONTEXT_RESPONSE_RESERVE: int = Field(default=4096, description="Minimum tokens reserved for response")
+    CONTEXT_WINDOW_DEFAULT: int = Field(default=128_000, description="Default context window if model info unavailable")
+    CONTEXT_WINDOW_OVERRIDE: dict[str, int] = Field(default_factory=dict, description="Per-model context window overrides")
+
     # ── Circuit Breaker ───────────────────────────────────────────────────
 
     CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, description="Failures before circuit opens")

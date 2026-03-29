@@ -51,8 +51,8 @@ def build_context_messages(
     and ``settings.MAX_HISTORY_MESSAGES`` for truncation.
     """
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "system", "content": reasoning_prompt},
+        {"role": "system", "content": system_prompt, "_meta": {"type": "instruction"}},
+        {"role": "system", "content": reasoning_prompt, "_meta": {"type": "instruction"}},
     ]
 
     # Pre-load patient context
@@ -65,35 +65,58 @@ def build_context_messages(
     if context.patient_names:
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
-    if context.facts:
-        # Group by category for cleaner LLM context
-        by_category: dict[str, list[str]] = {}
-        for f in context.facts[:settings.MAX_CONTEXT_FACTS]:
-            cat = f.get("category", "other")
-            by_category.setdefault(cat, []).append(f"{f['key']}: {f['value']}")
-        lines = ["Patient memories:"]
-        for cat, items in by_category.items():
-            lines.append(f"  {cat.title()}: {', '.join(items)}")
-        context_parts.append("\n".join(lines))
-    if context.thread_summary:
-        context_parts.append(f"Conversation summary:\n{context.thread_summary}")
-    if context.recent_insights:
-        lines = ["Recent health insights (notifications sent to this patient):"]
-        for ins in context.recent_insights[:5]:
-            lines.append(f"- [{ins.get('severity', '')}] {ins.get('title', '')}: {ins.get('message', '')}")
-        context_parts.append("\n".join(lines))
 
     if context_parts:
         messages.append({
             "role": "system",
             "content": "PATIENT CONTEXT (pre-loaded):\n\n" + "\n\n".join(context_parts),
+            "_meta": {"type": "context"},
+        })
+
+    # Facts (separate message for pruning)
+    if context.facts:
+        by_category: dict[str, list[str]] = {}
+        pinned_keys: list[str] = []
+        for f in context.facts[:settings.MAX_CONTEXT_FACTS]:
+            cat = f.get("category", "other")
+            by_category.setdefault(cat, []).append(f"{f['key']}: {f['value']}")
+            if f.get("is_permanent") or f.get("source") == "user_explicit":
+                pinned_keys.append(f["key"])
+        lines = ["Patient memories:"]
+        for cat, items in by_category.items():
+            lines.append(f"  {cat.title()}: {', '.join(items)}")
+        messages.append({
+            "role": "system",
+            "content": "\n".join(lines),
+            "_meta": {"type": "fact", "pinned_keys": pinned_keys},
+        })
+
+    # Thread summary
+    if context.thread_summary:
+        messages.append({
+            "role": "system",
+            "content": f"Conversation summary:\n{context.thread_summary}",
+            "_meta": {"type": "summary"},
+        })
+
+    # Recent insights (separate for pruning)
+    if context.recent_insights:
+        lines = ["Recent health insights (notifications sent to this patient):"]
+        for ins in context.recent_insights[:5]:
+            lines.append(f"- [{ins.get('severity', '')}] {ins.get('title', '')}: {ins.get('message', '')}")
+        messages.append({
+            "role": "system",
+            "content": "\n".join(lines),
+            "_meta": {"type": "insight"},
         })
 
     # Add conversation history
-    messages.extend(context.history[-settings.MAX_HISTORY_MESSAGES:])
+    for msg in context.history[-settings.MAX_HISTORY_MESSAGES:]:
+        tagged = {**msg, "_meta": {"type": "history"}}
+        messages.append(tagged)
 
     # User's question
-    messages.append({"role": "user", "content": user_message})
+    messages.append({"role": "user", "content": user_message, "_meta": {"type": "user_question"}})
 
     return messages
 

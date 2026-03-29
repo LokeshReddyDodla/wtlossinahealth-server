@@ -54,6 +54,9 @@ from lib.ai_foundation.agents.health_query.context_loader import build_context_m
 
 logger = logging.getLogger(__name__)
 
+# Meta types that must NEVER be pruned (system instructions + current question)
+_CRITICAL_TYPES = frozenset({"instruction", "user_question"})
+
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
 
@@ -161,6 +164,198 @@ class ReasoningEngine:
         self._tools = tool_executor
         self._planner = planner
         self._reflector = reflector
+
+    # ── Context Window Management ─────────────────────────────────────
+
+    def _get_input_budget(self, model: str) -> int:
+        """Calculate the max input tokens for a model."""
+        window = self._gateway.get_model_window(model)
+        return min(
+            int(window * settings.CONTEXT_BUDGET_RATIO),
+            window - settings.CONTEXT_RESPONSE_RESERVE,
+        )
+
+    def _prune_if_needed(self, messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
+        """Prune messages to fit within the model's context window.
+
+        Called before EVERY LLM call (thinker rounds AND final responder).
+        Applies 5 strategies in priority order, stopping as soon as under budget.
+        """
+        budget = self._get_input_budget(model)
+        tokens = self._gateway.count_tokens(messages, model)
+
+        if tokens <= budget:
+            logger.debug("Token budget OK: %d/%d (%.0f%%)", tokens, budget, tokens / max(budget, 1) * 100)
+            return messages
+
+        logger.info("Token budget exceeded: %d/%d — pruning", tokens, budget)
+
+        for strategy in [
+            self._summarize_old_rounds,
+            self._trim_history,
+            self._trim_facts,
+            self._trim_insights,
+            self._hard_truncate_oldest,
+        ]:
+            messages = strategy(messages)
+            tokens = self._gateway.count_tokens(messages, model)
+            logger.info("After %s: %d tokens (%.0f%%)", strategy.__name__, tokens, tokens / max(budget, 1) * 100)
+            if tokens <= budget:
+                return messages
+
+        logger.warning("All pruning strategies exhausted — still at %d/%d tokens", tokens, budget)
+        return messages  # best effort
+
+    def _summarize_old_rounds(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strategy 1: Collapse tool results from rounds > 2 ago into deterministic summaries."""
+        # Find the max round number
+        max_round = 0
+        for msg in messages:
+            meta = msg.get("_meta", {})
+            r = meta.get("round", 0)
+            if r > max_round:
+                max_round = r
+
+        if max_round <= 2:
+            return messages  # nothing old enough to collapse
+
+        threshold = max_round - 2
+        result: list[dict[str, Any]] = []
+        # Group consecutive old tool results by round for summary
+        pending_round: int = 0
+        pending_summaries: list[str] = []
+
+        for msg in messages:
+            meta = msg.get("_meta", {})
+            msg_type = meta.get("type", "")
+            msg_round = meta.get("round", 0)
+
+            if msg_type == "tool_result" and msg_round > 0 and msg_round <= threshold:
+                # Accumulate for summary
+                if msg_round != pending_round and pending_summaries:
+                    result.append({
+                        "role": "system",
+                        "content": "\n".join(pending_summaries),
+                        "_meta": {"type": "tool_summary", "round": pending_round},
+                    })
+                    pending_summaries = []
+                pending_round = msg_round
+                tool_name = meta.get("tool", "tool")
+                content = msg.get("content", "")
+                has_no_data = content.startswith("[NO_DATA]")
+                status = "no data" if has_no_data else f"{len(content)} chars"
+                pending_summaries.append(f"  {tool_name} → {status}")
+            elif msg_type == "tool_summary":
+                # Already summarized — keep
+                result.append(msg)
+            else:
+                # Flush pending
+                if pending_summaries:
+                    result.append({
+                        "role": "system",
+                        "content": f"[Round {pending_round} summary]\n" + "\n".join(pending_summaries),
+                        "_meta": {"type": "tool_summary", "round": pending_round},
+                    })
+                    pending_summaries = []
+                # Skip old assistant tool_calls messages for collapsed rounds
+                if msg.get("role") == "assistant" and msg.get("tool_calls") and meta.get("round", 0) <= threshold and meta.get("round", 0) > 0:
+                    continue
+                # Skip old tool role messages for collapsed rounds
+                if msg.get("role") == "tool" and meta.get("round", 0) <= threshold and meta.get("round", 0) > 0:
+                    continue
+                result.append(msg)
+
+        if pending_summaries:
+            result.append({
+                "role": "system",
+                "content": f"[Round {pending_round} summary]\n" + "\n".join(pending_summaries),
+                "_meta": {"type": "tool_summary", "round": pending_round},
+            })
+
+        return result
+
+    def _trim_history(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strategy 2: Reduce conversation history messages progressively.
+
+        Each call trims to the next lower tier: >4→4, >2→2, >0→0.
+        """
+        history_msgs = [(i, m) for i, m in enumerate(messages) if m.get("_meta", {}).get("type") == "history"]
+        count = len(history_msgs)
+        if count == 0:
+            return messages
+
+        # Determine target: next lower tier below current count
+        if count > 4:
+            target = 4
+        elif count > 2:
+            target = 2
+        else:
+            target = 0
+
+        if target == count:
+            return messages
+
+        to_remove = {idx for idx, _ in history_msgs[:-target]} if target > 0 else {idx for idx, _ in history_msgs}
+        return [m for i, m in enumerate(messages) if i not in to_remove]
+
+    def _trim_facts(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strategy 3: Reduce facts to pinned-only, keeping is_permanent/user_explicit."""
+        result: list[dict[str, Any]] = []
+        for msg in messages:
+            meta = msg.get("_meta", {})
+            if meta.get("type") == "fact":
+                pinned_keys = meta.get("pinned_keys", [])
+                if not pinned_keys:
+                    # No pinned facts — drop the entire fact message
+                    continue
+                # Rebuild with only pinned facts
+                content = msg["content"]
+                lines = content.split("\n")
+                kept = [lines[0]]  # header "Patient memories:"
+                for line in lines[1:]:
+                    if any(pk in line for pk in pinned_keys):
+                        kept.append(line)
+                if len(kept) > 1:
+                    result.append({**msg, "content": "\n".join(kept)})
+                # else drop entirely
+            else:
+                result.append(msg)
+        return result
+
+    def _trim_insights(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strategy 4: Remove insight messages entirely."""
+        return [m for m in messages if m.get("_meta", {}).get("type") != "insight"]
+
+    def _hard_truncate_oldest(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strategy 5: Hard truncate the longest non-critical message."""
+        max_round = max(
+            (m.get("_meta", {}).get("round", 0) for m in messages),
+            default=0,
+        )
+        longest_idx = -1
+        longest_len = 0
+        for i, msg in enumerate(messages):
+            meta = msg.get("_meta", {})
+            if meta.get("type") in _CRITICAL_TYPES:
+                continue
+            # Don't truncate the latest round's tool results
+            if meta.get("type") == "tool_result" and meta.get("round", 0) > 0:
+                if meta["round"] >= max_round - 1:
+                    continue
+            content_len = len(msg.get("content", "") or "")
+            if content_len > longest_len:
+                longest_len = content_len
+                longest_idx = i
+
+        if longest_idx >= 0 and longest_len > 500:
+            msg = messages[longest_idx]
+            messages = list(messages)  # copy
+            messages[longest_idx] = {
+                **msg,
+                "content": msg["content"][:500] + "\n... (truncated to fit context window)",
+            }
+
+        return messages
 
     # ── Public API (unchanged signatures) ─────────────────────────────
 
@@ -297,7 +492,15 @@ class ReasoningEngine:
                 )
 
         for round_num in range(1, budget_remaining + 1):
+            # Prune before thinker call
+            messages = self._prune_if_needed(messages, tier_cfg.thinker_model)
+
             thinker_start = time.perf_counter()
+            tokens = self._gateway.count_tokens(messages, tier_cfg.thinker_model)
+            budget = self._get_input_budget(tier_cfg.thinker_model)
+            logger.info("LLM call [thinker] round=%d: %d tokens (budget=%d, %.0f%%)",
+                        round_num, tokens, budget, tokens / max(budget, 1) * 100)
+
             response = await self._gateway.complete_with_tools(
                 messages=messages,
                 tools=tool_schemas,
@@ -335,6 +538,7 @@ class ReasoningEngine:
                     messages.append({
                         "role": "system",
                         "content": f"Health data retrieved:\n\n{fallback_result}",
+                        "_meta": {"type": "tool_result", "round": round_num, "tool": "look_up"},
                     })
                     continue  # Let the thinker see the data and try again
 
@@ -357,11 +561,21 @@ class ReasoningEngine:
             tool_start = time.perf_counter()
             tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
             perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
-            messages.append(tool_round.assistant_message)
-            messages.extend(tool_round.tool_messages)
-            total_tools += tool_round.executed_count
 
+            # Tag assistant message with round metadata
+            assistant_msg = {**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": round_num}}
+            messages.append(assistant_msg)
+
+            # Tag tool result messages with round + tool metadata
             tc_by_id = {tc.id: tc for tc in response.tool_calls}
+            for msg in tool_round.tool_messages:
+                tc_id = msg.get("tool_call_id", "")
+                tc = tc_by_id.get(tc_id)
+                tool_name = tc.function_name if tc else "unknown"
+                tagged = {**msg, "_meta": {"type": "tool_result", "round": round_num, "tool": tool_name}}
+                messages.append(tagged)
+
+            total_tools += tool_round.executed_count
 
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
@@ -399,6 +613,7 @@ class ReasoningEngine:
                     "You have reached the maximum number of investigation rounds. "
                     "Generate your best response with the data you have gathered so far."
                 ),
+                "_meta": {"type": "system_hint"},
             })
 
         # ── Reflection (ADVANCED+ tiers) ──
@@ -433,6 +648,13 @@ class ReasoningEngine:
             )
 
             responder_messages = self._build_responder_messages(messages, response_prompt)
+            responder_messages = self._prune_if_needed(responder_messages, tier_cfg.responder_model)
+
+            tokens = self._gateway.count_tokens(responder_messages, tier_cfg.responder_model)
+            resp_budget = self._get_input_budget(tier_cfg.responder_model)
+            logger.info("LLM call [responder-stream]: %d tokens (budget=%d, %.0f%%)",
+                        tokens, resp_budget, tokens / max(resp_budget, 1) * 100)
+
             full_response_parts: list[str] = []
             responder_start = time.perf_counter()
 
@@ -543,6 +765,7 @@ class ReasoningEngine:
                     f"Planned steps:\n" + "\n".join(step_lines) + "\n\n"
                     f"Execute these steps using your tools. Start with Phase 1."
                 ),
+                "_meta": {"type": "plan"},
             })
 
             return {
@@ -608,9 +831,11 @@ class ReasoningEngine:
                         f"REFLECTION identified gaps in the investigation:\n{gap_text}\n\n"
                         f"Please investigate these specific areas to complete the analysis."
                     ),
+                    "_meta": {"type": "reflection"},
                 })
 
                 # One more reasoning round to fill gaps
+                messages = self._prune_if_needed(messages, tier_cfg.thinker_model)
                 response = await self._gateway.complete_with_tools(
                     messages=messages,
                     tools=tool_schemas,
@@ -622,8 +847,12 @@ class ReasoningEngine:
 
                 if response.has_tool_calls:
                     tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
-                    messages.append(tool_round.assistant_message)
-                    messages.extend(tool_round.tool_messages)
+                    messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": 0}})
+                    tc_by_id = {tc.id: tc for tc in response.tool_calls}
+                    for msg in tool_round.tool_messages:
+                        tc = tc_by_id.get(msg.get("tool_call_id", ""))
+                        tool_name = tc.function_name if tc else "unknown"
+                        messages.append({**msg, "_meta": {"type": "tool_result", "round": 0, "tool": tool_name}})
                     total_tools += tool_round.executed_count
 
                 # Re-reflect if we have budget for another round
@@ -644,6 +873,7 @@ class ReasoningEngine:
                         f"SAFETY NOTE — mention these concerns in the response "
                         f"(suggest discussing with care team):\n{concerns}"
                     ),
+                    "_meta": {"type": "reflection"},
                 })
 
             return {
@@ -672,17 +902,18 @@ class ReasoningEngine:
         Takes the full reasoning conversation and restructures it for the
         responder: system prompt + gathered data summary + user question.
         """
-        # Extract system messages, user message, and all tool results
-        system_msgs: list[str] = []
+        # Extract system messages (with _meta), user message, and all tool results
+        system_msgs: list[dict[str, Any]] = []
         user_msg = ""
         gathered_data: list[str] = []
 
         for msg in reasoning_messages:
             role = msg.get("role", "")
             content = msg.get("content", "") or ""
+            meta = msg.get("_meta", {})
 
             if role == "system":
-                system_msgs.append(content)
+                system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
             elif role == "user":
                 user_msg = content
             elif role == "tool":
@@ -691,15 +922,14 @@ class ReasoningEngine:
                 # Thinker's analysis notes (when it stopped calling tools)
                 gathered_data.append(f"Analysis notes: {content}")
 
-        # Build responder messages
+        # Build responder messages — propagate _meta for pruning
         messages: list[dict[str, Any]] = []
 
         # Keep original system prompts (patient context, names, facts)
-        for sys_content in system_msgs:
-            messages.append({"role": "system", "content": sys_content})
+        messages.extend(system_msgs)
 
         # Replace reasoning prompt with response prompt
-        messages.append({"role": "system", "content": response_prompt})
+        messages.append({"role": "system", "content": response_prompt, "_meta": {"type": "instruction"}})
 
         # Add gathered data as context
         if gathered_data:
@@ -709,9 +939,10 @@ class ReasoningEngine:
             messages.append({
                 "role": "system",
                 "content": f"HEALTH DATA GATHERED BY INVESTIGATION:\n\n{data_text}",
+                "_meta": {"type": "gathered_data"},
             })
 
-        messages.append({"role": "user", "content": user_msg})
+        messages.append({"role": "user", "content": user_msg, "_meta": {"type": "user_question"}})
         return messages
 
     async def _generate_final_response(
@@ -723,6 +954,13 @@ class ReasoningEngine:
     ) -> Any:
         """Generate the final polished response from the responder model."""
         responder_messages = self._build_responder_messages(messages, response_prompt)
+        responder_messages = self._prune_if_needed(responder_messages, model_id)
+
+        tokens = self._gateway.count_tokens(responder_messages, model_id)
+        budget = self._get_input_budget(model_id)
+        logger.info("LLM call [responder]: %d tokens (budget=%d, %.0f%%)",
+                    tokens, budget, tokens / max(budget, 1) * 100)
+
         return await self._gateway.complete(
             messages=responder_messages,
             task=ModelTask.RESPONSE_GENERATION,
