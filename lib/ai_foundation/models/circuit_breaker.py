@@ -166,6 +166,13 @@ class _ProviderCircuit:
                 total_trips=self.total_trips,
             )
 
+    def reset(self) -> None:
+        with self._lock:
+            self.state = CircuitState.CLOSED
+            self.failures.clear()
+            self.successes.clear()
+            self._probe_in_flight = False
+
 
 class CircuitBreaker:
     """Manages per-provider circuit breakers.
@@ -239,7 +246,4 @@ class CircuitBreaker:
 
     def reset(self, provider: str) -> None:
         """Manually reset a provider circuit to CLOSED. Use for recovery."""
-        circuit = self._get_circuit(provider)
-        with circuit._lock:
-            circuit._transition(CircuitState.CLOSED)
-            circuit.failures.clear()
+        self._get_circuit(provider).reset()

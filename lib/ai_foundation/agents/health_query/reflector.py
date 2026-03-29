@@ -147,7 +147,7 @@ class ReflectionEngine:
 
             if role == "tool" and content:
                 # Tool result messages (reasoning engine path)
-                if len(content) > 500:
+                if len(content) > settings.STEP_LOG_TRUNCATION_CHARS:
                     content = content[:settings.STEP_LOG_TRUNCATION_CHARS] + "..."
                 parts.append(content)
             elif meta_type == "gathered_data" and content:

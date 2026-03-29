@@ -73,9 +73,11 @@ async def run_proactive_scan(
         batch = await monitor.scan_batch(eligible_ids, patient_names=patient_names, patient_timezones=patient_timezones)
 
         # 5. Send notifications
+        from lib.services.fcm_service import FCMService
+        fcm = FCMService()
         for result in batch.results:
             if result.insights:
-                await _send_notification(result.patient_id, result.insights, monitor)
+                await _send_notification(result.patient_id, result.insights, monitor, fcm=fcm)
 
         return TaskResult(
             success=True,
@@ -110,7 +112,8 @@ async def run_proactive_scan_single(
             return TaskResult(success=False, error=result.error, data={"patient_id": patient_id})
 
         if result.insights:
-            await _send_notification(patient_id, result.insights, monitor)
+            from lib.services.fcm_service import FCMService
+            await _send_notification(patient_id, result.insights, monitor, fcm=FCMService())
 
         return TaskResult(
             success=True,
@@ -150,15 +153,15 @@ async def _send_notification(
     patient_id: str,
     insights: list,
     monitor: Any,
+    *,
+    fcm: Any,
 ) -> None:
     """Send ONE push notification — the most severe insight — and record it."""
     try:
-        from lib.services.fcm_service import FCMService
-
         top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
         is_urgent = top.severity.value in ("warning", "alert")
 
-        await FCMService().send_fcm_notification_to_user_devices(
+        await fcm.send_fcm_notification_to_user_devices(
             user_id=patient_id,
             title=top.title,
             body=top.body,
@@ -174,6 +177,7 @@ async def _send_notification(
                 "total_insights": str(len(insights)),
             },
         )
+        # Only the top-severity insight is persisted — others are discarded by design.
         await monitor.record_insight(patient_id, top)
     except Exception as e:
         logger.warning(f"Failed to send notification for {patient_id}: {e}")
@@ -185,25 +189,21 @@ async def _get_active_patient_ids() -> list[str]:
     Uses UserDevice table instead of meal_reports — catches patients
     with CGM sync, vitals, or any app activity (not just meal logs).
     """
-    try:
-        from lib.dependencies.database import postgres_store
-        from sqlalchemy import select, and_
-        from lib.models.user_device import UserDevice
+    from lib.dependencies.database import postgres_store
+    from sqlalchemy import select, and_
+    from lib.models.user_device import UserDevice
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
-        async with postgres_store.get_session() as session:
-            stmt = (
-                select(UserDevice.user_id)
-                .where(and_(
-                    UserDevice.profile_type == "patient",
-                    UserDevice.is_active == True,  # noqa: E712
-                    UserDevice.last_active_at >= cutoff,
-                ))
-                .distinct()
-            )
-            result = await session.execute(stmt)
-            return [str(row[0]) for row in result.fetchall()]
-    except Exception as e:
-        logger.warning(f"Failed to fetch active patients: {e}")
-        return []
+    async with postgres_store.get_session() as session:
+        stmt = (
+            select(UserDevice.user_id)
+            .where(and_(
+                UserDevice.profile_type == "patient",
+                UserDevice.is_active == True,  # noqa: E712
+                UserDevice.last_active_at >= cutoff,
+            ))
+            .distinct()
+        )
+        result = await session.execute(stmt)
+        return [str(row[0]) for row in result.fetchall()]

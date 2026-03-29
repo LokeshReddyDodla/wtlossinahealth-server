@@ -51,8 +51,7 @@ def is_within_scan_window(
 
     local_now = now or datetime.now(tz)
     if local_now.tzinfo is None:
-        # If the caller passed a naive datetime, localize it
-        local_now = local_now.replace(tzinfo=tz)
+        raise ValueError("now must be timezone-aware; got naive datetime")
 
     # Convert to the target timezone if it differs
     local_now = local_now.astimezone(tz)

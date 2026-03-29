@@ -5,6 +5,7 @@ Deletes all turns and the thread summary for a given thread. The next
 query will start a fresh conversation.
 """
 
+import logging
 from typing import Optional
 
 from fastapi import Depends, HTTPException
@@ -23,8 +24,6 @@ from lib.utils.care_provider_permissions import (
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-from .api_schema import QueryRequest
-from .utils import resolve_bot_conversation_id
 
 
 class ResetRequest(BaseModel):
@@ -87,6 +86,11 @@ async def reset_conversation_v3(
     summaries_collection = memory.get_collection("ai_thread_summaries")
     summary_result = await summaries_collection.delete_one({"thread_id": thread_id})
     summary_deleted = summary_result.deleted_count > 0
+
+    logging.getLogger(__name__).info(
+        "Conversation reset: actor=%s thread=%s turns_deleted=%d",
+        current_actor.id, thread_id, turns_deleted,
+    )
 
     return SuccessResponse(
         message="Conversation reset successfully",

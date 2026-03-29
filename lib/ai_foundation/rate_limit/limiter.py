@@ -80,18 +80,18 @@ class RateLimiter:
         self._limits = limits or DEFAULT_LIMITS
         self._enabled = enabled
 
-    def check(
+    def check_and_record(
         self,
         tenant_id: str,
         priority: RequestPriority = RequestPriority.NORMAL,
     ) -> RateLimitResult:
-        """Check if a request is allowed under the rate limit.
+        """Atomically check and increment the request counter.
 
-        Does NOT increment the counter — call ``record()`` after the
-        request is accepted.
+        Uses SET NX + INCR to avoid TOCTOU race between check and record.
         """
+        config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
+
         if not self._enabled:
-            config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
             return RateLimitResult(
                 allowed=True,
                 remaining=config.max_requests,
@@ -99,21 +99,53 @@ class RateLimiter:
                 reset_at=time.time() + config.window_seconds,
             )
 
-        config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
         key = self._build_key(tenant_id, priority)
 
+        try:
+            # Ensure key exists with TTL (no-op if already exists)
+            self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
+            # Atomic increment — returns the new count
+            current = self._store.incr_key(key)
+        except Exception as exc:
+            logger.warning("Rate limiter failed for %s: %s", tenant_id, exc)
+            # Fail open — allow the request on Redis errors
+            return RateLimitResult(
+                allowed=True, remaining=config.max_requests,
+                limit=config.max_requests, reset_at=time.time() + config.window_seconds,
+            )
+
+        allowed = current <= config.max_requests
+        remaining = max(0, config.max_requests - current)
+
+        return RateLimitResult(
+            allowed=allowed,
+            remaining=remaining,
+            limit=config.max_requests,
+            reset_at=time.time() + config.window_seconds,
+        )
+
+    # Keep check() and record() as thin wrappers for backwards compatibility
+    def check(
+        self,
+        tenant_id: str,
+        priority: RequestPriority = RequestPriority.NORMAL,
+    ) -> RateLimitResult:
+        """Read-only check (no increment). Use check_and_record() for atomic ops."""
+        config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
+        if not self._enabled:
+            return RateLimitResult(
+                allowed=True, remaining=config.max_requests,
+                limit=config.max_requests, reset_at=time.time() + config.window_seconds,
+            )
+        key = self._build_key(tenant_id, priority)
         try:
             raw = self._store.get_key(key)
             current = int(raw) if raw else 0
         except Exception:
             current = 0
-
-        remaining = max(0, config.max_requests - current)
-        allowed = current < config.max_requests
-
         return RateLimitResult(
-            allowed=allowed,
-            remaining=remaining,
+            allowed=current < config.max_requests,
+            remaining=max(0, config.max_requests - current),
             limit=config.max_requests,
             reset_at=time.time() + config.window_seconds,
         )
@@ -123,20 +155,14 @@ class RateLimiter:
         tenant_id: str,
         priority: RequestPriority = RequestPriority.NORMAL,
     ) -> None:
-        """Increment the request counter for a tenant."""
+        """Increment counter. Prefer check_and_record() for atomic check+increment."""
         if not self._enabled:
             return
-
         config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
         key = self._build_key(tenant_id, priority)
-
         try:
-            # Use SET NX to create with TTL only if key doesn't exist
-            created = self._store.set_key(key, "1", expire=config.window_seconds, nx=True)
-            if not created:
-                # Key exists — increment without resetting TTL
-                namespaced_key = f"{self._store._get_namespace()}:{key.strip()}"
-                self._store._get_client().incr(namespaced_key)
+            self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
+            self._store.incr_key(key)
         except Exception as exc:
             logger.warning("Rate limiter record failed for %s: %s", tenant_id, exc)
 

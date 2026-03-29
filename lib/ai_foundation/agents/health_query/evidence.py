@@ -10,6 +10,7 @@ No LLM calls. Pure parsing and formatting.
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -34,18 +35,16 @@ _RE_TIMELINE_ITEM = re.compile(r"^\s+.*\[.+\]", re.MULTILINE)
 # ── Reverse mapping: data_type → human-readable domain name ──────────────
 
 # Built lazily from contracts to avoid circular imports at module level
-_DATA_TYPE_TO_DOMAIN: dict[str, str] | None = None
 
 
+@functools.lru_cache(maxsize=1)
 def _get_type_to_domain() -> dict[str, str]:
-    global _DATA_TYPE_TO_DOMAIN
-    if _DATA_TYPE_TO_DOMAIN is None:
-        from lib.ai_foundation.agents.health_query.contracts import DOMAIN_MAPPING
-        _DATA_TYPE_TO_DOMAIN = {}
-        for domain, types in DOMAIN_MAPPING.items():
-            for dt in types:
-                _DATA_TYPE_TO_DOMAIN[dt.value] = domain.value
-    return _DATA_TYPE_TO_DOMAIN
+    from lib.ai_foundation.agents.health_query.contracts import DOMAIN_MAPPING
+    mapping: dict[str, str] = {}
+    for domain, types in DOMAIN_MAPPING.items():
+        for dt in types:
+            mapping[dt.value] = domain.value
+    return mapping
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -327,8 +326,8 @@ def compute_coverage_confidence(summary: InvestigationSummary, *, skip_date_pena
 
     score = 1.0
 
-    # Penalty for missing domains: -0.15 each
-    score -= len(summary.domains_without_data) * 0.15
+    # Penalty for missing domains: -0.15 each, capped at 0.3
+    score -= min(0.3, 0.15 * len(summary.domains_without_data))
 
     # Penalty for thin coverage: fewer than 3 total records
     if summary.total_records is not None and summary.total_records < 3:

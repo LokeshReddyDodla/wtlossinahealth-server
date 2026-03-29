@@ -28,8 +28,6 @@ logger = logging.getLogger(__name__)
 class PersistenceService:
     """Handles all post-response persistence: turns, compaction, titles, signals."""
 
-    _compacting: set[str] = set()  # in-memory fast path (single-process)
-
     def __init__(
         self,
         *,
@@ -40,6 +38,7 @@ class PersistenceService:
         self._memory = memory
         self._gateway = gateway
         self._cache = cache_store  # CacheStore for distributed Redis lock
+        self._compacting: set[str] = set()  # in-memory fast path (single-process)
 
     # -- Turn persistence --------------------------------------------------
 
@@ -218,6 +217,7 @@ class PersistenceService:
             prev_trace_id = prev_assistant.metadata.get("trace_id")
 
             if prev_was_ready and not current_is_ready and prev_trace_id:
+                # TODO: persist signal for quality tracking once the feedback pipeline is ready
                 logger.debug("Implicit negative signal: clarification after is_ready=True")
         except Exception:
             pass

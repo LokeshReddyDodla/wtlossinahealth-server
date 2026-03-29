@@ -51,11 +51,13 @@ class InsightTracker:
         self,
         patient_id: str,
         category: str,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, int]:
         """Check whether an insight should be delivered.
 
-        Returns ``(should_send, escalated_severity)`` where
-        *escalated_severity* reflects how long the pattern has persisted.
+        Returns ``(should_send, escalated_severity, consecutive_days)`` where
+        *escalated_severity* reflects how long the pattern has persisted and
+        *consecutive_days* is the streak count (pass to :meth:`record` to
+        avoid a redundant MongoDB query).
         """
         await self._maybe_ensure_indexes()
 
@@ -65,7 +67,7 @@ class InsightTracker:
         )
 
         if not last:
-            return True, "info"  # First time — send as INFO
+            return True, "info", 1  # First time — send as INFO
 
         now = datetime.now(timezone.utc)
         last_sent: datetime = last.get("created_at", now)
@@ -75,7 +77,7 @@ class InsightTracker:
 
         # Don't repeat within 24 hours
         if hours_since < _DEDUP_HOURS:
-            return False, last.get("severity", "info")
+            return False, last.get("severity", "info"), last.get("consecutive_days", 0)
 
         # Escalation: count consecutive days
         if hours_since >= _CONSECUTIVE_TOLERANCE_HOURS:
@@ -89,7 +91,7 @@ class InsightTracker:
         else:
             severity = "info"
 
-        return True, severity
+        return True, severity, consecutive_days
 
     async def record(
         self,
@@ -102,26 +104,36 @@ class InsightTracker:
         title: str | None = None,
         suggested_query: str | None = None,
         trace_id: str | None = None,
+        consecutive_days: int | None = None,
     ) -> None:
-        """Record that an insight was sent."""
+        """Record that an insight was sent.
+
+        Args:
+            consecutive_days: If provided (from :meth:`should_send`), skips
+                the MongoDB query to re-derive the streak count.
+        """
         await self._maybe_ensure_indexes()
 
         now = datetime.now(timezone.utc)
 
-        # Determine consecutive-day count
-        last = await self._collection.find_one(
-            {"patient_id": patient_id, "category": category},
-            sort=[("created_at", -1)],
-        )
+        # Use caller-provided value when available to avoid redundant query
+        if consecutive_days is not None:
+            consecutive = consecutive_days
+        else:
+            # Determine consecutive-day count
+            last = await self._collection.find_one(
+                {"patient_id": patient_id, "category": category},
+                sort=[("created_at", -1)],
+            )
 
-        consecutive = 1
-        if last:
-            last_sent: datetime = last.get("created_at", now)
-            if last_sent.tzinfo is None:
-                last_sent = last_sent.replace(tzinfo=timezone.utc)
-            hours_since = (now - last_sent).total_seconds() / 3600
-            if hours_since < _CONSECUTIVE_TOLERANCE_HOURS:
-                consecutive = last.get("consecutive_days", 0) + 1
+            consecutive = 1
+            if last:
+                last_sent: datetime = last.get("created_at", now)
+                if last_sent.tzinfo is None:
+                    last_sent = last_sent.replace(tzinfo=timezone.utc)
+                hours_since = (now - last_sent).total_seconds() / 3600
+                if hours_since < _CONSECUTIVE_TOLERANCE_HOURS:
+                    consecutive = last.get("consecutive_days", 0) + 1
 
         doc: dict = {
             "patient_id": patient_id,

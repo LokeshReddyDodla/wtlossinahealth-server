@@ -60,7 +60,7 @@ GLUCOSE_SPEC = DomainSpec(
         "hypo_event", "hypo_stats", "hyper_event", "hyper_stats",
         "rapid_spike_event", "rapid_spike_stats",
         "rapid_drop_event", "rapid_drop_stats",
-        "smbg", "time_period_stats", "agp_point",
+        "smbg", "time_period_stats", "agp_point", "cgm_semantic_window",
     ],
     system_prompt=(
         "You are a GLUCOSE analysis specialist. Your domain: CGM readings, glucose summaries, "
@@ -281,6 +281,10 @@ class Specialist:
         total_tools = 0
         total_cost = 0.0
         seen_calls: set[str] = set()
+
+        # Ensure at least 2 rounds when fallback lookup is possible so the LLM sees data
+        if self._spec.data_types and max_rounds < 2:
+            max_rounds = 2
 
         for round_num in range(1, max_rounds + 1):
             response = await self._gateway.complete_with_tools(

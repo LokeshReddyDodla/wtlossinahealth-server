@@ -57,7 +57,7 @@ class PricingCalculator:
         Returns:
             Itemised ``CostBreakdown``.
         """
-        billable_input = usage.input_tokens - usage.cached_tokens
+        billable_input = max(0, usage.input_tokens - usage.cached_tokens)
         input_cost = (billable_input / 1_000) * spec.cost_per_1k_input
         cached_cost = (
             (usage.cached_tokens / 1_000)

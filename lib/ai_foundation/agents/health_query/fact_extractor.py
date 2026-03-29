@@ -214,15 +214,7 @@ class FactExtractor:
                         task=ModelTask.SUMMARIZATION,
                     )
 
-                    # Delete old individual memories concurrently.
-                    # These are independent I/O calls and order does not matter.
-                    delete_tasks = [
-                        self._memory.delete_patient_fact(patient_id, f.key)
-                        for f in to_summarize
-                    ]
-                    await asyncio.gather(*delete_tasks, return_exceptions=True)
-
-                    # Insert summary memory
+                    # Insert summary FIRST — if this fails, individual memories are preserved.
                     summary_fact = MemoryFact(
                         key=f"{cat}_summary",
                         value=response.content.strip(),
@@ -232,6 +224,16 @@ class FactExtractor:
                         is_permanent=False,
                     )
                     await self._memory.upsert_patient_facts(patient_id, [summary_fact])
+
+                    # Delete old individual memories only after summary is safely persisted.
+                    delete_tasks = [
+                        self._memory.delete_patient_fact(patient_id, f.key)
+                        for f in to_summarize
+                    ]
+                    delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
+                    for i, res in enumerate(delete_results):
+                        if isinstance(res, Exception):
+                            logger.warning("Failed to delete memory %s during compaction: %s", to_summarize[i].key, res)
                     logger.info("Compacted %d %s memories → summary for %s", len(to_summarize), cat, patient_id[:8])
 
                 except Exception as exc:

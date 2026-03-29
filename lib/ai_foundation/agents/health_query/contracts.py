@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -225,7 +225,7 @@ class QueryIntent(BaseModel):
         description="Deprecated — facts are now extracted via a separate LLM call.",
     )
     # Memory management — detected from user messages like "remember X", "forget X"
-    memory_action: str | None = Field(
+    memory_action: Literal["add", "delete", "list"] | None = Field(
         None, description="Memory action: 'add', 'delete', 'list', or null if not a memory command.",
     )
     memory_key: str | None = Field(

@@ -74,6 +74,7 @@ class HealthQueryAgent(BaseAgent):
         self.persistence = persistence
         self.fact_extractor = fact_extractor
         self._prompts_registered = False
+        self._prompt_cache: dict[str, str] = {}
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ class HealthQueryAgent(BaseAgent):
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
-            total_cost = (meta.usage.cost.total_cost if meta else 0) + result.total_cost
+            total_cost = (meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else 0) + result.total_cost
 
             output = AgentOutput(
                 message=result.response, is_ready=True,
@@ -537,8 +538,6 @@ class HealthQueryAgent(BaseAgent):
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")
         self._prompts_registered = True
 
-    _prompt_cache: dict[str, str] = {}
-
     def _render(self, template_name: str, **extra_vars: str) -> str:
         """Render a prompt with common variables (available_data_types, current_time)."""
         from lib.ai_foundation.agents.health_query.contracts import AVAILABLE_HEALTH_DOMAINS
@@ -579,7 +578,7 @@ class HealthQueryAgent(BaseAgent):
             suggestions=[s.model_dump() for s in intent.suggestions],
             data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
             trace_id=meta.trace_id if meta else None,
-            cost_usd=meta.usage.cost.total_cost if meta else None,
+            cost_usd=meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else None,
             model_id=meta.model_id if meta else None,
         )
 

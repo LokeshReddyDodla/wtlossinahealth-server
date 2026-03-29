@@ -45,6 +45,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ── Regex cue patterns for cross-domain connection detection ─────────────
+_GLUCOSE_SPIKE_CUES = re.compile(r"\b(?:spike|hyper|elevated|high glucose|above range)")
+_GLUCOSE_VARIABILITY_CUES = re.compile(r"\b(?:variab|unstable|fluctuat|inconsistent)")
+_GLUCOSE_IMPROVED_CUES = re.compile(r"\b(?:improved|better|lower average|good control)")
+_NUTRITION_MEAL_CUES = re.compile(r"\b(?:carb|high.?carb|meal|calories|protein|dinner|lunch|breakfast)")
+_FITNESS_LOW_CUES = re.compile(r"\b(?:low activity|inactive|sedentary|few steps|minimal activity|barely moved)")
+_FITNESS_ACTIVE_CUES = re.compile(r"\b(?:active|exercise|workout|walking|running|high activity|good activity)")
+_SLEEP_POOR_CUES = re.compile(r"\b(?:poor sleep|short sleep|disrupted|insomnia|restless|waking)")
+_HIGH_CAL_CUES = re.compile(r"\b(?:high calori|excess|over.?eat)")
+
 
 class Coordinator:
     """Orchestrates: plan -> parallel specialists -> reflect -> respond.
@@ -232,7 +242,7 @@ class Coordinator:
             findings = []
 
         # ── 3. Reflect on combined findings ──
-        combined_data = self._combine_findings(findings)
+        combined_data, cross_domain_connections = self._combine_findings(findings)
         reflection_result = None
 
         if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
@@ -260,7 +270,6 @@ class Coordinator:
                 logger.warning("Coordinator reflection failed (%s): %s", type(exc).__name__, exc)
 
         # ── 3.5. Cross-domain synthesis (ADVANCED+ tiers) ──
-        cross_domain_connections = self._detect_cross_domain_connections(findings)
         if (
             settings.CROSS_DOMAIN_SYNTHESIS_ENABLED
             and tier_cfg.max_tool_calls >= 10
@@ -571,7 +580,7 @@ class Coordinator:
         if connections:
             combined += f"\n\n---\n\n## POSSIBLE CROSS-DOMAIN CONNECTIONS\n\n{connections}"
 
-        return combined
+        return combined, connections
 
     @staticmethod
     def _detect_cross_domain_connections(findings: list[SpecialistFindings]) -> str:
@@ -607,15 +616,6 @@ class Coordinator:
                 if not _NEGATION_PREFIX.search(prefix):
                     return True
             return False
-
-        # Cue families per domain — must match in THAT domain's findings
-        _GLUCOSE_SPIKE_CUES = re.compile(r"\b(?:spike|hyper|elevated|high glucose|above range)")
-        _GLUCOSE_VARIABILITY_CUES = re.compile(r"\b(?:variab|unstable|fluctuat|inconsistent)")
-        _GLUCOSE_IMPROVED_CUES = re.compile(r"\b(?:improved|better|lower average|good control)")
-        _NUTRITION_MEAL_CUES = re.compile(r"\b(?:carb|high.?carb|meal|calories|protein|dinner|lunch|breakfast)")
-        _FITNESS_LOW_CUES = re.compile(r"\b(?:low activity|inactive|sedentary|few steps|minimal activity|barely moved)")
-        _FITNESS_ACTIVE_CUES = re.compile(r"\b(?:active|exercise|workout|walking|running|high activity|good activity)")
-        _SLEEP_POOR_CUES = re.compile(r"\b(?:poor sleep|short sleep|disrupted|insomnia|restless|waking)")
 
         connections: list[str] = []
 
@@ -657,7 +657,6 @@ class Coordinator:
 
         # Rule 4: high calories + low activity
         if "nutrition" in by_domain and "fitness" in by_domain:
-            _HIGH_CAL_CUES = re.compile(r"\b(?:high calori|excess|over.?eat)")
             if _has_cue(by_domain["nutrition"], _HIGH_CAL_CUES, _NS) and _has_cue(by_domain["fitness"], _FITNESS_LOW_CUES, _NS):
                 connections.append(
                     "- **nutrition + fitness** — High calorie intake alongside low activity. "

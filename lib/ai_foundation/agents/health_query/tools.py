@@ -381,6 +381,9 @@ class ToolExecutor:
                         f"Data types to get baseline for. For this domain use: {types_str}"
                     )
                 filtered.append(s)
+            elif func_name in ("investigate_day", "find_patterns"):
+                # These tools are domain-agnostic — pass through without data_type filtering
+                filtered.append(schema)
 
         return filtered
 
@@ -424,8 +427,13 @@ class ToolExecutor:
     async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
         date = args.get("date", "")
-        hour_start = int(args.get("hour_start", 0))
-        hour_end = int(args.get("hour_end", 24))
+        if not date:
+            return f"{NO_DATA_PREFIX}No date specified for investigate_day."
+        try:
+            hour_start = int(args.get("hour_start", 0))
+            hour_end = int(args.get("hour_end", 24))
+        except (ValueError, TypeError):
+            hour_start, hour_end = 0, 24
 
         # Fetch a larger window for day timelines so busy days don't silently drop earlier events.
         timeline_limit = max(settings.QDRANT_RESULT_LIMIT, 200)

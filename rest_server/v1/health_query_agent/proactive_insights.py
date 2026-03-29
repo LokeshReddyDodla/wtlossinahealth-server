@@ -155,8 +155,8 @@ async def submit_insight_feedback(
         recorded = True
     except HTTPException:
         raise
-    except Exception:
-        pass  # Langfuse scoring is best-effort
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Insight feedback failed for %s: %s", payload.insight_id, exc)
 
     return SuccessResponse(
         message="Feedback recorded" if recorded else "Feedback noted",

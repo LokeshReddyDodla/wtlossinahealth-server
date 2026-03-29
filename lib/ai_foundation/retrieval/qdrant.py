@@ -88,7 +88,7 @@ def _expand_data_types(data_types: list[str]) -> list[str]:
     """
     expanded = set(data_types)
     for prefix, pair_types in _STATS_EVENTS_PAIRS.items():
-        if any(prefix in dt for dt in data_types):
+        if any(dt == prefix or dt.startswith(prefix + "_") for dt in data_types):
             expanded.update(pair_types)
     return list(expanded)
 
@@ -145,9 +145,18 @@ class QdrantRetriever:
                 from qdrant_client.models import OrderBy
                 scroll_kwargs["order_by"] = OrderBy(key="start_time", direction="desc")
                 records, _ = await client.scroll(**scroll_kwargs)
-            except Exception:
+            except (ImportError, TypeError) as exc:
+                logger.debug("OrderBy not supported, falling back to unordered scroll: %s", exc)
                 scroll_kwargs.pop("order_by", None)
                 records, _ = await client.scroll(**scroll_kwargs)
+            except Exception as exc:
+                # If first scroll failed for non-OrderBy reasons, try without it once
+                if "order_by" in scroll_kwargs:
+                    logger.debug("Scroll with OrderBy failed (%s), retrying without", exc)
+                    scroll_kwargs.pop("order_by", None)
+                    records, _ = await client.scroll(**scroll_kwargs)
+                else:
+                    raise
 
         results: list[RetrievalResult] = []
         for record in records:
@@ -304,11 +313,15 @@ class QdrantRetriever:
         if len(should_filters) == 1:
             return should_filters[0]
 
-        from qdrant_client.models import MinShould
-        return Filter(
-            should=should_filters,
-            min_should=MinShould(min_count=1, conditions=should_filters),
-        )
+        try:
+            from qdrant_client.models import MinShould
+            return Filter(
+                should=should_filters,
+                min_should=MinShould(min_count=1, conditions=should_filters),
+            )
+        except ImportError:
+            # Older qdrant-client — use should without min_should
+            return Filter(should=should_filters)
 
     # ── Embedding helpers ────────────────────────────────────────────────
 
