@@ -591,7 +591,7 @@ class ModelGateway:
             self._instructor_client.chat.completions.create_with_completion(
                 model=model,
                 response_model=response_model,
-                messages=messages,
+                messages=self._clean_messages(messages),
                 temperature=spec.temperature,
             ),
             timeout=spec.timeout_seconds,

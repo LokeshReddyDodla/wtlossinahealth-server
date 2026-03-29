@@ -125,6 +125,7 @@ class HealthQueryAgent(BaseAgent):
                     domains=specialist_domains,
                     tier=tier,
                     patient_names=ctx.patient_names,
+                    user_role=input.context.user_role,
                 )
             else:
                 # Single-agent path
@@ -138,6 +139,7 @@ class HealthQueryAgent(BaseAgent):
                     tier=tier,
                     intent_data_types=[dt.value for dt in intent.data_types],
                     patient_names=ctx.patient_names,
+                    user_role=input.context.user_role,
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -240,6 +242,7 @@ class HealthQueryAgent(BaseAgent):
                     domains=specialist_domains,
                     tier=tier,
                     patient_names=ctx.patient_names,
+                    user_role=input.context.user_role,
                 )
             else:
                 event_source = self.reasoning_engine.reason_stream(
@@ -252,6 +255,7 @@ class HealthQueryAgent(BaseAgent):
                     tier=tier,
                     intent_data_types=[dt.value for dt in intent.data_types],
                     patient_names=ctx.patient_names,
+                    user_role=input.context.user_role,
                 )
 
             async for event in event_source:
