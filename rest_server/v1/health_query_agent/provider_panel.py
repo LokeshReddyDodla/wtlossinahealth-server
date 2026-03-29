@@ -68,7 +68,11 @@ async def get_provider_panel(
 
     # Access control
     if current_actor.role == ProfileTypeEnum.CARE_PROVIDER:
-        patient_uuids = [UUID(pid) for pid in payload.patient_ids]
+        try:
+            patient_uuids = [UUID(pid) for pid in payload.patient_ids]
+        except (ValueError, TypeError):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Invalid patient ID format — expected UUID")
         accessible = await care_provider_access_service.get_accessible_patients(
             care_provider_id=UUID(current_actor.id),
             patient_ids=patient_uuids,

@@ -388,12 +388,15 @@ def detect_conflicts(evidence_ledger: list[EvidenceItem]) -> list[str]:
     type_to_domain = _get_type_to_domain()
     conflicts: list[str] = []
 
-    # Group items by domain
+    # Group items by domain (dedup: same item only counted once per domain)
     domain_items: dict[str, list[EvidenceItem]] = {}
     for item in evidence_ledger:
+        seen_domains: set[str] = set()
         for dt in item.data_types:
             domain = type_to_domain.get(dt, dt)
-            domain_items.setdefault(domain, []).append(item)
+            if domain not in seen_domains:
+                seen_domains.add(domain)
+                domain_items.setdefault(domain, []).append(item)
 
     for domain, items in domain_items.items():
         has_data_items = [i for i in items if i.had_data]
@@ -430,15 +433,22 @@ def _parse_data_types_from_result(text: str) -> list[str]:
 
     investigate_day has lines like: "  08:00 [meal] ..."
     _format_results has headers like: "MEAL (5 entries):"
+    Validates against known data types to avoid false matches from log tags.
     """
+    type_to_domain = _get_type_to_domain()
+    valid_types = set(type_to_domain.keys())
+
     # Try timeline format: [data_type] tags
     types_from_tags = set(re.findall(r"\[(\w+)\]", text))
-    if types_from_tags:
-        return sorted(types_from_tags)
+    # Filter to known data types only (excludes [NO_DATA], [info], etc.)
+    valid_tags = sorted(t for t in types_from_tags if t in valid_types)
+    if valid_tags:
+        return valid_tags
     # Try section headers: "DATA_TYPE (N entries):"
     types_from_headers = set(re.findall(r"^(\w[\w ]+)\s+\(\d+ entries\)", text, re.MULTILINE))
     if types_from_headers:
-        return sorted(h.lower().replace(" ", "_") for h in types_from_headers)
+        normalized = [h.lower().replace(" ", "_") for h in types_from_headers]
+        return sorted(t for t in normalized if t in valid_types)
     return []
 
 

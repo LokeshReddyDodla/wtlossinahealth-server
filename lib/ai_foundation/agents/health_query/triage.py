@@ -94,19 +94,24 @@ def rank_patients(
             if sev in _URGENT_SEVERITIES:
                 alert_count += 1
 
-        # Clean insights for response (remove internal fields)
-        clean_insights = [
-            {
+        # Clean insights for response (remove internal fields, normalize timestamps)
+        clean_insights = []
+        for ins in insights:
+            created_at = ins.get("created_at")
+            # Normalize to ISO string for JSON serialization
+            if isinstance(created_at, datetime):
+                created_at = created_at.isoformat()
+            elif isinstance(created_at, str) and created_at.endswith("Z"):
+                created_at = created_at[:-1] + "+00:00"
+            clean_insights.append({
                 "insight_id": ins.get("insight_id", ""),
                 "category": ins.get("category", ""),
                 "severity": ins.get("severity", "info"),
                 "title": ins.get("title", ""),
                 "message": ins.get("message", ""),
                 "suggested_query": ins.get("suggested_query"),
-                "created_at": ins.get("created_at"),
-            }
-            for ins in insights
-        ]
+                "created_at": created_at,
+            })
 
         triage_list.append(PatientTriage(
             patient_id=pid,
@@ -129,6 +134,9 @@ def rank_patients(
                     val = ts.timestamp()
                 elif isinstance(ts, str):
                     try:
+                        # Handle MongoDB "Z" suffix and timezone-aware strings
+                        if ts.endswith("Z"):
+                            ts = ts[:-1] + "+00:00"
                         val = datetime.fromisoformat(ts).timestamp()
                     except (ValueError, TypeError):
                         val = 0.0

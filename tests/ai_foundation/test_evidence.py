@@ -351,14 +351,15 @@ class TestGracefulFallback:
         assert items[0].date_range == "2026-03-25"
 
     def test_find_patterns_no_data_types_in_args(self):
-        """find_patterns has no data_types arg — parse from result text."""
+        """find_patterns has no data_types arg — parse from result text using [type] tags."""
         tc = _make_tool_call("tc1", "find_patterns", {"query": "glucose spikes", "days_back": 14})
         resp = _make_response([tc])
-        msgs = [_make_tool_msg("tc1", "CGM_RANGE (3 entries):\n  - ...\n\nMEAL (2 entries):\n  - ...")]
+        # find_patterns output uses [data_type] tags per line
+        msgs = [_make_tool_msg("tc1", "Pattern search: 'glucose spikes' (5 matches):\n  - [cgm_range_stats] avg: 200\n  - [meal] carbs: 80")]
 
         items = extract_evidence_from_tool_round(resp, msgs)
         assert len(items) == 1
-        assert "cgm_range" in items[0].data_types
+        assert "cgm_range_stats" in items[0].data_types
         assert "meal" in items[0].data_types
         assert items[0].date_range == "last 14 days"
 
