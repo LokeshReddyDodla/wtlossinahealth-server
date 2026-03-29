@@ -5,6 +5,7 @@ GET  /health-query-agent/proactive-insights?patient_id=...&limit=20
 POST /health-query-agent/proactive-insights/feedback
 """
 
+import logging
 from typing import Optional
 from uuid import UUID
 

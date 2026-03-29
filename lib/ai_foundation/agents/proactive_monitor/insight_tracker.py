@@ -198,9 +198,12 @@ class InsightTracker:
         await self._maybe_ensure_indexes()
         since = datetime.now(timezone.utc) - timedelta(days=since_days)
 
+        # Cap total documents to avoid unbounded cursor scans
+        max_docs = len(patient_ids) * limit_per_patient * 2  # 2x headroom for skipped docs
         cursor = self._collection.find(
             {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}},
             sort=[("patient_id", 1), ("created_at", -1)],
+            limit=max_docs,
         )
 
         # Group by patient, limit per patient

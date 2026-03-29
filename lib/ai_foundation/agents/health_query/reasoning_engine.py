@@ -198,6 +198,8 @@ class ReasoningEngine:
             self._trim_facts,
             self._trim_insights,
             self._hard_truncate_oldest,
+            self._hard_truncate_oldest,  # second pass for severely over-budget contexts
+            self._hard_truncate_oldest,  # third pass
         ]:
             messages = strategy(messages)
             tokens = self._gateway.count_tokens(messages, model)
@@ -315,7 +317,7 @@ class ReasoningEngine:
                 lines = content.split("\n")
                 kept = [lines[0]]  # header "Patient memories:"
                 for line in lines[1:]:
-                    if any(pk in line for pk in pinned_keys):
+                    if any(line.strip().startswith(f"{pk}:") or f" {pk}:" in line for pk in pinned_keys):
                         kept.append(line)
                 if len(kept) > 1:
                     result.append({**msg, "content": "\n".join(kept)})
@@ -980,7 +982,8 @@ class ReasoningEngine:
             meta = msg.get("_meta", {})
 
             if role == "system":
-                if meta.get("type") != "instruction":
+                _exclude = {"instruction", "plan", "reflection", "system_hint", "tool_summary"}
+                if meta.get("type") not in _exclude:
                     system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
             elif role == "user":
                 user_msg = content

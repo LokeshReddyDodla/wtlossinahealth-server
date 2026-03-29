@@ -41,10 +41,10 @@ class CircuitStats(BaseModel):
     failure_count: int = Field(default=0, description="Failures in current window.")
     success_count: int = Field(default=0, description="Successes in current window.")
     last_failure_at: float | None = Field(
-        default=None, description="Epoch timestamp of last failure."
+        default=None, description="Monotonic clock value of last failure (use for relative comparisons only)."
     )
     last_state_change_at: float | None = Field(
-        default=None, description="Epoch timestamp of last state transition."
+        default=None, description="Monotonic clock value of last state transition (use for relative comparisons only)."
     )
     total_trips: int = Field(
         default=0, description="Total number of times circuit opened."

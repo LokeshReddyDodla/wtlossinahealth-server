@@ -106,6 +106,10 @@ class RateLimiter:
             self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
             # Atomic increment — returns the new count
             current = self._store.incr_key(key)
+            # If INCR recreated an expired key (race between SET NX and INCR),
+            # the new key has no TTL. Re-set with TTL to prevent permanent rate limit.
+            if current == 1:
+                self._store.set_key(key, str(current), expire=config.window_seconds)
         except Exception as exc:
             logger.warning("Rate limiter failed for %s: %s", tenant_id, exc)
             # Fail open — allow the request on Redis errors
@@ -162,7 +166,9 @@ class RateLimiter:
         key = self._build_key(tenant_id, priority)
         try:
             self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
-            self._store.incr_key(key)
+            current = self._store.incr_key(key)
+            if current == 1:
+                self._store.set_key(key, str(current), expire=config.window_seconds)
         except Exception as exc:
             logger.warning("Rate limiter record failed for %s: %s", tenant_id, exc)
 
