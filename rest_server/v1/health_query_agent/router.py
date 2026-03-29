@@ -13,3 +13,4 @@ from .admin_config import *
 from .proactive_scan import *
 from .proactive_insights import *
 from .patient_memories import *
+from .provider_panel import *

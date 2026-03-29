@@ -154,6 +154,42 @@ class InsightTracker:
             results.append(doc)
         return results
 
+    async def get_insights_for_patients(
+        self,
+        patient_ids: list[str],
+        *,
+        since_days: int = 7,
+        limit_per_patient: int = 5,
+    ) -> dict[str, list[dict]]:
+        """Get recent insights for multiple patients in a single query.
+
+        Returns dict mapping patient_id → list of recent insights (newest first).
+        Patients with no insights are not included in the result.
+        """
+        if not patient_ids:
+            return {}
+
+        await self._maybe_ensure_indexes()
+        from datetime import timedelta
+        since = datetime.utcnow() - timedelta(days=since_days)
+
+        cursor = self._collection.find(
+            {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}},
+            sort=[("created_at", -1)],
+        )
+
+        # Group by patient, limit per patient
+        by_patient: dict[str, list[dict]] = {}
+        async for doc in cursor:
+            pid = doc["patient_id"]
+            if pid not in by_patient:
+                by_patient[pid] = []
+            if len(by_patient[pid]) < limit_per_patient:
+                doc["_id"] = str(doc["_id"])
+                by_patient[pid].append(doc)
+
+        return by_patient
+
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""
         await self._collection.create_index(
