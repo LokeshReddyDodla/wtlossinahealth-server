@@ -89,6 +89,7 @@ class Coordinator:
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
     ) -> ReasoningResult:
         """Full orchestration: plan -> specialists -> reflect -> respond."""
         async for item in self._orchestrate_core(
@@ -101,6 +102,7 @@ class Coordinator:
             domains=domains,
             tier=tier,
             patient_names=patient_names,
+            user_role=user_role,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -120,6 +122,7 @@ class Coordinator:
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
     ) -> AsyncIterator[str]:
         """Streaming orchestration with SSE events."""
         async for item in self._orchestrate_core(
@@ -132,6 +135,7 @@ class Coordinator:
             domains=domains,
             tier=tier,
             patient_names=patient_names,
+            user_role=user_role,
             emit_events=True,
         ):
             if isinstance(item, str):
@@ -151,6 +155,7 @@ class Coordinator:
         domains: list[str],
         tier: ReasoningTier = ReasoningTier.STANDARD,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
         emit_events: bool = False,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
@@ -235,7 +240,9 @@ class Coordinator:
                 reflect_messages.append({
                     "role": "system",
                     "content": f"Investigation findings:\n\n{combined_data}",
+                    "_meta": {"type": "gathered_data"},
                 })
+                reflect_messages = self._prune_for_budget(reflect_messages, tier_cfg.thinker_model)
                 reflection_result = await self._reflector.reflect(
                     messages=reflect_messages,
                     user_question=user_message,
@@ -257,7 +264,11 @@ class Coordinator:
             response_prompt=response_prompt,
             combined_data=combined_data,
             reflection=reflection_result,
+            findings=findings,
+            user_role=user_role,
         )
+
+        responder_messages = self._prune_for_budget(responder_messages, tier_cfg.responder_model)
 
         if emit_events:
             # Stream final response
@@ -306,6 +317,66 @@ class Coordinator:
                 tier=tier.value,
             )
 
+    # ── Context window protection ────────────────────────────────────
+
+    def _prune_for_budget(self, messages: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
+        """Ensure messages fit within model's context window.
+
+        Simpler than ReasoningEngine's 5-strategy pruner — the Coordinator's
+        messages are already structured (base + combined_data + evidence).
+        Strategy: repeatedly halve the longest non-critical message until under budget.
+        """
+        budget = self._get_input_budget(model)
+        tokens = self._gateway.count_tokens(messages, model)
+
+        if tokens <= budget:
+            return messages
+
+        logger.info("Coordinator token budget exceeded: %d/%d — truncating", tokens, budget)
+        messages = list(messages)  # copy once
+
+        _PROTECTED = frozenset({"instruction", "evidence_summary", "user_question"})
+        max_iterations = 5  # safety limit
+
+        for _ in range(max_iterations):
+            # Find the longest non-critical message
+            longest_idx = -1
+            longest_len = 0
+            for i, msg in enumerate(messages):
+                if msg.get("_meta", {}).get("type") in _PROTECTED:
+                    continue
+                content_len = len(msg.get("content", "") or "")
+                if content_len > longest_len:
+                    longest_len = content_len
+                    longest_idx = i
+
+            if longest_idx < 0 or longest_len <= 500:
+                break  # nothing left to truncate
+
+            # Halve the longest message
+            target = max(longest_len // 2, 500)
+            msg = messages[longest_idx]
+            messages[longest_idx] = {
+                **msg,
+                "content": msg["content"][:target] + "\n... (truncated to fit context window)",
+            }
+
+            tokens = self._gateway.count_tokens(messages, model)
+            logger.info("Coordinator prune: %d tokens (%.0f%%)", tokens, tokens / max(budget, 1) * 100)
+            if tokens <= budget:
+                return messages
+
+        logger.warning("Coordinator pruning exhausted — still at %d/%d tokens", tokens, budget)
+        return messages  # best effort
+
+    def _get_input_budget(self, model: str) -> int:
+        """Calculate the max input tokens for a model."""
+        window = self._gateway.get_model_window(model)
+        return min(
+            int(window * settings.CONTEXT_BUDGET_RATIO),
+            window - settings.CONTEXT_RESPONSE_RESERVE,
+        )
+
     # ── Helpers ────────────────────────────────────────────────────────
 
     @staticmethod
@@ -328,8 +399,16 @@ class Coordinator:
         response_prompt: str,
         combined_data: str,
         reflection: Any = None,
+        findings: list | None = None,
+        user_role: str = "patient",
     ) -> list[dict[str, Any]]:
         """Build messages for the responder model."""
+        from lib.ai_foundation.agents.health_query.evidence import (
+            build_summary_from_findings,
+            format_patient,
+            format_provider,
+        )
+
         messages: list[dict[str, Any]] = []
 
         # Keep system messages from base (system prompt, context)
@@ -337,7 +416,7 @@ class Coordinator:
             if msg.get("role") == "system":
                 messages.append(msg)
 
-        messages.append({"role": "system", "content": response_prompt})
+        messages.append({"role": "system", "content": response_prompt, "_meta": {"type": "instruction"}})
 
         # Add combined investigation data
         data_text = combined_data
@@ -346,6 +425,7 @@ class Coordinator:
         messages.append({
             "role": "system",
             "content": f"HEALTH DATA FROM MULTI-DOMAIN INVESTIGATION:\n\n{data_text}",
+            "_meta": {"type": "gathered_data"},
         })
 
         # Add safety concerns from reflection
@@ -354,11 +434,23 @@ class Coordinator:
             messages.append({
                 "role": "system",
                 "content": f"SAFETY NOTE — mention these concerns:\n{concerns}",
+                "_meta": {"type": "reflection"},
             })
 
-        # Add user message
-        for msg in base_messages:
-            if msg.get("role") == "user":
+        # Inject evidence summary from specialist findings
+        if findings:
+            summary = build_summary_from_findings(findings)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            if evidence_text:
+                messages.append({
+                    "role": "system",
+                    "content": f"INVESTIGATION EVIDENCE:\n{evidence_text}",
+                    "_meta": {"type": "evidence_summary"},
+                })
+
+        # Add user message (the actual question, not history)
+        for msg in reversed(base_messages):
+            if msg.get("role") == "user" and msg.get("_meta", {}).get("type") == "user_question":
                 messages.append(msg)
                 break
 

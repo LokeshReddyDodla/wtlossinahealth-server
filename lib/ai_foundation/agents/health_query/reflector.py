@@ -138,17 +138,23 @@ class ReflectionEngine:
 
     @staticmethod
     def _extract_data_summary(messages: list[dict[str, Any]]) -> str:
-        """Extract a summary of all tool results from the conversation."""
+        """Extract a summary of all tool results / gathered data from the conversation."""
         parts: list[str] = []
         for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "") or ""
+            meta_type = msg.get("_meta", {}).get("type", "")
+
             if role == "tool" and content:
-                # Truncate individual tool results
+                # Tool result messages (reasoning engine path)
                 if len(content) > 500:
                     content = content[:settings.STEP_LOG_TRUNCATION_CHARS] + "..."
                 parts.append(content)
-            elif role == "system" and "Phase 1 investigation results" in content:
-                parts.append(content[:1000])
+            elif meta_type == "gathered_data" and content:
+                # Coordinator path: combined specialist findings
+                parts.append(content[:2000])
+            elif role == "system" and content.startswith("Investigation findings:"):
+                # Coordinator path: explicit findings block
+                parts.append(content[:2000])
 
         return "\n\n---\n\n".join(parts) if parts else ""

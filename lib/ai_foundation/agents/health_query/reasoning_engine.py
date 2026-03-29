@@ -55,7 +55,7 @@ from lib.ai_foundation.agents.health_query.context_loader import build_context_m
 logger = logging.getLogger(__name__)
 
 # Meta types that must NEVER be pruned (system instructions + current question)
-_CRITICAL_TYPES = frozenset({"instruction", "user_question"})
+_CRITICAL_TYPES = frozenset({"instruction", "user_question", "evidence_summary"})
 
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
@@ -371,6 +371,7 @@ class ReasoningEngine:
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
     ) -> ReasoningResult:
         """Run the full reasoning loop and return the result."""
         async for item in self._reason_core(
@@ -383,6 +384,7 @@ class ReasoningEngine:
             tier=tier,
             intent_data_types=intent_data_types,
             patient_names=patient_names,
+            user_role=user_role,
             emit_events=False,
         ):
             if isinstance(item, ReasoningResult):
@@ -402,6 +404,7 @@ class ReasoningEngine:
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
     ) -> AsyncIterator[str]:
         """Run the reasoning loop, yielding SSE events as the doctor thinks."""
         async for item in self._reason_core(
@@ -414,6 +417,7 @@ class ReasoningEngine:
             tier=tier,
             intent_data_types=intent_data_types,
             patient_names=patient_names,
+            user_role=user_role,
             emit_events=True,
         ):
             if isinstance(item, str):
@@ -433,9 +437,16 @@ class ReasoningEngine:
         tier: ReasoningTier = ReasoningTier.STANDARD,
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
+        user_role: str = "patient",
         emit_events: bool = False,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
+        from lib.ai_foundation.agents.health_query.evidence import (
+            EvidenceItem,
+            extract_evidence_from_tool_round,
+            extract_evidence_from_fallback,
+        )
+
         tier_cfg = TIER_CONFIGS[tier]
         tool_schemas = self._tools.get_openai_schemas()
         messages = build_context_messages(
@@ -451,6 +462,7 @@ class ReasoningEngine:
         rounds_used = 0
         seen_calls: set[str] = set()  # deduplication
         budget_remaining = tier_cfg.max_tool_calls
+        evidence_ledger: list[EvidenceItem] = []  # pruning-safe evidence trail
 
         pipeline_start = time.perf_counter()
         perf: dict[str, int] = {
@@ -526,6 +538,11 @@ class ReasoningEngine:
                     perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
+                    evidence_ledger.append(extract_evidence_from_fallback(
+                        "look_up",
+                        {"data_types": intent_data_types, "limit": 15},
+                        fallback_result,
+                    ))
                     steps.append(ReasoningStep(
                         round=round_num,
                         thought="Fetching data based on query intent.",
@@ -576,6 +593,7 @@ class ReasoningEngine:
                 messages.append(tagged)
 
             total_tools += tool_round.executed_count
+            evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
 
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
@@ -630,6 +648,7 @@ class ReasoningEngine:
                 total_cost=total_cost,
                 total_tools=total_tools,
                 patient_names=patient_names,
+                evidence_ledger=evidence_ledger,
             )
             perf["reflection_ms"] += int((time.perf_counter() - reflection_start) * 1000)
             total_cost = reflection["total_cost"]
@@ -647,7 +666,10 @@ class ReasoningEngine:
                 "Building personalized insights...",
             )
 
-            responder_messages = self._build_responder_messages(messages, response_prompt)
+            responder_messages = self._build_responder_messages(
+                messages, response_prompt,
+                user_role=user_role, evidence_ledger=evidence_ledger,
+            )
             responder_messages = self._prune_if_needed(responder_messages, tier_cfg.responder_model)
 
             tokens = self._gateway.count_tokens(responder_messages, tier_cfg.responder_model)
@@ -698,6 +720,8 @@ class ReasoningEngine:
                 messages=messages,
                 response_prompt=response_prompt,
                 model_id=tier_cfg.responder_model,
+                user_role=user_role,
+                evidence_ledger=evidence_ledger,
             )
             perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
             perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
@@ -794,6 +818,7 @@ class ReasoningEngine:
         total_cost: float,
         total_tools: int,
         patient_names: dict[str, str] | None = None,
+        evidence_ledger: list | None = None,
     ) -> dict[str, Any]:
         """Run reflection and optional gap-filling follow-up.
 
@@ -846,6 +871,7 @@ class ReasoningEngine:
                 total_cost += response.usage.cost.total_cost if response.usage.cost else 0
 
                 if response.has_tool_calls:
+                    from lib.ai_foundation.agents.health_query.evidence import extract_evidence_from_tool_round
                     tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
                     messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": 0}})
                     tc_by_id = {tc.id: tc for tc in response.tool_calls}
@@ -854,6 +880,8 @@ class ReasoningEngine:
                         tool_name = tc.function_name if tc else "unknown"
                         messages.append({**msg, "_meta": {"type": "tool_result", "round": 0, "tool": tool_name}})
                     total_tools += tool_round.executed_count
+                    if evidence_ledger is not None:
+                        evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
 
                 # Re-reflect if we have budget for another round
                 if reflection_round < max_reflection_rounds - 1:
@@ -896,12 +924,21 @@ class ReasoningEngine:
         self,
         reasoning_messages: list[dict[str, Any]],
         response_prompt: str,
+        *,
+        user_role: str = "patient",
+        evidence_ledger: list | None = None,
     ) -> list[dict[str, Any]]:
         """Build messages for the responder model.
 
         Takes the full reasoning conversation and restructures it for the
-        responder: system prompt + gathered data summary + user question.
+        responder: system prompt + gathered data summary + evidence + user question.
         """
+        from lib.ai_foundation.agents.health_query.evidence import (
+            build_summary,
+            format_patient,
+            format_provider,
+        )
+
         # Extract system messages (with _meta), user message, and all tool results
         system_msgs: list[dict[str, Any]] = []
         user_msg = ""
@@ -942,6 +979,17 @@ class ReasoningEngine:
                 "_meta": {"type": "gathered_data"},
             })
 
+        # Inject evidence summary (pruning-safe — built from ledger, not messages)
+        if evidence_ledger is not None:
+            summary = build_summary(evidence_ledger)
+            evidence_text = format_provider(summary) if user_role in ("care_provider", "admin") else format_patient(summary)
+            if evidence_text:
+                messages.append({
+                    "role": "system",
+                    "content": f"INVESTIGATION EVIDENCE:\n{evidence_text}",
+                    "_meta": {"type": "evidence_summary"},
+                })
+
         messages.append({"role": "user", "content": user_msg, "_meta": {"type": "user_question"}})
         return messages
 
@@ -951,9 +999,14 @@ class ReasoningEngine:
         messages: list[dict[str, Any]],
         response_prompt: str,
         model_id: str,
+        user_role: str = "patient",
+        evidence_ledger: list | None = None,
     ) -> Any:
         """Generate the final polished response from the responder model."""
-        responder_messages = self._build_responder_messages(messages, response_prompt)
+        responder_messages = self._build_responder_messages(
+            messages, response_prompt,
+            user_role=user_role, evidence_ledger=evidence_ledger,
+        )
         responder_messages = self._prune_if_needed(responder_messages, model_id)
 
         tokens = self._gateway.count_tokens(responder_messages, model_id)
