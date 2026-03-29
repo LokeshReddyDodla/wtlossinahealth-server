@@ -50,6 +50,7 @@ _LANE_RULE = (
     "\n2. You are ONLY responsible for your domain. Do NOT fetch or discuss data from other domains (other specialists handle those)."
     "\n3. Only use the data_types listed in your tool descriptions."
     "\n4. If tools return no data, say so briefly and stop."
+    "\n5. When you find notable events (spikes, drops, anomalies), include exact timing (date and time) when available so other specialists can cross-reference."
 )
 
 GLUCOSE_SPEC = DomainSpec(
@@ -68,7 +69,8 @@ GLUCOSE_SPEC = DomainSpec(
         "- Spike patterns: timing, severity, frequency\n"
         "- Hypo/hyper event clustering and triggers\n"
         "- Day-to-day and week-to-week trends\n"
-        "- Compare against the patient's OWN baseline, not population norms"
+        "- Compare against the patient's OWN baseline, not population norms\n"
+        "- When reporting spikes or unusual readings, note exact time when available — helps correlate with meals and activity"
         + _LANE_RULE
     ),
 )
@@ -82,7 +84,8 @@ NUTRITION_SPEC = DomainSpec(
         "- Meal timing patterns (late dinners, skipped meals)\n"
         "- Macro distribution and balance\n"
         "- Alignment with patient's dietary preferences and goals\n"
-        "- Specific, actionable food recommendations based on their actual data"
+        "- Specific, actionable food recommendations based on their actual data\n"
+        "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses"
         + _LANE_RULE
     ),
 )
@@ -98,7 +101,8 @@ FITNESS_SPEC = DomainSpec(
         "- Daily steps, active minutes, calories burned\n"
         "- Activity patterns and consistency\n"
         "- Sedentary periods and their health impact\n"
-        "- Progress toward the patient's activity goals"
+        "- Progress toward the patient's activity goals\n"
+        "- When reporting activity or inactivity, note time of day when available — helps correlate with glucose patterns"
         + _LANE_RULE
     ),
 )
@@ -128,7 +132,8 @@ SLEEP_SPEC = DomainSpec(
         "- Sleep quality patterns and disturbances\n"
         "- Sleep apnea indicators (very common in obese patients)\n"
         "- Sleep consistency (regular vs irregular schedule)\n"
-        "- Flag concerning patterns: chronic short sleep, frequent waking, deteriorating quality"
+        "- Flag concerning patterns: chronic short sleep, frequent waking, deteriorating quality\n"
+        "- When reporting sleep issues, note the date — helps correlate with next-day glucose patterns"
         + _LANE_RULE
     ),
 )

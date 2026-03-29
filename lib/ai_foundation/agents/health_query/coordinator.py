@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
@@ -381,7 +382,11 @@ class Coordinator:
 
     @staticmethod
     def _combine_findings(findings: list[SpecialistFindings]) -> str:
-        """Combine findings from multiple specialists into a single text block."""
+        """Combine findings from multiple specialists into a single text block.
+
+        Appends a POSSIBLE CROSS-DOMAIN CONNECTIONS section when deterministic
+        pattern matching detects overlapping health signals across domains.
+        """
         if not findings:
             return "No data gathered."
 
@@ -390,7 +395,107 @@ class Coordinator:
             header = f.domain.upper().replace("_", " ")
             sections.append(f"## {header} FINDINGS\n\n{f.findings}")
 
-        return "\n\n---\n\n".join(sections)
+        combined = "\n\n---\n\n".join(sections)
+
+        # Append cross-domain hypotheses if detected
+        connections = Coordinator._detect_cross_domain_connections(findings)
+        if connections:
+            combined += f"\n\n---\n\n## POSSIBLE CROSS-DOMAIN CONNECTIONS\n\n{connections}"
+
+        return combined
+
+    @staticmethod
+    def _detect_cross_domain_connections(findings: list[SpecialistFindings]) -> str:
+        """Scan specialist findings for known health correlations.
+
+        Domain-driven: both domains must be present AND each must contain
+        matching cue patterns. Returns hypothesis text or empty string.
+        Never asserts causation — phrased as "check the correlation."
+        """
+        # Index findings by domain
+        by_domain: dict[str, str] = {}
+        for f in findings:
+            if f.findings:
+                by_domain[f.domain] = f.findings.lower()
+
+        if len(by_domain) < 2:
+            return ""
+
+        # Negation guard — if the cue word appears only in negated context, skip
+        _NEGATION_PREFIX = re.compile(r"\b(?:no|not|without|zero|none)\s+")
+
+        def _has_cue(text: str, cue_pattern: re.Pattern, negation_sensitive: bool = False) -> bool:
+            """Check if text contains a cue pattern, optionally filtering negations."""
+            matches = list(cue_pattern.finditer(text))
+            if not matches:
+                return False
+            if not negation_sensitive:
+                return True
+            # Return True if ANY match is not preceded by a negation
+            for match in matches:
+                start = max(0, match.start() - 15)
+                prefix = text[start:match.start()]
+                if not _NEGATION_PREFIX.search(prefix):
+                    return True
+            return False
+
+        # Cue families per domain — must match in THAT domain's findings
+        _GLUCOSE_SPIKE_CUES = re.compile(r"\b(?:spike|hyper|elevated|high glucose|above range)")
+        _GLUCOSE_VARIABILITY_CUES = re.compile(r"\b(?:variab|unstable|fluctuat|inconsistent)")
+        _GLUCOSE_IMPROVED_CUES = re.compile(r"\b(?:improved|better|lower average|good control)")
+        _NUTRITION_MEAL_CUES = re.compile(r"\b(?:carb|high.?carb|meal|calories|protein|dinner|lunch|breakfast)")
+        _FITNESS_LOW_CUES = re.compile(r"\b(?:low activity|inactive|sedentary|few steps|minimal activity|barely moved)")
+        _FITNESS_ACTIVE_CUES = re.compile(r"\b(?:active|exercise|workout|walking|running|high activity|good activity)")
+        _SLEEP_POOR_CUES = re.compile(r"\b(?:poor sleep|short sleep|disrupted|insomnia|restless|waking)")
+
+        connections: list[str] = []
+
+        # All cue checks are negation-sensitive — "not elevated", "no poor sleep",
+        # "not sedentary" should not trigger connections.
+        _NS = True  # shorthand for negation_sensitive
+
+        # Rule 1: glucose spikes + nutrition meals
+        if "glucose" in by_domain and "nutrition" in by_domain:
+            if _has_cue(by_domain["glucose"], _GLUCOSE_SPIKE_CUES, _NS) and _has_cue(by_domain["nutrition"], _NUTRITION_MEAL_CUES, _NS):
+                connections.append(
+                    "- **glucose + nutrition** — Spike/elevated language in glucose findings "
+                    "and meal/carb data in nutrition findings. Check meal timing against "
+                    "spike timing for possible dietary triggers."
+                )
+
+        # Rule 2: glucose elevated + fitness low
+        if "glucose" in by_domain and "fitness" in by_domain:
+            g = by_domain["glucose"]
+            f = by_domain["fitness"]
+            if (_has_cue(g, _GLUCOSE_SPIKE_CUES, _NS) or _has_cue(g, _GLUCOSE_VARIABILITY_CUES, _NS)) and _has_cue(f, _FITNESS_LOW_CUES, _NS):
+                connections.append(
+                    "- **glucose + fitness** — Elevated/variable glucose alongside low activity. "
+                    "Active days may show better glucose control — compare dates."
+                )
+            elif _has_cue(g, _GLUCOSE_IMPROVED_CUES, _NS) and _has_cue(f, _FITNESS_ACTIVE_CUES, _NS):
+                connections.append(
+                    "- **glucose + fitness** — Improved glucose readings align with activity data. "
+                    "Compare active days with glucose trends to check the correlation."
+                )
+
+        # Rule 3: glucose variability + poor sleep
+        if "glucose" in by_domain and "sleep" in by_domain:
+            if _has_cue(by_domain["glucose"], _GLUCOSE_VARIABILITY_CUES, _NS) and _has_cue(by_domain["sleep"], _SLEEP_POOR_CUES, _NS):
+                connections.append(
+                    "- **glucose + sleep** — Glucose variability alongside poor sleep data. "
+                    "Sleep quality affects insulin sensitivity — compare dates."
+                )
+
+        # Rule 4: high calories + low activity
+        if "nutrition" in by_domain and "fitness" in by_domain:
+            _HIGH_CAL_CUES = re.compile(r"\b(?:high calori|excess|over.?eat)")
+            if _has_cue(by_domain["nutrition"], _HIGH_CAL_CUES, _NS) and _has_cue(by_domain["fitness"], _FITNESS_LOW_CUES, _NS):
+                connections.append(
+                    "- **nutrition + fitness** — High calorie intake alongside low activity. "
+                    "This combination may explain trends in other metrics."
+                )
+
+        return "\n".join(connections)
 
     @staticmethod
     def _build_responder_messages(
