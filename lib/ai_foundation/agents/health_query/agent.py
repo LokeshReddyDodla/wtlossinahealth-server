@@ -339,6 +339,7 @@ class HealthQueryAgent(BaseAgent):
         ))
         await _maybe_await(self.gateway.langfuse_trace_input(
             trace_id=trace_id,
+            name="health_query",
             input_text=input.message,
             metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
         ))

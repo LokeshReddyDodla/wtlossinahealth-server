@@ -184,6 +184,7 @@ class ProactiveMonitorAgent(BaseAgent):
             ))
             await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
+                name="proactive_monitor",
                 input_text=data_text[:500] if data_text else "(no data)",
                 metadata={
                     "agent": self.agent_id,

@@ -236,19 +236,22 @@ class ModelGateway:
 
     _langfuse_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_session", default=None)
     _langfuse_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_user", default=None)
+    _langfuse_trace_name: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_trace_name", default=None)
 
     def set_langfuse_context(self, *, session_id: str | None = None, user_id: str | None = None) -> None:
         """Set session/user context for Langfuse traces. Called once per request."""
         self._langfuse_session_id.set(session_id)
         self._langfuse_user_id.set(user_id)
 
-    def langfuse_trace_input(self, *, trace_id: str, input_text: str, metadata: dict | None = None) -> None:
+    def langfuse_trace_input(self, *, trace_id: str, name: str, input_text: str, metadata: dict | None = None) -> None:
         """Set the trace-level input (user message). Called at start of request."""
+        self._langfuse_trace_name.set(name)
         if not self._langfuse_client:
             return
         try:
             self._langfuse_client.trace(
                 id=trace_id,
+                name=name,
                 input=input_text,
                 session_id=self._langfuse_session_id.get(),
                 user_id=self._langfuse_user_id.get(),
@@ -393,7 +396,7 @@ class ModelGateway:
             "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
             "tools": tools,
-            "metadata": {"trace_id": trace_id},
+            "metadata": self._trace_metadata(trace_id),
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
@@ -575,6 +578,14 @@ class ModelGateway:
             overrides["timeout_seconds"] = timeout
         return spec.with_overrides(**overrides) if overrides else spec
 
+    def _trace_metadata(self, trace_id: str) -> dict[str, Any]:
+        """Build LiteLLM metadata dict with trace_id and optional trace_name."""
+        meta: dict[str, Any] = {"trace_id": trace_id}
+        trace_name = self._langfuse_trace_name.get()
+        if trace_name:
+            meta["trace_name"] = trace_name
+        return meta
+
     # -- Internal: LiteLLM complete -----------------------------------------
 
     async def _do_complete(
@@ -590,7 +601,7 @@ class ModelGateway:
             "model": model,
             "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
-            "metadata": {"trace_id": trace_id},
+            "metadata": self._trace_metadata(trace_id),
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
@@ -633,6 +644,7 @@ class ModelGateway:
                 response_model=response_model,
                 messages=self._clean_messages(messages),
                 temperature=spec.temperature,
+                metadata=self._trace_metadata(trace_id),
             ),
             timeout=spec.timeout_seconds,
         )
@@ -671,7 +683,7 @@ class ModelGateway:
             "temperature": spec.temperature,
             "stream": True,
             "stream_options": {"include_usage": True},
-            "metadata": {"trace_id": trace_id},
+            "metadata": self._trace_metadata(trace_id),
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
