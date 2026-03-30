@@ -456,35 +456,47 @@ class ModelGateway:
     ) -> AsyncIterator[StreamChunk]:
         """Send messages and yield response tokens as they arrive.
 
-        Tries the primary model first. On failure, falls back and restarts
-        streaming from the fallback model (does NOT resume mid-stream).
-
-        Warning: if fallback occurs, the consumer receives partial output
-        from the failed model followed by a full stream from the fallback model.
+        Tries the primary model first. On failure, falls back to the next model
+        ONLY if no tokens were yielded yet. If tokens were already sent to the
+        client, re-raises immediately to avoid garbled concatenation.
         """
         trace_id = trace_id or str(uuid4())
         chain = self._resolve_chain(task, model_id)
 
         last_error: Exception | None = None
+        failed_attempts: list[str] = []
         for spec in chain:
             circuit_key = _circuit_key(spec)
             if not self._circuit_breaker.is_available(circuit_key):
                 continue
 
             effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
+            tokens_yielded = 0
             try:
                 async for chunk in self._do_stream(effective_spec, messages, trace_id):
+                    if chunk.delta:
+                        tokens_yielded += 1
                     yield chunk
                 return  # stream completed successfully
             except Exception as exc:
-                last_error = exc
                 self._circuit_breaker.record_failure(circuit_key)
+                if tokens_yielded > 0:
+                    logger.error(
+                        "ModelGateway.stream failed for %s after %d chunks yielded, "
+                        "cannot fallback: %s", spec.model_id, tokens_yielded, exc,
+                    )
+                    raise
+                failed_attempts.append(f"{spec.model_id}:{type(exc).__name__}")
+                last_error = exc
                 logger.warning(
-                    "ModelGateway.stream failed for %s: %s", spec.model_id, exc
+                    "ModelGateway.stream failed for %s (pre-output), falling back: %s",
+                    spec.model_id, exc,
                 )
 
         raise AllProvidersUnavailableError(
-            f"All models failed for task {task.value!r}. Last error: {last_error}"
+            f"All stream models failed for task {task.value!r}. "
+            f"Attempts: {', '.join(failed_attempts) or 'none (all circuits open)'}. "
+            f"Last error: {last_error}"
         )
 
     # -- Accessors ----------------------------------------------------------
@@ -532,6 +544,7 @@ class ModelGateway:
         chain = self._resolve_chain(task, model_id)
 
         last_error: Exception | None = None
+        failed_attempts: list[str] = []
         for spec in chain:
             circuit_key = _circuit_key(spec)
             if not self._circuit_breaker.is_available(circuit_key):
@@ -543,13 +556,16 @@ class ModelGateway:
                 return await call(effective_spec, trace_id)
             except Exception as exc:
                 last_error = exc
+                failed_attempts.append(f"{spec.model_id}:{type(exc).__name__}")
                 self._circuit_breaker.record_failure(circuit_key)
                 logger.warning(
                     "%s failed for %s: %s", method_name, spec.model_id, exc
                 )
 
         raise AllProvidersUnavailableError(
-            f"All models failed for task {task.value!r}. Last error: {last_error}"
+            f"All models failed for task {task.value!r}. "
+            f"Attempts: {', '.join(failed_attempts) or 'none (all circuits open)'}. "
+            f"Last error: {last_error}"
         )
 
     # -- Internal: resolution -----------------------------------------------

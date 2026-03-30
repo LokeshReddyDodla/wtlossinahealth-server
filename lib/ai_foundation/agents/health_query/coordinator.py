@@ -25,6 +25,7 @@ from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
     sse_done,
+    sse_error,
     sse_plan,
     sse_reflection,
     sse_specialist_done,
@@ -110,6 +111,7 @@ class Coordinator:
         tier: ReasoningTier = ReasoningTier.STANDARD,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
     ) -> ReasoningResult:
         """Full orchestration: plan -> specialists -> reflect -> respond."""
         async for item in self._orchestrate_core(
@@ -124,6 +126,7 @@ class Coordinator:
             patient_names=patient_names,
             user_role=user_role,
             emit_events=False,
+            trace_id=trace_id,
         ):
             if isinstance(item, ReasoningResult):
                 return item
@@ -143,6 +146,7 @@ class Coordinator:
         tier: ReasoningTier = ReasoningTier.STANDARD,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
+        trace_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Streaming orchestration with SSE events."""
         async for item in self._orchestrate_core(
@@ -157,6 +161,7 @@ class Coordinator:
             patient_names=patient_names,
             user_role=user_role,
             emit_events=True,
+            trace_id=trace_id,
         ):
             if isinstance(item, str):
                 yield item
@@ -177,6 +182,7 @@ class Coordinator:
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
         emit_events: bool = False,
+        trace_id: str | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
@@ -229,12 +235,14 @@ class Coordinator:
                     max_rounds=budget_per_specialist,
                     model_id=tier_cfg.thinker_model,
                     patient_names=patient_names,
+                    trace_id=trace_id,
                 )
                 for _, spec in active_specialists
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             findings: list[SpecialistFindings] = []
+            failed_domains: list[str] = []
             for (domain, _), result in zip(active_specialists, results):
                 if isinstance(result, SpecialistFindings):
                     findings.append(result)
@@ -244,11 +252,13 @@ class Coordinator:
                         summary = result.findings[:settings.SUMMARY_TRUNCATION_CHARS] if result.findings else "No findings"
                         yield sse_specialist_done(domain, summary)
                 else:
+                    failed_domains.append(domain)
                     logger.warning("Specialist %s failed: %s", domain, result)
                     if emit_events:
                         yield sse_specialist_done(domain, f"Error: {result}")
         else:
             findings = []
+            failed_domains = []
 
         # ── 3. Reflect on combined findings ──
         combined_data, cross_domain_connections = self._combine_findings(findings)
@@ -312,6 +322,7 @@ class Coordinator:
             reflection=reflection_result,
             findings=findings,
             user_role=user_role,
+            failed_domains=failed_domains,
         )
 
         responder_messages = self._prune_for_budget(responder_messages, tier_cfg.responder_model)
@@ -322,16 +333,28 @@ class Coordinator:
 
             full_response_parts: list[str] = []
 
-            async for chunk in self._gateway.stream(
-                messages=responder_messages,
-                task=ModelTask.RESPONSE_GENERATION,
-                model_id=tier_cfg.responder_model,
-            ):
-                if chunk.delta:
-                    full_response_parts.append(chunk.delta)
-                    yield sse_token(chunk.delta)
-                if chunk.finished and chunk.usage:
-                    total_cost += safe_cost(chunk)
+            try:
+                async for chunk in self._gateway.stream(
+                    messages=responder_messages,
+                    task=ModelTask.RESPONSE_GENERATION,
+                    model_id=tier_cfg.responder_model,
+                ):
+                    if chunk.delta:
+                        full_response_parts.append(chunk.delta)
+                        yield sse_token(chunk.delta)
+                    if chunk.finished and chunk.usage:
+                        total_cost += safe_cost(chunk)
+            except Exception as exc:
+                logger.error(
+                    "Coordinator responder stream failed after %d chunks: %s",
+                    len(full_response_parts), exc,
+                )
+                yield sse_error(
+                    message="The response was interrupted. Please try again.",
+                    code="stream_error",
+                    fallback_text="".join(full_response_parts) or None,
+                )
+                return
 
             # Compute evidence confidence for SSE done payload
             evidence = self._compute_evidence_metrics(findings, reflection_result)
@@ -678,6 +701,7 @@ class Coordinator:
         reflection: Any = None,
         findings: list | None = None,
         user_role: str = "patient",
+        failed_domains: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Build messages for the responder model."""
         from lib.ai_foundation.agents.health_query.evidence import (
@@ -713,6 +737,19 @@ class Coordinator:
                 "role": "system",
                 "content": f"SAFETY NOTE — mention these concerns:\n{concerns}",
                 "_meta": {"type": "reflection"},
+            })
+
+        # Note failed domains so the LLM acknowledges the gap
+        if failed_domains:
+            domain_list = ", ".join(failed_domains)
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"DATA GAP: The following domains could not be retrieved due to a "
+                    f"system error: {domain_list}. Briefly acknowledge this gap in your "
+                    f"response so the user knows this data was not available."
+                ),
+                "_meta": {"type": "data_gap"},
             })
 
         # Inject evidence summary from specialist findings

@@ -49,6 +49,7 @@ class AIFoundationSettings(BaseSettings):
     REASONING_RESPONDER_MODEL: str = Field(default="gpt-5.1", description="Model for final response generation")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=2000, description="Max chars per tool result")
+    STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
 
     # ── Planning ──────────────────────────────────────────────────────────
 

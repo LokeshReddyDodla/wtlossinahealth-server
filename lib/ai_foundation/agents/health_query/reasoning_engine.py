@@ -37,6 +37,7 @@ from lib.ai_foundation.streaming.sse import (
     sse_reasoning,
     sse_reflection,
     sse_status,
+    sse_error,
     sse_token,
     sse_tool_call,
     sse_tool_result,
@@ -701,16 +702,28 @@ class ReasoningEngine:
             full_response_parts: list[str] = []
             responder_start = time.perf_counter()
 
-            async for chunk in self._gateway.stream(
-                messages=responder_messages,
-                task=ModelTask.RESPONSE_GENERATION,
-                model_id=tier_cfg.responder_model,
-            ):
-                if chunk.delta:
-                    full_response_parts.append(chunk.delta)
-                    yield sse_token(chunk.delta)
-                if chunk.finished and chunk.usage:
-                    total_cost += safe_cost(chunk)
+            try:
+                async for chunk in self._gateway.stream(
+                    messages=responder_messages,
+                    task=ModelTask.RESPONSE_GENERATION,
+                    model_id=tier_cfg.responder_model,
+                ):
+                    if chunk.delta:
+                        full_response_parts.append(chunk.delta)
+                        yield sse_token(chunk.delta)
+                    if chunk.finished and chunk.usage:
+                        total_cost += safe_cost(chunk)
+            except Exception as exc:
+                logger.error(
+                    "Responder stream failed after %d chunks: %s",
+                    len(full_response_parts), exc,
+                )
+                yield sse_error(
+                    message="The response was interrupted. Please try again.",
+                    code="stream_error",
+                    fallback_text="".join(full_response_parts) or None,
+                )
+                return
 
             perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
         else:
