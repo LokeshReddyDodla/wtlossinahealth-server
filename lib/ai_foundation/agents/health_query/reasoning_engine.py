@@ -985,8 +985,12 @@ class ReasoningEngine:
             meta = msg.get("_meta", {})
 
             if role == "system":
-                _exclude = {"instruction", "plan", "reflection", "system_hint", "tool_summary"}
-                if meta.get("type") not in _exclude:
+                _exclude = {"instruction", "plan", "reflection", "system_hint", "tool_summary", "tool_result", "assistant_tool_calls"}
+                msg_type = meta.get("type", "")
+                if msg_type == "tool_result":
+                    # Capture tool results in gathered_data (not as separate system messages)
+                    gathered_data.append(content)
+                elif msg_type not in _exclude:
                     system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
             elif role == "user":
                 user_msg = content
