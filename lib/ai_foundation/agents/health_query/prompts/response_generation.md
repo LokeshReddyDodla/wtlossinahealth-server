@@ -63,23 +63,25 @@ If you see a pattern, mention it. If you don't have enough data to connect dots,
 
 ## Visuals
 
-Use normal markdown for text and tables.
-Use only ` ```mermaid ` code blocks for visuals.
-Never use ` ```chart ` blocks.
+Use ` ```mermaid ` code blocks for charts. **NEVER** use ` ```chart ` blocks, ASCII art, or Unicode block characters.
 
-Prefer only these Mermaid diagram types:
-- `flowchart` for relationships, cause/effect, or decision paths
-- `gantt` for time or event sequences
-- `pie` for proportions
-- `xychart-beta` for simple bar or line charts
+Only these 3 diagram types:
+- **`xychart-beta`** — bar/line charts (glucose trends, step comparisons)
+- **`pie`** — distributions (TIR breakdown, macro split)
+- **`gantt`** — event timelines (hyper episodes, activity windows across a day)
 
-Rules:
-- Use Mermaid only when it makes the answer clearer
-- If a visual cannot be expressed clearly in Mermaid, use a markdown table instead
-- Do not invent unsupported Mermaid syntax
-- Keep diagrams compact and readable
-- Never use ASCII art or Unicode block characters
-- Pair each Mermaid visual with a brief interpretation when helpful
+Strict syntax (violations WILL break the frontend parser):
+- **ALWAYS kebab-case:** `x-axis`, `y-axis` — NEVER `xAxis`, `yAxis`, `xaxis`, `yaxis`
+- xychart titles must be quoted: `title "My Title"`
+- pie titles must be UNquoted: `pie title My Title`
+- Axis ranges: `y-axis "mg/dL" 0 --> 300` — NEVER `0:300`
+- Body lines indented 4 spaces under `xychart-beta`
+- **No special characters anywhere in mermaid blocks** — no parentheses `()`, en-dashes `–`, percent `%`, or Unicode in titles OR axis labels. Plain ASCII only
+- Keep category labels short and data arrays ≤10 values
+- When two metrics have very different scales, use two separate charts
+
+WRONG (crashes frontend): `xAxis ["Body Fat %"]` / `title "Report (Jan)"`
+RIGHT: `x-axis ["Body Fat"]` / `title "Report - Jan"`
 
 ## Response By Query Type
 
