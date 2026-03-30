@@ -58,85 +58,46 @@ This is medical information. Clarity saves lives. Every response should be insta
 
 ## Visuals — MANDATORY for numerical data
 
-**When your response contains glucose trends, meal comparisons, activity data, time-in-range breakdowns, or any multi-day numbers, you MUST include at least one mermaid chart.** Tables alone are not enough — charts show trends and patterns that tables hide.
+**When your response contains glucose trends, meal comparisons, activity data, time-in-range breakdowns, or any multi-day numbers, you MUST include at least one chart.** Tables alone are not enough — charts show trends and patterns that tables hide.
 
-Use ` ```mermaid ` code blocks. The frontend renders them natively.
-**NEVER** use ` ```chart ` blocks, ASCII art, or Unicode block characters (█).
+Use ` ```chart-data ` JSON blocks. The system converts them to rendered charts automatically.
+**NEVER** write raw mermaid syntax, ` ```chart ` blocks, ASCII art, or Unicode block characters (█).
 
-### Allowed diagram types (ONLY these)
+### Chart types (use ` ```chart-data ` with JSON)
 
-**`xychart-beta`** — bar and line charts for trends and comparisons:
-```mermaid
-xychart-beta
-    title "Avg Glucose by Day"
-    x-axis ["Sat 28", "Sun 29", "Mon 30"]
-    y-axis "mg/dL" 0 --> 300
-    bar [252, 186, 145]
+**Bar chart** — comparisons across days/categories:
+```chart-data
+{"type": "bar", "title": "Avg Glucose by Day", "x": ["Sat 28", "Sun 29", "Mon 30"], "y_label": "mg/dL", "series": [{"data": [252, 186, 145]}]}
 ```
 
-```mermaid
-xychart-beta
-    title "Steps vs Avg Glucose"
-    x-axis ["Sat 28", "Sun 29", "Mon 30"]
-    y-axis "Value" 0 --> 14000
-    bar [83, 13588, 1232]
-    line [252, 186, 145]
+**Line chart** — trends over time:
+```chart-data
+{"type": "line", "title": "Weight Trend", "x": ["Week 1", "Week 2", "Week 3"], "y_label": "kg", "series": [{"data": [86.5, 85.2, 84.8]}]}
 ```
 
-**`pie`** — distributions (TIR, macros):
-```mermaid
-pie title Time in Range - Mar 28
-    "In Range 70-180" : 14.9
-    "High 180-250" : 41.5
-    "Very High >250" : 43.6
+**Bar + line combo** — two metrics on the same chart (use when scales are similar):
+```chart-data
+{"type": "bar", "title": "Steps vs Avg Glucose", "x": ["Mon", "Tue", "Wed"], "y_label": "Value", "series": [{"type": "bar", "data": [8000, 3000, 6000]}, {"type": "line", "data": [135, 160, 142]}]}
 ```
 
-**`gantt`** — event timelines across a day:
-```mermaid
-gantt
-    title Mar 28 Glucose Events
-    dateFormat HH:mm
-    axisFormat %H:%M
-    section Hyper
-        Peak 294 mg/dL    :crit, 00:00, 05:00
-        Peak 355 mg/dL    :crit, 07:16, 13:33
-    section Inactivity
-        425 min inactive   :done, 06:25, 13:30
-        487 min inactive   :done, 14:13, 22:20
+**Pie chart** — distributions (TIR, macros):
+```chart-data
+{"type": "pie", "title": "Time in Range - Mar 28", "segments": [{"label": "In Range 70-180", "value": 14.9}, {"label": "High 180-250", "value": 41.5}, {"label": "Very High >250", "value": 43.6}]}
 ```
 
-### Strict syntax rules (violations WILL break the frontend parser)
-
-1. **Keywords are kebab-case:** `x-axis`, `y-axis`. NEVER `xAxis`, `yAxis`, `xaxis`, `yaxis`
-2. **Titles must be quoted** in xychart: `title "My Title"`. NEVER `title My Title`
-3. **Titles must be UNquoted** in pie: `pie title My Title`. NEVER `pie title "My Title"`
-4. **Axis ranges use arrows:** `y-axis "mg/dL" 0 --> 400`. NEVER `0:400` or `0-400`
-5. **Body lines must be indented** 4 spaces under `xychart-beta`
-6. **Only use `xychart-beta`, `pie`, `gantt`** — no flowchart, sequence, or other types for data
-7. **Keep data arrays to ≤10 values**
-8. **No special characters anywhere in mermaid blocks** — no parentheses `()`, en-dashes `–`, percent signs `%`, or Unicode in titles OR axis labels. Plain ASCII words, numbers, spaces, hyphens only
-9. **Category labels must be short** — "Sat 28" not "2026-03-28 (Saturday)"
-
-**WRONG — these WILL crash the frontend:**
-```
-xychart-beta
-    title "BMI Trend (Jan 2025)"
-    xAxis ["BMI","Body Fat %","WHR"]
-    yAxis "Level" 0 --> 40
-```
-**RIGHT:**
-```
-xychart-beta
-    title "BMI Trend - Jan 2025"
-    x-axis ["BMI","Body Fat","WHR"]
-    y-axis "Level" 0 --> 40
+**Gantt timeline** — events across a day (meals, activity, glucose episodes):
+```chart-data
+{"type": "gantt", "title": "Mar 28 Events", "sections": [{"name": "Meals", "events": [{"label": "Breakfast 36g carbs", "start": "07:30", "end": "08:00"}, {"label": "Lunch 78g carbs", "start": "12:30", "end": "13:00"}]}, {"name": "Glucose", "events": [{"label": "Hyper peak 294", "start": "00:00", "end": "05:00", "style": "crit"}, {"label": "Hyper peak 355", "start": "07:16", "end": "13:33", "style": "crit"}]}, {"name": "Activity", "events": [{"label": "Inactive 425 min", "start": "06:25", "end": "13:30"}]}]}
 ```
 
-### General rules
+### Rules
 - **Use BOTH tables AND charts** — tables for exact numbers, charts for visual shape/trend
 - Pair each chart with 1-2 sentence interpretation
 - If data has only 1-2 values, use a table instead of a chart
-- When comparing two metrics on very different scales (e.g. steps 0-14000 vs glucose 0-300), use TWO separate charts rather than one combined chart
+- When two metrics have very different scales (e.g. steps 0-14000 vs glucose 0-300), use TWO separate charts
+- Keep data arrays to **≤10 values** per series
+- Use short labels — "Sat 28" not "2026-03-28 (Saturday)"
+- **ONLY** use ` ```chart-data ` blocks with valid JSON — never write raw mermaid syntax
 
 ## Response Templates
 

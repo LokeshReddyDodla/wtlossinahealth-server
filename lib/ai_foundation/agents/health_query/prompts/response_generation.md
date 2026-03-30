@@ -63,25 +63,19 @@ If you see a pattern, mention it. If you don't have enough data to connect dots,
 
 ## Visuals
 
-Use ` ```mermaid ` code blocks for charts. **NEVER** use ` ```chart ` blocks, ASCII art, or Unicode block characters.
+Use ` ```chart-data ` JSON blocks for charts. The system converts them to rendered charts automatically.
+**NEVER** write raw mermaid syntax, ASCII art, or Unicode block characters.
 
-Only these 3 diagram types:
-- **`xychart-beta`** — bar/line charts (glucose trends, step comparisons)
-- **`pie`** — distributions (TIR breakdown, macro split)
-- **`gantt`** — event timelines (hyper episodes, activity windows across a day)
+4 chart types available:
+- **`bar`** — comparisons: `{"type": "bar", "title": "...", "x": [...], "y_label": "...", "series": [{"data": [...]}]}`
+- **`line`** — trends: `{"type": "line", "title": "...", "x": [...], "y_label": "...", "series": [{"data": [...]}]}`
+- **`pie`** — distributions: `{"type": "pie", "title": "...", "segments": [{"label": "...", "value": N}]}`
+- **`gantt`** — day timelines: `{"type": "gantt", "title": "...", "sections": [{"name": "...", "events": [{"label": "...", "start": "HH:MM", "end": "HH:MM"}]}]}`
 
-Strict syntax (violations WILL break the frontend parser):
-- **ALWAYS kebab-case:** `x-axis`, `y-axis` — NEVER `xAxis`, `yAxis`, `xaxis`, `yaxis`
-- xychart titles must be quoted: `title "My Title"`
-- pie titles must be UNquoted: `pie title My Title`
-- Axis ranges: `y-axis "mg/dL" 0 --> 300` — NEVER `0:300`
-- Body lines indented 4 spaces under `xychart-beta`
-- **No special characters anywhere in mermaid blocks** — no parentheses `()`, en-dashes `–`, percent `%`, or Unicode in titles OR axis labels. Plain ASCII only
-- Keep category labels short and data arrays ≤10 values
-- When two metrics have very different scales, use two separate charts
-
-WRONG (crashes frontend): `xAxis ["Body Fat %"]` / `title "Report (Jan)"`
-RIGHT: `x-axis ["Body Fat"]` / `title "Report - Jan"`
+Rules:
+- Keep data arrays ≤10 values, labels short
+- Use two separate charts when metrics have very different scales
+- Pair each chart with 1-2 sentence interpretation
 
 ## Response By Query Type
 

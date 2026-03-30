@@ -66,6 +66,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
 
 logger = logging.getLogger(__name__)
 
+from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner, CRITICAL_TYPES as _CRITICAL_TYPES, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
 
 
@@ -571,12 +572,12 @@ class ReasoningEngine:
                 data={
                     **evidence,
                     "tier": tier.value,
-                    "full_response": "".join(full_response_parts),
+                    "full_response": process_charts("".join(full_response_parts)),
                 },
             ))
         else:
             yield ReasoningResult(
-                response=final_response.content or "",
+                response=process_charts(final_response.content or ""),
                 thinker_model=tier_cfg.thinker_model,
                 responder_model=tier_cfg.responder_model,
                 total_cost=total_cost,

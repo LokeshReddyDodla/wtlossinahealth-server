@@ -41,6 +41,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
     format_data_gaps,
 )
 
+from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_loader import build_context_messages
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
 from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS
@@ -368,7 +369,7 @@ class Coordinator:
                     "tools_called": total_tools,
                     "tier": tier.value,
                     "domains": domains,
-                    "full_response": "".join(full_response_parts),
+                    "full_response": process_charts("".join(full_response_parts)),
                     **evidence,
                 },
             ))
@@ -385,7 +386,7 @@ class Coordinator:
             evidence = self._compute_evidence_metrics(findings, reflection_result)
 
             yield ReasoningResult(
-                response=final_response.content or "",
+                response=process_charts(final_response.content or ""),
                 steps=[],
                 rounds_used=len(findings),
                 tools_called=total_tools,
