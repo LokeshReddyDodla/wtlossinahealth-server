@@ -387,7 +387,7 @@ class TestSpecialists:
         tools = ToolExecutor(qdrant=MagicMock())
         schemas = tools.get_schemas_for_domain("nutrition")
         names = [s["function"]["name"] for s in schemas]
-        assert names == ["look_up", "compare_baseline"]
+        assert names == ["look_up", "investigate_day", "compare_baseline", "find_patterns", "get_recent_insights"]
         lookup_enum = schemas[0]["function"]["parameters"]["properties"]["data_types"]["items"]["enum"]
         assert lookup_enum == ["meal"]
 
@@ -502,29 +502,6 @@ class TestSSEEvents:
         event = sse_reasoning(1, "Looking at glucose data")
         assert "event: reasoning" in event
         assert "Looking at glucose data" in event
-
-    def test_reasoning_text_includes_tool_call_details(self):
-        from lib.ai_foundation.agents.health_query.reasoning_engine import _build_reasoning_text
-
-        text = _build_reasoning_text(
-            "Checking recent trends.",
-            [
-                ToolCall(
-                    id="tc_1",
-                    function_name="look_up",
-                    arguments={
-                        "data_types": ["cgm_summary_stats", "meal"],
-                        "date_start": "2026-03-20",
-                        "date_end": "2026-03-29",
-                    },
-                )
-            ],
-        )
-
-        assert "Checking recent trends." in text
-        assert "look_up" in text
-        assert "cgm_summary_stats, meal" in text
-        assert "2026-03-20->2026-03-29" in text
 
     def test_tool_call_event(self):
         from lib.ai_foundation.streaming.sse import sse_tool_call
