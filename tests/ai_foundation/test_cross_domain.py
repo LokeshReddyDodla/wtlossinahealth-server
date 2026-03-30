@@ -237,14 +237,16 @@ class TestCombineFindings:
             MockFindings(domain="glucose", findings="Spike to 220 at 3pm."),
             MockFindings(domain="nutrition", findings="Lunch had 85g carbs."),
         ]
-        combined = Coordinator._combine_findings(findings)
+        combined, connections = Coordinator._combine_findings(findings)
         assert "## GLUCOSE FINDINGS" in combined
         assert "## NUTRITION FINDINGS" in combined
         assert "## POSSIBLE CROSS-DOMAIN CONNECTIONS" in combined
+        assert "glucose + nutrition" in connections
 
     def test_no_connections_section_when_none(self):
         findings = [
             MockFindings(domain="glucose", findings="TIR was 72%."),
         ]
-        combined = Coordinator._combine_findings(findings)
+        combined, connections = Coordinator._combine_findings(findings)
         assert "CROSS-DOMAIN" not in combined
+        assert connections == ""

@@ -393,6 +393,8 @@ class TestIterativePruning:
             "_trim_facts",
             "_trim_insights",
             "_hard_truncate_oldest",
+            "_hard_truncate_oldest",  # second pass
+            "_hard_truncate_oldest",  # third pass
         ]
 
     def test_stops_early_when_under_budget(self):

@@ -59,7 +59,7 @@ class TestConcurrencyLock:
         await asyncio.gather(task1, task2)
 
         # Lock should be released after both complete
-        assert "t1" not in PersistenceService._compacting
+        assert "t1" not in svc._compacting
 
     @pytest.mark.asyncio
     async def test_different_threads_not_blocked(self):
@@ -71,8 +71,8 @@ class TestConcurrencyLock:
             svc.compact_if_needed(thread_id="t1"),
             svc.compact_if_needed(thread_id="t2"),
         )
-        assert "t1" not in PersistenceService._compacting
-        assert "t2" not in PersistenceService._compacting
+        assert "t1" not in svc._compacting
+        assert "t2" not in svc._compacting
 
     @pytest.mark.asyncio
     async def test_lock_released_on_error(self):
@@ -83,7 +83,7 @@ class TestConcurrencyLock:
         await svc.compact_if_needed(thread_id="t1")
 
         # Lock should be released
-        assert "t1" not in PersistenceService._compacting
+        assert "t1" not in svc._compacting
 
 
 # ── Test: Turn count tracking ────────────────────────────────────────────
