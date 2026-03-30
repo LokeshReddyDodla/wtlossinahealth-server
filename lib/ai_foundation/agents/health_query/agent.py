@@ -65,6 +65,14 @@ async def _maybe_await(result: Any) -> None:
         await result
 
 
+def _sse_event_name(event: str) -> str:
+    """Extract SSE event name from a formatted event payload."""
+    first_line = event.split("\n", 1)[0].strip()
+    if not first_line.startswith("event:"):
+        return ""
+    return first_line.split(":", 1)[1].strip()
+
+
 class HealthQueryAgent(BaseAgent):
     """Foundation-native health query agent — thin orchestrator with agentic reasoning."""
 
@@ -264,9 +272,24 @@ class HealthQueryAgent(BaseAgent):
                     user_role=input.context.user_role,
                 )
 
+            done_emitted = False
+            streamed_response_parts: list[str] = []
             async for event in event_source:
+                event_name = _sse_event_name(event)
+                if event_name == "token":
+                    try:
+                        import json as _json
+                        data_line = event.split("data: ", 1)[1].split("\n")[0]
+                        payload = _json.loads(data_line)
+                        delta = payload.get("delta")
+                        if isinstance(delta, str) and delta:
+                            streamed_response_parts.append(delta)
+                    except (IndexError, ValueError, KeyError, AttributeError, TypeError):
+                        pass
+
                 # Intercept done event to save turn and inject suggestions
-                if 'event: done' in event:
+                if event_name == "done":
+                    done_emitted = True
                     # Extract full_response + metadata from the done payload
                     full_text = ""
                     done_data: dict = {}
@@ -320,10 +343,46 @@ class HealthQueryAgent(BaseAgent):
 
                 yield event
 
+            # Fallback: if upstream stream ended without a done event, emit one.
+            if not done_emitted:
+                elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+                fallback_text = "".join(streamed_response_parts).strip()
+                if fallback_text:
+                    output = AgentOutput(
+                        message=fallback_text,
+                        is_ready=True,
+                        trace_id=trace_id,
+                        latency_ms=elapsed,
+                        data={"data_types": [dt.value for dt in intent.data_types]},
+                    )
+                    await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                    self._schedule_background(input)
+                    await _maybe_await(
+                        self.gateway.langfuse_trace_output(
+                            trace_id=trace_id,
+                            output_text=fallback_text,
+                        )
+                    )
+
+                yield sse_done(
+                    SSEDonePayload(
+                        suggestions=[s.model_dump() for s in intent.suggestions],
+                        trace_id=trace_id,
+                        latency_ms=elapsed,
+                        data={"degraded_stream": True},
+                    )
+                )
+
         except Exception as exc:
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
             yield sse_error(message="I'm having trouble right now.", code="agent_error",
                             fallback_text="Please try again in a moment.")
+            yield sse_done(
+                SSEDonePayload(
+                    trace_id=trace_id,
+                    data={"degraded_stream": True},
+                )
+            )
 
     # ── Pipeline steps ────────────────────────────────────────────────────
 
