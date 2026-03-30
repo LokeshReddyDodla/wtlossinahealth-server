@@ -25,7 +25,18 @@
     "smbg": ["smbg", "fingerstick", "pre-meal", "post-meal"],
     "fitness": ["fitness", "activity", "steps", "workout", "exercise"],
     "profile": ["profile", "bmi", "weight", "height"],
-    "documents": ["document", "report", "prescription", "lab", "scan"],
+    "documents": [
+      "document",
+      "documents",
+      "report",
+      "reports",
+      "prescription",
+      "lab",
+      "scan",
+      "inbody",
+      "body composition",
+      "composition report"
+    ],
     "sleep": ["sleep", "bed", "slept"],
     "vitals": ["vitals", "blood pressure", "heart rate", "spo2", "a1c"],
     "patient_summary": ["overall", "summary", "how's my today", "how is my today"]

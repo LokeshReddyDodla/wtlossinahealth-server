@@ -210,7 +210,8 @@ Reports, prescriptions, lab results, scans, medical records, test results.
 
 Keywords include:
 "reports", "prescriptions", "prescription", "documents", "lab results",
-"blood test", "x-ray", "MRI", "CT scan", "ultrasound", "medical records"
+"blood test", "x-ray", "MRI", "CT scan", "ultrasound", "medical records",
+"inbody", "body composition", "body composition analysis"
 
 ---
 
