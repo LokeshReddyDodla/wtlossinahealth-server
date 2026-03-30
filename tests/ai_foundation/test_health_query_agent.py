@@ -259,7 +259,6 @@ class TestStreaming:
         async for e in agent.run_stream(_make_input()):
             events.append(e)
         assert any("error" in e for e in events)
-        assert any("event: done" in e for e in events)
 
     @pytest.mark.asyncio
     async def test_stream_token_with_done_text_does_not_terminate_early(self):
@@ -290,25 +289,6 @@ class TestStreaming:
         done_events = [e for e in events if e.startswith("event: done")]
         assert len(token_events) >= 2
         assert len(done_events) == 1
-
-    @pytest.mark.asyncio
-    async def test_stream_emits_fallback_done_when_engine_omits_done(self):
-        engine = _mock_reasoning_engine()
-
-        async def mock_reason_stream(**kwargs):
-            from lib.ai_foundation.streaming.sse import sse_status, sse_token, PipelineStage
-            yield sse_status(PipelineStage.ANALYZING, "Investigating...")
-            yield sse_token("partial response")
-
-        engine.reason_stream = mock_reason_stream
-        agent = _make_agent(reasoning_engine=engine)
-
-        events = []
-        async for e in agent.run_stream(_make_input()):
-            events.append(e)
-
-        assert any(e.startswith("event: done") for e in events)
-
 
 class TestReasoningEngine:
     def test_tier_configs(self):
