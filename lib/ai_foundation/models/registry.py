@@ -328,7 +328,7 @@ def build_default_registry() -> ModelRegistry:
             model_id="gpt-5.1",
             provider=ModelProvider.OPENAI,
             temperature=0.0,
-            timeout_seconds=60.0,
+            timeout_seconds=120.0,
             cost_per_1k_input=0.005,
             cost_per_1k_output=0.015,
             supports_structured=True,
