@@ -193,7 +193,7 @@ async def _get_active_patient_ids() -> list[str]:
     from sqlalchemy import select, and_
     from lib.models.user_device import UserDevice
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff = datetime.utcnow() - timedelta(days=7)  # naive UTC — matches TIMESTAMP WITHOUT TIME ZONE
 
     async with postgres_store.get_session() as session:
         stmt = (
