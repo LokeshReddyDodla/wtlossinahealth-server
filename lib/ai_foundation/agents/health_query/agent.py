@@ -188,6 +188,7 @@ class HealthQueryAgent(BaseAgent):
             )
 
             await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
+            self._log_quality_scores(trace_id, result)
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
             self._schedule_background(input)
@@ -317,6 +318,7 @@ class HealthQueryAgent(BaseAgent):
                         )
                         if full_text:
                             await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text))
+                        self._log_quality_scores_from_data(trace_id, engine_data)
                         await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                         self._schedule_background(input)
 
@@ -606,6 +608,36 @@ class HealthQueryAgent(BaseAgent):
         reasoning = self._render("hq_reasoning")
         response = self._render("hq_final_response")
         return reasoning, response
+
+    def _log_quality_scores(self, trace_id: str, result: Any) -> None:
+        """Log coverage/reflection scores to Langfuse for quality monitoring."""
+        if result.coverage_confidence is not None:
+            self.gateway.log_score(trace_id=trace_id, name="coverage_confidence", value=result.coverage_confidence)
+        if result.reflection_confidence is not None:
+            self.gateway.log_score(trace_id=trace_id, name="reflection_confidence", value=result.reflection_confidence)
+        if result.data_gaps:
+            self.gateway.log_score(trace_id=trace_id, name="data_gaps_count", value=float(len(result.data_gaps)),
+                                   comment="; ".join(result.data_gaps))
+        if result.data_conflicts:
+            self.gateway.log_score(trace_id=trace_id, name="data_conflicts_count", value=float(len(result.data_conflicts)),
+                                   comment="; ".join(result.data_conflicts))
+
+    def _log_quality_scores_from_data(self, trace_id: str, engine_data: dict) -> None:
+        """Log quality scores from streaming done payload data dict."""
+        cc = engine_data.get("coverage_confidence")
+        if cc is not None:
+            self.gateway.log_score(trace_id=trace_id, name="coverage_confidence", value=cc)
+        rc = engine_data.get("reflection_confidence")
+        if rc is not None:
+            self.gateway.log_score(trace_id=trace_id, name="reflection_confidence", value=rc)
+        gaps = engine_data.get("data_gaps")
+        if gaps:
+            self.gateway.log_score(trace_id=trace_id, name="data_gaps_count", value=float(len(gaps)),
+                                   comment="; ".join(gaps))
+        conflicts = engine_data.get("data_conflicts")
+        if conflicts:
+            self.gateway.log_score(trace_id=trace_id, name="data_conflicts_count", value=float(len(conflicts)),
+                                   comment="; ".join(conflicts))
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:
         return AgentOutput(
