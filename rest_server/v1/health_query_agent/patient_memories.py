@@ -121,7 +121,7 @@ async def add_memory(
 
     from lib.ai_foundation.memory.base import MemoryFact, MemorySource
     from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-    from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS
+    from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS
 
     key = payload.key.strip().lower().replace(" ", "_")
     meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})

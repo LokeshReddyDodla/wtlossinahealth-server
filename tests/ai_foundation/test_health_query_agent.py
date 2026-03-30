@@ -10,14 +10,14 @@ from lib.ai_foundation.agents.health_query.agent import HealthQueryAgent
 from lib.ai_foundation.agents.health_query.contracts import (
     HealthDataType, QueryIntent, QueryResponse, SuggestedAction, DateRange,
 )
-from lib.ai_foundation.agents.health_query.context_loader import ContextLoader, AgentContext
-from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
-from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+from lib.ai_foundation.agents.core.context_loader import ContextLoader, AgentContext
+from lib.ai_foundation.agents.core.persistence_service import PersistenceService
+from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query.reasoning_engine import (
     ReasoningEngine, ReasoningResult, ReasoningTier,
 )
 from lib.ai_foundation.agents.state import AgentContext as InputContext, AgentInput, AgentOutput
-from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage
+from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage, ToolCall
 from lib.ai_foundation.models.pricing import CostBreakdown
 from lib.ai_foundation.prompts.registry import PromptRegistry
 
@@ -310,7 +310,7 @@ class TestReasoningEngine:
 class TestFactExtractor:
     def test_extractor_exists(self):
         """FactExtractor now always runs LLM — no keyword heuristic to test."""
-        from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+        from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
         ext = FactExtractor()
         assert hasattr(ext, "extract_if_needed")
 
@@ -502,6 +502,29 @@ class TestSSEEvents:
         event = sse_reasoning(1, "Looking at glucose data")
         assert "event: reasoning" in event
         assert "Looking at glucose data" in event
+
+    def test_reasoning_text_includes_tool_call_details(self):
+        from lib.ai_foundation.agents.health_query.reasoning_engine import _build_reasoning_text
+
+        text = _build_reasoning_text(
+            "Checking recent trends.",
+            [
+                ToolCall(
+                    id="tc_1",
+                    function_name="look_up",
+                    arguments={
+                        "data_types": ["cgm_summary_stats", "meal"],
+                        "date_start": "2026-03-20",
+                        "date_end": "2026-03-29",
+                    },
+                )
+            ],
+        )
+
+        assert "Checking recent trends." in text
+        assert "look_up" in text
+        assert "cgm_summary_stats, meal" in text
+        assert "2026-03-20->2026-03-29" in text
 
     def test_tool_call_event(self):
         from lib.ai_foundation.streaming.sse import sse_tool_call

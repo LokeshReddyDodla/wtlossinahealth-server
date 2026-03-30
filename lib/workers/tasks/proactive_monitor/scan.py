@@ -40,7 +40,7 @@ async def run_proactive_scan(
     try:
         from lib.core.container import container
         from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
-        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 
         monitor = container.resolve(ProactiveMonitorAgent)
         resolver = container.resolve(PatientNameResolver)

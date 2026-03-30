@@ -41,12 +41,13 @@ from lib.ai_foundation.agents.health_query.evidence import (
     format_data_gaps,
 )
 
-from .context_loader import build_context_messages
-from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS, _MIN_TRUNCATION_CHARS
+from lib.ai_foundation.agents.core.context_loader import build_context_messages
+from lib.ai_foundation.agents.core.context_pruner import ContextPruner, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
+from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS
 from .specialists import Specialist, SpecialistFindings
 
 if TYPE_CHECKING:
-    from .context_loader import AgentContext
+    from lib.ai_foundation.agents.core.context_loader import AgentContext
     from .planner import InvestigationPlanner
     from .reflector import ReflectionEngine
     from .tools import ToolExecutor
@@ -95,6 +96,7 @@ class Coordinator:
         self._planner = planner
         self._reflector = reflector
         self._specialists = specialists or {}
+        self._pruner = ContextPruner(gateway=gateway)
 
     # ── Public API (unchanged signatures) ─────────────────────────────
 
@@ -578,12 +580,7 @@ class Coordinator:
         return {"findings": findings, "cost": cost, "tools_called": tools_called}
 
     def _get_input_budget(self, model: str) -> int:
-        """Calculate the max input tokens for a model."""
-        window = self._gateway.get_model_window(model)
-        return max(1, min(
-            int(window * settings.CONTEXT_BUDGET_RATIO),
-            window - settings.CONTEXT_RESPONSE_RESERVE,
-        ))
+        return self._pruner.get_input_budget(model)
 
     # ── Helpers ────────────────────────────────────────────────────────
 

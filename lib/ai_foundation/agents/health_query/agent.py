@@ -380,7 +380,7 @@ class HealthQueryAgent(BaseAgent):
 
     async def _load_context(self, input: AgentInput) -> Any:
         if not self.context_loader:
-            from .context_loader import AgentContext as Ctx
+            from lib.ai_foundation.agents.core.context_loader import AgentContext as Ctx
             return Ctx()
         return await self.context_loader.load(
             patient_id=input.context.patient_id,
@@ -469,7 +469,7 @@ class HealthQueryAgent(BaseAgent):
     ) -> AgentOutput:
         """Handle memory commands: add, delete, list."""
         from lib.ai_foundation.memory.base import MemoryFact, MemorySource
-        from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS, normalize_memory_key
+        from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS, normalize_memory_key
 
         pid = self._resolve_single_pid(input)
         if not pid or not self.memory:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngine, _CRITICAL_TYPES
+from lib.ai_foundation.agents.core.context_pruner import CRITICAL_TYPES as _CRITICAL_TYPES
+from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngine
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -106,7 +107,7 @@ class TestSummarizeOldRounds:
             _msg("user", "question", "user_question"),
         ]
 
-        result = engine._summarize_old_rounds(messages)
+        result = engine._pruner._summarize_old_rounds(messages)
 
         # Round 1 and 2 should be collapsed into summaries
         types = [m.get("_meta", {}).get("type") for m in result]
@@ -124,7 +125,7 @@ class TestSummarizeOldRounds:
             _msg("system", "result", "tool_result", round=2, tool="look_up"),
             _msg("user", "question", "user_question"),
         ]
-        result = engine._summarize_old_rounds(messages)
+        result = engine._pruner._summarize_old_rounds(messages)
         # Nothing should change — max_round=2, threshold=0, nothing old enough
         tool_results = [m for m in result if m.get("_meta", {}).get("type") == "tool_result"]
         assert len(tool_results) == 2
@@ -144,17 +145,17 @@ class TestTrimHistory:
         ]
 
         # First trim: 8 → 4
-        result = engine._trim_history(messages)
+        result = engine._pruner._trim_history(messages)
         remaining = [m for m in result if m.get("_meta", {}).get("type") == "history"]
         assert len(remaining) == 4
 
         # Second trim: 4 → 2
-        result = engine._trim_history(result)
+        result = engine._pruner._trim_history(result)
         remaining = [m for m in result if m.get("_meta", {}).get("type") == "history"]
         assert len(remaining) == 2
 
         # Third trim: 2 → 0
-        result = engine._trim_history(result)
+        result = engine._pruner._trim_history(result)
         remaining = [m for m in result if m.get("_meta", {}).get("type") == "history"]
         assert len(remaining) == 0
 
@@ -164,7 +165,7 @@ class TestTrimHistory:
             _msg("system", "instructions", "instruction"),
             _msg("user", "question", "user_question"),
         ]
-        result = engine._trim_history(messages)
+        result = engine._pruner._trim_history(messages)
         assert len(result) == 2
 
     def test_2_history_trims_to_0(self):
@@ -176,7 +177,7 @@ class TestTrimHistory:
             _msg("user", "msg2", "history"),
             _msg("user", "question", "user_question"),
         ]
-        result = engine._trim_history(messages)
+        result = engine._pruner._trim_history(messages)
         remaining = [m for m in result if m.get("_meta", {}).get("type") == "history"]
         assert len(remaining) == 0
 
@@ -197,7 +198,7 @@ class TestTrimFacts:
             _msg("user", "question", "user_question"),
         ]
 
-        result = engine._trim_facts(messages)
+        result = engine._pruner._trim_facts(messages)
         fact_msgs = [m for m in result if m.get("_meta", {}).get("type") == "fact"]
         assert len(fact_msgs) == 1
         assert "diabetes_type" in fact_msgs[0]["content"]
@@ -214,7 +215,7 @@ class TestTrimFacts:
             _msg("user", "question", "user_question"),
         ]
 
-        result = engine._trim_facts(messages)
+        result = engine._pruner._trim_facts(messages)
         fact_msgs = [m for m in result if m.get("_meta", {}).get("type") == "fact"]
         assert len(fact_msgs) == 0
 
@@ -232,7 +233,7 @@ class TestTrimInsights:
             _msg("user", "question", "user_question"),
         ]
 
-        result = engine._trim_insights(messages)
+        result = engine._pruner._trim_insights(messages)
         insight_msgs = [m for m in result if m.get("_meta", {}).get("type") == "insight"]
         assert len(insight_msgs) == 0
         assert len(result) == 2  # instruction + user_question
@@ -252,7 +253,7 @@ class TestHardTruncate:
             _msg("user", "question", "user_question"),
         ]
 
-        result = engine._hard_truncate_oldest(messages)
+        result = engine._pruner._hard_truncate_oldest(messages)
         # The 2000-char message (round 1) should be truncated, not round 3 (protected)
         truncated = [m for m in result if "truncated to fit context window" in m.get("content", "")]
         assert len(truncated) == 1
@@ -265,7 +266,7 @@ class TestHardTruncate:
             _msg("system", "z" * 100, "context"),
         ]
 
-        result = engine._hard_truncate_oldest(messages)
+        result = engine._pruner._hard_truncate_oldest(messages)
         # instruction and user_question should remain untouched
         assert len(result[0]["content"]) == 5000
         assert len(result[1]["content"]) == 3000
@@ -358,11 +359,11 @@ class TestIterativePruning:
         # budget = 5904
 
         strategies_called = []
-        original_summarize = engine._summarize_old_rounds
-        original_trim_history = engine._trim_history
-        original_trim_facts = engine._trim_facts
-        original_trim_insights = engine._trim_insights
-        original_hard_truncate = engine._hard_truncate_oldest
+        original_summarize = engine._pruner._summarize_old_rounds
+        original_trim_history = engine._pruner._trim_history
+        original_trim_facts = engine._pruner._trim_facts
+        original_trim_insights = engine._pruner._trim_insights
+        original_hard_truncate = engine._pruner._hard_truncate_oldest
 
         def _track(name, fn):
             def wrapper(messages):
@@ -371,11 +372,11 @@ class TestIterativePruning:
             wrapper.__name__ = name
             return wrapper
 
-        engine._summarize_old_rounds = _track("_summarize_old_rounds", original_summarize)
-        engine._trim_history = _track("_trim_history", original_trim_history)
-        engine._trim_facts = _track("_trim_facts", original_trim_facts)
-        engine._trim_insights = _track("_trim_insights", original_trim_insights)
-        engine._hard_truncate_oldest = _track("_hard_truncate_oldest", original_hard_truncate)
+        engine._pruner._summarize_old_rounds = _track("_summarize_old_rounds", original_summarize)
+        engine._pruner._trim_history = _track("_trim_history", original_trim_history)
+        engine._pruner._trim_facts = _track("_trim_facts", original_trim_facts)
+        engine._pruner._trim_insights = _track("_trim_insights", original_trim_insights)
+        engine._pruner._hard_truncate_oldest = _track("_hard_truncate_oldest", original_hard_truncate)
 
         # Always over budget so all strategies fire
         engine._gateway.count_tokens = lambda msgs, model=None: 99999
@@ -412,12 +413,12 @@ class TestIterativePruning:
         engine._gateway.count_tokens = _count
 
         strategies_called = []
-        original = engine._summarize_old_rounds
+        original = engine._pruner._summarize_old_rounds
         def _track(messages):
             strategies_called.append("_summarize_old_rounds")
             return original(messages)
         _track.__name__ = "_summarize_old_rounds"
-        engine._summarize_old_rounds = _track
+        engine._pruner._summarize_old_rounds = _track
 
         messages = [
             _msg("system", "instructions", "instruction"),

@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
     from lib.ai_foundation.agents.state import AgentInput
-    from lib.ai_foundation.agents.health_query.contracts import QueryIntent
 
 logger = logging.getLogger(__name__)
 
