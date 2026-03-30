@@ -19,6 +19,8 @@ import inspect
 import logging
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
+from string import Template
 from typing import Any
 from uuid import uuid4
 
@@ -101,6 +103,8 @@ class ProactiveMonitorAgent(BaseAgent):
     """
 
     agent_id = "proactive_monitor_v2"
+    _SCAN_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_scan.md"
+    _scan_prompt_template: str | None = None
 
     def __init__(
         self,
@@ -115,6 +119,13 @@ class ProactiveMonitorAgent(BaseAgent):
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
         self._insight_tracker = insight_tracker
+
+    @classmethod
+    def _get_scan_prompt_template(cls) -> str:
+        """Load and cache the system scan prompt template."""
+        if cls._scan_prompt_template is None:
+            cls._scan_prompt_template = cls._SCAN_PROMPT_PATH.read_text()
+        return cls._scan_prompt_template
 
     # -- Public API ---------------------------------------------------------
 
@@ -173,6 +184,7 @@ class ProactiveMonitorAgent(BaseAgent):
             ))
             await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
+                name="proactive_monitor",
                 input_text=data_text[:500] if data_text else "(no data)",
                 metadata={
                     "agent": self.agent_id,
@@ -422,29 +434,12 @@ class ProactiveMonitorAgent(BaseAgent):
         if facts_text:
             context_parts.append(facts_text)
 
-        system_prompt = (
-            "You are a friendly health assistant writing push notifications for a patient.\n\n"
-            f"TIME: {scan_period}. DATA PERIOD: {scan_label}.\n"
-            f"GREETING: Start every body with '{greeting}' + patient's first name.\n"
-            f"TIME REFERENCE: Always say '{scan_label}' when referring to the data — never 'today' if data is from yesterday, never use full dates.\n\n"
-            "Produce 1-3 structured health insights from the data provided.\n\n"
-            "RULES:\n"
-            "1. EVERY insight must reference specific data from the records below.\n"
-            "2. Include BOTH concerns AND positives. If glucose is in range, that's worth noting. "
-            "If meals were logged consistently, acknowledge it.\n"
-            "3. ONLY comment on domains that have data below. If a domain has NO records, stay silent — data may not have synced yet.\n"
-            "4. Address the patient DIRECTLY using 'you/your' — like a friendly coach. "
-            "Use their first name naturally.\n"
-            "5. Title: under 45 characters, start with 1 relevant emoji "
-            "(🍽️ meals, 📈 glucose, 🏃 activity, 😴 sleep, ⚠️ alerts, ✅ positives).\n"
-            "6. Body: under 180 characters.\n"
-            "7. ALWAYS include a suggested_query.\n\n"
-            f"{LLM_INSIGHT_CATEGORIES_PROMPT}\n\n"
-            "IMPORTANT: Concern categories are for NEGATIVE findings only. "
-            "If the finding is positive, use a Positive category or 'general'. "
-            "Example: good protein intake → 'goal_progress' NOT 'meal_low_protein'.\n\n"
-            "Severity levels: info (positive/FYI), attention (worth noting), "
-            "warning (needs attention), alert (urgent)"
+        system_prompt = Template(self._get_scan_prompt_template()).safe_substitute(
+            greeting=greeting,
+            scan_label=scan_label,
+            scan_period=scan_period,
+            categories=LLM_INSIGHT_CATEGORIES_PROMPT,
+            patient_name=patient_name,
         )
 
         try:

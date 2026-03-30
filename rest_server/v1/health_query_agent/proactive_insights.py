@@ -7,7 +7,6 @@ POST /health-query-agent/proactive-insights/feedback
 
 import logging
 from typing import Optional
-from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -21,13 +20,7 @@ from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-
-
-def _parse_patient_uuid(patient_id: str) -> UUID:
-    try:
-        return UUID(patient_id)
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid patient ID format — expected UUID") from exc
+from .utils import parse_patient_uuid
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +60,7 @@ async def get_insight_history(
     """
     verified_pid = await resolve_patient_access(
         actor=current_actor,
-        patient_id=_parse_patient_uuid(patient_id),
+        patient_id=parse_patient_uuid(patient_id),
         care_provider_access_service=care_provider_access_service,
     )
 
@@ -140,7 +133,7 @@ async def submit_insight_feedback(
             raise HTTPException(status_code=404, detail="Insight not found")
         await resolve_patient_access(
             actor=current_actor,
-            patient_id=_parse_patient_uuid(str(doc["patient_id"])),
+            patient_id=parse_patient_uuid(str(doc["patient_id"])),
             care_provider_access_service=care_provider_access_service,
         )
         trace_id = doc.get("trace_id") if doc else None

@@ -85,6 +85,11 @@ class AIFoundationSettings(BaseSettings):
     COMPACTION_HISTORY_WINDOW: int = Field(default=12, description="Turns to include in summary LLM call")
     BACKGROUND_TASK_TIMEOUT_SECONDS: float = Field(default=30.0, description="Timeout for background tasks (compaction, fact extraction)")
 
+    # ── Memory Compaction ─────────────────────────────────────────────────
+
+    COMPACT_THRESHOLD: int = Field(default=50, description="Compact patient memories when count exceeds this")
+    COMPACT_KEEP_RECENT: int = Field(default=5, description="Recent memories to keep per category during compaction")
+
     # ── Langfuse Observability ────────────────────────────────────────────
 
     # Note: Langfuse fields use validation_alias to read LANGFUSE_* (no AI_ prefix)

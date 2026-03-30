@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
-from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
+from lib.ai_foundation.agents.proactive_monitor.notify import send_top_insight_notification
 from lib.dependencies.actor import Actor, get_current_actor
 from rest_server.response_models import SuccessResponse
 
@@ -88,29 +88,10 @@ async def trigger_proactive_scan(
         try:
             from lib.services.fcm_service import FCMService
             fcm = FCMService()
-            # Send only the most severe insight — avoid notification spam
-            notifiable = list(result.insights)
-            if notifiable:
-                top_insight = max(notifiable, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
-                is_urgent = top_insight.severity.value in ("warning", "alert")
-                await fcm.send_fcm_notification_to_user_devices(
-                    user_id=notification_target,
-                    title=top_insight.title,
-                    body=top_insight.body,
-                    channel_key="alerts" if is_urgent else "reminders",
-                    group_key="alert_group" if is_urgent else "reminder_group",
-                    data={
-                        "type": "proactive_insight",
-                        "insight_id": top_insight.insight_id,
-                        "category": top_insight.category.value,
-                        "severity": top_insight.severity.value,
-                        "patient_id": payload.patient_id,
-                        "suggested_query": top_insight.suggested_query or "",
-                        "total_insights": str(len(result.insights)),
-                    },
-                )
-                # Record only the insight we actually sent
-                await monitor.record_insight(payload.patient_id, top_insight)
+            await send_top_insight_notification(
+                payload.patient_id, result.insights, monitor, fcm,
+                notification_target=notification_target,
+            )
         except Exception as exc:
             logger.error("FCM notification failed: %s", exc, exc_info=True)
 

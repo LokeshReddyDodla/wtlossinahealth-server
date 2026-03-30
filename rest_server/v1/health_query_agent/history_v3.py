@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.ai_foundation.agents.health_query.patient_resolver import fallback_name
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.agents.thread_utils import thread_prefix_for_user
 from rest_server.response_models import SuccessResponse
@@ -204,14 +205,14 @@ async def list_conversation_threads(
                 )
         except Exception:
             for pid in all_patient_ids:
-                patient_profiles[pid] = PatientInfo(patient_id=pid, name=f"Patient ({pid[:8]})")
+                patient_profiles[pid] = PatientInfo(patient_id=pid, name=fallback_name(pid))
 
     threads = [
         ThreadInfo(
             thread_id=r["thread_id"],
             title=title_map.get(r["thread_id"]),
             patients=[
-                patient_profiles.get(pid, PatientInfo(patient_id=pid, name=f"Patient ({pid[:8]})"))
+                patient_profiles.get(pid, PatientInfo(patient_id=pid, name=fallback_name(pid)))
                 for pid in patient_ids_map.get(r["thread_id"], [])
             ],
             turn_count=r["turn_count"],

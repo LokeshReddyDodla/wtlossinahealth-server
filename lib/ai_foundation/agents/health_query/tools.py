@@ -34,6 +34,39 @@ logger = logging.getLogger(__name__)
 # Used by reasoning engine and specialists for early-exit decisions.
 NO_DATA_PREFIX = "[NO_DATA] "
 
+# Keys excluded when formatting payloads for LLM consumption
+_PAYLOAD_EXCLUDE = frozenset({"data_type", "source", "patient_id", "embedding", "start_time", "end_time"})
+
+
+def _format_payload(
+    payload: dict,
+    names: dict[str, str] | None = None,
+    *,
+    include_nested: bool = False,
+    exclude_extra: frozenset[str] | None = None,
+) -> str:
+    """Format a payload dict as a readable 'key: value' string, injecting patient name."""
+    exclude = _PAYLOAD_EXCLUDE | exclude_extra if exclude_extra else _PAYLOAD_EXCLUDE
+    clean = {k: v for k, v in payload.items() if k not in exclude and v is not None}
+    pid = payload.get("patient_id", "")
+    name = (names or {}).get(pid)
+    if name:
+        clean["patient"] = name
+
+    parts: list[str] = []
+    for k, v in clean.items():
+        if isinstance(v, dict):
+            if include_nested:
+                inner = ", ".join(f"{ik}: {iv}" for ik, iv in v.items() if iv is not None)
+                if inner:
+                    parts.append(f"{k}: ({inner})")
+        elif isinstance(v, list):
+            if include_nested and v and isinstance(v[0], dict):
+                parts.append(f"{k}: {len(v)} items")
+        else:
+            parts.append(f"{k}: {v}")
+    return ", ".join(parts)
+
 # Canonical data_type values derived from HealthDataType enum — used in tool schema enums.
 # This ensures the LLM can ONLY pass valid values (OpenAI enforces enum constraints).
 from lib.ai_foundation.agents.health_query.contracts import HealthDataType
@@ -86,19 +119,10 @@ class ToolRoundResult:
     all_no_data: bool = False
     results: list[str] = dc_field(default_factory=list)
 
-# Maps specialist domain → Qdrant data_type values the specialist should use
+# Derive domain → data_type mapping from specialist specs (single source of truth)
+from lib.ai_foundation.agents.health_query.specialists import DEFAULT_SPECS as _DEFAULT_SPECS
 _DOMAIN_DATA_TYPES: dict[str, list[str]] = {
-    "glucose": [
-        "cgm_range_stats", "cgm_summary_stats", "smbg",
-        "hypo_event", "hypo_stats", "hyper_event", "hyper_stats",
-        "rapid_spike_event", "rapid_spike_stats", "rapid_drop_event", "rapid_drop_stats",
-        "time_period_stats", "agp_point", "cgm_semantic_window",
-    ],
-    "nutrition": ["meal"],
-    "fitness": ["fitness_overview", "fitness_activity_distribution", "fitness_inactive_periods"],
-    "vitals": ["vital"],
-    "sleep": ["sleep"],
-    "documents": ["patient_document"],
+    domain: spec.data_types for domain, spec in _DEFAULT_SPECS.items()
 }
 
 
@@ -467,24 +491,9 @@ class ToolExecutor:
             time_val = p.get("time") or ""
 
             # Build readable line
-            clean = {k: v for k, v in p.items()
-                     if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
-            pid = p.get("patient_id", "")
-            name = (names or {}).get(pid)
-            if name:
-                clean["patient"] = name
-
-            parts = []
-            for k, v in clean.items():
-                if isinstance(v, dict):
-                    inner = ", ".join(f"{ik}: {iv}" for ik, iv in v.items() if iv is not None)
-                    if inner:
-                        parts.append(f"{k}: ({inner})")
-                else:
-                    parts.append(f"{k}: {v}")
-
+            formatted = _format_payload(p, names, include_nested=True)
             time_prefix = f"  {time_val}" if time_val else "  "
-            lines.append(f"{time_prefix} [{dt}] {', '.join(parts)}")
+            lines.append(f"{time_prefix} [{dt}] {formatted}")
 
         return self._cap_result("\n".join(lines))
 
@@ -522,15 +531,7 @@ class ToolExecutor:
 
         # Show individual records (the LLM can compute averages)
         for r in results[:display_limit]:
-            p = r.payload
-            clean = {k: v for k, v in p.items()
-                     if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
-            pid = p.get("patient_id", "")
-            name = (names or {}).get(pid)
-            if name:
-                clean["patient"] = name
-            parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
-            lines.append(f"  - {', '.join(parts)}")
+            lines.append(f"  - {_format_payload(r.payload, names)}")
 
         if len(results) > display_limit:
             lines.append(f"  ... and {len(results) - display_limit} more entries")
@@ -566,14 +567,7 @@ class ToolExecutor:
             p = r.payload
             dt = r.data_type or p.get("data_type", "unknown")
             score = f" (relevance: {r.score:.2f})" if r.score else ""
-            clean = {k: v for k, v in p.items()
-                     if k not in ("data_type", "source", "patient_id", "embedding", "start_time", "end_time") and v is not None}
-            pid = p.get("patient_id", "")
-            name = (names or {}).get(pid)
-            if name:
-                clean["patient"] = name
-            parts = [f"{k}: {v}" for k, v in clean.items() if not isinstance(v, (dict, list))]
-            lines.append(f"  - [{dt}]{score} {', '.join(parts)}")
+            lines.append(f"  - [{dt}]{score} {_format_payload(p, names)}")
 
         return self._cap_result("\n".join(lines))
 
@@ -669,24 +663,7 @@ class ToolExecutor:
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"{label} ({len(items)} entries):"]
             for item in items[:settings.MAX_RECORDS_PER_TYPE]:
-                clean = {k: v for k, v in item.items()
-                         if k not in ("data_type", "source", "patient_id", "embedding") and v is not None}
-                # Inject patient name so the LLM knows who this record belongs to
-                pid = item.get("patient_id", "")
-                name = (names or {}).get(pid)
-                if name:
-                    clean["patient"] = name
-                parts: list[str] = []
-                for k, v in clean.items():
-                    if isinstance(v, dict):
-                        inner = ", ".join(f"{ik}: {iv}" for ik, iv in v.items() if iv is not None)
-                        if inner:
-                            parts.append(f"{k}: ({inner})")
-                    elif isinstance(v, list) and v and isinstance(v[0], dict):
-                        parts.append(f"{k}: {len(v)} items")
-                    else:
-                        parts.append(f"{k}: {v}")
-                lines.append("  - " + ", ".join(parts))
+                lines.append("  - " + _format_payload(item, names, include_nested=True))
 
             if len(items) > settings.MAX_RECORDS_PER_TYPE:
                 lines.append(f"  ... and {len(items) - settings.MAX_RECORDS_PER_TYPE} more")

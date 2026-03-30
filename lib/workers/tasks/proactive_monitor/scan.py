@@ -15,7 +15,7 @@ from typing import Any
 
 from loguru import logger
 
-from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
+from lib.ai_foundation.agents.proactive_monitor.notify import send_top_insight_notification
 from lib.ai_foundation.agents.proactive_monitor.scheduling import (
     DEFAULT_TIMEZONE,
     is_within_scan_window,
@@ -77,7 +77,7 @@ async def run_proactive_scan(
         fcm = FCMService()
         for result in batch.results:
             if result.insights:
-                await _send_notification(result.patient_id, result.insights, monitor, fcm=fcm)
+                await send_top_insight_notification(result.patient_id, result.insights, monitor, fcm)
 
         return TaskResult(
             success=True,
@@ -113,7 +113,7 @@ async def run_proactive_scan_single(
 
         if result.insights:
             from lib.services.fcm_service import FCMService
-            await _send_notification(patient_id, result.insights, monitor, fcm=FCMService())
+            await send_top_insight_notification(patient_id, result.insights, monitor, FCMService())
 
         return TaskResult(
             success=True,
@@ -147,40 +147,6 @@ def _filter_by_scan_window(
         else:
             skipped += 1
     return eligible, skipped
-
-
-async def _send_notification(
-    patient_id: str,
-    insights: list,
-    monitor: Any,
-    *,
-    fcm: Any,
-) -> None:
-    """Send ONE push notification — the most severe insight — and record it."""
-    try:
-        top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
-        is_urgent = top.severity.value in ("warning", "alert")
-
-        await fcm.send_fcm_notification_to_user_devices(
-            user_id=patient_id,
-            title=top.title,
-            body=top.body,
-            channel_key="alerts" if is_urgent else "reminders",
-            group_key="alert_group" if is_urgent else "reminder_group",
-            data={
-                "type": "proactive_insight",
-                "insight_id": top.insight_id,
-                "category": top.category.value,
-                "severity": top.severity.value,
-                "patient_id": patient_id,
-                "suggested_query": top.suggested_query or "",
-                "total_insights": str(len(insights)),
-            },
-        )
-        # Only the top-severity insight is persisted — others are discarded by design.
-        await monitor.record_insight(patient_id, top)
-    except Exception as e:
-        logger.warning(f"Failed to send notification for {patient_id}: {e}")
 
 
 async def _get_active_patient_ids() -> list[str]:

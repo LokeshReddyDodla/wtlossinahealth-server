@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     sse_reasoning,
@@ -294,7 +295,7 @@ class Specialist:
                 model_id=model_id,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
             )
-            total_cost += response.usage.cost.total_cost if response.usage.cost else 0
+            total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
                 if round_num == 1 and self._spec.data_types and not seen_calls:
@@ -306,7 +307,8 @@ class Specialist:
                     )
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
-                    findings_parts.append(fallback_result)
+                    if not is_no_data(fallback_result):
+                        findings_parts.append(fallback_result)
                     specialist_messages.append({
                         "role": "system",
                         "content": f"Health data retrieved:\n\n{fallback_result}",
@@ -333,8 +335,8 @@ class Specialist:
             specialist_messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
 
-            # Collect findings from results
-            findings_parts.extend(tool_round.results)
+            # Collect findings from results (exclude [NO_DATA] sentinels)
+            findings_parts.extend(r for r in tool_round.results if not is_no_data(r))
 
             # Emit tool events (streaming only)
             if emit_events:

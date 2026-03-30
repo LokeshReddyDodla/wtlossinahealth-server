@@ -198,21 +198,24 @@ class InsightTracker:
         await self._maybe_ensure_indexes()
         since = datetime.now(timezone.utc) - timedelta(days=since_days)
 
-        # Cap total documents to avoid unbounded cursor scans
-        max_docs = len(patient_ids) * limit_per_patient * 2  # 2x headroom for skipped docs
-        cursor = self._collection.find(
-            {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}},
-            sort=[("patient_id", 1), ("created_at", -1)],
-            limit=max_docs,
-        )
+        # Use aggregation pipeline for fair per-patient limiting (avoids data skew)
+        pipeline = [
+            {"$match": {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}}},
+            {"$sort": {"created_at": -1}},
+            {"$group": {
+                "_id": "$patient_id",
+                "docs": {"$push": "$$ROOT"},
+            }},
+            {"$project": {
+                "docs": {"$slice": ["$docs", limit_per_patient]},
+            }},
+        ]
 
-        # Group by patient, limit per patient
         by_patient: dict[str, list[dict]] = {}
-        async for doc in cursor:
-            pid = doc["patient_id"]
-            if pid not in by_patient:
-                by_patient[pid] = []
-            if len(by_patient[pid]) < limit_per_patient:
+        async for group in self._collection.aggregate(pipeline):
+            pid = group["_id"]
+            by_patient[pid] = []
+            for doc in group["docs"]:
                 doc["_id"] = str(doc["_id"])
                 by_patient[pid].append(doc)
 

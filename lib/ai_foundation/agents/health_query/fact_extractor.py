@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.config import settings
+
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
@@ -66,6 +68,11 @@ _EXTRACTION_PROMPT = (
     "Set has_facts=true if ANY memories are found. "
     "Set has_facts=false if the message is just a data query with no personal facts."
 )
+
+
+def normalize_memory_key(raw: str) -> str:
+    """Normalize a memory key: lowercase, underscores, stripped."""
+    return raw.strip().lower().replace(" ", "_").replace("-", "_")
 
 
 class ExtractedFact(BaseModel):
@@ -123,7 +130,7 @@ class FactExtractor:
 
             facts = []
             for f in result.facts:
-                key = f.key.strip().lower().replace(" ", "_").replace("-", "_")
+                key = normalize_memory_key(f.key)
                 value = f.value.strip()
                 if not key or not value:
                     continue
@@ -153,15 +160,12 @@ class FactExtractor:
 
     # -- Memory compaction --------------------------------------------------
 
-    _COMPACT_THRESHOLD = 50
-    _KEEP_RECENT_PER_CATEGORY = 5
-
     async def _compact_if_needed(self, patient_id: str) -> None:
         """Compact memories when they exceed the threshold.
 
         Strategy:
         - Group memories by category
-        - For categories with > _KEEP_RECENT_PER_CATEGORY items:
+        - For categories with > settings.COMPACT_KEEP_RECENT items:
           - Keep the N most recent as-is
           - Summarize the rest into one "summary" memory via LLM
           - Delete the old individual memories
@@ -172,7 +176,7 @@ class FactExtractor:
 
         try:
             all_facts = await self._memory.get_patient_facts(patient_id)
-            if len(all_facts) <= self._COMPACT_THRESHOLD:
+            if len(all_facts) <= settings.COMPACT_THRESHOLD:
                 return
 
             logger.info("Compacting memories for %s: %d items", patient_id[:8], len(all_facts))
@@ -187,13 +191,13 @@ class FactExtractor:
             from lib.ai_foundation.models.registry import ModelTask
 
             for cat, facts in by_cat.items():
-                if len(facts) <= self._KEEP_RECENT_PER_CATEGORY:
+                if len(facts) <= settings.COMPACT_KEEP_RECENT:
                     continue
 
                 # Split: keep recent, summarize old
                 # Facts are sorted newest-first from get_patient_facts
                 to_summarize = [
-                    f for f in facts[self._KEEP_RECENT_PER_CATEGORY:]
+                    f for f in facts[settings.COMPACT_KEEP_RECENT:]
                     if not getattr(f, "is_permanent", False) and not f.key.endswith("_summary")
                 ]
 

@@ -519,31 +519,32 @@ def _parse_record_count(text: str) -> int | None:
     return None
 
 
-def _describe_data_types_patient(data_types: list[str]) -> str:
-    """Convert data_type list to patient-friendly description."""
+def _describe_data_types(
+    data_types: list[str],
+    labels: dict[str, str],
+    join_fn: Any,
+    fallback_suffix: str = "data",
+) -> str:
+    """Convert data_type list to human-readable description using role-specific labels."""
     type_to_domain = _get_type_to_domain()
-    # Group by domain for natural language
     domains: list[str] = []
     seen: set[str] = set()
     for dt in data_types:
         domain = type_to_domain.get(dt, dt.replace("_", " "))
         if domain not in seen:
             seen.add(domain)
-            domains.append(_DOMAIN_PATIENT_LABELS.get(domain, f"{domain} data"))
-    return _join_natural(domains)
+            domains.append(labels.get(domain, f"{domain} {fallback_suffix}"))
+    return join_fn(domains) if domains else "health data"
+
+
+def _describe_data_types_patient(data_types: list[str]) -> str:
+    """Convert data_type list to patient-friendly description."""
+    return _describe_data_types(data_types, _DOMAIN_PATIENT_LABELS, _join_natural, "data")
 
 
 def _describe_data_types_provider(data_types: list[str]) -> str:
     """Convert data_type list to clinical description."""
-    type_to_domain = _get_type_to_domain()
-    domains: list[str] = []
-    seen: set[str] = set()
-    for dt in data_types:
-        domain = type_to_domain.get(dt, dt.replace("_", " "))
-        if domain not in seen:
-            seen.add(domain)
-            domains.append(_DOMAIN_PROVIDER_LABELS.get(domain, f"{domain} records"))
-    return ", ".join(domains)
+    return _describe_data_types(data_types, _DOMAIN_PROVIDER_LABELS, ", ".join, "records")
 
 
 def _join_natural(items: list[str]) -> str:
