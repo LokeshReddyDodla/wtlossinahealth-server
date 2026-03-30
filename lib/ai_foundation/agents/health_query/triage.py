@@ -12,15 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-# ── Severity ranking (higher = more urgent) ──────────────────────────────
-
-SEVERITY_RANK: dict[str, int] = {
-    "alert": 4,
-    "warning": 3,
-    "attention": 2,
-    "info": 1,
-}
+from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
 
 _URGENT_SEVERITIES = frozenset({"warning", "alert"})
 

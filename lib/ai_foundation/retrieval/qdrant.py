@@ -209,15 +209,80 @@ class QdrantRetriever:
 
     # ── Filter Building ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _time_range_conditions(request: RetrievalRequest) -> list[FieldCondition]:
+        """Build date_start/date_end/month filter conditions."""
+        conditions: list[FieldCondition] = []
+
+        if request.date_start:
+            start_ms = _date_str_to_epoch_ms(request.date_start)
+            if start_ms is not None:
+                conditions.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
+
+        if request.date_end:
+            end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
+            if end_ms is not None:
+                conditions.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
+
+        month_filters = request.filters.get("month_filters")
+        if month_filters:
+            if isinstance(month_filters, list) and len(month_filters) == 1:
+                conditions.append(FieldCondition(key="month", match=MatchValue(value=month_filters[0])))
+            elif isinstance(month_filters, list):
+                conditions.append(FieldCondition(key="month", match=MatchAny(any=month_filters)))
+
+        return conditions
+
+    @staticmethod
+    def _pass_through_conditions(request: RetrievalRequest) -> list[FieldCondition]:
+        """Build hour range, numeric, and other key/value filter conditions."""
+        conditions: list[FieldCondition] = []
+
+        # Time buckets
+        time_buckets = request.filters.get("time_buckets")
+        if time_buckets and isinstance(time_buckets, list):
+            conditions.append(FieldCondition(key="time_of_day_bucket", match=MatchAny(any=time_buckets)))
+
+        # Hour range
+        hour_start = request.filters.get("hour_start")
+        hour_end = request.filters.get("hour_end")
+        if hour_start is not None and hour_end is not None:
+            conditions.append(FieldCondition(key="hour", range=Range(
+                gte=float(hour_start), lt=float(hour_end),
+            )))
+
+        # Numeric filters (e.g., glucose > 200)
+        numeric_filters = request.filters.get("numeric_filters")
+        if numeric_filters and isinstance(numeric_filters, list):
+            for nf in numeric_filters:
+                key = nf.get("key")
+                range_cond = nf.get("range_condition", {})
+                if key and range_cond:
+                    range_kwargs = {}
+                    for op in ("gte", "lte", "gt", "lt"):
+                        if op in range_cond and range_cond[op] is not None:
+                            range_kwargs[op] = float(range_cond[op])
+                    if range_kwargs:
+                        conditions.append(FieldCondition(key=key, range=Range(**range_kwargs)))
+
+        # Other pass-through filters
+        _HANDLED = frozenset(("month_filters", "time_buckets", "hour_start", "hour_end", "numeric_filters"))
+        for key, value in request.filters.items():
+            if key in _HANDLED:
+                continue
+            if isinstance(value, list):
+                conditions.append(FieldCondition(key=key, match=MatchAny(any=value)))
+            elif isinstance(value, (int, float, str, bool)):
+                conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+
+        return conditions
+
     def _build_full_filter(self, request: RetrievalRequest) -> Filter | None:
         """Build comprehensive Qdrant filter from the retrieval request.
 
-        Ported from v2/filter_builder.py with full support for:
-        - Patient ID, data types (with stats/events expansion)
-        - Date range (epoch ms), month filters
-        - Time buckets, hour ranges
-        - Numeric filters (range conditions)
-        - Non-filterable types (PROFILE, DOCUMENTS) via should/min_should
+        Orchestrates helper methods for time-range and pass-through conditions.
+        Handles patient ID, data types (with stats/events expansion),
+        and non-filterable types (PROFILE, DOCUMENTS) via should/min_should.
         """
         if not request.patient_ids:
             return None
@@ -252,60 +317,8 @@ class QdrantRetriever:
             if filterable:
                 must.append(FieldCondition(key="data_type", match=MatchAny(any=filterable)))
 
-            # Date range → epoch ms
-            if request.date_start:
-                start_ms = _date_str_to_epoch_ms(request.date_start)
-                if start_ms is not None:
-                    must.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
-
-            if request.date_end:
-                end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
-                if end_ms is not None:
-                    must.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
-
-            # Month filters
-            month_filters = request.filters.get("month_filters")
-            if month_filters:
-                if isinstance(month_filters, list) and len(month_filters) == 1:
-                    must.append(FieldCondition(key="month", match=MatchValue(value=month_filters[0])))
-                elif isinstance(month_filters, list):
-                    must.append(FieldCondition(key="month", match=MatchAny(any=month_filters)))
-
-            # Time buckets
-            time_buckets = request.filters.get("time_buckets")
-            if time_buckets and isinstance(time_buckets, list):
-                must.append(FieldCondition(key="time_of_day_bucket", match=MatchAny(any=time_buckets)))
-
-            # Hour range
-            hour_start = request.filters.get("hour_start")
-            hour_end = request.filters.get("hour_end")
-            if hour_start is not None and hour_end is not None:
-                must.append(FieldCondition(key="hour", range=Range(
-                    gte=float(hour_start), lt=float(hour_end),
-                )))
-
-            # Numeric filters (e.g., glucose > 200)
-            numeric_filters = request.filters.get("numeric_filters")
-            if numeric_filters and isinstance(numeric_filters, list):
-                for nf in numeric_filters:
-                    key = nf.get("key")
-                    range_cond = nf.get("range_condition", {})
-                    if key and range_cond:
-                        range_kwargs = {}
-                        for op in ("gte", "lte", "gt", "lt"):
-                            if op in range_cond and range_cond[op] is not None:
-                                range_kwargs[op] = float(range_cond[op])
-                        if range_kwargs:
-                            must.append(FieldCondition(key=key, range=Range(**range_kwargs)))
-
-            # Other pass-through filters
-            for key, value in request.filters.items():
-                if key in ("month_filters", "time_buckets", "hour_start", "hour_end", "numeric_filters"):
-                    continue  # already handled above
-                if isinstance(value, list):
-                    must.append(FieldCondition(key=key, match=MatchAny(any=value)))
-                elif isinstance(value, (int, float, str, bool)):
-                    must.append(FieldCondition(key=key, match=MatchValue(value=value)))
+            must.extend(self._time_range_conditions(request))
+            must.extend(self._pass_through_conditions(request))
 
             should_filters.append(Filter(must=must))
 

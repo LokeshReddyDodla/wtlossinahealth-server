@@ -21,6 +21,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def fallback_name(pid: str) -> str:
+    """Default display name when patient lookup fails."""
+    return f"Patient ({pid[:8]})"
+
+
 class PatientProfile(BaseModel):
     """Minimal patient info for thread display."""
 
@@ -62,11 +67,11 @@ class PatientNameResolver:
         stale = self._collect_stale(patient_ids)
         if stale:
             await self._fetch(stale)
-        return {pid: self._name_cache.get(pid, f"Patient ({pid[:8]})") for pid in patient_ids}
+        return {pid: self._name_cache.get(pid, fallback_name(pid)) for pid in patient_ids}
 
     async def resolve_name(self, patient_id: str) -> str:
         names = await self.resolve_names([patient_id])
-        return names.get(patient_id, f"Patient ({patient_id[:8]})")
+        return names.get(patient_id, fallback_name(patient_id))
 
     # -- Timezones (for proactive monitor) ---------------------------------
 
@@ -90,7 +95,7 @@ class PatientNameResolver:
             await self._fetch(stale)
         return [
             self._profile_cache.get(pid, PatientProfile(
-                patient_id=pid, name=f"Patient ({pid[:8]})",
+                patient_id=pid, name=fallback_name(pid),
             ))
             for pid in patient_ids
         ]
@@ -144,7 +149,7 @@ class PatientNameResolver:
                     pid = str(row.patient_id)
                     first = row.first_name or ""
                     last = row.last_name or ""
-                    name = f"{first} {last}".strip() or f"Patient ({pid[:8]})"
+                    name = f"{first} {last}".strip() or fallback_name(pid)
 
                     self._name_cache[pid] = name
                     self._profile_cache[pid] = PatientProfile(
@@ -157,9 +162,9 @@ class PatientNameResolver:
 
             for pid in patient_ids:
                 if pid not in self._name_cache:
-                    self._name_cache[pid] = f"Patient ({pid[:8]})"
+                    self._name_cache[pid] = fallback_name(pid)
                     self._profile_cache[pid] = PatientProfile(
-                        patient_id=pid, name=f"Patient ({pid[:8]})",
+                        patient_id=pid, name=fallback_name(pid),
                     )
                 # Cache misses too so unknown IDs do not trigger repeated DB hits.
                 self._timestamps[pid] = fetched_at
@@ -170,8 +175,8 @@ class PatientNameResolver:
             logger.warning("Failed to resolve patients: %s", exc)
             for pid in patient_ids:
                 if pid not in self._name_cache:
-                    self._name_cache[pid] = f"Patient ({pid[:8]})"
+                    self._name_cache[pid] = fallback_name(pid)
                     self._profile_cache[pid] = PatientProfile(
-                        patient_id=pid, name=f"Patient ({pid[:8]})",
+                        patient_id=pid, name=fallback_name(pid),
                     )
                 self._timestamps[pid] = fetched_at

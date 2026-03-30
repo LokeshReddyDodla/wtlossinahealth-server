@@ -19,6 +19,7 @@ import re
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
@@ -32,8 +33,15 @@ from lib.ai_foundation.streaming.sse import (
     sse_token,
 )
 
+from lib.ai_foundation.agents.health_query.evidence import (
+    build_summary_from_findings,
+    compute_coverage_confidence,
+    detect_conflicts,
+    format_data_gaps,
+)
+
 from .context_loader import build_context_messages
-from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS
+from .reasoning_engine import ReasoningResult, ReasoningTier, TIER_CONFIGS, _MIN_TRUNCATION_CHARS
 from .specialists import Specialist, SpecialistFindings
 
 if TYPE_CHECKING:
@@ -323,18 +331,10 @@ class Coordinator:
                     full_response_parts.append(chunk.delta)
                     yield sse_token(chunk.delta)
                 if chunk.finished and chunk.usage:
-                    total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
+                    total_cost += safe_cost(chunk)
 
             # Compute evidence confidence for SSE done payload
-            from lib.ai_foundation.agents.health_query.evidence import (
-                build_summary_from_findings as _bsf,
-                compute_coverage_confidence as _cc,
-                detect_conflicts as _dc,
-                format_data_gaps as _fg,
-            )
-            _s = _bsf(findings) if findings else None
-            _refl_conf = reflection_result.confidence if reflection_result else None
-            _conflicts = _dc(_s.items) if _s and _s.items else None
+            evidence = self._compute_evidence_metrics(findings, reflection_result)
 
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
@@ -344,10 +344,7 @@ class Coordinator:
                     "tier": tier.value,
                     "domains": domains,
                     "full_response": "".join(full_response_parts),
-                    "coverage_confidence": _cc(_s, skip_date_penalty=True) if _s else None,
-                    "reflection_confidence": _refl_conf,
-                    "data_gaps": _fg(_s) if _s else None,
-                    "data_conflicts": _conflicts or None,
+                    **evidence,
                 },
             ))
         else:
@@ -357,19 +354,10 @@ class Coordinator:
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=tier_cfg.responder_model,
             )
-            total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
+            total_cost += safe_cost(final_response)
 
             # Compute evidence confidence from specialist findings
-            from lib.ai_foundation.agents.health_query.evidence import (
-                build_summary_from_findings,
-                compute_coverage_confidence,
-                detect_conflicts,
-                format_data_gaps,
-            )
-            _summary = build_summary_from_findings(findings) if findings else None
-            _confidence = compute_coverage_confidence(_summary, skip_date_penalty=True) if _summary else None
-            _gaps = format_data_gaps(_summary) if _summary else None
-            _conflicts = detect_conflicts(_summary.items) if _summary and _summary.items else None
+            evidence = self._compute_evidence_metrics(findings, reflection_result)
 
             yield ReasoningResult(
                 response=final_response.content or "",
@@ -380,11 +368,28 @@ class Coordinator:
                 thinker_model=tier_cfg.thinker_model,
                 responder_model=tier_cfg.responder_model,
                 tier=tier.value,
-                coverage_confidence=_confidence,
-                reflection_confidence=reflection_result.confidence if reflection_result else None,
-                data_gaps=_gaps,
-                data_conflicts=_conflicts or None,
+                **evidence,
             )
+
+    # ── Evidence metrics (shared by streaming + non-streaming) ────────
+
+    @staticmethod
+    def _compute_evidence_metrics(
+        findings: list[SpecialistFindings],
+        reflection_result: Any,
+    ) -> dict[str, Any]:
+        """Compute evidence metrics from specialist findings and reflection.
+
+        Returns dict with keys: coverage_confidence, reflection_confidence,
+        data_gaps, data_conflicts.
+        """
+        summary = build_summary_from_findings(findings) if findings else None
+        return {
+            "coverage_confidence": compute_coverage_confidence(summary, skip_date_penalty=True) if summary else None,
+            "reflection_confidence": reflection_result.confidence if reflection_result else None,
+            "data_gaps": format_data_gaps(summary) if summary else None,
+            "data_conflicts": (detect_conflicts(summary.items) if summary and summary.items else None) or None,
+        }
 
     # ── Context window protection ────────────────────────────────────
 
@@ -419,11 +424,11 @@ class Coordinator:
                     longest_len = content_len
                     longest_idx = i
 
-            if longest_idx < 0 or longest_len <= 500:
+            if longest_idx < 0 or longest_len <= _MIN_TRUNCATION_CHARS:
                 break  # nothing left to truncate
 
             # Halve the longest message
-            target = max(longest_len // 2, 500)
+            target = max(longest_len // 2, _MIN_TRUNCATION_CHARS)
             msg = messages[longest_idx]
             messages[longest_idx] = {
                 **msg,
@@ -522,7 +527,7 @@ class Coordinator:
                 model_id=tier_cfg.thinker_model,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
             )
-            cost += response.usage.cost.total_cost if response.usage.cost else 0
+            cost += safe_cost(response)
 
             if not response.has_tool_calls:
                 if response.content:

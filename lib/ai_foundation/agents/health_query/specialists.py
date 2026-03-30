@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     sse_reasoning,
@@ -294,7 +295,7 @@ class Specialist:
                 model_id=model_id,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
             )
-            total_cost += response.usage.cost.total_cost if response.usage.cost else 0
+            total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
                 if round_num == 1 and self._spec.data_types and not seen_calls:

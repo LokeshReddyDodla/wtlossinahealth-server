@@ -19,9 +19,10 @@ import json
 import logging
 import time
 from typing import (
-    TYPE_CHECKING,
     Any,
     AsyncIterator,
+    Awaitable,
+    Callable,
     TypeVar,
 )
 from uuid import uuid4
@@ -40,12 +41,17 @@ from .registry import (
     ModelTask,
 )
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def safe_cost(obj: Any) -> float:
+    """Safely extract total_cost from an LLM response or metadata object."""
+    try:
+        return obj.usage.cost.total_cost if obj and obj.usage and obj.usage.cost else 0.0
+    except AttributeError:
+        return 0.0
 
 
 def _circuit_key(spec: ModelSpec) -> str:
@@ -307,28 +313,15 @@ class ModelGateway:
 
         Tries the primary model first, then walks the fallback chain on failure.
         """
-        trace_id = trace_id or str(uuid4())
-        chain = self._resolve_chain(task, model_id)
-
-        last_error: Exception | None = None
-        for spec in chain:
-            circuit_key = _circuit_key(spec)
-            if not self._circuit_breaker.is_available(circuit_key):
-                logger.debug("Skipping %s — circuit open for %s", spec.model_id, circuit_key)
-                continue
-
-            effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
-            try:
-                return await self._do_complete(effective_spec, messages, trace_id)
-            except Exception as exc:
-                last_error = exc
-                self._circuit_breaker.record_failure(circuit_key)
-                logger.warning(
-                    "ModelGateway.complete failed for %s: %s", spec.model_id, exc
-                )
-
-        raise AllProvidersUnavailableError(
-            f"All models failed for task {task.value!r}. Last error: {last_error}"
+        return await self._with_fallback(
+            task=task,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            trace_id=trace_id,
+            method_name="ModelGateway.complete",
+            call=lambda spec, tid: self._do_complete(spec, messages, tid),
         )
 
     async def extract(
@@ -346,29 +339,15 @@ class ModelGateway:
 
         Returns a tuple of (parsed_model, llm_response_metadata).
         """
-        trace_id = trace_id or str(uuid4())
-        chain = self._resolve_chain(task, model_id)
-
-        last_error: Exception | None = None
-        for spec in chain:
-            circuit_key = _circuit_key(spec)
-            if not self._circuit_breaker.is_available(circuit_key):
-                continue
-
-            effective_spec = self._apply_overrides(spec, temperature, None, timeout)
-            try:
-                return await self._do_extract(
-                    effective_spec, messages, response_model, trace_id
-                )
-            except Exception as exc:
-                last_error = exc
-                self._circuit_breaker.record_failure(circuit_key)
-                logger.warning(
-                    "ModelGateway.extract failed for %s: %s", spec.model_id, exc
-                )
-
-        raise AllProvidersUnavailableError(
-            f"All models failed for task {task.value!r}. Last error: {last_error}"
+        return await self._with_fallback(
+            task=task,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=None,
+            timeout=timeout,
+            trace_id=trace_id,
+            method_name="ModelGateway.extract",
+            call=lambda spec, tid: self._do_extract(spec, messages, response_model, tid),
         )
 
     async def complete_with_tools(
@@ -387,27 +366,15 @@ class ModelGateway:
         This is the core of the agentic reasoning loop. The LLM sees the tools,
         decides whether to call one (or more) or respond directly.
         """
-        trace_id = trace_id or str(uuid4())
-        chain = self._resolve_chain(task, model_id)
-
-        last_error: Exception | None = None
-        for spec in chain:
-            circuit_key = _circuit_key(spec)
-            if not self._circuit_breaker.is_available(circuit_key):
-                continue
-
-            effective_spec = self._apply_overrides(spec, temperature, None, timeout)
-            try:
-                return await self._do_complete_with_tools(
-                    effective_spec, messages, tools, trace_id,
-                )
-            except Exception as exc:
-                last_error = exc
-                self._circuit_breaker.record_failure(circuit_key)
-                logger.warning("ModelGateway.complete_with_tools failed for %s: %s", spec.model_id, exc)
-
-        raise AllProvidersUnavailableError(
-            f"All models failed for task {task.value!r}. Last error: {last_error}"
+        return await self._with_fallback(
+            task=task,
+            model_id=model_id,
+            temperature=temperature,
+            max_tokens=None,
+            timeout=timeout,
+            trace_id=trace_id,
+            method_name="ModelGateway.complete_with_tools",
+            call=lambda spec, tid: self._do_complete_with_tools(spec, messages, tools, tid),
         )
 
     async def _do_complete_with_tools(
@@ -526,6 +493,61 @@ class ModelGateway:
     @property
     def circuit_breaker(self) -> CircuitBreaker:
         return self._circuit_breaker
+
+    # -- Internal: fallback orchestration ------------------------------------
+
+    _R = TypeVar("_R")
+
+    async def _with_fallback(
+        self,
+        *,
+        task: ModelTask,
+        model_id: str | None,
+        temperature: float | None,
+        max_tokens: int | None,
+        timeout: float | None,
+        trace_id: str | None,
+        method_name: str,
+        call: Callable[[ModelSpec, str], Awaitable[_R]],
+    ) -> _R:
+        """Run *call* against each model in the fallback chain until one succeeds.
+
+        Handles: trace_id defaulting, chain resolution, circuit-breaker checks,
+        spec overrides, try/except with failure recording, and the terminal
+        AllProvidersUnavailableError.
+
+        Parameters
+        ----------
+        call:
+            ``async def(effective_spec, trace_id) -> _R`` — the actual LLM
+            invocation (e.g. ``_do_complete``, ``_do_extract`` partial).
+        method_name:
+            Used only in the warning log so messages stay identical to the
+            originals (e.g. ``"ModelGateway.complete"``).
+        """
+        trace_id = trace_id or str(uuid4())
+        chain = self._resolve_chain(task, model_id)
+
+        last_error: Exception | None = None
+        for spec in chain:
+            circuit_key = _circuit_key(spec)
+            if not self._circuit_breaker.is_available(circuit_key):
+                logger.debug("Skipping %s — circuit open for %s", spec.model_id, circuit_key)
+                continue
+
+            effective_spec = self._apply_overrides(spec, temperature, max_tokens, timeout)
+            try:
+                return await call(effective_spec, trace_id)
+            except Exception as exc:
+                last_error = exc
+                self._circuit_breaker.record_failure(circuit_key)
+                logger.warning(
+                    "%s failed for %s: %s", method_name, spec.model_id, exc
+                )
+
+        raise AllProvidersUnavailableError(
+            f"All models failed for task {task.value!r}. Last error: {last_error}"
+        )
 
     # -- Internal: resolution -----------------------------------------------
 

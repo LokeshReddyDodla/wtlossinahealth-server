@@ -15,6 +15,7 @@ import asyncio
 import inspect
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -34,6 +35,8 @@ from lib.ai_foundation.streaming.sse import (
     sse_token,
 )
 
+from lib.ai_foundation.models.gateway import safe_cost
+
 from .contracts import QueryIntent, QueryResponse, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
@@ -41,6 +44,16 @@ from .reasoning_engine import ReasoningEngine, ReasoningTier
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+@dataclass
+class _PipelineContext:
+    pipeline_start: float
+    user_timestamp: datetime
+    trace_id: str
+    ctx: Any  # AgentContext
+    intent: Any  # QueryIntent
+    meta: Any  # LLMResponse metadata
 
 
 async def _maybe_await(result: Any) -> None:
@@ -79,27 +92,16 @@ class HealthQueryAgent(BaseAgent):
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
     async def run(self, input: AgentInput) -> AgentOutput:
-        pipeline_start = time.perf_counter()
-        user_timestamp = datetime.now(timezone.utc)
         trace_id = f"trc_{uuid4().hex[:16]}"
 
         try:
-            # Set Langfuse context for this request
-            await _maybe_await(self.gateway.set_langfuse_context(
-                session_id=input.context.thread_id,
-                user_id=input.context.user_id,
-            ))
-
-            # Set trace-level input
-            await _maybe_await(self.gateway.langfuse_trace_input(
-                trace_id=trace_id,
-                input_text=input.message,
-                metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
-            ))
-
-            ctx = await self._load_context(input)
-            ctx.local_time = (input.context.metadata or {}).get("local_time")
-            intent, meta = await self._extract_intent(input, ctx)
+            pc = await self._init_pipeline(input)
+            pipeline_start = pc.pipeline_start
+            user_timestamp = pc.user_timestamp
+            trace_id = pc.trace_id
+            ctx = pc.ctx
+            intent = pc.intent
+            meta = pc.meta
 
             # ── Memory commands (remember/forget/list) ──
             if intent.memory_action:
@@ -154,7 +156,7 @@ class HealthQueryAgent(BaseAgent):
                 )
 
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
-            total_cost = (meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else 0) + result.total_cost
+            total_cost = safe_cost(meta) + result.total_cost
 
             output = AgentOutput(
                 message=result.response, is_ready=True,
@@ -192,28 +194,17 @@ class HealthQueryAgent(BaseAgent):
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 
     async def run_stream(self, input: AgentInput) -> AsyncIterator[str]:
-        pipeline_start = time.perf_counter()
-        user_timestamp = datetime.now(timezone.utc)
         trace_id = f"trc_{uuid4().hex[:16]}"
 
         try:
-            # Set Langfuse context for this request
-            await _maybe_await(self.gateway.set_langfuse_context(
-                session_id=input.context.thread_id,
-                user_id=input.context.user_id,
-            ))
-
-            # Set trace-level input
-            await _maybe_await(self.gateway.langfuse_trace_input(
-                trace_id=trace_id,
-                input_text=input.message,
-                metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
-            ))
-
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
-            ctx = await self._load_context(input)
-            ctx.local_time = (input.context.metadata or {}).get("local_time")
-            intent, meta = await self._extract_intent(input, ctx)
+            pc = await self._init_pipeline(input)
+            pipeline_start = pc.pipeline_start
+            user_timestamp = pc.user_timestamp
+            trace_id = pc.trace_id
+            ctx = pc.ctx
+            intent = pc.intent
+            meta = pc.meta
             yield sse_intent(intent.model_dump(mode="json", exclude_none=True))
 
             # ── Memory commands (remember/forget/list) ──
@@ -288,7 +279,7 @@ class HealthQueryAgent(BaseAgent):
                         pass
 
                     engine_data = done_data.get("data", {})
-                    intent_cost = meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else 0.0
+                    intent_cost = safe_cost(meta)
                     engine_cost = done_data.get("cost_usd")
                     total_cost = (engine_cost or 0.0) + intent_cost
                     elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -335,6 +326,35 @@ class HealthQueryAgent(BaseAgent):
                             fallback_text="Please try again in a moment.")
 
     # ── Pipeline steps ────────────────────────────────────────────────────
+
+    async def _init_pipeline(self, input: AgentInput) -> _PipelineContext:
+        """Shared setup for run() and run_stream(): timing, tracing, context, intent."""
+        pipeline_start = time.perf_counter()
+        user_timestamp = datetime.now(timezone.utc)
+        trace_id = f"trc_{uuid4().hex[:16]}"
+
+        await _maybe_await(self.gateway.set_langfuse_context(
+            session_id=input.context.thread_id,
+            user_id=input.context.user_id,
+        ))
+        await _maybe_await(self.gateway.langfuse_trace_input(
+            trace_id=trace_id,
+            input_text=input.message,
+            metadata={"user_role": input.context.user_role, "patient_ids": input.context.patient_ids},
+        ))
+
+        ctx = await self._load_context(input)
+        ctx.local_time = (input.context.metadata or {}).get("local_time")
+        intent, meta = await self._extract_intent(input, ctx)
+
+        return _PipelineContext(
+            pipeline_start=pipeline_start,
+            user_timestamp=user_timestamp,
+            trace_id=trace_id,
+            ctx=ctx,
+            intent=intent,
+            meta=meta,
+        )
 
     async def _load_context(self, input: AgentInput) -> Any:
         if not self.context_loader:
@@ -427,24 +447,21 @@ class HealthQueryAgent(BaseAgent):
     ) -> AgentOutput:
         """Handle memory commands: add, delete, list."""
         from lib.ai_foundation.memory.base import MemoryFact, MemorySource
-        from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS
+        from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS, normalize_memory_key
 
-        pid = input.context.patient_id
-        if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
-            pid = input.context.patient_ids[0]
+        pid = self._resolve_single_pid(input)
         if not pid or not self.memory:
             return AgentOutput(message="I can't manage memories without knowing which patient.", is_ready=True, trace_id=trace_id)
 
         action = intent.memory_action
 
-        if action == "add" and not (intent.memory_key and intent.memory_value):
-            return AgentOutput(
-                message="I'd like to remember that for you, but I'm not sure what to save. Could you say something like \"remember that I'm vegetarian\"?",
-                is_ready=True, trace_id=trace_id,
-            )
-
-        if action == "add" and intent.memory_key and intent.memory_value:
-            key = intent.memory_key.strip().lower().replace(" ", "_").replace("-", "_")
+        if action == "add":
+            if not (intent.memory_key and intent.memory_value):
+                return AgentOutput(
+                    message="I'd like to remember that for you, but I'm not sure what to save. Could you say something like \"remember that I'm vegetarian\"?",
+                    is_ready=True, trace_id=trace_id,
+                )
+            key = normalize_memory_key(intent.memory_key)
             meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
             fact = MemoryFact(
                 key=key,
@@ -461,20 +478,19 @@ class HealthQueryAgent(BaseAgent):
                 is_ready=True, trace_id=trace_id,
             )
 
-        if action == "delete" and not intent.memory_key:
-            return AgentOutput(
-                message="What would you like me to forget? Try \"forget my weight\" or \"forget my dietary preference\".",
-                is_ready=True, trace_id=trace_id,
-            )
-
-        if action == "delete" and intent.memory_key:
-            key = intent.memory_key.strip().lower().replace(" ", "_").replace("-", "_")
+        elif action == "delete":
+            if not intent.memory_key:
+                return AgentOutput(
+                    message="What would you like me to forget? Try \"forget my weight\" or \"forget my dietary preference\".",
+                    is_ready=True, trace_id=trace_id,
+                )
+            key = normalize_memory_key(intent.memory_key)
             deleted = await self.memory.delete_patient_fact(pid, key)
             if deleted:
                 return AgentOutput(message=f"Done — I've forgotten your **{key.replace('_', ' ')}**.", is_ready=True, trace_id=trace_id)
             return AgentOutput(message=f"I don't have a memory for \"{key.replace('_', ' ')}\".", is_ready=True, trace_id=trace_id)
 
-        if action == "list":
+        elif action == "list":
             facts = await self.memory.get_patient_facts(pid)
             if not facts:
                 return AgentOutput(message="I don't have any memories about you yet. As we chat, I'll learn your preferences and goals!", is_ready=True, trace_id=trace_id)
@@ -492,7 +508,7 @@ class HealthQueryAgent(BaseAgent):
             lines.append("You can say \"forget [topic]\" to remove any of these.")
             return AgentOutput(message="\n".join(lines), is_ready=True, trace_id=trace_id)
 
-        # Unknown action — fall through to normal query
+        # Unknown action fallback
         return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
     def _schedule_background(self, input: AgentInput) -> None:
@@ -507,9 +523,7 @@ class HealthQueryAgent(BaseAgent):
                 name="compaction", thread_id=thread_id,
             ))
         if self.fact_extractor:
-            pid = input.context.patient_id
-            if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
-                pid = input.context.patient_ids[0]
+            pid = self._resolve_single_pid(input)
             if pid:
                 asyncio.create_task(self._run_background(
                     self.fact_extractor.extract_if_needed(
@@ -578,7 +592,7 @@ class HealthQueryAgent(BaseAgent):
             suggestions=[s.model_dump() for s in intent.suggestions],
             data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
             trace_id=meta.trace_id if meta else None,
-            cost_usd=meta.usage.cost.total_cost if meta and meta.usage and meta.usage.cost else None,
+            cost_usd=safe_cost(meta) or None,
             model_id=meta.model_id if meta else None,
         )
 
@@ -587,6 +601,14 @@ class HealthQueryAgent(BaseAgent):
         return input.context.patient_ids or (
             [input.context.patient_id] if input.context.patient_id else []
         )
+
+    @staticmethod
+    def _resolve_single_pid(input: AgentInput) -> str | None:
+        """Resolve a single patient ID from input context."""
+        pid = input.context.patient_id
+        if not pid and input.context.patient_ids and len(input.context.patient_ids) == 1:
+            pid = input.context.patient_ids[0]
+        return pid
 
     @staticmethod
     def _resolve_tier(input: AgentInput) -> ReasoningTier:

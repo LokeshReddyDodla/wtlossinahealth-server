@@ -21,12 +21,13 @@ from __future__ import annotations
 import json
 import logging
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
-from lib.ai_foundation.models.gateway import LLMToolResponse
+from lib.ai_foundation.models.gateway import LLMToolResponse, safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
@@ -49,11 +50,34 @@ if TYPE_CHECKING:
     from lib.ai_foundation.models.gateway import ModelGateway
 
 from lib.ai_foundation.agents.health_query.context_loader import build_context_messages
+from lib.ai_foundation.agents.health_query.evidence import (
+    EvidenceItem,
+    build_summary,
+    compute_coverage_confidence,
+    detect_conflicts,
+    extract_evidence_from_fallback,
+    extract_evidence_from_tool_round,
+    format_coverage_note,
+    format_data_gaps,
+    format_patient,
+    format_provider,
+)
 
 logger = logging.getLogger(__name__)
 
 # Meta types that must NEVER be pruned (system instructions + current question)
 _CRITICAL_TYPES = frozenset({"system_prompt", "instruction", "user_question", "evidence_summary"})
+
+# Floor for _hard_truncate_oldest — never truncate below this many characters
+_MIN_TRUNCATION_CHARS = 500
+
+
+@contextmanager
+def _track_perf(perf: dict[str, int], key: str):
+    """Time a block and accumulate milliseconds into perf[key]."""
+    start = time.perf_counter()
+    yield
+    perf[key] += int((time.perf_counter() - start) * 1000)
 
 
 # ── Tier Configuration ─────────────────────────────────────────────────────
@@ -351,12 +375,12 @@ class ReasoningEngine:
                 longest_len = content_len
                 longest_idx = i
 
-        if longest_idx >= 0 and longest_len > 500:
+        if longest_idx >= 0 and longest_len > _MIN_TRUNCATION_CHARS:
             msg = messages[longest_idx]
             messages = list(messages)  # copy
             messages[longest_idx] = {
                 **msg,
-                "content": msg["content"][:500] + "\n... (truncated to fit context window)",
+                "content": msg["content"][:_MIN_TRUNCATION_CHARS] + "\n... (truncated to fit context window)",
             }
 
         return messages
@@ -445,12 +469,6 @@ class ReasoningEngine:
         emit_events: bool = False,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
-        from lib.ai_foundation.agents.health_query.evidence import (
-            EvidenceItem,
-            extract_evidence_from_tool_round,
-            extract_evidence_from_fallback,
-        )
-
         tier_cfg = TIER_CONFIGS[tier]
         tool_schemas = self._tools.get_openai_schemas()
         messages = build_context_messages(
@@ -483,16 +501,15 @@ class ReasoningEngine:
 
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
-            planning_start = time.perf_counter()
-            plan = await self._execute_plan(
-                messages=messages,
-                tool_schemas=tool_schemas,
-                tier_cfg=tier_cfg,
-                patient_ids=patient_ids,
-                seen_calls=seen_calls,
-                patient_names=patient_names,
-            )
-            perf["planning_ms"] += int((time.perf_counter() - planning_start) * 1000)
+            with _track_perf(perf, "planning_ms"):
+                plan = await self._execute_plan(
+                    messages=messages,
+                    tool_schemas=tool_schemas,
+                    tier_cfg=tier_cfg,
+                    patient_ids=patient_ids,
+                    seen_calls=seen_calls,
+                    patient_names=patient_names,
+                )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
             budget_remaining -= plan["tools_called"]
@@ -512,35 +529,33 @@ class ReasoningEngine:
             # Prune before thinker call
             messages = self._prune_if_needed(messages, tier_cfg.thinker_model)
 
-            thinker_start = time.perf_counter()
-            tokens = self._gateway.count_tokens(messages, tier_cfg.thinker_model)
-            budget = self._get_input_budget(tier_cfg.thinker_model)
-            logger.info("LLM call [thinker] round=%d: %d tokens (budget=%d, %.0f%%)",
-                        round_num, tokens, budget, tokens / max(budget, 1) * 100)
+            with _track_perf(perf, "thinker_llm_ms"):
+                tokens = self._gateway.count_tokens(messages, tier_cfg.thinker_model)
+                budget = self._get_input_budget(tier_cfg.thinker_model)
+                logger.info("LLM call [thinker] round=%d: %d tokens (budget=%d, %.0f%%)",
+                            round_num, tokens, budget, tokens / max(budget, 1) * 100)
 
-            response = await self._gateway.complete_with_tools(
-                messages=messages,
-                tools=tool_schemas,
-                task=ModelTask.CLASSIFICATION,
-                model_id=tier_cfg.thinker_model,
-                timeout=settings.REASONING_TIMEOUT_SECONDS,
-            )
-            perf["thinker_llm_ms"] += int((time.perf_counter() - thinker_start) * 1000)
-            total_cost += response.usage.cost.total_cost if response.usage.cost else 0
+                response = await self._gateway.complete_with_tools(
+                    messages=messages,
+                    tools=tool_schemas,
+                    task=ModelTask.CLASSIFICATION,
+                    model_id=tier_cfg.thinker_model,
+                    timeout=settings.REASONING_TIMEOUT_SECONDS,
+                )
+            total_cost += safe_cost(response)
 
             if not response.has_tool_calls:
                 # Round 1 with no tool calls = lazy LLM. Force a lookup.
                 if round_num == 1 and intent_data_types and not seen_calls:
                     if emit_events and tier_cfg.show_reasoning:
                         yield sse_tool_call("look_up", {"data_types": intent_data_types})
-                    tool_start = time.perf_counter()
-                    fallback_result = await self._tools.execute(
-                        "look_up",
-                        {"data_types": intent_data_types, "limit": 15},
-                        patient_ids,
-                        patient_names=patient_names,
-                    )
-                    perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
+                    with _track_perf(perf, "tool_exec_ms"):
+                        fallback_result = await self._tools.execute(
+                            "look_up",
+                            {"data_types": intent_data_types, "limit": 15},
+                            patient_ids,
+                            patient_names=patient_names,
+                        )
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
                     evidence_ledger.append(extract_evidence_from_fallback(
@@ -580,9 +595,8 @@ class ReasoningEngine:
             step = ReasoningStep(round=round_num, thought=response.content)
 
             # Execute tool round via shared helper
-            tool_start = time.perf_counter()
-            tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
-            perf["tool_exec_ms"] += int((time.perf_counter() - tool_start) * 1000)
+            with _track_perf(perf, "tool_exec_ms"):
+                tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
 
             # Tag assistant message with round metadata
             assistant_msg = {**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": round_num}}
@@ -642,21 +656,20 @@ class ReasoningEngine:
         # ── Reflection (ADVANCED+ tiers) ──
         reflection_result = None
         if self._reflector and settings.REFLECTION_ENABLED and tier_cfg.max_tool_calls >= 10:
-            reflection_start = time.perf_counter()
-            reflection = await self._reflect_and_followup(
-                messages=messages,
-                user_message=user_message,
-                tool_schemas=tool_schemas,
-                tier_cfg=tier_cfg,
-                patient_ids=patient_ids,
-                seen_calls=seen_calls,
-                steps=steps,
-                total_cost=total_cost,
-                total_tools=total_tools,
-                patient_names=patient_names,
-                evidence_ledger=evidence_ledger,
-            )
-            perf["reflection_ms"] += int((time.perf_counter() - reflection_start) * 1000)
+            with _track_perf(perf, "reflection_ms"):
+                reflection = await self._reflect_and_followup(
+                    messages=messages,
+                    user_message=user_message,
+                    tool_schemas=tool_schemas,
+                    tier_cfg=tier_cfg,
+                    patient_ids=patient_ids,
+                    seen_calls=seen_calls,
+                    steps=steps,
+                    total_cost=total_cost,
+                    total_tools=total_tools,
+                    patient_names=patient_names,
+                    evidence_ledger=evidence_ledger,
+                )
             total_cost = reflection["total_cost"]
             total_tools = reflection["total_tools"]
 
@@ -697,86 +710,85 @@ class ReasoningEngine:
                     full_response_parts.append(chunk.delta)
                     yield sse_token(chunk.delta)
                 if chunk.finished and chunk.usage:
-                    total_cost += chunk.usage.cost.total_cost if chunk.usage.cost else 0
+                    total_cost += safe_cost(chunk)
 
             perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
-            perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
-            logger.debug(
-                "Reasoning perf(ms): planning=%d thinker=%d tools=%d reflection=%d responder=%d total=%d",
-                perf["planning_ms"],
-                perf["thinker_llm_ms"],
-                perf["tool_exec_ms"],
-                perf["reflection_ms"],
-                perf["responder_ms"],
-                perf["total_ms"],
-            )
+        else:
+            # Non-streaming: single responder call
+            with _track_perf(perf, "responder_ms"):
+                final_response = await self._generate_final_response(
+                    messages=messages,
+                    response_prompt=response_prompt,
+                    model_id=tier_cfg.responder_model,
+                    user_role=user_role,
+                    evidence_ledger=evidence_ledger,
+                )
+            total_cost += safe_cost(final_response)
 
-            # Compute evidence confidence for SSE done payload
-            from lib.ai_foundation.agents.health_query.evidence import build_summary as _bs, compute_coverage_confidence as _cc, format_data_gaps as _fg, detect_conflicts as _dc
-            _s = _bs(evidence_ledger)
-            _cov = _cc(_s)
-            _refl = reflection_result.confidence if reflection_result else None
-            _conflicts = _dc(evidence_ledger) or None
+        # ── Finalize perf + evidence (shared) ──
+        perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
+        logger.debug(
+            "Reasoning perf(ms): planning=%d thinker=%d tools=%d reflection=%d responder=%d total=%d",
+            perf["planning_ms"],
+            perf["thinker_llm_ms"],
+            perf["tool_exec_ms"],
+            perf["reflection_ms"],
+            perf["responder_ms"],
+            perf["total_ms"],
+        )
 
+        evidence = self._compute_evidence_result(
+            evidence_ledger, reflection_result, tier, rounds_used, total_tools, steps, perf,
+        )
+
+        if emit_events:
             yield sse_done(SSEDonePayload(
                 cost_usd=total_cost,
                 data={
-                    "rounds_used": rounds_used,
-                    "tools_called": total_tools,
+                    **evidence,
                     "tier": tier.value,
                     "full_response": "".join(full_response_parts),
-                    "perf": perf,
-                    "coverage_confidence": _cov,
-                    "reflection_confidence": _refl,
-                    "data_gaps": _fg(_s),
-                    "data_conflicts": _conflicts,
                 },
             ))
         else:
-            # Non-streaming: single responder call
-            responder_start = time.perf_counter()
-            final_response = await self._generate_final_response(
-                messages=messages,
-                response_prompt=response_prompt,
-                model_id=tier_cfg.responder_model,
-                user_role=user_role,
-                evidence_ledger=evidence_ledger,
-            )
-            perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
-            perf["total_ms"] = int((time.perf_counter() - pipeline_start) * 1000)
-            total_cost += final_response.usage.cost.total_cost if final_response.usage.cost else 0
-            logger.debug(
-                "Reasoning perf(ms): planning=%d thinker=%d tools=%d reflection=%d responder=%d total=%d",
-                perf["planning_ms"],
-                perf["thinker_llm_ms"],
-                perf["tool_exec_ms"],
-                perf["reflection_ms"],
-                perf["responder_ms"],
-                perf["total_ms"],
-            )
-
-            # Compute evidence confidence for client
-            from lib.ai_foundation.agents.health_query.evidence import build_summary, compute_coverage_confidence, detect_conflicts, format_data_gaps
-            _summary = build_summary(evidence_ledger)
-            _confidence = compute_coverage_confidence(_summary)
-            _gaps = format_data_gaps(_summary)
-            _conflicts = detect_conflicts(evidence_ledger) or None
-
             yield ReasoningResult(
                 response=final_response.content or "",
-                steps=steps,
-                rounds_used=rounds_used,
-                tools_called=total_tools,
-                total_cost=total_cost,
                 thinker_model=tier_cfg.thinker_model,
                 responder_model=tier_cfg.responder_model,
+                total_cost=total_cost,
                 tier=tier.value,
-                perf=perf,
-                coverage_confidence=_confidence,
-                reflection_confidence=reflection_result.confidence if reflection_result else None,
-                data_gaps=_gaps,
-                data_conflicts=_conflicts,
+                **evidence,
             )
+
+    # ── Evidence computation (shared by streaming + non-streaming) ─────
+
+    @staticmethod
+    def _compute_evidence_result(
+        evidence_ledger: list[EvidenceItem],
+        reflection_result: Any,
+        tier: ReasoningTier,
+        rounds_used: int,
+        total_tools: int,
+        steps: list[ReasoningStep],
+        perf: dict[str, int],
+    ) -> dict[str, Any]:
+        """Build the evidence metrics dict used by both streaming and non-streaming paths.
+
+        Returns a dict with keys matching ReasoningResult fields:
+        rounds_used, tools_called, steps, perf, coverage_confidence,
+        reflection_confidence, data_gaps, data_conflicts.
+        """
+        summary = build_summary(evidence_ledger)
+        return {
+            "rounds_used": rounds_used,
+            "tools_called": total_tools,
+            "steps": steps,
+            "perf": perf,
+            "coverage_confidence": compute_coverage_confidence(summary),
+            "reflection_confidence": reflection_result.confidence if reflection_result else None,
+            "data_gaps": format_data_gaps(summary),
+            "data_conflicts": detect_conflicts(evidence_ledger) or None,
+        }
 
     # ── Planning ───────────────────────────────────────────────────────
 
@@ -898,10 +910,9 @@ class ReasoningEngine:
                     model_id=tier_cfg.thinker_model,
                     timeout=settings.REASONING_TIMEOUT_SECONDS,
                 )
-                total_cost += response.usage.cost.total_cost if response.usage.cost else 0
+                total_cost += safe_cost(response)
 
                 if response.has_tool_calls:
-                    from lib.ai_foundation.agents.health_query.evidence import extract_evidence_from_tool_round
                     tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
                     messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": 0}})
                     tc_by_id = {tc.id: tc for tc in response.tool_calls}
@@ -963,14 +974,6 @@ class ReasoningEngine:
         Takes the full reasoning conversation and restructures it for the
         responder: system prompt + gathered data summary + evidence + user question.
         """
-        from lib.ai_foundation.agents.health_query.evidence import (
-            build_summary,
-            detect_conflicts,
-            format_coverage_note,
-            format_patient,
-            format_provider,
-        )
-
         # Extract system messages (with _meta), user message, and all tool results
         system_msgs: list[dict[str, Any]] = []
         user_msg = ""
