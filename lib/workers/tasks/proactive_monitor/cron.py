@@ -18,13 +18,13 @@ def get_cron_jobs():
             minute=0,
             timeout_s=3600,
         ),
-        # daily_cron(
-        #     coroutine=run_proactive_scan,
-        #     name="proactive-scan-12pm",
-        #     hour=12,
-        #     minute=0,
-        #     timeout_s=3600,
-        # ),
+        daily_cron(
+            coroutine=run_proactive_scan,
+            name="proactive-scan-12pm",
+            hour=12,
+            minute=0,
+            timeout_s=3600,
+        ),
         daily_cron(
             coroutine=run_proactive_scan,
             name="proactive-scan-4pm",
