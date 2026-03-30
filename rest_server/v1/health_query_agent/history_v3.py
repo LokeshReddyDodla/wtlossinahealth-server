@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from lib.core.constants import ProfileTypeEnum
 from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.ai_foundation.agents.health_query.patient_resolver import fallback_name
+from lib.ai_foundation.agents.core.patient_resolver import fallback_name
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.agents.thread_utils import thread_prefix_for_user
 from rest_server.response_models import SuccessResponse
@@ -196,7 +196,7 @@ async def list_conversation_threads(
     patient_profiles: dict[str, PatientInfo] = {}
     if all_patient_ids:
         try:
-            from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+            from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
             resolver: PatientNameResolver = container.resolve(PatientNameResolver)
             profiles = await resolver.resolve_profiles(list(all_patient_ids))
             for p in profiles:

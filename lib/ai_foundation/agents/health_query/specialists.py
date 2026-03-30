@@ -221,6 +221,7 @@ class Specialist:
         max_rounds: int = 3,
         model_id: str,
         patient_names: dict[str, str] | None = None,
+        trace_id: str | None = None,
     ) -> SpecialistFindings:
         """Run a domain-scoped investigation."""
         async for item in self._investigate_core(
@@ -230,6 +231,7 @@ class Specialist:
             model_id=model_id,
             patient_names=patient_names,
             emit_events=False,
+            trace_id=trace_id,
         ):
             if isinstance(item, SpecialistFindings):
                 return item
@@ -244,6 +246,7 @@ class Specialist:
         max_rounds: int = 3,
         model_id: str,
         patient_names: dict[str, str] | None = None,
+        trace_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Streaming version that yields SSE events during investigation."""
         async for item in self._investigate_core(
@@ -253,6 +256,7 @@ class Specialist:
             model_id=model_id,
             patient_names=patient_names,
             emit_events=True,
+            trace_id=trace_id,
         ):
             if isinstance(item, str):
                 yield item
@@ -268,6 +272,7 @@ class Specialist:
         model_id: str,
         patient_names: dict[str, str] | None = None,
         emit_events: bool = False,
+        trace_id: str | None = None,
     ) -> AsyncIterator[str | SpecialistFindings]:
         """Unified investigation loop that yields SSE strings and/or SpecialistFindings."""
         # Add domain-specific system prompt
@@ -294,6 +299,7 @@ class Specialist:
                 task=ModelTask.CLASSIFICATION,
                 model_id=model_id,
                 timeout=settings.REASONING_TIMEOUT_SECONDS,
+                trace_id=trace_id,
             )
             total_cost += safe_cost(response)
 

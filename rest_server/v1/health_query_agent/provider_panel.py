@@ -96,7 +96,7 @@ async def get_provider_panel(
 
     # Resolve patient names
     from lib.core.container import container
-    from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 
     resolver: PatientNameResolver = container.resolve(PatientNameResolver)
     names = await resolver.resolve_names(patient_ids)

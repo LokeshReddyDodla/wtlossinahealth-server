@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
+from lib.ai_foundation.agents.core.persistence_service import PersistenceService
 from lib.ai_foundation.memory.base import ThreadSummary
 
 

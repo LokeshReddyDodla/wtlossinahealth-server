@@ -20,7 +20,7 @@ from lib.ai_foundation.config import settings
 
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
-    from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
 logger = logging.getLogger(__name__)

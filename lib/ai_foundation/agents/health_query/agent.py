@@ -147,6 +147,7 @@ class HealthQueryAgent(BaseAgent):
                     tier=tier,
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                 )
             else:
                 # Single-agent path
@@ -257,6 +258,7 @@ class HealthQueryAgent(BaseAgent):
                     tier=tier,
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    trace_id=trace_id,
                 )
             else:
                 event_source = self.reasoning_engine.reason_stream(
@@ -272,64 +274,73 @@ class HealthQueryAgent(BaseAgent):
                     user_role=input.context.user_role,
                 )
 
-            async for event in event_source:
-                event_name = _sse_event_name(event)
+            async with asyncio.timeout(settings.STREAMING_PIPELINE_TIMEOUT_SECONDS):
+                async for event in event_source:
+                    event_name = _sse_event_name(event)
 
-                # Intercept done event to save turn and inject suggestions
-                if event_name == "done":
-                    # Extract full_response + metadata from the done payload
-                    full_text = ""
-                    done_data: dict = {}
-                    try:
-                        import json as _json
-                        data_line = event.split("data: ", 1)[1].split("\n")[0]
-                        done_data = _json.loads(data_line)
-                        full_text = done_data.get("data", {}).get("full_response", "")
-                    except (IndexError, ValueError, KeyError):
-                        pass
+                    # Intercept done event to save turn and inject suggestions
+                    if event_name == "done":
+                        # Extract full_response + metadata from the done payload
+                        full_text = ""
+                        done_data: dict = {}
+                        try:
+                            import json as _json
+                            data_line = event.split("data: ", 1)[1].split("\n")[0]
+                            done_data = _json.loads(data_line)
+                            full_text = done_data.get("data", {}).get("full_response", "")
+                        except (IndexError, ValueError, KeyError):
+                            pass
 
-                    engine_data = done_data.get("data", {})
-                    intent_cost = safe_cost(meta)
-                    engine_cost = done_data.get("cost_usd")
-                    total_cost = (engine_cost or 0.0) + intent_cost
-                    elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+                        engine_data = done_data.get("data", {})
+                        intent_cost = safe_cost(meta)
+                        engine_cost = done_data.get("cost_usd")
+                        total_cost = (engine_cost or 0.0) + intent_cost
+                        elapsed = int((time.perf_counter() - pipeline_start) * 1000)
 
-                    output = AgentOutput(
-                        message=full_text, is_ready=True,
-                        trace_id=trace_id,
-                        cost_usd=total_cost,
-                        latency_ms=elapsed,
-                        model_id=done_data.get("model_id"),
-                        data={
-                            "data_types": [dt.value for dt in intent.data_types],
-                            "intent_confidence": intent.confidence,
-                            "coverage_confidence": engine_data.get("coverage_confidence"),
-                            "reflection_confidence": engine_data.get("reflection_confidence"),
-                            "data_gaps": engine_data.get("data_gaps"),
-                            "data_conflicts": engine_data.get("data_conflicts"),
-                            "rounds_used": engine_data.get("rounds_used"),
-                            "tools_called": engine_data.get("tools_called"),
-                            "tier": engine_data.get("tier"),
-                        },
-                    )
-                    if full_text:
-                        await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text))
-                    await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                    self._schedule_background(input)
+                        output = AgentOutput(
+                            message=full_text, is_ready=True,
+                            trace_id=trace_id,
+                            cost_usd=total_cost,
+                            latency_ms=elapsed,
+                            model_id=done_data.get("model_id"),
+                            data={
+                                "data_types": [dt.value for dt in intent.data_types],
+                                "intent_confidence": intent.confidence,
+                                "coverage_confidence": engine_data.get("coverage_confidence"),
+                                "reflection_confidence": engine_data.get("reflection_confidence"),
+                                "data_gaps": engine_data.get("data_gaps"),
+                                "data_conflicts": engine_data.get("data_conflicts"),
+                                "rounds_used": engine_data.get("rounds_used"),
+                                "tools_called": engine_data.get("tools_called"),
+                                "tier": engine_data.get("tier"),
+                            },
+                        )
+                        if full_text:
+                            await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text))
+                        await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                        self._schedule_background(input)
 
-                    # Emit our own done event with suggestions and trace
-                    yield sse_done(SSEDonePayload(
-                        suggestions=[s.model_dump() for s in intent.suggestions],
-                        trace_id=trace_id,
-                        cost_usd=total_cost,
-                        latency_ms=elapsed,
-                        model_id=done_data.get("model_id"),
-                        data=engine_data,
-                    ))
-                    continue
+                        # Emit our own done event with suggestions and trace
+                        yield sse_done(SSEDonePayload(
+                            suggestions=[s.model_dump() for s in intent.suggestions],
+                            trace_id=trace_id,
+                            cost_usd=total_cost,
+                            latency_ms=elapsed,
+                            model_id=done_data.get("model_id"),
+                            data=engine_data,
+                        ))
+                        continue
 
-                yield event
+                    yield event
 
+        except TimeoutError:
+            elapsed = int((time.perf_counter() - pipeline_start) * 1000)
+            logger.error("Streaming pipeline timed out after %dms (limit=%ds)",
+                         elapsed, settings.STREAMING_PIPELINE_TIMEOUT_SECONDS)
+            yield sse_error(
+                message="This query is taking longer than expected. Please try a simpler question or try again.",
+                code="pipeline_timeout",
+            )
         except Exception as exc:
             logger.exception("HealthQueryAgent.run_stream failed: %s", exc)
             yield sse_error(message="I'm having trouble right now.", code="agent_error",
@@ -369,7 +380,7 @@ class HealthQueryAgent(BaseAgent):
 
     async def _load_context(self, input: AgentInput) -> Any:
         if not self.context_loader:
-            from .context_loader import AgentContext as Ctx
+            from lib.ai_foundation.agents.core.context_loader import AgentContext as Ctx
             return Ctx()
         return await self.context_loader.load(
             patient_id=input.context.patient_id,
@@ -458,7 +469,7 @@ class HealthQueryAgent(BaseAgent):
     ) -> AgentOutput:
         """Handle memory commands: add, delete, list."""
         from lib.ai_foundation.memory.base import MemoryFact, MemorySource
-        from lib.ai_foundation.agents.health_query.fact_extractor import CANONICAL_MEMORY_KEYS, normalize_memory_key
+        from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS, normalize_memory_key
 
         pid = self._resolve_single_pid(input)
         if not pid or not self.memory:

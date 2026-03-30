@@ -166,7 +166,7 @@ def _make_event_bus():
     return bus
 
 
-def _make_insight_tracker(*, should_send_result=(True, "info")):
+def _make_insight_tracker(*, should_send_result=(True, "info", 1)):
     tracker = AsyncMock(spec=InsightTracker)
     tracker.should_send = AsyncMock(return_value=should_send_result)
     tracker.record = AsyncMock()
@@ -371,21 +371,21 @@ class TestDedupEscalationIntegration:
 
     @pytest.mark.asyncio
     async def test_tracker_allows_first_time_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "info"))
+        tracker = _make_insight_tracker(should_send_result=(True, "info", 1))
         agent = _make_agent(insight_tracker=tracker)
         result = await agent.scan_patient("p1")
         assert len(result.insights) == 2
 
     @pytest.mark.asyncio
     async def test_tracker_blocks_duplicate_insights(self):
-        tracker = _make_insight_tracker(should_send_result=(False, "info"))
+        tracker = _make_insight_tracker(should_send_result=(False, "info", 1))
         agent = _make_agent(insight_tracker=tracker)
         result = await agent.scan_patient("p1")
         assert len(result.insights) == 0  # all blocked by dedup
 
     @pytest.mark.asyncio
     async def test_tracker_escalates_severity(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention"))
+        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
         agent = _make_agent(insight_tracker=tracker)
         result = await agent.scan_patient("p1")
         for insight in result.insights:
@@ -393,7 +393,7 @@ class TestDedupEscalationIntegration:
 
     @pytest.mark.asyncio
     async def test_tracker_never_downgrades_warning(self):
-        tracker = _make_insight_tracker(should_send_result=(True, "attention"))
+        tracker = _make_insight_tracker(should_send_result=(True, "attention", 3))
         warning_only = [
             HealthInsight(
                 category=InsightCategory.GLUCOSE_SPIKE,
@@ -418,7 +418,7 @@ class TestInsightTracker:
         store, collection = _make_mock_mongo_store()
         collection.find_one = AsyncMock(return_value=None)
         tracker = InsightTracker(store)
-        should_send, severity = await tracker.should_send("p1", "glucose_spike")
+        should_send, severity, _ = await tracker.should_send("p1", "glucose_spike")
         assert should_send is True
         assert severity == "info"
 
@@ -432,7 +432,7 @@ class TestInsightTracker:
             "consecutive_days": 1,
         })
         tracker = InsightTracker(store)
-        should_send, _ = await tracker.should_send("p1", "glucose_spike")
+        should_send, _, _ = await tracker.should_send("p1", "glucose_spike")
         assert should_send is False
 
     @pytest.mark.asyncio
@@ -445,7 +445,7 @@ class TestInsightTracker:
             "consecutive_days": 1,
         })
         tracker = InsightTracker(store)
-        should_send, severity = await tracker.should_send("p1", "glucose_spike")
+        should_send, severity, _ = await tracker.should_send("p1", "glucose_spike")
         assert should_send is True
         assert severity == "info"
 
@@ -459,7 +459,7 @@ class TestInsightTracker:
             "consecutive_days": 2,  # +1 = 3
         })
         tracker = InsightTracker(store)
-        _, severity = await tracker.should_send("p1", "glucose_spike")
+        _, severity, _ = await tracker.should_send("p1", "glucose_spike")
         assert severity == "attention"
 
     @pytest.mark.asyncio
@@ -472,7 +472,7 @@ class TestInsightTracker:
             "consecutive_days": 4,  # +1 = 5
         })
         tracker = InsightTracker(store)
-        _, severity = await tracker.should_send("p1", "glucose_spike")
+        _, severity, _ = await tracker.should_send("p1", "glucose_spike")
         assert severity == "warning"
 
     @pytest.mark.asyncio
@@ -485,7 +485,7 @@ class TestInsightTracker:
             "consecutive_days": 5,
         })
         tracker = InsightTracker(store)
-        should_send, severity = await tracker.should_send("p1", "glucose_spike")
+        should_send, severity, _ = await tracker.should_send("p1", "glucose_spike")
         assert should_send is True
         assert severity == "info"
 

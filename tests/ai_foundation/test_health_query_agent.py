@@ -10,14 +10,14 @@ from lib.ai_foundation.agents.health_query.agent import HealthQueryAgent
 from lib.ai_foundation.agents.health_query.contracts import (
     HealthDataType, QueryIntent, QueryResponse, SuggestedAction, DateRange,
 )
-from lib.ai_foundation.agents.health_query.context_loader import ContextLoader, AgentContext
-from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
-from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+from lib.ai_foundation.agents.core.context_loader import ContextLoader, AgentContext
+from lib.ai_foundation.agents.core.persistence_service import PersistenceService
+from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query.reasoning_engine import (
     ReasoningEngine, ReasoningResult, ReasoningTier,
 )
 from lib.ai_foundation.agents.state import AgentContext as InputContext, AgentInput, AgentOutput
-from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage
+from lib.ai_foundation.models.gateway import LLMResponse, LLMUsage, ToolCall
 from lib.ai_foundation.models.pricing import CostBreakdown
 from lib.ai_foundation.prompts.registry import PromptRegistry
 
@@ -310,7 +310,7 @@ class TestReasoningEngine:
 class TestFactExtractor:
     def test_extractor_exists(self):
         """FactExtractor now always runs LLM — no keyword heuristic to test."""
-        from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+        from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
         ext = FactExtractor()
         assert hasattr(ext, "extract_if_needed")
 
@@ -387,7 +387,7 @@ class TestSpecialists:
         tools = ToolExecutor(qdrant=MagicMock())
         schemas = tools.get_schemas_for_domain("nutrition")
         names = [s["function"]["name"] for s in schemas]
-        assert names == ["look_up", "compare_baseline"]
+        assert names == ["look_up", "investigate_day", "compare_baseline", "find_patterns", "get_recent_insights"]
         lookup_enum = schemas[0]["function"]["parameters"]["properties"]["data_types"]["items"]["enum"]
         assert lookup_enum == ["meal"]
 

@@ -67,7 +67,7 @@ async def trigger_proactive_scan(
     patient_name = None
     tz_name = None
     try:
-        from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
         resolver: PatientNameResolver = container.resolve(PatientNameResolver)
         names = await resolver.resolve_names([payload.patient_id])
         timezones = await resolver.resolve_timezones([payload.patient_id])

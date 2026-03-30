@@ -170,10 +170,10 @@ from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.ai_foundation.cache.embedding_cache import EmbeddingCache
 from lib.ai_foundation.events.bus import EventBus
 from lib.ai_foundation.rate_limit.limiter import RateLimiter
-from lib.ai_foundation.agents.health_query.patient_resolver import PatientNameResolver
-from lib.ai_foundation.agents.health_query.context_loader import ContextLoader
-from lib.ai_foundation.agents.health_query.persistence_service import PersistenceService
-from lib.ai_foundation.agents.health_query.fact_extractor import FactExtractor
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+from lib.ai_foundation.agents.core.context_loader import ContextLoader
+from lib.ai_foundation.agents.core.persistence_service import PersistenceService
+from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
 from lib.ai_foundation.agents.health_query.tools import ToolExecutor
 from lib.ai_foundation.agents.health_query.planner import InvestigationPlanner
 from lib.ai_foundation.agents.health_query.reflector import ReflectionEngine
