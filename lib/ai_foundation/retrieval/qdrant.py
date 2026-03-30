@@ -140,23 +140,31 @@ class QdrantRetriever:
             }
 
             # Order by start_time DESC so the limit keeps the most recent records.
-            # Falls back to unordered scroll if OrderBy is unavailable or server rejects it.
-            try:
-                from qdrant_client.models import OrderBy
-                scroll_kwargs["order_by"] = OrderBy(key="start_time", direction="desc")
-                records, _ = await client.scroll(**scroll_kwargs)
-            except (ImportError, TypeError) as exc:
-                logger.debug("OrderBy not supported, falling back to unordered scroll: %s", exc)
-                scroll_kwargs.pop("order_by", None)
-                records, _ = await client.scroll(**scroll_kwargs)
-            except Exception as exc:
-                # If first scroll failed for non-OrderBy reasons, try without it once
-                if "order_by" in scroll_kwargs:
-                    logger.debug("Scroll with OrderBy failed (%s), retrying without", exc)
+            # SKIP ordering when query includes non-filterable types (documents, profile)
+            # which may lack start_time — Qdrant excludes records missing the order field.
+            # Also skip when data_types is empty (all types including documents).
+            data_types = request.data_types or []
+            has_non_filterable = not data_types or any(dt in _NON_FILTERABLE_TYPES for dt in data_types)
+            use_order = not has_non_filterable
+
+            if use_order:
+                try:
+                    from qdrant_client.models import OrderBy
+                    scroll_kwargs["order_by"] = OrderBy(key="start_time", direction="desc")
+                    records, _ = await client.scroll(**scroll_kwargs)
+                except (ImportError, TypeError) as exc:
+                    logger.debug("OrderBy not supported, falling back to unordered scroll: %s", exc)
                     scroll_kwargs.pop("order_by", None)
                     records, _ = await client.scroll(**scroll_kwargs)
-                else:
-                    raise
+                except Exception as exc:
+                    if "order_by" in scroll_kwargs:
+                        logger.debug("Scroll with OrderBy failed (%s), retrying without", exc)
+                        scroll_kwargs.pop("order_by", None)
+                        records, _ = await client.scroll(**scroll_kwargs)
+                    else:
+                        raise
+            else:
+                records, _ = await client.scroll(**scroll_kwargs)
 
         results: list[RetrievalResult] = []
         for record in records:
