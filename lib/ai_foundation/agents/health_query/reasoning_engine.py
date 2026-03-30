@@ -989,7 +989,7 @@ class ReasoningEngine:
                 user_msg = content
             elif role == "tool":
                 gathered_data.append(content)
-            elif role == "assistant" and content and not msg.get("tool_calls"):
+            elif role == "assistant" and content and not msg.get("tool_calls") and meta.get("type") != "history":
                 # Thinker's analysis notes (when it stopped calling tools)
                 gathered_data.append(f"Analysis notes: {content}")
 

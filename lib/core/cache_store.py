@@ -68,6 +68,11 @@ class CacheStore:
         key = f"{self.__namespace}:{key.strip()}"
         return self.__client.incr(key)
 
+    def expire_key(self, key: str, seconds: int) -> bool:
+        """Set TTL on an existing key without changing its value."""
+        key = f"{self.__namespace}:{key.strip()}"
+        return self.__client.expire(key, seconds)
+
     def delete_key(self, key: str) -> Optional[int]:
         key = f"{self.__namespace}:{key.strip()}"
         return self.__client.delete(key)

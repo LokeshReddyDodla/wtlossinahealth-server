@@ -306,7 +306,8 @@ class Specialist:
                     )
                     seen_calls.add("look_up:fallback")
                     total_tools += 1
-                    findings_parts.append(fallback_result)
+                    if not is_no_data(fallback_result):
+                        findings_parts.append(fallback_result)
                     specialist_messages.append({
                         "role": "system",
                         "content": f"Health data retrieved:\n\n{fallback_result}",
@@ -333,8 +334,8 @@ class Specialist:
             specialist_messages.extend(tool_round.tool_messages)
             total_tools += tool_round.executed_count
 
-            # Collect findings from results
-            findings_parts.extend(tool_round.results)
+            # Collect findings from results (exclude [NO_DATA] sentinels)
+            findings_parts.extend(r for r in tool_round.results if not is_no_data(r))
 
             # Emit tool events (streaming only)
             if emit_events:
