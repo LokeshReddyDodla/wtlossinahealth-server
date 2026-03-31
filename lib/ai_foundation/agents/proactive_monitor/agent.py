@@ -27,6 +27,7 @@ from uuid import uuid4
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
+from lib.ai_foundation.models.gateway import LLMResponse
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.retrieval.base import RetrievalRequest
 
@@ -197,7 +198,7 @@ class ProactiveMonitorAgent(BaseAgent):
 
             # 5. Single LLM call → structured ScanInsights
             display_name = patient_name or "this patient"
-            insights = await self._analyze_data(
+            insights, llm_meta = await self._analyze_data(
                 data_text=data_text,
                 patient_id=patient_id,
                 patient_name=display_name,
@@ -227,13 +228,23 @@ class ProactiveMonitorAgent(BaseAgent):
                         pub_result,
                     )
 
-            # 8. Log trace output
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+
+            # 8. Log trace output with cost/usage metadata
+            trace_meta: dict[str, Any] = {
+                "latency_ms": elapsed_ms,
+                "insights_count": len(insights),
+            }
+            if llm_meta is not None:
+                trace_meta["model_id"] = llm_meta.model_id
+                trace_meta["cost_usd"] = llm_meta.usage.cost.total_cost
+                trace_meta["input_tokens"] = llm_meta.usage.input_tokens
+                trace_meta["output_tokens"] = llm_meta.usage.output_tokens
             await _maybe_await(self.gateway.langfuse_trace_output(
                 trace_id=trace_id,
                 output_text="; ".join(f"[{i.severity.value}] {i.title}" for i in insights) or "(no insights)",
+                metadata=trace_meta,
             ))
-
-            elapsed_ms = int((time.perf_counter() - start) * 1000)
             return ScanResult(
                 patient_id=patient_id,
                 scan_date=scan_date,
@@ -410,7 +421,7 @@ class ProactiveMonitorAgent(BaseAgent):
         facts_text: str,
         has_data: bool,
         domain_counts: dict[str, int] | None = None,
-    ) -> list[HealthInsight]:
+    ) -> tuple[list[HealthInsight], LLMResponse | None]:
         """Single LLM call: data → structured ScanInsights."""
         greetings = {
             "morning": "Good morning",
@@ -428,7 +439,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 body=f"{greeting} {patient_name}! No data was logged {scan_label}. Keep logging to help us track your health!",
                 patient_id=patient_id,
                 suggested_query="Why is it important to log my health data regularly?",
-            )]
+            )], None
 
         context_parts = [data_text]
         if facts_text:
@@ -443,7 +454,7 @@ class ProactiveMonitorAgent(BaseAgent):
         )
 
         try:
-            scan_insights, _ = await self.gateway.extract(
+            scan_insights, llm_meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "\n\n".join(context_parts)},
@@ -453,7 +464,7 @@ class ProactiveMonitorAgent(BaseAgent):
             )
             for insight in scan_insights.insights:
                 insight.patient_id = patient_id
-            return scan_insights.insights
+            return scan_insights.insights, llm_meta
         except Exception as exc:
             logger.warning("Insight analysis failed: %s", exc, exc_info=True)
             # Fallback: static insight so patient still gets something
@@ -466,7 +477,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
                 patient_id=patient_id,
                 suggested_query=f"How was my health {scan_label}?",
-            )]
+            )], None
 
     async def _filter_insights(
         self,

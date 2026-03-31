@@ -187,7 +187,17 @@ class HealthQueryAgent(BaseAgent):
                 model_id=result.responder_model,
             )
 
-            await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
+            await _maybe_await(self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text=output.message,
+                metadata={
+                    "cost_usd": total_cost,
+                    "latency_ms": elapsed,
+                    "model_id": result.responder_model,
+                    "rounds_used": result.rounds_used,
+                    "tools_called": result.tools_called,
+                },
+            ))
             self._log_quality_scores(trace_id, result)
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
@@ -317,7 +327,17 @@ class HealthQueryAgent(BaseAgent):
                             },
                         )
                         if full_text:
-                            await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=full_text))
+                            await _maybe_await(self.gateway.langfuse_trace_output(
+                                trace_id=trace_id,
+                                output_text=full_text,
+                                metadata={
+                                    "cost_usd": total_cost,
+                                    "latency_ms": elapsed,
+                                    "model_id": done_data.get("model_id"),
+                                    "rounds_used": engine_data.get("rounds_used"),
+                                    "tools_called": engine_data.get("tools_called"),
+                                },
+                            ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
                         await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
                         self._schedule_background(input)

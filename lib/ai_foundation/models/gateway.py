@@ -237,6 +237,7 @@ class ModelGateway:
     _langfuse_session_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_session", default=None)
     _langfuse_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_user", default=None)
     _langfuse_trace_name: contextvars.ContextVar[str | None] = contextvars.ContextVar("_lf_trace_name", default=None)
+    _langfuse_request_meta: contextvars.ContextVar[dict | None] = contextvars.ContextVar("_lf_req_meta", default=None)
 
     def set_langfuse_context(self, *, session_id: str | None = None, user_id: str | None = None) -> None:
         """Set session/user context for Langfuse traces. Called once per request."""
@@ -246,6 +247,7 @@ class ModelGateway:
     def langfuse_trace_input(self, *, trace_id: str, name: str, input_text: str, metadata: dict | None = None) -> None:
         """Set the trace-level input (user message). Called at start of request."""
         self._langfuse_trace_name.set(name)
+        self._langfuse_request_meta.set(metadata)
         if not self._langfuse_client:
             return
         try:
@@ -255,17 +257,41 @@ class ModelGateway:
                 input=input_text,
                 session_id=self._langfuse_session_id.get(),
                 user_id=self._langfuse_user_id.get(),
-                metadata=metadata,
+                metadata={"request": metadata} if metadata else None,
             )
         except Exception as exc:
             logger.debug("Langfuse trace_input failed: %s", exc)
 
-    def langfuse_trace_output(self, *, trace_id: str, output_text: str) -> None:
-        """Set the trace-level output (agent response). Called at end of request."""
+    def langfuse_trace_output(
+        self,
+        *,
+        trace_id: str,
+        output_text: str,
+        metadata: dict | None = None,
+    ) -> None:
+        """Set the trace-level output (agent response). Called at end of request.
+
+        Merges request metadata (saved by langfuse_trace_input) with response
+        metadata under namespaced keys so neither overwrites the other.
+        Langfuse replaces the whole metadata field on upsert, so we must send
+        both halves together.
+        """
         if not self._langfuse_client:
             return
         try:
-            self._langfuse_client.trace(id=trace_id, output=output_text)
+            combined: dict | None = None
+            request_meta = self._langfuse_request_meta.get()
+            if request_meta or metadata:
+                combined = {}
+                if request_meta:
+                    combined["request"] = request_meta
+                if metadata:
+                    combined["response"] = metadata
+            self._langfuse_client.trace(
+                id=trace_id,
+                output=output_text,
+                metadata=combined,
+            )
         except Exception as exc:
             logger.debug("Langfuse trace_output failed: %s", exc)
 
@@ -595,11 +621,17 @@ class ModelGateway:
         return spec.with_overrides(**overrides) if overrides else spec
 
     def _trace_metadata(self, trace_id: str) -> dict[str, Any]:
-        """Build LiteLLM metadata dict with trace_id and optional trace_name."""
+        """Build LiteLLM metadata dict with trace_id and optional trace_name/user/session."""
         meta: dict[str, Any] = {"trace_id": trace_id}
         trace_name = self._langfuse_trace_name.get()
         if trace_name:
             meta["trace_name"] = trace_name
+        user_id = self._langfuse_user_id.get()
+        if user_id:
+            meta["trace_user_id"] = user_id
+        session_id = self._langfuse_session_id.get()
+        if session_id:
+            meta["session_id"] = session_id
         return meta
 
     # -- Internal: LiteLLM complete -----------------------------------------
