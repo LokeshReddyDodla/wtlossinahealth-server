@@ -147,3 +147,5 @@ fcm-notification-sender-key.json
 
 # Microservices
 microservices/**
+
+.opencode/**
