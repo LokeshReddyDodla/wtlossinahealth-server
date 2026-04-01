@@ -437,8 +437,10 @@ class ToolExecutor:
         # Filter to only results matching the requested data_types.
         # The Qdrant filter always includes profile as a should-branch,
         # which returns results even when the requested types have no data.
+        # Use expanded types so paired types (e.g. sleep → sleep_checkin) aren't dropped.
         if data_types:
-            requested = set(data_types)
+            from lib.ai_foundation.retrieval.qdrant import _expand_data_types
+            requested = set(_expand_data_types(data_types))
             results = [r for r in results if (r.data_type or r.payload.get("data_type")) in requested]
 
         if not results:
@@ -516,7 +518,8 @@ class ToolExecutor:
 
         # Post-filter to requested types (Qdrant may include profile/other via should-branch)
         if data_types:
-            requested = set(data_types)
+            from lib.ai_foundation.retrieval.qdrant import _expand_data_types
+            requested = set(_expand_data_types(data_types))
             results = [r for r in results if (r.data_type or r.payload.get("data_type")) in requested]
 
         if not results:
