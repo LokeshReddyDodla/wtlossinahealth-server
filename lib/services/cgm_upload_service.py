@@ -44,12 +44,7 @@ class CGMUploadService:
             ).dt.tz_localize(None)
             df = df.dropna(subset=["Device Timestamp"])
 
-            start_time = df["Device Timestamp"].min()
             end_time = df["Device Timestamp"].max()
-
-            self.clickhouse_store.delete_existing_cgm_data(
-                "aihealth.cgm_data", patient_id, start_time, end_time, "libreview"
-            )
 
             data_points = self._extract_libreview_data_points(df, patient_id)
             report_periods = self._generate_report_periods(df)
@@ -84,12 +79,7 @@ class CGMUploadService:
         try:
             df = self._parse_sinocare_file(file_contents)
 
-            start_time = df["timestamp"].min()
             end_time = df["timestamp"].max()
-
-            self.clickhouse_store.delete_existing_cgm_data(
-                "aihealth.cgm_data", patient_id, start_time, end_time, "sinocare"
-            )
 
             data_points = self._extract_sinocare_data_points(df, patient_id)
 
@@ -131,12 +121,7 @@ class CGMUploadService:
         try:
             df = self._parse_linx_file(file_contents)
 
-            start_time = df["timestamp"].min()
             end_time = df["timestamp"].max()
-
-            self.clickhouse_store.delete_existing_cgm_data(
-                "aihealth.cgm_data", patient_id, start_time, end_time, "linx"
-            )
 
             data_points = self._extract_linx_data_points(df, patient_id)
             self.clickhouse_store.write_data("aihealth.cgm_data", data_points)
