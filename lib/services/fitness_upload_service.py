@@ -5,7 +5,6 @@ from dateutil.parser import parse
 from sqlalchemy import delete
 
 from lib.core.postgres_store import PostgresStore
-from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
 from lib.workers.tasks.fitness.enqueue import (
     enqueue_process_fitness_upload_sync,
@@ -72,23 +71,13 @@ class FitnessUploadService:
             PatientSMBG.patient_id == patient_id,
             PatientSMBG.reading_time.between(start_datetime, end_datetime),
         )
-        sleep_query = delete(PatientSleep).where(
-            PatientSleep.patient_id == patient_id,
-            PatientSleep.sleep_start_time.between(start_datetime, end_datetime),
-        )
 
-        # If a specific source_name is provided, filter by source_name
         if source_name:
             smbg_query = smbg_query.where(PatientSMBG.source_name == source_name)
-            sleep_query = sleep_query.where(PatientSleep.source_name == source_name)
         else:
-            # Exclude manual sources by default if no specific source_name is provided
             smbg_query = smbg_query.where(PatientSMBG.source_name != "manual")
-            sleep_query = sleep_query.where(PatientSleep.source_name != "manual")
 
-        # Execute queries
         await postgres_session.execute(smbg_query)
-        await postgres_session.execute(sleep_query)
 
     @with_postgres_session
     async def insert_new_data(
@@ -98,7 +87,15 @@ class FitnessUploadService:
         *,
         postgres_session: AsyncSession,
     ):
-        # Insert data into ClickHouse (steps and active_energy_burned)
+        # Insert fitness data into ClickHouse
+        fitness_items = (
+            fitness_data.steps
+            + fitness_data.active_energy_burned
+            + fitness_data.distance_walking_running
+            + fitness_data.flights_climbed
+            + fitness_data.exercise_time
+            + fitness_data.workouts
+        )
         data_points = [
             {
                 "patient_id": patient_id,
@@ -107,14 +104,10 @@ class FitnessUploadService:
                 "source_platform": item.source_platform,
                 "unit": item.unit,
                 "value": float(item.value),
-                "start_datetime": parse(item.start_datetime).replace(
-                    tzinfo=None
-                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
-                "end_datetime": parse(item.end_datetime).replace(
-                    tzinfo=None
-                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
+                "start_datetime": parse(item.start_datetime).replace(tzinfo=None),
+                "end_datetime": parse(item.end_datetime).replace(tzinfo=None),
             }
-            for item in fitness_data.steps + fitness_data.active_energy_burned
+            for item in fitness_items
         ]
         self.clickhouse_store.write_data("aihealth.fitness_data", data_points)
 
@@ -169,6 +162,22 @@ class FitnessUploadService:
                 "source_platform": item.source_platform,
             })
 
+        for vital_type, vital_data in [
+            ("blood_oxygen", fitness_data.blood_oxygen),
+            ("resting_heart_rate", fitness_data.resting_heart_rate),
+            ("body_temperature", fitness_data.body_temperature),
+            ("weight", fitness_data.weight),
+            ("respiratory_rate", fitness_data.respiratory_rate),
+        ]:
+            for item in vital_data:
+                vitals_data_points.append({
+                    "patient_id": patient_id, "type": vital_type,
+                    "value": item.value,
+                    "time": parse(item.start_datetime).replace(tzinfo=None),
+                    "source_name": item.source_name,
+                    "source_platform": item.source_platform,
+                })
+
         if vitals_data_points:
             self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
 
@@ -184,27 +193,7 @@ class FitnessUploadService:
             for item in fitness_data.blood_glucose
         ]
 
-        sleep_records = [
-            PatientSleep(
-                patient_id=patient_id,
-                source_name=item.source_name,
-                source_platform=item.source_platform,
-                sleep_start_time=parse(item.start_datetime).replace(tzinfo=None),
-                sleep_end_time=parse(item.end_datetime).replace(tzinfo=None),
-                sleep_duration=item.value,
-                type=sleep_type,
-            )
-            for sleep_type, sleep_data in [
-                ("sleep_in_bed", fitness_data.sleep_in_bed),
-                ("sleep_deep", fitness_data.sleep_deep),
-                ("sleep_light", fitness_data.sleep_light),
-                ("sleep_rem", fitness_data.sleep_rem),
-                ("sleep_awake", fitness_data.sleep_awake),
-            ]
-            for item in sleep_data
-        ]
-
-        postgres_session.add_all(smbg_records + sleep_records)
+        postgres_session.add_all(smbg_records)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"

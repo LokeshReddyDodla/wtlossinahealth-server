@@ -21,6 +21,9 @@ class SummaryMetrics(BaseModel):
     active_energy: float
     active_duration: float
     average_active_session_duration: float
+    distance: float = 0
+    flights_climbed: int = 0
+    exercise_time: float = 0
 
 
 class FitnessSummary(BaseModel):
@@ -32,6 +35,8 @@ class ActivityDistribution(BaseModel):
     steps: int
     active_energy: float
     active_duration: float
+    distance: float = 0
+    flights_climbed: int = 0
 
 
 class ActivityDistributionBreakdown(BaseModel):
@@ -44,6 +49,7 @@ class PeakActivityTime(BaseModel):
     hour: str
     max_steps: int
     max_active_energy: float
+    max_distance: float = 0
 
 
 class InactivePeriod(BaseModel):
@@ -57,6 +63,8 @@ class HourlyStats(BaseModel):
     steps: int
     active_energy: float
     active_duration: float
+    distance: float = 0
+    flights_climbed: int = 0
 
 
 class ActivityBreakdown(BaseModel):
@@ -78,12 +86,23 @@ class FitnessWeekOverWeekComparison(BaseModel):
     active_duration_diff: float
 
 
+class WorkoutSummary(BaseModel):
+    type: str
+    session_count: int
+    total_duration: float
+    total_energy: float
+
+
 class FitnessStats(BaseModel):
     metadata: ReportMetadata
     steps: int
     active_energy: float
     active_duration: float
     average_active_session_duration: float
+    distance: float = 0
+    flights_climbed: int = 0
+    exercise_time: float = 0
+    workouts: Optional[List[WorkoutSummary]] = None
     activity_distribution: Optional[Dict[str, ActivityDistribution]] = None
     peak_activity_time: Optional[PeakActivityTime] = None
     inactive_periods: Optional[List[InactivePeriod]] = None

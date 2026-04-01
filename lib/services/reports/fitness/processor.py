@@ -16,6 +16,7 @@ from lib.schemas.fitness_stats import (
     PeakActivityTime,
     ReportMetadata,
     SummaryMetrics,
+    WorkoutSummary,
 )
 from lib.utils.date.periods import DayWisePeriod, WeekWisePeriod
 
@@ -26,6 +27,7 @@ from .queries import (
     generate_inactive_periods_query,
     generate_peak_activity_time_query,
     generate_summary_stats_query,
+    generate_workouts_query,
 )
 
 
@@ -150,7 +152,11 @@ class FitnessStatsProcessor:
             patient_id, start_date_str, end_date_str
         )
 
+        workouts = self._fetch_workouts(patient_id, start_date_str, end_date_str)
+
         days_covered = (end_date.date() - start_date.date()).days + 1
+
+        row = summary_stats[0] if summary_stats else (0, 0.0, 0.0, 0.0, 0, 0.0)
 
         return FitnessStats(
             metadata=ReportMetadata(
@@ -161,14 +167,18 @@ class FitnessStatsProcessor:
                 days_covered=days_covered,
                 report_type=report_type,
             ),
-            steps=summary_stats[0][0] if summary_stats else 0,
-            active_energy=summary_stats[0][1] if summary_stats else 0.0,
-            active_duration=summary_stats[0][2] if summary_stats else 0.0,
+            steps=row[0],
+            active_energy=row[1],
+            active_duration=row[2],
+            distance=row[3],
+            flights_climbed=int(row[4]),
+            exercise_time=row[5],
             average_active_session_duration=average_active_session_duration,
             activity_distribution=activity_distribution,
             peak_activity_time=peak_activity_time,
             inactive_periods=inactive_periods,
             hourly_stats=hourly_stats,
+            workouts=workouts,
         )
 
     def _process_multiple_periods(
@@ -202,6 +212,8 @@ class FitnessStatsProcessor:
                 steps=row[1],
                 active_energy=row[2],
                 active_duration=row[3],
+                distance=row[4],
+                flights_climbed=int(row[5]),
             )
             for row in data
         ]
@@ -216,6 +228,8 @@ class FitnessStatsProcessor:
                 steps=row[1],
                 active_energy=row[2],
                 active_duration=row[3],
+                distance=row[4],
+                flights_climbed=int(row[5]),
             )
             for row in data
         }
@@ -229,6 +243,7 @@ class FitnessStatsProcessor:
                 hour=data[0][0],
                 max_steps=data[0][1],
                 max_active_energy=data[0][2],
+                max_distance=data[0][3],
             )
         return None
 
@@ -241,6 +256,23 @@ class FitnessStatsProcessor:
                 start_time=str(row[0]),
                 end_time=str(row[1]),
                 inactive_duration=row[2],
+            )
+            for row in data
+        ]
+
+    def _fetch_workouts(
+        self, patient_id: str, start_date_str: str, end_date_str: str
+    ) -> Optional[List[WorkoutSummary]]:
+        query = generate_workouts_query(patient_id, start_date_str, end_date_str)
+        data = self.clickhouse_store.client.execute(query)
+        if not data:
+            return None
+        return [
+            WorkoutSummary(
+                type=row[0],
+                session_count=row[1],
+                total_duration=row[2],
+                total_energy=row[3],
             )
             for row in data
         ]
@@ -314,6 +346,9 @@ class FitnessStatsProcessor:
                     active_energy=summary_stats[0][1] if summary_stats else 0.0,
                     active_duration=summary_stats[0][2] if summary_stats else 0.0,
                     average_active_session_duration=average_active_session_duration,
+                    distance=summary_stats[0][3] if summary_stats else 0.0,
+                    flights_climbed=int(summary_stats[0][4]) if summary_stats else 0,
+                    exercise_time=summary_stats[0][5] if summary_stats else 0.0,
                 )
             ),
             breakdowns=ActivityDistributionBreakdown(
