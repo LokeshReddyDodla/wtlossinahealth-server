@@ -111,10 +111,11 @@ def migrate(dry_run: bool):
         ch.client.execute(f"INSERT INTO {full_new} SELECT * FROM {full}")
 
         new_count = ch.client.execute(f"SELECT count() FROM {full_new}")[0][0]
-        print(f"  Copied: {new_count:,} rows")
+        deduped = old_count - new_count
+        print(f"  Copied: {new_count:,} rows ({deduped:,} duplicates removed)")
 
-        if new_count != old_count:
-            print(f"  ERROR: count mismatch ({old_count} vs {new_count}). Skipping swap.")
+        if new_count > old_count:
+            print(f"  ERROR: new table has MORE rows than old ({new_count} > {old_count}). Skipping.")
             ch.client.execute(f"DROP TABLE {full_new}")
             continue
 
