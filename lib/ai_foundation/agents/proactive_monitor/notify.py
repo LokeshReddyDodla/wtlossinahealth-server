@@ -33,8 +33,8 @@ async def send_top_insight_notification(
             user_id=target,
             title=top.title,
             body=top.body,
-            channel_key="alerts" if is_urgent else "reminders",
-            group_key="alert_group" if is_urgent else "reminder_group",
+            channel_key="alerts" if is_urgent else "health_insights",
+            group_key="alert_group" if is_urgent else "health_insights_group",
             data={
                 "type": "proactive_insight",
                 "insight_id": top.insight_id,
