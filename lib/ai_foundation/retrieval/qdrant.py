@@ -45,6 +45,7 @@ _STATS_EVENTS_PAIRS = {
     "hypo": ["hypo_stats", "hypo_event"],
     "rapid_spike": ["rapid_spike_stats", "rapid_spike_event"],
     "rapid_drop": ["rapid_drop_stats", "rapid_drop_event"],
+    "sleep": ["sleep", "sleep_checkin"],
 }
 
 # Data types that don't support time-based filtering
