@@ -113,6 +113,8 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
 )
 from lib.services.reports import SleepReportService
 from lib.services.vector import SMBGVectorService
+from lib.services.vector.checkin import CheckinVectorService
+from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -1204,6 +1206,25 @@ container.register(
     ),
 )
 
+
+# 🔹 Checkin Vector Service
+container.register(
+    CheckinVectorService,
+    lambda: CheckinVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+# 🔹 Daily Checkin Service
+container.register(
+    DailyCheckinService,
+    lambda: DailyCheckinService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        checkin_vector_service=cast(
+            CheckinVectorService, container.resolve(CheckinVectorService)
+        ),
+    ),
+)
 
 # 🔹 Qdrant Search Engine
 container.register(

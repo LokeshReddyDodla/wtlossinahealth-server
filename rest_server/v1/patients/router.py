@@ -8,3 +8,4 @@ from .data_availability import *
 from .patient_daily_overview import *
 from .exports import *
 from .vitals import *
+from .checkins import *

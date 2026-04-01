@@ -43,15 +43,18 @@ class InsightCategory(str, Enum):
     MEAL_LOW_PROTEIN = "meal_low_protein"
     FITNESS_INACTIVE = "fitness_inactive"
     SLEEP_POOR = "sleep_poor"
+    MOOD_LOW = "mood_low"
 
     # Positives (LLM-generated)
     GLUCOSE_IMPROVING = "glucose_improving"
     FITNESS_STREAK = "fitness_streak"
     SLEEP_IMPROVING = "sleep_improving"
+    MOOD_IMPROVING = "mood_improving"
     GOAL_PROGRESS = "goal_progress"
 
     # Cross-domain (LLM-generated)
     SLEEP_GLUCOSE_CORRELATION = "sleep_glucose_correlation"
+    SLEEP_MOOD_CORRELATION = "sleep_mood_correlation"
     MEAL_SPIKE_PATTERN = "meal_spike_pattern"
     ACTIVITY_GLUCOSE_BENEFIT = "activity_glucose_benefit"
     LIFESTYLE_PATTERN = "lifestyle_pattern"
@@ -78,16 +81,18 @@ _CONCERN_CATEGORIES = [
     InsightCategory.GLUCOSE_RAPID_SPIKE, InsightCategory.GLUCOSE_RAPID_DROP,
     InsightCategory.GLUCOSE_WORSENING, InsightCategory.MEAL_HIGH_CARB,
     InsightCategory.MEAL_LOW_PROTEIN, InsightCategory.FITNESS_INACTIVE,
-    InsightCategory.SLEEP_POOR,
+    InsightCategory.SLEEP_POOR, InsightCategory.MOOD_LOW,
 ]
 _POSITIVE_CATEGORIES = [
     InsightCategory.GLUCOSE_IMPROVING, InsightCategory.FITNESS_STREAK,
-    InsightCategory.SLEEP_IMPROVING, InsightCategory.GOAL_PROGRESS,
+    InsightCategory.SLEEP_IMPROVING, InsightCategory.MOOD_IMPROVING,
+    InsightCategory.GOAL_PROGRESS,
     InsightCategory.STREAK_MAINTAINED, InsightCategory.TARGET_HIT,
     InsightCategory.IMPROVEMENT_TREND,
 ]
 _CROSS_DOMAIN_CATEGORIES = [
     InsightCategory.SLEEP_GLUCOSE_CORRELATION,
+    InsightCategory.SLEEP_MOOD_CORRELATION,
     InsightCategory.MEAL_SPIKE_PATTERN,
     InsightCategory.ACTIVITY_GLUCOSE_BENEFIT,
     InsightCategory.LIFESTYLE_PATTERN,

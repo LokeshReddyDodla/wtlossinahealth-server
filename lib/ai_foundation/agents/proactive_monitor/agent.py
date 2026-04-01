@@ -62,7 +62,9 @@ _SCAN_DATA_TYPES = [
     "meal",                 # meals logged
     "smbg",                 # finger-prick readings
     "fitness_overview",     # steps, active minutes
-    "sleep",                # sleep duration/quality
+    "sleep",                # sleep duration/quality (device)
+    "sleep_checkin",        # self-reported sleep quality
+    "mood_checkin",         # self-reported mood
     "vital",                # weight, BP, heart rate
     # "patient_document",     # new reports, prescriptions, lab results
 ]
