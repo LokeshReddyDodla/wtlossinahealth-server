@@ -167,10 +167,14 @@ class InsightTracker:
         patient_id: str,
         limit: int = 20,
     ) -> list[dict]:
-        """Get recent insight history for a patient (newest first)."""
+        """Get recent insight history for a patient (newest first).
+
+        Excludes dedup-only records (those without an insight_id) that are
+        created by daily briefs to block afternoon/evening duplicate topics.
+        """
         await self._maybe_ensure_indexes()
         cursor = self._collection.find(
-            {"patient_id": patient_id},
+            {"patient_id": patient_id, "insight_id": {"$exists": True}},
             sort=[("created_at", -1)],
             limit=limit,
         )
@@ -200,7 +204,7 @@ class InsightTracker:
 
         # Use aggregation pipeline for fair per-patient limiting (avoids data skew)
         pipeline = [
-            {"$match": {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}}},
+            {"$match": {"patient_id": {"$in": patient_ids}, "created_at": {"$gte": since}, "insight_id": {"$exists": True}}},
             {"$sort": {"created_at": -1}},
             {"$group": {
                 "_id": "$patient_id",

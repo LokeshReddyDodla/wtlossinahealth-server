@@ -33,6 +33,7 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 
 from .contracts import (
     BatchScanResult,
+    DailyBrief,
     HealthInsight,
     InsightCategory,
     InsightSeverity,
@@ -105,7 +106,9 @@ class ProactiveMonitorAgent(BaseAgent):
 
     agent_id = "proactive_monitor_v2"
     _SCAN_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_scan.md"
+    _BRIEF_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_scan_brief.md"
     _scan_prompt_template: str | None = None
+    _brief_prompt_template: str | None = None
 
     def __init__(
         self,
@@ -127,6 +130,13 @@ class ProactiveMonitorAgent(BaseAgent):
         if cls._scan_prompt_template is None:
             cls._scan_prompt_template = cls._SCAN_PROMPT_PATH.read_text()
         return cls._scan_prompt_template
+
+    @classmethod
+    def _get_brief_prompt_template(cls) -> str:
+        """Load and cache the morning brief prompt template."""
+        if cls._brief_prompt_template is None:
+            cls._brief_prompt_template = cls._BRIEF_PROMPT_PATH.read_text()
+        return cls._brief_prompt_template
 
     # -- Public API ---------------------------------------------------------
 
@@ -396,18 +406,31 @@ class ProactiveMonitorAgent(BaseAgent):
         header = f"# Health Data for {name} on {scan_date}\n"
         return header + "\n\n".join(sections), domain_counts
 
+    _GOAL_KEYS = frozenset({
+        "health_goal", "weight_goal", "glucose_target_tir",
+        "weight_target", "steps_target", "sleep_target", "calorie_target",
+    })
+
     async def _load_facts(self, patient_id: str) -> str:
-        """Load patient facts from memory for context."""
+        """Load patient facts from memory, with goals in a dedicated section."""
         if not self.memory:
             return ""
         try:
             raw_facts = await self.memory.get_patient_facts(patient_id)
             if not raw_facts:
                 return ""
-            lines = []
-            for f in raw_facts[:6]:
-                lines.append(f"- {f.key}: {f.value}")
-            return "Patient facts:\n" + "\n".join(lines)
+
+            goals = [f for f in raw_facts if f.key in self._GOAL_KEYS]
+            other = [f for f in raw_facts if f.key not in self._GOAL_KEYS][:6]
+
+            parts: list[str] = []
+            if goals:
+                lines = [f"- {f.key}: {f.value}" for f in goals]
+                parts.append("Patient GOALS (track progress against these):\n" + "\n".join(lines))
+            if other:
+                lines = [f"- {f.key}: {f.value}" for f in other]
+                parts.append("Patient facts:\n" + "\n".join(lines))
+            return "\n\n".join(parts)
         except Exception:
             return ""
 
@@ -445,6 +468,14 @@ class ProactiveMonitorAgent(BaseAgent):
         if facts_text:
             context_parts.append(facts_text)
 
+        # Morning scans → single cohesive daily brief
+        if scan_period == "morning":
+            return await self._analyze_as_brief(
+                context_parts, greeting, scan_label, scan_period,
+                patient_id, patient_name, domain_counts,
+            )
+
+        # Afternoon/evening → individual insights (existing behavior)
         system_prompt = Template(self._get_scan_prompt_template()).safe_substitute(
             greeting=greeting,
             scan_label=scan_label,
@@ -479,6 +510,56 @@ class ProactiveMonitorAgent(BaseAgent):
                 suggested_query=f"How was my health {scan_label}?",
             )], None
 
+    async def _analyze_as_brief(
+        self,
+        context_parts: list[str],
+        greeting: str,
+        scan_label: str,
+        scan_period: str,
+        patient_id: str,
+        patient_name: str,
+        domain_counts: dict[str, int] | None = None,
+    ) -> tuple[list[HealthInsight], LLMResponse | None]:
+        """Morning path: produce a single DailyBrief instead of individual insights."""
+        system_prompt = Template(self._get_brief_prompt_template()).safe_substitute(
+            greeting=greeting,
+            scan_label=scan_label,
+            scan_period=scan_period,
+            categories=LLM_INSIGHT_CATEGORIES_PROMPT,
+            patient_name=patient_name,
+        )
+
+        try:
+            brief, llm_meta = await self.gateway.extract(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "\n\n".join(context_parts)},
+                ],
+                response_model=DailyBrief,
+                task=ModelTask.CLASSIFICATION,
+            )
+            return [HealthInsight(
+                category=InsightCategory.DAILY_BRIEF,
+                severity=brief.top_severity,
+                title=brief.title,
+                body=brief.body,
+                patient_id=patient_id,
+                suggested_query=brief.suggested_query,
+                data={"categories_covered": [c.value for c in brief.categories_covered]},
+            )], llm_meta
+        except Exception as exc:
+            logger.warning("Daily brief analysis failed: %s", exc, exc_info=True)
+            counts = domain_counts or {}
+            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
+            return [HealthInsight(
+                category=InsightCategory.GENERAL,
+                severity=InsightSeverity.INFO,
+                title="📋 Your morning brief",
+                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
+                patient_id=patient_id,
+                suggested_query=f"How was my health {scan_label}?",
+            )], None
+
     async def _filter_insights(
         self,
         patient_id: str,
@@ -496,6 +577,27 @@ class ProactiveMonitorAgent(BaseAgent):
         dedup_cache: dict[str, tuple[bool, str, int]] = {}
 
         for insight in insights:
+            # Daily brief: check covered categories, send if ANY are fresh
+            if insight.category == InsightCategory.DAILY_BRIEF:
+                covered = insight.data.get("categories_covered", [])
+                any_fresh = False
+                for cat in covered:
+                    try:
+                        check = dedup_cache.get(cat)
+                        if check is None:
+                            check = await self._insight_tracker.should_send(patient_id, cat)
+                            dedup_cache[cat] = check
+                        if check[0]:
+                            any_fresh = True
+                    except Exception as exc:
+                        logger.warning("InsightTracker error for %s/%s: %s", patient_id, cat, exc)
+                        any_fresh = True
+                if any_fresh or not covered:
+                    filtered.append(insight)
+                else:
+                    logger.debug("Dedup: skipping daily_brief for patient %s (all categories sent recently)", patient_id)
+                continue
+
             category = insight.category.value
             try:
                 check = dedup_cache.get(category)
@@ -522,9 +624,38 @@ class ProactiveMonitorAgent(BaseAgent):
         return filtered
 
     async def record_insight(self, patient_id: str, insight: HealthInsight) -> None:
-        """Record that an insight was actually sent as a notification."""
+        """Record that an insight was actually sent as a notification.
+
+        For daily briefs, records each covered category so afternoon/evening
+        scans correctly dedup against content already mentioned in the brief.
+        """
         if not self._insight_tracker:
             return
+
+        if insight.category == InsightCategory.DAILY_BRIEF:
+            # Record the brief itself (with insight_id) for history/feedback
+            await self._insight_tracker.record(
+                patient_id,
+                insight.category.value,
+                insight.severity.value,
+                insight.body,
+                insight_id=insight.insight_id,
+                title=insight.title,
+                suggested_query=insight.suggested_query,
+                trace_id=insight.data.get("trace_id"),
+            )
+            # Record dedup-only entries for each covered category (no insight_id)
+            # so afternoon/evening scans correctly skip already-mentioned topics
+            covered = insight.data.get("categories_covered", [])
+            for cat in covered:
+                await self._insight_tracker.record(
+                    patient_id,
+                    cat,
+                    insight.severity.value,
+                    insight.body,
+                )
+            return
+
         await self._insight_tracker.record(
             patient_id,
             insight.category.value,

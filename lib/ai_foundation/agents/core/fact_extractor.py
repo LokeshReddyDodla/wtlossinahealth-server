@@ -35,6 +35,12 @@ CANONICAL_MEMORY_KEYS: dict[str, dict] = {
     # Goals (mutable)
     "health_goal": {"category": "goal", "permanent": False},
     "weight_goal": {"category": "goal", "permanent": False},
+    # Targets (mutable, numeric goals)
+    "glucose_target_tir": {"category": "goal", "permanent": False},
+    "weight_target": {"category": "goal", "permanent": False},
+    "steps_target": {"category": "goal", "permanent": False},
+    "sleep_target": {"category": "goal", "permanent": False},
+    "calorie_target": {"category": "goal", "permanent": False},
     # Preferences (mutable)
     "dietary_preference": {"category": "preference", "permanent": False},
     "cuisine_preference": {"category": "preference", "permanent": False},
