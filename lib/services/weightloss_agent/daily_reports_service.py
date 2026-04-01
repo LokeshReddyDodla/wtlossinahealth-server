@@ -11,7 +11,6 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.models.patient_meal import PatientMeal
-from lib.models.patient_vital import PatientVital
 
 
 class DailyReportsMixin:
@@ -49,16 +48,15 @@ class DailyReportsMixin:
                 )
                 meals = meals_result.scalars().all()
 
-                # Get vitals for the day
-                vitals_result = await session.execute(
-                    select(PatientVital).where(
-                        and_(
-                            PatientVital.patient_id == patient_id,
-                            func.date(PatientVital.test_time) == current_date,
-                        )
-                    )
-                )
-                vitals = vitals_result.scalars().all()
+                _vitals_query = f"""
+                SELECT type, value FROM aihealth.vitals_data
+                WHERE patient_id = '{patient_id}'
+                    AND toDate(time) = '{current_date}'
+                ORDER BY time DESC
+                LIMIT 1 BY type
+                """
+                _vitals_rows = self.clickhouse_store.client.execute(_vitals_query)
+                _vitals_map = {r[0]: r[1] for r in _vitals_rows}
 
                 # Get fitness data from external service (placeholder)
                 fitness_data = await self._get_fitness_data_for_date(
@@ -99,33 +97,17 @@ class DailyReportsMixin:
                         "fitness_data": fitness_data,
                         "vitals_data": (
                             {
-                                "weight": (
-                                    vitals[-1].weight
-                                    if vitals
-                                    and len(vitals) > 0
-                                    and vitals[-1].weight
-                                    else None
-                                ),
+                                "weight": _vitals_map.get("weight"),
                                 "blood_pressure": (
                                     {
-                                        "systolic": (
-                                            vitals[-1].systolic_bp
-                                            if vitals
-                                            and vitals[-1].systolic_bp
-                                            else None
-                                        ),
-                                        "diastolic": (
-                                            vitals[-1].diastolic_bp
-                                            if vitals
-                                            and vitals[-1].diastolic_bp
-                                            else None
-                                        ),
+                                        "systolic": _vitals_map.get("systolic_bp"),
+                                        "diastolic": _vitals_map.get("diastolic_bp"),
                                     }
-                                    if vitals
+                                    if "systolic_bp" in _vitals_map or "diastolic_bp" in _vitals_map
                                     else None
                                 ),
                             }
-                            if vitals
+                            if _vitals_map
                             else None
                         ),
                     }

@@ -78,10 +78,28 @@ class ClickHouseStore:
         """
         self.client.execute(create_table_query)
 
+    def create_vitals_data_table(self):
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS aihealth.vitals_data (
+            patient_id String,
+            vital_id String DEFAULT '',
+            type String,
+            value Float64,
+            time DateTime,
+            source_name String DEFAULT '',
+            source_platform String DEFAULT '',
+            INDEX idx_type type TYPE set(100) GRANULARITY 4,
+            INDEX idx_source source_name TYPE set(100) GRANULARITY 4
+        ) ENGINE = MergeTree()
+        ORDER BY (patient_id, time);
+        """
+        self.client.execute(create_table_query)
+
     def create_all_tables(self):
         self.create_cgm_data_table()
         self.create_fitness_data_table()
         self.create_sleep_data_table()
+        self.create_vitals_data_table()
 
     def write_data(self, table_name, data):
         if not data:
@@ -157,6 +175,121 @@ class ClickHouseStore:
         """
 
         self.client.execute(query, settings={"mutations_sync": 1})
+
+    def delete_existing_vitals_data(
+        self,
+        patient_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        source_name: Optional[str] = None,
+    ):
+        if source_name:
+            condition = f"AND source_name = '{source_name}'"
+        else:
+            condition = "AND source_name != 'manual'"
+
+        query = f"""
+        ALTER TABLE aihealth.vitals_data
+        DELETE WHERE
+            patient_id = '{patient_id}'
+            AND time >= toDateTime('{start_time}')
+            AND time <= toDateTime('{end_time}')
+            {condition}
+        """
+        self.client.execute(query, settings={"mutations_sync": 1})
+
+    def delete_vitals_by_vital_id(self, patient_id: str, vital_id: str):
+        query = f"""
+        ALTER TABLE aihealth.vitals_data
+        DELETE WHERE patient_id = '{patient_id}' AND vital_id = '{vital_id}'
+        """
+        self.client.execute(query, settings={"mutations_sync": 1})
+
+    def query_vitals(
+        self,
+        patient_id: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        types: Optional[list[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Query vitals with pagination. Returns (rows, total_count)."""
+        conditions = [f"patient_id = '{patient_id}'"]
+        if start_time:
+            conditions.append(f"time >= toDateTime('{start_time}')")
+        if end_time:
+            conditions.append(f"time <= toDateTime('{end_time}')")
+        if types:
+            type_list = ", ".join(f"'{t}'" for t in types)
+            conditions.append(f"type IN ({type_list})")
+        where = " AND ".join(conditions)
+
+        count_query = f"SELECT count() FROM aihealth.vitals_data WHERE {where}"
+        total = self.client.execute(count_query)[0][0]
+
+        data_query = f"""
+        SELECT vital_id, type, value, time, source_name, source_platform
+        FROM aihealth.vitals_data
+        WHERE {where}
+        ORDER BY time DESC
+        LIMIT {limit} OFFSET {offset}
+        """
+        rows = self.client.execute(data_query)
+        return [
+            {
+                "vital_id": r[0], "type": r[1], "value": r[2],
+                "time": r[3], "source_name": r[4], "source_platform": r[5],
+            }
+            for r in rows
+        ], total
+
+    def query_vitals_summary(
+        self,
+        patient_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> list[dict]:
+        """Daily avg/min/max/count per vital type."""
+        query = f"""
+        SELECT
+            toDate(time) AS date,
+            type,
+            avg(value) AS avg_value,
+            min(value) AS min_value,
+            max(value) AS max_value,
+            count() AS reading_count
+        FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+            AND time >= toDateTime('{start_time}')
+            AND time <= toDateTime('{end_time}')
+        GROUP BY date, type
+        ORDER BY date DESC, type
+        """
+        rows = self.client.execute(query)
+        return [
+            {
+                "date": str(r[0]), "type": r[1],
+                "avg": round(r[2], 1), "min": round(r[3], 1),
+                "max": round(r[4], 1), "count": r[5],
+            }
+            for r in rows
+        ]
+
+    def query_vitals_latest(self, patient_id: str) -> list[dict]:
+        """Most recent reading per vital type."""
+        query = f"""
+        SELECT type, value, time, source_name
+        FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+        ORDER BY time DESC
+        LIMIT 1 BY type
+        """
+        rows = self.client.execute(query)
+        return [
+            {"type": r[0], "value": round(r[1], 2), "time": r[2], "source_name": r[3]}
+            for r in rows
+        ]
 
     def query_data(self, query):
         try:

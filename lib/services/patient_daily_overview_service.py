@@ -13,8 +13,8 @@ from lib.services.reports.meal.service import MealReportService
 from lib.services.reports.cgm.service import CGMReportService
 from lib.services.reports.fitness.service import FitnessReportService
 from lib.services.reports.sleep.service import SleepReportService
+from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
-from lib.models.patient_vital import PatientVital
 from sqlalchemy import and_, cast, Date, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -24,12 +24,14 @@ class PatientDailyOverviewService:
     def __init__(
         self,
         postgres_store: PostgresStore,
+        clickhouse_store: ClickHouseStore,
         meal_report_service: MealReportService,
         cgm_report_service: CGMReportService,
         fitness_report_service: FitnessReportService,
         sleep_report_service: SleepReportService,
     ):
         self.postgres_store = postgres_store
+        self.clickhouse_store = clickhouse_store
         self.meal_report_service = meal_report_service
         self.cgm_report_service = cgm_report_service
         self.fitness_report_service = fitness_report_service
@@ -157,20 +159,13 @@ class PatientDailyOverviewService:
         selected_date: date,
         session: AsyncSession,
     ) -> Optional[float]:
-        query = (
-            select(PatientVital.weight)
-            .where(
-                and_(
-                    PatientVital.patient_id == patient_id,
-                    cast(PatientVital.test_time, Date) <= selected_date,
-                    PatientVital.weight.isnot(None),
-                )
-            )
-            .order_by(PatientVital.test_time.desc())
-            .limit(1)
-        )
-
-        result = await session.execute(query)
-        row = result.fetchone()
-
-        return float(row[0]) if row and row[0] else None
+        query = f"""
+        SELECT value FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+            AND type = 'weight'
+            AND toDate(time) <= '{selected_date}'
+        ORDER BY time DESC
+        LIMIT 1
+        """
+        rows = self.clickhouse_store.client.execute(query)
+        return float(rows[0][0]) if rows else None

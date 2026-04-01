@@ -7,7 +7,6 @@ from sqlalchemy import delete
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_sleep import PatientSleep
 from lib.models.patient_smbg import PatientSMBG
-from lib.models.patient_vital import PatientVital
 from lib.workers.tasks.fitness.enqueue import (
     enqueue_process_fitness_upload_sync,
 )
@@ -84,14 +83,16 @@ class FitnessUploadService:
             end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
             source_name,
         )
+        self.clickhouse_store.delete_existing_vitals_data(
+            patient_id,
+            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
+            source_name,
+        )
 
         smbg_query = delete(PatientSMBG).where(
             PatientSMBG.patient_id == patient_id,
             PatientSMBG.reading_time.between(start_datetime, end_datetime),
-        )
-        vital_query = delete(PatientVital).where(
-            PatientVital.patient_id == patient_id,
-            PatientVital.test_time.between(start_datetime, end_datetime),
         )
         sleep_query = delete(PatientSleep).where(
             PatientSleep.patient_id == patient_id,
@@ -101,17 +102,14 @@ class FitnessUploadService:
         # If a specific source_name is provided, filter by source_name
         if source_name:
             smbg_query = smbg_query.where(PatientSMBG.source_name == source_name)
-            vital_query = vital_query.where(PatientVital.source_name == source_name)
             sleep_query = sleep_query.where(PatientSleep.source_name == source_name)
         else:
             # Exclude manual sources by default if no specific source_name is provided
             smbg_query = smbg_query.where(PatientSMBG.source_name != "manual")
-            vital_query = vital_query.where(PatientVital.source_name != "manual")
             sleep_query = sleep_query.where(PatientSleep.source_name != "manual")
 
         # Execute queries
         await postgres_session.execute(smbg_query)
-        await postgres_session.execute(vital_query)
         await postgres_session.execute(sleep_query)
 
     @with_postgres_session
@@ -164,32 +162,37 @@ class FitnessUploadService:
         ]
         self.clickhouse_store.write_data("aihealth.sleep_data", sleep_data_points)
 
-        # Insert data into PatientVitals, PatientSMBG, PatientSleep, etc.
-        vitals = [
-            PatientVital(
-                patient_id=patient_id,
-                diastolic_bp=diastolic_item.value,
-                systolic_bp=systolic_item.value,
-                test_time=parse(diastolic_item.start_datetime).replace(tzinfo=None),
-                source_name=diastolic_item.source_name,
-                source_platform=diastolic_item.source_platform,
-            )
-            for diastolic_item, systolic_item in zip(
-                fitness_data.blood_pressure_diastolic,
-                fitness_data.blood_pressure_systolic,
-            )
-        ]
+        # Insert vitals into ClickHouse (HR, BP)
+        vitals_data_points: list[dict] = []
+        for diastolic_item, systolic_item in zip(
+            fitness_data.blood_pressure_diastolic,
+            fitness_data.blood_pressure_systolic,
+        ):
+            t = parse(diastolic_item.start_datetime).replace(tzinfo=None)
+            vitals_data_points.append({
+                "patient_id": patient_id, "type": "diastolic_bp",
+                "value": diastolic_item.value, "time": t,
+                "source_name": diastolic_item.source_name,
+                "source_platform": diastolic_item.source_platform,
+            })
+            vitals_data_points.append({
+                "patient_id": patient_id, "type": "systolic_bp",
+                "value": systolic_item.value, "time": t,
+                "source_name": systolic_item.source_name,
+                "source_platform": systolic_item.source_platform,
+            })
 
         for item in fitness_data.heart_rate:
-            vitals.append(
-                PatientVital(
-                    patient_id=patient_id,
-                    heart_rate=item.value,
-                    test_time=parse(item.start_datetime).replace(tzinfo=None),
-                    source_name=item.source_name,
-                    source_platform=item.source_platform,
-                )
-            )
+            vitals_data_points.append({
+                "patient_id": patient_id, "type": "heart_rate",
+                "value": item.value,
+                "time": parse(item.start_datetime).replace(tzinfo=None),
+                "source_name": item.source_name,
+                "source_platform": item.source_platform,
+            })
+
+        if vitals_data_points:
+            self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
 
         smbg_records = [
             PatientSMBG(
@@ -223,7 +226,7 @@ class FitnessUploadService:
             for item in sleep_data
         ]
 
-        postgres_session.add_all(vitals + smbg_records + sleep_records)
+        postgres_session.add_all(smbg_records + sleep_records)
 
     async def update_last_sync(self, patient_id: str, dateTo: datetime):
         fitness_sync_key = f"fitness_sync:{patient_id}"

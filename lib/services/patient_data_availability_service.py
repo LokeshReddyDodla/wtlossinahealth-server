@@ -4,10 +4,10 @@ from typing import Dict
 from sqlalchemy import and_, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_meal import PatientMeal
 from lib.models.patient_smbg import PatientSMBG
-from lib.models.patient_vital import PatientVital
 from lib.schemas.patient_data_availability import (
     DateDataAvailability,
     PatientDataAvailabilityResponse,
@@ -19,8 +19,10 @@ class PatientDataAvailabilityService:
     def __init__(
         self,
         postgres_store: PostgresStore,
+        clickhouse_store: ClickHouseStore,
     ):
         self.postgres_store = postgres_store
+        self.clickhouse_store = clickhouse_store
 
     @with_postgres_session
     async def get_data_availability(
@@ -149,24 +151,15 @@ class PatientDataAvailabilityService:
         end_date: date,
         session: AsyncSession,
     ) -> Dict[date, int]:
-        """Get vitals counts grouped by date"""
-        query = (
-            select(
-                cast(PatientVital.test_time, Date).label("date"),
-                func.count(PatientVital.id).label("count"),
-            )
-            .where(
-                and_(
-                    PatientVital.patient_id == patient_id,
-                    cast(PatientVital.test_time, Date) >= start_date,
-                    cast(PatientVital.test_time, Date) <= end_date,
-                )
-            )
-            .group_by(cast(PatientVital.test_time, Date))
-        )
-
-        result = await session.execute(query)
-        rows = result.fetchall()
+        query = f"""
+        SELECT toDate(time) AS d, count() AS c
+        FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+            AND toDate(time) >= '{start_date}'
+            AND toDate(time) <= '{end_date}'
+        GROUP BY d
+        """
+        rows = self.clickhouse_store.client.execute(query)
         return {row[0]: row[1] for row in rows}
 
     async def _get_cgm_counts(

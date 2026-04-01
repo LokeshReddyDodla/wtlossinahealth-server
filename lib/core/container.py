@@ -470,6 +470,7 @@ container.register(
     PatientDataAvailabilityService,
     lambda: PatientDataAvailabilityService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 
@@ -478,6 +479,7 @@ container.register(
     PatientDailyOverviewService,
     lambda: PatientDailyOverviewService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
         meal_report_service=cast(
             MealReportService, container.resolve(MealReportService)
         ),
@@ -549,13 +551,7 @@ container.register(
 container.register(
     PatientVitalService,
     lambda: PatientVitalService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
-        patient_summary_service=cast(
-            PatientSummaryService, container.resolve(PatientSummaryService)
-        ),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 
@@ -814,6 +810,7 @@ container.register(
     AgentMealV1Service,
     lambda: AgentMealV1Service(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
         meal_service=cast(MealService, container.resolve(MealService)),
         meal_report_service=cast(
             MealReportService, container.resolve(MealReportService)
@@ -856,6 +853,7 @@ container.register(
         token_usage_service=cast(
             TokenUsageService, container.resolve(TokenUsageService)
         ),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 
