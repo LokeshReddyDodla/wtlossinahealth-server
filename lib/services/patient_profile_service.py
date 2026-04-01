@@ -155,7 +155,6 @@ class PatientProfileService:
 
             if include_health_data:
                 stmt = stmt.options(
-                    selectinload(PatientModel.vitals),
                     selectinload(PatientModel.smbgs),
                 )
 

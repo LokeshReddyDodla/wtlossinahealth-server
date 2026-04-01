@@ -42,7 +42,7 @@ from .patient_sleep import PatientSleep
 from .patient_sleep_habit import PatientSleepHabit
 from .patient_smbg import PatientSMBG
 from .patient_smoking_habit import PatientSmokingHabit
-from .patient_vital import PatientVital
+
 from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
@@ -50,5 +50,3 @@ from .weight_loss_agent import WeightLossAgentEnrollment
 from .user_activity_log import UserActivityLog
 from .patient_report import PatientReport
 from .patient_data_export import PatientDataExport
-from .agent_meal_snapshot import AgentMealSnapshot
-from .agent_meal_feature_cache import AgentMealFeatureCache
