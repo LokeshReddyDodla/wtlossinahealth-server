@@ -4,7 +4,6 @@ from fastapi import Depends, Request, status
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_patient_vital_service
 from lib.models.patient import Patient
-from lib.schemas.patient_vital import PatientVital as PatientVitalSchema
 from lib.schemas.patient_vital import PatientVitalCreate
 from lib.services.patient_vital_service import PatientVitalService
 from lib.utils.http_exceptions import raise_http_exception
@@ -23,16 +22,13 @@ async def upload_vitals(
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        new_vitals = await patient_vital_service.upload_patient_vital(
+        result = await patient_vital_service.upload_patient_vital(
             str(current_patient.patient_id),
             vital_data,
         )
-
-        vital = PatientVitalSchema.model_validate(new_vitals)
-
         return SuccessResponse(
             message="Vitals uploaded successfully.",
-            data=vital,
+            data=result,
         )
     except Exception as e:
         raise_http_exception(

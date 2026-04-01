@@ -15,7 +15,7 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.agent_meal_feature_cache import AgentMealFeatureCache
 from lib.models.agent_meal_snapshot import AgentMealSnapshot
 from lib.models.patient_smbg import PatientSMBG
-from lib.models.patient_vital import PatientVital
+
 from lib.schemas.agent_meal_v1 import (
     CareProviderView,
     DataUsedFlags,
@@ -64,6 +64,7 @@ class AgentMealV1Service:
     def __init__(
         self,
         postgres_store: PostgresStore,
+        clickhouse_store,
         meal_service: MealService,
         meal_report_service: MealReportService,
         cgm_report_service: CGMReportService,
@@ -77,6 +78,7 @@ class AgentMealV1Service:
         agent_meal_messages_collection: Any,
     ):
         self.postgres_store = postgres_store
+        self.clickhouse_store = clickhouse_store
         self.meal_service = meal_service
         self.meal_report_service = meal_report_service
         self.cgm_report_service = cgm_report_service
@@ -655,29 +657,33 @@ class AgentMealV1Service:
         start_dt = datetime.combine(meal_date - timedelta(days=7), time.min)
         end_dt = datetime.combine(meal_date, time.max)
 
-        query = (
-            select(PatientVital)
-            .where(
-                and_(
-                    PatientVital.patient_id == patient_id,
-                    PatientVital.test_time >= start_dt,
-                    PatientVital.test_time <= end_dt,
-                )
-            )
-            .order_by(PatientVital.test_time.desc())
-            .limit(1)
-        )
-        result = await postgres_session.execute(query)
-        vital = result.scalars().first()
-        if not vital:
+        query = f"""
+        SELECT type, value, time
+        FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+            AND time >= toDateTime('{start_dt}')
+            AND time <= toDateTime('{end_dt}')
+        ORDER BY time DESC
+        LIMIT 1 BY type
+        """
+        rows = self.clickhouse_store.client.execute(query)
+        if not rows:
             return {}
+
         source_flags["vitals"] = True
+        vitals: Dict[str, Any] = {}
+        latest_time = None
+        for vtype, value, t in rows:
+            vitals[vtype] = value
+            if latest_time is None or t > latest_time:
+                latest_time = t
+
         return {
-            "test_time": vital.test_time.isoformat(),
-            "weight": vital.weight,
-            "systolic_bp": vital.systolic_bp,
-            "diastolic_bp": vital.diastolic_bp,
-            "heart_rate": vital.heart_rate,
+            "test_time": latest_time.isoformat() if latest_time else None,
+            "weight": vitals.get("weight"),
+            "systolic_bp": vitals.get("systolic_bp"),
+            "diastolic_bp": vitals.get("diastolic_bp"),
+            "heart_rate": vitals.get("heart_rate"),
         }
 
     async def _fetch_sleep_context(

@@ -27,8 +27,10 @@ class PatientSummaryService:
         meal_reports_collection,
         cgm_reports_collection,
         token_usage_service: TokenUsageService,
+        clickhouse_store=None,
     ):
         self.token_usage_service = token_usage_service
+        self.clickhouse_store = clickhouse_store
 
         # Mongo collections
         self.patient_summary_collection = patient_summary_collection
@@ -497,70 +499,63 @@ class PatientSummaryService:
     async def _build_vitals_section(
         self, patient_id: str, start_date: datetime, end_date: datetime
     ) -> Optional[Dict[str, Any]]:
-        """
-        Aggregate vitals stored in Postgres for the given window.
-        """
-        from lib.core.container import container
-        from lib.core.postgres_store import PostgresStore
-        from lib.models.patient_vital import PatientVital
+        if not self.clickhouse_store:
+            return None
+        rows = self.clickhouse_store.query_vitals_summary(
+            patient_id,
+            start_date.replace(tzinfo=None),
+            end_date.replace(tzinfo=None),
+        )
 
-        store: PostgresStore = container.resolve(PostgresStore)  # type: ignore
-        async with store.get_session() as session:
-            result = await session.execute(
-                select(
-                    func.avg(PatientVital.weight),
-                    func.avg(PatientVital.systolic_bp),
-                    func.avg(PatientVital.diastolic_bp),
-                    func.avg(PatientVital.heart_rate),
-                    func.avg(PatientVital.spo2),
-                    func.avg(PatientVital.temperature),
-                    func.avg(PatientVital.respiratory_rate),
-                    func.max(PatientVital.ketones),
-                    func.max(PatientVital.a1c),
-                ).where(
-                    PatientVital.patient_id == patient_id,
-                    PatientVital.test_time >= start_date.replace(tzinfo=None),
-                    PatientVital.test_time <= end_date.replace(tzinfo=None),
-                )
-            )
-            row = result.first()
-
-        if not row:
+        if not rows:
             return None
 
-        (
-            weight,
-            systolic,
-            diastolic,
-            heart_rate,
-            spo2,
-            temperature,
-            respiratory_rate,
-            ketones,
-            a1c,
-        ) = row
+        # Build lookup: type → {avg, min, max, count}
+        by_type: Dict[str, Dict] = {}
+        for r in rows:
+            t = r["type"]
+            if t not in by_type:
+                by_type[t] = r
+            else:
+                # Merge across days — recalculate weighted avg is complex,
+                # so just take the overall avg from the full-range query
+                pass
 
-        if not any(
-            [
-                weight,
-                systolic,
-                diastolic,
-                heart_rate,
-                spo2,
-                temperature,
-                respiratory_rate,
-                ketones,
-                a1c,
-            ]
-        ):
+        # If multi-day, do a single aggregate query instead
+        if len(set(r["date"] for r in rows)) > 1:
+            agg_query = f"""
+            SELECT type, avg(value), max(value)
+            FROM aihealth.vitals_data
+            WHERE patient_id = '{patient_id}'
+                AND time >= toDateTime('{start_date.replace(tzinfo=None)}')
+                AND time <= toDateTime('{end_date.replace(tzinfo=None)}')
+            GROUP BY type
+            """
+            agg_rows = self.clickhouse_store.client.execute(agg_query)
+            by_type = {r[0]: {"avg": r[1], "max": r[2]} for r in agg_rows}
+
+        def avg_of(t: str) -> Optional[float]:
+            return round(by_type[t]["avg"], 1) if t in by_type else None
+
+        def max_of(t: str) -> Optional[float]:
+            return round(by_type[t]["max"], 1) if t in by_type else None
+
+        weight = avg_of("weight")
+        systolic = avg_of("systolic_bp")
+        diastolic = avg_of("diastolic_bp")
+        heart_rate = avg_of("heart_rate")
+        spo2 = avg_of("spo2")
+        temperature = avg_of("temperature")
+        respiratory_rate = avg_of("respiratory_rate")
+        ketones = max_of("ketones")
+        a1c = max_of("a1c")
+
+        if not any([weight, systolic, diastolic, heart_rate, spo2, temperature, respiratory_rate, ketones, a1c]):
             return None
 
         bp = None
         if systolic is not None or diastolic is not None:
-            bp = {
-                "systolic": systolic,
-                "diastolic": diastolic,
-            }
+            bp = {"systolic": systolic, "diastolic": diastolic}
 
         return {
             "weight_kg": weight,
