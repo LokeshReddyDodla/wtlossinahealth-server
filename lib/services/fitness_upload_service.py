@@ -68,28 +68,6 @@ class FitnessUploadService:
         *,
         postgres_session: AsyncSession,
     ):
-        # Delete data from ClickHouse
-        self.clickhouse_store.delete_existing_fitness_data(
-            "aihealth.fitness_data",
-            patient_id,
-            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            source_name,
-        )
-        self.clickhouse_store.delete_existing_sleep_data(
-            "aihealth.sleep_data",
-            patient_id,
-            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            source_name,
-        )
-        self.clickhouse_store.delete_existing_vitals_data(
-            patient_id,
-            start_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            end_datetime.strftime("%Y-%m-%d %H:%M:%S"),
-            source_name,
-        )
-
         smbg_query = delete(PatientSMBG).where(
             PatientSMBG.patient_id == patient_id,
             PatientSMBG.reading_time.between(start_datetime, end_datetime),
