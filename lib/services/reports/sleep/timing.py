@@ -1,59 +1,21 @@
-from datetime import datetime
-
-from sqlalchemy import text
-
-from lib.models.patient_sleep import PatientSleep
+from .queries import generate_timing_stats_query
 
 
 class SleepTimingStatistics:
     @staticmethod
-    async def fetch(
-        postgres_session,
+    def fetch(
+        clickhouse_store,
         patient_id: str,
-        start_datetime: datetime,
-        end_datetime: datetime,
+        start_datetime: str,
+        end_datetime: str,
     ) -> dict:
-        query = text(
-            """
-        SELECT 
-            MIN(sleep_start_time::time) AS earliest_start,
-            MAX(sleep_end_time::time) AS latest_end,
-            (DATE_TRUNC('second', TO_TIMESTAMP(AVG(EXTRACT(EPOCH FROM sleep_start_time::time))))::time) AS avg_start,
-            (DATE_TRUNC('second', TO_TIMESTAMP(AVG(EXTRACT(EPOCH FROM sleep_end_time::time))))::time) AS avg_end
-        FROM 
-            patient_sleeps
-        WHERE 
-            patient_id = :patient_id
-            AND sleep_start_time >= :start_datetime
-            AND sleep_end_time <= :end_datetime
-            AND (
-                sleep_start_time::time >= '18:00' OR sleep_end_time::time < '12:00'
-            )
-            AND type != 'sleep_awake'
-        """
-        )
-
-        result = await postgres_session.execute(
-            query,
-            {
-                "patient_id": patient_id,
-                "start_datetime": start_datetime,
-                "end_datetime": end_datetime,
-            },
-        )
-        row = result.first()
+        query = generate_timing_stats_query(patient_id, start_datetime, end_datetime)
+        result = clickhouse_store.client.execute(query)
+        row = result[0] if result else (None, None, None, None)
 
         return {
-            "earliest_start_time": (
-                row.earliest_start.isoformat() if row.earliest_start else None
-            ),
-            "latest_end_time": (
-                row.latest_end.isoformat() if row.latest_end else None
-            ),
-            "average_start_time": (
-                row.avg_start.isoformat() if row.avg_start else None
-            ),
-            "average_end_time": (
-                row.avg_end.isoformat() if row.avg_end else None
-            ),
+            "earliest_start_time": row[0] if row[0] else None,
+            "latest_end_time": row[1] if row[1] else None,
+            "average_start_time": row[2] if row[2] else None,
+            "average_end_time": row[3] if row[3] else None,
         }

@@ -746,7 +746,7 @@ container.register(
 container.register(
     SleepStatsProcessor,
     lambda: SleepStatsProcessor(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
     ),
 )
 
