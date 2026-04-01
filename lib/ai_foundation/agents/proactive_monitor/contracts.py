@@ -50,9 +50,23 @@ class InsightCategory(str, Enum):
     SLEEP_IMPROVING = "sleep_improving"
     GOAL_PROGRESS = "goal_progress"
 
+    # Cross-domain (LLM-generated)
+    SLEEP_GLUCOSE_CORRELATION = "sleep_glucose_correlation"
+    MEAL_SPIKE_PATTERN = "meal_spike_pattern"
+    ACTIVITY_GLUCOSE_BENEFIT = "activity_glucose_benefit"
+    LIFESTYLE_PATTERN = "lifestyle_pattern"
+
+    # Goal tracking (LLM-generated)
+    STREAK_MAINTAINED = "streak_maintained"
+    TARGET_HIT = "target_hit"
+    IMPROVEMENT_TREND = "improvement_trend"
+
     # Static only (generated without LLM, never by LLM)
     MEAL_MISSED = "meal_missed"
     ENGAGEMENT_DROP = "engagement_drop"
+
+    # Daily brief (pipeline-generated, morning scans only)
+    DAILY_BRIEF = "daily_brief"
 
     # Neutral
     GENERAL = "general"
@@ -69,12 +83,21 @@ _CONCERN_CATEGORIES = [
 _POSITIVE_CATEGORIES = [
     InsightCategory.GLUCOSE_IMPROVING, InsightCategory.FITNESS_STREAK,
     InsightCategory.SLEEP_IMPROVING, InsightCategory.GOAL_PROGRESS,
+    InsightCategory.STREAK_MAINTAINED, InsightCategory.TARGET_HIT,
+    InsightCategory.IMPROVEMENT_TREND,
+]
+_CROSS_DOMAIN_CATEGORIES = [
+    InsightCategory.SLEEP_GLUCOSE_CORRELATION,
+    InsightCategory.MEAL_SPIKE_PATTERN,
+    InsightCategory.ACTIVITY_GLUCOSE_BENEFIT,
+    InsightCategory.LIFESTYLE_PATTERN,
 ]
 
 LLM_INSIGHT_CATEGORIES_PROMPT = (
     "CATEGORIES — pick the one that fits best:\n"
     f"Concerns: {', '.join(c.value for c in _CONCERN_CATEGORIES)}\n"
     f"Positives: {', '.join(c.value for c in _POSITIVE_CATEGORIES)}\n"
+    f"Cross-domain: {', '.join(c.value for c in _CROSS_DOMAIN_CATEGORIES)}\n"
     "Neutral: general"
 )
 
@@ -86,7 +109,7 @@ class HealthInsight(BaseModel):
     category: InsightCategory
     severity: InsightSeverity
     title: str = Field(max_length=50, description="Push notification title. Max 50 characters.")
-    body: str = Field(max_length=200, description="Push notification body. Max 200 characters.")
+    body: str = Field(max_length=300, description="Push notification body. Max 300 characters for daily briefs, ~180 for individual insights.")
     patient_id: str = ""
     data: dict[str, Any] = Field(
         default_factory=dict,
@@ -109,6 +132,25 @@ class ScanInsights(BaseModel):
     insights: list[HealthInsight] = Field(
         default_factory=list,
         description="List of noteworthy health insights found during the scan.",
+    )
+
+
+class DailyBrief(BaseModel):
+    """Single cohesive morning digest combining all health domains."""
+
+    title: str = Field(max_length=50, description="Push notification title. Max 50 chars, start with 📋 emoji.")
+    body: str = Field(max_length=300, description="Cohesive daily summary covering all domains. Max 300 chars.")
+    categories_covered: list[InsightCategory] = Field(
+        default_factory=list,
+        description="Which insight categories this brief covers (for dedup tracking).",
+    )
+    top_severity: InsightSeverity = Field(
+        default=InsightSeverity.INFO,
+        description="Highest severity among the topics covered.",
+    )
+    suggested_query: str | None = Field(
+        default=None,
+        description="Follow-up query the patient could ask.",
     )
 
 
