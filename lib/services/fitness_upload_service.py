@@ -87,7 +87,15 @@ class FitnessUploadService:
         *,
         postgres_session: AsyncSession,
     ):
-        # Insert data into ClickHouse (steps and active_energy_burned)
+        # Insert fitness data into ClickHouse
+        fitness_items = (
+            fitness_data.steps
+            + fitness_data.active_energy_burned
+            + fitness_data.distance_walking_running
+            + fitness_data.flights_climbed
+            + fitness_data.exercise_time
+            + fitness_data.workouts
+        )
         data_points = [
             {
                 "patient_id": patient_id,
@@ -96,14 +104,10 @@ class FitnessUploadService:
                 "source_platform": item.source_platform,
                 "unit": item.unit,
                 "value": float(item.value),
-                "start_datetime": parse(item.start_datetime).replace(
-                    tzinfo=None
-                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
-                "end_datetime": parse(item.end_datetime).replace(
-                    tzinfo=None
-                ),  # .strftime("%Y-%m-%dT%H:%M:%S")
+                "start_datetime": parse(item.start_datetime).replace(tzinfo=None),
+                "end_datetime": parse(item.end_datetime).replace(tzinfo=None),
             }
-            for item in fitness_data.steps + fitness_data.active_energy_burned
+            for item in fitness_items
         ]
         self.clickhouse_store.write_data("aihealth.fitness_data", data_points)
 
@@ -157,6 +161,22 @@ class FitnessUploadService:
                 "source_name": item.source_name,
                 "source_platform": item.source_platform,
             })
+
+        for vital_type, vital_data in [
+            ("blood_oxygen", fitness_data.blood_oxygen),
+            ("resting_heart_rate", fitness_data.resting_heart_rate),
+            ("body_temperature", fitness_data.body_temperature),
+            ("weight", fitness_data.weight),
+            ("respiratory_rate", fitness_data.respiratory_rate),
+        ]:
+            for item in vital_data:
+                vitals_data_points.append({
+                    "patient_id": patient_id, "type": vital_type,
+                    "value": item.value,
+                    "time": parse(item.start_datetime).replace(tzinfo=None),
+                    "source_name": item.source_name,
+                    "source_platform": item.source_platform,
+                })
 
         if vitals_data_points:
             self.clickhouse_store.write_data("aihealth.vitals_data", vitals_data_points)
