@@ -41,7 +41,7 @@ class DailyCheckinService:
         *,
         postgres_session: AsyncSession,
     ) -> SleepCheckin:
-        checkin_date = data.checkin_date or date.today()
+        checkin_date = data.checkin_date
         try:
             result = await postgres_session.execute(
                 select(SleepCheckin).where(
@@ -243,7 +243,7 @@ class DailyCheckinService:
         *,
         postgres_session: AsyncSession,
     ) -> MoodEntry:
-        recorded_at = data.recorded_at or datetime.now().replace(tzinfo=None)
+        recorded_at = data.recorded_at.replace(tzinfo=None) if data.recorded_at.tzinfo else data.recorded_at
         try:
             record = MoodEntry(
                 patient_id=patient_id,

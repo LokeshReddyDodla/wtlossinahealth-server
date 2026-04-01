@@ -18,7 +18,7 @@ class SleepCheckinInput(BaseModel):
     hours_slept: float = Field(..., ge=0, le=24, description="Hours slept")
     bed_time: str = Field(..., description="Bed time in HH:MM format")
     wake_time: str = Field(..., description="Wake time in HH:MM format")
-    checkin_date: Optional[date] = Field(None, description="Date of check-in, defaults to today")
+    checkin_date: date = Field(..., description="Date of check-in (patient's local date)")
     notes: Optional[str] = Field(None, max_length=500)
 
 
@@ -26,7 +26,7 @@ class MoodEntryInput(BaseModel):
     level: int = Field(..., ge=1, le=5, description="Mood level 1-5")
     emoji: Literal["very_bad", "bad", "neutral", "good", "great"]
     tags: list[str] = Field(default_factory=list, max_length=10)
-    recorded_at: Optional[datetime] = Field(None, description="When the mood was felt, defaults to now")
+    recorded_at: datetime = Field(..., description="When the mood was felt (patient's local time)")
     notes: Optional[str] = Field(None, max_length=500)
 
 
