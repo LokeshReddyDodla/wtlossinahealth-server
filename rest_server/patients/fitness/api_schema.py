@@ -3,9 +3,6 @@ from typing import List
 
 from pydantic import BaseModel
 
-# TODO: pull vitals data from this fitness sync as well
-
-
 class FitnessDataPoint(BaseModel):
     type: str
     source_name: str
