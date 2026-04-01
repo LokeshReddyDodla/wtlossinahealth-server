@@ -138,7 +138,6 @@ from lib.services.weightloss_agent.agentic_orchestrator import (
 )
 
 from lib.services.health_query_agent.service import HealthQueryAgentService
-from lib.services.agent_meal_v1 import AgentMealV1Service
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 
 
@@ -514,14 +513,6 @@ def get_meal_report_collection():
 
 def get_sleep_report_collection():
     return container.resolve("sleep_report_collection")
-
-
-def get_agent_meal_messages_v1_collection():
-    return container.resolve("agent_meal_messages_v1_collection")
-
-
-def get_agent_meal_v1_service() -> AgentMealV1Service:
-    return cast(AgentMealV1Service, container.resolve(AgentMealV1Service))
 
 
 def get_patient_documents_collection():
