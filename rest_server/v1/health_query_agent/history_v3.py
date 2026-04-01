@@ -21,7 +21,7 @@ from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.ai_foundation.agents.core.patient_resolver import fallback_name
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-from lib.ai_foundation.agents.thread_utils import thread_prefix_for_user
+from lib.ai_foundation.agents.thread_utils import resolve_thread_id, thread_prefix_for_user
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -73,7 +73,11 @@ class ThreadListResponse(BaseModel):
 
 @router.get("/history/v3", response_model=SuccessResponse[ConversationHistoryV3Response])
 async def get_conversation_history_v3(
-    thread_id: str = Query(..., description="Thread ID from /history/v3/threads"),
+    thread_id: str | None = Query(
+        None,
+        description="Thread ID — required for providers/admins (from /history/v3/threads), "
+        "optional for patients (auto-resolved to their single thread)",
+    ),
     limit: int = Query(50, ge=1, le=500, description="Number of turns to return"),
     current_actor: Actor = Depends(
         get_current_actor(
@@ -88,20 +92,33 @@ async def get_conversation_history_v3(
 ):
     """Retrieve conversation turns for a thread.
 
-    Flow: GET /history/v3/threads → pick a thread → GET /history/v3?thread_id=...
+    Patients: thread_id is optional — auto-resolved to bot:patient:{patient_id}.
+    Providers/Admins: thread_id required (GET /history/v3/threads → pick → pass here).
 
     Security: users can only access threads that belong to them
     (thread_id starts with their role:id prefix). Admin can access any thread.
     """
+    # Auto-resolve thread_id for patients
+    if thread_id is None:
+        if current_actor.role == ProfileTypeEnum.PATIENT:
+            thread_id = resolve_thread_id(
+                role="patient", actor_id=current_actor.id,
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="thread_id is required for care providers and admins",
+            )
+
+    resolved_thread_id: str = thread_id
+
     # Security: verify the thread belongs to this user (or user is admin)
     if current_actor.role != ProfileTypeEnum.ADMIN:
         expected_prefix = thread_prefix_for_user(
             role=current_actor.role.value, actor_id=current_actor.id,
         )
-        if not thread_id.startswith(expected_prefix):
+        if not resolved_thread_id.startswith(expected_prefix):
             raise HTTPException(status_code=403, detail="Access denied to this thread")
-
-    resolved_thread_id = thread_id
 
     memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     turns = await memory.get_thread_turns(resolved_thread_id, limit=limit)
