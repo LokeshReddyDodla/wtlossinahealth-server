@@ -27,7 +27,7 @@ from lib.schemas.patient_permission import PatientPermission
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
-from lib.schemas.patient_vital import PatientVital
+
 from lib.schemas.weight_loss_agent import WeightLossEnrollment
 
 
@@ -119,7 +119,6 @@ class CorePatientProfile(Patient):
 class CompletePatientProfile(CorePatientProfile):
     permissions: Optional[PatientPermission] = None
     connected_apps: Optional[PatientConnectedApp] = None
-    vitals: List[PatientVital] = []
     smbgs: List[PatientSMBG] = []
     # health_facility: Optional[HealthFacility] = None
     care_providers: List[CareProvider] = []

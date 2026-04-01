@@ -152,10 +152,6 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    vitals = relationship(
-        "PatientVital", back_populates="patient", cascade="all, delete-orphan"
-    )
-
     smbgs = relationship(
         "PatientSMBG", back_populates="patient", cascade="all, delete-orphan"
     )

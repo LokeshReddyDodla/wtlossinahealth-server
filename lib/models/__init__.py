@@ -42,7 +42,7 @@ from .patient_sleep import PatientSleep
 from .patient_sleep_habit import PatientSleepHabit
 from .patient_smbg import PatientSMBG
 from .patient_smoking_habit import PatientSmokingHabit
-from .patient_vital import PatientVital
+
 from .token_usage_log import TokenUsageLog
 from .user_device import UserDevice
 from .patient_package_assignment import PatientPackageAssignment
