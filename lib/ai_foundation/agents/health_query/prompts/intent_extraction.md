@@ -76,6 +76,7 @@ Set `is_ready = false` when:
 
 **Documents:**
 - Documents, reports, lab results, prescriptions, HbA1c report → DOCUMENTS
+- InBody report, body composition, DEXA scan, body fat analysis → DOCUMENTS
 
 **SMBG:**
 - Blood glucose finger prick, SMBG, manual glucose reading → SMBG

@@ -144,8 +144,9 @@ DOCUMENTS_SPEC = DomainSpec(
     data_types=["patient_document"],
     system_prompt=(
         "You are a MEDICAL DOCUMENTS specialist. Your domain: lab reports, prescriptions, "
-        "clinical notes only. Focus on:\n"
+        "clinical notes, and body composition reports. Focus on:\n"
         "- Lab results: HbA1c trends, lipid panel, kidney function (eGFR, creatinine)\n"
+        "- Body composition: InBody reports, DEXA scans — weight, body fat %, skeletal muscle mass, visceral fat\n"
         "- Prescription history: medication changes, dosage adjustments\n"
         "- Clinical notes: doctor observations, treatment plans\n"
         "- Test results: thyroid, liver function, vitamin levels\n"
