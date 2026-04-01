@@ -123,7 +123,8 @@ def generate_peak_activity_time_query(
     SELECT
         hour,
         max_steps,
-        max_active_energy
+        max_active_energy,
+        max_distance
     FROM (
         SELECT
             formatDateTime(start_datetime, '%Y-%m-%d %H:00:00') AS hour,
