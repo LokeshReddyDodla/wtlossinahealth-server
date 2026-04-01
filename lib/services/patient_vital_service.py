@@ -31,16 +31,43 @@ class PatientVitalService:
 
     @with_postgres_session
     async def get_patient_vitals(
-        self, patient_id: str, *, postgres_session: AsyncSession
-    ) -> List[PatientVitalModel]:
+        self,
+        patient_id: str,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        postgres_session: AsyncSession,
+    ) -> tuple[List[PatientVitalModel], int]:
+        """Return vitals newest-first with pagination and optional date filter.
+
+        Returns (records, total_count) so the caller can build pagination metadata.
+        """
         try:
-            result = await postgres_session.execute(
-                select(PatientVitalModel)
-                .where(PatientVitalModel.patient_id == patient_id)
-                .order_by(PatientVitalModel.test_time.desc())
+            from sqlalchemy import func
+
+            base = select(PatientVitalModel).where(
+                PatientVitalModel.patient_id == patient_id
             )
-            vitals_records = result.scalars().all()
-            return list(vitals_records)
+            if start_date:
+                base = base.where(PatientVitalModel.test_time >= start_date)
+            if end_date:
+                base = base.where(PatientVitalModel.test_time <= end_date)
+
+            # Total count (before pagination)
+            count_result = await postgres_session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+            total = count_result.scalar() or 0
+
+            # Paginated results
+            result = await postgres_session.execute(
+                base.order_by(PatientVitalModel.test_time.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            return list(result.scalars().all()), total
         except SQLAlchemyError as e:
             raise_http_exception(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
