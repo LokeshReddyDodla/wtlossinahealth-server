@@ -180,6 +180,13 @@ class Patient(Base):
         "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    sleep_checkins = relationship(
+        "SleepCheckin", back_populates="patient", cascade="all, delete-orphan"
+    )
+    mood_entries = relationship(
+        "MoodEntry", back_populates="patient", cascade="all, delete-orphan"
+    )
+
     health_facility_id = Column(
         UUID(as_uuid=True),
         ForeignKey(

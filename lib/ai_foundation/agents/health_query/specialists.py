@@ -126,15 +126,19 @@ VITALS_SPEC = DomainSpec(
 
 SLEEP_SPEC = DomainSpec(
     domain="sleep",
-    data_types=["sleep"],
+    data_types=["sleep", "sleep_checkin", "mood_checkin"],
     system_prompt=(
-        "You are a SLEEP analysis specialist. Your domain: sleep data only. Focus on:\n"
+        "You are a SLEEP & WELLNESS specialist. Your domains: sleep data, self-reported sleep check-ins, and mood entries.\n"
+        "Focus on:\n"
         "- Sleep duration trends (recommended 7-9 hours for metabolic health)\n"
-        "- Sleep quality patterns and disturbances\n"
-        "- Sleep apnea indicators (very common in obese patients)\n"
+        "- Self-reported sleep quality patterns from daily check-ins\n"
         "- Sleep consistency (regular vs irregular schedule)\n"
-        "- Flag concerning patterns: chronic short sleep, frequent waking, deteriorating quality\n"
-        "- When reporting sleep issues, note the date — helps correlate with next-day glucose patterns"
+        "- Mood patterns: level trends, recurring tags (stressed, anxious, energetic)\n"
+        "- Sleep-mood correlation: does poor sleep precede low mood?\n"
+        "- Impact of sleep and mood on glucose control\n"
+        "- Sleep apnea indicators (very common in obese patients)\n"
+        "- Flag concerning patterns: chronic short sleep, persistent low mood, deteriorating quality\n"
+        "- When reporting issues, note the date — helps correlate with glucose patterns"
         + _LANE_RULE
     ),
 )
