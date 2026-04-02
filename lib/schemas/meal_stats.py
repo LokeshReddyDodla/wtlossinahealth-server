@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel
 
-from lib.schemas.patient_diet_plan import PatientDietPlanCreate
+from lib.schemas.patient_diet_plan import DietRecommendation
 
 
 class NutritionStats(BaseModel):
@@ -26,7 +26,7 @@ class DailyMealStats(NutritionStats):
     meal_count: Optional[int] = None
     meals: Any
     avg_glucose: float
-    diet_recommendations: PatientDietPlanCreate
+    diet_recommendations: DietRecommendation
 
     class Config:
         from_attributes = True

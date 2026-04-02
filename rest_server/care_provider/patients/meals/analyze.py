@@ -8,7 +8,6 @@ from lib.dependencies.service_dependencies import (
     get_meal_stats_processor,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.patient_diet_plan import DietRecommendation
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal import MealService
 from lib.utils.care_provider_permissions import (
@@ -55,15 +54,11 @@ async def analyze_meal(
             str(patient_id), meal_data.uploaded_at
         )
 
-        validated_recommendations = DietRecommendation.model_validate(
-            diet_recommendations_data.model_dump() if hasattr(diet_recommendations_data, "model_dump") else diet_recommendations_data
-        )
-
         return SuccessResponse(
             message="Meal analyzed successfully.",
             data=PatientMealAnalysis(
                 meal_data=meal_data,
-                meal_recommendation=validated_recommendations,
+                meal_recommendation=diet_recommendations_data,
             ),
         )
     except HTTPException as http_exc:
