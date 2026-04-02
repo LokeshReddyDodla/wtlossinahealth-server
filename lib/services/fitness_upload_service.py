@@ -55,6 +55,26 @@ class FitnessUploadService:
 
         enqueue_process_sleep_upload_sync(patient_id, start_datetime, end_datetime)
 
+        # Gamification hook (fire-and-forget)
+        try:
+            from uuid import UUID as _UUID
+            from lib.core.container import container
+            from lib.services.gamification.event_handler import GamificationEventHandler
+            handler = container.resolve(GamificationEventHandler)
+            # Extract total steps from fitness data if available
+            steps = None
+            workout_completed = False
+            for item in (fitness_data.fitness or []):
+                if hasattr(item, "type") and item.type == "steps" and hasattr(item, "value"):
+                    steps = (steps or 0) + float(item.value)
+                if hasattr(item, "type") and item.type in ("workout", "exercise"):
+                    workout_completed = True
+            await handler.on_fitness_synced(
+                _UUID(patient_id), steps=steps, workout_completed=workout_completed
+            )
+        except Exception:
+            pass
+
         return end_datetime
 
     @with_postgres_session

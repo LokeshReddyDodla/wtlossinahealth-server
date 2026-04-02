@@ -239,6 +239,16 @@ class MealService:
 
             enqueue_daily_meal_report_sync(str(patient_id), meal.date)
 
+            # Gamification hook (fire-and-forget)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_meal_logged(_UUID(patient_id))
+            except Exception:
+                pass
+
             return meal
 
         except SQLAlchemyError as e:

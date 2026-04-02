@@ -107,6 +107,17 @@ class PatientVitalService:
             vital_data=vital_data_dict,
         )
 
+        # Gamification hook — check if weight was logged (fire-and-forget)
+        if vital_data.weight is not None:
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_weight_logged(_UUID(patient_id))
+            except Exception:
+                pass
+
         return {"vital_id": vital_id, "rows_written": len(rows)}
 
     async def delete_vital(self, vital_id: str, patient_id: str) -> None:

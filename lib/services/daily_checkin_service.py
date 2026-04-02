@@ -4,6 +4,7 @@ import logging
 from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
 from fastapi import status
 from sqlalchemy import Date, func, cast
@@ -93,6 +94,15 @@ class DailyCheckinService:
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize sleep for {patient_id}: {e}")
+
+            # Gamification hook (fire-and-forget)
+            try:
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_sleep_logged(UUID(patient_id))
+            except Exception:
+                pass
 
             return record
 
@@ -276,6 +286,15 @@ class DailyCheckinService:
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize mood for {patient_id}: {e}")
+
+            # Gamification hook (fire-and-forget)
+            try:
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_mood_logged(UUID(patient_id))
+            except Exception:
+                pass
 
             return record
 

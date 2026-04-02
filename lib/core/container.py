@@ -1671,3 +1671,101 @@ container.register(
     ),
     scope=Scope.singleton,
 )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🎮 Gamification Services
+# ═══════════════════════════════════════════════════════════════════════════
+
+from lib.services.gamification.xp_service import XPService
+from lib.services.gamification.streak_service import StreakService
+from lib.services.gamification.task_generator import TaskGeneratorService
+from lib.services.gamification.achievement_evaluator import AchievementEvaluator
+from lib.services.gamification.event_handler import GamificationEventHandler
+from lib.services.gamification.service import GamificationService
+from lib.services.gamification.buddy_service import BuddyService
+from lib.services.gamification.group_service import GroupService
+from lib.services.gamification.challenge_service import ChallengeService
+from lib.services.gamification.leaderboard_service import LeaderboardService
+from lib.services.gamification.feed_service import FeedService
+from lib.services.gamification.care_provider_service import CPGamificationService
+
+container.register(
+    XPService,
+    lambda: XPService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    StreakService,
+    lambda: StreakService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    TaskGeneratorService,
+    lambda: TaskGeneratorService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    AchievementEvaluator,
+    lambda: AchievementEvaluator(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        xp_service=cast(XPService, container.resolve(XPService)),
+    ),
+)
+container.register(
+    GamificationEventHandler,
+    lambda: GamificationEventHandler(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        xp_service=cast(XPService, container.resolve(XPService)),
+        achievement_evaluator=cast(AchievementEvaluator, container.resolve(AchievementEvaluator)),
+    ),
+)
+container.register(
+    GamificationService,
+    lambda: GamificationService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        xp_service=cast(XPService, container.resolve(XPService)),
+        task_generator=cast(TaskGeneratorService, container.resolve(TaskGeneratorService)),
+        achievement_evaluator=cast(AchievementEvaluator, container.resolve(AchievementEvaluator)),
+    ),
+)
+container.register(
+    BuddyService,
+    lambda: BuddyService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    GroupService,
+    lambda: GroupService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    ChallengeService,
+    lambda: ChallengeService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        xp_service=cast(XPService, container.resolve(XPService)),
+    ),
+)
+container.register(
+    LeaderboardService,
+    lambda: LeaderboardService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+container.register(
+    FeedService,
+    lambda: FeedService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        xp_service=cast(XPService, container.resolve(XPService)),
+    ),
+)
+container.register(
+    CPGamificationService,
+    lambda: CPGamificationService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)

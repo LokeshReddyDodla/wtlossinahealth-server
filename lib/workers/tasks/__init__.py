@@ -27,6 +27,14 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.weightloss_agent_tasks import get_tasks as get_weightloss_agent_tasks
     from lib.workers.tasks.proactive_monitor import get_tasks as get_proactive_monitor_tasks
     from lib.workers.tasks.reengagement import get_tasks as get_reengagement_tasks
+    from lib.workers.tasks.gamification.tasks import (
+        process_streaks_for_all,
+        generate_daily_tasks_for_all,
+        evaluate_eod_macros,
+        refresh_leaderboards,
+        process_challenge_lifecycle,
+        cleanup_feed_and_leaderboards,
+    )
 
     tasks.extend(get_cgm_tasks())
     tasks.extend(get_device_tasks())
@@ -45,6 +53,14 @@ def get_all_tasks() -> List[Callable]:
     tasks.extend(get_weightloss_agent_tasks())
     tasks.extend(get_proactive_monitor_tasks())
     tasks.extend(get_reengagement_tasks())
+    tasks.extend([
+        process_streaks_for_all,
+        generate_daily_tasks_for_all,
+        evaluate_eod_macros,
+        refresh_leaderboards,
+        process_challenge_lifecycle,
+        cleanup_feed_and_leaderboards,
+    ])
 
     logger.info(f"Registered {len(tasks)} ARQ tasks")
     return tasks
