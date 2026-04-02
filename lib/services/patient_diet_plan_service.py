@@ -10,6 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
+from lib.models.patient import Patient
 from lib.models.patient_diet_plan import PatientDietPlan as PatientDietPlanModel
 from lib.schemas.patient_diet_plan import PatientDietPlanCreate
 from lib.services.vector.plans import PlansVectorService
@@ -371,6 +372,7 @@ class PatientDietPlanService:
     async def _vectorize_diet_plan(self, plan: PatientDietPlanModel) -> None:
         """Fire-and-forget vectorization of a diet plan."""
         try:
+            patient_age, patient_gender = await self._fetch_patient_basics(str(plan.patient_id))
             plan_data = {
                 "start_date": str(plan.start_date),
                 "end_date": str(plan.end_date) if plan.end_date else None,
@@ -388,8 +390,23 @@ class PatientDietPlanService:
                 patient_id=str(plan.patient_id),
                 plan_id=str(plan.diet_plan_id),
                 plan_data=plan_data,
-                patient_age=0,
-                patient_gender="unknown",
+                patient_age=patient_age,
+                patient_gender=patient_gender,
             )
         except Exception as e:
             logger.error(f"Failed to vectorize diet plan {plan.diet_plan_id}: {e}")
+
+    @with_postgres_session
+    async def _fetch_patient_basics(
+        self, patient_id: str, *, postgres_session: AsyncSession,
+    ) -> tuple[int, str]:
+        """Fetch patient age and gender for vectorization."""
+        result = await postgres_session.execute(
+            select(Patient.dob, Patient.gender).where(Patient.patient_id == patient_id)
+        )
+        row = result.first()
+        if not row or not row.dob:
+            return 0, "unknown"
+        today = datetime.today()
+        age = today.year - row.dob.year - ((today.month, today.day) < (row.dob.month, row.dob.day))
+        return age, row.gender or "unknown"
