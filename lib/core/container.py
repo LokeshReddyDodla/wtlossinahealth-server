@@ -576,6 +576,7 @@ container.register(
     lambda: PatientDietPlanService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         plans_vector_service=cast(PlansVectorService, container.resolve(PlansVectorService)),
+        patient_profile_service=cast(PatientProfileService, container.resolve(PatientProfileService)),
     ),
 )
 
@@ -585,6 +586,7 @@ container.register(
     lambda: PatientFitnessPlanService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         plans_vector_service=cast(PlansVectorService, container.resolve(PlansVectorService)),
+        patient_profile_service=cast(PatientProfileService, container.resolve(PatientProfileService)),
     ),
 )
 
