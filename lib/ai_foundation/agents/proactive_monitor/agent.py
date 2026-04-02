@@ -67,6 +67,8 @@ _SCAN_DATA_TYPES = [
     "mood_entry",         # self-reported mood
     "symptom_entry",        # self-reported symptoms
     "vital",                # weight, BP, heart rate
+    "diet_plan",            # active diet plan targets
+    "fitness_plan",         # active fitness plan goals
     # "patient_document",     # new reports, prescriptions, lab results
 ]
 

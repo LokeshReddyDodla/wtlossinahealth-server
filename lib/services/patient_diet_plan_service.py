@@ -12,15 +12,19 @@ from sqlalchemy.orm import selectinload
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_diet_plan import PatientDietPlan as PatientDietPlanModel
 from lib.schemas.patient_diet_plan import PatientDietPlanCreate
+from lib.services.vector.plans import PlansVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+logger = __import__("logging").getLogger(__name__)
 
 
 class PatientDietPlanService:
     """Service for managing patient diet plans."""
 
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(self, postgres_store: PostgresStore, plans_vector_service: PlansVectorService):
         self.postgres_store = postgres_store
+        self.plans_vector_service = plans_vector_service
 
     @with_postgres_session
     async def create_diet_plan(
@@ -74,6 +78,9 @@ class PatientDietPlanService:
             postgres_session.add(diet_plan)
             await postgres_session.commit()
             await postgres_session.refresh(diet_plan)
+
+            await self._vectorize_diet_plan(diet_plan)
+
             return diet_plan
         except IntegrityError as e:
             await postgres_session.rollback()
@@ -115,6 +122,7 @@ class PatientDietPlanService:
                 plan.status = "ARCHIVED"
                 if plan.end_date is None or plan.end_date >= start_date:
                     plan.end_date = start_date - timedelta(days=1)
+                await self._vectorize_diet_plan(plan)
 
             return await self.create_diet_plan(
                 patient_id=patient_id,
@@ -273,6 +281,9 @@ class PatientDietPlanService:
 
             await postgres_session.commit()
             await postgres_session.refresh(diet_plan)
+
+            await self._vectorize_diet_plan(diet_plan)
+
             return diet_plan
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -307,6 +318,9 @@ class PatientDietPlanService:
             diet_plan.status = new_status
             await postgres_session.commit()
             await postgres_session.refresh(diet_plan)
+
+            await self._vectorize_diet_plan(diet_plan)
+
             return diet_plan
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -337,8 +351,15 @@ class PatientDietPlanService:
                     message="Diet plan not found. It may have been deleted.",
                 )
 
+            plan_id = str(diet_plan.diet_plan_id)
             await postgres_session.delete(diet_plan)
             await postgres_session.commit()
+
+            try:
+                await self.plans_vector_service.delete_plan_vector(plan_id)
+            except Exception as e:
+                logger.error(f"Failed to delete diet plan vector {plan_id}: {e}")
+
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -346,3 +367,29 @@ class PatientDietPlanService:
                 message="Unable to delete diet plan. Please try again.",
                 detail=str(e),
             )
+
+    async def _vectorize_diet_plan(self, plan: PatientDietPlanModel) -> None:
+        """Fire-and-forget vectorization of a diet plan."""
+        try:
+            plan_data = {
+                "start_date": str(plan.start_date),
+                "end_date": str(plan.end_date) if plan.end_date else None,
+                "status": plan.status,
+                "plan_reason": plan.plan_reason,
+                "is_default": plan.is_default,
+                "calories": plan.calories,
+                "protein": plan.protein,
+                "carbs": plan.carbs,
+                "fats": plan.fats,
+                "fiber": plan.fiber,
+                "content": plan.content,
+            }
+            await self.plans_vector_service.upsert_diet_plan_vector(
+                patient_id=str(plan.patient_id),
+                plan_id=str(plan.diet_plan_id),
+                plan_data=plan_data,
+                patient_age=0,
+                patient_gender="unknown",
+            )
+        except Exception as e:
+            logger.error(f"Failed to vectorize diet plan {plan.diet_plan_id}: {e}")

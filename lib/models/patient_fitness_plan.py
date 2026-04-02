@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import UUID, Column, Date, DateTime, Float, ForeignKey, String, Boolean, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -16,15 +17,19 @@ class PatientFitnessPlan(Base):
     patient_id = Column(
         UUID(as_uuid=True), ForeignKey("patients.patient_id"), nullable=False, index=True
     )
-    steps_goal = Column(Float)
-    workout_plan = Column(String)
-    
+
+    # Top-level target (column for SQL queries)
+    steps_goal = Column(Float, nullable=True)
+
+    # Structured content: weekly sessions, exercises, rest days, notes
+    content = Column(JSONB, nullable=True)
+
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
     is_default = Column(Boolean, default=False, index=True)
     status = Column(String(20), default="ACTIVE", index=True)
     plan_reason = Column(String, nullable=True)
-    
+
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

@@ -1,12 +1,12 @@
 from datetime import date
-from lib.schemas.patient_diet_plan import MealDistribution, PatientDietPlanBase
+from lib.schemas.patient_diet_plan import PatientDietPlanCreate
 
 
 async def get_diet_recommendations(
     patient_id: str,
     query_date: date,
     patient_diet_plan_service,
-) -> PatientDietPlanBase:
+) -> PatientDietPlanCreate:
     """Get diet recommendations for a query date.
 
     Priority order:
@@ -20,26 +20,15 @@ async def get_diet_recommendations(
     )
 
     if active_diet_plan:
-        return PatientDietPlanBase(
-            calories=active_diet_plan.calories,
-            protein=active_diet_plan.protein,
-            carbs=active_diet_plan.carbs,
-            fats=active_diet_plan.fats,
-            fiber=active_diet_plan.fiber,
-            calcium=active_diet_plan.calcium,
-            iron=active_diet_plan.iron,
-            zinc=active_diet_plan.zinc,
-            magnesium=active_diet_plan.magnesium,
-            major_meal=(
-                MealDistribution(**active_diet_plan.major_meal)
-                if active_diet_plan.major_meal
-                else None
-            ),
-            snack=(
-                MealDistribution(**active_diet_plan.snack)
-                if active_diet_plan.snack
-                else None
-            ),
+        return PatientDietPlanCreate(
+            calories=active_diet_plan.calories or 0,
+            protein=active_diet_plan.protein or 0,
+            carbs=active_diet_plan.carbs or 0,
+            fats=active_diet_plan.fats or 0,
+            fiber=active_diet_plan.fiber or 0,
+            content=active_diet_plan.content,
+            start_date=active_diet_plan.start_date,
+            end_date=active_diet_plan.end_date,
         )
 
     # Fall back to default diet plan
@@ -48,59 +37,23 @@ async def get_diet_recommendations(
     )
 
     if default_diet_plan:
-        return PatientDietPlanBase(
-            calories=default_diet_plan.calories,
-            protein=default_diet_plan.protein,
-            carbs=default_diet_plan.carbs,
-            fats=default_diet_plan.fats,
-            fiber=default_diet_plan.fiber,
-            calcium=default_diet_plan.calcium,
-            iron=default_diet_plan.iron,
-            zinc=default_diet_plan.zinc,
-            magnesium=default_diet_plan.magnesium,
-            major_meal=(
-                MealDistribution(**default_diet_plan.major_meal)
-                if default_diet_plan.major_meal
-                else None
-            ),
-            snack=(
-                MealDistribution(**default_diet_plan.snack)
-                if default_diet_plan.snack
-                else None
-            ),
+        return PatientDietPlanCreate(
+            calories=default_diet_plan.calories or 0,
+            protein=default_diet_plan.protein or 0,
+            carbs=default_diet_plan.carbs or 0,
+            fats=default_diet_plan.fats or 0,
+            fiber=default_diet_plan.fiber or 0,
+            content=default_diet_plan.content,
+            start_date=default_diet_plan.start_date,
+            end_date=default_diet_plan.end_date,
         )
 
     # Return empty defaults if no active or default plan exists
-    return PatientDietPlanBase(
+    return PatientDietPlanCreate(
         calories=0,
         protein=0,
         carbs=0,
         fats=0,
         fiber=0,
-        calcium=0,
-        iron=0,
-        zinc=0,
-        magnesium=0,
-        major_meal=MealDistribution(
-            calories=0,
-            protein=0,
-            carbs=0,
-            fats=0,
-            fiber=0,
-            calcium=0,
-            iron=0,
-            zinc=0,
-            magnesium=0,
-        ),
-        snack=MealDistribution(
-            calories=0,
-            protein=0,
-            carbs=0,
-            fats=0,
-            fiber=0,
-            calcium=0,
-            iron=0,
-            zinc=0,
-            magnesium=0,
-        ),
+        start_date=query_date,
     )
