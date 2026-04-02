@@ -122,6 +122,7 @@ class PlansVectorService(BaseVectorService):
                 "carbs": plan_data.get("carbs"),
                 "fats": plan_data.get("fats"),
                 "fiber": plan_data.get("fiber"),
+                "content": plan_data.get("content"),
                 "plan_status": plan_data.get("status", "ACTIVE"),
                 "is_default": plan_data.get("is_default", False),
             },
@@ -157,6 +158,7 @@ class PlansVectorService(BaseVectorService):
             end_time=end_dt,
             additional_payload={
                 "steps_goal": plan_data.get("steps_goal"),
+                "content": plan_data.get("content"),
                 "sessions_per_week": content.get("sessions_per_week"),
                 "weekly_active_minutes": content.get("weekly_active_minutes"),
                 "plan_status": plan_data.get("status", "ACTIVE"),
