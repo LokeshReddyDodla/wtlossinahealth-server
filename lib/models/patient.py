@@ -176,10 +176,6 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    sleep_entries = relationship(
-        "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
-    )
-
     sleep_checkins = relationship(
         "SleepCheckin", back_populates="patient", cascade="all, delete-orphan"
     )
