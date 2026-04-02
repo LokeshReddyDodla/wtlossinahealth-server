@@ -50,15 +50,15 @@ def generate_timing_stats_query(
     """Timing stats for nighttime sleep (start >= 18:00 or end < 12:00), excluding awake."""
     return f"""
     SELECT
-        formatDateTime(min(sleep_start_time), '%H:%M:%S') AS earliest_start,
-        formatDateTime(max(sleep_end_time), '%H:%M:%S') AS latest_end,
-        formatDateTime(
-            toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_start_time))))),
-            '%H:%M:%S'
+        if(count() > 0, formatDateTime(min(sleep_start_time), '%H:%M:%S'), '') AS earliest_start,
+        if(count() > 0, formatDateTime(max(sleep_end_time), '%H:%M:%S'), '') AS latest_end,
+        if(count() > 0,
+            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_start_time))))), '%H:%M:%S'),
+            ''
         ) AS avg_start,
-        formatDateTime(
-            toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_end_time))))),
-            '%H:%M:%S'
+        if(count() > 0,
+            formatDateTime(toDateTime(toUInt32(avg(toUnixTimestamp(toTime(sleep_end_time))))), '%H:%M:%S'),
+            ''
         ) AS avg_end
     FROM aihealth.sleep_data
     WHERE patient_id = '{patient_id}'
