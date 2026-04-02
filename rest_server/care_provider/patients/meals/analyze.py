@@ -56,7 +56,7 @@ async def analyze_meal(
         )
 
         validated_recommendations = DietRecommendation.model_validate(
-            diet_recommendations_data
+            diet_recommendations_data.model_dump() if hasattr(diet_recommendations_data, "model_dump") else diet_recommendations_data
         )
 
         return SuccessResponse(
