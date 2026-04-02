@@ -16,19 +16,19 @@ async def mark_summary_stale_and_enqueue(
         _enqueue_patient_summary,
     )
 
-    service = get_patient_summary_service()
-    if target_date is None:
-        target_date = datetime.now().date()
+    # service = get_patient_summary_service()
+    # if target_date is None:
+    #     target_date = datetime.now().date()
 
-    await service.mark_summaries_as_stale(
-        patient_id=patient_id,
-        target_date=target_date,
-        stale_reason=stale_reason,
-    )
+    # await service.mark_summaries_as_stale(
+    #     patient_id=patient_id,
+    #     target_date=target_date,
+    #     stale_reason=stale_reason,
+    # )
 
-    if enqueue:
-        return await _enqueue_patient_summary(
-            patient_id=patient_id, target_date=target_date, forced=force
-        )
+    # if enqueue:
+    #     return await _enqueue_patient_summary(
+    #         patient_id=patient_id, target_date=target_date, forced=force
+    #     )
     
     return None
