@@ -1,4 +1,4 @@
-"""V1 Check-in endpoints — sleep check-ins and mood entries."""
+"""V1 Check-in endpoints — sleep check-ins, mood entries, and symptom entries."""
 
 from datetime import date, datetime
 from typing import Optional
@@ -17,6 +17,9 @@ from lib.schemas.daily_checkin import (
     MoodEntryResponse,
     SleepCheckinInput,
     SleepCheckinResponse,
+    SymptomEntryInput,
+    SymptomEntryResponse,
+    SymptomItemResponse,
 )
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.daily_checkin_service import DailyCheckinService
@@ -246,6 +249,129 @@ async def get_mood_trends(
             start_date=start_date, end_date=end_date,
         )
         return SuccessResponse(message="Mood trends.", data=trends)
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+# ── Symptoms ─────────────────────────────────────────────────────────────
+
+
+@router.post("/{patient_id}/checkins/symptoms", response_model=SuccessResponse)
+async def add_symptom_entry(
+    patient_id: str,
+    body: SymptomEntryInput,
+    service: DailyCheckinService = Depends(get_daily_checkin_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    try:
+        from uuid import UUID
+        verified_pid = await resolve_patient_access(
+            actor=current_actor, patient_id=UUID(patient_id),
+            care_provider_access_service=care_provider_access_service,
+        )
+        record = await service.add_symptoms(str(verified_pid), body)
+        return SuccessResponse(
+            message="Symptom entry saved.",
+            data=SymptomEntryResponse(
+                id=str(record.id),
+                patient_id=str(record.patient_id),
+                recorded_at=record.recorded_at,
+                symptoms=[
+                    SymptomItemResponse(
+                        symptom_name=item.symptom_name,
+                        severity=item.severity,
+                        custom_label=item.custom_label,
+                    )
+                    for item in record.items
+                ],
+                notes=record.notes,
+                created_at=record.created_at,
+            ),
+        )
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/{patient_id}/checkins/symptoms", response_model=SuccessResponse)
+async def get_symptom_history(
+    patient_id: str,
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    service: DailyCheckinService = Depends(get_daily_checkin_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    try:
+        from uuid import UUID
+        verified_pid = await resolve_patient_access(
+            actor=current_actor, patient_id=UUID(patient_id),
+            care_provider_access_service=care_provider_access_service,
+        )
+        records, total = await service.get_symptom_history(
+            str(verified_pid), start_date=start_date, end_date=end_date,
+            limit=limit, offset=offset,
+        )
+        checkins = [
+            SymptomEntryResponse(
+                id=str(r.id), patient_id=str(r.patient_id),
+                recorded_at=r.recorded_at,
+                symptoms=[
+                    SymptomItemResponse(
+                        symptom_name=item.symptom_name,
+                        severity=item.severity,
+                        custom_label=item.custom_label,
+                    )
+                    for item in r.items
+                ],
+                notes=r.notes,
+                created_at=r.created_at,
+            )
+            for r in records
+        ]
+        return SuccessResponse(
+            message=f"{len(checkins)} symptom entries fetched.",
+            data={"checkins": checkins, "total": total, "limit": limit, "offset": offset},
+        )
+    except Exception as e:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal Server Error",
+            detail=str(e),
+        )
+
+
+@router.get("/{patient_id}/checkins/symptoms/trends", response_model=SuccessResponse)
+async def get_symptom_trends(
+    patient_id: str,
+    period: str = Query("weekly", regex="^(weekly|monthly)$"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    service: DailyCheckinService = Depends(get_daily_checkin_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    try:
+        from uuid import UUID
+        verified_pid = await resolve_patient_access(
+            actor=current_actor, patient_id=UUID(patient_id),
+            care_provider_access_service=care_provider_access_service,
+        )
+        trends = await service.get_symptom_trends(
+            str(verified_pid), period=period,
+            start_date=start_date, end_date=end_date,
+        )
+        return SuccessResponse(message="Symptom trends.", data=trends)
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

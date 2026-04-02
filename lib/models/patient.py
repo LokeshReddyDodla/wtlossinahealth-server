@@ -176,15 +176,14 @@ class Patient(Base):
         cascade="all, delete-orphan",
     )
 
-    sleep_entries = relationship(
-        "PatientSleep", back_populates="patient", cascade="all, delete-orphan"
-    )
-
     sleep_checkins = relationship(
         "SleepCheckin", back_populates="patient", cascade="all, delete-orphan"
     )
     mood_entries = relationship(
         "MoodEntry", back_populates="patient", cascade="all, delete-orphan"
+    )
+    symptom_entries = relationship(
+        "SymptomEntry", back_populates="patient", cascade="all, delete-orphan"
     )
 
     health_facility_id = Column(

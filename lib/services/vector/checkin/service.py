@@ -1,4 +1,4 @@
-"""Vector service for sleep check-in and mood entry data."""
+"""Vector service for sleep check-in, mood entry, and symptom entry data."""
 
 import logging
 from datetime import datetime
@@ -158,7 +158,7 @@ class CheckinVectorService(BaseVectorService):
             patient_id=patient_id,
             patient_age=patient_age,
             patient_gender=patient_gender,
-            data_type="mood_checkin",
+            data_type="mood_entry",
             text_repr=text_repr,
             start_time=dt,
             end_time=dt,
@@ -172,5 +172,84 @@ class CheckinVectorService(BaseVectorService):
 
         # Unique per mood entry
         point_id = self._generate_simple_point_id(mood_entry_id)
+
+        return {"id": point_id, "text": text_repr, "payload": payload}
+
+    async def upsert_symptom_vector(
+        self,
+        patient_id: str,
+        symptom_entry_id: str,
+        symptom_data: Dict[str, Any],
+        patient_age: int,
+        patient_gender: str,
+    ) -> Dict[str, int]:
+        try:
+            async with self.qdrant_store.get_client() as client:
+                point = self._build_symptom_point(
+                    patient_id, symptom_entry_id, symptom_data, patient_age, patient_gender,
+                )
+                embedding = await embed_text(point["text"])
+                if embedding:
+                    await client.upsert(
+                        collection_name=self.collection_name,
+                        points=[PointStruct(
+                            id=point["id"], vector=embedding, payload=point["payload"],
+                        )],
+                    )
+                return {"points_created": 1}
+        except Exception as e:
+            logger.error(f"Failed to upsert symptom vector for {patient_id}: {e}")
+            raise VectorServiceError(
+                f"Failed to upsert symptom vector: {e}",
+                service_name=self.__class__.__name__,
+            ) from e
+
+    def _build_symptom_point(
+        self,
+        patient_id: str,
+        symptom_entry_id: str,
+        symptom_data: Dict[str, Any],
+        patient_age: int,
+        patient_gender: str,
+    ) -> Dict[str, Any]:
+        recorded_at = symptom_data.get("recorded_at")
+        if isinstance(recorded_at, str):
+            dt = datetime.fromisoformat(recorded_at)
+        elif isinstance(recorded_at, datetime):
+            dt = recorded_at
+        else:
+            dt = datetime.now().replace(tzinfo=None)
+
+        # Add checkin_date for text builder
+        symptom_data_with_date = {
+            **symptom_data,
+            "checkin_date": dt.strftime("%Y-%m-%d"),
+        }
+
+        symptoms = symptom_data.get("symptoms", [])
+        symptom_names = [s.get("symptom_name", "unknown") for s in symptoms]
+        severities = [s.get("severity", 1) for s in symptoms]
+
+        text_repr = CheckinTextReprBuilder.build_symptoms(symptom_data_with_date)
+
+        payload = self._build_base_payload(
+            patient_id=patient_id,
+            patient_age=patient_age,
+            patient_gender=patient_gender,
+            data_type="symptom_entry",
+            text_repr=text_repr,
+            start_time=dt,
+            end_time=dt,
+            additional_payload={
+                "symptom_names": symptom_names,
+                "symptom_count": len(symptoms),
+                "max_severity": max(severities) if severities else 0,
+                "avg_severity": round(sum(severities) / len(severities), 1) if severities else 0,
+                "has_notes": bool(symptom_data.get("notes")),
+            },
+        )
+
+        # Unique per symptom entry
+        point_id = self._generate_simple_point_id(symptom_entry_id)
 
         return {"id": point_id, "text": text_repr, "payload": payload}

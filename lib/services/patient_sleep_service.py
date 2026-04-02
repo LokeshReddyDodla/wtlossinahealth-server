@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from lib.core.postgres_store import PostgresStore
-from lib.models.patient_sleep import PatientSleep as PatientSleepModel
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.postgres_session_decorator import with_postgres_session
 

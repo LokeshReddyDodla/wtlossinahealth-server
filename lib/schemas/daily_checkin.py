@@ -92,3 +92,70 @@ class MoodTrendsResponse(BaseModel):
     periods: list[MoodPeriod]
     current_streak: int
     longest_streak: int
+
+
+# ---------------------------------------------------------------------------
+# Symptom models
+# ---------------------------------------------------------------------------
+
+SYMPTOM_NAMES = [
+    "nausea", "fatigue", "headache", "dizziness", "muscle_pain",
+    "constipation", "diarrhea", "insomnia", "anxiety", "brain_fog",
+    "vomiting", "joint_pain", "bloating", "heartburn", "hair_loss",
+    "dry_mouth", "other",
+]
+
+
+class SymptomItemInput(BaseModel):
+    symptom_name: str = Field(
+        ...,
+        description=(
+            "Symptom identifier. One of: nausea, fatigue, headache, dizziness, "
+            "muscle_pain, constipation, diarrhea, insomnia, anxiety, brain_fog, "
+            "vomiting, joint_pain, bloating, heartburn, hair_loss, dry_mouth, other"
+        ),
+    )
+    severity: int = Field(..., ge=1, le=5, description="Severity 1-5")
+    custom_label: Optional[str] = Field(
+        None, max_length=100, description="Custom label when symptom_name is 'other'"
+    )
+
+
+class SymptomEntryInput(BaseModel):
+    symptoms: list[SymptomItemInput] = Field(
+        ..., min_length=1, max_length=20, description="List of symptoms"
+    )
+    recorded_at: datetime = Field(..., description="When symptoms were felt (patient's local time)")
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+class SymptomItemResponse(BaseModel):
+    symptom_name: str
+    severity: int
+    custom_label: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SymptomEntryResponse(BaseModel):
+    id: str
+    patient_id: str
+    recorded_at: datetime
+    symptoms: list[SymptomItemResponse]
+    notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SymptomPeriod(BaseModel):
+    label: str
+    avg_severity: float
+    count: int
+    top_symptoms: list[str] = Field(default_factory=list)
+
+
+class SymptomTrendsResponse(BaseModel):
+    periods: list[SymptomPeriod]
+    current_streak: int
+    longest_streak: int

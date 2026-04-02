@@ -38,7 +38,6 @@ from .patient_medical_history import PatientMedicalHistory
 from .patient_permission import PatientPermission
 from .patient_prescription import PatientPrescription
 from .patient_prescription import PatientPrescriptionMedicine
-from .patient_sleep import PatientSleep
 from .patient_sleep_habit import PatientSleepHabit
 from .patient_smbg import PatientSMBG
 from .patient_smoking_habit import PatientSmokingHabit
@@ -52,3 +51,4 @@ from .patient_report import PatientReport
 from .patient_data_export import PatientDataExport
 from .sleep_checkin import SleepCheckin
 from .mood_entry import MoodEntry
+from .symptom_entry import SymptomEntry, SymptomEntryItem

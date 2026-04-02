@@ -64,7 +64,8 @@ _SCAN_DATA_TYPES = [
     "fitness_overview",     # steps, active minutes
     "sleep",                # sleep duration/quality (device)
     "sleep_checkin",        # self-reported sleep quality
-    "mood_checkin",         # self-reported mood
+    "mood_entry",         # self-reported mood
+    "symptom_entry",        # self-reported symptoms
     "vital",                # weight, BP, heart rate
     # "patient_document",     # new reports, prescriptions, lab results
 ]
