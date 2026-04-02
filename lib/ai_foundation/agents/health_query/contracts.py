@@ -46,6 +46,8 @@ class HealthDataType(str, Enum):
     SLEEP_CHECKIN = "sleep_checkin"
     MOOD_ENTRY = "mood_entry"
     SYMPTOM_ENTRY = "symptom_entry"
+    DIET_PLAN = "diet_plan"
+    FITNESS_PLAN = "fitness_plan"
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
 
@@ -69,6 +71,7 @@ class DomainName(str, Enum):
     VITALS = "vitals"
     MOOD = "mood"
     SYMPTOMS = "symptoms"
+    PLANS = "plans"
 
 
 # Human-readable domain list for prompts — derived from DomainName enum.
@@ -97,6 +100,7 @@ DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
     DomainName.SLEEP: [HealthDataType.SLEEP, HealthDataType.SLEEP_CHECKIN],
     DomainName.MOOD: [HealthDataType.MOOD_ENTRY],
     DomainName.SYMPTOMS: [HealthDataType.SYMPTOM_ENTRY],
+    DomainName.PLANS: [HealthDataType.DIET_PLAN, HealthDataType.FITNESS_PLAN],
     DomainName.PROFILE: [HealthDataType.PROFILE],
     DomainName.DOCUMENTS: [HealthDataType.DOCUMENTS],
 }
@@ -120,6 +124,7 @@ _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
     DomainName.SLEEP: "sleep",
     DomainName.MOOD: "sleep",  # mood routed to sleep/wellness specialist
     DomainName.SYMPTOMS: "sleep",  # symptoms routed to sleep/wellness specialist
+    DomainName.PLANS: "nutrition",  # plans routed to nutrition specialist
     DomainName.DOCUMENTS: "documents",
 }
 

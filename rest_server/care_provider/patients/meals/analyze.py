@@ -8,7 +8,7 @@ from lib.dependencies.service_dependencies import (
     get_meal_stats_processor,
 )
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.schemas.patient_diet_plan import MealDistribution
+from lib.schemas.patient_diet_plan import DietRecommendation
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.meal import MealService
 from lib.utils.care_provider_permissions import (
@@ -55,7 +55,7 @@ async def analyze_meal(
             str(patient_id), meal_data.uploaded_at
         )
 
-        validated_recommendations = MealDistribution.model_validate(
+        validated_recommendations = DietRecommendation.model_validate(
             diet_recommendations_data
         )
 

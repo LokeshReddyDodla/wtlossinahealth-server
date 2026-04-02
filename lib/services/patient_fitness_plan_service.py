@@ -12,15 +12,19 @@ from sqlalchemy.orm import selectinload
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_fitness_plan import PatientFitnessPlan as PatientFitnessPlanModel
 from lib.schemas.patient_fitness_plan import PatientFitnessPlanCreate
+from lib.services.vector.plans import PlansVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+logger = __import__("logging").getLogger(__name__)
 
 
 class PatientFitnessPlanService:
     """Service for managing patient fitness plans."""
 
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(self, postgres_store: PostgresStore, plans_vector_service: PlansVectorService):
         self.postgres_store = postgres_store
+        self.plans_vector_service = plans_vector_service
 
     @with_postgres_session
     async def create_fitness_plan(
@@ -75,6 +79,9 @@ class PatientFitnessPlanService:
             postgres_session.add(fitness_plan)
             await postgres_session.commit()
             await postgres_session.refresh(fitness_plan)
+
+            await self._vectorize_fitness_plan(fitness_plan)
+
             return fitness_plan
         except IntegrityError as e:
             await postgres_session.rollback()
@@ -116,6 +123,7 @@ class PatientFitnessPlanService:
                 plan.status = "ARCHIVED"
                 if plan.end_date is None or plan.end_date >= start_date:
                     plan.end_date = start_date - timedelta(days=1)
+                await self._vectorize_fitness_plan(plan)
 
             return await self.create_fitness_plan(
                 patient_id=patient_id,
@@ -274,6 +282,9 @@ class PatientFitnessPlanService:
 
             await postgres_session.commit()
             await postgres_session.refresh(fitness_plan)
+
+            await self._vectorize_fitness_plan(fitness_plan)
+
             return fitness_plan
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -308,6 +319,9 @@ class PatientFitnessPlanService:
             fitness_plan.status = new_status
             await postgres_session.commit()
             await postgres_session.refresh(fitness_plan)
+
+            await self._vectorize_fitness_plan(fitness_plan)
+
             return fitness_plan
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -338,8 +352,15 @@ class PatientFitnessPlanService:
                     message="Fitness plan not found. It may have been deleted.",
                 )
 
+            plan_id = str(fitness_plan.fitness_plan_id)
             await postgres_session.delete(fitness_plan)
             await postgres_session.commit()
+
+            try:
+                await self.plans_vector_service.delete_plan_vector(plan_id)
+            except Exception as e:
+                logger.error(f"Failed to delete fitness plan vector {plan_id}: {e}")
+
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -347,3 +368,25 @@ class PatientFitnessPlanService:
                 message="Unable to delete fitness plan. Please try again.",
                 detail=str(e),
             )
+
+    async def _vectorize_fitness_plan(self, plan: PatientFitnessPlanModel) -> None:
+        """Fire-and-forget vectorization of a fitness plan."""
+        try:
+            plan_data = {
+                "start_date": str(plan.start_date),
+                "end_date": str(plan.end_date) if plan.end_date else None,
+                "status": plan.status,
+                "plan_reason": plan.plan_reason,
+                "is_default": plan.is_default,
+                "steps_goal": plan.steps_goal,
+                "content": plan.content,
+            }
+            await self.plans_vector_service.upsert_fitness_plan_vector(
+                patient_id=str(plan.patient_id),
+                plan_id=str(plan.fitness_plan_id),
+                plan_data=plan_data,
+                patient_age=0,
+                patient_gender="unknown",
+            )
+        except Exception as e:
+            logger.error(f"Failed to vectorize fitness plan {plan.fitness_plan_id}: {e}")

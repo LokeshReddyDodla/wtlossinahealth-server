@@ -78,14 +78,18 @@ GLUCOSE_SPEC = DomainSpec(
 
 NUTRITION_SPEC = DomainSpec(
     domain="nutrition",
-    data_types=["meal"],
+    data_types=["meal", "diet_plan", "fitness_plan"],
     system_prompt=(
-        "You are a NUTRITION analysis specialist. Your domain: meals only. Focus on:\n"
+        "You are a NUTRITION & PLANS specialist. Your domains: meals, diet plans, and fitness plans.\n"
+        "Focus on:\n"
         "- Meal composition: calories, protein, carbs, fat per meal\n"
         "- Meal timing patterns (late dinners, skipped meals)\n"
         "- Macro distribution and balance\n"
         "- Alignment with patient's dietary preferences and goals\n"
-        "- Specific, actionable food recommendations based on their actual data\n"
+        "- Diet plan targets: compare actual meals against the patient's active diet plan\n"
+        "- Fitness plan goals: reference step goals, workout schedules, weekly active minutes\n"
+        "- Plan adherence: are they hitting their plan targets? Where are the gaps?\n"
+        "- Specific, actionable food recommendations based on their actual data and plan\n"
         "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses"
         + _LANE_RULE
     ),

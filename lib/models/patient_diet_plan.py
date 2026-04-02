@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    JSON,
     UUID,
     Column,
     Date,
@@ -13,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     Index,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -28,18 +28,16 @@ class PatientDietPlan(Base):
         nullable=False,
         index=True,
     )
-    calories = Column(Float)
-    carbs = Column(Float)
-    protein = Column(Float)
-    fats = Column(Float)
-    fiber = Column(Float)
-    calcium = Column(Float)
-    iron = Column(Float)
-    zinc = Column(Float)
-    magnesium = Column(Float)
 
-    major_meal = Column(JSON, nullable=True)
-    snack = Column(JSON, nullable=True)
+    # Daily macro targets (top-level columns for SQL queries)
+    calories = Column(Float, nullable=True)
+    protein = Column(Float, nullable=True)
+    carbs = Column(Float, nullable=True)
+    fats = Column(Float, nullable=True)
+    fiber = Column(Float, nullable=True)
+
+    # Structured content: meals, restrictions, micronutrients, notes
+    content = Column(JSONB, nullable=True)
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)

@@ -87,6 +87,7 @@ from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.vector import PatientProfileVectorService
+from lib.services.vector.plans import PlansVectorService
 from lib.services.patient_sleep_service import PatientSleepService
 from lib.services.patient_smbg_service import PatientSmbgService
 from lib.services.patient_vital_service import PatientVitalService
@@ -561,11 +562,20 @@ container.register(
     ),
 )
 
+# 🔹 Plans Vector Service
+container.register(
+    PlansVectorService,
+    lambda: PlansVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+    ),
+)
+
 # 🔹 Patient Diet Plan Service
 container.register(
     PatientDietPlanService,
     lambda: PatientDietPlanService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        plans_vector_service=cast(PlansVectorService, container.resolve(PlansVectorService)),
     ),
 )
 
@@ -574,6 +584,7 @@ container.register(
     PatientFitnessPlanService,
     lambda: PatientFitnessPlanService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        plans_vector_service=cast(PlansVectorService, container.resolve(PlansVectorService)),
     ),
 )
 
