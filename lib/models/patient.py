@@ -182,6 +182,9 @@ class Patient(Base):
     mood_entries = relationship(
         "MoodEntry", back_populates="patient", cascade="all, delete-orphan"
     )
+    symptom_entries = relationship(
+        "SymptomEntry", back_populates="patient", cascade="all, delete-orphan"
+    )
 
     health_facility_id = Column(
         UUID(as_uuid=True),
