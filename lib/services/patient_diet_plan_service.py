@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_diet_plan import PatientDietPlan as PatientDietPlanModel
 from lib.schemas.patient_diet_plan import PatientDietPlanCreate
+from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector.plans import PlansVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -22,9 +23,15 @@ logger = __import__("logging").getLogger(__name__)
 class PatientDietPlanService:
     """Service for managing patient diet plans."""
 
-    def __init__(self, postgres_store: PostgresStore, plans_vector_service: PlansVectorService):
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+        plans_vector_service: PlansVectorService,
+        patient_profile_service: PatientProfileService,
+    ):
         self.postgres_store = postgres_store
         self.plans_vector_service = plans_vector_service
+        self.patient_profile_service = patient_profile_service
 
     @with_postgres_session
     async def create_diet_plan(
@@ -371,6 +378,7 @@ class PatientDietPlanService:
     async def _vectorize_diet_plan(self, plan: PatientDietPlanModel) -> None:
         """Fire-and-forget vectorization of a diet plan."""
         try:
+            patient = await self.patient_profile_service.fetch_patient_profile(str(plan.patient_id))
             plan_data = {
                 "start_date": str(plan.start_date),
                 "end_date": str(plan.end_date) if plan.end_date else None,
@@ -388,8 +396,8 @@ class PatientDietPlanService:
                 patient_id=str(plan.patient_id),
                 plan_id=str(plan.diet_plan_id),
                 plan_data=plan_data,
-                patient_age=0,
-                patient_gender="unknown",
+                patient_age=patient.age or 0,
+                patient_gender=patient.gender or "unknown",
             )
         except Exception as e:
             logger.error(f"Failed to vectorize diet plan {plan.diet_plan_id}: {e}")

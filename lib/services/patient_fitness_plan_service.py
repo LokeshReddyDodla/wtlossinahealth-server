@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_fitness_plan import PatientFitnessPlan as PatientFitnessPlanModel
 from lib.schemas.patient_fitness_plan import PatientFitnessPlanCreate
+from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector.plans import PlansVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -22,9 +23,15 @@ logger = __import__("logging").getLogger(__name__)
 class PatientFitnessPlanService:
     """Service for managing patient fitness plans."""
 
-    def __init__(self, postgres_store: PostgresStore, plans_vector_service: PlansVectorService):
+    def __init__(
+        self,
+        postgres_store: PostgresStore,
+        plans_vector_service: PlansVectorService,
+        patient_profile_service: PatientProfileService,
+    ):
         self.postgres_store = postgres_store
         self.plans_vector_service = plans_vector_service
+        self.patient_profile_service = patient_profile_service
 
     @with_postgres_session
     async def create_fitness_plan(
@@ -372,6 +379,7 @@ class PatientFitnessPlanService:
     async def _vectorize_fitness_plan(self, plan: PatientFitnessPlanModel) -> None:
         """Fire-and-forget vectorization of a fitness plan."""
         try:
+            patient = await self.patient_profile_service.fetch_patient_profile(str(plan.patient_id))
             plan_data = {
                 "start_date": str(plan.start_date),
                 "end_date": str(plan.end_date) if plan.end_date else None,
@@ -385,8 +393,8 @@ class PatientFitnessPlanService:
                 patient_id=str(plan.patient_id),
                 plan_id=str(plan.fitness_plan_id),
                 plan_data=plan_data,
-                patient_age=0,
-                patient_gender="unknown",
+                patient_age=patient.age or 0,
+                patient_gender=patient.gender or "unknown",
             )
         except Exception as e:
             logger.error(f"Failed to vectorize fitness plan {plan.fitness_plan_id}: {e}")
