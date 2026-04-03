@@ -71,6 +71,17 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed to init AI Foundation indexes: {e}")
 
+    # Gamification — seed achievements catalog
+    try:
+        from lib.core.container import container
+        from lib.services.gamification.achievement_seeder import AchievementSeeder
+        from lib.core.postgres_store import PostgresStore
+        seeder = AchievementSeeder(container.resolve(PostgresStore))
+        await seeder.seed()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to seed achievements: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
