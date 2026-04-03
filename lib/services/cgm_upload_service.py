@@ -107,6 +107,16 @@ class CGMUploadService:
 
             enqueue_cgm_report_generation_sync(patient_id, report_periods)
 
+            # Gamification hook (fire-and-forget)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_glucose_synced(_UUID(patient_id))
+            except Exception:
+                pass
+
             logger.info(
                 f"Uploaded Sinocare data for {patient_id} "
                 f"({len(data_points)} records, {len(report_periods)} periods)"
@@ -146,6 +156,16 @@ class CGMUploadService:
 
             await self._update_last_sync(postgres_session, patient_id, "linx", end_time)
             enqueue_cgm_report_generation_sync(patient_id, report_periods)
+
+            # Gamification hook (fire-and-forget)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler.on_glucose_synced(_UUID(patient_id))
+            except Exception:
+                pass
 
             logger.info(
                 f"Uploaded Linx data for {patient_id} "

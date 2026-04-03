@@ -61,17 +61,26 @@ class FitnessUploadService:
             from lib.core.container import container
             from lib.services.gamification.event_handler import GamificationEventHandler
             handler = container.resolve(GamificationEventHandler)
-            # Extract total steps from fitness data if available
+
+            # Sum total steps from the steps list
             steps = None
-            workout_completed = False
-            for item in (fitness_data.fitness or []):
-                if hasattr(item, "type") and item.type == "steps" and hasattr(item, "value"):
-                    steps = (steps or 0) + float(item.value)
-                if hasattr(item, "type") and item.type in ("workout", "exercise"):
-                    workout_completed = True
+            if fitness_data.steps:
+                steps = sum(item.value for item in fitness_data.steps)
+
+            # Detect workouts
+            workout_completed = bool(fitness_data.workouts)
+
             await handler.on_fitness_synced(
                 _UUID(patient_id), steps=steps, workout_completed=workout_completed
             )
+
+            # Glucose via HealthKit
+            if fitness_data.blood_glucose:
+                await handler.on_glucose_synced(_UUID(patient_id))
+
+            # Weight via HealthKit
+            if fitness_data.weight:
+                await handler.on_weight_logged(_UUID(patient_id))
         except Exception:
             pass
 
