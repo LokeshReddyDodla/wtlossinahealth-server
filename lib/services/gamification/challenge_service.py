@@ -15,6 +15,7 @@ from lib.services.gamification.queries import active_group_ids
 from lib.models.gamification import (
     Challenge,
     ChallengeParticipant,
+    DailyTask,
     Group,
     GroupMember,
     PlayerProfile,
@@ -261,6 +262,24 @@ class ChallengeService:
             raise ValueError("Not participating in this challenge")
 
         participant.status = "withdrawn"
+
+        # Expire today's challenge task so it disappears from the task list
+        from lib.services.gamification.time_utils import local_today, get_patient_timezone
+        tz_name = await get_patient_timezone(patient_id, postgres_session)
+        today = local_today(tz_name)
+        task_type = f"CHALLENGE_TASK_{challenge_id.hex}"
+        task_result = await postgres_session.execute(
+            select(DailyTask).where(
+                DailyTask.patient_id == patient_id,
+                DailyTask.task_date == today,
+                DailyTask.task_type == task_type,
+                DailyTask.status == "pending",
+            )
+        )
+        task = task_result.scalars().first()
+        if task:
+            task.status = "expired"
+
         await postgres_session.commit()
 
     @with_postgres_session
