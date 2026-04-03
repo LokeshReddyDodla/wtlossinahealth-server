@@ -200,7 +200,6 @@ class GamificationService:
                 current_value=t.current_value,
                 status=t.status,
                 xp_reward=t.xp_reward,
-                bonus_multiplier=t.bonus_multiplier,
                 completed_at=t.completed_at,
             )
             for t in tasks
