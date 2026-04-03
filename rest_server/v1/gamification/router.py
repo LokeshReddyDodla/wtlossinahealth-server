@@ -1098,6 +1098,22 @@ async def canonical_get_recent_achievements(
 
 
 @canonical_router.get(
+    "/patients/{patient_id}/gamification/buddies/search",
+    response_model=SuccessResponse[List[Dict]],
+    summary="Search patients in the same facility for buddy requests",
+)
+async def canonical_search_patients_for_buddy(
+    patient_id: UUID,
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(10, ge=1, le=20),
+    service: GamificationService = Depends(get_gamification_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    return await search_patients_for_buddy(patient_id, q, limit, service, actor, cp_access)
+
+
+@canonical_router.get(
     "/patients/{patient_id}/gamification/buddies",
     response_model=SuccessResponse[List[BuddyResponse]],
 )
