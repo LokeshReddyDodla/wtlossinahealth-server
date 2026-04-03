@@ -59,6 +59,7 @@ class GamificationEventHandler:
         except Exception:
             pass
         await self._safe_complete(patient_id, TaskType.LOG_MEAL, "on_meal_logged")
+        await self._refresh_macro_progress(patient_id)
 
     async def on_sleep_logged(self, patient_id: UUID) -> None:
         await self._safe_complete(patient_id, TaskType.LOG_SLEEP, "on_sleep_logged")
@@ -417,6 +418,49 @@ class GamificationEventHandler:
             await self._update_quest_progress(patient_id, task_type.value)
         else:
             await postgres_session.commit()
+
+    async def _refresh_macro_progress(self, patient_id: UUID) -> None:
+        """Update current_value on calorie/protein tasks so patients see real-time progress.
+
+        Does NOT complete the tasks — that's the EOD evaluator's job (needs full day totals).
+        Only updates the progress indicator.
+        """
+        try:
+            from lib.core.container import container
+            from lib.services.reports.meal.processor import MealStatsProcessor
+
+            today = await self._patient_today(patient_id)
+            meal_processor = container.resolve(MealStatsProcessor)
+            daily_stats = await meal_processor.get_meal_report_by_date(str(patient_id), today)
+            if not daily_stats:
+                return
+
+            total_cal = getattr(daily_stats, "calories", None)
+            total_prot = getattr(daily_stats, "proteins", None)
+
+            async with self.postgres_store.get_session() as session:
+                result = await session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == patient_id,
+                        DailyTask.task_date == today,
+                        DailyTask.task_type.in_([
+                            TaskType.HIT_CALORIE_TARGET.value,
+                            TaskType.HIT_PROTEIN_TARGET.value,
+                        ]),
+                        DailyTask.status == TaskStatus.PENDING.value,
+                    )
+                )
+                tasks = result.scalars().all()
+                for task in tasks:
+                    if task.task_type == TaskType.HIT_CALORIE_TARGET.value and total_cal is not None:
+                        task.current_value = total_cal
+                    elif task.task_type == TaskType.HIT_PROTEIN_TARGET.value and total_prot is not None:
+                        task.current_value = total_prot
+                await session.commit()
+        except Exception:
+            logger.opt(exception=True).debug(
+                f"Macro progress refresh failed for {patient_id}"
+            )
 
     async def _patient_today(self, patient_id: UUID) -> date:
         tz_name = await self._resolve_tz(patient_id)
