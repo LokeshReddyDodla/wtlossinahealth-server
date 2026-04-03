@@ -414,6 +414,25 @@ async def accept_buddy_request(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.post(
+    "/patients/{patient_id}/buddies/{buddy_id}/reject",
+    response_model=SuccessResponse,
+)
+async def reject_buddy_request(
+    patient_id: UUID,
+    buddy_id: UUID,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        await service.reject_request(buddy_id, pid)
+        return SuccessResponse(message="Buddy request rejected")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
 @router.delete(
     "/patients/{patient_id}/buddies/{buddy_id}",
     response_model=SuccessResponse,
@@ -1177,6 +1196,20 @@ async def canonical_accept_buddy_request(
     pid = await _resolve_patient(patient_id, actor, cp_access)
     await service.accept_request(buddy_id, pid)
     return SuccessResponse(message="Buddy request accepted")
+
+
+@canonical_router.post(
+    "/patients/{patient_id}/gamification/buddies/{buddy_id}/reject",
+    response_model=SuccessResponse,
+)
+async def canonical_reject_buddy_request(
+    patient_id: UUID,
+    buddy_id: UUID,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    return await reject_buddy_request(patient_id, buddy_id, service, actor, cp_access)
 
 
 @canonical_router.delete(
