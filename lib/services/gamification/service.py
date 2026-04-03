@@ -268,12 +268,13 @@ class GamificationService:
         task.completed_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
 
-        # Update quest progress (same as event_handler auto-completion path)
+        # Update quest progress + streak (same as event_handler auto-completion path)
         try:
             from lib.core.container import container
             from lib.services.gamification.event_handler import GamificationEventHandler
             handler = container.resolve(GamificationEventHandler)
             await handler._update_quest_progress(patient_id, task.task_type)
+            await handler._try_process_streak(patient_id)
         except Exception:
             pass
 
