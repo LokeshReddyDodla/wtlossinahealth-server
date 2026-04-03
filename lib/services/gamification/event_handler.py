@@ -201,6 +201,12 @@ class GamificationEventHandler:
             today = await self._patient_today(patient_id)
             week_start = today - timedelta(days=today.weekday())
 
+            # Ensure the weekly quest exists (might not if patient hasn't opened daily progress yet)
+            from lib.core.container import container
+            from lib.services.gamification.task_generator import TaskGeneratorService
+            task_gen = container.resolve(TaskGeneratorService)
+            await task_gen.generate_weekly_quest(patient_id, week_start)
+
             async with self.postgres_store.get_session() as session:
                 result = await session.execute(
                     select(WeeklyQuest).where(
