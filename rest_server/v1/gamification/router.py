@@ -303,6 +303,9 @@ async def search_patients_for_buddy(
     from sqlalchemy import select as sa_select, func as sa_func
     from lib.models.patient import Patient
 
+    from sqlalchemy import or_ as sa_or
+    from lib.models.gamification import Buddy
+
     async with service.postgres_store.get_session() as session:
         # Get the requesting patient's facility
         facility_result = await session.execute(
@@ -313,13 +316,28 @@ async def search_patients_for_buddy(
         if not facility_id:
             return SuccessResponse(message="No facility", data=[])
 
+        # Get IDs of existing buddies (pending or active) to exclude
+        buddy_result = await session.execute(
+            sa_select(Buddy.requester_id, Buddy.accepter_id).where(
+                sa_or(
+                    Buddy.requester_id == pid,
+                    Buddy.accepter_id == pid,
+                ),
+                Buddy.status.in_(["pending", "active"]),
+            )
+        )
+        exclude_ids = {pid}
+        for row in buddy_result.all():
+            exclude_ids.add(row.requester_id)
+            exclude_ids.add(row.accepter_id)
+
         # Search by first_name or last_name (case-insensitive) within same facility
         search_term = f"%{q.strip().lower()}%"
         result = await session.execute(
             sa_select(Patient.patient_id, Patient.first_name, Patient.last_name)
             .where(
                 Patient.health_facility_id == facility_id,
-                Patient.patient_id != pid,
+                Patient.patient_id.not_in(exclude_ids),
                 sa_func.lower(
                     sa_func.concat(
                         sa_func.coalesce(Patient.first_name, ""),
@@ -392,6 +410,25 @@ async def accept_buddy_request(
     try:
         await service.accept_request(buddy_id, pid)
         return SuccessResponse(message="Buddy request accepted")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/patients/{patient_id}/buddies/{buddy_id}/reject",
+    response_model=SuccessResponse,
+)
+async def reject_buddy_request(
+    patient_id: UUID,
+    buddy_id: UUID,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        await service.reject_request(buddy_id, pid)
+        return SuccessResponse(message="Buddy request rejected")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -1159,6 +1196,20 @@ async def canonical_accept_buddy_request(
     pid = await _resolve_patient(patient_id, actor, cp_access)
     await service.accept_request(buddy_id, pid)
     return SuccessResponse(message="Buddy request accepted")
+
+
+@canonical_router.post(
+    "/patients/{patient_id}/gamification/buddies/{buddy_id}/reject",
+    response_model=SuccessResponse,
+)
+async def canonical_reject_buddy_request(
+    patient_id: UUID,
+    buddy_id: UUID,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    return await reject_buddy_request(patient_id, buddy_id, service, actor, cp_access)
 
 
 @canonical_router.delete(

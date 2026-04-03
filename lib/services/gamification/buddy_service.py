@@ -147,6 +147,31 @@ class BuddyService:
         return buddy
 
     @with_postgres_session
+    async def reject_request(
+        self,
+        buddy_id: UUID,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Reject a pending buddy request. Only the accepter can reject."""
+        result = await postgres_session.execute(
+            select(Buddy).where(
+                Buddy.buddy_id == buddy_id,
+                Buddy.accepter_id == patient_id,
+                Buddy.status == "pending",
+            )
+        )
+        buddy = result.scalars().first()
+        if not buddy:
+            raise ValueError("Pending request not found")
+
+        buddy.status = "removed"
+        buddy.removed_at = datetime.now().replace(tzinfo=None)
+        buddy.removed_by = patient_id
+        await postgres_session.commit()
+
+    @with_postgres_session
     async def remove_buddy(
         self,
         buddy_id: UUID,
@@ -210,12 +235,16 @@ class BuddyService:
             other_id = (
                 b.accepter_id if b.requester_id == patient_id else b.requester_id
             )
+            direction = None
+            if b.status == "pending":
+                direction = "outgoing" if b.requester_id == patient_id else "incoming"
             responses.append(
                 BuddyResponse(
                     buddy_id=str(b.buddy_id),
                     buddy_patient_id=str(other_id),
                     buddy_name=names_map.get(other_id),
                     status=b.status,
+                    direction=direction,
                     buddy_streak=b.buddy_streak,
                     buddy_streak_longest=b.buddy_streak_longest,
                     created_at=b.created_at,

@@ -300,6 +300,7 @@ class BuddyResponse(BaseModel):
     buddy_patient_id: str
     buddy_name: Optional[str] = None
     status: str
+    direction: Optional[str] = None  # "incoming" or "outgoing" (only set when status is "pending")
     buddy_streak: int
     buddy_streak_longest: int
     created_at: datetime
