@@ -268,6 +268,15 @@ class GamificationService:
         task.completed_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
 
+        # Update quest progress (same as event_handler auto-completion path)
+        try:
+            from lib.core.container import container
+            from lib.services.gamification.event_handler import GamificationEventHandler
+            handler = container.resolve(GamificationEventHandler)
+            await handler._update_quest_progress(patient_id, task.task_type)
+        except Exception:
+            pass
+
         xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
             patient_id=patient_id,
             amount=task.xp_reward,
