@@ -179,6 +179,7 @@ class GamificationEventHandler:
             raise
         await session.commit()
         await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
+        await self._try_process_streak(patient_id)
 
     async def _update_quest_progress(
         self, patient_id: UUID, task_type: str
@@ -421,6 +422,24 @@ class GamificationEventHandler:
             await self._update_quest_progress(patient_id, task_type.value)
         else:
             await postgres_session.commit()
+
+    async def _try_process_streak(self, patient_id: UUID) -> None:
+        """Process streak immediately if patient meets the activity threshold today.
+
+        Called after every task completion so the streak updates in real-time
+        instead of waiting for the 2 AM nightly cron.
+        """
+        try:
+            from lib.core.container import container
+            from lib.services.gamification.streak_service import StreakService
+
+            today = await self._patient_today(patient_id)
+            streak_service = container.resolve(StreakService)
+            await streak_service.process_streak(patient_id, today)
+        except Exception:
+            logger.opt(exception=True).debug(
+                f"Real-time streak check failed for {patient_id}"
+            )
 
     async def _refresh_macro_progress(self, patient_id: UUID) -> None:
         """Update progress and auto-complete calorie/protein tasks in real-time.
