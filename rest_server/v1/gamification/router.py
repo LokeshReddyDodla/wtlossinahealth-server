@@ -316,9 +316,9 @@ async def search_patients_for_buddy(
         if not facility_id:
             return SuccessResponse(message="No facility", data=[])
 
-        # Get IDs of existing buddies (pending or active) to exclude
+        # Get existing buddy relationships (pending or active) for status display
         buddy_result = await session.execute(
-            sa_select(Buddy.requester_id, Buddy.accepter_id).where(
+            sa_select(Buddy.requester_id, Buddy.accepter_id, Buddy.status).where(
                 sa_or(
                     Buddy.requester_id == pid,
                     Buddy.accepter_id == pid,
@@ -326,10 +326,13 @@ async def search_patients_for_buddy(
                 Buddy.status.in_(["pending", "active"]),
             )
         )
-        exclude_ids = {pid}
+        buddy_status_map: dict = {}  # other_patient_id -> {"status": ..., "direction": ...}
         for row in buddy_result.all():
-            exclude_ids.add(row.requester_id)
-            exclude_ids.add(row.accepter_id)
+            other_id = row.accepter_id if row.requester_id == pid else row.requester_id
+            direction = None
+            if row.status == "pending":
+                direction = "outgoing" if row.requester_id == pid else "incoming"
+            buddy_status_map[other_id] = {"status": row.status, "direction": direction}
 
         # Search by first_name or last_name (case-insensitive) within same facility
         search_term = f"%{q.strip().lower()}%"
@@ -337,7 +340,7 @@ async def search_patients_for_buddy(
             sa_select(Patient.patient_id, Patient.first_name, Patient.last_name)
             .where(
                 Patient.health_facility_id == facility_id,
-                Patient.patient_id.not_in(exclude_ids),
+                Patient.patient_id != pid,
                 sa_func.lower(
                     sa_func.concat(
                         sa_func.coalesce(Patient.first_name, ""),
@@ -348,14 +351,20 @@ async def search_patients_for_buddy(
             )
             .limit(limit)
         )
-        patients = [
-            {
+        patients = []
+        for row in result.all():
+            entry = {
                 "patient_id": str(row.patient_id),
                 "first_name": row.first_name,
                 "last_name": row.last_name,
+                "buddy_status": None,
+                "buddy_direction": None,
             }
-            for row in result.all()
-        ]
+            existing = buddy_status_map.get(row.patient_id)
+            if existing:
+                entry["buddy_status"] = existing["status"]
+                entry["buddy_direction"] = existing["direction"]
+            patients.append(entry)
 
     return SuccessResponse(message="Search results", data=patients)
 
