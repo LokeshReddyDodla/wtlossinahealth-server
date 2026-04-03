@@ -424,9 +424,9 @@ class GamificationEventHandler:
             await postgres_session.commit()
 
     async def _try_process_streak(self, patient_id: UUID) -> None:
-        """Process streak immediately if patient meets the activity threshold today.
+        """Process personal + buddy streaks immediately when activity threshold is met.
 
-        Called after every task completion so the streak updates in real-time
+        Called after every task completion so streaks update in real-time
         instead of waiting for the 2 AM nightly cron.
         """
         try:
@@ -436,6 +436,7 @@ class GamificationEventHandler:
             today = await self._patient_today(patient_id)
             streak_service = container.resolve(StreakService)
             await streak_service.process_streak(patient_id, today)
+            await streak_service.process_buddy_streaks(patient_id, today)
         except Exception:
             logger.opt(exception=True).debug(
                 f"Real-time streak check failed for {patient_id}"
