@@ -95,7 +95,7 @@ class TestBuddyService:
                 FakeScalarResult(values=[SimpleNamespace(health_facility_id=facility_id)]),
                 FakeScalarResult(scalar=facility_id),
                 FakeScalarResult(scalar=0),
-                FakeScalarResult(values=[SimpleNamespace()]),
+                FakeScalarResult(values=[SimpleNamespace(status="active")]),
             ]
         )
 
@@ -153,7 +153,10 @@ class TestBuddyService:
         profile = SimpleNamespace(level=10, current_streak=8)
         task_completed = SimpleNamespace(status="completed")
         task_pending = SimpleNamespace(status="pending")
-        achievement = SimpleNamespace(achievement_id=uuid4())
+        # Joined query returns rows with .Achievement.slug
+        ach_row = SimpleNamespace(
+            Achievement=SimpleNamespace(slug="streak_7"),
+        )
         session = FakeSession(
             results=[
                 FakeScalarResult(values=[buddy]),
@@ -161,8 +164,7 @@ class TestBuddyService:
                 FakeScalarResult(scalar="Mina"),
                 FakeScalarResult(scalar="America/New_York"),
                 FakeScalarResult(values=[task_completed, task_pending]),
-                FakeScalarResult(values=[achievement]),
-                FakeScalarResult(scalar="streak_7"),
+                FakeScalarResult(values=[ach_row]),
             ]
         )
         monkeypatch.setattr(module, "local_today", lambda _tz=None: date(2026, 4, 2))

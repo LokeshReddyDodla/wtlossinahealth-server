@@ -167,6 +167,12 @@ def make_module(name: str, **attrs) -> types.ModuleType:
     return module
 
 
+def _async_return(value):
+    async def _fn(*args, **kwargs):
+        return value
+    return _fn
+
+
 def base_stubs() -> dict[str, types.ModuleType]:
     async def _get_patient_timezone(*_args, **_kwargs):
         return None
@@ -509,9 +515,35 @@ def base_stubs() -> dict[str, types.ModuleType]:
             ACTIVE=SimpleNamespace(value="active"),
             EXPIRED=SimpleNamespace(value="expired"),
         ),
+        ParticipantStatus=SimpleNamespace(
+            ACTIVE=EnumValue("active"),
+            COMPLETED=EnumValue("completed"),
+            WITHDRAWN=EnumValue("withdrawn"),
+        ),
+        ParticipantType=SimpleNamespace(
+            PATIENT=EnumValue("patient"),
+            GROUP=EnumValue("group"),
+        ),
+        BuddyStatus=SimpleNamespace(
+            ACTIVE=EnumValue("active"),
+            PENDING=EnumValue("pending"),
+            REMOVED=EnumValue("removed"),
+        ),
+        CreatorType=SimpleNamespace(
+            CARE_PROVIDER=EnumValue("care_provider"),
+            SYSTEM=EnumValue("system"),
+        ),
         DAILY_XP_CAP=500,
         BUDDY_REQUESTS_PER_DAY=10,
         MAX_LEVEL=100,
+        MAX_ACTIVE_BUDDIES=3,
+        CHEERS_PER_DAY_LIMIT=3,
+        CHEER_XP_REWARD=5,
+        FEED_EXPIRY_DAYS=30,
+        STEP_GOAL_THRESHOLD_PCT=0.80,
+        CALORIE_TOLERANCE_PCT=0.15,
+        PROTEIN_TOLERANCE_PCT=0.10,
+        MANUALLY_COMPLETABLE_TASKS={"LOG_MEAL", "LOG_SLEEP", "LOG_MOOD", "LOG_GLUCOSE", "LOG_WEIGHT"},
         title_for_level=lambda level: {
             1: "Newcomer",
             5: "Explorer",
@@ -597,6 +629,15 @@ def base_stubs() -> dict[str, types.ModuleType]:
         "lib.services.gamification.notifications": make_module(
             "lib.services.gamification.notifications",
             send_gamification_notification=lambda *a, **k: None,
+        ),
+        "lib.services.gamification.queries": make_module(
+            "lib.services.gamification.queries",
+            active_group_ids=_async_return([]),
+            active_challenge_participations=_async_return([]),
+        ),
+        "lib.services.gamification.profile_utils": make_module(
+            "lib.services.gamification.profile_utils",
+            get_or_create_profile=_async_return(None),
         ),
         "lib.services.gamification.xp_service": make_module(
             "lib.services.gamification.xp_service",

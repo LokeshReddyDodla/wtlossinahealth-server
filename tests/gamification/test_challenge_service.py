@@ -44,10 +44,14 @@ class TestChallengeService:
             return date(2026, 4, 3)
 
         monkeypatch.setattr(service, "_patient_today", fake_patient_today)
+
+        async def fake_active_group_ids(_pid, _session):
+            return [group_id]
+
+        monkeypatch.setattr(module, "active_group_ids", fake_active_group_ids)
         session = FakeSession(
             results=[
                 FakeScalarResult(values=[SimpleNamespace(ChallengeParticipant=patient_participant, Challenge=challenge)]),
-                FakeScalarResult(values=[group_id]),
                 FakeScalarResult(values=[SimpleNamespace(ChallengeParticipant=group_participant, Challenge=challenge)]),
             ]
         )
@@ -128,13 +132,16 @@ class TestChallengeService:
         async def fake_participant_count(_challenge_id, _session):
             return 3
 
+        async def fake_active_group_ids(_pid, _session):
+            return [group_id]
+
         monkeypatch.setattr(service, "_patient_today", fake_patient_today)
         monkeypatch.setattr(service, "_participant_count", fake_participant_count)
         monkeypatch.setattr(service, "_to_response", lambda challenge, count: (challenge.challenge_id, count))
+        monkeypatch.setattr(module, "active_group_ids", fake_active_group_ids)
 
         session = FakeSession(
             results=[
-                FakeScalarResult(values=[group_id]),
                 FakeScalarResult(values=[shared_challenge]),
                 FakeScalarResult(values=[shared_challenge]),
             ]

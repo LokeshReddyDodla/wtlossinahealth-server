@@ -32,6 +32,7 @@ class TestLeaderboardService:
         subject_id = uuid4()
         session = FakeSession(
             results=[
+                # 1. Leaderboard entries
                 FakeScalarResult(
                     values=[
                         SimpleNamespace(
@@ -41,6 +42,7 @@ class TestLeaderboardService:
                         )
                     ]
                 ),
+                # 2. Visibility map (batch)
                 FakeScalarResult(
                     values=[
                         SimpleNamespace(
@@ -49,8 +51,18 @@ class TestLeaderboardService:
                         )
                     ]
                 ),
-                FakeScalarResult(scalar="Amina"),
-                FakeScalarResult(scalar=12),
+                # 3. Names map (batch)
+                FakeScalarResult(
+                    values=[
+                        SimpleNamespace(patient_id=subject_id, first_name="Amina")
+                    ]
+                ),
+                # 4. Levels map (batch)
+                FakeScalarResult(
+                    values=[
+                        SimpleNamespace(patient_id=subject_id, level=12)
+                    ]
+                ),
             ]
         )
 

@@ -136,7 +136,7 @@ class TestFeedService:
         assert cheer.sender_id == sender_id
         assert cheer.recipient_id == recipient_id
         assert session.commit_count == 1
-        assert xp_calls[0]["amount"] == module.CHEER_XP
+        assert xp_calls[0]["amount"] == module.CHEER_XP_REWARD
         assert xp_calls[0]["source_type"] == "cheer"
         assert notification_calls == [
             {
