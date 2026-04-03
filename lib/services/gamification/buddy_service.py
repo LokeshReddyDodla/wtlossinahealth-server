@@ -235,12 +235,16 @@ class BuddyService:
             other_id = (
                 b.accepter_id if b.requester_id == patient_id else b.requester_id
             )
+            direction = None
+            if b.status == "pending":
+                direction = "outgoing" if b.requester_id == patient_id else "incoming"
             responses.append(
                 BuddyResponse(
                     buddy_id=str(b.buddy_id),
                     buddy_patient_id=str(other_id),
                     buddy_name=names_map.get(other_id),
                     status=b.status,
+                    direction=direction,
                     buddy_streak=b.buddy_streak,
                     buddy_streak_longest=b.buddy_streak_longest,
                     created_at=b.created_at,
