@@ -400,7 +400,7 @@ async def create_group(
     group = await service.create_group(
         name=body.name,
         group_type=body.group_type.value,
-        created_by_id=actor.user_id,
+        created_by_id=actor.id,
         created_by_type=actor.role,
         description=body.description,
         facility_id=body.facility_id,
@@ -420,7 +420,7 @@ async def get_group(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     # Verify membership (or care provider who created it)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
@@ -438,7 +438,7 @@ async def join_group(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.join_group(group_id, pid)
         return SuccessResponse(message="Joined group")
@@ -453,7 +453,7 @@ async def leave_group(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.leave_group(group_id, pid)
         return SuccessResponse(message="Left group")
@@ -472,7 +472,7 @@ async def get_group_members(
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
     # Verify the caller is a member of this group
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
@@ -492,7 +492,7 @@ async def get_group_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     # Verify group membership
     patient_groups = await group_service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
@@ -532,7 +532,7 @@ async def get_available_challenges(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     challenges = await service.get_available_challenges(pid)
     return SuccessResponse(message="Available challenges", data=challenges)
 
@@ -559,7 +559,7 @@ async def join_challenge(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.join_challenge(challenge_id, pid)
         return SuccessResponse(message="Joined challenge")
@@ -574,7 +574,7 @@ async def withdraw_challenge(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.withdraw_from_challenge(challenge_id, pid)
         return SuccessResponse(message="Withdrawn from challenge")
@@ -592,7 +592,7 @@ async def get_challenge_detail(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         detail = await service.get_challenge_detail(challenge_id, pid)
         return SuccessResponse(message="Challenge details", data=detail)
@@ -610,7 +610,7 @@ async def get_challenge_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         leaderboard = await service.get_challenge_leaderboard(challenge_id, pid)
         return SuccessResponse(message="Challenge leaderboard", data=leaderboard)
@@ -675,7 +675,7 @@ async def get_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
 
     # Validate board_type
     allowed_board_types = {"weekly_xp", "monthly_xp", "weekly_steps", "streak", "challenge"}
@@ -742,7 +742,7 @@ async def get_group_feed(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         feed = await service.get_group_feed(group_id, pid)
         return SuccessResponse(message="Group feed", data=feed)
@@ -762,7 +762,7 @@ async def send_cheer(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.send_cheer(pid, feed_event_id, body.reaction.value)
         return SuccessResponse(message="Cheer sent")
@@ -1147,7 +1147,7 @@ async def canonical_create_group(
     group = await service.create_group(
         name=body.name,
         group_type=body.group_type.value,
-        created_by_id=actor.user_id,
+        created_by_id=actor.id,
         created_by_type=actor.role,
         description=body.description,
         facility_id=body.facility_id,
@@ -1182,7 +1182,7 @@ async def canonical_join_group(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.join_group(group_id, pid)
         return SuccessResponse(message="Joined group")
@@ -1200,7 +1200,7 @@ async def canonical_leave_group(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.leave_group(group_id, pid)
         return SuccessResponse(message="Left group")
@@ -1218,7 +1218,7 @@ async def canonical_get_group_members(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
@@ -1237,7 +1237,7 @@ async def canonical_get_group_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     board = await service.get_leaderboard(
         board_type,
         "group",
@@ -1257,7 +1257,7 @@ async def canonical_get_group_feed(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         feed = await service.get_group_feed(group_id, pid)
         return SuccessResponse(message="Group feed", data=feed)
@@ -1274,7 +1274,7 @@ async def canonical_get_available_challenges(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     challenges = await service.get_available_challenges(pid)
     return SuccessResponse(message="Available challenges", data=challenges)
 
@@ -1288,7 +1288,7 @@ async def canonical_get_my_active_challenges(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     challenges = await service.get_active_challenges(pid)
     return SuccessResponse(message="Active challenges", data=challenges)
 
@@ -1318,7 +1318,7 @@ async def canonical_join_challenge(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.join_challenge(challenge_id, pid)
         return SuccessResponse(message="Joined challenge")
@@ -1336,7 +1336,7 @@ async def canonical_withdraw_challenge(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.withdraw_from_challenge(challenge_id, pid)
         return SuccessResponse(message="Withdrawn from challenge")
@@ -1354,7 +1354,7 @@ async def canonical_get_challenge_detail(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         detail = await service.get_challenge_detail(challenge_id, pid)
         return SuccessResponse(message="Challenge details", data=detail)
@@ -1372,7 +1372,7 @@ async def canonical_get_challenge_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         leaderboard = await service.get_challenge_leaderboard(challenge_id, pid)
         return SuccessResponse(message="Challenge leaderboard", data=leaderboard)
@@ -1432,7 +1432,7 @@ async def canonical_get_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     board = await service.get_leaderboard(board_type, scope, pid, scope_id=scope_id)
     return SuccessResponse(message="Leaderboard", data=board)
 
@@ -1464,7 +1464,7 @@ async def canonical_send_cheer(
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    pid = await _resolve_patient(actor.id, actor, cp_access)
     try:
         await service.send_cheer(pid, feed_event_id, body.reaction.value)
         return SuccessResponse(message="Cheer sent")

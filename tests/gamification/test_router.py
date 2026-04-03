@@ -149,7 +149,7 @@ def _load_router(monkeypatch):
 
     async def resolve_patient_access(*, actor, patient_id, care_provider_access_service):
         if actor.role == profile_type.PATIENT:
-            return actor.user_id
+            return actor.id
         assigned = await care_provider_access_service.is_patient_assigned(
             care_provider_id=actor.model.care_provider_id,
             patient_id=patient_id,
@@ -194,7 +194,7 @@ class TestGamificationRouter:
             leaderboard_visibility=SimpleNamespace(value="public"),
             title_slug="champion",
         )
-        actor = SimpleNamespace(user_id=patient_id, role="PATIENT", model=SimpleNamespace(patient_id=patient_id))
+        actor = SimpleNamespace(id=patient_id, role="PATIENT", model=SimpleNamespace(patient_id=patient_id))
 
         response = await module.canonical_update_profile(
             patient_id=uuid4(),
@@ -210,7 +210,7 @@ class TestGamificationRouter:
     @pytest.mark.asyncio
     async def test_canonical_get_group_members_requires_membership(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(user_id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
 
         class FakeGroupService:
             async def get_patient_groups(self, _patient_id):
@@ -230,7 +230,7 @@ class TestGamificationRouter:
     @pytest.mark.asyncio
     async def test_canonical_join_challenge_maps_value_error_to_bad_request(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(user_id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
 
         class FakeChallengeService:
             async def join_challenge(self, _challenge_id, _patient_id):
@@ -250,7 +250,7 @@ class TestGamificationRouter:
     @pytest.mark.asyncio
     async def test_canonical_send_cheer_maps_value_error_to_bad_request(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(user_id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
 
         class FakeFeedService:
             async def send_cheer(self, _patient_id, _feed_event_id, _reaction):
@@ -271,7 +271,7 @@ class TestGamificationRouter:
     @pytest.mark.asyncio
     async def test_canonical_create_group_uses_actor_identity(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(user_id=uuid4(), role="PATIENT")
+        actor = SimpleNamespace(id=uuid4(), role="PATIENT")
         create_calls = []
         get_calls = []
         group_id = uuid4()
@@ -298,7 +298,7 @@ class TestGamificationRouter:
         )
 
         assert response.message == "Group created"
-        assert create_calls[0]["created_by_id"] == actor.user_id
+        assert create_calls[0]["created_by_id"] == actor.id
         assert create_calls[0]["created_by_type"] == actor.role
         assert get_calls == [group_id]
 
@@ -308,7 +308,7 @@ class TestGamificationRouter:
         patient_id = uuid4()
         cp_id = uuid4()
         actor = SimpleNamespace(
-            user_id=cp_id,
+            id=cp_id,
             role="CARE_PROVIDER",
             model=SimpleNamespace(care_provider_id=cp_id),
         )
