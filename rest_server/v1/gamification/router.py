@@ -508,7 +508,7 @@ async def create_group(
         name=body.name,
         group_type=body.group_type.value,
         created_by_id=pid,
-        created_by_type=actor.role,
+        created_by_type=actor.role.value if hasattr(actor.role, "value") else str(actor.role),
         description=body.description,
         facility_id=body.facility_id,
         max_members=body.max_members,
