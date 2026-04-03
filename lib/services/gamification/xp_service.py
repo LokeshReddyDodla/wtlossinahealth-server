@@ -11,7 +11,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
+from lib.models.patient import Patient
 from lib.models.gamification import PlayerProfile, XPLedgerEntry
+from lib.services.gamification.time_utils import (
+    local_today,
+    naive_day_bounds_for_local_date,
+)
 from lib.schemas.gamification import title_for_level, xp_for_level
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -66,10 +71,12 @@ class XPService:
 
         multiplier = streak_multiplier(profile.current_streak)
         final_amount = int(math.ceil(amount * multiplier))
+        tz_name = await self._patient_timezone(patient_id, postgres_session)
 
         if respect_cap:
-            today_start = datetime.now().replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+            today_start, _ = naive_day_bounds_for_local_date(
+                local_today(tz_name),
+                tz_name,
             )
             result = await postgres_session.execute(
                 select(func.coalesce(func.sum(XPLedgerEntry.xp_amount), 0))
@@ -104,20 +111,47 @@ class XPService:
         await postgres_session.commit()
         await postgres_session.refresh(profile)
 
+        try:
+            from lib.core.container import container
+            from lib.services.gamification.challenge_service import ChallengeService
+
+            challenge_service = container.resolve(ChallengeService)
+            await challenge_service.update_participant_progress(
+                patient_id=patient_id,
+                metric_type="xp_earned",
+                increment=float(final_amount),
+            )
+        except Exception:
+            pass
+
         return final_amount, new_level, new_level > old_level
 
     @with_postgres_session
     async def get_xp_earned_today(
         self, patient_id: UUID, *, postgres_session: AsyncSession
     ) -> int:
-        today_start = datetime.now().replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        return await self.get_xp_earned_for_date(
+            patient_id,
+            local_today(await self._patient_timezone(patient_id, postgres_session)),
+            postgres_session=postgres_session,
         )
+
+    @with_postgres_session
+    async def get_xp_earned_for_date(
+        self,
+        patient_id: UUID,
+        target_date,
+        *,
+        tz_name: str | None = None,
+        postgres_session: AsyncSession,
+    ) -> int:
+        today_start, today_end = naive_day_bounds_for_local_date(target_date, tz_name)
         result = await postgres_session.execute(
             select(func.coalesce(func.sum(XPLedgerEntry.xp_amount), 0))
             .where(
                 XPLedgerEntry.patient_id == patient_id,
                 XPLedgerEntry.created_at >= today_start,
+                XPLedgerEntry.created_at <= today_end,
                 XPLedgerEntry.xp_amount > 0,
             )
         )
@@ -146,3 +180,13 @@ class XPService:
             if profile:
                 return profile
             raise
+
+    async def _patient_timezone(
+        self,
+        patient_id: UUID,
+        session: AsyncSession,
+    ) -> str | None:
+        result = await session.execute(
+            select(Patient.locale).where(Patient.patient_id == patient_id)
+        )
+        return result.scalar()

@@ -10,7 +10,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
-from lib.models.gamification import DailyTask, WeeklyQuest
+from lib.models.gamification import Challenge, ChallengeParticipant, DailyTask, GroupMember, WeeklyQuest
 from lib.models.patient_diet_plan import PatientDietPlan
 from lib.models.patient_fitness_plan import PatientFitnessPlan
 from lib.schemas.gamification import SourceType, TaskStatus, TaskType
@@ -93,14 +93,8 @@ class TaskGeneratorService:
                 DailyTask.task_date == task_date,
             )
         )
-        if existing.scalars().first():
-            result = await postgres_session.execute(
-                select(DailyTask).where(
-                    DailyTask.patient_id == patient_id,
-                    DailyTask.task_date == task_date,
-                )
-            )
-            return list(result.scalars().all())
+        existing_tasks = list(existing.scalars().all())
+        existing_keys = {(task.task_type, task.source_id) for task in existing_tasks}
 
         tasks: List[DailyTask] = []
 
@@ -118,11 +112,21 @@ class TaskGeneratorService:
         )
         tasks.extend(fitness_tasks)
 
+        challenge_tasks = await self._challenge_tasks(
+            patient_id, task_date, postgres_session
+        )
+        tasks.extend(challenge_tasks)
+
         for task in tasks:
+            key = (task.task_type, task.source_id)
+            if key in existing_keys:
+                continue
             postgres_session.add(task)
+            existing_tasks.append(task)
+            existing_keys.add(key)
 
         await postgres_session.commit()
-        return tasks
+        return existing_tasks
 
     @with_postgres_session
     async def generate_weekly_quest(
@@ -257,6 +261,80 @@ class TaskGeneratorService:
                     xp_reward=_XP_REWARDS[TaskType.HIT_PROTEIN_TARGET],
                 )
             )
+        return tasks
+
+    async def _challenge_tasks(
+        self,
+        patient_id: UUID,
+        task_date: date,
+        session: AsyncSession,
+    ) -> List[DailyTask]:
+        result = await session.execute(
+            select(ChallengeParticipant, Challenge)
+            .join(Challenge)
+            .where(
+                Challenge.is_active == True,
+                Challenge.start_date <= task_date,
+                Challenge.end_date >= task_date,
+                ChallengeParticipant.status == "active",
+                (
+                    (
+                        (ChallengeParticipant.participant_type == "patient")
+                        & (ChallengeParticipant.participant_id == patient_id)
+                    )
+                ),
+            )
+        )
+        rows = list(result.all())
+
+        group_ids_result = await session.execute(
+            select(GroupMember.group_id).where(
+                GroupMember.patient_id == patient_id,
+                GroupMember.is_active == True,
+            )
+        )
+        group_ids = list(group_ids_result.scalars().all())
+        if group_ids:
+            group_rows = await session.execute(
+                select(ChallengeParticipant, Challenge)
+                .join(Challenge)
+                .where(
+                    Challenge.is_active == True,
+                    Challenge.start_date <= task_date,
+                    Challenge.end_date >= task_date,
+                    ChallengeParticipant.status == "active",
+                    ChallengeParticipant.participant_type == "group",
+                    ChallengeParticipant.participant_id.in_(group_ids),
+                )
+            )
+            rows.extend(group_rows.all())
+
+        tasks: List[DailyTask] = []
+        seen_challenges: set[UUID] = set()
+        for row in rows:
+            challenge = row.Challenge
+            participant = row.ChallengeParticipant
+            if challenge.challenge_id in seen_challenges:
+                continue
+            seen_challenges.add(challenge.challenge_id)
+            participant_name = "your team" if participant.participant_type == "group" else "you"
+            tasks.append(
+                DailyTask(
+                    patient_id=patient_id,
+                    task_date=task_date,
+                    task_type=f"{TaskType.CHALLENGE_TASK.value}_{challenge.challenge_id.hex}",
+                    title=f"Challenge: {challenge.title}",
+                    description=(
+                        f"Help {participant_name} progress in this {challenge.scope.replace('_', ' ')} challenge."
+                    ),
+                    source_type=SourceType.CHALLENGE.value,
+                    source_id=challenge.challenge_id,
+                    target_value=challenge.target_value,
+                    current_value=participant.current_value,
+                    xp_reward=0,
+                )
+            )
+
         return tasks
 
     async def _fitness_plan_tasks(

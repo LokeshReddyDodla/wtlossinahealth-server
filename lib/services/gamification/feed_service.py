@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -15,9 +15,15 @@ from lib.models.gamification import (
     Buddy,
     Cheer,
     GroupMember,
+    PlayerProfile,
 )
 from lib.models.patient import Patient
 from lib.schemas.gamification import FeedEventResponse
+from lib.services.gamification.notifications import send_gamification_notification
+from lib.services.gamification.time_utils import (
+    local_today,
+    naive_day_bounds_for_local_date,
+)
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -102,7 +108,9 @@ class FeedService:
             .limit(limit)
         )
         events = result.scalars().all()
-        return await self._enrich_events(events, patient_id, postgres_session)
+        return await self._enrich_events(
+            events, patient_id, postgres_session, context="buddy"
+        )
 
     @with_postgres_session
     async def get_group_feed(
@@ -136,14 +144,19 @@ class FeedService:
         result = await postgres_session.execute(
             select(ActivityFeedEvent)
             .where(
-                ActivityFeedEvent.actor_id.in_(member_ids),
+                or_(
+                    ActivityFeedEvent.group_id == group_id,
+                    ActivityFeedEvent.actor_id.in_(member_ids),
+                ),
                 ActivityFeedEvent.visibility.in_(["group", "public"]),
             )
             .order_by(ActivityFeedEvent.created_at.desc())
             .limit(limit)
         )
         events = result.scalars().all()
-        return await self._enrich_events(events, patient_id, postgres_session)
+        return await self._enrich_events(
+            events, patient_id, postgres_session, context="group"
+        )
 
     @with_postgres_session
     async def send_cheer(
@@ -155,8 +168,13 @@ class FeedService:
         postgres_session: AsyncSession,
     ) -> Cheer:
         # Check daily limit
-        today_start = datetime.now().replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        tz_result = await postgres_session.execute(
+            select(Patient.locale).where(Patient.patient_id == sender_id)
+        )
+        tz_name = tz_result.scalar()
+        today_start, _ = naive_day_bounds_for_local_date(
+            local_today(tz_name),
+            tz_name,
         )
         count_result = await postgres_session.execute(
             select(func.count(Cheer.cheer_id)).where(
@@ -210,6 +228,17 @@ class FeedService:
             description=f"Cheered a friend",
         )
 
+        await send_gamification_notification(
+            str(event.actor_id),
+            title="You got a cheer",
+            body="A buddy reacted to your progress update.",
+            data={
+                "event_type": "buddy_cheer",
+                "feed_event_id": str(feed_event_id),
+                "sender_id": str(sender_id),
+            },
+        )
+
         return cheer
 
     @with_postgres_session
@@ -230,6 +259,8 @@ class FeedService:
         events: List[ActivityFeedEvent],
         viewer_id: UUID,
         session: AsyncSession,
+        *,
+        context: str,
     ) -> List[FeedEventResponse]:
         responses = []
         for event in events:
@@ -240,6 +271,19 @@ class FeedService:
                 )
             )
             name = name_result.scalar()
+
+            visibility_result = await session.execute(
+                select(PlayerProfile.leaderboard_visibility).where(
+                    PlayerProfile.patient_id == event.actor_id
+                )
+            )
+            visibility = visibility_result.scalar() or "group_only"
+            visible = self._is_identity_visible(
+                viewer_id=viewer_id,
+                actor_id=event.actor_id,
+                visibility=visibility,
+                context=context,
+            )
 
             # Get cheer count
             cheer_count_result = await session.execute(
@@ -261,8 +305,12 @@ class FeedService:
             responses.append(
                 FeedEventResponse(
                     feed_id=str(event.feed_id),
-                    actor_id=str(event.actor_id),
-                    actor_name=name,
+                    actor_id=(
+                        str(event.actor_id)
+                        if visible
+                        else f"anonymous:{str(event.feed_id)[:8]}"
+                    ),
+                    actor_name=name if visible else "Anonymous",
                     event_type=event.event_type,
                     event_data=event.event_data or {},
                     cheer_count=cheer_count,
@@ -271,3 +319,21 @@ class FeedService:
                 )
             )
         return responses
+
+    def _is_identity_visible(
+        self,
+        *,
+        viewer_id: UUID,
+        actor_id: UUID,
+        visibility: str,
+        context: str,
+    ) -> bool:
+        if viewer_id == actor_id:
+            return True
+        if context == "buddy":
+            return True
+        if visibility == "public":
+            return True
+        if visibility == "group_only":
+            return context == "group"
+        return False

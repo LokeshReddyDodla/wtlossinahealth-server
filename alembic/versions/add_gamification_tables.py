@@ -30,6 +30,7 @@ def upgrade() -> None:
         sa.Column("current_streak", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("longest_streak", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("streak_freezes", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("streak_resets", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("last_active_date", sa.Date(), nullable=True),
         sa.Column("streak_frozen_on", sa.Date(), nullable=True),
         sa.Column("leaderboard_visibility", sa.String(20), nullable=False, server_default="group_only"),

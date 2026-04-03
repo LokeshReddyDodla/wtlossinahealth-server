@@ -12,27 +12,24 @@ from lib.workers.tasks.gamification.tasks import (
 )
 
 GAMIFICATION_CRON_JOBS = [
-    # Nightly streak processor — 2:00 AM IST (20:30 UTC previous day)
+    # Run hourly; worker filters by patient-local 2:00 AM.
     cron(
         process_streaks_for_all,
-        hour=20,
-        minute=30,
+        minute=5,
         timeout=3600,
         unique=True,
     ),
-    # Daily task generator — 5:00 AM IST (23:30 UTC previous day)
+    # Run hourly; worker filters by patient-local 5:00 AM.
     cron(
         generate_daily_tasks_for_all,
-        hour=23,
-        minute=30,
+        minute=10,
         timeout=3600,
         unique=True,
     ),
-    # EOD macro evaluator — 11:00 PM IST (17:30 UTC)
+    # Run hourly; worker filters by patient-local 11:00 PM.
     cron(
         evaluate_eod_macros,
-        hour=17,
-        minute=30,
+        minute=15,
         timeout=1800,
         unique=True,
     ),
@@ -50,11 +47,11 @@ GAMIFICATION_CRON_JOBS = [
         timeout=600,
         unique=True,
     ),
-    # Feed + leaderboard cleanup — 3:00 AM IST (21:30 UTC)
+    # Feed + leaderboard cleanup — daily
     cron(
         cleanup_feed_and_leaderboards,
-        hour=21,
-        minute=30,
+        hour=0,
+        minute=20,
         timeout=600,
         unique=True,
     ),

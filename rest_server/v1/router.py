@@ -11,7 +11,10 @@ from .uploads.router import router as uploads_router
 from .diet_plans.router import router as diet_plans_router
 from .fitness_plans.router import router as fitness_plans_router
 from .patient_exports.router import router as patient_exports_router
-from .gamification.router import router as gamification_router
+from .gamification.router import (
+    router as gamification_router,
+    canonical_router as gamification_canonical_router,
+)
 
 
 router = APIRouter(prefix="/v1", tags=["V1"])
@@ -29,3 +32,4 @@ router.include_router(diet_plans_router)
 router.include_router(fitness_plans_router)
 router.include_router(patient_exports_router)
 router.include_router(gamification_router)
+router.include_router(gamification_canonical_router)

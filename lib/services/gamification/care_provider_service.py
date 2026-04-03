@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import (
     DailyTask,
+    Group,
+    GroupMember,
     PatientAchievement,
     PlayerProfile,
 )
@@ -19,6 +21,7 @@ from lib.models.patient import Patient
 from lib.models.associations import patient_care_provider_association
 from lib.schemas.gamification import (
     CPGamificationOverview,
+    GroupResponse,
     PatientEngagementSummary,
     TaskStatus,
     title_for_level,
@@ -184,3 +187,43 @@ class CPGamificationService:
         pa.starred_by = care_provider_id
         pa.starred_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
+
+    @with_postgres_session
+    async def get_groups(
+        self,
+        care_provider_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> List[GroupResponse]:
+        result = await postgres_session.execute(
+            select(Group).where(
+                Group.created_by_id == care_provider_id,
+                Group.created_by_type == "care_provider",
+                Group.is_active == True,
+            )
+        )
+        groups = result.scalars().all()
+        responses: List[GroupResponse] = []
+        for group in groups:
+            count_result = await postgres_session.execute(
+                select(func.count()).select_from(GroupMember).where(
+                    GroupMember.group_id == group.group_id,
+                    GroupMember.is_active == True,
+                )
+            )
+            responses.append(
+                GroupResponse(
+                    group_id=str(group.group_id),
+                    name=group.name,
+                    description=group.description,
+                    group_type=group.group_type,
+                    created_by_id=str(group.created_by_id),
+                    created_by_type=group.created_by_type,
+                    facility_id=str(group.facility_id) if group.facility_id else None,
+                    member_count=count_result.scalar() or 0,
+                    max_members=group.max_members,
+                    is_active=group.is_active,
+                    created_at=group.created_at,
+                )
+            )
+        return responses

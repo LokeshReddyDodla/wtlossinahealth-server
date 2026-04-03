@@ -14,6 +14,7 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import DailyTask
 from lib.schemas.gamification import TaskStatus, TaskType
 from lib.services.gamification.achievement_evaluator import AchievementEvaluator
+from lib.services.gamification.time_utils import local_today
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -34,10 +35,17 @@ class GamificationEventHandler:
         from lib.services.gamification.task_generator import TaskGeneratorService
         from lib.core.container import container
         task_gen = container.resolve(TaskGeneratorService)
-        await task_gen.generate_daily_tasks(patient_id, date.today())
+        await task_gen.generate_daily_tasks(
+            patient_id, await self._patient_today(patient_id)
+        )
 
     async def on_meal_logged(self, patient_id: UUID) -> None:
         try:
+            await self._increment_challenge_metric(
+                patient_id,
+                metric_type="meals_logged",
+                increment=1.0,
+            )
             await self._complete_task(patient_id, TaskType.LOG_MEAL.value)
         except Exception:
             logger.opt(exception=True).warning(
@@ -86,6 +94,11 @@ class GamificationEventHandler:
             if steps is not None:
                 await self._evaluate_step_goal(patient_id, steps)
             if workout_completed:
+                await self._increment_challenge_metric(
+                    patient_id,
+                    metric_type="workouts",
+                    increment=1.0,
+                )
                 await self._complete_task(
                     patient_id, TaskType.COMPLETE_WORKOUT.value
                 )
@@ -123,7 +136,7 @@ class GamificationEventHandler:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = await self._patient_today(patient_id)
 
         # Ensure tasks exist (on-demand for mid-day signups)
         await self._ensure_tasks_exist(patient_id)
@@ -180,7 +193,7 @@ class GamificationEventHandler:
             return
 
         try:
-            today = date.today()
+            today = await self._patient_today(patient_id)
             week_start = today - timedelta(days=today.weekday())
 
             async with self.postgres_store.get_session() as session:
@@ -219,7 +232,7 @@ class GamificationEventHandler:
 
         # Check "all_tasks_3_days" quest: if all today's tasks are completed
         try:
-            today = date.today()
+            today = await self._patient_today(patient_id)
             week_start = today - timedelta(days=today.weekday())
             async with self.postgres_store.get_session() as session:
                 all_tasks = await session.execute(
@@ -266,9 +279,6 @@ class GamificationEventHandler:
         from lib.services.gamification.challenge_service import ChallengeService
 
         metric_map = {
-            "LOG_MEAL": "meals_logged",
-            "HIT_STEP_GOAL": "steps",
-            "COMPLETE_WORKOUT": "workouts",
             "HIT_CALORIE_TARGET": "calorie_target_hits",
         }
         metric = metric_map.get(task_type)
@@ -282,6 +292,25 @@ class GamificationEventHandler:
         except Exception:
             pass  # Fire-and-forget
 
+    async def _increment_challenge_metric(
+        self,
+        patient_id: UUID,
+        metric_type: str,
+        increment: float,
+    ) -> None:
+        from lib.core.container import container
+        from lib.services.gamification.challenge_service import ChallengeService
+
+        try:
+            challenge_service = container.resolve(ChallengeService)
+            await challenge_service.update_participant_progress(
+                patient_id=patient_id,
+                metric_type=metric_type,
+                increment=increment,
+            )
+        except Exception:
+            pass
+
     @with_postgres_session
     async def _evaluate_step_goal(
         self,
@@ -290,7 +319,7 @@ class GamificationEventHandler:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = await self._patient_today(patient_id)
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
@@ -303,7 +332,14 @@ class GamificationEventHandler:
         if not task or not task.target_value:
             return
 
+        previous_steps = float(task.current_value or 0)
         task.current_value = steps
+        if steps > previous_steps:
+            await self._increment_challenge_metric(
+                patient_id,
+                metric_type="steps",
+                increment=steps - previous_steps,
+            )
         # 80% threshold
         if steps >= task.target_value * 0.8:
             task.status = TaskStatus.COMPLETED.value
@@ -320,7 +356,6 @@ class GamificationEventHandler:
             await self.achievement_evaluator.evaluate_all(
                 patient_id=patient_id
             )
-            await self._update_challenge_progress(patient_id, TaskType.HIT_STEP_GOAL.value)
             await self._update_quest_progress(patient_id, TaskType.HIT_STEP_GOAL.value)
         else:
             await postgres_session.commit()
@@ -333,7 +368,7 @@ class GamificationEventHandler:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = await self._patient_today(patient_id)
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
@@ -378,7 +413,7 @@ class GamificationEventHandler:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = await self._patient_today(patient_id)
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
@@ -414,3 +449,13 @@ class GamificationEventHandler:
             await self._update_quest_progress(patient_id, TaskType.HIT_PROTEIN_TARGET.value)
         else:
             await postgres_session.commit()
+
+    async def _patient_today(self, patient_id: UUID) -> date:
+        from lib.models.patient import Patient
+
+        async with self.postgres_store.get_session() as session:
+            result = await session.execute(
+                select(Patient.locale).where(Patient.patient_id == patient_id)
+            )
+            tz_name = result.scalar()
+        return local_today(tz_name)

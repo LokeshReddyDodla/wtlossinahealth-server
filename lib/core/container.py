@@ -1546,6 +1546,7 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+        gamification_service=cast(GamificationService, container.resolve(GamificationService)),
     ),
     scope=Scope.singleton,
 )

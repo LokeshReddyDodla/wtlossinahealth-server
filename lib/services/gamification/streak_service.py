@@ -81,6 +81,19 @@ class StreakService:
 
             await postgres_session.commit()
 
+            try:
+                from lib.core.container import container
+                from lib.services.gamification.challenge_service import ChallengeService
+
+                challenge_service = container.resolve(ChallengeService)
+                await challenge_service.update_participant_progress(
+                    patient_id=patient_id,
+                    metric_type="streak_days",
+                    increment=1.0,
+                )
+            except Exception:
+                pass
+
             # Post feed event for streak milestones
             streak = profile.current_streak
             if streak in (7, 14, 30, 60, 90):
@@ -114,6 +127,8 @@ class StreakService:
         old_streak = profile.current_streak
         profile.current_streak = 0
         profile.streak_frozen_on = None
+        if old_streak > 0:
+            profile.streak_resets += 1
         await postgres_session.commit()
         return {
             "action": "broken",
@@ -210,3 +225,25 @@ class StreakService:
             if profile:
                 return profile
             raise
+
+    @with_postgres_session
+    async def use_freeze(
+        self,
+        patient_id: UUID,
+        freeze_date: date,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PlayerProfile:
+        profile = await self._get_or_create_profile(patient_id, postgres_session)
+        if profile.streak_freezes <= 0:
+            raise ValueError("No streak freezes available")
+        if profile.current_streak <= 0:
+            raise ValueError("No active streak to protect")
+        if profile.streak_frozen_on == freeze_date:
+            raise ValueError("Freeze already applied for this date")
+
+        profile.streak_freezes -= 1
+        profile.streak_frozen_on = freeze_date
+        await postgres_session.commit()
+        await postgres_session.refresh(profile)
+        return profile

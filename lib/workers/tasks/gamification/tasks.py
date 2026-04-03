@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any, Dict, List
 from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import select
 
+from lib.services.gamification.time_utils import local_today, matches_local_hour
 from lib.workers.tasks.base import task_with_logging
 
 
@@ -19,25 +20,31 @@ async def process_streaks_for_all(ctx: Dict[str, Any]) -> None:
     """
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
-    from lib.models.gamification import PlayerProfile
+    from lib.models.patient import Patient
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.services.gamification.streak_service import StreakService
 
     store = container.resolve(PostgresStore)
     streak_service = container.resolve(StreakService)
-
-    yesterday = date.today() - timedelta(days=1)
+    resolver = container.resolve(PatientNameResolver)
 
     async with store.get_session() as session:
         result = await session.execute(
-            select(PlayerProfile.patient_id)
+            select(Patient.patient_id)
         )
         patient_ids: List[UUID] = list(result.scalars().all())
+
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
 
     processed = 0
     for pid in patient_ids:
         try:
-            await streak_service.process_streak(pid, yesterday)
-            await streak_service.process_buddy_streaks(pid, yesterday)
+            tz_name = tz_map.get(str(pid))
+            if not matches_local_hour(tz_name, 2):
+                continue
+            target_date = local_today(tz_name) - timedelta(days=1)
+            await streak_service.process_streak(pid, target_date)
+            await streak_service.process_buddy_streaks(pid, target_date)
             processed += 1
         except Exception:
             logger.opt(exception=True).warning(
@@ -54,28 +61,33 @@ async def generate_daily_tasks_for_all(ctx: Dict[str, Any]) -> None:
     """
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
-    from lib.models.gamification import PlayerProfile
+    from lib.models.patient import Patient
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.services.gamification.task_generator import TaskGeneratorService
 
     store = container.resolve(PostgresStore)
     task_gen = container.resolve(TaskGeneratorService)
-
-    today = date.today()
-    yesterday = today - timedelta(days=1)
+    resolver = container.resolve(PatientNameResolver)
 
     # Monday = 0 in Python weekday()
-    is_monday = today.weekday() == 0
-    week_start = today - timedelta(days=today.weekday())
-
     async with store.get_session() as session:
         result = await session.execute(
-            select(PlayerProfile.patient_id)
+            select(Patient.patient_id)
         )
         patient_ids: List[UUID] = list(result.scalars().all())
+
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
 
     generated = 0
     for pid in patient_ids:
         try:
+            tz_name = tz_map.get(str(pid))
+            if not matches_local_hour(tz_name, 5):
+                continue
+            today = local_today(tz_name)
+            is_monday = today.weekday() == 0
+            week_start = today - timedelta(days=today.weekday())
+
             # Expire yesterday's pending tasks
             await task_gen.expire_old_tasks(pid, today)
 
@@ -102,7 +114,8 @@ async def evaluate_eod_macros(ctx: Dict[str, Any]) -> None:
     """
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
-    from lib.models.gamification import DailyTask, PlayerProfile
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.models.gamification import DailyTask
     from lib.services.gamification.event_handler import GamificationEventHandler
 
     from lib.services.reports.meal.processor import MealStatsProcessor
@@ -110,13 +123,12 @@ async def evaluate_eod_macros(ctx: Dict[str, Any]) -> None:
     store = container.resolve(PostgresStore)
     event_handler = container.resolve(GamificationEventHandler)
     meal_processor = container.resolve(MealStatsProcessor)
-    today = date.today()
+    resolver = container.resolve(PatientNameResolver)
 
     async with store.get_session() as session:
         result = await session.execute(
             select(DailyTask.patient_id)
             .where(
-                DailyTask.task_date == today,
                 DailyTask.task_type.in_([
                     "HIT_CALORIE_TARGET",
                     "HIT_PROTEIN_TARGET",
@@ -127,11 +139,17 @@ async def evaluate_eod_macros(ctx: Dict[str, Any]) -> None:
         )
         patient_ids = list(result.scalars().all())
 
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
+
     logger.info(f"EOD macro eval for {len(patient_ids)} patients with pending macro tasks")
 
     evaluated = 0
     for pid in patient_ids:
         try:
+            tz_name = tz_map.get(str(pid))
+            if not matches_local_hour(tz_name, 23):
+                continue
+            today = local_today(tz_name)
             daily_stats = await meal_processor.get_meal_report_by_date(
                 str(pid), today
             )
@@ -161,8 +179,7 @@ async def refresh_leaderboards(ctx: Dict[str, Any]) -> None:
     lb_service = container.resolve(LeaderboardService)
 
     try:
-        await lb_service.refresh_weekly_xp_board(scope="global")
-        await lb_service.refresh_streak_board(scope="global")
+        await lb_service.refresh_all_boards()
         logger.info("Leaderboards refreshed")
     except Exception:
         logger.opt(exception=True).warning("Leaderboard refresh failed")
@@ -180,17 +197,7 @@ async def process_challenge_lifecycle(ctx: Dict[str, Any]) -> None:
 
     store = container.resolve(PostgresStore)
     challenge_service = container.resolve(ChallengeService)
-    today = date.today()
-
-    async with store.get_session() as session:
-        # Find challenges that have ended
-        result = await session.execute(
-            select(Challenge.challenge_id).where(
-                Challenge.is_active == True,
-                Challenge.end_date < today,
-            )
-        )
-        ended_ids = list(result.scalars().all())
+    ended_ids = await challenge_service.get_finalizable_challenge_ids()
 
     for cid in ended_ids:
         try:

@@ -23,6 +23,7 @@ from lib.schemas.gamification import (
     TaskStatus,
     title_for_level,
 )
+from lib.services.gamification.time_utils import local_today
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 MAX_ACTIVE_BUDDIES = 3
@@ -43,14 +44,24 @@ class BuddyService:
         if requester_id == accepter_id:
             raise ValueError("Cannot buddy yourself")
 
-        # Verify accepter exists
+        # Verify accepter exists and is in the same facility
         accepter_result = await postgres_session.execute(
-            select(Patient.patient_id).where(
+            select(Patient.patient_id, Patient.health_facility_id).where(
                 Patient.patient_id == accepter_id
             )
         )
-        if not accepter_result.scalar():
+        accepter_row = accepter_result.first()
+        if not accepter_row:
             raise ValueError("Patient not found")
+
+        requester_result = await postgres_session.execute(
+            select(Patient.health_facility_id).where(
+                Patient.patient_id == requester_id
+            )
+        )
+        requester_facility = requester_result.scalar()
+        if requester_facility != accepter_row.health_facility_id:
+            raise ValueError("Buddy requests are limited to the same facility")
 
         active_count = await self._active_buddy_count(
             requester_id, postgres_session
@@ -225,10 +236,11 @@ class BuddyService:
         )
         name = name_result.scalar()
 
-        # Get today's task stats
-        from datetime import date
-
-        today = date.today()
+        # Get today's task stats in the buddy's local timezone
+        tz_result = await postgres_session.execute(
+            select(Patient.locale).where(Patient.patient_id == other_id)
+        )
+        today = local_today(tz_result.scalar())
         task_result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == other_id,

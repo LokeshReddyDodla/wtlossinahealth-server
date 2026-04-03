@@ -45,6 +45,7 @@ class PlayerProfile(Base):
     current_streak = Column(Integer, default=0, nullable=False)
     longest_streak = Column(Integer, default=0, nullable=False)
     streak_freezes = Column(Integer, default=1, nullable=False)
+    streak_resets = Column(Integer, default=0, nullable=False)
     last_active_date = Column(Date, nullable=True)
     streak_frozen_on = Column(Date, nullable=True)
     leaderboard_visibility = Column(

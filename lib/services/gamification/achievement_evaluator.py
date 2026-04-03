@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -18,7 +18,9 @@ from lib.models.gamification import (
     PatientAchievement,
     PlayerProfile,
 )
+from lib.models.patient import Patient
 from lib.schemas.gamification import TaskStatus
+from lib.services.gamification.time_utils import local_today, resolve_timezone
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -159,18 +161,25 @@ class AchievementEvaluator:
     ) -> bool:
         """Handle custom achievement criteria by slug."""
         if slug == "night_owl":
-            # Logged something between 2-4 AM
+            from lib.ai_foundation.agents.proactive_monitor.scheduling import DEFAULT_TIMEZONE
+            server_tz = resolve_timezone(DEFAULT_TIMEZONE)
+            patient_tz = resolve_timezone(await self._patient_timezone(patient_id, session))
             result = await session.execute(
-                select(func.count(DailyTask.task_id)).where(
+                select(DailyTask.completed_at).where(
                     DailyTask.patient_id == patient_id,
                     DailyTask.status == TaskStatus.COMPLETED.value,
-                    func.extract("hour", DailyTask.completed_at).between(2, 4),
+                    DailyTask.completed_at.is_not(None),
                 )
             )
-            return (result.scalar() or 0) >= threshold
+            count = sum(
+                1
+                for completed_at in result.scalars().all()
+                if completed_at.replace(tzinfo=server_tz).astimezone(patient_tz).hour in {2, 3, 4}
+            )
+            return count >= threshold
 
         if slug == "comeback_kid":
-            # Has longest_streak > 0 AND current_streak >= 3 (rebuilt after a break)
+            # Had at least one streak reset AND rebuilt to 3+ days
             result = await session.execute(
                 select(PlayerProfile).where(
                     PlayerProfile.patient_id == patient_id
@@ -179,11 +188,11 @@ class AchievementEvaluator:
             profile = result.scalars().first()
             if not profile:
                 return False
-            return profile.longest_streak > profile.current_streak >= 3
+            return profile.streak_resets >= 1 and profile.current_streak >= 3
 
         if slug == "perfect_week":
             # All plan-derived tasks completed for 7 consecutive days
-            today = date.today()
+            today = local_today(await self._patient_timezone(patient_id, session))
             for offset in range(7):
                 d = today - timedelta(days=offset)
                 day_result = await session.execute(
@@ -199,15 +208,22 @@ class AchievementEvaluator:
             return True
 
         if slug == "early_bird":
-            # Logged before 6 AM on N days
+            from lib.ai_foundation.agents.proactive_monitor.scheduling import DEFAULT_TIMEZONE
+            server_tz = resolve_timezone(DEFAULT_TIMEZONE)
+            patient_tz = resolve_timezone(await self._patient_timezone(patient_id, session))
             result = await session.execute(
-                select(func.count(func.distinct(DailyTask.task_date))).where(
+                select(DailyTask.task_date, DailyTask.completed_at).where(
                     DailyTask.patient_id == patient_id,
                     DailyTask.status == TaskStatus.COMPLETED.value,
-                    func.extract("hour", DailyTask.completed_at) < 6,
+                    DailyTask.completed_at.is_not(None),
                 )
             )
-            return (result.scalar() or 0) >= threshold
+            early_days = {
+                task_date
+                for task_date, completed_at in result.all()
+                if completed_at.replace(tzinfo=server_tz).astimezone(patient_tz).hour < 6
+            }
+            return len(early_days) >= threshold
 
         if slug == "social_butterfly":
             # In 3+ active groups
@@ -317,15 +333,36 @@ class AchievementEvaluator:
     async def _check_group_challenges(
         self, patient_id: UUID, threshold: int, session: AsyncSession
     ) -> bool:
-        result = await session.execute(
+        patient_result = await session.execute(
             select(func.count(ChallengeParticipant.id)).where(
                 ChallengeParticipant.participant_id == patient_id,
                 ChallengeParticipant.participant_type == "patient",
                 ChallengeParticipant.status == "completed",
             )
         )
-        count = result.scalar() or 0
-        return count >= threshold
+        patient_count = patient_result.scalar() or 0
+
+        from lib.models.gamification import GroupMember
+
+        group_ids_result = await session.execute(
+            select(GroupMember.group_id).where(
+                GroupMember.patient_id == patient_id,
+                GroupMember.is_active == True,
+            )
+        )
+        group_ids = list(group_ids_result.scalars().all())
+        group_count = 0
+        if group_ids:
+            group_result = await session.execute(
+                select(func.count(ChallengeParticipant.id)).where(
+                    ChallengeParticipant.participant_id.in_(group_ids),
+                    ChallengeParticipant.participant_type == "group",
+                    ChallengeParticipant.status == "completed",
+                )
+            )
+            group_count = group_result.scalar() or 0
+
+        return (patient_count + group_count) >= threshold
 
     async def _check_buddy_streak(
         self, patient_id: UUID, threshold: int, session: AsyncSession
@@ -375,7 +412,7 @@ class AchievementEvaluator:
         self, patient_id: UUID, threshold: int, session: AsyncSession
     ) -> bool:
         """Check if patient was active 25+ days in any calendar month."""
-        today = date.today()
+        today = local_today(await self._patient_timezone(patient_id, session))
         first_of_month = today.replace(day=1)
         result = await session.execute(
             select(func.count(func.distinct(DailyTask.task_date))).where(
@@ -386,6 +423,16 @@ class AchievementEvaluator:
         )
         count = result.scalar() or 0
         return count >= threshold
+
+    async def _patient_timezone(
+        self,
+        patient_id: UUID,
+        session: AsyncSession,
+    ) -> str | None:
+        result = await session.execute(
+            select(Patient.locale).where(Patient.patient_id == patient_id)
+        )
+        return result.scalar()
 
     @with_postgres_session
     async def get_progress(

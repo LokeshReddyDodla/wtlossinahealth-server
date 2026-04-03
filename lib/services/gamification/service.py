@@ -13,6 +13,7 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import (
     Achievement,
     DailyTask,
+    GroupMember,
     PatientAchievement,
     PlayerProfile,
     WeeklyQuest,
@@ -33,6 +34,8 @@ from lib.schemas.gamification import (
     xp_for_level,
 )
 from lib.services.gamification.achievement_evaluator import AchievementEvaluator
+from lib.services.gamification.notifications import send_gamification_notification
+from lib.services.gamification.time_utils import local_today
 from lib.services.gamification.task_generator import TaskGeneratorService
 from lib.services.gamification.xp_service import XPService, streak_multiplier
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -68,6 +71,27 @@ class GamificationService:
                 event_data=event_data,
                 visibility="group",
             )
+            title_map = {
+                "level_up": "Level up",
+                "achievement_earned": "Achievement unlocked",
+                "streak_milestone": "Streak milestone",
+                "challenge_completed": "Challenge completed",
+                "challenge_won": "Challenge won",
+            }
+            body_map = {
+                "level_up": f"You reached level {event_data.get('new_level')}.",
+                "achievement_earned": f"You earned {event_data.get('title', 'a new achievement')}.",
+                "streak_milestone": f"You're on a {event_data.get('streak')}-day streak.",
+                "challenge_completed": f"You completed {event_data.get('title', 'a challenge')}.",
+                "challenge_won": f"You won {event_data.get('title', 'a challenge')}.",
+            }
+            if event_type in title_map:
+                await send_gamification_notification(
+                    str(patient_id),
+                    title=title_map[event_type],
+                    body=body_map[event_type],
+                    data={"event_type": event_type, **event_data},
+                )
         except Exception as exc:
             from loguru import logger
             logger.debug(f"Feed event posting failed for {patient_id}: {exc}")
@@ -145,8 +169,10 @@ class GamificationService:
         *,
         postgres_session: AsyncSession,
     ) -> DailyProgressResponse:
+        tz_name = await self._patient_timezone(patient_id, postgres_session)
+        patient_today = local_today(tz_name)
         # On-demand task generation: ensure tasks exist for today
-        if task_date == date.today():
+        if task_date == patient_today:
             await self.task_generator.generate_daily_tasks(patient_id, task_date)
             # Also ensure weekly quest exists if it's Monday
             if task_date.weekday() == 0:
@@ -182,7 +208,11 @@ class GamificationService:
         ]
 
         completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
-        xp_earned = await self.xp_service.get_xp_earned_today(patient_id)
+        xp_earned = await self.xp_service.get_xp_earned_for_date(
+            patient_id,
+            task_date,
+            tz_name=tz_name,
+        )
 
         profile_result = await postgres_session.execute(
             select(PlayerProfile).where(
@@ -350,6 +380,21 @@ class GamificationService:
             )
         return responses
 
+    @with_postgres_session
+    async def get_recent_achievements(
+        self,
+        patient_id: UUID,
+        limit: int = 10,
+        *,
+        postgres_session: AsyncSession,
+    ) -> List[AchievementResponse]:
+        achievements = await self.get_achievements(
+            patient_id, postgres_session=postgres_session
+        )
+        earned = [a for a in achievements if a.earned]
+        earned.sort(key=lambda a: a.earned_at or datetime.min, reverse=True)
+        return earned[:limit]
+
     # ── Weekly Quest ─────────────────────────────────────────────────────
 
     @with_postgres_session
@@ -359,7 +404,7 @@ class GamificationService:
         *,
         postgres_session: AsyncSession,
     ) -> Optional[WeeklyQuestResponse]:
-        today = date.today()
+        today = await self._patient_today(patient_id, postgres_session)
         week_start = today - timedelta(days=today.weekday())
         result = await postgres_session.execute(
             select(WeeklyQuest).where(
@@ -401,7 +446,8 @@ class GamificationService:
         postgres_session: AsyncSession,
     ) -> XPHistoryResponse:
         days = 7 if period == "week" else 30
-        start_date = date.today() - timedelta(days=days)
+        patient_today = await self._patient_today(patient_id, postgres_session)
+        start_date = patient_today - timedelta(days=days)
         start_dt = datetime.combine(start_date, datetime.min.time())
 
         result = await postgres_session.execute(
@@ -447,6 +493,30 @@ class GamificationService:
             total_xp_period=sum(e.xp_earned for e in entries),
         )
 
+    @with_postgres_session
+    async def use_streak_freeze(
+        self,
+        patient_id: UUID,
+        freeze_date: Optional[date] = None,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PlayerProfileResponse:
+        from lib.core.container import container
+        from lib.services.gamification.streak_service import StreakService
+
+        streak_service = container.resolve(StreakService)
+        target_date = freeze_date or await self._patient_today(
+            patient_id, postgres_session
+        )
+        await streak_service.use_freeze(
+            patient_id,
+            target_date,
+            postgres_session=postgres_session,
+        )
+        return await self.get_or_create_profile(
+            patient_id, postgres_session=postgres_session
+        )
+
     # ── AI Context ───────────────────────────────────────────────────────
 
     @with_postgres_session
@@ -484,7 +554,7 @@ class GamificationService:
         recent = [row.Achievement.slug for row in earned_result.all()]
 
         # Today's tasks
-        today = date.today()
+        today = await self._patient_today(patient_id, postgres_session)
         task_result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
@@ -528,7 +598,7 @@ class GamificationService:
 
         # Active challenges
         from lib.models.gamification import Challenge, ChallengeParticipant
-        challenges_result = await postgres_session.execute(
+        direct_challenges_result = await postgres_session.execute(
             select(ChallengeParticipant, Challenge)
             .join(Challenge)
             .where(
@@ -539,13 +609,37 @@ class GamificationService:
             )
             .limit(5)
         )
+        direct_challenge_rows = list(direct_challenges_result.all())
+
+        group_ids_result = await postgres_session.execute(
+            select(GroupMember.group_id).where(
+                GroupMember.patient_id == patient_id,
+                GroupMember.is_active == True,
+            )
+        )
+        group_ids = list(group_ids_result.scalars().all())
+        group_challenge_rows = []
+        if group_ids:
+            group_challenges_result = await postgres_session.execute(
+                select(ChallengeParticipant, Challenge)
+                .join(Challenge)
+                .where(
+                    ChallengeParticipant.participant_id.in_(group_ids),
+                    ChallengeParticipant.participant_type == "group",
+                    ChallengeParticipant.status == "active",
+                    Challenge.is_active == True,
+                )
+                .limit(5)
+            )
+            group_challenge_rows = list(group_challenges_result.all())
+
         active_challenges = [
             {
                 "title": row.Challenge.title,
                 "rank": row.ChallengeParticipant.rank,
                 "progress": f"{row.ChallengeParticipant.current_value:.0f}/{row.Challenge.target_value:.0f}",
             }
-            for row in challenges_result.all()
+            for row in (direct_challenge_rows + group_challenge_rows)[:5]
         ]
 
         return GamificationContext(
@@ -561,3 +655,31 @@ class GamificationService:
             active_challenges=active_challenges,
             buddy_streak=buddy_streak,
         )
+
+    async def _patient_today(
+        self,
+        patient_id: UUID,
+        postgres_session: AsyncSession,
+    ) -> date:
+        return local_today(await self._patient_timezone(patient_id, postgres_session))
+
+    @with_postgres_session
+    async def get_patient_local_date(
+        self,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> date:
+        return await self._patient_today(patient_id, postgres_session)
+
+    async def _patient_timezone(
+        self,
+        patient_id: UUID,
+        postgres_session: AsyncSession,
+    ) -> str | None:
+        from lib.models.patient import Patient
+
+        result = await postgres_session.execute(
+            select(Patient.locale).where(Patient.patient_id == patient_id)
+        )
+        return result.scalar()
