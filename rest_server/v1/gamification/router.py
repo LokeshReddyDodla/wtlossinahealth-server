@@ -486,15 +486,18 @@ async def get_buddy_progress(
 
 
 @router.post(
-    "/groups",
+    "/patients/{patient_id}/groups",
     response_model=SuccessResponse[GroupResponse],
     status_code=status.HTTP_201_CREATED,
 )
 async def create_group(
+    patient_id: UUID,
     body: GroupCreateInput,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     # Only care providers can create care_provider or facility groups
     if body.group_type.value in ("care_provider", "facility") and actor.role != "care_provider":
         raise HTTPException(
@@ -504,7 +507,7 @@ async def create_group(
     group = await service.create_group(
         name=body.name,
         group_type=body.group_type.value,
-        created_by_id=actor.id,
+        created_by_id=pid,
         created_by_type=actor.role,
         description=body.description,
         facility_id=body.facility_id,
@@ -1307,26 +1310,18 @@ async def canonical_get_patient_groups(
 
 
 @canonical_router.post(
-    "/gamification/groups",
+    "/patients/{patient_id}/gamification/groups",
     response_model=SuccessResponse[GroupResponse],
     status_code=status.HTTP_201_CREATED,
 )
 async def canonical_create_group(
+    patient_id: UUID,
     body: GroupCreateInput,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    group = await service.create_group(
-        name=body.name,
-        group_type=body.group_type.value,
-        created_by_id=actor.id,
-        created_by_type=actor.role,
-        description=body.description,
-        facility_id=body.facility_id,
-        max_members=body.max_members,
-    )
-    resp = await service.get_group(group.group_id)
-    return SuccessResponse(message="Group created", data=resp)
+    return await create_group(patient_id, body, service, actor, cp_access)
 
 
 @canonical_router.get(
