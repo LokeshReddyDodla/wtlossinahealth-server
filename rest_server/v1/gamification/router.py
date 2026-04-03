@@ -762,6 +762,44 @@ async def create_challenge(
     return SuccessResponse(message="Challenge created", data=detail.challenge)
 
 
+@router.post(
+    "/patients/{patient_id}/challenges",
+    response_model=SuccessResponse[ChallengeResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Patient-created challenge",
+)
+async def patient_create_challenge(
+    patient_id: UUID,
+    body: ChallengeCreateInput,
+    challenge_service: ChallengeService = Depends(get_challenge_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Allow patients to create their own challenges (opt-in, capped XP)."""
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    # Patients can only create opt-in challenges with capped rewards
+    MAX_PATIENT_XP = 200
+    MAX_PATIENT_BONUS = 100
+    challenge = await challenge_service.create_challenge(
+        title=body.title,
+        challenge_type=body.challenge_type.value,
+        scope=body.scope.value,
+        metric_type=body.metric_type.value,
+        target_value=body.target_value,
+        duration_days=min(body.duration_days, 30),  # Max 30 days for patient challenges
+        xp_reward=min(body.xp_reward, MAX_PATIENT_XP),
+        created_by_id=pid,
+        created_by_type="patient",
+        description=body.description,
+        bonus_xp_winner=min(body.bonus_xp_winner, MAX_PATIENT_BONUS),
+        is_opt_in=True,  # Always opt-in for patient-created
+        patient_ids=body.patient_ids,
+        group_ids=body.group_ids,
+    )
+    detail = await challenge_service.get_challenge_detail(challenge.challenge_id, pid)
+    return SuccessResponse(message="Challenge created", data=detail.challenge)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Leaderboards
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1512,6 +1550,21 @@ async def canonical_get_challenge_leaderboard(
         return SuccessResponse(message="Challenge leaderboard", data=leaderboard)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@canonical_router.post(
+    "/patients/{patient_id}/gamification/challenges",
+    response_model=SuccessResponse[ChallengeResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def canonical_patient_create_challenge(
+    patient_id: UUID,
+    body: ChallengeCreateInput,
+    challenge_service: ChallengeService = Depends(get_challenge_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    return await patient_create_challenge(patient_id, body, challenge_service, actor, cp_access)
 
 
 @canonical_router.post(
