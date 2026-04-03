@@ -1,7 +1,7 @@
 """Drop patient_vitals table — vitals now stored in ClickHouse
 
 Revision ID: drop_patient_vitals_table
-Revises: add_patient_data_exports_table
+Revises: add_agent_meal_v1_tables
 Create Date: 2026-04-02
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "drop_patient_vitals_table"
-down_revision: Union[str, None] = "add_patient_data_exports_table"
+down_revision: Union[str, None] = "add_agent_meal_v1_tables"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
