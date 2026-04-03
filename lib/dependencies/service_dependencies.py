@@ -624,3 +624,57 @@ def get_arq_task_manager_service() -> ArqTaskManager:
 
 def get_agentic_orchestrator_service() -> AgenticOrchestrator:
     return cast(AgenticOrchestrator, container.resolve(AgenticOrchestrator))
+
+
+# ── Gamification ─────────────────────────────────────────────────────────────
+
+from lib.services.gamification.service import GamificationService
+from lib.services.gamification.buddy_service import BuddyService
+from lib.services.gamification.group_service import GroupService
+from lib.services.gamification.challenge_service import ChallengeService
+from lib.services.gamification.leaderboard_service import LeaderboardService
+from lib.services.gamification.feed_service import FeedService
+from lib.services.gamification.care_provider_service import CPGamificationService
+from lib.services.gamification.event_handler import GamificationEventHandler
+from lib.services.gamification.task_generator import TaskGeneratorService
+from lib.services.gamification.streak_service import StreakService
+
+
+def get_gamification_service() -> GamificationService:
+    return cast(GamificationService, container.resolve(GamificationService))
+
+
+def get_buddy_service() -> BuddyService:
+    return cast(BuddyService, container.resolve(BuddyService))
+
+
+def get_group_service() -> GroupService:
+    return cast(GroupService, container.resolve(GroupService))
+
+
+def get_challenge_service() -> ChallengeService:
+    return cast(ChallengeService, container.resolve(ChallengeService))
+
+
+def get_leaderboard_service() -> LeaderboardService:
+    return cast(LeaderboardService, container.resolve(LeaderboardService))
+
+
+def get_feed_service() -> FeedService:
+    return cast(FeedService, container.resolve(FeedService))
+
+
+def get_cp_gamification_service() -> CPGamificationService:
+    return cast(CPGamificationService, container.resolve(CPGamificationService))
+
+
+def get_gamification_event_handler() -> GamificationEventHandler:
+    return cast(GamificationEventHandler, container.resolve(GamificationEventHandler))
+
+
+def get_task_generator_service() -> TaskGeneratorService:
+    return cast(TaskGeneratorService, container.resolve(TaskGeneratorService))
+
+
+def get_streak_service() -> StreakService:
+    return cast(StreakService, container.resolve(StreakService))

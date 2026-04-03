@@ -12,16 +12,19 @@ ReasoningEngine and the Coordinator.
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.config import settings
+from lib.services.gamification.time_utils import local_now
 
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+    from lib.services.gamification.service import GamificationService
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,7 @@ class AgentContext(BaseModel):
     patient_names: dict[str, str] = Field(default_factory=dict)
     recent_insights: list[dict] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
+    gamification: dict[str, Any] | None = None
 
 
 def build_context_messages(
@@ -65,6 +69,20 @@ def build_context_messages(
     if context.patient_names:
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
+    if context.gamification:
+        g = context.gamification
+        context_parts.append(
+            "Gamification:\n"
+            f"- Level: {g.get('level', 1)} ({g.get('title', 'Newcomer')})\n"
+            f"- Total XP: {g.get('total_xp', 0)}\n"
+            f"- Current streak: {g.get('current_streak', 0)}\n"
+            f"- Streak freezes: {g.get('streak_freezes', 0)}\n"
+            f"- Recent achievements: {', '.join(g.get('recent_achievements', [])) or 'None'}\n"
+            f"- Tasks today: {g.get('tasks_today', {}).get('completed', 0)}/{g.get('tasks_today', {}).get('total', 0)}\n"
+            f"- Weekly quest: {g.get('weekly_quest') or 'None'}\n"
+            f"- Active challenges: {g.get('active_challenges', [])}\n"
+            f"- Buddy streak: {g.get('buddy_streak') or 0}"
+        )
 
     if context_parts:
         messages.append({
@@ -133,10 +151,12 @@ class ContextLoader:
         memory: MemoryStore | None = None,
         patient_resolver: PatientNameResolver | None = None,
         insight_tracker: InsightTracker | None = None,
+        gamification_service: GamificationService | None = None,
     ) -> None:
         self._memory = memory
         self._resolver = patient_resolver
         self._insight_tracker = insight_tracker
+        self._gamification_service = gamification_service
 
     async def load(
         self,
@@ -153,9 +173,17 @@ class ContextLoader:
         summary_task = self._load_summary(thread_id)
         names_task = self._load_names(patient_ids or ([patient_id] if patient_id else []))
         insights_task = self._load_recent_insights(patient_id)
+        gamification_task = self._load_gamification(patient_id)
+        local_time_task = self._load_local_time(patient_id)
 
-        facts, history, summary, names, insights = await asyncio.gather(
-            facts_task, history_task, summary_task, names_task, insights_task,
+        facts, history, summary, names, insights, gamification, local_time = await asyncio.gather(
+            facts_task,
+            history_task,
+            summary_task,
+            names_task,
+            insights_task,
+            gamification_task,
+            local_time_task,
         )
 
         return AgentContext(
@@ -164,6 +192,8 @@ class ContextLoader:
             thread_summary=summary,
             patient_names=names,
             recent_insights=insights,
+            gamification=gamification,
+            local_time=local_time,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -213,3 +243,26 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to load recent insights: %s", exc)
             return []
+
+    async def _load_gamification(self, patient_id: str | None) -> dict[str, Any] | None:
+        if not patient_id or not self._gamification_service:
+            return None
+        try:
+            context = await self._gamification_service.get_gamification_context(
+                UUID(patient_id)
+            )
+            return context.model_dump(mode="json")
+        except Exception as exc:
+            logger.debug("Failed to load gamification context: %s", exc)
+            return None
+
+    async def _load_local_time(self, patient_id: str | None) -> str | None:
+        if not patient_id or not self._resolver:
+            return None
+        try:
+            timezones = await self._resolver.resolve_timezones([patient_id])
+            tz_name = timezones.get(patient_id)
+            return local_now(tz_name).strftime("%Y-%m-%d %H:%M %Z")
+        except Exception as exc:
+            logger.debug("Failed to load local time: %s", exc)
+            return None

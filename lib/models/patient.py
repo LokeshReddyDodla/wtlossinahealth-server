@@ -186,6 +186,25 @@ class Patient(Base):
         "SymptomEntry", back_populates="patient", cascade="all, delete-orphan"
     )
 
+    # Gamification
+    player_profile = relationship(
+        "PlayerProfile",
+        uselist=False,
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    daily_tasks = relationship(
+        "DailyTask", back_populates="patient", cascade="all, delete-orphan"
+    )
+    achievements = relationship(
+        "PatientAchievement",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    weekly_quests = relationship(
+        "WeeklyQuest", back_populates="patient", cascade="all, delete-orphan"
+    )
+
     health_facility_id = Column(
         UUID(as_uuid=True),
         ForeignKey(

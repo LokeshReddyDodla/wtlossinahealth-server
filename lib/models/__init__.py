@@ -52,3 +52,19 @@ from .patient_data_export import PatientDataExport
 from .sleep_checkin import SleepCheckin
 from .mood_entry import MoodEntry
 from .symptom_entry import SymptomEntry, SymptomEntryItem
+from .gamification import (
+    Achievement,
+    ActivityFeedEvent,
+    Buddy,
+    Challenge,
+    ChallengeParticipant,
+    Cheer,
+    DailyTask,
+    Group,
+    GroupMember,
+    LeaderboardEntry,
+    PatientAchievement,
+    PlayerProfile,
+    WeeklyQuest,
+    XPLedgerEntry,
+)

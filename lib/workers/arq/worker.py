@@ -27,6 +27,7 @@ def _get_all_cron_jobs():
     from lib.workers.tasks.weightloss_agent_tasks import get_cron_jobs as get_weightloss_agent_cron_jobs
     from lib.workers.tasks.proactive_monitor import get_cron_jobs as get_proactive_monitor_cron_jobs
     from lib.workers.tasks.reengagement import get_cron_jobs as get_reengagement_cron_jobs
+    from lib.workers.tasks.gamification.cron import GAMIFICATION_CRON_JOBS
 
     cron_jobs.extend(get_device_cron_jobs())
     cron_jobs.extend(get_libreview_cron_jobs())
@@ -37,6 +38,7 @@ def _get_all_cron_jobs():
     cron_jobs.extend(get_weightloss_agent_cron_jobs())
     cron_jobs.extend(get_proactive_monitor_cron_jobs())
     cron_jobs.extend(get_reengagement_cron_jobs())
+    cron_jobs.extend(GAMIFICATION_CRON_JOBS)
 
     return cron_jobs
 
