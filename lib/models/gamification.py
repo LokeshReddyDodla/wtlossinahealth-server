@@ -519,6 +519,10 @@ class WeeklyQuest(Base):
             "patient_id", "week_start", "quest_type",
             name="uq_weekly_quests_patient_week_type",
         ),
+        Index(
+            "ix_weekly_quests_patient_week_status",
+            "patient_id", "week_start", "status",
+        ),
     )
 
     quest_id = Column(

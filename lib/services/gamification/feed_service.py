@@ -295,45 +295,59 @@ class FeedService:
         *,
         context: str,
     ) -> List[FeedEventResponse]:
+        if not events:
+            return []
+
+        actor_ids = list({e.actor_id for e in events})
+        feed_ids = [e.feed_id for e in events]
+
+        # Batch: actor names
+        names_result = await session.execute(
+            select(Patient.patient_id, Patient.first_name).where(
+                Patient.patient_id.in_(actor_ids)
+            )
+        )
+        names_map = {r.patient_id: r.first_name for r in names_result.all()}
+
+        # Batch: visibility settings
+        vis_result = await session.execute(
+            select(
+                PlayerProfile.patient_id,
+                PlayerProfile.leaderboard_visibility,
+            ).where(PlayerProfile.patient_id.in_(actor_ids))
+        )
+        vis_map = {r.patient_id: r.leaderboard_visibility for r in vis_result.all()}
+
+        # Batch: cheer counts per event
+        cheer_counts_result = await session.execute(
+            select(
+                Cheer.feed_event_id,
+                func.count(Cheer.cheer_id).label("cnt"),
+            )
+            .where(Cheer.feed_event_id.in_(feed_ids))
+            .group_by(Cheer.feed_event_id)
+        )
+        cheer_counts_map = {r.feed_event_id: r.cnt for r in cheer_counts_result.all()}
+
+        # Batch: viewer's cheers
+        my_cheers_result = await session.execute(
+            select(Cheer.feed_event_id, Cheer.reaction).where(
+                Cheer.feed_event_id.in_(feed_ids),
+                Cheer.sender_id == viewer_id,
+            )
+        )
+        my_cheers_map = {r.feed_event_id: r.reaction for r in my_cheers_result.all()}
+
         responses = []
         for event in events:
-            # Get actor name
-            name_result = await session.execute(
-                select(Patient.first_name).where(
-                    Patient.patient_id == event.actor_id
-                )
-            )
-            name = name_result.scalar()
-
-            visibility_result = await session.execute(
-                select(PlayerProfile.leaderboard_visibility).where(
-                    PlayerProfile.patient_id == event.actor_id
-                )
-            )
-            visibility = visibility_result.scalar() or "group_only"
+            name = names_map.get(event.actor_id)
+            visibility = vis_map.get(event.actor_id, "group_only")
             visible = self._is_identity_visible(
                 viewer_id=viewer_id,
                 actor_id=event.actor_id,
                 visibility=visibility,
                 context=context,
             )
-
-            # Get cheer count
-            cheer_count_result = await session.execute(
-                select(func.count(Cheer.cheer_id)).where(
-                    Cheer.feed_event_id == event.feed_id
-                )
-            )
-            cheer_count = cheer_count_result.scalar() or 0
-
-            # Get my cheer on this event
-            my_cheer_result = await session.execute(
-                select(Cheer.reaction).where(
-                    Cheer.feed_event_id == event.feed_id,
-                    Cheer.sender_id == viewer_id,
-                )
-            )
-            my_cheer = my_cheer_result.scalar()
 
             responses.append(
                 FeedEventResponse(
@@ -346,8 +360,8 @@ class FeedService:
                     actor_name=name if visible else "Anonymous",
                     event_type=event.event_type,
                     event_data=event.event_data or {},
-                    cheer_count=cheer_count,
-                    my_cheer=my_cheer,
+                    cheer_count=cheer_counts_map.get(event.feed_id, 0),
+                    my_cheer=my_cheers_map.get(event.feed_id),
                     created_at=event.created_at,
                 )
             )

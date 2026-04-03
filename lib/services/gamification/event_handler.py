@@ -29,6 +29,7 @@ class GamificationEventHandler:
         self.postgres_store = postgres_store
         self.xp_service = xp_service
         self.achievement_evaluator = achievement_evaluator
+        self._tz_cache: dict[UUID, date] = {}  # patient_id -> today (per-request cache)
 
     async def _ensure_tasks_exist(self, patient_id: UUID) -> None:
         """Ensure daily tasks exist before trying to complete them."""
@@ -479,8 +480,12 @@ class GamificationEventHandler:
             await postgres_session.commit()
 
     async def _patient_today(self, patient_id: UUID) -> date:
+        if patient_id in self._tz_cache:
+            return self._tz_cache[patient_id]
         from lib.services.gamification.time_utils import get_patient_timezone
 
         async with self.postgres_store.get_session() as session:
             tz_name = await get_patient_timezone(patient_id, session)
-        return local_today(tz_name)
+        result = local_today(tz_name)
+        self._tz_cache[patient_id] = result
+        return result

@@ -82,21 +82,26 @@ class LeaderboardService:
             for row in visibility_result.all()
         }
 
-        # Enrich with names and levels
+        # Batch-load names and levels (avoids N+1)
+        entry_pids = [e.patient_id for e in entries]
+        names_result = await postgres_session.execute(
+            select(Patient.patient_id, Patient.first_name).where(
+                Patient.patient_id.in_(entry_pids)
+            )
+        )
+        names_map = {r.patient_id: r.first_name for r in names_result.all()}
+
+        levels_result = await postgres_session.execute(
+            select(PlayerProfile.patient_id, PlayerProfile.level).where(
+                PlayerProfile.patient_id.in_(entry_pids)
+            )
+        )
+        levels_map = {r.patient_id: r.level for r in levels_result.all()}
+
         entry_responses = []
         for e in entries:
-            name_result = await postgres_session.execute(
-                select(Patient.first_name).where(
-                    Patient.patient_id == e.patient_id
-                )
-            )
-            name = name_result.scalar()
-            profile_result = await postgres_session.execute(
-                select(PlayerProfile.level).where(
-                    PlayerProfile.patient_id == e.patient_id
-                )
-            )
-            level = profile_result.scalar() or 1
+            name = names_map.get(e.patient_id)
+            level = levels_map.get(e.patient_id, 1)
             visible = self._is_identity_visible(
                 viewer_id=patient_id,
                 subject_id=e.patient_id,

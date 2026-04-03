@@ -306,6 +306,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["patient_id"], ["patients.patient_id"], ondelete="CASCADE"),
         sa.UniqueConstraint("patient_id", "week_start", "quest_type", name="uq_weekly_quests_patient_week_type"),
     )
+    op.create_index(
+        "ix_weekly_quests_patient_week_status",
+        "weekly_quests",
+        ["patient_id", "week_start", "status"],
+    )
 
     # ── Seed achievement catalog ─────────────────────────────────────────
     import uuid

@@ -83,6 +83,15 @@ class AchievementEvaluator:
 
         return newly_earned
 
+    # Dispatch table: criteria_type → checker method name (or task_type for count-based)
+    _TASK_COUNT_CRITERIA = {
+        "meals_logged": "LOG_MEAL",
+        "steps_hit": "HIT_STEP_GOAL",
+        "workouts_completed": "COMPLETE_WORKOUT",
+        "mood_logged": "LOG_MOOD",
+        "sleep_logged": "LOG_SLEEP",
+    }
+
     async def _check_criteria(
         self,
         patient_id: UUID,
@@ -92,59 +101,30 @@ class AchievementEvaluator:
         ct = achievement.criteria_type
         threshold = achievement.criteria_threshold
 
-        if ct == "streak_days":
-            return await self._check_streak(patient_id, threshold, session)
-        if ct == "tasks_completed":
-            return await self._check_tasks_completed(
-                patient_id, threshold, session
-            )
-        if ct == "meals_logged":
+        # Task-count based criteria (all follow the same pattern)
+        if ct in self._TASK_COUNT_CRITERIA:
             return await self._check_task_type_count(
-                patient_id, "LOG_MEAL", threshold, session
+                patient_id, self._TASK_COUNT_CRITERIA[ct], threshold, session
             )
-        if ct == "steps_hit":
-            return await self._check_task_type_count(
-                patient_id, "HIT_STEP_GOAL", threshold, session
-            )
-        if ct == "workouts_completed":
-            return await self._check_task_type_count(
-                patient_id, "COMPLETE_WORKOUT", threshold, session
-            )
-        if ct == "mood_logged":
-            return await self._check_task_type_count(
-                patient_id, "LOG_MOOD", threshold, session
-            )
-        if ct == "sleep_logged":
-            return await self._check_task_type_count(
-                patient_id, "LOG_SLEEP", threshold, session
-            )
-        if ct == "total_xp":
-            return await self._check_total_xp(patient_id, threshold, session)
-        if ct == "level_reached":
-            return await self._check_level(patient_id, threshold, session)
-        if ct == "buddy_added":
-            return await self._check_buddy_count(
-                patient_id, threshold, session
-            )
-        if ct == "cheers_sent":
-            return await self._check_cheers_sent(
-                patient_id, threshold, session
-            )
-        if ct == "group_challenges_completed":
-            return await self._check_group_challenges(
-                patient_id, threshold, session
-            )
-        if ct == "buddy_streak":
-            return await self._check_buddy_streak(
-                patient_id, threshold, session
-            )
+
+        dispatch = {
+            "streak_days": self._check_streak,
+            "tasks_completed": self._check_tasks_completed,
+            "total_xp": self._check_total_xp,
+            "level_reached": self._check_level,
+            "buddy_added": self._check_buddy_count,
+            "cheers_sent": self._check_cheers_sent,
+            "group_challenges_completed": self._check_group_challenges,
+            "buddy_streak": self._check_buddy_streak,
+            "monthly_active_days": self._check_monthly_active,
+        }
+        handler = dispatch.get(ct)
+        if handler:
+            return await handler(patient_id, threshold, session)
+
         if ct == "macro_hit_streak":
             return await self._check_consecutive_task_type(
                 patient_id, "HIT_CALORIE_TARGET", threshold, session
-            )
-        if ct == "monthly_active_days":
-            return await self._check_monthly_active(
-                patient_id, threshold, session
             )
         if ct == "custom":
             return await self._check_custom(
