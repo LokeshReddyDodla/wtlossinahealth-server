@@ -303,6 +303,8 @@ class BuddyResponse(BaseModel):
     direction: Optional[str] = None  # "incoming" or "outgoing" (only set when status is "pending")
     buddy_streak: int
     buddy_streak_longest: int
+    tasks_completed_today: int = 0
+    tasks_total_today: int = 0
     created_at: datetime
     accepted_at: Optional[datetime] = None
 

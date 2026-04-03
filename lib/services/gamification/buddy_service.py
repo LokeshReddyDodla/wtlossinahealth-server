@@ -216,19 +216,37 @@ class BuddyService:
         )
         buddies = result.scalars().all()
 
-        # Batch-load names for all buddy partners
+        # Batch-load names and timezones for all buddy partners
         other_ids = [
             b.accepter_id if b.requester_id == patient_id else b.requester_id
             for b in buddies
         ]
         names_map: dict = {}
+        tz_map: dict = {}
         if other_ids:
             names_result = await postgres_session.execute(
-                select(Patient.patient_id, Patient.first_name).where(
+                select(Patient.patient_id, Patient.first_name, Patient.locale).where(
                     Patient.patient_id.in_(other_ids)
                 )
             )
-            names_map = {r.patient_id: r.first_name for r in names_result.all()}
+            for r in names_result.all():
+                names_map[r.patient_id] = r.first_name
+                tz_map[r.patient_id] = r.locale
+
+        # Batch-load today's task progress for all buddies
+        task_progress: dict = {}  # other_id -> (completed, total)
+        if other_ids:
+            for oid in other_ids:
+                today = local_today(tz_map.get(oid))
+                task_result = await postgres_session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == oid,
+                        DailyTask.task_date == today,
+                    )
+                )
+                tasks = task_result.scalars().all()
+                completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
+                task_progress[oid] = (completed, len(tasks))
 
         responses = []
         for b in buddies:
@@ -238,6 +256,7 @@ class BuddyService:
             direction = None
             if b.status == "pending":
                 direction = "outgoing" if b.requester_id == patient_id else "incoming"
+            completed, total = task_progress.get(other_id, (0, 0))
             responses.append(
                 BuddyResponse(
                     buddy_id=str(b.buddy_id),
@@ -247,6 +266,8 @@ class BuddyService:
                     direction=direction,
                     buddy_streak=b.buddy_streak,
                     buddy_streak_longest=b.buddy_streak_longest,
+                    tasks_completed_today=completed,
+                    tasks_total_today=total,
                     created_at=b.created_at,
                     accepted_at=b.accepted_at,
                 )
