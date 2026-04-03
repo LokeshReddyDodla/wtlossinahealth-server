@@ -161,6 +161,10 @@ class StreakService:
         )
 
         for buddy in buddies:
+            # Skip if already processed for this date
+            if buddy.last_both_active == for_date:
+                continue
+
             other_id = (
                 buddy.accepter_id
                 if buddy.requester_id == patient_id
@@ -171,11 +175,10 @@ class StreakService:
             )
 
             if my_active and other_active:
-                if buddy.last_both_active != for_date:
-                    buddy.buddy_streak += 1
-                    if buddy.buddy_streak > buddy.buddy_streak_longest:
-                        buddy.buddy_streak_longest = buddy.buddy_streak
-                    buddy.last_both_active = for_date
+                buddy.buddy_streak += 1
+                if buddy.buddy_streak > buddy.buddy_streak_longest:
+                    buddy.buddy_streak_longest = buddy.buddy_streak
+                buddy.last_both_active = for_date
             else:
                 if buddy.buddy_streak > 0:
                     buddy.buddy_streak = 0
@@ -205,26 +208,8 @@ class StreakService:
     async def _get_or_create_profile(
         self, patient_id: UUID, session: AsyncSession
     ) -> PlayerProfile:
-        result = await session.execute(
-            select(PlayerProfile).where(PlayerProfile.patient_id == patient_id)
-        )
-        profile = result.scalars().first()
-        if profile:
-            return profile
-        try:
-            profile = PlayerProfile(patient_id=patient_id)
-            session.add(profile)
-            await session.flush()
-            return profile
-        except Exception:
-            await session.rollback()
-            result = await session.execute(
-                select(PlayerProfile).where(PlayerProfile.patient_id == patient_id)
-            )
-            profile = result.scalars().first()
-            if profile:
-                return profile
-            raise
+        from lib.services.gamification.profile_utils import get_or_create_profile
+        return await get_or_create_profile(patient_id, session)
 
     @with_postgres_session
     async def use_freeze(

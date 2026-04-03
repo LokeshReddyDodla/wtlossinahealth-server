@@ -125,7 +125,18 @@ class TaskGeneratorService:
             existing_tasks.append(task)
             existing_keys.add(key)
 
-        await postgres_session.commit()
+        try:
+            await postgres_session.commit()
+        except Exception:
+            await postgres_session.rollback()
+            # Re-fetch on conflict (concurrent generation)
+            result = await postgres_session.execute(
+                select(DailyTask).where(
+                    DailyTask.patient_id == patient_id,
+                    DailyTask.task_date == task_date,
+                )
+            )
+            existing_tasks = list(result.scalars().all())
         return existing_tasks
 
     @with_postgres_session

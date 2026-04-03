@@ -174,12 +174,11 @@ class GamificationService:
         # On-demand task generation: ensure tasks exist for today
         if task_date == patient_today:
             await self.task_generator.generate_daily_tasks(patient_id, task_date)
-            # Also ensure weekly quest exists if it's Monday
-            if task_date.weekday() == 0:
-                week_start = task_date - timedelta(days=task_date.weekday())
-                await self.task_generator.generate_weekly_quest(
-                    patient_id, week_start
-                )
+            # Ensure weekly quest exists (on any day, not just Monday)
+            week_start = task_date - timedelta(days=task_date.weekday())
+            await self.task_generator.generate_weekly_quest(
+                patient_id, week_start
+            )
 
         result = await postgres_session.execute(
             select(DailyTask).where(
@@ -255,6 +254,15 @@ class GamificationService:
             raise ValueError("Task not found")
         if task.status != TaskStatus.PENDING.value:
             raise ValueError(f"Task is not pending (status: {task.status})")
+
+        # Only logging tasks can be manually completed — target-based tasks
+        # (steps, calories, protein, workouts) must be auto-completed by
+        # the event handler when the actual metric is met.
+        from lib.schemas.gamification import MANUALLY_COMPLETABLE_TASKS
+        if task.task_type not in MANUALLY_COMPLETABLE_TASKS:
+            raise ValueError(
+                f"Task type '{task.task_type}' cannot be manually completed"
+            )
 
         task.status = TaskStatus.COMPLETED.value
         task.completed_at = datetime.now().replace(tzinfo=None)
@@ -673,13 +681,7 @@ class GamificationService:
         return await self._patient_today(patient_id, postgres_session)
 
     async def _patient_timezone(
-        self,
-        patient_id: UUID,
-        postgres_session: AsyncSession,
+        self, patient_id: UUID, postgres_session: AsyncSession
     ) -> str | None:
-        from lib.models.patient import Patient
-
-        result = await postgres_session.execute(
-            select(Patient.locale).where(Patient.patient_id == patient_id)
-        )
-        return result.scalar()
+        from lib.services.gamification.time_utils import get_patient_timezone
+        return await get_patient_timezone(patient_id, postgres_session)

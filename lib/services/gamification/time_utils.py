@@ -54,6 +54,24 @@ def matches_local_hour(
     return local_now(tz_name, now=now).hour == target_hour
 
 
+async def get_patient_timezone(
+    patient_id,
+    session,
+) -> str | None:
+    """Shared helper: fetch a patient's locale/timezone from the DB.
+
+    Used by multiple gamification services — centralised here to avoid
+    the same 4-line query being copy-pasted across 5+ files.
+    """
+    from sqlalchemy import select
+    from lib.models.patient import Patient
+
+    result = await session.execute(
+        select(Patient.locale).where(Patient.patient_id == patient_id)
+    )
+    return result.scalar()
+
+
 def naive_day_bounds_for_local_date(
     target_date: date,
     tz_name: str | None,

@@ -63,13 +63,27 @@ class BuddyService:
         if requester_facility != accepter_row.health_facility_id:
             raise ValueError("Buddy requests are limited to the same facility")
 
+        # Rate limit: max BUDDY_REQUESTS_PER_DAY per day
+        from lib.schemas.gamification import BUDDY_REQUESTS_PER_DAY
+        from lib.services.gamification.time_utils import get_patient_timezone, local_today, naive_day_bounds_for_local_date
+        tz_name = await get_patient_timezone(requester_id, postgres_session)
+        day_start, _ = naive_day_bounds_for_local_date(local_today(tz_name), tz_name)
+        daily_requests = await postgres_session.execute(
+            select(func.count(Buddy.buddy_id)).where(
+                Buddy.requester_id == requester_id,
+                Buddy.created_at >= day_start,
+            )
+        )
+        if (daily_requests.scalar() or 0) >= BUDDY_REQUESTS_PER_DAY:
+            raise ValueError(f"Maximum {BUDDY_REQUESTS_PER_DAY} buddy requests per day")
+
         active_count = await self._active_buddy_count(
             requester_id, postgres_session
         )
         if active_count >= MAX_ACTIVE_BUDDIES:
             raise ValueError(f"Maximum {MAX_ACTIVE_BUDDIES} active buddies allowed")
 
-        # Check for existing relationship (either direction)
+        # Check for existing relationship (either direction, any status)
         existing = await postgres_session.execute(
             select(Buddy).where(
                 or_(
@@ -82,14 +96,22 @@ class BuddyService:
                         Buddy.accepter_id == requester_id,
                     ),
                 ),
-                Buddy.status.in_(["pending", "active"]),
             )
         )
-        if existing.scalars().first():
-            raise ValueError("Buddy request already exists")
-
-        buddy = Buddy(requester_id=requester_id, accepter_id=accepter_id)
-        postgres_session.add(buddy)
+        existing_buddy = existing.scalars().first()
+        if existing_buddy:
+            if existing_buddy.status in ("pending", "active"):
+                raise ValueError("Buddy request already exists")
+            # Re-activate a removed buddy by setting status back to pending
+            existing_buddy.status = "pending"
+            existing_buddy.removed_at = None
+            existing_buddy.removed_by = None
+            existing_buddy.buddy_streak = 0
+            existing_buddy.created_at = datetime.now().replace(tzinfo=None)
+            buddy = existing_buddy
+        else:
+            buddy = Buddy(requester_id=requester_id, accepter_id=accepter_id)
+            postgres_session.add(buddy)
         await postgres_session.commit()
         await postgres_session.refresh(buddy)
         return buddy

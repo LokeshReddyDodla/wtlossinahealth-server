@@ -191,19 +191,27 @@ class AchievementEvaluator:
             return profile.streak_resets >= 1 and profile.current_streak >= 3
 
         if slug == "perfect_week":
-            # All plan-derived tasks completed for 7 consecutive days
+            # All plan-derived tasks completed for the current ISO week (Mon-Sun)
             today = local_today(await self._patient_timezone(patient_id, session))
+            week_start = today - timedelta(days=today.weekday())  # Monday
+            # Only check if we're at least on Sunday (full week available)
+            days_in_week = min(7, (today - week_start).days + 1)
+            if days_in_week < 7:
+                return False  # Week not complete yet
             for offset in range(7):
-                d = today - timedelta(days=offset)
+                d = week_start + timedelta(days=offset)
                 day_result = await session.execute(
                     select(DailyTask).where(
                         DailyTask.patient_id == patient_id,
                         DailyTask.task_date == d,
                         DailyTask.source_type.in_(["diet_plan", "fitness_plan"]),
-                        DailyTask.status != TaskStatus.COMPLETED.value,
                     )
                 )
-                if day_result.scalars().first():
+                day_tasks = day_result.scalars().all()
+                # Day must have at least one plan task AND all must be completed
+                if not day_tasks:
+                    return False
+                if any(t.status != TaskStatus.COMPLETED.value for t in day_tasks):
                     return False
             return True
 
@@ -411,7 +419,11 @@ class AchievementEvaluator:
     async def _check_monthly_active(
         self, patient_id: UUID, threshold: int, session: AsyncSession
     ) -> bool:
-        """Check if patient was active 25+ days in any calendar month."""
+        """Check if patient was active 25+ days in the current calendar month.
+
+        NOTE: Only checks the current month, not historical months.
+        The achievement triggers when the threshold is met this month.
+        """
         today = local_today(await self._patient_timezone(patient_id, session))
         first_of_month = today.replace(day=1)
         result = await session.execute(
@@ -425,14 +437,10 @@ class AchievementEvaluator:
         return count >= threshold
 
     async def _patient_timezone(
-        self,
-        patient_id: UUID,
-        session: AsyncSession,
+        self, patient_id: UUID, session: AsyncSession
     ) -> str | None:
-        result = await session.execute(
-            select(Patient.locale).where(Patient.patient_id == patient_id)
-        )
-        return result.scalar()
+        from lib.services.gamification.time_utils import get_patient_timezone
+        return await get_patient_timezone(patient_id, session)
 
     @with_postgres_session
     async def get_progress(

@@ -200,6 +200,39 @@ class FeedService:
         if event.actor_id == sender_id:
             raise ValueError("Cannot cheer your own event")
 
+        # Verify sender has a relationship with the event actor (buddy or shared group)
+        buddy_check = await postgres_session.execute(
+            select(Buddy.buddy_id).where(
+                Buddy.status == "active",
+                or_(
+                    (Buddy.requester_id == sender_id) & (Buddy.accepter_id == event.actor_id),
+                    (Buddy.requester_id == event.actor_id) & (Buddy.accepter_id == sender_id),
+                ),
+            )
+        )
+        is_buddy = buddy_check.scalar() is not None
+
+        if not is_buddy:
+            # Check shared group membership
+            sender_groups = await postgres_session.execute(
+                select(GroupMember.group_id).where(
+                    GroupMember.patient_id == sender_id,
+                    GroupMember.is_active == True,
+                )
+            )
+            sender_group_ids = set(sender_groups.scalars().all())
+
+            actor_groups = await postgres_session.execute(
+                select(GroupMember.group_id).where(
+                    GroupMember.patient_id == event.actor_id,
+                    GroupMember.is_active == True,
+                )
+            )
+            actor_group_ids = set(actor_groups.scalars().all())
+
+            if not sender_group_ids & actor_group_ids:
+                raise ValueError("You can only cheer buddies or group members")
+
         # Check for duplicate
         existing = await postgres_session.execute(
             select(Cheer).where(

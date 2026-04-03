@@ -17,7 +17,13 @@ from lib.services.gamification.time_utils import (
     local_today,
     naive_day_bounds_for_local_date,
 )
-from lib.schemas.gamification import title_for_level, xp_for_level
+from lib.schemas.gamification import (
+    DAILY_XP_CAP,
+    MAX_LEVEL,
+    title_for_level,
+    xp_for_level,
+)
+from lib.services.gamification.profile_utils import get_or_create_profile
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 
@@ -30,8 +36,6 @@ _STREAK_MULTIPLIERS = [
     (7, 1.1),
 ]
 
-DAILY_XP_CAP = 500
-
 
 def streak_multiplier(streak: int) -> float:
     for threshold, mult in _STREAK_MULTIPLIERS:
@@ -43,7 +47,7 @@ def streak_multiplier(streak: int) -> float:
 def level_from_xp(total_xp: int) -> int:
     """Return the highest level the player has reached."""
     level = 1
-    while xp_for_level(level + 1) <= total_xp:
+    while level < MAX_LEVEL and xp_for_level(level + 1) <= total_xp:
         level += 1
     return level
 
@@ -160,33 +164,10 @@ class XPService:
     async def _get_or_create_profile(
         self, patient_id: UUID, session: AsyncSession
     ) -> PlayerProfile:
-        result = await session.execute(
-            select(PlayerProfile).where(PlayerProfile.patient_id == patient_id)
-        )
-        profile = result.scalars().first()
-        if profile:
-            return profile
-        try:
-            profile = PlayerProfile(patient_id=patient_id)
-            session.add(profile)
-            await session.flush()
-            return profile
-        except Exception:
-            await session.rollback()
-            result = await session.execute(
-                select(PlayerProfile).where(PlayerProfile.patient_id == patient_id)
-            )
-            profile = result.scalars().first()
-            if profile:
-                return profile
-            raise
+        return await get_or_create_profile(patient_id, session)
 
     async def _patient_timezone(
-        self,
-        patient_id: UUID,
-        session: AsyncSession,
+        self, patient_id: UUID, session: AsyncSession
     ) -> str | None:
-        result = await session.execute(
-            select(Patient.locale).where(Patient.patient_id == patient_id)
-        )
-        return result.scalar()
+        from lib.services.gamification.time_utils import get_patient_timezone
+        return await get_patient_timezone(patient_id, session)

@@ -391,6 +391,12 @@ async def create_group(
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
 ):
+    # Only care providers can create care_provider or facility groups
+    if body.group_type.value in ("care_provider", "facility") and actor.role != "care_provider":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only care providers can create {body.group_type.value} groups",
+        )
     group = await service.create_group(
         name=body.name,
         group_type=body.group_type.value,
@@ -412,7 +418,13 @@ async def get_group(
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
+    pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    # Verify membership (or care provider who created it)
+    patient_groups = await service.get_patient_groups(pid)
+    if not any(g.group_id == str(group_id) for g in patient_groups):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
     group = await service.get_group(group_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
@@ -476,10 +488,15 @@ async def get_group_leaderboard(
     group_id: UUID,
     board_type: str = Query("weekly_xp"),
     service: LeaderboardService = Depends(get_leaderboard_service),
+    group_service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
     pid = await _resolve_patient(actor.user_id, actor, cp_access)
+    # Verify group membership
+    patient_groups = await group_service.get_patient_groups(pid)
+    if not any(g.group_id == str(group_id) for g in patient_groups):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
     board = await service.get_leaderboard(
         board_type, "group", pid, scope_id=group_id
     )
@@ -659,6 +676,32 @@ async def get_leaderboard(
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
     pid = await _resolve_patient(actor.user_id, actor, cp_access)
+
+    # Validate board_type
+    allowed_board_types = {"weekly_xp", "monthly_xp", "weekly_steps", "streak", "challenge"}
+    if board_type not in allowed_board_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid board_type. Allowed: {', '.join(sorted(allowed_board_types))}",
+        )
+
+    # Validate scope access
+    if scope == "group" and scope_id:
+        _group_service = get_group_service()
+        patient_groups = await _group_service.get_patient_groups(pid)
+        if not any(g.group_id == str(scope_id) for g in patient_groups):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
+    elif scope == "facility" and scope_id:
+        _gam_service = get_gamification_service()
+        async with _gam_service.postgres_store.get_session() as _session:
+            from sqlalchemy import select as _select
+            from lib.models.patient import Patient as _Patient
+            _result = await _session.execute(
+                _select(_Patient.health_facility_id).where(_Patient.patient_id == pid)
+            )
+            if str(_result.scalar()) != str(scope_id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this facility")
+
     board = await service.get_leaderboard(board_type, scope, pid, scope_id=scope_id)
     return SuccessResponse(message="Leaderboard", data=board)
 

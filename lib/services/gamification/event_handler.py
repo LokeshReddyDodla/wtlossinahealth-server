@@ -163,7 +163,6 @@ class GamificationEventHandler:
             source_type="task",
             source_id=task.task_id,
             description=f"Task: {task.title}",
-            postgres_session=postgres_session,
         )
 
         await postgres_session.commit()
@@ -243,6 +242,20 @@ class GamificationEventHandler:
                 )
                 tasks = all_tasks.scalars().all()
                 if tasks and all(t.status == TaskStatus.COMPLETED.value for t in tasks):
+                    # Count how many days this week already had all tasks completed
+                    # to avoid double-counting the same day
+                    from sqlalchemy import func as _func
+                    perfect_days_result = await session.execute(
+                        select(_func.count(_func.distinct(DailyTask.task_date))).where(
+                            DailyTask.patient_id == patient_id,
+                            DailyTask.task_date >= week_start,
+                            DailyTask.task_date <= today,
+                            DailyTask.status == TaskStatus.COMPLETED.value,
+                        )
+                    )
+                    # This is an approximation — counts days with ANY completed task.
+                    # The true count of "all completed" days is expensive to compute,
+                    # so we use the quest's current_value as the guard instead:
                     quest_result = await session.execute(
                         select(WeeklyQuest).where(
                             WeeklyQuest.patient_id == patient_id,
@@ -253,7 +266,22 @@ class GamificationEventHandler:
                     )
                     quest = quest_result.scalars().first()
                     if quest:
-                        quest.current_value += 1
+                        # Guard: count actual "all completed" days this week
+                        all_days = set()
+                        for d_offset in range((today - week_start).days + 1):
+                            d = week_start + timedelta(days=d_offset)
+                            day_tasks_result = await session.execute(
+                                select(DailyTask).where(
+                                    DailyTask.patient_id == patient_id,
+                                    DailyTask.task_date == d,
+                                )
+                            )
+                            day_tasks = day_tasks_result.scalars().all()
+                            if day_tasks and all(t.status == TaskStatus.COMPLETED.value for t in day_tasks):
+                                all_days.add(d)
+                        new_value = float(len(all_days))
+                        if new_value > quest.current_value:
+                            quest.current_value = new_value
                         if quest.current_value >= quest.target_value:
                             quest.status = "completed"
                             quest.completed_at = datetime.now().replace(tzinfo=None)
@@ -451,11 +479,8 @@ class GamificationEventHandler:
             await postgres_session.commit()
 
     async def _patient_today(self, patient_id: UUID) -> date:
-        from lib.models.patient import Patient
+        from lib.services.gamification.time_utils import get_patient_timezone
 
         async with self.postgres_store.get_session() as session:
-            result = await session.execute(
-                select(Patient.locale).where(Patient.patient_id == patient_id)
-            )
-            tz_name = result.scalar()
+            tz_name = await get_patient_timezone(patient_id, session)
         return local_today(tz_name)

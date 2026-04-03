@@ -121,6 +121,60 @@ class FeedEventType(str, Enum):
     CHEER_SENT = "cheer_sent"
 
 
+class ParticipantStatus(str, Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    WITHDRAWN = "withdrawn"
+
+
+class ParticipantType(str, Enum):
+    PATIENT = "patient"
+    GROUP = "group"
+
+
+class FeedVisibility(str, Enum):
+    BUDDY = "buddy"
+    GROUP = "group"
+    FACILITY = "facility"
+    PUBLIC = "public"
+
+
+class CreatorType(str, Enum):
+    SYSTEM = "system"
+    CARE_PROVIDER = "care_provider"
+    FACILITY_ADMIN = "facility_admin"
+    PATIENT = "patient"
+
+
+# ── Constants ────────────────────────────────────────────────────────────────
+
+STEP_GOAL_THRESHOLD_PCT = 0.80
+CALORIE_TOLERANCE_PCT = 0.15
+PROTEIN_TOLERANCE_PCT = 0.10
+XP_LEVEL_BASE = 200
+XP_LEVEL_EXPONENT = 1.5
+MAX_STREAK_FREEZES = 3
+FREEZE_EARN_INTERVAL_DAYS = 7
+DAILY_XP_CAP = 500
+MAX_ACTIVE_BUDDIES = 3
+CHEERS_PER_DAY_LIMIT = 3
+CHEER_XP_REWARD = 5
+FEED_EXPIRY_DAYS = 30
+LEADERBOARD_TOP_N = 100
+CHALLENGE_LEADERBOARD_LIMIT = 20
+BUDDY_REQUESTS_PER_DAY = 5
+MAX_LEVEL = 200
+
+# Task types that can be manually completed (logging tasks only)
+MANUALLY_COMPLETABLE_TASKS = {
+    TaskType.LOG_MEAL.value,
+    TaskType.LOG_SLEEP.value,
+    TaskType.LOG_MOOD.value,
+    TaskType.LOG_GLUCOSE.value,
+    TaskType.LOG_WEIGHT.value,
+}
+
+
 # ── Level titles ─────────────────────────────────────────────────────────────
 
 LEVEL_TITLES: Dict[int, str] = {
@@ -149,7 +203,7 @@ def xp_for_level(level: int) -> int:
     """Cumulative XP needed to reach *level*."""
     if level <= 1:
         return 0
-    return int(200 * (level ** 1.5))
+    return int(XP_LEVEL_BASE * (level ** XP_LEVEL_EXPONENT))
 
 
 # ── Player Profile ───────────────────────────────────────────────────────────
