@@ -395,7 +395,11 @@ class GamificationEventHandler:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        """Evaluate a range-based target task (calories, protein, etc.)."""
+        """Evaluate a range-based target task (calories, protein, etc.).
+
+        Completes when actual_value >= lower bound. No upper cap — hitting
+        136g protein on a 50g target is a success, not a failure.
+        """
         today = await self._patient_today(patient_id)
         result = await postgres_session.execute(
             select(DailyTask).where(
@@ -411,8 +415,7 @@ class GamificationEventHandler:
 
         task.current_value = actual_value
         lower = task.target_value * lower_pct
-        upper = task.target_value * upper_pct
-        if lower <= actual_value <= upper:
+        if actual_value >= lower:
             await self._mark_task_completed(task, patient_id, postgres_session)
             await self._update_challenge_progress(patient_id, task_type.value)
             await self._update_quest_progress(patient_id, task_type.value)
@@ -420,14 +423,15 @@ class GamificationEventHandler:
             await postgres_session.commit()
 
     async def _refresh_macro_progress(self, patient_id: UUID) -> None:
-        """Update current_value on calorie/protein tasks so patients see real-time progress.
+        """Update progress and auto-complete calorie/protein tasks in real-time.
 
-        Does NOT complete the tasks — that's the EOD evaluator's job (needs full day totals).
-        Only updates the progress indicator.
+        Called on every meal log. Fetches current day totals and evaluates
+        whether targets are met — same logic as the EOD evaluator but immediate.
         """
         try:
             from lib.core.container import container
             from lib.services.reports.meal.processor import MealStatsProcessor
+            from lib.schemas.gamification import CALORIE_TOLERANCE_PCT, PROTEIN_TOLERANCE_PCT
 
             today = await self._patient_today(patient_id)
             meal_processor = container.resolve(MealStatsProcessor)
@@ -438,25 +442,18 @@ class GamificationEventHandler:
             total_cal = getattr(daily_stats, "calories", None)
             total_prot = getattr(daily_stats, "proteins", None)
 
-            async with self.postgres_store.get_session() as session:
-                result = await session.execute(
-                    select(DailyTask).where(
-                        DailyTask.patient_id == patient_id,
-                        DailyTask.task_date == today,
-                        DailyTask.task_type.in_([
-                            TaskType.HIT_CALORIE_TARGET.value,
-                            TaskType.HIT_PROTEIN_TARGET.value,
-                        ]),
-                        DailyTask.status == TaskStatus.PENDING.value,
-                    )
+            if total_cal is not None:
+                await self._evaluate_range_target(
+                    patient_id, total_cal,
+                    TaskType.HIT_CALORIE_TARGET,
+                    1 - CALORIE_TOLERANCE_PCT, 1 + CALORIE_TOLERANCE_PCT,
                 )
-                tasks = result.scalars().all()
-                for task in tasks:
-                    if task.task_type == TaskType.HIT_CALORIE_TARGET.value and total_cal is not None:
-                        task.current_value = total_cal
-                    elif task.task_type == TaskType.HIT_PROTEIN_TARGET.value and total_prot is not None:
-                        task.current_value = total_prot
-                await session.commit()
+            if total_prot is not None:
+                await self._evaluate_range_target(
+                    patient_id, total_prot,
+                    TaskType.HIT_PROTEIN_TARGET,
+                    1 - PROTEIN_TOLERANCE_PCT, 1 + PROTEIN_TOLERANCE_PCT,
+                )
         except Exception:
             logger.opt(exception=True).debug(
                 f"Macro progress refresh failed for {patient_id}"
