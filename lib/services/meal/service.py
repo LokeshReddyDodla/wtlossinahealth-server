@@ -301,6 +301,16 @@ class MealService:
 
             enqueue_daily_meal_report_sync(str(patient_id), meal.date)
 
+            # Refresh macro task progress (totals changed)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler._refresh_macro_progress(_UUID(patient_id))
+            except Exception:
+                pass
+
             return meal
 
         except SQLAlchemyError as e:
@@ -349,6 +359,16 @@ class MealService:
 
             await self._create_meal_conversation(meal_orm, meal_id, parsed_ai_response)
             trigger_meal_tasks(str(patient_id), str(meal_id), meal.date, updated_meal)
+
+            # Refresh macro task progress (nutritional values changed after analysis)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler._refresh_macro_progress(_UUID(patient_id))
+            except Exception:
+                pass
 
             return updated_meal
         except (json.JSONDecodeError, SQLAlchemyError) as e:
@@ -533,6 +553,16 @@ class MealService:
 
             enqueue_daily_meal_report_sync(str(patient_id), meal_date)
             await self.meal_vector_service.delete_meal_vector(str(meal_id))
+
+            # Refresh macro task progress (totals decreased)
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import GamificationEventHandler
+                handler = container.resolve(GamificationEventHandler)
+                await handler._refresh_macro_progress(_UUID(patient_id))
+            except Exception:
+                pass
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
