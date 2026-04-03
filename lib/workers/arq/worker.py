@@ -28,6 +28,7 @@ def _get_all_cron_jobs():
     from lib.workers.tasks.proactive_monitor import get_cron_jobs as get_proactive_monitor_cron_jobs
     from lib.workers.tasks.reengagement import get_cron_jobs as get_reengagement_cron_jobs
     from lib.workers.tasks.gamification.cron import GAMIFICATION_CRON_JOBS
+    from lib.workers.tasks.platform.cron import PLATFORM_CRON_JOBS
 
     cron_jobs.extend(get_device_cron_jobs())
     cron_jobs.extend(get_libreview_cron_jobs())
@@ -39,6 +40,7 @@ def _get_all_cron_jobs():
     cron_jobs.extend(get_proactive_monitor_cron_jobs())
     cron_jobs.extend(get_reengagement_cron_jobs())
     cron_jobs.extend(GAMIFICATION_CRON_JOBS)
+    cron_jobs.extend(PLATFORM_CRON_JOBS)
 
     return cron_jobs
 
