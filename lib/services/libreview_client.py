@@ -120,10 +120,16 @@ class LibreViewClient:
                 "accept": "application/json",
                 "content-type": "application/json",
                 "product": "lv",
-                "newyu-lv-web-version": "3.25.0.28",
+                "newyu-lv-web-version": "3.25.0.29",
             },
         )
 
+        if response.status_code != 200:
+            logger.error(
+                "[LibreView] Login failed: status={} body={}",
+                response.status_code,
+                response.text[:500],
+            )
         response.raise_for_status()
         data = response.json()["data"]["authTicket"]
 
