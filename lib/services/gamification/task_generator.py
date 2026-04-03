@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -237,6 +237,10 @@ class TaskGeneratorService:
                 PatientDietPlan.patient_id == patient_id,
                 PatientDietPlan.status == "ACTIVE",
                 PatientDietPlan.start_date <= task_date,
+                or_(
+                    PatientDietPlan.end_date.is_(None),
+                    PatientDietPlan.end_date >= task_date,
+                ),
             )
         )
         plan = result.scalars().first()
@@ -361,6 +365,10 @@ class TaskGeneratorService:
                 PatientFitnessPlan.patient_id == patient_id,
                 PatientFitnessPlan.status == "ACTIVE",
                 PatientFitnessPlan.start_date <= task_date,
+                or_(
+                    PatientFitnessPlan.end_date.is_(None),
+                    PatientFitnessPlan.end_date >= task_date,
+                ),
             )
         )
         plan = result.scalars().first()

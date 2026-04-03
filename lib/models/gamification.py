@@ -89,7 +89,6 @@ class DailyTask(Base):
     current_value = Column(Float, default=0, nullable=True)
     status = Column(String(20), default="pending", nullable=False)
     xp_reward = Column(Integer, nullable=False)
-    bonus_multiplier = Column(Float, default=1.0, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_now)
 

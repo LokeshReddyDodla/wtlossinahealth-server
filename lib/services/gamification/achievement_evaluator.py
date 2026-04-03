@@ -63,6 +63,7 @@ class AchievementEvaluator:
                     patient_id=patient_id,
                     achievement_id=achievement.achievement_id,
                     earned_at=datetime.now().replace(tzinfo=None),
+                    notified=True,
                 )
                 postgres_session.add(pa)
                 newly_earned.append(achievement)

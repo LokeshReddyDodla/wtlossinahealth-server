@@ -289,7 +289,6 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "source_type",
             "source_id",
             "xp_reward",
-            "bonus_multiplier",
             "completed_at",
         ),
         LeaderboardEntry=model_class(

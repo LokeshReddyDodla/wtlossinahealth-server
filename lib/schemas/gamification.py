@@ -245,7 +245,6 @@ class DailyTaskResponse(BaseModel):
     current_value: Optional[float] = None
     status: str
     xp_reward: int
-    bonus_multiplier: float
     completed_at: Optional[datetime] = None
 
 
