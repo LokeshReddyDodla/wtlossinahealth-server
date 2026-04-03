@@ -86,6 +86,17 @@ class ChallengeService:
 
         enrolled_patient_ids: set[UUID] = set()
 
+        # Auto-enroll the creator if they're a patient
+        if created_by_type == "patient":
+            postgres_session.add(
+                ChallengeParticipant(
+                    challenge_id=challenge.challenge_id,
+                    participant_type="patient",
+                    participant_id=created_by_id,
+                )
+            )
+            enrolled_patient_ids.add(created_by_id)
+
         # Auto-enroll specified patients
         if patient_ids and not is_opt_in:
             for pid in patient_ids:
