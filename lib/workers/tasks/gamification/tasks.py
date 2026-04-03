@@ -211,7 +211,7 @@ async def process_challenge_lifecycle(ctx: Dict[str, Any]) -> None:
 
 @task_with_logging
 async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
-    """Cleanup expired feed events and old leaderboard entries.
+    """Cleanup expired feed events, old leaderboard entries, and archive expired plans.
     Runs daily.
     """
     from lib.core.container import container
@@ -224,6 +224,55 @@ async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
     feed_count = await feed_service.cleanup_expired()
     lb_count = await lb_service.cleanup_old_entries(days=90)
 
+    # Archive expired plans (end_date < today but status still ACTIVE)
+    plans_archived = await _archive_expired_plans()
+
     logger.info(
-        f"Cleanup: {feed_count} feed events, {lb_count} leaderboard entries removed"
+        f"Cleanup: {feed_count} feed events, {lb_count} leaderboard entries removed, "
+        f"{plans_archived} plans archived"
     )
+
+
+async def _archive_expired_plans() -> int:
+    """Archive diet and fitness plans whose end_date has passed."""
+    from datetime import date
+    from sqlalchemy import select, and_
+
+    from lib.core.container import container
+    from lib.core.postgres_store import PostgresStore
+    from lib.models.patient_diet_plan import PatientDietPlan
+    from lib.models.patient_fitness_plan import PatientFitnessPlan
+
+    store = container.resolve(PostgresStore)
+    today = date.today()
+    archived = 0
+
+    async with store.get_session() as session:
+        # Diet plans
+        result = await session.execute(
+            select(PatientDietPlan).where(
+                PatientDietPlan.status == "ACTIVE",
+                PatientDietPlan.end_date.is_not(None),
+                PatientDietPlan.end_date < today,
+            )
+        )
+        for plan in result.scalars().all():
+            plan.status = "ARCHIVED"
+            archived += 1
+
+        # Fitness plans
+        result = await session.execute(
+            select(PatientFitnessPlan).where(
+                PatientFitnessPlan.status == "ACTIVE",
+                PatientFitnessPlan.end_date.is_not(None),
+                PatientFitnessPlan.end_date < today,
+            )
+        )
+        for plan in result.scalars().all():
+            plan.status = "ARCHIVED"
+            archived += 1
+
+        if archived:
+            await session.commit()
+
+    return archived
