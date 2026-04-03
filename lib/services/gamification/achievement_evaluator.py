@@ -19,7 +19,7 @@ from lib.models.gamification import (
     PlayerProfile,
 )
 from lib.models.patient import Patient
-from lib.schemas.gamification import TaskStatus
+from lib.schemas.gamification import BuddyStatus, ParticipantStatus, ParticipantType, TaskStatus
 from lib.services.gamification.time_utils import local_today, resolve_timezone
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -295,7 +295,7 @@ class AchievementEvaluator:
 
         result = await session.execute(
             select(func.count(Buddy.buddy_id)).where(
-                Buddy.status == "active",
+                Buddy.status == BuddyStatus.ACTIVE.value,
                 or_(
                     Buddy.requester_id == patient_id,
                     Buddy.accepter_id == patient_id,
@@ -324,8 +324,8 @@ class AchievementEvaluator:
         patient_result = await session.execute(
             select(func.count(ChallengeParticipant.id)).where(
                 ChallengeParticipant.participant_id == patient_id,
-                ChallengeParticipant.participant_type == "patient",
-                ChallengeParticipant.status == "completed",
+                ChallengeParticipant.participant_type == ParticipantType.PATIENT.value,
+                ChallengeParticipant.status == ParticipantStatus.COMPLETED.value,
             )
         )
         patient_count = patient_result.scalar() or 0
@@ -344,8 +344,8 @@ class AchievementEvaluator:
             group_result = await session.execute(
                 select(func.count(ChallengeParticipant.id)).where(
                     ChallengeParticipant.participant_id.in_(group_ids),
-                    ChallengeParticipant.participant_type == "group",
-                    ChallengeParticipant.status == "completed",
+                    ChallengeParticipant.participant_type == ParticipantType.GROUP.value,
+                    ChallengeParticipant.status == ParticipantStatus.COMPLETED.value,
                 )
             )
             group_count = group_result.scalar() or 0
@@ -359,7 +359,7 @@ class AchievementEvaluator:
 
         result = await session.execute(
             select(func.max(Buddy.buddy_streak)).where(
-                Buddy.status == "active",
+                Buddy.status == BuddyStatus.ACTIVE.value,
                 or_(
                     Buddy.requester_id == patient_id,
                     Buddy.accepter_id == patient_id,
@@ -467,18 +467,11 @@ class AchievementEvaluator:
                 )
             )
             current = result.scalar() or 0
-        elif ct in ("meals_logged", "steps_hit", "workouts_completed", "mood_logged", "sleep_logged"):
-            type_map = {
-                "meals_logged": "LOG_MEAL",
-                "steps_hit": "HIT_STEP_GOAL",
-                "workouts_completed": "COMPLETE_WORKOUT",
-                "mood_logged": "LOG_MOOD",
-                "sleep_logged": "LOG_SLEEP",
-            }
+        elif ct in self._TASK_COUNT_CRITERIA:
             result = await postgres_session.execute(
                 select(func.count(DailyTask.task_id)).where(
                     DailyTask.patient_id == patient_id,
-                    DailyTask.task_type == type_map[ct],
+                    DailyTask.task_type == self._TASK_COUNT_CRITERIA[ct],
                     DailyTask.status == TaskStatus.COMPLETED.value,
                 )
             )
@@ -487,7 +480,7 @@ class AchievementEvaluator:
             from sqlalchemy import or_
             result = await postgres_session.execute(
                 select(func.count(Buddy.buddy_id)).where(
-                    Buddy.status == "active",
+                    Buddy.status == BuddyStatus.ACTIVE.value,
                     or_(
                         Buddy.requester_id == patient_id,
                         Buddy.accepter_id == patient_id,
@@ -507,8 +500,8 @@ class AchievementEvaluator:
             result = await postgres_session.execute(
                 select(func.count(ChallengeParticipant.id)).where(
                     ChallengeParticipant.participant_id == patient_id,
-                    ChallengeParticipant.participant_type == "patient",
-                    ChallengeParticipant.status == "completed",
+                    ChallengeParticipant.participant_type == ParticipantType.PATIENT.value,
+                    ChallengeParticipant.status == ParticipantStatus.COMPLETED.value,
                 )
             )
             current = result.scalar() or 0

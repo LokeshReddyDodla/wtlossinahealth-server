@@ -137,7 +137,7 @@ class GroupService:
         if not group:
             return None
         count = await self._member_count(group_id, postgres_session)
-        return self._to_response(group, count)
+        return self.to_response(group, count)
 
     @with_postgres_session
     async def get_patient_groups(
@@ -166,7 +166,7 @@ class GroupService:
         responses = []
         for g in groups:
             count = await self._member_count(g.group_id, postgres_session)
-            responses.append(self._to_response(g, count))
+            responses.append(self.to_response(g, count))
         return responses
 
     @with_postgres_session
@@ -228,7 +228,8 @@ class GroupService:
         )
         return result.scalar() or 0
 
-    def _to_response(self, group: Group, member_count: int) -> GroupResponse:
+    @staticmethod
+    def to_response(group: Group, member_count: int) -> GroupResponse:
         return GroupResponse(
             group_id=str(group.group_id),
             name=group.name,

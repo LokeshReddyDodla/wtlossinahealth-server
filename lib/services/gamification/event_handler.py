@@ -40,50 +40,37 @@ class GamificationEventHandler:
             patient_id, await self._patient_today(patient_id)
         )
 
+    async def _safe_complete(
+        self, patient_id: UUID, task_type: TaskType, hook_name: str
+    ) -> None:
+        """Fire-and-forget wrapper: complete a task and log on failure."""
+        try:
+            await self._complete_task(patient_id, task_type.value)
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"Gamification hook {hook_name} failed for {patient_id}"
+            )
+
     async def on_meal_logged(self, patient_id: UUID) -> None:
         try:
             await self._increment_challenge_metric(
-                patient_id,
-                metric_type="meals_logged",
-                increment=1.0,
+                patient_id, metric_type="meals_logged", increment=1.0,
             )
-            await self._complete_task(patient_id, TaskType.LOG_MEAL.value)
         except Exception:
-            logger.opt(exception=True).warning(
-                f"Gamification hook on_meal_logged failed for {patient_id}"
-            )
+            pass
+        await self._safe_complete(patient_id, TaskType.LOG_MEAL, "on_meal_logged")
 
     async def on_sleep_logged(self, patient_id: UUID) -> None:
-        try:
-            await self._complete_task(patient_id, TaskType.LOG_SLEEP.value)
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"Gamification hook on_sleep_logged failed for {patient_id}"
-            )
+        await self._safe_complete(patient_id, TaskType.LOG_SLEEP, "on_sleep_logged")
 
     async def on_mood_logged(self, patient_id: UUID) -> None:
-        try:
-            await self._complete_task(patient_id, TaskType.LOG_MOOD.value)
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"Gamification hook on_mood_logged failed for {patient_id}"
-            )
+        await self._safe_complete(patient_id, TaskType.LOG_MOOD, "on_mood_logged")
 
     async def on_glucose_synced(self, patient_id: UUID) -> None:
-        try:
-            await self._complete_task(patient_id, TaskType.LOG_GLUCOSE.value)
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"Gamification hook on_glucose_synced failed for {patient_id}"
-            )
+        await self._safe_complete(patient_id, TaskType.LOG_GLUCOSE, "on_glucose_synced")
 
     async def on_weight_logged(self, patient_id: UUID) -> None:
-        try:
-            await self._complete_task(patient_id, TaskType.LOG_WEIGHT.value)
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"Gamification hook on_weight_logged failed for {patient_id}"
-            )
+        await self._safe_complete(patient_id, TaskType.LOG_WEIGHT, "on_weight_logged")
 
     async def on_fitness_synced(
         self,
@@ -115,14 +102,19 @@ class GamificationEventHandler:
         total_protein: Optional[float] = None,
     ) -> None:
         """Called by EOD evaluator when daily macro totals are available."""
+        from lib.schemas.gamification import CALORIE_TOLERANCE_PCT, PROTEIN_TOLERANCE_PCT
         try:
             if total_calories is not None:
-                await self._evaluate_calorie_target(
-                    patient_id, total_calories
+                await self._evaluate_range_target(
+                    patient_id, total_calories,
+                    TaskType.HIT_CALORIE_TARGET,
+                    1 - CALORIE_TOLERANCE_PCT, 1 + CALORIE_TOLERANCE_PCT,
                 )
             if total_protein is not None:
-                await self._evaluate_protein_target(
-                    patient_id, total_protein
+                await self._evaluate_range_target(
+                    patient_id, total_protein,
+                    TaskType.HIT_PROTEIN_TARGET,
+                    1 - PROTEIN_TOLERANCE_PCT, 1 + PROTEIN_TOLERANCE_PCT,
                 )
         except Exception:
             logger.opt(exception=True).warning(
@@ -376,40 +368,47 @@ class GamificationEventHandler:
                 metric_type="steps",
                 increment=steps - previous_steps,
             )
-        # 80% threshold
-        if steps >= task.target_value * 0.8:
+        from lib.schemas.gamification import STEP_GOAL_THRESHOLD_PCT
+        if steps >= task.target_value * STEP_GOAL_THRESHOLD_PCT:
             task.status = TaskStatus.COMPLETED.value
             task.completed_at = datetime.now().replace(tzinfo=None)
-            await self.xp_service.grant_xp(
-                patient_id=patient_id,
-                amount=task.xp_reward,
-                source_type="task",
-                source_id=task.task_id,
-                description=f"Task: {task.title}",
-                postgres_session=postgres_session,
-            )
+            try:
+                await self.xp_service.grant_xp(
+                    patient_id=patient_id,
+                    amount=task.xp_reward,
+                    source_type="task",
+                    source_id=task.task_id,
+                    description=f"Task: {task.title}",
+                )
+            except Exception:
+                task.status = TaskStatus.PENDING.value
+                task.completed_at = None
+                await postgres_session.commit()
+                raise
             await postgres_session.commit()
-            await self.achievement_evaluator.evaluate_all(
-                patient_id=patient_id
-            )
+            await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
             await self._update_quest_progress(patient_id, TaskType.HIT_STEP_GOAL.value)
         else:
             await postgres_session.commit()
 
     @with_postgres_session
-    async def _evaluate_calorie_target(
+    async def _evaluate_range_target(
         self,
         patient_id: UUID,
-        total_calories: float,
+        actual_value: float,
+        task_type: TaskType,
+        lower_pct: float,
+        upper_pct: float,
         *,
         postgres_session: AsyncSession,
     ) -> None:
+        """Evaluate a range-based target task (calories, protein, etc.)."""
         today = await self._patient_today(patient_id)
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
                 DailyTask.task_date == today,
-                DailyTask.task_type == TaskType.HIT_CALORIE_TARGET.value,
+                DailyTask.task_type == task_type.value,
                 DailyTask.status == TaskStatus.PENDING.value,
             )
         )
@@ -417,72 +416,29 @@ class GamificationEventHandler:
         if not task or not task.target_value:
             return
 
-        task.current_value = total_calories
-        # ±15% tolerance
-        lower = task.target_value * 0.85
-        upper = task.target_value * 1.15
-        if lower <= total_calories <= upper:
+        task.current_value = actual_value
+        lower = task.target_value * lower_pct
+        upper = task.target_value * upper_pct
+        if lower <= actual_value <= upper:
             task.status = TaskStatus.COMPLETED.value
             task.completed_at = datetime.now().replace(tzinfo=None)
-            await self.xp_service.grant_xp(
-                patient_id=patient_id,
-                amount=task.xp_reward,
-                source_type="task",
-                source_id=task.task_id,
-                description=f"Task: {task.title}",
-                postgres_session=postgres_session,
-            )
+            try:
+                await self.xp_service.grant_xp(
+                    patient_id=patient_id,
+                    amount=task.xp_reward,
+                    source_type="task",
+                    source_id=task.task_id,
+                    description=f"Task: {task.title}",
+                )
+            except Exception:
+                task.status = TaskStatus.PENDING.value
+                task.completed_at = None
+                await postgres_session.commit()
+                raise
             await postgres_session.commit()
-            await self.achievement_evaluator.evaluate_all(
-                patient_id=patient_id
-            )
-            await self._update_challenge_progress(patient_id, TaskType.HIT_CALORIE_TARGET.value)
-            await self._update_quest_progress(patient_id, TaskType.HIT_CALORIE_TARGET.value)
-        else:
-            await postgres_session.commit()
-
-    @with_postgres_session
-    async def _evaluate_protein_target(
-        self,
-        patient_id: UUID,
-        total_protein: float,
-        *,
-        postgres_session: AsyncSession,
-    ) -> None:
-        today = await self._patient_today(patient_id)
-        result = await postgres_session.execute(
-            select(DailyTask).where(
-                DailyTask.patient_id == patient_id,
-                DailyTask.task_date == today,
-                DailyTask.task_type == TaskType.HIT_PROTEIN_TARGET.value,
-                DailyTask.status == TaskStatus.PENDING.value,
-            )
-        )
-        task = result.scalars().first()
-        if not task or not task.target_value:
-            return
-
-        task.current_value = total_protein
-        # ±10% tolerance
-        lower = task.target_value * 0.9
-        upper = task.target_value * 1.1
-        if lower <= total_protein <= upper:
-            task.status = TaskStatus.COMPLETED.value
-            task.completed_at = datetime.now().replace(tzinfo=None)
-            await self.xp_service.grant_xp(
-                patient_id=patient_id,
-                amount=task.xp_reward,
-                source_type="task",
-                source_id=task.task_id,
-                description=f"Task: {task.title}",
-                postgres_session=postgres_session,
-            )
-            await postgres_session.commit()
-            await self.achievement_evaluator.evaluate_all(
-                patient_id=patient_id
-            )
-            await self._update_challenge_progress(patient_id, TaskType.HIT_PROTEIN_TARGET.value)
-            await self._update_quest_progress(patient_id, TaskType.HIT_PROTEIN_TARGET.value)
+            await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
+            await self._update_challenge_progress(patient_id, task_type.value)
+            await self._update_quest_progress(patient_id, task_type.value)
         else:
             await postgres_session.commit()
 
