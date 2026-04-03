@@ -280,8 +280,66 @@ async def get_xp_history(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Buddies
+# Buddy Search + Buddies
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/patients/{patient_id}/buddies/search",
+    response_model=SuccessResponse[List[Dict]],
+    summary="Search patients in the same facility for buddy requests",
+)
+async def search_patients_for_buddy(
+    patient_id: UUID,
+    q: str = Query(..., min_length=1, max_length=100, description="Name to search"),
+    limit: int = Query(10, ge=1, le=20),
+    service: GamificationService = Depends(get_gamification_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Search for patients by name within the same facility. Returns basic info only (id, name) for buddy request purposes."""
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+
+    from sqlalchemy import select as sa_select, func as sa_func
+    from lib.models.patient import Patient
+
+    async with service.postgres_store.get_session() as session:
+        # Get the requesting patient's facility
+        facility_result = await session.execute(
+            sa_select(Patient.health_facility_id).where(Patient.patient_id == pid)
+        )
+        facility_id = facility_result.scalar()
+
+        if not facility_id:
+            return SuccessResponse(message="No facility", data=[])
+
+        # Search by first_name or last_name (case-insensitive) within same facility
+        search_term = f"%{q.strip().lower()}%"
+        result = await session.execute(
+            sa_select(Patient.patient_id, Patient.first_name, Patient.last_name)
+            .where(
+                Patient.health_facility_id == facility_id,
+                Patient.patient_id != pid,
+                sa_func.lower(
+                    sa_func.concat(
+                        sa_func.coalesce(Patient.first_name, ""),
+                        " ",
+                        sa_func.coalesce(Patient.last_name, ""),
+                    )
+                ).like(search_term),
+            )
+            .limit(limit)
+        )
+        patients = [
+            {
+                "patient_id": str(row.patient_id),
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+            }
+            for row in result.all()
+        ]
+
+    return SuccessResponse(message="Search results", data=patients)
 
 
 @router.get(
@@ -1037,6 +1095,22 @@ async def canonical_get_recent_achievements(
     pid = await _resolve_patient(patient_id, actor, cp_access)
     achievements = await service.get_recent_achievements(pid, limit=limit)
     return SuccessResponse(message="Recent achievements", data=achievements)
+
+
+@canonical_router.get(
+    "/patients/{patient_id}/gamification/buddies/search",
+    response_model=SuccessResponse[List[Dict]],
+    summary="Search patients in the same facility for buddy requests",
+)
+async def canonical_search_patients_for_buddy(
+    patient_id: UUID,
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(10, ge=1, le=20),
+    service: GamificationService = Depends(get_gamification_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    return await search_patients_for_buddy(patient_id, q, limit, service, actor, cp_access)
 
 
 @canonical_router.get(
