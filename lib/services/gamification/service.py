@@ -281,7 +281,7 @@ class GamificationService:
         )
 
         # Refresh profile from DB to get updated XP (grant_xp used a separate session)
-        await postgres_session.expire_all()
+        postgres_session.expire_all()
         profile_result = await postgres_session.execute(
             select(PlayerProfile).where(
                 PlayerProfile.patient_id == patient_id
