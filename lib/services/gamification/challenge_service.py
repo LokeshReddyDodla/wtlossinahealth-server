@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
+from lib.services.gamification.queries import active_group_ids
 from lib.models.gamification import (
     Challenge,
     ChallengeParticipant,
@@ -198,13 +199,7 @@ class ChallengeService:
             )
         )
 
-        group_ids_result = await postgres_session.execute(
-            select(GroupMember.group_id).where(
-                GroupMember.patient_id == patient_id,
-                GroupMember.is_active == True,
-            )
-        )
-        group_ids = list(group_ids_result.scalars().all())
+        group_ids = await active_group_ids(patient_id, postgres_session)
         group_rows = []
         if group_ids:
             group_rows_result = await postgres_session.execute(
@@ -314,13 +309,7 @@ class ChallengeService:
         postgres_session: AsyncSession,
     ) -> List[ChallengeResponse]:
         today = await self._patient_today(patient_id, postgres_session)
-        group_ids_result = await postgres_session.execute(
-            select(GroupMember.group_id).where(
-                GroupMember.patient_id == patient_id,
-                GroupMember.is_active == True,
-            )
-        )
-        group_ids = list(group_ids_result.scalars().all())
+        group_ids = await active_group_ids(patient_id, postgres_session)
 
         patient_result = await postgres_session.execute(
             select(Challenge)

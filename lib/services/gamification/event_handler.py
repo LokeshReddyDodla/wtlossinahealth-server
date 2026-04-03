@@ -146,10 +146,23 @@ class GamificationEventHandler:
         if not task:
             return
 
-        now = datetime.now().replace(tzinfo=None)
-        task.status = TaskStatus.COMPLETED.value
-        task.completed_at = now
+        await self._mark_task_completed(task, patient_id, postgres_session)
+        await self._update_challenge_progress(patient_id, task_type)
+        await self._update_quest_progress(patient_id, task_type)
 
+    async def _mark_task_completed(
+        self,
+        task: DailyTask,
+        patient_id: UUID,
+        session: AsyncSession,
+    ) -> None:
+        """Mark a task completed, grant XP, and evaluate achievements.
+
+        Rolls back the task status if the XP grant fails so the task
+        remains pending and can be retried.
+        """
+        task.status = TaskStatus.COMPLETED.value
+        task.completed_at = datetime.now().replace(tzinfo=None)
         try:
             await self.xp_service.grant_xp(
                 patient_id=patient_id,
@@ -159,21 +172,12 @@ class GamificationEventHandler:
                 description=f"Task: {task.title}",
             )
         except Exception:
-            # Roll back the task status change if XP grant fails
             task.status = TaskStatus.PENDING.value
             task.completed_at = None
-            await postgres_session.commit()
+            await session.commit()
             raise
-
-        await postgres_session.commit()
-
+        await session.commit()
         await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
-
-        # Update challenge progress based on task type
-        await self._update_challenge_progress(patient_id, task_type)
-
-        # Update weekly quest progress
-        await self._update_quest_progress(patient_id, task_type)
 
     async def _update_quest_progress(
         self, patient_id: UUID, task_type: str
@@ -266,19 +270,23 @@ class GamificationEventHandler:
                     )
                     quest = quest_result.scalars().first()
                     if quest:
-                        # Guard: count actual "all completed" days this week
-                        all_days = set()
-                        for d_offset in range((today - week_start).days + 1):
-                            d = week_start + timedelta(days=d_offset)
-                            day_tasks_result = await session.execute(
-                                select(DailyTask).where(
-                                    DailyTask.patient_id == patient_id,
-                                    DailyTask.task_date == d,
-                                )
+                        # Bulk query: fetch ALL tasks for this week, group by date in Python
+                        week_tasks_result = await session.execute(
+                            select(DailyTask).where(
+                                DailyTask.patient_id == patient_id,
+                                DailyTask.task_date >= week_start,
+                                DailyTask.task_date <= today,
                             )
-                            day_tasks = day_tasks_result.scalars().all()
-                            if day_tasks and all(t.status == TaskStatus.COMPLETED.value for t in day_tasks):
-                                all_days.add(d)
+                        )
+                        tasks_by_date: dict = {}
+                        for t in week_tasks_result.scalars().all():
+                            tasks_by_date.setdefault(t.task_date, []).append(t)
+                        all_days = {
+                            d for d, day_tasks in tasks_by_date.items()
+                            if day_tasks and all(
+                                t.status == TaskStatus.COMPLETED.value for t in day_tasks
+                            )
+                        }
                         new_value = float(len(all_days))
                         if new_value > quest.current_value:
                             quest.current_value = new_value
@@ -370,23 +378,7 @@ class GamificationEventHandler:
             )
         from lib.schemas.gamification import STEP_GOAL_THRESHOLD_PCT
         if steps >= task.target_value * STEP_GOAL_THRESHOLD_PCT:
-            task.status = TaskStatus.COMPLETED.value
-            task.completed_at = datetime.now().replace(tzinfo=None)
-            try:
-                await self.xp_service.grant_xp(
-                    patient_id=patient_id,
-                    amount=task.xp_reward,
-                    source_type="task",
-                    source_id=task.task_id,
-                    description=f"Task: {task.title}",
-                )
-            except Exception:
-                task.status = TaskStatus.PENDING.value
-                task.completed_at = None
-                await postgres_session.commit()
-                raise
-            await postgres_session.commit()
-            await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
+            await self._mark_task_completed(task, patient_id, postgres_session)
             await self._update_quest_progress(patient_id, TaskType.HIT_STEP_GOAL.value)
         else:
             await postgres_session.commit()
@@ -420,23 +412,7 @@ class GamificationEventHandler:
         lower = task.target_value * lower_pct
         upper = task.target_value * upper_pct
         if lower <= actual_value <= upper:
-            task.status = TaskStatus.COMPLETED.value
-            task.completed_at = datetime.now().replace(tzinfo=None)
-            try:
-                await self.xp_service.grant_xp(
-                    patient_id=patient_id,
-                    amount=task.xp_reward,
-                    source_type="task",
-                    source_id=task.task_id,
-                    description=f"Task: {task.title}",
-                )
-            except Exception:
-                task.status = TaskStatus.PENDING.value
-                task.completed_at = None
-                await postgres_session.commit()
-                raise
-            await postgres_session.commit()
-            await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
+            await self._mark_task_completed(task, patient_id, postgres_session)
             await self._update_challenge_progress(patient_id, task_type.value)
             await self._update_quest_progress(patient_id, task_type.value)
         else:

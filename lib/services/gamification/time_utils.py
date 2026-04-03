@@ -54,6 +54,12 @@ def matches_local_hour(
     return local_now(tz_name, now=now).hour == target_hour
 
 
+async def patient_today(patient_id, session) -> date:
+    """Return the patient's local date. Shared across all gamification services."""
+    tz = await get_patient_timezone(patient_id, session)
+    return local_today(tz)
+
+
 async def get_patient_timezone(
     patient_id,
     session,

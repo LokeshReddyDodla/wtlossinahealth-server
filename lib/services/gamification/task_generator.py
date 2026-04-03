@@ -305,13 +305,8 @@ class TaskGeneratorService:
         )
         rows = list(result.all())
 
-        group_ids_result = await session.execute(
-            select(GroupMember.group_id).where(
-                GroupMember.patient_id == patient_id,
-                GroupMember.is_active == True,
-            )
-        )
-        group_ids = list(group_ids_result.scalars().all())
+        from lib.services.gamification.queries import active_group_ids
+        group_ids = await active_group_ids(patient_id, session)
         if group_ids:
             group_rows = await session.execute(
                 select(ChallengeParticipant, Challenge)

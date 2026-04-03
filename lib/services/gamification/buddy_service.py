@@ -23,10 +23,9 @@ from lib.schemas.gamification import (
     TaskStatus,
     title_for_level,
 )
+from lib.schemas.gamification import MAX_ACTIVE_BUDDIES
 from lib.services.gamification.time_utils import local_today
 from lib.utils.postgres_session_decorator import with_postgres_session
-
-MAX_ACTIVE_BUDDIES = 3
 
 
 class BuddyService:
@@ -192,23 +191,30 @@ class BuddyService:
         )
         buddies = result.scalars().all()
 
+        # Batch-load names for all buddy partners
+        other_ids = [
+            b.accepter_id if b.requester_id == patient_id else b.requester_id
+            for b in buddies
+        ]
+        names_map: dict = {}
+        if other_ids:
+            names_result = await postgres_session.execute(
+                select(Patient.patient_id, Patient.first_name).where(
+                    Patient.patient_id.in_(other_ids)
+                )
+            )
+            names_map = {r.patient_id: r.first_name for r in names_result.all()}
+
         responses = []
         for b in buddies:
             other_id = (
                 b.accepter_id if b.requester_id == patient_id else b.requester_id
             )
-            name_result = await postgres_session.execute(
-                select(Patient.first_name).where(
-                    Patient.patient_id == other_id
-                )
-            )
-            name = name_result.scalar()
-
             responses.append(
                 BuddyResponse(
                     buddy_id=str(b.buddy_id),
                     buddy_patient_id=str(other_id),
-                    buddy_name=name,
+                    buddy_name=names_map.get(other_id),
                     status=b.status,
                     buddy_streak=b.buddy_streak,
                     buddy_streak_longest=b.buddy_streak_longest,

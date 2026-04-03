@@ -18,7 +18,12 @@ from lib.models.gamification import (
     PlayerProfile,
 )
 from lib.models.patient import Patient
-from lib.schemas.gamification import FeedEventResponse
+from lib.schemas.gamification import (
+    CHEERS_PER_DAY_LIMIT,
+    CHEER_XP_REWARD,
+    FEED_EXPIRY_DAYS,
+    FeedEventResponse,
+)
 from lib.services.gamification.notifications import send_gamification_notification
 from lib.services.gamification.time_utils import (
     local_today,
@@ -26,10 +31,6 @@ from lib.services.gamification.time_utils import (
 )
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
-
-CHEERS_PER_DAY_LIMIT = 3
-CHEER_XP = 5
-FEED_EXPIRY_DAYS = 30
 
 
 class FeedService:
@@ -255,7 +256,7 @@ class FeedService:
         # Grant XP to cheerer
         await self.xp_service.grant_xp(
             patient_id=sender_id,
-            amount=CHEER_XP,
+            amount=CHEER_XP_REWARD,
             source_type="cheer",
             source_id=cheer.cheer_id,
             description=f"Cheered a friend",
