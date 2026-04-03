@@ -328,6 +328,10 @@ class PatientDietPlanService:
 
             await self._vectorize_diet_plan(diet_plan)
 
+            # Expire today's plan-derived tasks if plan is no longer active
+            if new_status != "ACTIVE":
+                await self._expire_plan_tasks(str(diet_plan.patient_id), str(diet_plan.diet_plan_id))
+
             return diet_plan
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -358,6 +362,7 @@ class PatientDietPlanService:
                     message="Diet plan not found. It may have been deleted.",
                 )
 
+            patient_id = str(diet_plan.patient_id)
             plan_id = str(diet_plan.diet_plan_id)
             await postgres_session.delete(diet_plan)
             await postgres_session.commit()
@@ -366,6 +371,8 @@ class PatientDietPlanService:
                 await self.plans_vector_service.delete_plan_vector(plan_id)
             except Exception as e:
                 logger.error(f"Failed to delete diet plan vector {plan_id}: {e}")
+
+            await self._expire_plan_tasks(patient_id, plan_id)
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -401,3 +408,24 @@ class PatientDietPlanService:
             )
         except Exception as e:
             logger.error(f"Failed to vectorize diet plan {plan.diet_plan_id}: {e}")
+
+    async def _expire_plan_tasks(self, patient_id: str, plan_id: str) -> None:
+        """Expire today's pending tasks that were derived from this plan."""
+        try:
+            from lib.models.gamification import DailyTask
+            from lib.services.gamification.time_utils import local_today
+            today = local_today(None)
+            async with self.postgres_store.get_session() as session:
+                result = await session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == patient_id,
+                        DailyTask.task_date == today,
+                        DailyTask.source_id == plan_id,
+                        DailyTask.status == "pending",
+                    )
+                )
+                for task in result.scalars().all():
+                    task.status = "expired"
+                await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to expire plan tasks for {plan_id}: {e}")

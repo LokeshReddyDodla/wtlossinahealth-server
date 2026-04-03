@@ -124,6 +124,37 @@ class GroupService:
 
         member.is_active = False
         member.left_at = datetime.now().replace(tzinfo=None)
+
+        # Expire today's challenge tasks for group challenges the patient was in
+        from lib.models.gamification import Challenge, ChallengeParticipant, DailyTask
+        from lib.services.gamification.time_utils import local_today
+        today = local_today(None)
+
+        # Find active group challenges
+        challenge_result = await postgres_session.execute(
+            select(Challenge.challenge_id).join(
+                ChallengeParticipant,
+                ChallengeParticipant.challenge_id == Challenge.challenge_id,
+            ).where(
+                ChallengeParticipant.participant_id == group_id,
+                ChallengeParticipant.participant_type == "group",
+                ChallengeParticipant.status == "active",
+                Challenge.is_active == True,
+            )
+        )
+        for row in challenge_result.all():
+            task_type = f"CHALLENGE_TASK_{row.challenge_id.hex}"
+            task_result = await postgres_session.execute(
+                select(DailyTask).where(
+                    DailyTask.patient_id == patient_id,
+                    DailyTask.task_date == today,
+                    DailyTask.task_type == task_type,
+                    DailyTask.status == "pending",
+                )
+            )
+            for task in task_result.scalars().all():
+                task.status = "expired"
+
         await postgres_session.commit()
 
     @with_postgres_session

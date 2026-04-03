@@ -503,6 +503,21 @@ class ChallengeService:
                 p.completed_at = now
 
         challenge.is_active = False
+
+        # Expire today's challenge tasks for all participants
+        from lib.services.gamification.time_utils import local_today
+        today = local_today(None)
+        task_type = f"CHALLENGE_TASK_{challenge_id.hex}"
+        task_result = await postgres_session.execute(
+            select(DailyTask).where(
+                DailyTask.task_type == task_type,
+                DailyTask.task_date == today,
+                DailyTask.status == "pending",
+            )
+        )
+        for task in task_result.scalars().all():
+            task.status = "expired"
+
         await postgres_session.commit()
 
         # Grant XP
