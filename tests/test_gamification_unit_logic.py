@@ -11,6 +11,24 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _StrEnumMember(str):
+    """Hashable stub that behaves like a str enum member."""
+    def __new__(cls, value: str):
+        obj = str.__new__(cls, value)
+        obj._value = value
+        return obj
+
+    @property
+    def value(self):
+        return self._value
+
+
+def _make_str_enum(name: str, **members):
+    """Create a SimpleNamespace whose members are hashable str-like objects."""
+    ns = SimpleNamespace(**{k: _StrEnumMember(v) for k, v in members.items()})
+    return ns
+
+
 def _make_module(name: str, **attrs) -> types.ModuleType:
     module = types.ModuleType(name)
     for key, value in attrs.items():
@@ -32,27 +50,31 @@ def _load_module(monkeypatch, relative_path: str, module_name: str, stubs: dict[
 def _base_stubs() -> dict[str, types.ModuleType]:
     sqlalchemy = _make_module(
         "sqlalchemy",
-        func=SimpleNamespace(count=lambda *a, **k: None, sum=lambda *a, **k: None, coalesce=lambda *a, **k: None),
+        func=SimpleNamespace(count=lambda *a, **k: None, sum=lambda *a, **k: None, coalesce=lambda *a, **k: None, distinct=lambda *a, **k: None, date=lambda *a, **k: None, extract=lambda *a, **k: None, max=lambda *a, **k: None),
         select=lambda *a, **k: None,
         delete=lambda *a, **k: None,
         or_=lambda *a, **k: None,
+        and_=lambda *a, **k: None,
     )
     sqlalchemy_ext = _make_module("sqlalchemy.ext")
     sqlalchemy_asyncio = _make_module("sqlalchemy.ext.asyncio", AsyncSession=type("AsyncSession", (), {}))
 
     gamification_models = _make_module(
         "lib.models.gamification",
-        Challenge=type("Challenge", (), {}),
-        ChallengeParticipant=type("ChallengeParticipant", (), {}),
-        Group=type("Group", (), {}),
-        GroupMember=type("GroupMember", (), {}),
-        PlayerProfile=type("PlayerProfile", (), {}),
-        DailyTask=type("DailyTask", (), {}),
-        LeaderboardEntry=type("LeaderboardEntry", (), {}),
-        XPLedgerEntry=type("XPLedgerEntry", (), {}),
+        Achievement=type("Achievement", (), {}),
         ActivityFeedEvent=type("ActivityFeedEvent", (), {}),
         Buddy=type("Buddy", (), {}),
+        Challenge=type("Challenge", (), {}),
+        ChallengeParticipant=type("ChallengeParticipant", (), {}),
         Cheer=type("Cheer", (), {}),
+        DailyTask=type("DailyTask", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}),
+        Group=type("Group", (), {}),
+        GroupMember=type("GroupMember", (), {}),
+        LeaderboardEntry=type("LeaderboardEntry", (), {}),
+        PatientAchievement=type("PatientAchievement", (), {}),
+        PlayerProfile=type("PlayerProfile", (), {}),
+        WeeklyQuest=type("WeeklyQuest", (), {}),
+        XPLedgerEntry=type("XPLedgerEntry", (), {}),
     )
 
     gamification_schemas = _make_module(
@@ -64,23 +86,12 @@ def _base_stubs() -> dict[str, types.ModuleType]:
         LeaderboardResponse=type("LeaderboardResponse", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}),
         FeedEventResponse=type("FeedEventResponse", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}),
         TaskStatus=SimpleNamespace(COMPLETED=SimpleNamespace(value="completed"), PENDING=SimpleNamespace(value="pending")),
-        TaskType=SimpleNamespace(
-            LOG_MEAL=SimpleNamespace(value="LOG_MEAL"),
-            HIT_CALORIE_TARGET=SimpleNamespace(value="HIT_CALORIE_TARGET"),
-            HIT_PROTEIN_TARGET=SimpleNamespace(value="HIT_PROTEIN_TARGET"),
-            HIT_STEP_GOAL=SimpleNamespace(value="HIT_STEP_GOAL"),
-            COMPLETE_WORKOUT=SimpleNamespace(value="COMPLETE_WORKOUT"),
-            LOG_SLEEP=SimpleNamespace(value="LOG_SLEEP"),
-            LOG_MOOD=SimpleNamespace(value="LOG_MOOD"),
-            LOG_GLUCOSE=SimpleNamespace(value="LOG_GLUCOSE"),
-            LOG_WEIGHT=SimpleNamespace(value="LOG_WEIGHT"),
-            CHALLENGE_TASK=SimpleNamespace(value="CHALLENGE_TASK"),
-        ),
-        SourceType=SimpleNamespace(CHALLENGE=SimpleNamespace(value="challenge")),
-        ParticipantStatus=SimpleNamespace(ACTIVE=SimpleNamespace(value="active"), COMPLETED=SimpleNamespace(value="completed"), WITHDRAWN=SimpleNamespace(value="withdrawn")),
-        ParticipantType=SimpleNamespace(PATIENT=SimpleNamespace(value="patient"), GROUP=SimpleNamespace(value="group")),
-        BuddyStatus=SimpleNamespace(ACTIVE=SimpleNamespace(value="active"), PENDING=SimpleNamespace(value="pending"), REMOVED=SimpleNamespace(value="removed")),
-        CreatorType=SimpleNamespace(CARE_PROVIDER=SimpleNamespace(value="care_provider")),
+        TaskType=_make_str_enum("TaskType", LOG_MEAL="LOG_MEAL", HIT_CALORIE_TARGET="HIT_CALORIE_TARGET", HIT_PROTEIN_TARGET="HIT_PROTEIN_TARGET", HIT_STEP_GOAL="HIT_STEP_GOAL", COMPLETE_WORKOUT="COMPLETE_WORKOUT", LOG_SLEEP="LOG_SLEEP", LOG_MOOD="LOG_MOOD", LOG_GLUCOSE="LOG_GLUCOSE", LOG_WEIGHT="LOG_WEIGHT", CHALLENGE_TASK="CHALLENGE_TASK"),
+        SourceType=_make_str_enum("SourceType", DIET_PLAN="diet_plan", FITNESS_PLAN="fitness_plan", HABIT="habit", QUEST="quest", CHALLENGE="challenge"),
+        ParticipantStatus=_make_str_enum("ParticipantStatus", ACTIVE="active", COMPLETED="completed", WITHDRAWN="withdrawn"),
+        ParticipantType=_make_str_enum("ParticipantType", PATIENT="patient", GROUP="group"),
+        BuddyStatus=_make_str_enum("BuddyStatus", ACTIVE="active", PENDING="pending", REMOVED="removed"),
+        CreatorType=_make_str_enum("CreatorType", CARE_PROVIDER="care_provider"),
         DAILY_XP_CAP=500,
         BUDDY_REQUESTS_PER_DAY=10,
         MAX_LEVEL=100,
