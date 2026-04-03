@@ -699,7 +699,13 @@ async def get_leaderboard(
             _result = await _session.execute(
                 _select(_Patient.health_facility_id).where(_Patient.patient_id == pid)
             )
-            if str(_result.scalar()) != str(scope_id):
+            patient_facility = _result.scalar()
+            if patient_facility is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Patient is not associated with any facility",
+                )
+            if str(patient_facility) != str(scope_id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this facility")
 
     board = await service.get_leaderboard(board_type, scope, pid, scope_id=scope_id)

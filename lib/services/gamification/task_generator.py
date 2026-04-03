@@ -280,6 +280,13 @@ class TaskGeneratorService:
         task_date: date,
         session: AsyncSession,
     ) -> List[DailyTask]:
+        """Generate informational tasks for active challenges.
+
+        NOTE: Challenge tasks use a synthetic task_type (CHALLENGE_TASK_{id})
+        and have xp_reward=0. They are display-only — they do NOT count toward
+        streak activity or earn XP directly. Challenge XP is granted via
+        challenge_service.finalize_challenge when the challenge ends.
+        """
         result = await session.execute(
             select(ChallengeParticipant, Challenge)
             .join(Challenge)

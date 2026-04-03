@@ -29,7 +29,7 @@ class GamificationEventHandler:
         self.postgres_store = postgres_store
         self.xp_service = xp_service
         self.achievement_evaluator = achievement_evaluator
-        self._tz_cache: dict[UUID, date] = {}  # patient_id -> today (per-request cache)
+        self._tz_cache: dict[UUID, str | None] = {}  # patient_id -> timezone name
 
     async def _ensure_tasks_exist(self, patient_id: UUID) -> None:
         """Ensure daily tasks exist before trying to complete them."""
@@ -158,13 +158,20 @@ class GamificationEventHandler:
         task.status = TaskStatus.COMPLETED.value
         task.completed_at = now
 
-        await self.xp_service.grant_xp(
-            patient_id=patient_id,
-            amount=task.xp_reward,
-            source_type="task",
-            source_id=task.task_id,
-            description=f"Task: {task.title}",
-        )
+        try:
+            await self.xp_service.grant_xp(
+                patient_id=patient_id,
+                amount=task.xp_reward,
+                source_type="task",
+                source_id=task.task_id,
+                description=f"Task: {task.title}",
+            )
+        except Exception:
+            # Roll back the task status change if XP grant fails
+            task.status = TaskStatus.PENDING.value
+            task.completed_at = None
+            await postgres_session.commit()
+            raise
 
         await postgres_session.commit()
 
@@ -480,12 +487,15 @@ class GamificationEventHandler:
             await postgres_session.commit()
 
     async def _patient_today(self, patient_id: UUID) -> date:
+        tz_name = await self._resolve_tz(patient_id)
+        return local_today(tz_name)
+
+    async def _resolve_tz(self, patient_id: UUID) -> str | None:
         if patient_id in self._tz_cache:
             return self._tz_cache[patient_id]
         from lib.services.gamification.time_utils import get_patient_timezone
 
         async with self.postgres_store.get_session() as session:
             tz_name = await get_patient_timezone(patient_id, session)
-        result = local_today(tz_name)
-        self._tz_cache[patient_id] = result
-        return result
+        self._tz_cache[patient_id] = tz_name
+        return tz_name

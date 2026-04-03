@@ -61,8 +61,11 @@ class StreakService:
                 profile.last_active_date is None
                 or (for_date - profile.last_active_date).days == 1
                 or (
+                    # Freeze bridged exactly 1 gap day between last_active and today
                     profile.streak_frozen_on is not None
                     and (for_date - profile.streak_frozen_on).days == 1
+                    and profile.last_active_date is not None
+                    and (profile.streak_frozen_on - profile.last_active_date).days == 1
                 )
             )
             if is_consecutive:

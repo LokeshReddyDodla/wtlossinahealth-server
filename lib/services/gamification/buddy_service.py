@@ -274,25 +274,21 @@ class BuddyService:
             1 for t in tasks if t.status == TaskStatus.COMPLETED.value
         )
 
-        # Recent achievements (last 5 slugs)
+        # Recent achievements (last 5 slugs) — joined to avoid N+1
+        from lib.models.gamification import Achievement
+
         ach_result = await postgres_session.execute(
-            select(PatientAchievement)
+            select(PatientAchievement, Achievement)
+            .join(Achievement)
             .where(PatientAchievement.patient_id == other_id)
             .order_by(PatientAchievement.earned_at.desc())
             .limit(5)
         )
-        from lib.models.gamification import Achievement
-
-        recent_slugs = []
-        for pa in ach_result.scalars().all():
-            a_result = await postgres_session.execute(
-                select(Achievement.slug).where(
-                    Achievement.achievement_id == pa.achievement_id
-                )
-            )
-            slug = a_result.scalar()
-            if slug:
-                recent_slugs.append(slug)
+        recent_slugs = [
+            row.Achievement.slug
+            for row in ach_result.all()
+            if row.Achievement.slug
+        ]
 
         return BuddyProgressResponse(
             buddy_patient_id=str(other_id),
