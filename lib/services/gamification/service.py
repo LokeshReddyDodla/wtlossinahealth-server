@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import (
@@ -171,13 +174,26 @@ class GamificationService:
     ) -> DailyProgressResponse:
         tz_name = await self._patient_timezone(patient_id, postgres_session)
         patient_today = local_today(tz_name)
+        logger.info(
+            "[daily-progress] patient=%s task_date=%s tz=%s patient_today=%s match=%s",
+            patient_id, task_date, tz_name, patient_today, task_date == patient_today,
+        )
         # On-demand task generation: ensure tasks exist for today
         if task_date == patient_today:
-            await self.task_generator.generate_daily_tasks(patient_id, task_date)
+            generated = await self.task_generator.generate_daily_tasks(patient_id, task_date)
+            logger.info(
+                "[daily-progress] generate_daily_tasks returned %d tasks for %s on %s",
+                len(generated), patient_id, task_date,
+            )
             # Ensure weekly quest exists (on any day, not just Monday)
             week_start = task_date - timedelta(days=task_date.weekday())
             await self.task_generator.generate_weekly_quest(
                 patient_id, week_start
+            )
+        else:
+            logger.warning(
+                "[daily-progress] SKIPPED on-demand generation: task_date=%s != patient_today=%s for %s",
+                task_date, patient_today, patient_id,
             )
 
         result = await postgres_session.execute(
@@ -187,6 +203,10 @@ class GamificationService:
             )
         )
         tasks = result.scalars().all()
+        logger.info(
+            "[daily-progress] final query returned %d tasks for %s on %s",
+            len(tasks), patient_id, task_date,
+        )
 
         task_responses = [
             DailyTaskResponse(
