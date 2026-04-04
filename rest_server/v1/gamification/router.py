@@ -518,16 +518,17 @@ async def create_group(
 
 
 @router.get(
-    "/groups/{group_id}",
+    "/patients/{patient_id}/groups/{group_id}",
     response_model=SuccessResponse[GroupResponse],
 )
 async def get_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     # Verify membership (or care provider who created it)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
@@ -538,14 +539,15 @@ async def get_group(
     return SuccessResponse(message="Group details", data=group)
 
 
-@router.post("/groups/{group_id}/join", response_model=SuccessResponse)
+@router.post("/patients/{patient_id}/groups/{group_id}/join", response_model=SuccessResponse)
 async def join_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.join_group(group_id, pid)
         return SuccessResponse(message="Joined group")
@@ -553,14 +555,15 @@ async def join_group(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.delete("/groups/{group_id}/leave", response_model=SuccessResponse)
+@router.delete("/patients/{patient_id}/groups/{group_id}/leave", response_model=SuccessResponse)
 async def leave_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.leave_group(group_id, pid)
         return SuccessResponse(message="Left group")
@@ -569,17 +572,18 @@ async def leave_group(
 
 
 @router.get(
-    "/groups/{group_id}/members",
+    "/patients/{patient_id}/groups/{group_id}/members",
     response_model=SuccessResponse[List[GroupMemberResponse]],
 )
 async def get_group_members(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
     # Verify the caller is a member of this group
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
@@ -588,10 +592,11 @@ async def get_group_members(
 
 
 @router.get(
-    "/groups/{group_id}/leaderboard",
+    "/patients/{patient_id}/groups/{group_id}/leaderboard",
     response_model=SuccessResponse[LeaderboardResponse],
 )
 async def get_group_leaderboard(
+    patient_id: UUID,
     group_id: UUID,
     board_type: str = Query("weekly_xp"),
     service: LeaderboardService = Depends(get_leaderboard_service),
@@ -599,7 +604,7 @@ async def get_group_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     # Verify group membership
     patient_groups = await group_service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
@@ -631,15 +636,16 @@ async def get_patient_groups(
 
 
 @router.get(
-    "/challenges/available",
+    "/patients/{patient_id}/challenges/available",
     response_model=SuccessResponse[List[ChallengeResponse]],
 )
 async def get_available_challenges(
+    patient_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     challenges = await service.get_available_challenges(pid)
     return SuccessResponse(message="Available challenges", data=challenges)
 
@@ -659,14 +665,15 @@ async def get_active_challenges(
     return SuccessResponse(message="Active challenges", data=challenges)
 
 
-@router.post("/challenges/{challenge_id}/join", response_model=SuccessResponse)
+@router.post("/patients/{patient_id}/challenges/{challenge_id}/join", response_model=SuccessResponse)
 async def join_challenge(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.join_challenge(challenge_id, pid)
         return SuccessResponse(message="Joined challenge")
@@ -674,14 +681,15 @@ async def join_challenge(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/challenges/{challenge_id}/withdraw", response_model=SuccessResponse)
+@router.post("/patients/{patient_id}/challenges/{challenge_id}/withdraw", response_model=SuccessResponse)
 async def withdraw_challenge(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.withdraw_from_challenge(challenge_id, pid)
         return SuccessResponse(message="Withdrawn from challenge")
@@ -690,16 +698,17 @@ async def withdraw_challenge(
 
 
 @router.get(
-    "/challenges/{challenge_id}",
+    "/patients/{patient_id}/challenges/{challenge_id}",
     response_model=SuccessResponse[ChallengeDetailResponse],
 )
 async def get_challenge_detail(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         detail = await service.get_challenge_detail(challenge_id, pid)
         return SuccessResponse(message="Challenge details", data=detail)
@@ -708,16 +717,17 @@ async def get_challenge_detail(
 
 
 @router.get(
-    "/challenges/{challenge_id}/leaderboard",
+    "/patients/{patient_id}/challenges/{challenge_id}/leaderboard",
     response_model=SuccessResponse[List[ChallengeParticipantResponse]],
 )
 async def get_challenge_leaderboard(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         leaderboard = await service.get_challenge_leaderboard(challenge_id, pid)
         return SuccessResponse(message="Challenge leaderboard", data=leaderboard)
@@ -809,10 +819,11 @@ async def patient_create_challenge(
 
 
 @router.get(
-    "/leaderboards/{board_type}",
+    "/patients/{patient_id}/leaderboards/{board_type}",
     response_model=SuccessResponse[LeaderboardResponse],
 )
 async def get_leaderboard(
+    patient_id: UUID,
     board_type: str,
     scope: str = Query("global"),
     scope_id: Optional[UUID] = Query(None),
@@ -820,7 +831,7 @@ async def get_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
 
     # Validate board_type
     allowed_board_types = {"weekly_xp", "monthly_xp", "weekly_steps", "streak", "challenge"}
@@ -878,16 +889,17 @@ async def get_buddy_feed(
 
 
 @router.get(
-    "/groups/{group_id}/feed",
+    "/patients/{patient_id}/groups/{group_id}/feed",
     response_model=SuccessResponse[List[FeedEventResponse]],
 )
 async def get_group_feed(
+    patient_id: UUID,
     group_id: UUID,
     service: FeedService = Depends(get_feed_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         feed = await service.get_group_feed(group_id, pid)
         return SuccessResponse(message="Group feed", data=feed)
@@ -896,18 +908,19 @@ async def get_group_feed(
 
 
 @router.post(
-    "/feed/{feed_event_id}/cheer",
+    "/patients/{patient_id}/feed/{feed_event_id}/cheer",
     response_model=SuccessResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def send_cheer(
+    patient_id: UUID,
     feed_event_id: UUID,
     body: CheerInput,
     service: FeedService = Depends(get_feed_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.send_cheer(pid, feed_event_id, body.reaction.value)
         return SuccessResponse(message="Cheer sent")
@@ -1325,14 +1338,20 @@ async def canonical_create_group(
 
 
 @canonical_router.get(
-    "/gamification/groups/{group_id}",
+    "/patients/{patient_id}/gamification/groups/{group_id}",
     response_model=SuccessResponse[GroupResponse],
 )
 async def canonical_get_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    patient_groups = await service.get_patient_groups(pid)
+    if not any(g.group_id == str(group_id) for g in patient_groups):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
     group = await service.get_group(group_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
@@ -1340,16 +1359,17 @@ async def canonical_get_group(
 
 
 @canonical_router.post(
-    "/gamification/groups/{group_id}/join",
+    "/patients/{patient_id}/gamification/groups/{group_id}/join",
     response_model=SuccessResponse,
 )
 async def canonical_join_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.join_group(group_id, pid)
         return SuccessResponse(message="Joined group")
@@ -1358,16 +1378,17 @@ async def canonical_join_group(
 
 
 @canonical_router.delete(
-    "/gamification/groups/{group_id}/leave",
+    "/patients/{patient_id}/gamification/groups/{group_id}/leave",
     response_model=SuccessResponse,
 )
 async def canonical_leave_group(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.leave_group(group_id, pid)
         return SuccessResponse(message="Left group")
@@ -1376,16 +1397,17 @@ async def canonical_leave_group(
 
 
 @canonical_router.get(
-    "/gamification/groups/{group_id}/members",
+    "/patients/{patient_id}/gamification/groups/{group_id}/members",
     response_model=SuccessResponse[List[GroupMemberResponse]],
 )
 async def canonical_get_group_members(
+    patient_id: UUID,
     group_id: UUID,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     patient_groups = await service.get_patient_groups(pid)
     if not any(g.group_id == str(group_id) for g in patient_groups):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this group")
@@ -1394,17 +1416,18 @@ async def canonical_get_group_members(
 
 
 @canonical_router.get(
-    "/gamification/groups/{group_id}/leaderboard",
+    "/patients/{patient_id}/gamification/groups/{group_id}/leaderboard",
     response_model=SuccessResponse[LeaderboardResponse],
 )
 async def canonical_get_group_leaderboard(
+    patient_id: UUID,
     group_id: UUID,
     board_type: str = Query("weekly_xp"),
     service: LeaderboardService = Depends(get_leaderboard_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     board = await service.get_leaderboard(
         board_type,
         "group",
@@ -1415,16 +1438,17 @@ async def canonical_get_group_leaderboard(
 
 
 @canonical_router.get(
-    "/gamification/groups/{group_id}/feed",
+    "/patients/{patient_id}/gamification/groups/{group_id}/feed",
     response_model=SuccessResponse[List[FeedEventResponse]],
 )
 async def canonical_get_group_feed(
+    patient_id: UUID,
     group_id: UUID,
     service: FeedService = Depends(get_feed_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         feed = await service.get_group_feed(group_id, pid)
         return SuccessResponse(message="Group feed", data=feed)
@@ -1433,31 +1457,18 @@ async def canonical_get_group_feed(
 
 
 @canonical_router.get(
-    "/gamification/challenges/available",
+    "/patients/{patient_id}/gamification/challenges/available",
     response_model=SuccessResponse[List[ChallengeResponse]],
 )
 async def canonical_get_available_challenges(
+    patient_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     challenges = await service.get_available_challenges(pid)
     return SuccessResponse(message="Available challenges", data=challenges)
-
-
-@canonical_router.get(
-    "/gamification/challenges/active",
-    response_model=SuccessResponse[List[ChallengeResponse]],
-)
-async def canonical_get_my_active_challenges(
-    service: ChallengeService = Depends(get_challenge_service),
-    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
-    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
-):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
-    challenges = await service.get_active_challenges(pid)
-    return SuccessResponse(message="Active challenges", data=challenges)
 
 
 @canonical_router.get(
@@ -1476,16 +1487,17 @@ async def canonical_get_active_challenges(
 
 
 @canonical_router.post(
-    "/gamification/challenges/{challenge_id}/join",
+    "/patients/{patient_id}/gamification/challenges/{challenge_id}/join",
     response_model=SuccessResponse,
 )
 async def canonical_join_challenge(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.join_challenge(challenge_id, pid)
         return SuccessResponse(message="Joined challenge")
@@ -1494,16 +1506,17 @@ async def canonical_join_challenge(
 
 
 @canonical_router.post(
-    "/gamification/challenges/{challenge_id}/withdraw",
+    "/patients/{patient_id}/gamification/challenges/{challenge_id}/withdraw",
     response_model=SuccessResponse,
 )
 async def canonical_withdraw_challenge(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.withdraw_from_challenge(challenge_id, pid)
         return SuccessResponse(message="Withdrawn from challenge")
@@ -1512,16 +1525,17 @@ async def canonical_withdraw_challenge(
 
 
 @canonical_router.get(
-    "/gamification/challenges/{challenge_id}",
+    "/patients/{patient_id}/gamification/challenges/{challenge_id}",
     response_model=SuccessResponse[ChallengeDetailResponse],
 )
 async def canonical_get_challenge_detail(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         detail = await service.get_challenge_detail(challenge_id, pid)
         return SuccessResponse(message="Challenge details", data=detail)
@@ -1530,16 +1544,17 @@ async def canonical_get_challenge_detail(
 
 
 @canonical_router.get(
-    "/gamification/challenges/{challenge_id}/leaderboard",
+    "/patients/{patient_id}/gamification/challenges/{challenge_id}/leaderboard",
     response_model=SuccessResponse[List[ChallengeParticipantResponse]],
 )
 async def canonical_get_challenge_leaderboard(
+    patient_id: UUID,
     challenge_id: UUID,
     service: ChallengeService = Depends(get_challenge_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         leaderboard = await service.get_challenge_leaderboard(challenge_id, pid)
         return SuccessResponse(message="Challenge leaderboard", data=leaderboard)
@@ -1603,10 +1618,11 @@ async def canonical_create_challenge(
 
 
 @canonical_router.get(
-    "/gamification/leaderboards/{board_type}",
+    "/patients/{patient_id}/gamification/leaderboards/{board_type}",
     response_model=SuccessResponse[LeaderboardResponse],
 )
 async def canonical_get_leaderboard(
+    patient_id: UUID,
     board_type: str,
     scope: str = Query("global"),
     scope_id: Optional[UUID] = Query(None),
@@ -1614,7 +1630,7 @@ async def canonical_get_leaderboard(
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     board = await service.get_leaderboard(board_type, scope, pid, scope_id=scope_id)
     return SuccessResponse(message="Leaderboard", data=board)
 
@@ -1635,18 +1651,19 @@ async def canonical_get_buddy_feed(
 
 
 @canonical_router.post(
-    "/gamification/feed/{feed_event_id}/cheer",
+    "/patients/{patient_id}/gamification/feed/{feed_event_id}/cheer",
     response_model=SuccessResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def canonical_send_cheer(
+    patient_id: UUID,
     feed_event_id: UUID,
     body: CheerInput,
     service: FeedService = Depends(get_feed_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    pid = await _resolve_patient(actor.id, actor, cp_access)
+    pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.send_cheer(pid, feed_event_id, body.reaction.value)
         return SuccessResponse(message="Cheer sent")
