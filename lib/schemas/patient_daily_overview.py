@@ -32,6 +32,16 @@ class SleepMetrics(BaseModel):
     records_count: int = 0
 
 
+class BloodPressure(BaseModel):
+    systolic: Optional[float] = None
+    diastolic: Optional[float] = None
+
+
+class VitalsMetrics(BaseModel):
+    blood_pressure: BloodPressure = BloodPressure()
+    resting_heart_rate: Optional[float] = None
+
+
 class PatientDailyOverviewResponse(BaseModel):
     date: date
     patient_id: str
@@ -40,4 +50,5 @@ class PatientDailyOverviewResponse(BaseModel):
     fitness: FitnessMetrics
     sleep: SleepMetrics
     glucose: GlucoseMetrics
+    vitals: VitalsMetrics = VitalsMetrics()
     current_weight: Optional[float] = None
