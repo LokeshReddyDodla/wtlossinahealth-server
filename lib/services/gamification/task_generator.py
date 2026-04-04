@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import Challenge, ChallengeParticipant, DailyTask, GroupMember, WeeklyQuest
@@ -87,6 +90,10 @@ class TaskGeneratorService:
         postgres_session: AsyncSession,
     ) -> List[DailyTask]:
         """Generate all daily tasks for a patient. Idempotent."""
+        logger.info(
+            "[task-gen] START patient=%s task_date=%s", patient_id, task_date,
+        )
+
         existing = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
@@ -95,39 +102,62 @@ class TaskGeneratorService:
         )
         existing_tasks = list(existing.scalars().all())
         existing_keys = {(task.task_type, task.source_id) for task in existing_tasks}
+        logger.info(
+            "[task-gen] existing tasks=%d keys=%s patient=%s",
+            len(existing_tasks), existing_keys, patient_id,
+        )
 
         tasks: List[DailyTask] = []
 
         # Habit tasks (always generated)
-        tasks.extend(self._habit_tasks(patient_id, task_date))
+        habit_tasks = self._habit_tasks(patient_id, task_date)
+        tasks.extend(habit_tasks)
+        logger.info("[task-gen] habit_tasks=%d", len(habit_tasks))
 
         # Plan-derived tasks
         diet_tasks = await self._diet_plan_tasks(
             patient_id, task_date, postgres_session
         )
         tasks.extend(diet_tasks)
+        logger.info("[task-gen] diet_tasks=%d", len(diet_tasks))
 
         fitness_tasks = await self._fitness_plan_tasks(
             patient_id, task_date, postgres_session
         )
         tasks.extend(fitness_tasks)
+        logger.info("[task-gen] fitness_tasks=%d", len(fitness_tasks))
 
         challenge_tasks = await self._challenge_tasks(
             patient_id, task_date, postgres_session
         )
         tasks.extend(challenge_tasks)
+        logger.info("[task-gen] challenge_tasks=%d", len(challenge_tasks))
 
+        added = 0
+        skipped = 0
         for task in tasks:
             key = (task.task_type, task.source_id)
             if key in existing_keys:
+                skipped += 1
                 continue
             postgres_session.add(task)
             existing_tasks.append(task)
             existing_keys.add(key)
+            added += 1
+
+        logger.info(
+            "[task-gen] added=%d skipped=%d total_to_return=%d patient=%s",
+            added, skipped, len(existing_tasks), patient_id,
+        )
 
         try:
             await postgres_session.commit()
+            logger.info("[task-gen] COMMIT OK patient=%s", patient_id)
         except Exception:
+            logger.exception(
+                "[task-gen] COMMIT FAILED patient=%s on %s",
+                patient_id, task_date,
+            )
             await postgres_session.rollback()
             # Re-fetch on conflict (concurrent generation)
             result = await postgres_session.execute(
@@ -137,6 +167,10 @@ class TaskGeneratorService:
                 )
             )
             existing_tasks = list(result.scalars().all())
+            logger.info(
+                "[task-gen] after rollback re-fetch=%d patient=%s",
+                len(existing_tasks), patient_id,
+            )
         return existing_tasks
 
     @with_postgres_session
