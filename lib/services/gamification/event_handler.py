@@ -187,6 +187,16 @@ class GamificationEventHandler:
         """Increment weekly quest progress based on completed task type."""
         from lib.models.gamification import WeeklyQuest
 
+        today = await self._patient_today(patient_id)
+        week_start = today - timedelta(days=today.weekday())
+
+        # Ensure the weekly quest exists
+        from lib.core.container import container
+        from lib.services.gamification.task_generator import TaskGeneratorService
+        task_gen = container.resolve(TaskGeneratorService)
+        await task_gen.generate_weekly_quest(patient_id, week_start)
+
+        # Increment the type-specific quest (meals_5_of_7, steps_5_of_7, etc.)
         quest_map = {
             "LOG_MEAL": "meals_5_of_7",
             "HIT_STEP_GOAL": "steps_5_of_7",
@@ -194,110 +204,20 @@ class GamificationEventHandler:
             "LOG_SLEEP": "sleep_7_of_7",
         }
         quest_type = quest_map.get(task_type)
-        if not quest_type:
-            return
-
-        try:
-            today = await self._patient_today(patient_id)
-            week_start = today - timedelta(days=today.weekday())
-
-            # Ensure the weekly quest exists (might not if patient hasn't opened daily progress yet)
-            from lib.core.container import container
-            from lib.services.gamification.task_generator import TaskGeneratorService
-            task_gen = container.resolve(TaskGeneratorService)
-            await task_gen.generate_weekly_quest(patient_id, week_start)
-
-            async with self.postgres_store.get_session() as session:
-                result = await session.execute(
-                    select(WeeklyQuest).where(
-                        WeeklyQuest.patient_id == patient_id,
-                        WeeklyQuest.week_start == week_start,
-                        WeeklyQuest.quest_type == quest_type,
-                        WeeklyQuest.status == "active",
-                    )
-                )
-                quest = result.scalars().first()
-                if not quest:
-                    return
-
-                quest.current_value += 1
-                if quest.current_value >= quest.target_value:
-                    quest.status = "completed"
-                    quest.completed_at = datetime.now().replace(tzinfo=None)
-                    await session.commit()
-                    # Grant quest XP
-                    await self.xp_service.grant_xp(
-                        patient_id=patient_id,
-                        amount=quest.xp_reward,
-                        source_type="quest",
-                        source_id=quest.quest_id,
-                        description=f"Weekly quest: {quest.title}",
-                        respect_cap=False,
-                    )
-                else:
-                    await session.commit()
-        except Exception:
-            logger.opt(exception=True).debug(
-                f"Quest progress update failed for {patient_id}"
-            )
-
-        # Check "all_tasks_3_days" quest: if all today's tasks are completed
-        try:
-            today = await self._patient_today(patient_id)
-            week_start = today - timedelta(days=today.weekday())
-            async with self.postgres_store.get_session() as session:
-                all_tasks = await session.execute(
-                    select(DailyTask).where(
-                        DailyTask.patient_id == patient_id,
-                        DailyTask.task_date == today,
-                    )
-                )
-                tasks = all_tasks.scalars().all()
-                if tasks and all(t.status == TaskStatus.COMPLETED.value for t in tasks):
-                    # Count how many days this week already had all tasks completed
-                    # to avoid double-counting the same day
-                    from sqlalchemy import func as _func
-                    perfect_days_result = await session.execute(
-                        select(_func.count(_func.distinct(DailyTask.task_date))).where(
-                            DailyTask.patient_id == patient_id,
-                            DailyTask.task_date >= week_start,
-                            DailyTask.task_date <= today,
-                            DailyTask.status == TaskStatus.COMPLETED.value,
-                        )
-                    )
-                    # This is an approximation — counts days with ANY completed task.
-                    # The true count of "all completed" days is expensive to compute,
-                    # so we use the quest's current_value as the guard instead:
-                    quest_result = await session.execute(
+        if quest_type:
+            try:
+                async with self.postgres_store.get_session() as session:
+                    result = await session.execute(
                         select(WeeklyQuest).where(
                             WeeklyQuest.patient_id == patient_id,
                             WeeklyQuest.week_start == week_start,
-                            WeeklyQuest.quest_type == "all_tasks_3_days",
+                            WeeklyQuest.quest_type == quest_type,
                             WeeklyQuest.status == "active",
                         )
                     )
-                    quest = quest_result.scalars().first()
+                    quest = result.scalars().first()
                     if quest:
-                        # Bulk query: fetch ALL tasks for this week, group by date in Python
-                        week_tasks_result = await session.execute(
-                            select(DailyTask).where(
-                                DailyTask.patient_id == patient_id,
-                                DailyTask.task_date >= week_start,
-                                DailyTask.task_date <= today,
-                            )
-                        )
-                        tasks_by_date: dict = {}
-                        for t in week_tasks_result.scalars().all():
-                            tasks_by_date.setdefault(t.task_date, []).append(t)
-                        all_days = {
-                            d for d, day_tasks in tasks_by_date.items()
-                            if day_tasks and all(
-                                t.status == TaskStatus.COMPLETED.value for t in day_tasks
-                            )
-                        }
-                        new_value = float(len(all_days))
-                        if new_value > quest.current_value:
-                            quest.current_value = new_value
+                        quest.current_value += 1
                         if quest.current_value >= quest.target_value:
                             quest.status = "completed"
                             quest.completed_at = datetime.now().replace(tzinfo=None)
@@ -312,8 +232,64 @@ class GamificationEventHandler:
                             )
                         else:
                             await session.commit()
+            except Exception:
+                logger.opt(exception=True).debug(
+                    f"Quest progress update failed for {patient_id}"
+                )
+
+        # Check "all_tasks_3_days" quest regardless of task type
+        try:
+            async with self.postgres_store.get_session() as session:
+                quest_result = await session.execute(
+                    select(WeeklyQuest).where(
+                        WeeklyQuest.patient_id == patient_id,
+                        WeeklyQuest.week_start == week_start,
+                        WeeklyQuest.quest_type == "all_tasks_3_days",
+                        WeeklyQuest.status == "active",
+                    )
+                )
+                quest = quest_result.scalars().first()
+                if not quest:
+                    return
+
+                # Fetch all tasks for this week, group by date, count perfect days
+                week_tasks_result = await session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == patient_id,
+                        DailyTask.task_date >= week_start,
+                        DailyTask.task_date <= today,
+                    )
+                )
+                tasks_by_date: dict = {}
+                for t in week_tasks_result.scalars().all():
+                    tasks_by_date.setdefault(t.task_date, []).append(t)
+                perfect_days = {
+                    d for d, day_tasks in tasks_by_date.items()
+                    if day_tasks and all(
+                        t.status == TaskStatus.COMPLETED.value for t in day_tasks
+                    )
+                }
+                new_value = float(len(perfect_days))
+                if new_value > quest.current_value:
+                    quest.current_value = new_value
+                if quest.current_value >= quest.target_value:
+                    quest.status = "completed"
+                    quest.completed_at = datetime.now().replace(tzinfo=None)
+                    await session.commit()
+                    await self.xp_service.grant_xp(
+                        patient_id=patient_id,
+                        amount=quest.xp_reward,
+                        source_type="quest",
+                        source_id=quest.quest_id,
+                        description=f"Weekly quest: {quest.title}",
+                        respect_cap=False,
+                    )
+                else:
+                    await session.commit()
         except Exception:
-            pass
+            logger.opt(exception=True).debug(
+                f"all_tasks_3_days quest update failed for {patient_id}"
+            )
 
     async def _update_challenge_progress(
         self, patient_id: UUID, task_type: str
