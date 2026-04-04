@@ -1,13 +1,16 @@
-from datetime import date
+import asyncio
+from datetime import date, datetime
 from typing import Optional
 
 from lib.schemas.patient_daily_overview import (
+    BloodPressure,
     FitnessMetrics,
     GlucoseMetrics,
     MacroNutrients,
     MealDailySummary,
     PatientDailyOverviewResponse,
     SleepMetrics,
+    VitalsMetrics,
 )
 from lib.services.reports.meal.service import MealReportService
 from lib.services.reports.cgm.service import CGMReportService
@@ -46,17 +49,23 @@ class PatientDailyOverviewService:
         postgres_session: AsyncSession,
     ) -> PatientDailyOverviewResponse:
 
-        current_weight = await self._get_current_weight(
-            patient_id, selected_date, postgres_session
+        meals, fitness, sleep, glucose, vitals, current_weight = await asyncio.gather(
+            self._get_meal_data(patient_id, selected_date),
+            self._get_fitness_data(patient_id, selected_date),
+            self._get_sleep_data(patient_id, selected_date),
+            self._get_cgm_data(patient_id, selected_date),
+            self._get_vitals_data(patient_id, selected_date),
+            self._get_current_weight(patient_id, selected_date, postgres_session),
         )
 
         return PatientDailyOverviewResponse(
             date=selected_date,
             patient_id=patient_id,
-            meals=await self._get_meal_data(patient_id, selected_date),
-            fitness=await self._get_fitness_data(patient_id, selected_date),
-            sleep=await self._get_sleep_data(patient_id, selected_date),
-            glucose=await self._get_cgm_data(patient_id, selected_date),
+            meals=meals,
+            fitness=fitness,
+            sleep=sleep,
+            glucose=glucose,
+            vitals=vitals,
             current_weight=current_weight,
         )
 
@@ -152,6 +161,40 @@ class PatientDailyOverviewService:
         except Exception as e:
             print(f"Sleep data error: {e}")
             return SleepMetrics()
+
+    async def _get_vitals_data(
+        self, patient_id: str, selected_date: date
+    ) -> VitalsMetrics:
+        try:
+            query = f"""
+            SELECT type, value
+            FROM aihealth.vitals_data FINAL
+            WHERE patient_id = '{patient_id}'
+                AND toDate(time) = '{selected_date}'
+                AND type IN ('systolic_bp', 'diastolic_bp', 'resting_heart_rate')
+            ORDER BY time DESC
+            LIMIT 1 BY type
+            """
+            rows = self.clickhouse_store.client.execute(query)
+            lookup = {r[0]: r[1] for r in rows}
+
+            systolic = lookup.get("systolic_bp")
+            diastolic = lookup.get("diastolic_bp")
+
+            return VitalsMetrics(
+                blood_pressure=BloodPressure(
+                    systolic=round(systolic, 1) if systolic is not None else None,
+                    diastolic=round(diastolic, 1) if diastolic is not None else None,
+                ),
+                resting_heart_rate=(
+                    round(lookup["resting_heart_rate"], 1)
+                    if "resting_heart_rate" in lookup
+                    else None
+                ),
+            )
+        except Exception as e:
+            print(f"Vitals data error: {e}")
+            return VitalsMetrics()
 
     async def _get_current_weight(
         self,
