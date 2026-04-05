@@ -286,9 +286,10 @@ class TaskGeneratorService:
     ) -> List[DailyTask]:
         """Generate informational tasks for active challenges.
 
-        NOTE: Challenge tasks use a synthetic task_type (CHALLENGE_TASK_{id})
-        and have xp_reward=0. They are display-only — they do NOT count toward
-        streak activity or earn XP directly. Challenge XP is granted via
+        NOTE: Challenge tasks use a synthetic task_type (CHALLENGE_TASK_{id}).
+        They are display-only — they do NOT count toward streak activity or earn
+        XP directly. The xp_reward shown is the challenge's actual reward so the
+        patient knows what they'll earn; it is only granted via
         challenge_service.finalize_challenge when the challenge ends.
         """
         result = await session.execute(
@@ -358,7 +359,10 @@ class TaskGeneratorService:
                     source_id=challenge.challenge_id,
                     target_value=challenge.target_value,
                     current_value=participant.current_value,
-                    xp_reward=0,
+                    # Show the actual challenge XP reward so the patient knows
+                    # what they'll earn on completion. XP is still only granted
+                    # when the challenge ends via challenge_service.finalize_challenge.
+                    xp_reward=challenge.xp_reward,
                 )
             )
 
