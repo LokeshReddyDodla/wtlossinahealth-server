@@ -184,6 +184,7 @@ class GamificationService:
             select(DailyTask).where(
                 DailyTask.patient_id == patient_id,
                 DailyTask.task_date == task_date,
+                DailyTask.status != TaskStatus.EXPIRED.value,
             )
         )
         tasks = result.scalars().all()
