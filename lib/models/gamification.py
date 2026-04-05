@@ -257,6 +257,9 @@ class Group(Base):
         nullable=True,
     )
     avatar_url = Column(String(500), nullable=True)
+    # Short shareable code so patients can invite others (e.g. "AHX392").
+    # Generated on creation; unique so it can be used as a join key.
+    invite_code = Column(String(8), nullable=True, unique=True, index=True)
     max_members = Column(Integer, default=50, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=_now)

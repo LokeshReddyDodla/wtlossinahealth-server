@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import string
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -45,6 +47,7 @@ class GroupService:
             created_by_type=created_by_type,
             facility_id=facility_id,
             max_members=max_members,
+            invite_code=await self._generate_invite_code(postgres_session),
         )
         postgres_session.add(group)
         await postgres_session.commit()
@@ -240,6 +243,30 @@ class GroupService:
             for row in rows
         ]
 
+    @with_postgres_session
+    async def join_by_code(
+        self,
+        invite_code: str,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> GroupResponse:
+        """Look up a group by invite code and join it."""
+        result = await postgres_session.execute(
+            select(Group).where(
+                Group.invite_code == invite_code.upper(),
+                Group.is_active == True,
+            )
+        )
+        group = result.scalars().first()
+        if not group:
+            raise ValueError("Invalid or expired invite code")
+
+        # Reuse join_group for all membership checks (capacity, duplicates)
+        await self.join_group(group.group_id, patient_id)
+        count = await self._member_count(group.group_id, postgres_session)
+        return self.to_response(group, count)
+
     async def _get_group(
         self, group_id: UUID, session: AsyncSession
     ) -> Optional[Group]:
@@ -260,6 +287,19 @@ class GroupService:
         return result.scalar() or 0
 
     @staticmethod
+    async def _generate_invite_code(session: AsyncSession) -> str:
+        """Generate a unique 6-char alphanumeric invite code (no 0/O/1/I)."""
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        for _ in range(10):
+            code = "".join(secrets.choice(alphabet) for _ in range(6))
+            existing = await session.execute(
+                select(Group.group_id).where(Group.invite_code == code)
+            )
+            if not existing.scalars().first():
+                return code
+        raise RuntimeError("Failed to generate unique invite code")
+
+    @staticmethod
     def to_response(group: Group, member_count: int) -> GroupResponse:
         return GroupResponse(
             group_id=str(group.group_id),
@@ -269,6 +309,7 @@ class GroupService:
             created_by_id=str(group.created_by_id),
             created_by_type=group.created_by_type,
             facility_id=str(group.facility_id) if group.facility_id else None,
+            invite_code=group.invite_code,
             member_count=member_count,
             max_members=group.max_members,
             is_active=group.is_active,

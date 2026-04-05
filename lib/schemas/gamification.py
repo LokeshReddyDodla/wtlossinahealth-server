@@ -339,10 +339,15 @@ class GroupResponse(BaseModel):
     created_by_id: str
     created_by_type: str
     facility_id: Optional[str] = None
+    invite_code: Optional[str] = None
     member_count: int = 0
     max_members: int
     is_active: bool
     created_at: datetime
+
+
+class JoinByCodeInput(BaseModel):
+    invite_code: str = Field(..., min_length=6, max_length=8)
 
 
 class GroupMemberResponse(BaseModel):
