@@ -37,6 +37,7 @@ from lib.schemas.gamification import (
     GroupCreateInput,
     GroupMemberResponse,
     GroupResponse,
+    JoinByCodeInput,
     LeaderboardResponse,
     PatientEngagementSummary,
     PlayerProfileResponse,
@@ -551,6 +552,26 @@ async def join_group(
     try:
         await service.join_group(group_id, pid)
         return SuccessResponse(message="Joined group")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/patients/{patient_id}/groups/join-by-code",
+    response_model=SuccessResponse[GroupResponse],
+)
+async def join_group_by_code(
+    patient_id: UUID,
+    body: JoinByCodeInput,
+    service: GroupService = Depends(get_group_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Join a group using a shareable invite code (e.g. 'AHX392')."""
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        group = await service.join_by_code(body.invite_code, pid)
+        return SuccessResponse(message="Joined group", data=group)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
