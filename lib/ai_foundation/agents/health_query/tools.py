@@ -411,6 +411,31 @@ class ToolExecutor:
 
         return filtered
 
+    # ── Panel scaling helpers ─────────────────────────────────────────────
+
+    def _panel_char_limit(self, patient_ids: list[str]) -> int:
+        """Scale tool result char limit by patient count."""
+        n = max(1, len(patient_ids))
+        if n <= 1:
+            return settings.REASONING_MAX_TOOL_RESULT_CHARS
+        return min(settings.REASONING_MAX_TOOL_RESULT_CHARS * n, settings.PANEL_MAX_TOOL_RESULT_CHARS)
+
+    def _panel_lookup_limit(self, patient_ids: list[str], explicit_limit: int | None) -> int:
+        """Return effective look_up record limit, scaled for panel queries."""
+        if explicit_limit is not None:
+            return explicit_limit
+        n = max(1, len(patient_ids))
+        if n <= 1:
+            return settings.LOOKUP_DEFAULT_LIMIT
+        return settings.PANEL_LOOKUP_LIMIT * n
+
+    def _panel_records_per_type(self, patient_ids: list[str]) -> int:
+        """Return per-type record cap, scaled for panel queries."""
+        n = max(1, len(patient_ids))
+        if n <= 1:
+            return settings.MAX_RECORDS_PER_TYPE
+        return min(settings.PANEL_RECORDS_PER_PATIENT * n, settings.PANEL_MAX_RECORDS_PER_TYPE)
+
     # ── Tool implementations ──────────────────────────────────────────────
 
     async def _look_up(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
@@ -418,7 +443,7 @@ class ToolExecutor:
         data_types = args.get("data_types", [])
         date_start = args.get("date_start")
         date_end = args.get("date_end")
-        limit = args.get("limit", settings.LOOKUP_DEFAULT_LIMIT)
+        limit = self._panel_lookup_limit(patient_ids, args.get("limit"))
 
         logger.info(
             "look_up: types=%s dates=%s→%s pids=%s limit=%s",
@@ -448,7 +473,11 @@ class ToolExecutor:
 
         from lib.ai_foundation.agents.health_query.result_ranking import sort_by_time
         results = sort_by_time(results)
-        return self._format_results(results, names, requested_types=data_types)
+        return self._format_results(
+            results, names,
+            requested_types=data_types,
+            patient_ids=patient_ids,
+        )
 
     async def _investigate_day(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get chronological timeline for a specific day."""
@@ -497,7 +526,7 @@ class ToolExecutor:
             time_prefix = f"  {time_val}" if time_val else "  "
             lines.append(f"{time_prefix} [{dt}] {formatted}")
 
-        return self._cap_result("\n".join(lines))
+        return self._cap_result("\n".join(lines), self._panel_char_limit(patient_ids))
 
     async def _compare_baseline(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Get statistical baseline for comparison."""
@@ -528,8 +557,8 @@ class ToolExecutor:
         from lib.ai_foundation.agents.health_query.result_ranking import sort_by_time
         results = sort_by_time(results)
 
-        # Format as baseline summary + individual entries
-        display_limit = settings.BASELINE_DISPLAY_LIMIT
+        # Scale display limit for panel queries
+        display_limit = self._panel_records_per_type(patient_ids)
         lines = [f"Baseline ({days} days, {len(results)} entries):"]
 
         # Show individual records (the LLM can compute averages)
@@ -539,7 +568,7 @@ class ToolExecutor:
         if len(results) > display_limit:
             lines.append(f"  ... and {len(results) - display_limit} more entries")
 
-        return self._cap_result("\n".join(lines))
+        return self._cap_result("\n".join(lines), self._panel_char_limit(patient_ids))
 
     async def _find_patterns(self, args: dict, patient_ids: list[str], names: dict[str, str] | None = None) -> str:
         """Semantic search for patterns in patient history."""
@@ -572,7 +601,7 @@ class ToolExecutor:
             score = f" (relevance: {r.score:.2f})" if r.score else ""
             lines.append(f"  - [{dt}]{score} {_format_payload(p, names)}")
 
-        return self._cap_result("\n".join(lines))
+        return self._cap_result("\n".join(lines), self._panel_char_limit(patient_ids))
 
     async def _get_recent_insights(self, args: dict, patient_ids: list[str]) -> str:
         """Fetch recent proactive insights from InsightTracker."""
@@ -634,13 +663,19 @@ class ToolExecutor:
         results: list[RetrievalResult],
         names: dict[str, str] | None = None,
         requested_types: list[str] | None = None,
+        patient_ids: list[str] | None = None,
     ) -> str:
         """Format results as readable text grouped by data type.
 
         Groups are ordered by ``requested_types`` if provided, otherwise by
         first-seen order. Records within each group are sorted most-recent-first.
+        The per-type record cap scales with patient count for panel queries.
         """
         from lib.ai_foundation.agents.health_query.result_ranking import _extract_time_key
+
+        pids = patient_ids or []
+        records_per_type = self._panel_records_per_type(pids)
+        char_limit = self._panel_char_limit(pids)
 
         by_type: dict[str, list[dict]] = {}
         for r in results:
@@ -665,18 +700,19 @@ class ToolExecutor:
 
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"{label} ({len(items)} entries):"]
-            for item in items[:settings.MAX_RECORDS_PER_TYPE]:
+            for item in items[:records_per_type]:
                 lines.append("  - " + _format_payload(item, names, include_nested=True))
 
-            if len(items) > settings.MAX_RECORDS_PER_TYPE:
-                lines.append(f"  ... and {len(items) - settings.MAX_RECORDS_PER_TYPE} more")
+            if len(items) > records_per_type:
+                lines.append(f"  ... and {len(items) - records_per_type} more")
 
             sections.append("\n".join(lines))
 
-        return "\n\n".join(sections)
+        return self._cap_result("\n\n".join(sections), char_limit)
 
     @staticmethod
-    def _cap_result(text: str) -> str:
+    def _cap_result(text: str, max_chars: int | None = None) -> str:
         """Cap tool result to prevent context bloat. Truncates at line boundaries."""
         from lib.ai_foundation.agents.health_query.result_ranking import cap_at_record_boundaries
-        return cap_at_record_boundaries(text, settings.REASONING_MAX_TOOL_RESULT_CHARS)
+        limit = max_chars if max_chars is not None else settings.REASONING_MAX_TOOL_RESULT_CHARS
+        return cap_at_record_boundaries(text, limit)
