@@ -72,15 +72,24 @@ async def active_challenge_participations(
         patient_q = patient_q.limit(limit)
     rows = list((await session.execute(patient_q)).all())
 
-    # Group participations
+    # Group participations — exclude challenges the patient individually withdrew from
     group_ids = await active_group_ids(patient_id, session)
     if group_ids:
+        withdrawn_challenge_ids = (
+            select(ChallengeParticipant.challenge_id).where(
+                ChallengeParticipant.participant_id == patient_id,
+                ChallengeParticipant.participant_type == ParticipantType.PATIENT.value,
+                ChallengeParticipant.status == "withdrawn",
+            )
+        ).scalar_subquery()
+
         group_q = (
             select(ChallengeParticipant, Challenge)
             .join(Challenge)
             .where(
                 ChallengeParticipant.participant_id.in_(group_ids),
                 ChallengeParticipant.participant_type == ParticipantType.GROUP.value,
+                Challenge.challenge_id.notin_(withdrawn_challenge_ids),
                 *filters,
             )
         )

@@ -312,6 +312,15 @@ class TaskGeneratorService:
         from lib.services.gamification.queries import active_group_ids
         group_ids = await active_group_ids(patient_id, session)
         if group_ids:
+            # Exclude challenges the patient individually withdrew from
+            withdrawn_ids = (
+                select(ChallengeParticipant.challenge_id).where(
+                    ChallengeParticipant.participant_id == patient_id,
+                    ChallengeParticipant.participant_type == "patient",
+                    ChallengeParticipant.status == "withdrawn",
+                )
+            ).scalar_subquery()
+
             group_rows = await session.execute(
                 select(ChallengeParticipant, Challenge)
                 .join(Challenge)
@@ -322,6 +331,7 @@ class TaskGeneratorService:
                     ChallengeParticipant.status == "active",
                     ChallengeParticipant.participant_type == "group",
                     ChallengeParticipant.participant_id.in_(group_ids),
+                    Challenge.challenge_id.notin_(withdrawn_ids),
                 )
             )
             rows.extend(group_rows.all())

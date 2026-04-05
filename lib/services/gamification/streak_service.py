@@ -40,6 +40,7 @@ class StreakService:
         patient_id: UUID,
         for_date: date,
         *,
+        allow_break: bool = True,
         postgres_session: AsyncSession,
     ) -> dict:
         """Evaluate streak for the given date. Returns summary dict."""
@@ -53,6 +54,12 @@ class StreakService:
         was_active = await self._was_active(
             patient_id, for_date, postgres_session
         )
+
+        if not was_active and not allow_break:
+            # Real-time call: patient hasn't hit the activity threshold yet
+            # today — don't break the streak. The nightly cron (allow_break=True)
+            # handles breaks for completed days.
+            return {"action": "pending", "streak": profile.current_streak}
 
         if was_active:
             # Only continue the streak if for_date is the day after last_active_date
@@ -145,6 +152,7 @@ class StreakService:
         patient_id: UUID,
         for_date: date,
         *,
+        allow_break: bool = True,
         postgres_session: AsyncSession,
     ) -> None:
         """Update buddy_streak for all active buddies of this patient."""
@@ -182,7 +190,7 @@ class StreakService:
                 if buddy.buddy_streak > buddy.buddy_streak_longest:
                     buddy.buddy_streak_longest = buddy.buddy_streak
                 buddy.last_both_active = for_date
-            else:
+            elif allow_break:
                 if buddy.buddy_streak > 0:
                     buddy.buddy_streak = 0
 

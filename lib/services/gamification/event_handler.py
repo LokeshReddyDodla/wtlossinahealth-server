@@ -165,7 +165,7 @@ class GamificationEventHandler:
         task.status = TaskStatus.COMPLETED.value
         task.completed_at = datetime.now().replace(tzinfo=None)
         try:
-            await self.xp_service.grant_xp(
+            xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
                 patient_id=patient_id,
                 amount=task.xp_reward,
                 source_type="task",
@@ -178,8 +178,21 @@ class GamificationEventHandler:
             await session.commit()
             raise
         await session.commit()
-        await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
+        newly_earned = await self.achievement_evaluator.evaluate_all(patient_id=patient_id)
         await self._try_process_streak(patient_id)
+
+        # Post feed events for level ups and achievements
+        if leveled_up:
+            from lib.schemas.gamification import title_for_level
+            await self._post_feed_event(
+                patient_id, "level_up",
+                {"new_level": new_level, "title": title_for_level(new_level)},
+            )
+        for a in newly_earned:
+            await self._post_feed_event(
+                patient_id, "achievement_earned",
+                {"slug": a.slug, "title": a.title, "tier": a.tier},
+            )
 
     async def _update_quest_progress(
         self, patient_id: UUID, task_type: str
@@ -417,8 +430,8 @@ class GamificationEventHandler:
 
             today = await self._patient_today(patient_id)
             streak_service = container.resolve(StreakService)
-            await streak_service.process_streak(patient_id, today)
-            await streak_service.process_buddy_streaks(patient_id, today)
+            await streak_service.process_streak(patient_id, today, allow_break=False)
+            await streak_service.process_buddy_streaks(patient_id, today, allow_break=False)
         except Exception:
             logger.opt(exception=True).debug(
                 f"Real-time streak check failed for {patient_id}"
@@ -459,6 +472,45 @@ class GamificationEventHandler:
         except Exception:
             logger.opt(exception=True).debug(
                 f"Macro progress refresh failed for {patient_id}"
+            )
+
+    async def _post_feed_event(
+        self,
+        patient_id: UUID,
+        event_type: str,
+        event_data: dict,
+    ) -> None:
+        """Fire-and-forget feed event + notification."""
+        try:
+            from lib.core.container import container
+            from lib.services.gamification.feed_service import FeedService
+            from lib.services.gamification.notifications import send_gamification_notification
+
+            feed = container.resolve(FeedService)
+            await feed.post_event(
+                actor_id=patient_id,
+                event_type=event_type,
+                event_data=event_data,
+                visibility="group",
+            )
+            title_map = {
+                "level_up": "Level up",
+                "achievement_earned": "Achievement unlocked",
+            }
+            body_map = {
+                "level_up": f"You reached level {event_data.get('new_level')}.",
+                "achievement_earned": f"You earned {event_data.get('title', 'a new achievement')}.",
+            }
+            if event_type in title_map:
+                await send_gamification_notification(
+                    str(patient_id),
+                    title=title_map[event_type],
+                    body=body_map[event_type],
+                    data={"event_type": event_type, **event_data},
+                )
+        except Exception:
+            logger.opt(exception=True).debug(
+                f"Feed event posting failed for {patient_id}"
             )
 
     async def _patient_today(self, patient_id: UUID) -> date:
