@@ -196,6 +196,7 @@ class GamificationService:
                 title=t.title,
                 description=t.description,
                 source_type=t.source_type,
+                source_id=str(t.source_id) if t.source_id else None,
                 target_value=t.target_value,
                 current_value=t.current_value,
                 status=t.status,
