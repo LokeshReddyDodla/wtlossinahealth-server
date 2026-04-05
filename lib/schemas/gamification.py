@@ -241,6 +241,7 @@ class DailyTaskResponse(BaseModel):
     title: str
     description: Optional[str] = None
     source_type: str
+    source_id: Optional[str] = None
     target_value: Optional[float] = None
     current_value: Optional[float] = None
     status: str
