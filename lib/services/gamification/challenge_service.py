@@ -214,6 +214,15 @@ class ChallengeService:
         group_ids = await active_group_ids(patient_id, postgres_session)
         group_rows = []
         if group_ids:
+            # Exclude challenges the patient individually withdrew from
+            withdrawn_ids = (
+                select(ChallengeParticipant.challenge_id).where(
+                    ChallengeParticipant.participant_id == patient_id,
+                    ChallengeParticipant.participant_type == "patient",
+                    ChallengeParticipant.status == "withdrawn",
+                )
+            ).scalar_subquery()
+
             group_rows_result = await postgres_session.execute(
                 select(ChallengeParticipant, Challenge)
                 .join(Challenge)
@@ -225,6 +234,7 @@ class ChallengeService:
                     Challenge.metric_type == metric_type,
                     Challenge.start_date <= today,
                     Challenge.end_date >= today,
+                    Challenge.challenge_id.notin_(withdrawn_ids),
                 )
             )
             group_rows = group_rows_result.all()
@@ -356,6 +366,15 @@ class ChallengeService:
         challenges = list(patient_result.scalars().all())
 
         if group_ids:
+            # Exclude challenges the patient individually withdrew from
+            withdrawn_ids = (
+                select(ChallengeParticipant.challenge_id).where(
+                    ChallengeParticipant.participant_id == patient_id,
+                    ChallengeParticipant.participant_type == "patient",
+                    ChallengeParticipant.status == "withdrawn",
+                )
+            ).scalar_subquery()
+
             group_result = await postgres_session.execute(
                 select(Challenge)
                 .join(ChallengeParticipant)
@@ -366,6 +385,7 @@ class ChallengeService:
                     Challenge.is_active == True,
                     Challenge.start_date <= today,
                     Challenge.end_date >= today,
+                    Challenge.challenge_id.notin_(withdrawn_ids),
                 )
             )
             challenges.extend(group_result.scalars().all())
