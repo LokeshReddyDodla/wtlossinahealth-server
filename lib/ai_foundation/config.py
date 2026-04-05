@@ -74,6 +74,13 @@ class AIFoundationSettings(BaseSettings):
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
+    # ── Panel (Multi-Patient) Queries ─────────────────────────────────────
+
+    PANEL_LOOKUP_LIMIT: int = Field(default=5, description="Default look_up records per patient in panel queries")
+    PANEL_RECORDS_PER_PATIENT: int = Field(default=4, description="Records per patient per data_type in panel queries")
+    PANEL_MAX_RECORDS_PER_TYPE: int = Field(default=30, description="Absolute max records per data_type in panel queries")
+    PANEL_MAX_TOOL_RESULT_CHARS: int = Field(default=10_000, description="Max chars per tool result for panel (multi-patient) queries")
+
     # ── Cross-Domain Synthesis ─────────────────────────────────────────────
 
     CROSS_DOMAIN_SYNTHESIS_ENABLED: bool = Field(default=True, description="Enable LLM cross-domain follow-up in coordinator")

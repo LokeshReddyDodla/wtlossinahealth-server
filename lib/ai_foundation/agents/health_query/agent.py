@@ -433,10 +433,17 @@ class HealthQueryAgent(BaseAgent):
 
         if input.context.user_role in ("care_provider", "research") and ctx.patient_names:
             names = list(ctx.patient_names.values())
-            messages.append({"role": "system", "content": (
-                f"The user is a {input.context.user_role} asking about: {', '.join(names)}. "
-                f"In suggestions, use patient names, NEVER use 'my' or 'your'."
-            )})
+            if len(names) > 1:
+                messages.append({"role": "system", "content": (
+                    f"You are analyzing a panel of {len(names)} patients: {', '.join(names)}. "
+                    f"Ensure intent extraction accounts for ALL patients, not just one. "
+                    f"In suggestions, use patient names, NEVER use 'my' or 'your'."
+                )})
+            else:
+                messages.append({"role": "system", "content": (
+                    f"The user is a {input.context.user_role} asking about: {', '.join(names)}. "
+                    f"In suggestions, use patient names, NEVER use 'my' or 'your'."
+                )})
 
         if ctx.facts:
             by_cat: dict[str, list[str]] = {}
@@ -686,12 +693,28 @@ class HealthQueryAgent(BaseAgent):
 
     @staticmethod
     def _resolve_tier(input: AgentInput) -> ReasoningTier:
-        """Resolve reasoning tier from input context or default."""
+        """Resolve reasoning tier from input context or default.
+
+        Panel queries (multiple patients) are auto-upgraded to at least ADVANCED
+        regardless of the requested tier — cost is not a concern for multi-patient
+        care_provider / research queries and the extra tool-call budget is needed
+        to achieve adequate per-patient coverage.
+        """
         tier_str = (input.context.metadata or {}).get("tier", settings.REASONING_DEFAULT_TIER)
         try:
-            return ReasoningTier(tier_str)
+            tier = ReasoningTier(tier_str)
         except ValueError:
-            return ReasoningTier.STANDARD
+            tier = ReasoningTier.STANDARD
+
+        patient_ids = input.context.patient_ids or []
+        if len(patient_ids) > 1:
+            # Upgrade: BASIC → ADVANCED, STANDARD → ADVANCED; leave UNLIMITED as-is
+            _PANEL_MIN = ReasoningTier.ADVANCED
+            _ORDER = [ReasoningTier.BASIC, ReasoningTier.STANDARD, ReasoningTier.ADVANCED, ReasoningTier.UNLIMITED]
+            if _ORDER.index(tier) < _ORDER.index(_PANEL_MIN):
+                tier = _PANEL_MIN
+
+        return tier
 
     def to_query_response(self, input: AgentInput, output: AgentOutput) -> QueryResponse:
         return QueryResponse(

@@ -39,6 +39,9 @@ class AgentContext(BaseModel):
     recent_insights: list[dict] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
     gamification: dict[str, Any] | None = None
+    # Panel (multi-patient) mode — keyed by patient_id
+    panel_facts: dict[str, list[dict]] = Field(default_factory=dict)
+    panel_insights: dict[str, list[dict]] = Field(default_factory=dict)
 
 
 def build_context_messages(
@@ -69,6 +72,17 @@ def build_context_messages(
     if context.patient_names:
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
+
+    # Panel coverage instruction — injected once, seen by every LLM in the pipeline
+    if len(context.patient_names) > 1:
+        patient_name_list = list(context.patient_names.values())
+        context_parts.append(
+            f"PANEL QUERY — you are analyzing {len(patient_name_list)} patients: "
+            f"{', '.join(patient_name_list)}. "
+            f"Your response MUST address each patient by name. "
+            f"Do not focus on one patient and ignore the others. "
+            f"Use each patient's first name as a sub-heading or clearly label their data."
+        )
     if context.gamification:
         g = context.gamification
         context_parts.append(
@@ -92,9 +106,34 @@ def build_context_messages(
         })
 
     # Facts (separate message for pruning)
-    if context.facts:
-        by_category: dict[str, list[str]] = {}
+    if context.panel_facts:
+        # Panel mode: per-patient facts grouped by patient name
+        pnames = context.patient_names
+        lines = ["Patient memories (by patient):"]
         pinned_keys: list[str] = []
+        for pid, facts in context.panel_facts.items():
+            if not facts:
+                continue
+            name = pnames.get(pid, f"Patient {pid[:8]}")
+            by_cat: dict[str, list[str]] = {}
+            for f in facts:
+                cat = f.get("category", "other")
+                by_cat.setdefault(cat, []).append(f"{f.get('key', '?')}: {f.get('value', '')}")
+                if f.get("is_permanent") or f.get("source") == "user_explicit":
+                    pinned_keys.append(f.get("key", ""))
+            cat_parts = " | ".join(
+                f"{cat.title()}: {', '.join(items)}" for cat, items in by_cat.items()
+            )
+            lines.append(f"  [{name}] {cat_parts}")
+        messages.append({
+            "role": "system",
+            "content": "\n".join(lines),
+            "_meta": {"type": "fact", "pinned_keys": pinned_keys},
+        })
+    elif context.facts:
+        # Single-patient mode: flat facts list
+        by_category: dict[str, list[str]] = {}
+        pinned_keys = []
         for f in context.facts[:settings.MAX_CONTEXT_FACTS]:
             cat = f.get("category", "other")
             by_category.setdefault(cat, []).append(f"{f.get('key', 'unknown')}: {f.get('value', '')}")
@@ -118,7 +157,25 @@ def build_context_messages(
         })
 
     # Recent insights (separate for pruning)
-    if context.recent_insights:
+    if context.panel_insights:
+        # Panel mode: per-patient insights
+        pnames = context.patient_names
+        lines = ["Recent health insights (by patient):"]
+        for pid, insights in context.panel_insights.items():
+            if not insights:
+                continue
+            name = pnames.get(pid, f"Patient {pid[:8]}")
+            for ins in insights[:3]:
+                lines.append(
+                    f"  [{name}] [{ins.get('severity', '')}] "
+                    f"{ins.get('title', '')}: {ins.get('message', '')[:120]}"
+                )
+        messages.append({
+            "role": "system",
+            "content": "\n".join(lines),
+            "_meta": {"type": "insight"},
+        })
+    elif context.recent_insights:
         lines = ["Recent health insights (notifications sent to this patient):"]
         for ins in context.recent_insights[:5]:
             lines.append(f"- [{ins.get('severity', '')}] {ins.get('title', '')}: {ins.get('message', '')}")
@@ -165,25 +222,42 @@ class ContextLoader:
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
     ) -> AgentContext:
-        """Load all context in parallel — 5 independent calls via asyncio.gather."""
+        """Load all context in parallel. Panel mode (>1 patient) loads per-patient facts/insights."""
         import asyncio
 
-        facts_task = self._load_facts(patient_id)
-        history_task = self._load_history(thread_id)
-        summary_task = self._load_summary(thread_id)
-        names_task = self._load_names(patient_ids or ([patient_id] if patient_id else []))
-        insights_task = self._load_recent_insights(patient_id)
-        gamification_task = self._load_gamification(patient_id)
-        local_time_task = self._load_local_time(patient_id)
+        all_pids = patient_ids or ([patient_id] if patient_id else [])
+        is_panel = len(all_pids) > 1
 
+        if is_panel:
+            # Panel mode: load facts + insights for every patient; skip gamification + local_time
+            names, history, summary, panel_facts, panel_insights = await asyncio.gather(
+                self._load_names(all_pids),
+                self._load_history(thread_id),
+                self._load_summary(thread_id),
+                self._load_panel_facts(all_pids),
+                self._load_panel_insights(all_pids),
+            )
+            return AgentContext(
+                facts=[],
+                history=history,
+                thread_summary=summary,
+                patient_names=names,
+                recent_insights=[],
+                gamification=None,
+                local_time=None,
+                panel_facts=panel_facts,
+                panel_insights=panel_insights,
+            )
+
+        # Single-patient mode: original behaviour
         facts, history, summary, names, insights, gamification, local_time = await asyncio.gather(
-            facts_task,
-            history_task,
-            summary_task,
-            names_task,
-            insights_task,
-            gamification_task,
-            local_time_task,
+            self._load_facts(patient_id),
+            self._load_history(thread_id),
+            self._load_summary(thread_id),
+            self._load_names(all_pids),
+            self._load_recent_insights(patient_id),
+            self._load_gamification(patient_id),
+            self._load_local_time(patient_id),
         )
 
         return AgentContext(
@@ -255,6 +329,42 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to load gamification context: %s", exc)
             return None
+
+    async def _load_panel_facts(self, patient_ids: list[str]) -> dict[str, list[dict]]:
+        """Load facts for every patient in a panel, keyed by patient_id."""
+        if not self._memory or not patient_ids:
+            return {}
+
+        import asyncio
+
+        async def _one(pid: str) -> tuple[str, list[dict]]:
+            try:
+                facts = await self._memory.get_patient_facts(pid)
+                return pid, [f.model_dump(mode="json") for f in facts[:settings.MAX_CONTEXT_FACTS]]
+            except Exception as exc:
+                logger.debug("Failed to load facts for %s: %s", pid, exc)
+                return pid, []
+
+        results = await asyncio.gather(*[_one(pid) for pid in patient_ids])
+        return {pid: facts for pid, facts in results if facts}
+
+    async def _load_panel_insights(self, patient_ids: list[str]) -> dict[str, list[dict]]:
+        """Load recent proactive insights for every patient in a panel, keyed by patient_id."""
+        if not self._insight_tracker or not patient_ids:
+            return {}
+
+        import asyncio
+
+        async def _one(pid: str) -> tuple[str, list[dict]]:
+            try:
+                insights = await self._insight_tracker.get_history(pid, limit=3)
+                return pid, insights
+            except Exception as exc:
+                logger.debug("Failed to load insights for %s: %s", pid, exc)
+                return pid, []
+
+        results = await asyncio.gather(*[_one(pid) for pid in patient_ids])
+        return {pid: insights for pid, insights in results if insights}
 
     async def _load_local_time(self, patient_id: str | None) -> str | None:
         if not patient_id or not self._resolver:

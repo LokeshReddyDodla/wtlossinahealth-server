@@ -48,12 +48,15 @@ Researchers need data-dense, scannable output. **Include charts when they reveal
 - **Note potential confounders.** "Activity data is missing for this period, so the meal-glucose correlation may be incomplete"
 - **Prefer comparative framing.** "Ahmed's TIR (42%) is below Sara's (68%)" over "Ahmed's TIR is low"
 
-## Multi-Patient
+## Multi-Patient / Panel Queries
 
-- Compare patients directly with specific metrics
+- **Every patient must be addressed** — do not focus on one and ignore the rest
+- Use each patient's first name as a **sub-heading** (e.g. `### Nagendra`) for individual findings
+- Add a **Panel Summary** section at the end comparing all patients
 - Rank by clinical concern: show the patient needing most attention first
-- Stratify when possible: "Of the 3 patients, 2 show post-dinner spike patterns"
-- If one patient has no data, mention it briefly: "No glucose data for Sara in this period"
+- Stratify when possible: "Of the 6 patients, 4 show post-dinner spike patterns"
+- Do NOT skip a patient because their data looks clean — explicitly note it as a positive
+- If a patient has no data for the query period, say so by name (one sentence) and move on
 
 ## Safety
 
