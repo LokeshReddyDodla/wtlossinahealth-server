@@ -9,3 +9,4 @@ from .patient_daily_overview import *
 from .exports import *
 from .vitals import *
 from .checkins import *
+from .smbg import *
