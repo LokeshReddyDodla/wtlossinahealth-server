@@ -22,6 +22,7 @@ from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPrio
 from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.protocol import (
     AgentDoneMsg,
+    AgentThoughtMsg,
     ResponseTextMsg,
     ThinkingAloudMsg,
     TranscriptMsg,
@@ -37,6 +38,12 @@ logger = logging.getLogger(__name__)
 
 # Regex to split text at sentence boundaries for chunked TTS
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+# SSE events forwarded as "thought" messages to the client
+_THOUGHT_EVENTS = frozenset({
+    "reasoning", "tool_call", "tool_result",
+    "plan", "reflection", "specialist_start", "specialist_done",
+})
 
 
 SendJson = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
@@ -142,6 +149,13 @@ class VoiceOrchestrator:
                     await send_json(VoiceStatusMsg(
                         stage=event_data.get("stage", ""),
                         message=event_data.get("message"),
+                    ).model_dump())
+
+                # Forward reasoning events (thoughts, tool calls, plans, etc.)
+                if event_name in _THOUGHT_EVENTS:
+                    await send_json(AgentThoughtMsg(
+                        event=event_name,
+                        data=event_data,
                     ).model_dump())
 
                 # Thinking-aloud filler

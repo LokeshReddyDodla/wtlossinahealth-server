@@ -73,6 +73,14 @@ class VoiceStatusMsg(BaseModel):
     message: str | None = None
 
 
+class AgentThoughtMsg(BaseModel):
+    """Agent's internal reasoning — tool calls, reflections, plans."""
+
+    type: Literal["thought"] = "thought"
+    event: str  # reasoning, tool_call, tool_result, plan, reflection, specialist_start, specialist_done
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 class ThinkingAloudMsg(BaseModel):
     """Agent is speaking a filler phrase while thinking."""
 
