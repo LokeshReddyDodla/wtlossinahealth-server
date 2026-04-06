@@ -38,11 +38,13 @@ _FORWARDED_EVENTS = frozenset({
     "plan", "reflection", "specialist_start", "specialist_done",
 })
 
-# Only speak LLM-generated reasoning thoughts — they're already natural
-# and patient-friendly. Skip tool_result, specialist_done, etc. which
-# contain raw data dumps not meant for the patient to hear.
+# Events spoken aloud — only LLM-generated text that sounds natural.
+# reasoning: single-domain path thoughts (from ReasoningEngine)
+# plan: multi-domain path strategy (from Coordinator) — fills silence
+#       when reasoning events aren't emitted
 _SPEAKABLE_EVENTS: dict[str, Callable[[dict], str | None]] = {
     "reasoning": lambda d: d.get("thought"),
+    "plan": lambda d: d.get("strategy"),
 }
 
 SendJson = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
