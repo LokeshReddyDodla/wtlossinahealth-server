@@ -123,7 +123,7 @@ class VoiceOrchestrator:
                 thread_id=session.thread_id,
                 patient_ids=[session.patient_id] if session.patient_id else [],
                 priority=RequestPriority.NORMAL,
-                metadata=session.metadata,
+                metadata={**session.metadata, "output_mode": "voice"},
             ),
             stream=True,
         )
