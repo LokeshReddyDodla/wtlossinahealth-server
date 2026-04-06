@@ -26,7 +26,7 @@ class VoiceSettings(BaseSettings):
     # ── Speech-to-Text ───────────────────────────────────────────────────
 
     STT_MODEL: str = Field(default="whisper-1", description="OpenAI Whisper model")
-    STT_LANGUAGE: str = Field(default="en", description="Default STT language (ISO 639-1)")
+    STT_LANGUAGE: str = Field(default="", description="Default STT language (ISO 639-1). Empty = auto-detect.")
     STT_MAX_AUDIO_SECONDS: int = Field(default=30, description="Max audio duration per utterance")
 
     # ── Text-to-Speech ───────────────────────────────────────────────────
@@ -41,12 +41,6 @@ class VoiceSettings(BaseSettings):
     SESSION_TIMEOUT_SECONDS: int = Field(default=300, description="Idle timeout before session auto-closes")
     MAX_CONCURRENT_SESSIONS: int = Field(default=100, description="Max simultaneous voice sessions")
     AUDIO_BUFFER_MAX_BYTES: int = Field(default=5_000_000, description="Max audio buffer per utterance (~5MB)")
-
-    # ── Thinking Aloud ───────────────────────────────────────────────────
-
-    THINKING_ALOUD_ENABLED: bool = Field(default=True, description="Speak filler phrases while agent reasons")
-    THINKING_COOLDOWN_SECONDS: float = Field(default=2.5, description="Min seconds between filler phrases")
-    THINKING_MAX_FILLERS_PER_TURN: int = Field(default=3, description="Max filler phrases per agent turn")
 
     # ── Audio Format ─────────────────────────────────────────────────────
 
