@@ -3,6 +3,13 @@ WebSocket protocol — message schemas for voice agent communication.
 
 Binary frames carry raw audio. Text frames carry JSON control messages.
 All JSON messages have a ``type`` field for discrimination.
+
+Shared event types (same as text chat SSE):
+    status, intent, reasoning, tool_call, tool_result, plan,
+    reflection, specialist_start, specialist_done, token, done, error
+
+Voice-only event types:
+    session_ready, transcript, thinking_aloud, response_text, session_ended
 """
 
 from __future__ import annotations
@@ -44,7 +51,7 @@ class SessionEndMsg(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Server → Client (JSON)
+# Server → Client (JSON) — voice-only messages
 # ---------------------------------------------------------------------------
 
 
@@ -65,14 +72,6 @@ class TranscriptMsg(BaseModel):
     duration_seconds: float | None = None
 
 
-class VoiceStatusMsg(BaseModel):
-    """Agent pipeline status update."""
-
-    type: Literal["status"] = "status"
-    stage: str
-    message: str | None = None
-
-
 class ThinkingAloudMsg(BaseModel):
     """Agent is speaking a filler phrase while thinking."""
 
@@ -87,25 +86,15 @@ class ResponseTextMsg(BaseModel):
     text: str
 
 
-class AgentDoneMsg(BaseModel):
-    """Agent finished processing — mirrors SSE done event."""
-
-    type: Literal["agent_done"] = "agent_done"
-    suggestions: list[dict[str, str]] = Field(default_factory=list)
-    trace_id: str | None = None
-    cost_usd: float | None = None
-    latency_ms: int | None = None
-
-
-class VoiceErrorMsg(BaseModel):
-    """Error during voice pipeline."""
-
-    type: Literal["error"] = "error"
-    code: str
-    message: str
-
-
 class SessionEndedMsg(BaseModel):
     """Server confirms the session has ended."""
 
     type: Literal["session_ended"] = "session_ended"
+
+
+class VoiceErrorMsg(BaseModel):
+    """Voice-specific error (STT failure, buffer overflow, etc)."""
+
+    type: Literal["error"] = "error"
+    code: str
+    message: str

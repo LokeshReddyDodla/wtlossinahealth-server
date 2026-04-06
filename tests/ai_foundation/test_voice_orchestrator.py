@@ -111,14 +111,14 @@ class TestVoiceOrchestrator:
         types = [m["type"] for m in json_messages]
         assert "transcript" in types
         assert "response_text" in types
-        assert "agent_done" in types
+        assert "done" in types
 
         # Verify transcript content
         transcript_msg = next(m for m in json_messages if m["type"] == "transcript")
         assert transcript_msg["text"] == "How is my glucose today?"
 
         # Verify done metadata
-        done_msg = next(m for m in json_messages if m["type"] == "agent_done")
+        done_msg = next(m for m in json_messages if m["type"] == "done")
         assert done_msg["trace_id"] == "trc_1"
 
         # Session should be back to idle
@@ -238,7 +238,7 @@ class TestVoiceOrchestrator:
 
         # Should NOT have agent_done (interrupted before completion)
         types = [m["type"] for m in json_messages]
-        assert "agent_done" not in types
+        assert "done" not in types
 
 
 async def _append(lst: list, item):
