@@ -143,7 +143,7 @@ class VoiceConnectionHandler:
                             session,
                             audio,
                             send_json=lambda d: self._send_json(websocket, d),
-                            send_bytes=lambda b: websocket.send_bytes(b),
+                            send_bytes=lambda b: self._send_bytes(websocket, b),
                         )
                     else:
                         await self._send_json(websocket, VoiceErrorMsg(
@@ -157,7 +157,10 @@ class VoiceConnectionHandler:
                 elif msg_type == "session_end":
                     if session:
                         await self._send_json(websocket, SessionEndedMsg().model_dump())
-                    await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+                    try:
+                        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+                    except RuntimeError:
+                        pass  # Already closed by client
                     return
 
             # Disconnect
@@ -194,5 +197,13 @@ class VoiceConnectionHandler:
         """Send a JSON message, suppressing errors on closed connections."""
         try:
             await websocket.send_json(data)
+        except Exception:
+            pass
+
+    @staticmethod
+    async def _send_bytes(websocket: WebSocket, data: bytes) -> None:
+        """Send binary data, suppressing errors on closed connections."""
+        try:
+            await websocket.send_bytes(data)
         except Exception:
             pass

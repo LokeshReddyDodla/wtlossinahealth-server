@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import logging
+import struct
+import wave
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -48,8 +50,16 @@ class SpeechToText:
         Returns:
             TranscriptionResult with text, detected language, and duration.
         """
+        filename = _detect_filename(audio_bytes)
+        # Raw PCM has no header — wrap in WAV so Whisper can decode it
+        if filename == "audio.wav" and not audio_bytes[:4] == b"RIFF":
+            audio_bytes = _pcm_to_wav(
+                audio_bytes,
+                sample_rate=self._settings.INPUT_SAMPLE_RATE,
+                channels=self._settings.INPUT_CHANNELS,
+            )
         audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "audio.webm"
+        audio_file.name = filename
 
         kwargs: dict = {
             "model": self._settings.STT_MODEL,
@@ -78,3 +88,38 @@ class SpeechToText:
             result.duration_seconds or 0,
         )
         return result
+
+
+def _detect_filename(data: bytes) -> str:
+    """Detect audio format from magic bytes and return a filename hint for Whisper."""
+    if data[:4] == b"RIFF":
+        return "audio.wav"
+    if data[:4] == b"fLaC":
+        return "audio.flac"
+    if data[:3] == b"ID3" or data[:2] == b"\xff\xfb" or data[:2] == b"\xff\xf3":
+        return "audio.mp3"
+    if data[:4] == b"OggS":
+        return "audio.ogg"
+    if data[:4] == b"\x1aE\xdf\xa3":  # EBML header (WebM/Matroska)
+        return "audio.webm"
+    if len(data) >= 8 and data[4:8] == b"ftyp":
+        return "audio.m4a"
+    # Default to wav — raw PCM will be wrapped with a WAV header
+    return "audio.wav"
+
+
+def _pcm_to_wav(
+    pcm_data: bytes,
+    *,
+    sample_rate: int = 16000,
+    channels: int = 1,
+    sample_width: int = 2,
+) -> bytes:
+    """Wrap raw PCM bytes in a valid WAV container."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_data)
+    return buf.getvalue()
