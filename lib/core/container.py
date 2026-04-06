@@ -188,7 +188,6 @@ from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTr
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import SpeechToText
 from lib.ai_foundation.voice.tts import TextToSpeech
-from lib.ai_foundation.voice.thinking_aloud import ThinkingAloudMapper
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 
 # Initialize Container
@@ -1695,18 +1694,11 @@ container.register(
 )
 
 container.register(
-    ThinkingAloudMapper,
-    lambda: ThinkingAloudMapper(settings=_voice_settings),
-    scope=Scope.singleton,
-)
-
-container.register(
     VoiceOrchestrator,
     lambda: VoiceOrchestrator(
         stt=cast(SpeechToText, container.resolve(SpeechToText)),
         tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
-        thinking_mapper=cast(ThinkingAloudMapper, container.resolve(ThinkingAloudMapper)),
         settings=_voice_settings,
     ),
     scope=Scope.singleton,
