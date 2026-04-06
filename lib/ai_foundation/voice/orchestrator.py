@@ -38,15 +38,11 @@ _FORWARDED_EVENTS = frozenset({
     "plan", "reflection", "specialist_start", "specialist_done",
 })
 
-# SSE events that should be spoken aloud as the agent thinks.
-# Maps event name → function that extracts speakable text from event data.
+# Only speak LLM-generated reasoning thoughts — they're already natural
+# and patient-friendly. Skip tool_result, specialist_done, etc. which
+# contain raw data dumps not meant for the patient to hear.
 _SPEAKABLE_EVENTS: dict[str, Callable[[dict], str | None]] = {
     "reasoning": lambda d: d.get("thought"),
-    "tool_call": lambda d: f"Checking your {d['args'].get('data_types', ['data'])[0].replace('_', ' ')}" if d.get("args", {}).get("data_types") else d.get("reason"),
-    "tool_result": lambda d: d.get("summary", "")[:120] if d.get("summary") else None,
-    "specialist_start": lambda d: f"Looking at your {d.get('domain', 'health')} data",
-    "specialist_done": lambda d: d.get("summary", "")[:120] if d.get("summary") else None,
-    "plan": lambda d: d.get("strategy"),
 }
 
 SendJson = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
