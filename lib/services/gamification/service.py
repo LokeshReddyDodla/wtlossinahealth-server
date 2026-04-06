@@ -130,6 +130,7 @@ class GamificationService:
             streak_freezes=profile.streak_freezes,
             streak_multiplier=mult,
             last_active_date=profile.last_active_date,
+            buddy_code=profile.buddy_code,
             leaderboard_visibility=profile.leaderboard_visibility,
             xp_to_next_level=xp_to_next,
             created_at=profile.created_at,

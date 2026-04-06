@@ -22,9 +22,11 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.care_provider import CareProvider
 from lib.schemas.gamification import (
+    AddGroupMembersInput,
     AchievementResponse,
     ChallengeParticipantResponse,
     BuddyProgressResponse,
+    BuddyRequestByCodeInput,
     BuddyRequestInput,
     BuddyResponse,
     CPGamificationOverview,
@@ -400,6 +402,26 @@ async def send_buddy_request(
     pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
         await service.send_request(pid, body.accepter_id)
+        return SuccessResponse(message="Buddy request sent")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/patients/{patient_id}/buddies/request-by-code",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def send_buddy_request_by_code(
+    patient_id: UUID,
+    body: BuddyRequestByCodeInput,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_WRITE_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        await service.send_request_by_code(pid, body.buddy_code)
         return SuccessResponse(message="Buddy request sent")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -931,7 +953,6 @@ async def get_group_feed(
 @router.post(
     "/patients/{patient_id}/feed/{feed_event_id}/cheer",
     response_model=SuccessResponse,
-    status_code=status.HTTP_201_CREATED,
 )
 async def send_cheer(
     patient_id: UUID,
@@ -943,7 +964,9 @@ async def send_cheer(
 ):
     pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
-        await service.send_cheer(pid, feed_event_id, body.reaction.value)
+        result = await service.send_cheer(pid, feed_event_id, body.reaction.value)
+        if result is None:
+            return SuccessResponse(message="Cheer removed")
         return SuccessResponse(message="Cheer sent")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -1036,6 +1059,33 @@ async def create_cp_challenge(
         challenge.challenge_id, cp_id
     )
     return SuccessResponse(message="Challenge created", data=detail.challenge)
+
+
+@router.post(
+    "/care-providers/{cp_id}/groups/{group_id}/members",
+    response_model=SuccessResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_group_members(
+    cp_id: UUID,
+    group_id: UUID,
+    body: AddGroupMembersInput,
+    service: GroupService = Depends(get_group_service),
+    current_cp: CareProvider = Depends(
+        get_current_care_provider(
+            action=CareProviderPermissionAction.CREATE,
+            feature=CareProviderFeature.PATIENTS,
+            check_permissions=True,
+        )
+    ),
+):
+    if cp_id != current_cp.care_provider_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        added = await service.add_members(group_id, body.patient_ids)
+        return SuccessResponse(message=f"{added} member(s) added", data={"added": added})
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post(
