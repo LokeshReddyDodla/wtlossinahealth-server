@@ -21,13 +21,10 @@ from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
 from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.protocol import (
-    AgentDoneMsg,
-    AgentThoughtMsg,
     ResponseTextMsg,
     ThinkingAloudMsg,
     TranscriptMsg,
     VoiceErrorMsg,
-    VoiceStatusMsg,
 )
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import SpeechToText
@@ -39,9 +36,9 @@ logger = logging.getLogger(__name__)
 # Regex to split text at sentence boundaries for chunked TTS
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
-# SSE events forwarded as "thought" messages to the client
-_THOUGHT_EVENTS = frozenset({
-    "reasoning", "tool_call", "tool_result",
+# SSE events forwarded directly to the client (same type names as text chat)
+_FORWARDED_EVENTS = frozenset({
+    "intent", "reasoning", "tool_call", "tool_result",
     "plan", "reflection", "specialist_start", "specialist_done",
 })
 
@@ -144,19 +141,9 @@ class VoiceOrchestrator:
                 if event_name is None:
                     continue
 
-                # Forward status events as JSON
-                if event_name == "status":
-                    await send_json(VoiceStatusMsg(
-                        stage=event_data.get("stage", ""),
-                        message=event_data.get("message"),
-                    ).model_dump())
-
-                # Forward reasoning events (thoughts, tool calls, plans, etc.)
-                if event_name in _THOUGHT_EVENTS:
-                    await send_json(AgentThoughtMsg(
-                        event=event_name,
-                        data=event_data,
-                    ).model_dump())
+                # Forward events with same type names as text chat SSE
+                if event_name == "status" or event_name in _FORWARDED_EVENTS:
+                    await send_json({"type": event_name, **event_data})
 
                 # Thinking-aloud filler
                 filler = self._thinking.map_event(sse_raw)
@@ -211,13 +198,8 @@ class VoiceOrchestrator:
                         session.state = VoiceSessionState.SPEAKING
                         await self._stream_tts(remaining, send_bytes, session)
 
-                    # Send done metadata
-                    await send_json(AgentDoneMsg(
-                        suggestions=event_data.get("suggestions", []),
-                        trace_id=event_data.get("trace_id"),
-                        cost_usd=event_data.get("cost_usd"),
-                        latency_ms=event_data.get("latency_ms"),
-                    ).model_dump())
+                    # Forward done event with same shape as text chat SSE
+                    await send_json({"type": "done", **event_data})
 
                     session.state = VoiceSessionState.IDLE
                     return
