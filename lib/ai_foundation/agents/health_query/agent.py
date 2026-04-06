@@ -490,6 +490,7 @@ class HealthQueryAgent(BaseAgent):
                 "cost_usd": output.cost_usd,
                 "latency_ms": output.latency_ms,
                 "model_id": output.model_id,
+                "input_mode": input.context.metadata.get("output_mode", "text"),
             },
         )
 
