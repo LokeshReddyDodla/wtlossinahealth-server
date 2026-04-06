@@ -2,8 +2,9 @@
 Voice Orchestrator — main pipeline: STT → HealthQueryAgent → TTS.
 
 Bridges the gap between raw audio and the existing text-based agent.
-Handles thinking-aloud filler phrases, sentence-level TTS chunking,
-and interruption support.
+Speaks the agent's actual thoughts (reasoning, tool calls, findings)
+so there's no silence while the agent investigates. Final response
+is spoken as one continuous stream.
 
 The orchestrator does NOT own the HealthQueryAgent — it wraps it.
 All reasoning, tools, memory, and persistence stay in the agent.
@@ -13,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -22,26 +22,32 @@ from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPrio
 from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.protocol import (
     ResponseTextMsg,
-    ThinkingAloudMsg,
     TranscriptMsg,
     VoiceErrorMsg,
 )
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import SpeechToText
-from lib.ai_foundation.voice.thinking_aloud import ThinkingAloudMapper, parse_sse_event
+from lib.ai_foundation.voice.thinking_aloud import parse_sse_event
 from lib.ai_foundation.voice.tts import TextToSpeech
 
 logger = logging.getLogger(__name__)
 
-# Regex to split text at sentence boundaries for chunked TTS
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-
-# SSE events forwarded directly to the client (same type names as text chat)
+# SSE events forwarded as JSON to the client (same type names as text chat)
 _FORWARDED_EVENTS = frozenset({
-    "intent", "reasoning", "tool_call", "tool_result",
+    "status", "intent", "reasoning", "tool_call", "tool_result",
     "plan", "reflection", "specialist_start", "specialist_done",
 })
 
+# SSE events that should be spoken aloud as the agent thinks.
+# Maps event name → function that extracts speakable text from event data.
+_SPEAKABLE_EVENTS: dict[str, Callable[[dict], str | None]] = {
+    "reasoning": lambda d: d.get("thought"),
+    "tool_call": lambda d: f"Checking your {d['args'].get('data_types', ['data'])[0].replace('_', ' ')}" if d.get("args", {}).get("data_types") else d.get("reason"),
+    "tool_result": lambda d: d.get("summary", "")[:120] if d.get("summary") else None,
+    "specialist_start": lambda d: f"Looking at your {d.get('domain', 'health')} data",
+    "specialist_done": lambda d: d.get("summary", "")[:120] if d.get("summary") else None,
+    "plan": lambda d: d.get("strategy"),
+}
 
 SendJson = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
 SendBytes = Callable[[bytes], Coroutine[Any, Any, None]]
@@ -56,13 +62,11 @@ class VoiceOrchestrator:
         stt: SpeechToText,
         tts: TextToSpeech,
         agent: HealthQueryAgent,
-        thinking_mapper: ThinkingAloudMapper,
         settings: VoiceSettings,
     ) -> None:
         self._stt = stt
         self._tts = tts
         self._agent = agent
-        self._thinking = thinking_mapper
         self._settings = settings
 
     async def handle_utterance(
@@ -83,7 +87,6 @@ class VoiceOrchestrator:
         """
         session.clear_interrupt()
         session.state = VoiceSessionState.PROCESSING
-        self._thinking.reset_turn()
 
         # ── 1. Speech-to-Text ────────────────────────────────────────────
         try:
@@ -130,7 +133,7 @@ class VoiceOrchestrator:
 
         # ── 3. Consume agent stream ─────────────────────────────────────
         token_buffer: list[str] = []
-        tts_tasks: list[asyncio.Task] = []
+        speaking_task: asyncio.Task | None = None
 
         try:
             async for sse_raw in self._agent.run_stream(agent_input):
@@ -141,41 +144,27 @@ class VoiceOrchestrator:
                 if event_name is None:
                     continue
 
-                # Forward events with same type names as text chat SSE
-                if event_name == "status" or event_name in _FORWARDED_EVENTS:
+                # Forward all agent events as JSON (same types as text chat)
+                if event_name in _FORWARDED_EVENTS:
                     await send_json({"type": event_name, **event_data})
 
-                # Thinking-aloud filler
-                filler = self._thinking.map_event(sse_raw)
-                if filler and not session.is_cancelled:
-                    await send_json(ThinkingAloudMsg(phrase=filler).model_dump())
-                    task = asyncio.create_task(
-                        self._send_filler_audio(filler, send_bytes, session)
-                    )
-                    tts_tasks.append(task)
+                # Speak thoughts aloud — wait for each to finish before next
+                extractor = _SPEAKABLE_EVENTS.get(event_name)
+                if extractor and not session.is_cancelled:
+                    phrase = extractor(event_data)
+                    if phrase and phrase.strip():
+                        # Wait for any previous speech to finish
+                        if speaking_task and not speaking_task.done():
+                            await speaking_task
+                        speaking_task = asyncio.create_task(
+                            self._speak(phrase, send_bytes, session)
+                        )
 
                 # Accumulate response tokens
                 if event_name == "token":
-                    delta = event_data.get("delta", "")
-                    token_buffer.append(delta)
+                    token_buffer.append(event_data.get("delta", ""))
 
-                    # Sentence-level TTS: start speaking completed sentences
-                    text_so_far = "".join(token_buffer)
-                    sentences = _SENTENCE_END.split(text_so_far)
-                    if len(sentences) > 1:
-                        # Speak all complete sentences, keep the incomplete tail
-                        complete = " ".join(sentences[:-1])
-                        token_buffer.clear()
-                        token_buffer.append(sentences[-1])
-
-                        if not session.is_cancelled:
-                            session.state = VoiceSessionState.SPEAKING
-                            task = asyncio.create_task(
-                                self._stream_tts(complete, send_bytes, session)
-                            )
-                            tts_tasks.append(task)
-
-                # Done event — stream remaining text and send metadata
+                # Done — speak the full response as one stream
                 if event_name == "done":
                     if session.is_cancelled:
                         break
@@ -184,27 +173,23 @@ class VoiceOrchestrator:
                     if not full_response:
                         full_response = "".join(token_buffer)
 
-                    # Send text response for display
+                    # Send text for display
                     await send_json(ResponseTextMsg(text=full_response).model_dump())
 
-                    # Wait for any in-flight TTS to finish
-                    if tts_tasks:
-                        await asyncio.gather(*tts_tasks, return_exceptions=True)
-                        tts_tasks.clear()
+                    # Wait for any in-flight thought speech to finish
+                    if speaking_task and not speaking_task.done():
+                        await speaking_task
 
-                    # Stream remaining buffered text
-                    remaining = "".join(token_buffer).strip()
-                    if remaining and not session.is_cancelled:
+                    # One TTS stream for the full response
+                    if full_response.strip() and not session.is_cancelled:
                         session.state = VoiceSessionState.SPEAKING
-                        await self._stream_tts(remaining, send_bytes, session)
+                        await self._speak(full_response, send_bytes, session)
 
-                    # Forward done event with same shape as text chat SSE
                     await send_json({"type": "done", **event_data})
-
                     session.state = VoiceSessionState.IDLE
                     return
 
-                # Error event
+                # Error
                 if event_name == "error":
                     error_msg = event_data.get("message", "Something went wrong.")
                     fallback = event_data.get("fallback_text", error_msg)
@@ -212,9 +197,10 @@ class VoiceOrchestrator:
                         code="agent_error", message=error_msg,
                     ).model_dump())
 
-                    # Speak the error
+                    if speaking_task and not speaking_task.done():
+                        await speaking_task
                     if not session.is_cancelled:
-                        await self._stream_tts(fallback, send_bytes, session)
+                        await self._speak(fallback, send_bytes, session)
 
                     session.state = VoiceSessionState.IDLE
                     return
@@ -226,22 +212,23 @@ class VoiceOrchestrator:
                 message="Sorry, something went wrong. Please try again.",
             ).model_dump())
         finally:
-            # Cancel any lingering TTS tasks
-            for task in tts_tasks:
-                if not task.done():
-                    task.cancel()
+            if speaking_task and not speaking_task.done():
+                speaking_task.cancel()
             session.state = VoiceSessionState.IDLE
 
-    # ── TTS helpers ──────────────────────────────────────────────────────
+    # ── TTS ──────────────────────────────────────────────────────────────
 
-    async def _stream_tts(
+    async def _speak(
         self,
         text: str,
         send_bytes: SendBytes,
         session: VoiceSession,
     ) -> None:
         """Stream TTS audio to client, respecting interruption."""
-        logger.info("TTS stream: starting for %d chars: %s", len(text), text[:80])
+        if not text.strip():
+            return
+
+        logger.info("TTS: speaking %d chars: %s", len(text), text[:80])
         total_bytes = 0
         try:
             async for chunk in self._tts.synthesize_stream(text):
@@ -249,28 +236,8 @@ class VoiceOrchestrator:
                     break
                 total_bytes += len(chunk)
                 await send_bytes(chunk)
-            logger.info("TTS stream: sent %d bytes total", total_bytes)
+            logger.info("TTS: sent %d bytes", total_bytes)
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.error("TTS streaming failed for session %s", session.session_id, exc_info=True)
-
-    async def _send_filler_audio(
-        self,
-        phrase: str,
-        send_bytes: SendBytes,
-        session: VoiceSession,
-    ) -> None:
-        """Synthesize and send a short filler phrase."""
-        logger.info("TTS filler: synthesizing '%s'", phrase)
-        try:
-            audio = await self._tts.synthesize(phrase)
-            logger.info("TTS filler: got %d bytes", len(audio) if audio else 0)
-            if audio and not session.is_cancelled:
-                await send_bytes(audio)
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.warning("Filler TTS failed: %s", phrase, exc_info=True)
-
-
+            logger.error("TTS failed for session %s", session.session_id, exc_info=True)

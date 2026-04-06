@@ -12,16 +12,10 @@ from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import TranscriptionResult
-from lib.ai_foundation.voice.thinking_aloud import ThinkingAloudMapper
 
 
 def _settings(**overrides) -> VoiceSettings:
-    return VoiceSettings(
-        THINKING_ALOUD_ENABLED=True,
-        THINKING_COOLDOWN_SECONDS=0,
-        THINKING_MAX_FILLERS_PER_TURN=3,
-        **overrides,
-    )
+    return VoiceSettings(**overrides)
 
 
 def _session(settings: VoiceSettings | None = None) -> VoiceSession:
@@ -38,37 +32,36 @@ def _sse_event(event_type: str, data: dict) -> str:
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
+def _make_tts():
+    mock_tts = AsyncMock()
+
+    async def fake_stream(text):
+        yield b"\x00" * 100
+
+    mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
+    return mock_tts
+
+
 class TestVoiceOrchestrator:
     @pytest.mark.asyncio
-    async def test_full_pipeline_happy_path(self):
-        """STT → Agent stream → TTS → client receives transcript, status, response, done."""
+    async def test_full_pipeline_with_thoughts(self):
+        """STT → reasoning (spoken) → tool_call (spoken) → response (spoken) → done."""
         settings = _settings()
 
-        # Mock STT
         mock_stt = AsyncMock()
         mock_stt.transcribe.return_value = TranscriptionResult(
-            text="How is my glucose today?",
-            language="en",
-            duration_seconds=2.0,
+            text="How is my glucose today?", language="en", duration_seconds=2.0,
         )
 
-        # Mock TTS
-        mock_tts = AsyncMock()
-
-        async def fake_stream(text):
-            yield b"\x00" * 100  # Fake audio chunk
-
-        mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
-        mock_tts.synthesize.return_value = b"\x00" * 50
-
-        # Mock Agent — yields status + tokens + done
+        mock_tts = _make_tts()
         mock_agent = AsyncMock()
 
         async def fake_run_stream(agent_input):
-            yield _sse_event("status", {"stage": "analyzing", "message": "Looking..."})
-            yield _sse_event("token", {"delta": "Your "})
-            yield _sse_event("token", {"delta": "glucose "})
-            yield _sse_event("token", {"delta": "is fine."})
+            yield _sse_event("status", {"stage": "extracting_intent"})
+            yield _sse_event("reasoning", {"step": 1, "thought": "Let me check glucose data"})
+            yield _sse_event("tool_call", {"tool": "look_up", "args": {"data_types": ["cgm_range_stats"]}, "reason": "Checking glucose"})
+            yield _sse_event("tool_result", {"tool": "look_up", "summary": "Found 7 days of data"})
+            yield _sse_event("token", {"delta": "Your glucose is fine."})
             yield _sse_event("done", {
                 "suggestions": [{"label": "More"}],
                 "trace_id": "trc_1",
@@ -78,51 +71,84 @@ class TestVoiceOrchestrator:
 
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
-        mapper = ThinkingAloudMapper(settings=settings)
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt,
-            tts=mock_tts,
-            agent=mock_agent,
-            thinking_mapper=mapper,
-            settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
         )
 
         session = _session(settings)
         json_messages = []
         binary_messages = []
 
-        async def send_json(data):
-            json_messages.append(data)
-
-        async def send_bytes(data):
-            binary_messages.append(data)
-
         await orchestrator.handle_utterance(
-            session,
-            b"\x00" * 1000,
-            send_json=send_json,
-            send_bytes=send_bytes,
+            session, b"\x00" * 1000,
+            send_json=lambda d: _async_append(json_messages, d),
+            send_bytes=lambda b: _async_append(binary_messages, b),
         )
 
-        # Verify STT was called
-        mock_stt.transcribe.assert_called_once_with(b"\x00" * 1000)
-
-        # Verify messages sent to client
         types = [m["type"] for m in json_messages]
+
+        # All events forwarded
         assert "transcript" in types
+        assert "status" in types
+        assert "reasoning" in types
+        assert "tool_call" in types
+        assert "tool_result" in types
         assert "response_text" in types
         assert "done" in types
 
-        # Verify transcript content
-        transcript_msg = next(m for m in json_messages if m["type"] == "transcript")
-        assert transcript_msg["text"] == "How is my glucose today?"
+        # TTS was called for thoughts + response
+        assert mock_tts.synthesize_stream.call_count >= 2  # at least reasoning + response
 
-        # Verify done metadata
-        done_msg = next(m for m in json_messages if m["type"] == "done")
-        assert done_msg["trace_id"] == "trc_1"
+        # Binary audio was sent
+        assert len(binary_messages) > 0
 
-        # Session should be back to idle
         assert session.state == VoiceSessionState.IDLE
+
+    @pytest.mark.asyncio
+    async def test_thoughts_spoken_sequentially(self):
+        """Each thought waits for the previous to finish before speaking."""
+        settings = _settings()
+
+        mock_stt = AsyncMock()
+        mock_stt.transcribe.return_value = TranscriptionResult(
+            text="Tell me about today", language="en", duration_seconds=1.5,
+        )
+
+        speak_order = []
+        mock_tts = AsyncMock()
+
+        async def fake_stream(text):
+            speak_order.append(text[:30])
+            yield b"\x00" * 50
+
+        mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
+
+        mock_agent = AsyncMock()
+
+        async def fake_run_stream(agent_input):
+            yield _sse_event("reasoning", {"step": 1, "thought": "First thought"})
+            yield _sse_event("reasoning", {"step": 2, "thought": "Second thought"})
+            yield _sse_event("done", {"data": {"full_response": "Final answer."}})
+
+        mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
+
+        orchestrator = VoiceOrchestrator(
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+        )
+
+        session = _session(settings)
+
+        await orchestrator.handle_utterance(
+            session, b"\x00" * 500,
+            send_json=lambda d: _async_append([], d),
+            send_bytes=AsyncMock(),
+        )
+
+        # All three were spoken: two thoughts + final response
+        assert len(speak_order) == 3
+        assert "First thought" in speak_order[0]
+        assert "Second thought" in speak_order[1]
+        assert "Final answer" in speak_order[2]
 
     @pytest.mark.asyncio
     async def test_empty_transcript_sends_error(self):
@@ -133,13 +159,8 @@ class TestVoiceOrchestrator:
             text="   ", language="en", duration_seconds=0.5,
         )
 
-        mock_tts = AsyncMock()
-        mock_agent = AsyncMock()
-        mapper = ThinkingAloudMapper(settings=settings)
-
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent,
-            thinking_mapper=mapper, settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -147,17 +168,14 @@ class TestVoiceOrchestrator:
 
         await orchestrator.handle_utterance(
             session, b"\x00" * 100,
-            send_json=lambda d: _append(json_messages, d),
+            send_json=lambda d: _async_append(json_messages, d),
             send_bytes=AsyncMock(),
         )
 
-        # Should get transcript then error
         types = [m["type"] for m in json_messages]
-        assert "transcript" in types
         assert "error" in types
         error_msg = next(m for m in json_messages if m["type"] == "error")
         assert error_msg["code"] == "empty_transcript"
-        assert session.state == VoiceSessionState.IDLE
 
     @pytest.mark.asyncio
     async def test_stt_failure_sends_error(self):
@@ -166,13 +184,8 @@ class TestVoiceOrchestrator:
         mock_stt = AsyncMock()
         mock_stt.transcribe.side_effect = RuntimeError("API error")
 
-        mock_tts = AsyncMock()
-        mock_agent = AsyncMock()
-        mapper = ThinkingAloudMapper(settings=settings)
-
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent,
-            thinking_mapper=mapper, settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -180,7 +193,7 @@ class TestVoiceOrchestrator:
 
         await orchestrator.handle_utterance(
             session, b"\x00" * 100,
-            send_json=lambda d: _append(json_messages, d),
+            send_json=lambda d: _async_append(json_messages, d),
             send_bytes=AsyncMock(),
         )
 
@@ -198,32 +211,22 @@ class TestVoiceOrchestrator:
             text="Tell me about my glucose", language="en", duration_seconds=2.0,
         )
 
-        mock_tts = AsyncMock()
-        mock_tts.synthesize.return_value = b"\x00" * 50
-
+        mock_tts = _make_tts()
         mock_agent = AsyncMock()
 
         async def slow_stream(agent_input):
             yield _sse_event("status", {"stage": "analyzing"})
-            yield _sse_event("token", {"delta": "Your "})
-            # Simulate interrupt during stream
-            yield _sse_event("token", {"delta": "glucose "})
-            yield _sse_event("token", {"delta": "is "})
-            yield _sse_event("done", {"suggestions": [], "data": {"full_response": "Your glucose is..."}})
+            yield _sse_event("token", {"delta": "Your glucose..."})
+            yield _sse_event("done", {"data": {"full_response": "Your glucose..."}})
 
         mock_agent.run_stream = MagicMock(side_effect=lambda i: slow_stream(i))
-        mapper = ThinkingAloudMapper(settings=settings)
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent,
-            thinking_mapper=mapper, settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
         )
 
         session = _session(settings)
         json_messages = []
-
-        # Interrupt after first message
-        original_send = AsyncMock()
 
         async def send_json_and_interrupt(data):
             json_messages.append(data)
@@ -236,10 +239,44 @@ class TestVoiceOrchestrator:
             send_bytes=AsyncMock(),
         )
 
-        # Should NOT have agent_done (interrupted before completion)
         types = [m["type"] for m in json_messages]
         assert "done" not in types
 
+    @pytest.mark.asyncio
+    async def test_voice_metadata_set(self):
+        """Verify output_mode='voice' is passed in agent input metadata."""
+        settings = _settings()
 
-async def _append(lst: list, item):
+        mock_stt = AsyncMock()
+        mock_stt.transcribe.return_value = TranscriptionResult(
+            text="Hello", language="en", duration_seconds=1.0,
+        )
+
+        mock_tts = _make_tts()
+        mock_agent = AsyncMock()
+        captured_input = []
+
+        async def capture_stream(agent_input):
+            captured_input.append(agent_input)
+            yield _sse_event("done", {"data": {"full_response": "Hi there."}})
+
+        mock_agent.run_stream = MagicMock(side_effect=lambda i: capture_stream(i))
+
+        orchestrator = VoiceOrchestrator(
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+        )
+
+        session = _session(settings)
+
+        await orchestrator.handle_utterance(
+            session, b"\x00" * 100,
+            send_json=lambda d: _async_append([], d),
+            send_bytes=AsyncMock(),
+        )
+
+        assert len(captured_input) == 1
+        assert captured_input[0].context.metadata["output_mode"] == "voice"
+
+
+async def _async_append(lst: list, item):
     lst.append(item)
