@@ -129,7 +129,7 @@ class HealthQueryAgent(BaseAgent):
             # ── Route: single-agent vs multi-agent ──
             patient_ids = self._resolve_patient_ids(input)
             system_prompt = self._get_system_prompt(input.context.user_role)
-            reasoning_prompt, response_prompt = self._get_reasoning_prompts()
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input)
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
@@ -252,7 +252,7 @@ class HealthQueryAgent(BaseAgent):
             # ── Route: single-agent vs multi-agent (streaming) ──
             patient_ids = self._resolve_patient_ids(input)
             system_prompt = self._get_system_prompt(input.context.user_role)
-            reasoning_prompt, response_prompt = self._get_reasoning_prompts()
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input)
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
@@ -629,11 +629,19 @@ class HealthQueryAgent(BaseAgent):
         self._prompt_cache[cache_key] = rendered
         return rendered
 
-    def _get_reasoning_prompts(self) -> tuple[str, str]:
-        """Return (reasoning_prompt, response_prompt) for the engine."""
+    def _get_reasoning_prompts(self, input: AgentInput | None = None) -> tuple[str, str]:
+        """Return (reasoning_prompt, response_prompt) for the engine.
+
+        When input.context.metadata contains output_mode='voice', the
+        voice-optimised response prompt is used (conversational, no markdown).
+        """
         self._ensure_prompts()
         reasoning = self._render("hq_reasoning")
-        response = self._render("hq_final_response")
+        is_voice = (
+            input is not None
+            and input.context.metadata.get("output_mode") == "voice"
+        )
+        response = self._render("hq_final_response_voice" if is_voice else "hq_final_response")
         return reasoning, response
 
     def _log_quality_scores(self, trace_id: str, result: Any) -> None:

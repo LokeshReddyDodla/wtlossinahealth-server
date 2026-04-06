@@ -123,7 +123,7 @@ class VoiceOrchestrator:
                 thread_id=session.thread_id,
                 patient_ids=[session.patient_id] if session.patient_id else [],
                 priority=RequestPriority.NORMAL,
-                metadata=session.metadata,
+                metadata={**session.metadata, "output_mode": "voice"},
             ),
             stream=True,
         )
@@ -171,7 +171,7 @@ class VoiceOrchestrator:
                         if not session.is_cancelled:
                             session.state = VoiceSessionState.SPEAKING
                             task = asyncio.create_task(
-                                self._stream_tts(complete, send_bytes, session)
+                                self._stream_tts(_strip_markdown(complete), send_bytes, session)
                             )
                             tts_tasks.append(task)
 
