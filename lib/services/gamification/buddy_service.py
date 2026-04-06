@@ -102,6 +102,8 @@ class BuddyService:
             if existing_buddy.status in ("pending", "active"):
                 raise ValueError("Buddy request already exists")
             # Re-activate a removed buddy by setting status back to pending
+            existing_buddy.requester_id = requester_id
+            existing_buddy.accepter_id = accepter_id
             existing_buddy.status = "pending"
             existing_buddy.removed_at = None
             existing_buddy.removed_by = None
