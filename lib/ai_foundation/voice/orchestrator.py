@@ -171,7 +171,7 @@ class VoiceOrchestrator:
                         if not session.is_cancelled:
                             session.state = VoiceSessionState.SPEAKING
                             task = asyncio.create_task(
-                                self._stream_tts(_strip_markdown(complete), send_bytes, session)
+                                self._stream_tts(complete, send_bytes, session)
                             )
                             tts_tasks.append(task)
 
