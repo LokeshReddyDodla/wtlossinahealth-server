@@ -121,6 +121,7 @@ services:
       - 9000:9000
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ./deployment/clickhouse/config.xml:/etc/clickhouse-server/config.d/logging.xml
 
   aihealth-qdrant:
     container_name: aihealth-qdrant
