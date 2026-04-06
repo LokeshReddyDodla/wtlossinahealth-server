@@ -3,6 +3,8 @@ Speech-to-Text — OpenAI Whisper integration.
 
 Uses the OpenAI SDK directly (not LiteLLM) because LiteLLM does not
 support audio APIs. The OPENAI_API_KEY env var is read automatically.
+
+Audio input: Opus/OGG from Flutter client.
 """
 
 from __future__ import annotations
@@ -39,17 +41,17 @@ class SpeechToText:
         *,
         language: str | None = None,
     ) -> TranscriptionResult:
-        """Transcribe audio bytes using Whisper.
+        """Transcribe Opus/OGG audio bytes using Whisper.
 
         Args:
-            audio_bytes: Raw audio data (any format Whisper accepts).
+            audio_bytes: OGG-encoded audio from the Flutter client.
             language: ISO 639-1 language code override, or None for auto-detect.
 
         Returns:
             TranscriptionResult with text, detected language, and duration.
         """
         audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "audio.webm"
+        audio_file.name = "audio.ogg"
 
         kwargs: dict = {
             "model": self._settings.STT_MODEL,
