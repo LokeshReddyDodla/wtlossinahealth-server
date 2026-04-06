@@ -168,26 +168,6 @@ class FeedService:
         *,
         postgres_session: AsyncSession,
     ) -> Cheer:
-        # Check daily limit
-        tz_result = await postgres_session.execute(
-            select(Patient.locale).where(Patient.patient_id == sender_id)
-        )
-        tz_name = tz_result.scalar()
-        today_start, _ = naive_day_bounds_for_local_date(
-            local_today(tz_name),
-            tz_name,
-        )
-        count_result = await postgres_session.execute(
-            select(func.count(Cheer.cheer_id)).where(
-                Cheer.sender_id == sender_id,
-                Cheer.created_at >= today_start,
-            )
-        )
-        if (count_result.scalar() or 0) >= CHEERS_PER_DAY_LIMIT:
-            raise ValueError(
-                f"Maximum {CHEERS_PER_DAY_LIMIT} cheers per day"
-            )
-
         # Get the feed event to find recipient
         event_result = await postgres_session.execute(
             select(ActivityFeedEvent).where(
