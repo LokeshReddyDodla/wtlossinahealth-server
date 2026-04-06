@@ -185,6 +185,11 @@ from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+from lib.ai_foundation.voice.config import voice_settings as _voice_settings
+from lib.ai_foundation.voice.stt import SpeechToText
+from lib.ai_foundation.voice.tts import TextToSpeech
+from lib.ai_foundation.voice.thinking_aloud import ThinkingAloudMapper
+from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 
 # Initialize Container
 container = Container()
@@ -1669,6 +1674,40 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+    ),
+    scope=Scope.singleton,
+)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🎙️ Voice Agent Services
+# ═══════════════════════════════════════════════════════════════════════════
+
+container.register(
+    SpeechToText,
+    lambda: SpeechToText(settings=_voice_settings),
+    scope=Scope.singleton,
+)
+
+container.register(
+    TextToSpeech,
+    lambda: TextToSpeech(settings=_voice_settings),
+    scope=Scope.singleton,
+)
+
+container.register(
+    ThinkingAloudMapper,
+    lambda: ThinkingAloudMapper(settings=_voice_settings),
+    scope=Scope.singleton,
+)
+
+container.register(
+    VoiceOrchestrator,
+    lambda: VoiceOrchestrator(
+        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
+        agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
+        thinking_mapper=cast(ThinkingAloudMapper, container.resolve(ThinkingAloudMapper)),
+        settings=_voice_settings,
     ),
     scope=Scope.singleton,
 )
