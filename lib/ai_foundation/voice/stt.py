@@ -51,6 +51,12 @@ class SpeechToText:
             TranscriptionResult with text, detected language, and duration.
         """
         filename = _detect_filename(audio_bytes)
+        logger.info(
+            "STT: received %d bytes, first 16 bytes: %s, detected format: %s",
+            len(audio_bytes),
+            audio_bytes[:16].hex(),
+            filename,
+        )
         # Raw PCM has no header — wrap in WAV so Whisper can decode it
         if filename == "audio.wav" and not audio_bytes[:4] == b"RIFF":
             audio_bytes = _pcm_to_wav(
