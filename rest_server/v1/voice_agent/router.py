@@ -19,7 +19,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket
 
-from lib.ai_foundation.voice.ws_dependencies import get_voice_connection_handler
+from lib.ai_foundation.voice.config import voice_settings
+from lib.ai_foundation.voice.ws_dependencies import get_voice_orchestrator
+from .ws_handler import VoiceConnectionHandler
 
 router = APIRouter(prefix="/voice", tags=["voice-agent"])
 
@@ -27,5 +29,8 @@ router = APIRouter(prefix="/voice", tags=["voice-agent"])
 @router.websocket("/ws")
 async def voice_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time voice interaction with the health agent."""
-    handler = get_voice_connection_handler()
+    handler = VoiceConnectionHandler(
+        orchestrator=get_voice_orchestrator(),
+        settings=voice_settings,
+    )
     await handler.handle(websocket)
