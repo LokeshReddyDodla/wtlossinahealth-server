@@ -27,7 +27,7 @@ from lib.ai_foundation.voice.protocol import (
 )
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
 from lib.ai_foundation.voice.stt import SpeechToText
-from lib.ai_foundation.voice.thinking_aloud import parse_sse_event
+from lib.ai_foundation.voice.sse_utils import parse_sse_event
 from lib.ai_foundation.voice.tts import TextToSpeech
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ Shared event types (same as text chat SSE):
     reflection, specialist_start, specialist_done, token, done, error
 
 Voice-only event types:
-    session_ready, transcript, thinking_aloud, response_text, session_ended
+    session_ready, transcript, response_text, session_ended
 """
 
 from __future__ import annotations
@@ -70,13 +70,6 @@ class TranscriptMsg(BaseModel):
     is_final: bool = True
     language: str | None = None
     duration_seconds: float | None = None
-
-
-class ThinkingAloudMsg(BaseModel):
-    """Agent is speaking a filler phrase while thinking."""
-
-    type: Literal["thinking_aloud"] = "thinking_aloud"
-    phrase: str
 
 
 class ResponseTextMsg(BaseModel):
