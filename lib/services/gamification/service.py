@@ -102,17 +102,9 @@ class GamificationService:
     async def get_or_create_profile(
         self, patient_id: UUID, *, postgres_session: AsyncSession
     ) -> PlayerProfileResponse:
-        result = await postgres_session.execute(
-            select(PlayerProfile).where(
-                PlayerProfile.patient_id == patient_id
-            )
-        )
-        profile = result.scalars().first()
-        if not profile:
-            profile = PlayerProfile(patient_id=patient_id)
-            postgres_session.add(profile)
-            await postgres_session.commit()
-            await postgres_session.refresh(profile)
+        from lib.services.gamification.profile_utils import get_or_create_profile as _get_or_create
+        profile = await _get_or_create(patient_id, postgres_session)
+        await postgres_session.commit()
 
         title = title_for_level(profile.level)
         mult = streak_multiplier(profile.current_streak)
