@@ -241,15 +241,19 @@ class VoiceOrchestrator:
         session: VoiceSession,
     ) -> None:
         """Stream TTS audio to client, respecting interruption."""
+        logger.info("TTS stream: starting for %d chars: %s", len(text), text[:80])
+        total_bytes = 0
         try:
             async for chunk in self._tts.synthesize_stream(text):
                 if session.is_cancelled:
                     break
+                total_bytes += len(chunk)
                 await send_bytes(chunk)
+            logger.info("TTS stream: sent %d bytes total", total_bytes)
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.warning("TTS streaming failed for session %s", session.session_id, exc_info=True)
+            logger.error("TTS streaming failed for session %s", session.session_id, exc_info=True)
 
     async def _send_filler_audio(
         self,
@@ -258,8 +262,10 @@ class VoiceOrchestrator:
         session: VoiceSession,
     ) -> None:
         """Synthesize and send a short filler phrase."""
+        logger.info("TTS filler: synthesizing '%s'", phrase)
         try:
             audio = await self._tts.synthesize(phrase)
+            logger.info("TTS filler: got %d bytes", len(audio) if audio else 0)
             if audio and not session.is_cancelled:
                 await send_bytes(audio)
         except asyncio.CancelledError:
