@@ -220,6 +220,7 @@ class PlayerProfileResponse(BaseModel):
     streak_freezes: int
     streak_multiplier: float
     last_active_date: Optional[date] = None
+    buddy_code: Optional[str] = None
     leaderboard_visibility: str
     xp_to_next_level: int
     created_at: datetime
@@ -295,6 +296,10 @@ class BuddyRequestInput(BaseModel):
     accepter_id: UUID = Field(..., description="Patient ID of the buddy to add")
 
 
+class BuddyRequestByCodeInput(BaseModel):
+    buddy_code: str = Field(..., min_length=6, max_length=8)
+
+
 class BuddyResponse(BaseModel):
     buddy_id: str
     buddy_patient_id: str
@@ -348,6 +353,10 @@ class GroupResponse(BaseModel):
 
 class JoinByCodeInput(BaseModel):
     invite_code: str = Field(..., min_length=6, max_length=8)
+
+
+class AddGroupMembersInput(BaseModel):
+    patient_ids: List[UUID] = Field(..., min_length=1, max_length=50)
 
 
 class GroupMemberResponse(BaseModel):

@@ -48,6 +48,7 @@ class PlayerProfile(Base):
     streak_resets = Column(Integer, default=0, nullable=False)
     last_active_date = Column(Date, nullable=True)
     streak_frozen_on = Column(Date, nullable=True)
+    buddy_code = Column(String(8), unique=True, nullable=True)
     leaderboard_visibility = Column(
         String(20), default="group_only", nullable=False
     )

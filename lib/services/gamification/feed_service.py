@@ -234,15 +234,25 @@ class FeedService:
             if not sender_group_ids & actor_group_ids:
                 raise ValueError("You can only cheer buddies or group members")
 
-        # Check for duplicate
-        existing = await postgres_session.execute(
+        # Check for existing cheer on this event
+        existing_result = await postgres_session.execute(
             select(Cheer).where(
                 Cheer.sender_id == sender_id,
                 Cheer.feed_event_id == feed_event_id,
             )
         )
-        if existing.scalars().first():
-            raise ValueError("Already cheered this event")
+        existing = existing_result.scalars().first()
+
+        if existing:
+            if existing.reaction == reaction:
+                # Same emoji tapped again — undo the cheer
+                await postgres_session.delete(existing)
+                await postgres_session.commit()
+                return None
+            # Different emoji — replace
+            existing.reaction = reaction
+            await postgres_session.commit()
+            return existing
 
         cheer = Cheer(
             sender_id=sender_id,
@@ -253,7 +263,7 @@ class FeedService:
         postgres_session.add(cheer)
         await postgres_session.commit()
 
-        # Grant XP to cheerer
+        # Grant XP only on first cheer (not on replace/undo)
         await self.xp_service.grant_xp(
             patient_id=sender_id,
             amount=CHEER_XP_REWARD,

@@ -116,6 +116,26 @@ class BuddyService:
         return buddy
 
     @with_postgres_session
+    async def send_request_by_code(
+        self,
+        requester_id: UUID,
+        buddy_code: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> Buddy:
+        """Look up a patient by buddy code and send a buddy request."""
+        result = await postgres_session.execute(
+            select(PlayerProfile.patient_id).where(
+                PlayerProfile.buddy_code == buddy_code.upper(),
+            )
+        )
+        target_id = result.scalar()
+        if not target_id:
+            raise ValueError("Invalid buddy code")
+
+        return await self.send_request(requester_id, target_id)
+
+    @with_postgres_session
     async def accept_request(
         self,
         buddy_id: UUID,

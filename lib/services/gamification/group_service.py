@@ -244,6 +244,50 @@ class GroupService:
         ]
 
     @with_postgres_session
+    async def add_members(
+        self,
+        group_id: UUID,
+        patient_ids: List[UUID],
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        """Add multiple patients to a group. Skips already-active members.
+        Returns the number of newly added members."""
+        group = await self._get_group(group_id, postgres_session)
+        if not group or not group.is_active:
+            raise ValueError("Group not found or inactive")
+
+        count = await self._member_count(group_id, postgres_session)
+        available = group.max_members - count
+        added = 0
+
+        for pid in patient_ids:
+            if added >= available:
+                break
+
+            existing = await postgres_session.execute(
+                select(GroupMember).where(
+                    GroupMember.group_id == group_id,
+                    GroupMember.patient_id == pid,
+                )
+            )
+            member = existing.scalars().first()
+            if member:
+                if member.is_active:
+                    continue
+                member.is_active = True
+                member.left_at = None
+                member.joined_at = datetime.now().replace(tzinfo=None)
+            else:
+                postgres_session.add(
+                    GroupMember(group_id=group_id, patient_id=pid)
+                )
+            added += 1
+
+        await postgres_session.commit()
+        return added
+
+    @with_postgres_session
     async def join_by_code(
         self,
         invite_code: str,

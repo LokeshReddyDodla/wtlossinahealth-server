@@ -6,12 +6,19 @@ identical race-condition-safe logic being copy-pasted.
 
 from __future__ import annotations
 
+import secrets
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.models.gamification import PlayerProfile
+
+
+def _generate_buddy_code() -> str:
+    """Generate a 6-char alphanumeric code (no ambiguous chars)."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(6))
 
 
 async def get_or_create_profile(
@@ -28,9 +35,16 @@ async def get_or_create_profile(
     )
     profile = result.scalars().first()
     if profile:
+        # Backfill buddy_code for existing profiles
+        if not profile.buddy_code:
+            profile.buddy_code = _generate_buddy_code()
+            await session.flush()
         return profile
     try:
-        profile = PlayerProfile(patient_id=patient_id)
+        profile = PlayerProfile(
+            patient_id=patient_id,
+            buddy_code=_generate_buddy_code(),
+        )
         session.add(profile)
         await session.flush()
         return profile
