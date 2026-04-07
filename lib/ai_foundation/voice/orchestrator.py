@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -247,7 +248,7 @@ class VoiceOrchestrator:
         if not text.strip():
             return
 
-        logger.info("TTS: speaking %d chars: %s", len(text), text[:80])
+        logger.debug("TTS: speaking %d chars: %s", len(text), text[:80])
         total_bytes = 0
         try:
             async for chunk in self._tts.synthesize_stream(text):
@@ -255,14 +256,12 @@ class VoiceOrchestrator:
                     break
                 total_bytes += len(chunk)
                 await send_bytes(chunk)
-            logger.info("TTS: sent %d bytes", total_bytes)
+            logger.debug("TTS: sent %d bytes", total_bytes)
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.error("TTS failed for session %s", session.session_id, exc_info=True)
 
-
-import random
 
 _GREETINGS_WITH_NAME = [
     "Hey {name}! What's on your mind today?",
