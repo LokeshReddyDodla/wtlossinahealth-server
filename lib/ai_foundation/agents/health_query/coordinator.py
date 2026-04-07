@@ -208,10 +208,17 @@ class Coordinator:
         plan_cost = 0.0
         if self._planner and settings.PLANNING_ENABLED:
             try:
+                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
+                planning_prompt = (
+                    "Plan the multi-domain investigation. "
+                    "Write the strategy field as if you are a doctor explaining your plan "
+                    "to the patient out loud — first person, conversational, no jargon."
+                ) if is_voice else "Plan the multi-domain investigation."
+
                 plan, plan_cost = await self._planner.plan(
                     messages=base_messages,
                     tool_schemas=self._tools.get_openai_schemas(),
-                    planning_prompt="Plan the multi-domain investigation.",
+                    planning_prompt=planning_prompt,
                     model_id=tier_cfg.thinker_model,
                 )
                 total_cost += plan_cost

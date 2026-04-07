@@ -315,6 +315,7 @@ class ReasoningEngine:
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
             with _track_perf(perf, "planning_ms"):
+                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
                 plan = await self._execute_plan(
                     messages=messages,
                     tool_schemas=tool_schemas,
@@ -322,6 +323,7 @@ class ReasoningEngine:
                     patient_ids=patient_ids,
                     seen_calls=seen_calls,
                     patient_names=patient_names,
+                    is_voice=is_voice,
                 )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -631,6 +633,7 @@ class ReasoningEngine:
         patient_ids: list[str],
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
+        is_voice: bool = False,
     ) -> dict[str, Any]:
         """Generate an investigation plan and add it as context for the thinker.
 
@@ -642,10 +645,16 @@ class ReasoningEngine:
         Returns dict with: cost, tools_called, steps, plan_obj.
         """
         try:
+            planning_prompt = (
+                "Plan the investigation. Output a structured InvestigationPlan. "
+                "Write the strategy field as if you are a doctor explaining your plan "
+                "to the patient out loud — first person, conversational, no jargon."
+            ) if is_voice else "Plan the investigation. Output a structured InvestigationPlan."
+
             plan, plan_cost = await self._planner.plan(
                 messages=messages,
                 tool_schemas=tool_schemas,
-                planning_prompt="Plan the investigation. Output a structured InvestigationPlan.",
+                planning_prompt=planning_prompt,
                 model_id=tier_cfg.thinker_model,
             )
 
