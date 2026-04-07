@@ -57,7 +57,7 @@ class GamificationEventHandler:
                 patient_id, metric_type="meals_logged", increment=1.0,
             )
         except Exception:
-            pass
+            logger.warning("Challenge metric increment (meals_logged) failed for %s", patient_id, exc_info=True)
         await self._safe_complete(patient_id, TaskType.LOG_MEAL, "on_meal_logged")
         await self._refresh_macro_progress(patient_id)
 
@@ -243,6 +243,10 @@ class GamificationEventHandler:
                                 description=f"Weekly quest: {quest.title}",
                                 respect_cap=False,
                             )
+                            await self._post_feed_event(
+                                patient_id, "quest_completed",
+                                {"title": quest.title},
+                            )
                         else:
                             await session.commit()
             except Exception:
@@ -297,6 +301,10 @@ class GamificationEventHandler:
                         description=f"Weekly quest: {quest.title}",
                         respect_cap=False,
                     )
+                    await self._post_feed_event(
+                        patient_id, "quest_completed",
+                        {"title": quest.title},
+                    )
                 else:
                     await session.commit()
         except Exception:
@@ -323,7 +331,7 @@ class GamificationEventHandler:
                 patient_id, metric, 1.0
             )
         except Exception:
-            pass  # Fire-and-forget
+            logger.warning("Challenge progress update failed for %s", patient_id, exc_info=True)
 
     async def _increment_challenge_metric(
         self,
@@ -498,10 +506,12 @@ class GamificationEventHandler:
             title_map = {
                 "level_up": "Level up",
                 "achievement_earned": "Achievement unlocked",
+                "quest_completed": "Quest complete!",
             }
             body_map = {
                 "level_up": f"You reached level {event_data.get('new_level')}.",
                 "achievement_earned": f"You earned {event_data.get('title', 'a new achievement')}.",
+                "quest_completed": f"You finished {event_data.get('title', 'a weekly quest')}.",
             }
             if event_type in title_map:
                 await send_gamification_notification(

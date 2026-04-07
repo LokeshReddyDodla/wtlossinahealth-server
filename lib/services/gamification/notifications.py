@@ -22,9 +22,9 @@ async def send_gamification_notification(
             user_id=patient_id,
             title=title,
             body=body,
-            channel_key="health_insights",
-            group_key="health_insights_group",
+            channel_key="gamification",
+            group_key="gamification_group",
             data={"type": "gamification", **(data or {})},
         )
     except Exception as exc:
-        logger.debug("Failed gamification notification for %s: %s", patient_id, exc)
+        logger.warning("Failed gamification notification for %s: %s", patient_id, exc)

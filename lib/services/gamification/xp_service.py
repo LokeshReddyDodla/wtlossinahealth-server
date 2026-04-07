@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -126,7 +129,7 @@ class XPService:
                 increment=float(final_amount),
             )
         except Exception:
-            pass
+            logger.warning("Challenge metric update (xp_earned) failed for %s", patient_id, exc_info=True)
 
         return final_amount, new_level, new_level > old_level
 

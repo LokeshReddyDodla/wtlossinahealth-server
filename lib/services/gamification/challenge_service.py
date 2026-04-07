@@ -622,6 +622,15 @@ class ChallengeService:
                                 else None
                             ),
                         )
+                    elif p.participant_type == "patient":
+                        # Non-completers: notify but don't post feed event
+                        from lib.services.gamification.notifications import send_gamification_notification
+                        await send_gamification_notification(
+                            str(actor_id),
+                            title="Challenge ended",
+                            body=f"The {challenge.title} challenge has ended. Better luck next time!",
+                            data={"event_type": "challenge_ended", "challenge_id": str(challenge.challenge_id)},
+                        )
         except Exception:
             logger.warning("Failed to post feed events for challenge %s", challenge_id, exc_info=True)
 

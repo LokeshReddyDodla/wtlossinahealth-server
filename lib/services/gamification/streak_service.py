@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 from uuid import UUID
@@ -10,6 +11,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
+
+logger = logging.getLogger(__name__)
 from lib.models.gamification import (
     Buddy,
     DailyTask,
@@ -86,10 +89,21 @@ class StreakService:
             profile.streak_frozen_on = None  # Clear stale freeze date
 
             # Earn a freeze every 7 streak days (max 3)
+            freeze_earned = False
             if profile.current_streak % 7 == 0 and profile.streak_freezes < 3:
                 profile.streak_freezes += 1
+                freeze_earned = True
 
             await postgres_session.commit()
+
+            if freeze_earned:
+                from lib.services.gamification.notifications import send_gamification_notification
+                await send_gamification_notification(
+                    str(patient_id),
+                    title="Streak freeze earned!",
+                    body=f"You earned a streak freeze. You now have {profile.streak_freezes} available.",
+                    data={"event_type": "streak_freeze_earned", "freezes": profile.streak_freezes},
+                )
 
             try:
                 from lib.core.container import container
@@ -102,7 +116,7 @@ class StreakService:
                     increment=1.0,
                 )
             except Exception:
-                pass
+                logger.warning("Challenge metric update failed for %s", patient_id, exc_info=True)
 
             # Post feed event for streak milestones
             streak = profile.current_streak
@@ -118,7 +132,7 @@ class StreakService:
                         visibility="group",
                     )
                 except Exception:
-                    pass
+                    logger.warning("Streak milestone feed event failed for %s", patient_id, exc_info=True)
 
             return {"action": "incremented", "streak": profile.current_streak}
 
@@ -127,6 +141,15 @@ class StreakService:
             profile.streak_freezes -= 1
             profile.streak_frozen_on = for_date
             await postgres_session.commit()
+
+            from lib.services.gamification.notifications import send_gamification_notification
+            await send_gamification_notification(
+                str(patient_id),
+                title="Streak freeze used",
+                body=f"Your {profile.current_streak}-day streak is safe! {profile.streak_freezes} freeze(s) left.",
+                data={"event_type": "streak_freeze_used", "streak": profile.current_streak, "freezes_remaining": profile.streak_freezes},
+            )
+
             return {
                 "action": "frozen",
                 "streak": profile.current_streak,
