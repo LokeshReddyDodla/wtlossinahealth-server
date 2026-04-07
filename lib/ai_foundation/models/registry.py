@@ -11,9 +11,12 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from lib.ai_foundation.config import AIFoundationSettings
 
 logger = logging.getLogger(__name__)
 
@@ -293,12 +296,23 @@ class ModelRegistry:
 # ---------------------------------------------------------------------------
 
 
-def build_default_registry() -> ModelRegistry:
-    """Build a registry pre-loaded with common OpenAI models and sensible routes.
+def build_default_registry(
+    settings: AIFoundationSettings | None = None,
+) -> ModelRegistry:
+    """Build a registry pre-loaded with common models and sensible routes.
 
-    This is a convenience for bootstrapping. Production deployments should
-    configure the registry explicitly via environment or config.
+    When *settings* is provided, task routes use the configured model IDs
+    (REASONING_THINKER_MODEL, REASONING_RESPONDER_MODEL, etc.) so that
+    environment variables like AI_REASONING_THINKER_MODEL actually control
+    which models are routed to each task.
     """
+    from lib.ai_foundation.config import settings as _default_settings
+
+    s = settings or _default_settings
+    thinker = s.REASONING_THINKER_MODEL          # default: gpt-4.1-mini
+    responder = s.REASONING_RESPONDER_MODEL       # default: gpt-5.1
+    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL  # default: gpt-4.1
+
     registry = ModelRegistry()
 
     registry.register_many([
@@ -370,29 +384,30 @@ def build_default_registry() -> ModelRegistry:
         ),
     ])
 
+    # Task routes use config-driven model IDs so env vars take effect
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
-        primary="gpt-4.1-mini",
-        fallbacks=["gemini-2.5-flash", "gpt-4.1"],
+        primary=thinker,
+        fallbacks=["gemini-2.5-flash", adv_thinker],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
-        primary="gpt-5.1",
-        fallbacks=["gemini-2.5-pro", "gpt-4.1"],
+        primary=responder,
+        fallbacks=["gemini-2.5-pro", adv_thinker],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
-        primary="gpt-4.1-mini",
+        primary=thinker,
         fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
-        primary="gpt-4.1-mini",
+        primary=thinker,
         fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
-        primary="gpt-4.1-mini",
+        primary=thinker,
         fallbacks=["gemini-2.5-flash"],
     )
     registry.set_task_route(
@@ -401,8 +416,8 @@ def build_default_registry() -> ModelRegistry:
     )
     registry.set_task_route(
         ModelTask.QUALITY_JUDGE,
-        primary="gpt-4.1",
-        fallbacks=["gpt-4.1-mini"],
+        primary=adv_thinker,
+        fallbacks=[thinker],
     )
 
     return registry

@@ -205,14 +205,23 @@ class Coordinator:
 
         # ── 1. Planning ──
         plan = None
+        plan_cost = 0.0
         if self._planner and settings.PLANNING_ENABLED:
             try:
-                plan = await self._planner.plan(
+                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
+                planning_prompt = (
+                    "Plan the multi-domain investigation. "
+                    "Write the strategy field as if you are a doctor explaining your plan "
+                    "to the patient out loud — first person, conversational, no jargon."
+                ) if is_voice else "Plan the multi-domain investigation."
+
+                plan, plan_cost = await self._planner.plan(
                     messages=base_messages,
                     tool_schemas=self._tools.get_openai_schemas(),
-                    planning_prompt="Plan the multi-domain investigation.",
+                    planning_prompt=planning_prompt,
                     model_id=tier_cfg.thinker_model,
                 )
+                total_cost += plan_cost
                 if emit_events:
                     yield sse_plan(plan.strategy, len(plan.steps), plan.domains_involved)
             except Exception as exc:
@@ -242,7 +251,14 @@ class Coordinator:
                 )
                 for _, spec in active_specialists
             ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=settings.SPECIALIST_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Specialist investigations timed out after %.0fs", settings.SPECIALIST_TIMEOUT_SECONDS)
+                results = [asyncio.TimeoutError("Specialist timeout") for _ in active_specialists]
 
             findings: list[SpecialistFindings] = []
             failed_domains: list[str] = []

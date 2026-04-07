@@ -315,6 +315,7 @@ class ReasoningEngine:
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
             with _track_perf(perf, "planning_ms"):
+                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
                 plan = await self._execute_plan(
                     messages=messages,
                     tool_schemas=tool_schemas,
@@ -322,6 +323,7 @@ class ReasoningEngine:
                     patient_ids=patient_ids,
                     seen_calls=seen_calls,
                     patient_names=patient_names,
+                    is_voice=is_voice,
                 )
             total_cost += plan["cost"]
             total_tools += plan["tools_called"]
@@ -365,7 +367,7 @@ class ReasoningEngine:
                     with _track_perf(perf, "tool_exec_ms"):
                         fallback_result = await self._tools.execute(
                             "look_up",
-                            {"data_types": intent_data_types, "limit": 15},
+                            {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
                             patient_ids,
                             patient_names=patient_names,
                         )
@@ -373,7 +375,7 @@ class ReasoningEngine:
                     total_tools += 1
                     evidence_ledger.append(extract_evidence_from_fallback(
                         "look_up",
-                        {"data_types": intent_data_types, "limit": 15},
+                        {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
                         fallback_result,
                     ))
                     steps.append(ReasoningStep(
@@ -426,6 +428,11 @@ class ReasoningEngine:
 
             total_tools += tool_round.executed_count
             evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
+
+            # Stop if cumulative tool calls have reached the budget
+            if total_tools >= tier_cfg.max_tool_calls:
+                rounds_used = round_num
+                break
 
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
@@ -626,6 +633,7 @@ class ReasoningEngine:
         patient_ids: list[str],
         seen_calls: set[str],
         patient_names: dict[str, str] | None = None,
+        is_voice: bool = False,
     ) -> dict[str, Any]:
         """Generate an investigation plan and add it as context for the thinker.
 
@@ -637,10 +645,16 @@ class ReasoningEngine:
         Returns dict with: cost, tools_called, steps, plan_obj.
         """
         try:
-            plan = await self._planner.plan(
+            planning_prompt = (
+                "Plan the investigation. Output a structured InvestigationPlan. "
+                "Write the strategy field as if you are a doctor explaining your plan "
+                "to the patient out loud — first person, conversational, no jargon."
+            ) if is_voice else "Plan the investigation. Output a structured InvestigationPlan."
+
+            plan, plan_cost = await self._planner.plan(
                 messages=messages,
                 tool_schemas=tool_schemas,
-                planning_prompt="Plan the investigation. Output a structured InvestigationPlan.",
+                planning_prompt=planning_prompt,
                 model_id=tier_cfg.thinker_model,
             )
 
@@ -660,7 +674,7 @@ class ReasoningEngine:
             })
 
             return {
-                "cost": 0,
+                "cost": plan_cost,
                 "tools_called": 0,
                 "steps": [],
                 "plan_obj": plan,

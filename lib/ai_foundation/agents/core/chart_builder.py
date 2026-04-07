@@ -103,7 +103,7 @@ def _build_pie(chart: dict) -> str | None:
         return None
 
     lines = [f"pie title {title}" if title else "pie"]
-    for seg in segments:
+    for seg in segments[:10]:
         label = _clean(str(seg.get("label", "")))
         value = seg.get("value", 0)
         lines.append(f'    "{label}" : {value}')
@@ -126,10 +126,10 @@ def _build_gantt(chart: dict) -> str | None:
         "    axisFormat %H:%M",
     ]
 
-    for section in sections:
+    for section in sections[:10]:
         name = _clean(str(section.get("name", "")))
         lines.append(f"    section {name}")
-        for event in section.get("events", []):
+        for event in section.get("events", [])[:20]:
             label = _clean(str(event.get("label", "")))
             start = event.get("start", "00:00")
             end = event.get("end", "00:00")

@@ -102,76 +102,82 @@ class VoiceConnectionHandler:
         """Main message loop after auth."""
         session: VoiceSession | None = None
 
-        while True:
-            message = await websocket.receive()
+        try:
+            while True:
+                message = await websocket.receive()
 
-            # Binary frame = audio data
-            if "bytes" in message and message["bytes"]:
-                if session is None:
-                    continue  # Drop audio before session_start
-                if not session.append_audio(message["bytes"]):
-                    await self._send_json(websocket, VoiceErrorMsg(
-                        code="buffer_overflow",
-                        message="Audio too long. Please keep it shorter.",
-                    ).model_dump())
-                    session.get_audio_and_reset()
-                continue
-
-            # Text frame = JSON control message
-            if "text" in message and message["text"]:
-                try:
-                    data = json.loads(message["text"])
-                except json.JSONDecodeError:
+                # Binary frame = audio data
+                if "bytes" in message and message["bytes"]:
+                    if session is None:
+                        continue  # Drop audio before session_start
+                    if not session.append_audio(message["bytes"]):
+                        await self._send_json(websocket, VoiceErrorMsg(
+                            code="buffer_overflow",
+                            message="Audio too long. Please keep it shorter.",
+                        ).model_dump())
+                        session.get_audio_and_reset()
                     continue
 
-                msg_type = data.get("type")
+                # Text frame = JSON control message
+                if "text" in message and message["text"]:
+                    try:
+                        data = json.loads(message["text"])
+                    except json.JSONDecodeError:
+                        continue
 
-                if msg_type == "session_start":
-                    session = self._create_session(user_id, role, data)
-                    await self._send_json(websocket, SessionReadyMsg(
-                        session_id=session.session_id,
-                    ).model_dump())
-                    logger.info(
-                        "Voice session started: %s (user=%s, thread=%s)",
-                        session.session_id, user_id, session.thread_id,
-                    )
-                    # Spoken greeting
-                    await self._orchestrator.greet(
-                        session,
-                        send_json=lambda d: self._send_json(websocket, d),
-                        send_bytes=lambda b: self._send_bytes(websocket, b),
-                    )
+                    msg_type = data.get("type")
 
-                elif msg_type == "end_of_speech" and session is not None:
-                    if session.has_audio:
-                        audio = session.get_audio_and_reset()
-                        await self._orchestrator.handle_utterance(
+                    if msg_type == "session_start":
+                        session = self._create_session(user_id, role, data)
+                        await self._send_json(websocket, SessionReadyMsg(
+                            session_id=session.session_id,
+                        ).model_dump())
+                        logger.info(
+                            "Voice session started: %s (user=%s, thread=%s)",
+                            session.session_id, user_id, session.thread_id,
+                        )
+                        # Spoken greeting
+                        await self._orchestrator.greet(
                             session,
-                            audio,
                             send_json=lambda d: self._send_json(websocket, d),
                             send_bytes=lambda b: self._send_bytes(websocket, b),
                         )
-                    else:
-                        await self._send_json(websocket, VoiceErrorMsg(
-                            code="no_audio",
-                            message="No audio received. Please speak and try again.",
-                        ).model_dump())
 
-                elif msg_type == "interrupt" and session is not None:
-                    session.interrupt()
+                    elif msg_type == "end_of_speech" and session is not None:
+                        if session.has_audio:
+                            audio = session.get_audio_and_reset()
+                            await self._orchestrator.handle_utterance(
+                                session,
+                                audio,
+                                send_json=lambda d: self._send_json(websocket, d),
+                                send_bytes=lambda b: self._send_bytes(websocket, b),
+                            )
+                        else:
+                            await self._send_json(websocket, VoiceErrorMsg(
+                                code="no_audio",
+                                message="No audio received. Please speak and try again.",
+                            ).model_dump())
 
-                elif msg_type == "session_end":
-                    if session:
-                        await self._send_json(websocket, SessionEndedMsg().model_dump())
-                    try:
-                        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-                    except RuntimeError:
-                        pass  # Already closed by client
+                    elif msg_type == "interrupt" and session is not None:
+                        session.interrupt()
+
+                    elif msg_type == "session_end":
+                        if session:
+                            await self._send_json(websocket, SessionEndedMsg().model_dump())
+                        try:
+                            await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
+                        except RuntimeError:
+                            pass  # Already closed by client
+                        return
+
+                # Disconnect
+                if message.get("type") == "websocket.disconnect":
                     return
-
-            # Disconnect
-            if message.get("type") == "websocket.disconnect":
-                return
+        finally:
+            # Cancel in-flight TTS/agent work when connection closes for any reason
+            if session is not None:
+                session.interrupt()
+                logger.debug("Session %s interrupted on connection close", session.session_id)
 
     def _create_session(
         self,

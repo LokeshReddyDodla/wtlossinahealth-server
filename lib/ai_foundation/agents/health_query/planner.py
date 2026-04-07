@@ -8,12 +8,12 @@ first: what to fetch, in what order, and why. Phase 1 steps execute in parallel.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ class InvestigationPlanner:
         tool_schemas: list[dict[str, Any]],
         planning_prompt: str,
         model_id: str,
-    ) -> InvestigationPlan:
+    ) -> tuple[InvestigationPlan, float]:
         """Generate an investigation plan.
 
         Args:
@@ -83,7 +83,7 @@ class InvestigationPlanner:
             model_id: Model to use for planning (thinker model).
 
         Returns:
-            Structured investigation plan.
+            Tuple of (plan, cost_usd).
         """
         # Build planning-specific messages
         plan_messages: list[dict[str, Any]] = list(messages)  # copy
@@ -95,7 +95,7 @@ class InvestigationPlanner:
             "content": f"{planning_prompt}\n\nAvailable tools:\n{tool_desc}",
         })
 
-        plan, _meta = await self._gateway.extract(
+        plan, meta = await self._gateway.extract(
             messages=plan_messages,
             response_model=InvestigationPlan,
             task=ModelTask.CLASSIFICATION,
@@ -103,13 +103,16 @@ class InvestigationPlanner:
             timeout=settings.PLANNING_TIMEOUT_SECONDS,
         )
 
+        cost = safe_cost(meta)
+
         logger.debug(
-            "Investigation plan: %s (%d steps, phases: %s)",
+            "Investigation plan: %s (%d steps, phases: %s, cost=%.5f)",
             plan.strategy, len(plan.steps),
             sorted({s.phase for s in plan.steps}),
+            cost,
         )
 
-        return plan
+        return plan, cost
 
     @staticmethod
     def _format_tool_descriptions(schemas: list[dict[str, Any]]) -> str:
@@ -121,5 +124,6 @@ class InvestigationPlanner:
             desc = func.get("description", "")
             params = func.get("parameters", {}).get("properties", {})
             param_names = ", ".join(params.keys())
-            lines.append(f"- **{name}**({param_names}): {desc[:150]}")
+            short_desc = desc[:150] + ("..." if len(desc) > 150 else "")
+            lines.append(f"- **{name}**({param_names}): {short_desc}")
         return "\n".join(lines)

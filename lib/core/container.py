@@ -1454,7 +1454,7 @@ container.register(
 # Model Registry — central model configuration with fallback chains
 container.register(
     ModelRegistry,
-    lambda: build_default_registry(),
+    lambda: build_default_registry(_ai_settings),
     scope=Scope.singleton,
 )
 

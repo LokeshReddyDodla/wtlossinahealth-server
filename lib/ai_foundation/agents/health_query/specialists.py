@@ -319,7 +319,7 @@ class Specialist:
                 if round_num == 1 and self._spec.data_types and not seen_calls:
                     fallback_result = await self._tools.execute(
                         "look_up",
-                        {"data_types": self._spec.data_types, "limit": 10},
+                        {"data_types": self._spec.data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
                         patient_ids,
                         patient_names=patient_names,
                     )
@@ -332,7 +332,7 @@ class Specialist:
                         "content": f"Health data retrieved:\n\n{fallback_result}",
                     })
                     if emit_events:
-                        yield sse_tool_call("look_up", {"data_types": self._spec.data_types, "limit": 10})
+                        yield sse_tool_call("look_up", {"data_types": self._spec.data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT})
                         lines = fallback_result.strip().split("\n")
                         summary = lines[0][:settings.SUMMARY_TRUNCATION_CHARS] if lines else "No data"
                         yield sse_tool_result("look_up", summary)

@@ -81,7 +81,7 @@ class PatientNameResolver:
         if stale:
             await self._fetch(stale)
         return {
-            pid: self._profile_cache[pid].locale or "Asia/Kolkata"
+            pid: self._profile_cache[pid].locale or settings.DEFAULT_PATIENT_TIMEZONE
             for pid in patient_ids
             if pid in self._profile_cache
         }

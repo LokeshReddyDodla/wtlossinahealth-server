@@ -26,6 +26,10 @@ class AIFoundationSettings(BaseSettings):
 
     model_config = {"env_prefix": "AI_", "case_sensitive": False}
 
+    # ── Defaults ─────────────────────────────────────────────────────────
+
+    DEFAULT_PATIENT_TIMEZONE: str = Field(default="Asia/Kolkata", description="Fallback timezone when patient profile has none")
+
     # ── Retrieval ─────────────────────────────────────────────────────────
 
     QDRANT_RESULT_LIMIT: int = Field(default=30, description="Max results per Qdrant query")
@@ -63,6 +67,10 @@ class AIFoundationSettings(BaseSettings):
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
 
     REASONING_ADVANCED_THINKER_MODEL: str = Field(default="gpt-4.1", description="Thinker model for ADVANCED/UNLIMITED tiers")
+
+    # ── Coordinator ──────────────────────────────────────────────────────
+
+    SPECIALIST_TIMEOUT_SECONDS: float = Field(default=120.0, description="Timeout for all specialist investigations in coordinator")
 
     # ── Agentic Loop Limits ───────────────────────────────────────────────
 

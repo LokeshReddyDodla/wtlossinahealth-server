@@ -633,15 +633,16 @@ class HealthQueryAgent(BaseAgent):
     def _get_reasoning_prompts(self, input: AgentInput | None = None) -> tuple[str, str]:
         """Return (reasoning_prompt, response_prompt) for the engine.
 
-        When input.context.metadata contains output_mode='voice', the
-        voice-optimised response prompt is used (conversational, no markdown).
+        When input.context.metadata contains output_mode='voice', voice-
+        optimised prompts are used: conversational reasoning thoughts that
+        sound natural when spoken aloud, and a brief response with no markdown.
         """
         self._ensure_prompts()
-        reasoning = self._render("hq_reasoning")
         is_voice = (
             input is not None
             and input.context.metadata.get("output_mode") == "voice"
         )
+        reasoning = self._render("hq_reasoning_voice" if is_voice else "hq_reasoning")
         response = self._render("hq_final_response_voice" if is_voice else "hq_final_response")
         return reasoning, response
 

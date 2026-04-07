@@ -219,7 +219,7 @@ class PersistenceService:
                 # TODO: persist signal for quality tracking once the feedback pipeline is ready
                 logger.debug("Implicit negative signal: clarification after is_ready=True")
         except Exception:
-            pass
+            logger.debug("Implicit signal detection failed", exc_info=True)
 
     # -- Title generation --------------------------------------------------
 
