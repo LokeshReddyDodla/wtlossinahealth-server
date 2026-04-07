@@ -350,6 +350,17 @@ def build_default_registry(
             tags=["powerful", "reasoning"],
         ),
         ModelSpec(
+            model_id="gpt-4o",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.0025,
+            cost_per_1k_output=0.01,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["vision", "multimodal"],
+        ),
+        ModelSpec(
             model_id="text-embedding-3-large",
             provider=ModelProvider.OPENAI,
             timeout_seconds=5.0,

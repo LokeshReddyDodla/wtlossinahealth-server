@@ -64,6 +64,7 @@ class PrescriptionExtractionService:
             messages=messages,
             response_model=ExtractedPrescription,
             task=ModelTask.STRUCTURED_ANALYSIS,
+            model_id="gpt-4o",
         )
 
         logger.info(
