@@ -13,9 +13,9 @@ from sqlalchemy.orm import selectinload
 
 from lib.core.constants import ProfileTypeEnum
 from lib.core.postgres_store import PostgresStore
-from lib.models.patient_prescription import (
-    PatientPrescription as PatientPrescriptionModel,
-    PatientPrescriptionMedicine,
+from lib.models.patient_prescription_legacy import (
+    PatientPrescriptionLegacy as PatientPrescriptionModel,
+    PatientPrescriptionMedicineLegacy as PatientPrescriptionMedicine,
 )
 from lib.schemas.ai_conversation_schemas import (
     AiConversationMessage as AiConversationMessageSchema,

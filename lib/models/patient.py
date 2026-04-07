@@ -126,8 +126,15 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    current_medication = relationship(
-        "PatientCurrentMedication",
+    medications = relationship(
+        "PatientMedication",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
+    # Legacy — kept for backward compat with old profile endpoints
+    current_medication_legacy = relationship(
+        "PatientCurrentMedicationLegacy",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",
@@ -158,6 +165,13 @@ class Patient(Base):
 
     prescriptions = relationship(
         "PatientPrescription",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
+    # Legacy — kept for backward compat with old prescription endpoints
+    prescriptions_legacy = relationship(
+        "PatientPrescriptionLegacy",
         back_populates="patient",
         cascade="all, delete-orphan",
     )

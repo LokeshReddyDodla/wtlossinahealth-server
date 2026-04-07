@@ -13,6 +13,9 @@ from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import Challenge, ChallengeParticipant, DailyTask, GroupMember, WeeklyQuest
 from lib.models.patient_diet_plan import PatientDietPlan
 from lib.models.patient_fitness_plan import PatientFitnessPlan
+from lib.models.patient_diabetic_history import PatientDiabeticHistory
+from lib.models.patient_medication import PatientMedication
+from lib.models.patient_prescription import PatientPrescription
 from lib.schemas.gamification import SourceType, TaskStatus, TaskType
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -27,6 +30,11 @@ _XP_REWARDS = {
     TaskType.LOG_MOOD: 10,
     TaskType.LOG_GLUCOSE: 10,
     TaskType.LOG_WEIGHT: 20,
+    TaskType.TAKE_MEDICATION_MORNING: 15,
+    TaskType.TAKE_MEDICATION_AFTERNOON: 15,
+    TaskType.TAKE_MEDICATION_EVENING: 15,
+    TaskType.TAKE_MEDICATION_NIGHT: 15,
+    TaskType.FOLLOW_UP_APPOINTMENT: 20,
 }
 
 _WEEKDAY_NAMES = [
@@ -98,8 +106,17 @@ class TaskGeneratorService:
 
         tasks: List[DailyTask] = []
 
+        # Check if patient is diabetic (has diabetic history record)
+        is_diabetic = (
+            await postgres_session.execute(
+                select(PatientDiabeticHistory.patient_id).where(
+                    PatientDiabeticHistory.patient_id == patient_id
+                )
+            )
+        ).scalar_one_or_none() is not None
+
         # Habit tasks (always generated)
-        tasks.extend(self._habit_tasks(patient_id, task_date))
+        tasks.extend(self._habit_tasks(patient_id, task_date, is_diabetic=is_diabetic))
 
         # Plan-derived tasks
         diet_tasks = await self._diet_plan_tasks(
@@ -116,6 +133,18 @@ class TaskGeneratorService:
             patient_id, task_date, postgres_session
         )
         tasks.extend(challenge_tasks)
+
+        # Medication tasks
+        medication_tasks = await self._medication_tasks(
+            patient_id, task_date, postgres_session
+        )
+        tasks.extend(medication_tasks)
+
+        # Follow-up appointment tasks
+        follow_up_tasks = await self._follow_up_tasks(
+            patient_id, task_date, postgres_session
+        )
+        tasks.extend(follow_up_tasks)
 
         for task in tasks:
             key = (task.task_type, task.source_id)
@@ -198,14 +227,18 @@ class TaskGeneratorService:
         return len(tasks)
 
     def _habit_tasks(
-        self, patient_id: UUID, task_date: date
+        self, patient_id: UUID, task_date: date, *, is_diabetic: bool
     ) -> List[DailyTask]:
         habits = [
             (TaskType.LOG_MEAL, "Log your meals", "Track what you eat today"),
             (TaskType.LOG_SLEEP, "Log your sleep", "How did you sleep last night?"),
             (TaskType.LOG_MOOD, "Check in on your mood", "How are you feeling?"),
-            (TaskType.LOG_GLUCOSE, "Sync glucose data", "Keep your glucose data up to date"),
         ]
+
+        if is_diabetic:
+            habits.append(
+                (TaskType.LOG_GLUCOSE, "Sync glucose data", "Keep your glucose data up to date")
+            )
 
         # Weekly weight task only on Mondays
         if task_date.weekday() == 0:
@@ -429,5 +462,104 @@ class TaskGeneratorService:
                     )
                 )
                 break  # One workout task per day
+
+        return tasks
+
+    async def _medication_tasks(
+        self,
+        patient_id: UUID,
+        task_date: date,
+        session: AsyncSession,
+    ) -> List[DailyTask]:
+        """Generate TAKE_MEDICATION_{SLOT} tasks from active medications."""
+        result = await session.execute(
+            select(PatientMedication).where(
+                PatientMedication.patient_id == patient_id,
+                PatientMedication.status == "active",
+                PatientMedication.start_date <= task_date,
+                or_(
+                    PatientMedication.end_date.is_(None),
+                    PatientMedication.end_date >= task_date,
+                ),
+            )
+        )
+        medications = result.scalars().all()
+        if not medications:
+            return []
+
+        # Group medications by dose slot
+        slot_meds: dict[str, list[PatientMedication]] = {}
+        for med in medications:
+            for dose in (med.doses or []):
+                slot = dose.get("slot", "morning")
+                slot_meds.setdefault(slot, []).append(med)
+
+        slot_to_task_type = {
+            "morning": TaskType.TAKE_MEDICATION_MORNING,
+            "afternoon": TaskType.TAKE_MEDICATION_AFTERNOON,
+            "evening": TaskType.TAKE_MEDICATION_EVENING,
+            "night": TaskType.TAKE_MEDICATION_NIGHT,
+        }
+
+        tasks: List[DailyTask] = []
+        for slot, meds in slot_meds.items():
+            task_type = slot_to_task_type.get(slot)
+            if not task_type:
+                continue
+
+            med_names = [
+                f"{m.name} {m.strength}" if m.strength else m.name
+                for m in meds
+            ]
+            description = ", ".join(med_names)
+
+            tasks.append(
+                DailyTask(
+                    patient_id=patient_id,
+                    task_date=task_date,
+                    task_type=task_type.value,
+                    title=f"Take your {slot} medications",
+                    description=description,
+                    source_type=SourceType.MEDICATION.value,
+                    xp_reward=_XP_REWARDS[task_type],
+                )
+            )
+
+        return tasks
+
+    async def _follow_up_tasks(
+        self,
+        patient_id: UUID,
+        task_date: date,
+        session: AsyncSession,
+    ) -> List[DailyTask]:
+        """Generate FOLLOW_UP_APPOINTMENT task on follow-up dates."""
+        result = await session.execute(
+            select(PatientPrescription).where(
+                PatientPrescription.patient_id == patient_id,
+                PatientPrescription.status == "confirmed",
+                PatientPrescription.follow_up_required.is_(True),
+                PatientPrescription.follow_up_date == task_date,
+            )
+        )
+        prescriptions = result.scalars().all()
+        if not prescriptions:
+            return []
+
+        tasks: List[DailyTask] = []
+        for rx in prescriptions:
+            doctor = rx.doctor_name or "your doctor"
+            tasks.append(
+                DailyTask(
+                    patient_id=patient_id,
+                    task_date=task_date,
+                    task_type=TaskType.FOLLOW_UP_APPOINTMENT.value,
+                    title=f"Follow up with Dr. {doctor}",
+                    description="You have a scheduled follow-up appointment today",
+                    source_type=SourceType.PRESCRIPTION.value,
+                    source_id=rx.prescription_id,
+                    xp_reward=_XP_REWARDS[TaskType.FOLLOW_UP_APPOINTMENT],
+                )
+            )
 
         return tasks

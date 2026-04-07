@@ -26,8 +26,8 @@ from lib.services.prescription_service import PrescriptionService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.models.patient_prescription import (
-    PatientPrescription as PatientPrescriptionModel,
+from lib.models.patient_prescription_legacy import (
+    PatientPrescriptionLegacy as PatientPrescriptionModel,
 )
 
 

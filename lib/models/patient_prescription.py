@@ -1,69 +1,30 @@
-from datetime import datetime
+"""Prescription model — record of what a doctor prescribed."""
+
 import uuid
+from datetime import datetime
+
 from sqlalchemy import (
     UUID,
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
-    Integer,
+    Index,
     String,
     Text,
 )
-from lib.models import Base
-from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
-
-class PatientPrescriptionMedicine(Base):
-    __tablename__ = "patient_prescription_medicines"
-
-    id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
-    )
-    prescription_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(
-            "patient_prescriptions.prescription_id", ondelete="CASCADE"
-        ),
-        nullable=False,
-    )
-
-    # Core Medicine Info
-    brand_name = Column(String, nullable=True)  # e.g., "Glycomet"
-    generic_name = Column(String, nullable=True)  # e.g., "Metformin"
-    formulation = Column(
-        String, nullable=True
-    )  # e.g., "Tablet", "Syrup", "Injection"
-    strength = Column(String, nullable=True)  # e.g., "500 mg", "5 mg/5 ml"
-
-    # Prescription Details
-    frequency = Column(String, nullable=True)  # e.g., "1-0-1", "SOS"
-    duration = Column(String, nullable=True)  # e.g., "5 Days", "2 Weeks"
-    before_after_food = Column(
-        String, nullable=True
-    )  # e.g., "Before food", "After food"
-    route = Column(String, nullable=True)  # e.g., "Oral", "IV", "Topical"
-    instructions = Column(
-        Text, nullable=True
-    )  # Any extra freeform instructions
-
-    # Optional Clinical Context
-    purpose = Column(Text, nullable=True)
-    possible_side_effects = Column(JSONB, nullable=True)
-
-    explanation = Column(Text, nullable=False)
-
-    prescription = relationship(
-        "PatientPrescription", back_populates="medicines"
-    )
+from lib.models import Base
 
 
 class PatientPrescription(Base):
     __tablename__ = "patient_prescriptions"
 
     prescription_id = Column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     patient_id = Column(
         UUID(as_uuid=True),
@@ -71,21 +32,15 @@ class PatientPrescription(Base):
         nullable=False,
     )
 
-    patient = relationship("Patient", back_populates="prescriptions")
+    doctor_name = Column(String, nullable=True)
+    prescription_date = Column(Date, nullable=True)
+    file_urls = Column(JSONB, nullable=False, default=list)
 
-    doctor_name = Column(String, nullable=False)
-    prescription_date = Column(String, nullable=False)
-    prescription_file_url = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="draft")
 
-    analyzed = Column(Boolean, default=True, nullable=False)
-    source = Column(
-        String, default="ai", nullable=False
-    )  # e.g., "ai", "manual", "imported"
-
-    general_advice = Column(Text, nullable=True)
-    follow_up_required = Column(Boolean, default=False)
-    follow_up_in_days = Column(Integer, nullable=True)
-    overall_summary = Column(Text, nullable=True)
+    follow_up_required = Column(Boolean, nullable=False, default=False)
+    follow_up_date = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
 
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
@@ -96,8 +51,13 @@ class PatientPrescription(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
 
-    medicines = relationship(
-        "PatientPrescriptionMedicine",
+    patient = relationship("Patient", back_populates="prescriptions")
+    medications = relationship(
+        "PatientMedication",
         back_populates="prescription",
         cascade="all, delete",
+    )
+
+    __table_args__ = (
+        Index("ix_prescription_patient_status", "patient_id", "status"),
     )

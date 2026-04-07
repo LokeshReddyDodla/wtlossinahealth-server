@@ -4,11 +4,14 @@ from arq.cron import cron
 
 from lib.workers.tasks.gamification.tasks import (
     cleanup_feed_and_leaderboards,
+    complete_expired_medications,
     evaluate_eod_macros,
     generate_daily_tasks_for_all,
     process_challenge_lifecycle,
     process_streaks_for_all,
     refresh_leaderboards,
+    send_medication_reminders,
+    send_refill_reminders,
     send_streak_reminders,
 )
 
@@ -60,6 +63,28 @@ GAMIFICATION_CRON_JOBS = [
         cleanup_feed_and_leaderboards,
         hour=0,
         minute=20,
+        timeout=600,
+        unique=True,
+    ),
+    # Medication reminders — hourly, filtered by patient-local slot times
+    cron(
+        send_medication_reminders,
+        minute=35,
+        timeout=1800,
+        unique=True,
+    ),
+    # Expire completed medication courses — daily at 1:00 AM
+    cron(
+        complete_expired_medications,
+        hour=1,
+        minute=0,
+        timeout=600,
+        unique=True,
+    ),
+    # Refill reminders — hourly, filtered by patient-local 9:00 AM
+    cron(
+        send_refill_reminders,
+        minute=45,
         timeout=600,
         unique=True,
     ),

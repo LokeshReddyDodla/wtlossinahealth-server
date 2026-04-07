@@ -70,7 +70,10 @@ from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
+from lib.services.medication_service import MedicationService
 from lib.services.vector import MealVectorService
+from lib.services.vector.medication import MedicationVectorService
+from lib.services.prescription_extraction_service import PrescriptionExtractionService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -670,7 +673,7 @@ container.register(
     ),
 )
 
-# 🔹 Prescription Service
+# 🔹 Prescription Service (legacy)
 container.register(
     PrescriptionService,
     lambda: PrescriptionService(
@@ -681,6 +684,33 @@ container.register(
         ),
         patient_profile_service=cast(
             PatientProfileService, container.resolve(PatientProfileService)
+        ),
+    ),
+)
+
+# 🔹 Medication Vector Service
+container.register(
+    MedicationVectorService,
+    lambda: MedicationVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+    ),
+)
+
+# 🔹 Prescription Extraction Service (v1 — ModelGateway + vision)
+container.register(
+    PrescriptionExtractionService,
+    lambda: PrescriptionExtractionService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+)
+
+# 🔹 Medication Service (v1)
+container.register(
+    MedicationService,
+    lambda: MedicationService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        medication_vector_service=cast(
+            MedicationVectorService, container.resolve(MedicationVectorService),
         ),
     ),
 )

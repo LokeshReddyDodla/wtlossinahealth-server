@@ -16,8 +16,8 @@ from lib.models.patient_alcohol_consumption import (
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_current_medication import (
-    PatientCurrentMedication as PatientCurrentMedicationModel,
+from lib.models.patient_current_medication_legacy import (
+    PatientCurrentMedicationLegacy as PatientCurrentMedicationModel,
 )
 from lib.models.patient_daily_activity import (
     PatientDailyActivity as PatientDailyActivityModel,
@@ -150,7 +150,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication),
+                    selectinload(PatientModel.current_medication_legacy),
                 )
 
             if include_health_data:
@@ -302,7 +302,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication),
+                    selectinload(PatientModel.current_medication_legacy),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -614,8 +614,8 @@ class PatientProfileService:
                 patient_id,
             )
 
-            patient_profile.current_medication = self._upsert_single_entity(
-                patient_profile.current_medication,
+            patient_profile.current_medication_legacy = self._upsert_single_entity(
+                patient_profile.current_medication_legacy,
                 current_medication,
                 PatientCurrentMedicationModel,
                 "patient_id",
