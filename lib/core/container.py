@@ -1700,7 +1700,6 @@ container.register(
         tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
-        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         settings=_voice_settings,
     ),
     scope=Scope.singleton,
