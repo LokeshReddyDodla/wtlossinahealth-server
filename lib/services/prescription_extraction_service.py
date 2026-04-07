@@ -76,11 +76,24 @@ class PrescriptionExtractionService:
             trace_id=trace_id,
         )
 
+        cost = meta.usage.cost.total_cost if meta.usage else 0
         logger.info(
             "Prescription extracted: %d medicines, %dms, $%.4f",
             len(extracted.medicines),
             meta.latency_ms,
-            meta.usage.cost.total_cost if meta.usage else 0,
+            cost,
+        )
+
+        self.gateway.langfuse_trace_output(
+            trace_id=trace_id,
+            output_text=f"Extracted {len(extracted.medicines)} medicines",
+            metadata={
+                "cost_usd": cost,
+                "input_tokens": meta.usage.input_tokens if meta.usage else 0,
+                "output_tokens": meta.usage.output_tokens if meta.usage else 0,
+                "model_id": meta.model_id,
+                "latency_ms": meta.latency_ms,
+            },
         )
 
         return extracted

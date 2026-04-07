@@ -108,9 +108,6 @@ from lib.services.package_query_service import PackageQueryService
 from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
-from lib.services.prescription_analysis_service import (
-    PrescriptionAnalysisService,
-)
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -699,19 +696,6 @@ container.register(
     ),
 )
 
-
-# 🔹 Prescription Analysis Service
-container.register(
-    PrescriptionAnalysisService,
-    lambda: PrescriptionAnalysisService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        token_usage_service=cast(
-            TokenUsageService, container.resolve(TokenUsageService)
-        ),
-        selected_ai_model="gpt-4o",
-        ai_model_provider="openai",
-    ),
-)
 
 # 🔹 OsteoFlag Screening Service
 container.register(

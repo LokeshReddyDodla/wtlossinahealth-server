@@ -48,7 +48,7 @@ async def list_prescriptions(
             follow_up_date=p.follow_up_date,
             notes=p.notes,
             medications=[
-                MedicationService._to_response(m, today)
+                MedicationService.to_response(m, today)
                 for m in (p.medications or [])
             ],
             created_at=p.created_at,
@@ -102,7 +102,7 @@ async def get_prescription(
         follow_up_date=prescription.follow_up_date,
         notes=prescription.notes,
         medications=[
-            MedicationService._to_response(m, today)
+            MedicationService.to_response(m, today)
             for m in (prescription.medications or [])
         ],
         created_at=prescription.created_at,

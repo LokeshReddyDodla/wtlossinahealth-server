@@ -79,9 +79,6 @@ from lib.services.patient_vital_service import PatientVitalService
 from lib.services.patient_summary import PatientSummaryService
 from lib.services.active_patient_service import ActivePatientService
 from lib.services.osteoflag_service import OsteoFlagService
-from lib.services.prescription_analysis_service import (
-    PrescriptionAnalysisService,
-)
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -361,13 +358,6 @@ def get_task_service() -> TaskService:
 
 def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
-
-
-def get_prescription_analysis_service() -> PrescriptionAnalysisService:
-    return cast(
-        PrescriptionAnalysisService,
-        container.resolve(PrescriptionAnalysisService),
-    )
 
 
 def get_osteoflag_service() -> OsteoFlagService:
