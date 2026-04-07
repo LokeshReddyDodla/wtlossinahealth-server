@@ -342,7 +342,9 @@ class GamificationEventHandler:
                 increment=increment,
             )
         except Exception:
-            pass
+            logger.opt(exception=True).debug(
+                f"Challenge progress update failed: {patient_id} {metric_type}"
+            )
 
     @with_postgres_session
     async def _evaluate_step_goal(
