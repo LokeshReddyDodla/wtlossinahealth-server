@@ -252,10 +252,14 @@ class FeedService:
             description=f"Cheered a friend",
         )
 
+        from lib.core.container import container
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        resolver = container.resolve(PatientNameResolver)
+        sender_name = await resolver.resolve_first_name(str(sender_id))
         await send_gamification_notification(
             str(event.actor_id),
             title="You got a cheer",
-            body="A buddy reacted to your progress update.",
+            body=f"{sender_name} cheered your progress!",
             data={
                 "event_type": "buddy_cheer",
                 "feed_event_id": str(feed_event_id),

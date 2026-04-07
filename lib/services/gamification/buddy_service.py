@@ -24,6 +24,7 @@ from lib.schemas.gamification import (
     title_for_level,
 )
 from lib.schemas.gamification import MAX_ACTIVE_BUDDIES
+from lib.services.gamification.notifications import send_gamification_notification
 from lib.services.gamification.time_utils import local_today
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -115,6 +116,19 @@ class BuddyService:
             postgres_session.add(buddy)
         await postgres_session.commit()
         await postgres_session.refresh(buddy)
+
+        # Notify the accepter about the incoming buddy request
+        from lib.core.container import container
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        resolver = container.resolve(PatientNameResolver)
+        requester_name = await resolver.resolve_first_name(str(requester_id))
+        await send_gamification_notification(
+            str(accepter_id),
+            title="New buddy request",
+            body=f"{requester_name} wants to be your buddy.",
+            data={"event_type": "buddy_request_received", "requester_id": str(requester_id)},
+        )
+
         return buddy
 
     @with_postgres_session
@@ -166,6 +180,19 @@ class BuddyService:
         buddy.accepted_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
         await postgres_session.refresh(buddy)
+
+        # Notify the requester that their request was accepted
+        from lib.core.container import container
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        resolver = container.resolve(PatientNameResolver)
+        accepter_name = await resolver.resolve_first_name(str(accepter_id))
+        await send_gamification_notification(
+            str(buddy.requester_id),
+            title="Buddy request accepted",
+            body=f"{accepter_name} accepted your buddy request!",
+            data={"event_type": "buddy_request_accepted", "buddy_id": str(buddy.buddy_id)},
+        )
+
         return buddy
 
     @with_postgres_session

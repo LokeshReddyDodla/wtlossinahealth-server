@@ -210,6 +210,76 @@ async def process_challenge_lifecycle(ctx: Dict[str, Any]) -> None:
 
 
 @task_with_logging
+async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
+    """Streak reminder — nudge patients at risk of losing their streak.
+    Runs hourly; worker filters by patient-local 8:00 PM.
+    """
+    from lib.core.container import container
+    from lib.core.postgres_store import PostgresStore
+    from lib.models.gamification import DailyTask, PlayerProfile
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.services.gamification.notifications import send_gamification_notification
+    from lib.services.gamification.streak_service import ACTIVITY_TASK_TYPES, ACTIVITY_THRESHOLD
+    from lib.schemas.gamification import TaskStatus
+
+    store = container.resolve(PostgresStore)
+    resolver = container.resolve(PatientNameResolver)
+
+    async with store.get_session() as session:
+        result = await session.execute(
+            select(PlayerProfile.patient_id, PlayerProfile.current_streak).where(
+                PlayerProfile.current_streak > 0
+            )
+        )
+        rows = result.all()
+
+    if not rows:
+        return
+
+    streak_map = {r.patient_id: r.current_streak for r in rows}
+    patient_ids = list(streak_map.keys())
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
+
+    sent = 0
+    for pid in patient_ids:
+        try:
+            tz_name = tz_map.get(str(pid))
+            if not matches_local_hour(tz_name, 20):
+                continue
+
+            today = local_today(tz_name)
+
+            async with store.get_session() as session:
+                task_result = await session.execute(
+                    select(DailyTask.task_type)
+                    .where(
+                        DailyTask.patient_id == pid,
+                        DailyTask.task_date == today,
+                        DailyTask.status == TaskStatus.COMPLETED.value,
+                        DailyTask.task_type.in_(ACTIVITY_TASK_TYPES),
+                    )
+                    .distinct()
+                )
+                completed_types = len(task_result.scalars().all())
+
+            if completed_types >= ACTIVITY_THRESHOLD:
+                continue
+
+            streak = streak_map[pid]
+            await send_gamification_notification(
+                str(pid),
+                title="Don't lose your streak!",
+                body=f"You're on a {streak}-day streak. Complete a task to keep it going!",
+                data={"event_type": "streak_reminder", "current_streak": streak},
+            )
+            sent += 1
+        except Exception:
+            logger.opt(exception=True).warning(f"Streak reminder failed for {pid}")
+
+    logger.info(f"Sent streak reminders to {sent}/{len(patient_ids)} patients")
+
+
+@task_with_logging
 async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
     """Cleanup expired feed events and old leaderboard entries.
     Runs daily.

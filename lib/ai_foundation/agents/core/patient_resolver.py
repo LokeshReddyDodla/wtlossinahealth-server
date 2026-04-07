@@ -73,6 +73,16 @@ class PatientNameResolver:
         names = await self.resolve_names([patient_id])
         return names.get(patient_id, fallback_name(patient_id))
 
+    async def resolve_first_name(self, patient_id: str) -> str:
+        """Resolve a patient UUID to first name only (for notifications)."""
+        stale = self._collect_stale([patient_id])
+        if stale:
+            await self._fetch(stale)
+        profile = self._profile_cache.get(patient_id)
+        if profile and profile.name:
+            return profile.name.split()[0]
+        return fallback_name(patient_id)
+
     # -- Timezones (for proactive monitor) ---------------------------------
 
     async def resolve_timezones(self, patient_ids: list[str]) -> dict[str, str]:
