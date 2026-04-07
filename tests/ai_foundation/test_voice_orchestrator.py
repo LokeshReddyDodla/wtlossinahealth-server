@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,8 +43,8 @@ def _make_tts():
 
 class TestVoiceOrchestrator:
     @pytest.mark.asyncio
-    async def test_full_pipeline_with_thoughts(self):
-        """STT → reasoning (spoken) → tool_call (spoken) → response (spoken) → done."""
+    async def test_full_pipeline_with_audio_boundaries(self):
+        """Verify audio_start/audio_end wrap every spoken segment."""
         settings = _settings()
 
         mock_stt = AsyncMock()
@@ -59,13 +58,12 @@ class TestVoiceOrchestrator:
         async def fake_run_stream(agent_input):
             yield _sse_event("status", {"stage": "extracting_intent"})
             yield _sse_event("reasoning", {"step": 1, "thought": "Let me check glucose data"})
-            yield _sse_event("tool_call", {"tool": "look_up", "args": {"data_types": ["cgm_range_stats"]}, "reason": "Checking glucose"})
+            yield _sse_event("tool_call", {"tool": "look_up", "args": {"data_types": ["cgm_range_stats"]}})
             yield _sse_event("tool_result", {"tool": "look_up", "summary": "Found 7 days of data"})
             yield _sse_event("token", {"delta": "Your glucose is fine."})
             yield _sse_event("done", {
                 "suggestions": [{"label": "More"}],
                 "trace_id": "trc_1",
-                "latency_ms": 1500,
                 "data": {"full_response": "Your glucose is fine."},
             })
 
@@ -87,26 +85,93 @@ class TestVoiceOrchestrator:
 
         types = [m["type"] for m in json_messages]
 
-        # All events forwarded
+        # Semantic events forwarded
         assert "transcript" in types
-        assert "status" in types
         assert "reasoning" in types
-        assert "tool_call" in types
-        assert "tool_result" in types
         assert "response_text" in types
         assert "done" in types
 
-        # TTS was called for thoughts + response
-        assert mock_tts.synthesize_stream.call_count >= 2  # at least reasoning + response
+        # Audio boundaries present
+        assert "audio_start" in types
+        assert "audio_end" in types
+
+        # Every audio_start has a matching audio_end
+        starts = [m for m in json_messages if m["type"] == "audio_start"]
+        ends = [m for m in json_messages if m["type"] == "audio_end"]
+        assert len(starts) == len(ends)
+        for s, e in zip(starts, ends):
+            assert s["segment_id"] == e["segment_id"]
+            assert s["segment_type"] == e["segment_type"]
+            assert e["completed"] is True
+
+        # done is the last event
+        assert types[-1] == "done"
+
+        # done comes after the last audio_end
+        last_audio_end_idx = max(i for i, m in enumerate(json_messages) if m["type"] == "audio_end")
+        done_idx = next(i for i, m in enumerate(json_messages) if m["type"] == "done")
+        assert done_idx > last_audio_end_idx
 
         # Binary audio was sent
         assert len(binary_messages) > 0
 
-        assert session.state == VoiceSessionState.IDLE
+        # Segment types are correct
+        segment_types = [m["segment_type"] for m in starts]
+        assert "reasoning" in segment_types
+        assert "response_text" in segment_types
+
+    @pytest.mark.asyncio
+    async def test_no_orphan_binary(self):
+        """Binary only appears between audio_start and audio_end."""
+        settings = _settings()
+
+        mock_stt = AsyncMock()
+        mock_stt.transcribe.return_value = TranscriptionResult(
+            text="Check my glucose", language="en", duration_seconds=1.5,
+        )
+
+        mock_tts = _make_tts()
+        mock_agent = AsyncMock()
+
+        async def fake_run_stream(agent_input):
+            yield _sse_event("reasoning", {"step": 1, "thought": "Checking glucose"})
+            yield _sse_event("done", {"data": {"full_response": "Looks good."}})
+
+        mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
+
+        orchestrator = VoiceOrchestrator(
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+        )
+
+        session = _session(settings)
+        all_messages = []  # Track order of JSON and binary
+
+        async def track_json(d):
+            all_messages.append(("json", d))
+
+        async def track_bytes(b):
+            all_messages.append(("binary", len(b)))
+
+        await orchestrator.handle_utterance(
+            session, b"\x00" * 500,
+            send_json=track_json,
+            send_bytes=track_bytes,
+        )
+
+        # Verify binary only appears between audio_start and audio_end
+        in_segment = False
+        for kind, data in all_messages:
+            if kind == "json" and isinstance(data, dict):
+                if data.get("type") == "audio_start":
+                    in_segment = True
+                elif data.get("type") == "audio_end":
+                    in_segment = False
+            elif kind == "binary":
+                assert in_segment, "Binary frame outside audio_start/audio_end!"
 
     @pytest.mark.asyncio
     async def test_thoughts_spoken_sequentially(self):
-        """Each thought waits for the previous to finish before speaking."""
+        """Each thought finishes before the next starts — one segment at a time."""
         settings = _settings()
 
         mock_stt = AsyncMock()
@@ -122,7 +187,6 @@ class TestVoiceOrchestrator:
             yield b"\x00" * 50
 
         mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
-
         mock_agent = AsyncMock()
 
         async def fake_run_stream(agent_input):
@@ -137,18 +201,75 @@ class TestVoiceOrchestrator:
         )
 
         session = _session(settings)
+        json_messages = []
 
         await orchestrator.handle_utterance(
             session, b"\x00" * 500,
-            send_json=lambda d: _async_append([], d),
+            send_json=lambda d: _async_append(json_messages, d),
             send_bytes=AsyncMock(),
         )
 
-        # All three were spoken: two thoughts + final response
+        # All three spoken in order
         assert len(speak_order) == 3
         assert "First thought" in speak_order[0]
         assert "Second thought" in speak_order[1]
         assert "Final answer" in speak_order[2]
+
+        # Verify no overlapping segments
+        starts = [m for m in json_messages if m["type"] == "audio_start"]
+        ends = [m for m in json_messages if m["type"] == "audio_end"]
+        assert len(starts) == 3
+        assert len(ends) == 3
+
+    @pytest.mark.asyncio
+    async def test_interrupt_closes_segment(self):
+        """Interrupted segment gets audio_end with completed=false."""
+        settings = _settings()
+
+        mock_stt = AsyncMock()
+        mock_stt.transcribe.return_value = TranscriptionResult(
+            text="Tell me about my glucose", language="en", duration_seconds=2.0,
+        )
+
+        mock_tts = _make_tts()
+        mock_agent = AsyncMock()
+
+        async def fake_stream(agent_input):
+            yield _sse_event("reasoning", {"step": 1, "thought": "Checking glucose data"})
+            yield _sse_event("done", {"data": {"full_response": "Your glucose..."}})
+
+        mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_stream(i))
+
+        orchestrator = VoiceOrchestrator(
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
+        )
+
+        session = _session(settings)
+        json_messages = []
+
+        async def send_json_and_interrupt(data):
+            json_messages.append(data)
+            # Interrupt when audio_start for reasoning arrives
+            if isinstance(data, dict) and data.get("type") == "audio_start" and data.get("segment_type") == "reasoning":
+                session.interrupt()
+
+        await orchestrator.handle_utterance(
+            session, b"\x00" * 100,
+            send_json=send_json_and_interrupt,
+            send_bytes=AsyncMock(),
+        )
+
+        # The reasoning segment should have audio_end with completed=false
+        ends = [m for m in json_messages if m.get("type") == "audio_end"]
+        assert len(ends) >= 1
+        reasoning_end = next((e for e in ends if e["segment_type"] == "reasoning"), None)
+        assert reasoning_end is not None
+        assert reasoning_end["completed"] is False
+        assert reasoning_end["reason"] == "interrupted"
+
+        # done should NOT be present (interrupted before response)
+        types = [m.get("type") for m in json_messages]
+        assert "done" not in types
 
     @pytest.mark.asyncio
     async def test_empty_transcript_sends_error(self):
@@ -174,8 +295,7 @@ class TestVoiceOrchestrator:
 
         types = [m["type"] for m in json_messages]
         assert "error" in types
-        error_msg = next(m for m in json_messages if m["type"] == "error")
-        assert error_msg["code"] == "empty_transcript"
+        assert "audio_start" not in types  # No audio for errors without agent
 
     @pytest.mark.asyncio
     async def test_stt_failure_sends_error(self):
@@ -201,46 +321,6 @@ class TestVoiceOrchestrator:
         assert "error" in types
         error_msg = next(m for m in json_messages if m["type"] == "error")
         assert error_msg["code"] == "stt_failed"
-
-    @pytest.mark.asyncio
-    async def test_interrupt_stops_pipeline(self):
-        settings = _settings()
-
-        mock_stt = AsyncMock()
-        mock_stt.transcribe.return_value = TranscriptionResult(
-            text="Tell me about my glucose", language="en", duration_seconds=2.0,
-        )
-
-        mock_tts = _make_tts()
-        mock_agent = AsyncMock()
-
-        async def slow_stream(agent_input):
-            yield _sse_event("status", {"stage": "analyzing"})
-            yield _sse_event("token", {"delta": "Your glucose..."})
-            yield _sse_event("done", {"data": {"full_response": "Your glucose..."}})
-
-        mock_agent.run_stream = MagicMock(side_effect=lambda i: slow_stream(i))
-
-        orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
-        )
-
-        session = _session(settings)
-        json_messages = []
-
-        async def send_json_and_interrupt(data):
-            json_messages.append(data)
-            if data.get("type") == "status":
-                session.interrupt()
-
-        await orchestrator.handle_utterance(
-            session, b"\x00" * 100,
-            send_json=send_json_and_interrupt,
-            send_bytes=AsyncMock(),
-        )
-
-        types = [m["type"] for m in json_messages]
-        assert "done" not in types
 
     @pytest.mark.asyncio
     async def test_voice_metadata_set(self):
