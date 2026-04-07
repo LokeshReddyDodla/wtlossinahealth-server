@@ -15,7 +15,7 @@ from .patient_connected_app import (
     PatientSinocare,
     PatientOtherApp,
 )
-from .patient_current_medication import PatientCurrentMedication
+from .patient_medication import PatientMedication
 from .patient_daily_activity import PatientDailyActivity
 from .patient_diabetic_history import PatientDiabeticHistory
 from .patient_diet_plan import PatientDietPlan
@@ -37,7 +37,6 @@ from .patient_meal_timing import PatientMealTiming
 from .patient_medical_history import PatientMedicalHistory
 from .patient_permission import PatientPermission
 from .patient_prescription import PatientPrescription
-from .patient_prescription import PatientPrescriptionMedicine
 from .patient_sleep_habit import PatientSleepHabit
 from .patient_smbg import PatientSMBG
 from .patient_smoking_habit import PatientSmokingHabit

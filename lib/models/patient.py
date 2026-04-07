@@ -126,9 +126,8 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
-    current_medication = relationship(
-        "PatientCurrentMedication",
-        uselist=False,
+    medications = relationship(
+        "PatientMedication",
         back_populates="patient",
         cascade="all, delete-orphan",
     )
@@ -161,6 +160,7 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
+
 
     reports = relationship(
         "PatientReport",

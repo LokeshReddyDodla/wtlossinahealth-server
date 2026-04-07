@@ -297,3 +297,152 @@ async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
     logger.info(
         f"Cleanup: {feed_count} feed events, {lb_count} leaderboard entries removed"
     )
+
+
+# ── Medication cron tasks ────────────────────────────────────────────────
+
+
+_MEDICATION_REMINDER_SLOTS = {
+    10: "TAKE_MEDICATION_MORNING",
+    15: "TAKE_MEDICATION_AFTERNOON",
+    21: "TAKE_MEDICATION_EVENING",
+    23: "TAKE_MEDICATION_NIGHT",
+}
+
+
+@task_with_logging
+async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
+    """Medication reminder — nudge patients to take their meds.
+    Runs hourly; filters by patient-local time for each slot.
+    """
+    from lib.core.container import container
+    from lib.core.postgres_store import PostgresStore
+    from lib.models.gamification import DailyTask
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.services.gamification.notifications import send_gamification_notification
+    from lib.schemas.gamification import TaskStatus
+
+    store = container.resolve(PostgresStore)
+    resolver = container.resolve(PatientNameResolver)
+
+    # Get all patients who have active medications
+    from lib.models.patient_medication import PatientMedication
+
+    async with store.get_session() as session:
+        result = await session.execute(
+            select(PatientMedication.patient_id)
+            .where(PatientMedication.status == "active")
+            .distinct()
+        )
+        patient_ids = [r[0] for r in result.all()]
+
+    if not patient_ids:
+        return
+
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
+
+    sent = 0
+    for pid in patient_ids:
+        try:
+            tz_name = tz_map.get(str(pid))
+
+            for hour, task_type in _MEDICATION_REMINDER_SLOTS.items():
+                if not matches_local_hour(tz_name, hour):
+                    continue
+
+                today = local_today(tz_name)
+                async with store.get_session() as session:
+                    task_result = await session.execute(
+                        select(DailyTask).where(
+                            DailyTask.patient_id == pid,
+                            DailyTask.task_date == today,
+                            DailyTask.task_type == task_type,
+                            DailyTask.status == TaskStatus.PENDING.value,
+                        )
+                    )
+                    pending_task = task_result.scalars().first()
+
+                if pending_task:
+                    slot_name = task_type.replace("TAKE_MEDICATION_", "").lower()
+                    await send_gamification_notification(
+                        str(pid),
+                        title="Medication reminder",
+                        body=f"Time to take your {slot_name} medications",
+                        data={"event_type": "medication_reminder", "slot": slot_name},
+                    )
+                    sent += 1
+        except Exception:
+            logger.opt(exception=True).warning(f"Medication reminder failed for {pid}")
+
+    logger.info(f"Sent medication reminders to {sent} patients")
+
+
+@task_with_logging
+async def complete_expired_medications(ctx: Dict[str, Any]) -> None:
+    """Mark medications past their end_date as completed. Runs daily."""
+    from lib.core.container import container
+    from lib.services.medication_service import MedicationService
+
+    service = container.resolve(MedicationService)
+    count = await service.complete_expired_medications()
+    logger.info(f"Completed {count} expired medications")
+
+
+@task_with_logging
+async def send_refill_reminders(ctx: Dict[str, Any]) -> None:
+    """Remind patients whose medication course ends in 3 days.
+    Runs hourly; filters by patient-local 9:00 AM.
+    """
+    from lib.core.container import container
+    from lib.core.postgres_store import PostgresStore
+    from lib.models.patient_medication import PatientMedication
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.services.gamification.notifications import send_gamification_notification
+
+    store = container.resolve(PostgresStore)
+    resolver = container.resolve(PatientNameResolver)
+
+    from datetime import timedelta as td
+
+    # Get all patients with active medications that have end dates
+    async with store.get_session() as session:
+        result = await session.execute(
+            select(PatientMedication).where(
+                PatientMedication.status == "active",
+                PatientMedication.end_date.isnot(None),
+            )
+        )
+        all_medications = result.scalars().all()
+
+    if not all_medications:
+        return
+
+    patient_ids = list({str(m.patient_id) for m in all_medications})
+    tz_map = await resolver.resolve_timezones(patient_ids)
+
+    sent = 0
+    for med in all_medications:
+        try:
+            pid = str(med.patient_id)
+            tz_name = tz_map.get(pid)
+            if not matches_local_hour(tz_name, 9):
+                continue
+
+            # Use patient-local date for the 3-day check
+            today = local_today(tz_name)
+            target_date = today + td(days=3)
+            if med.end_date != target_date:
+                continue
+
+            name = f"{med.name} {med.strength}" if med.strength else med.name
+            await send_gamification_notification(
+                pid,
+                title="Course ending soon",
+                body=f"Your {name} course ends in 3 days. Contact your doctor if you need a refill.",
+                data={"event_type": "refill_reminder", "medication_id": str(med.medication_id)},
+            )
+            sent += 1
+        except Exception:
+            logger.opt(exception=True).warning(f"Refill reminder failed for {med.patient_id}")
+
+    logger.info(f"Sent refill reminders to {sent} patients")

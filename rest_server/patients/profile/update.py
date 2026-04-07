@@ -8,8 +8,6 @@ from lib.models.patient import Patient
 from lib.schemas.patient import CorePatientProfile, PatientUpdate
 from lib.schemas.patient_alcohol_consumption import \
     PatientAlcoholConsumptionCreate
-from lib.schemas.patient_current_medication import \
-    PatientCurrentMedicationCreate
 from lib.schemas.patient_daily_activity import PatientDailyActivityCreate
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistoryCreate
 from lib.schemas.patient_drug_allergy import PatientDrugAllergyCreate
@@ -113,7 +111,6 @@ async def upsert_patient_lifestyle(
 async def upsert_patient_medical_history(
     request: Request,
     diabetic_history: PatientDiabeticHistoryCreate,
-    current_medication: PatientCurrentMedicationCreate,
     drug_allergies: Optional[List[PatientDrugAllergyCreate]] = None,
     family_diabetic_histories: Optional[
         List[PatientFamilyDiabeticHistoryCreate]
@@ -129,7 +126,6 @@ async def upsert_patient_medical_history(
             await patient_profile_service.upsert_patient_medical_history(
                 patient_id=str(current_patient.patient_id),
                 diabetic_history=diabetic_history,
-                current_medication=current_medication,
                 drug_allergies=drug_allergies,
                 family_diabetic_histories=family_diabetic_histories,
                 medical_histories=medical_histories,

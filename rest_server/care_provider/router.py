@@ -8,9 +8,6 @@ from .patients.cgm.router import router as patients_cgm_router
 from .patients.fitness.router import router as patients_fitness_router
 from .patients.meals.router import router as patients_meals_router
 from .patients.smbg.router import router as patients_smbg_router
-from .patients.prescriptions.router import (
-    router as patients_prescriptions_router,
-)
 from .patients.profile.router import router as patients_profile_router
 from .patients.documents.router import router as patients_document_router
 from .patients.uploads.router import router as patients_uploads_router
@@ -35,7 +32,6 @@ router.include_router(patients_smbg_router)
 router.include_router(patients_fitness_router)
 router.include_router(patients_cgm_router)
 router.include_router(patients_uploads_router)
-router.include_router(patients_prescriptions_router)
 router.include_router(patients_connected_apps_router)
 router.include_router(patients_summaries_router)
 

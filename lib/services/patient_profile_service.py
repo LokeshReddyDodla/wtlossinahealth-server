@@ -16,9 +16,6 @@ from lib.models.patient_alcohol_consumption import (
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel,
 )
 from lib.models.patient_connected_app import PatientConnectedApp
-from lib.models.patient_current_medication import (
-    PatientCurrentMedication as PatientCurrentMedicationModel,
-)
 from lib.models.patient_daily_activity import (
     PatientDailyActivity as PatientDailyActivityModel,
 )
@@ -61,9 +58,6 @@ from lib.schemas.patient import (
 from lib.schemas.patient import PatientUpdate
 from lib.schemas.patient_alcohol_consumption import (
     PatientAlcoholConsumptionCreate,
-)
-from lib.schemas.patient_current_medication import (
-    PatientCurrentMedicationCreate,
 )
 from lib.models.patient_package_assignment import (
     PatientPackageAssignment as PatientPackageAssignmentModel,
@@ -150,7 +144,6 @@ class PatientProfileService:
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication),
                 )
 
             if include_health_data:
@@ -302,7 +295,6 @@ class PatientProfileService:
                     selectinload(PatientModel.diabetic_history),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
-                    selectinload(PatientModel.current_medication),
                 )
 
             result = await postgres_session.execute(stmt)
@@ -591,7 +583,6 @@ class PatientProfileService:
         self,
         patient_id: str,
         diabetic_history: PatientDiabeticHistoryCreate,
-        current_medication: PatientCurrentMedicationCreate,
         drug_allergies: Optional[List[PatientDrugAllergyCreate]] = None,
         family_diabetic_histories: Optional[
             List[PatientFamilyDiabeticHistoryCreate]
@@ -610,14 +601,6 @@ class PatientProfileService:
                 patient_profile.diabetic_history,
                 diabetic_history,
                 PatientDiabeticHistoryModel,
-                "patient_id",
-                patient_id,
-            )
-
-            patient_profile.current_medication = self._upsert_single_entity(
-                patient_profile.current_medication,
-                current_medication,
-                PatientCurrentMedicationModel,
                 "patient_id",
                 patient_id,
             )

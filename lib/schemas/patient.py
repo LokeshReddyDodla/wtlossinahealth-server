@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_connected_app import PatientConnectedApp
-from lib.schemas.patient_current_medication import PatientCurrentMedication
 from lib.schemas.patient_daily_activity import PatientDailyActivity
 from lib.schemas.patient_diabetic_history import PatientDiabeticHistory
 from lib.schemas.patient_diet_plan import PatientDietPlan
@@ -96,7 +95,6 @@ class CorePatientProfile(Patient):
     diabetic_history: Optional[PatientDiabeticHistory] = None
     family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
     medical_histories: List[PatientMedicalHistory] = []
-    current_medication: Optional[PatientCurrentMedication] = None
     diet_plans: List[PatientDietPlan] = []
     fitness_plans: List[PatientFitnessPlan] = []
 

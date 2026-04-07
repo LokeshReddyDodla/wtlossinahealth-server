@@ -82,7 +82,6 @@ from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
-from lib.services.prescription_service import PrescriptionService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -314,8 +313,14 @@ def get_meal_service() -> MealService:
     )
 
 
-def get_prescription_service() -> PrescriptionService:
-    return cast(PrescriptionService, container.resolve(PrescriptionService))
+def get_medication_service():
+    from lib.services.medication_service import MedicationService  # avoid circular
+    return cast(MedicationService, container.resolve(MedicationService))
+
+
+def get_prescription_extraction_service():
+    from lib.services.prescription_extraction_service import PrescriptionExtractionService  # avoid circular
+    return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
 
 
 def get_weightloss_analytics_service() -> AnalyticsService:
