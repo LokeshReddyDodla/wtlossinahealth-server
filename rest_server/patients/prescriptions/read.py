@@ -8,7 +8,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.patient import Patient
 from lib.schemas.patient_prescription import PatientPrescriptionRead
-from lib.services.prescription_service import PrescriptionService
+from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import InQueueResponse, SuccessResponse
 

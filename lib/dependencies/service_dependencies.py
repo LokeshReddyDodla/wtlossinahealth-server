@@ -82,7 +82,7 @@ from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
-from lib.services.prescription_service import PrescriptionService
+from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )

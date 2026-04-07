@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, Request, status
 from lib.dependencies.auth.care_provider_auth import get_current_care_provider
 from lib.dependencies.service_dependencies import get_prescription_service
 from lib.models.care_provider import CareProvider as CareProviderModel
-from lib.services.prescription_service import PrescriptionService
+from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,

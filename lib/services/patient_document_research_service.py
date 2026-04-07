@@ -22,7 +22,7 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.patient_document_service import PatientDocumentService
-from lib.services.prescription_service import PrescriptionService
+from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.utils.http_exceptions import raise_http_exception

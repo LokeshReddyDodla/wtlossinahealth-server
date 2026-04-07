@@ -14,7 +14,7 @@ from lib.schemas.patient_prescription_analysis import (
     PrescriptionAnalysis,
 )
 
-from lib.services.prescription_service import PrescriptionService
+from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.utils.http_exceptions import raise_http_exception
 
 

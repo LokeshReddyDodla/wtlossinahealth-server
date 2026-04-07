@@ -35,7 +35,7 @@ from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 
-class PrescriptionService:
+class PrescriptionServiceLegacy:
     def __init__(
         self,
         postgres_store: PostgresStore,
