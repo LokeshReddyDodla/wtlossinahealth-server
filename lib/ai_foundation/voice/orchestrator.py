@@ -1,19 +1,22 @@
 """
 Voice Orchestrator — main pipeline: STT → HealthQueryAgent → TTS.
 
-Bridges the gap between raw audio and the existing text-based agent.
-Speaks the agent's actual thoughts (reasoning, tool calls, findings)
-so there's no silence while the agent investigates. Final response
-is spoken as one continuous stream.
+Audio boundary protocol:
+    Every spoken segment is wrapped in audio_start / audio_end.
+    Binary frames only appear between these two signals — never orphaned.
+    Only one segment is open at a time. done always comes after the
+    final audio_end. Any binary received outside an open segment is a
+    protocol error and should be ignored by the client.
 
-The orchestrator does NOT own the HealthQueryAgent — it wraps it.
-All reasoning, tools, memory, and persistence stay in the agent.
+Segment types: greeting, reasoning, plan, response_text, error.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import secrets
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -40,9 +43,8 @@ _FORWARDED_EVENTS = frozenset({
 })
 
 # Events spoken aloud — only LLM-generated text that sounds natural.
-# reasoning: single-domain path thoughts (from ReasoningEngine)
-# plan: multi-domain path strategy (from Coordinator) — fills silence
-#       when reasoning events aren't emitted
+# The key is the SSE event name, value extracts speakable text.
+# segment_type sent to Flutter matches the event name.
 _SPEAKABLE_EVENTS: dict[str, Callable[[dict], str | None]] = {
     "reasoning": lambda d: d.get("thought"),
     "plan": lambda d: d.get("strategy"),
@@ -83,8 +85,10 @@ class VoiceOrchestrator:
             first_name = name.split()[0] if name else ""
             greeting = _pick_greeting(first_name)
 
+            # Semantic event first (Flutter shows text from this)
             await send_json({"type": "greeting", "text": greeting})
-            await self._speak(greeting, send_bytes, session)
+            # Then audio with explicit boundaries
+            await self._speak(greeting, send_json, send_bytes, session, segment_type="greeting")
         except Exception:
             logger.warning("Greeting failed for session %s", session.session_id, exc_info=True)
 
@@ -96,14 +100,7 @@ class VoiceOrchestrator:
         send_json: SendJson,
         send_bytes: SendBytes,
     ) -> None:
-        """Full pipeline: audio → STT → Agent → TTS → audio.
-
-        Args:
-            session: Current voice session.
-            audio_bytes: Raw audio from the client.
-            send_json: Callback to send a JSON message to the client.
-            send_bytes: Callback to send binary audio to the client.
-        """
+        """Full pipeline: audio → STT → Agent → TTS → audio."""
         session.clear_interrupt()
         session.state = VoiceSessionState.PROCESSING
 
@@ -119,7 +116,6 @@ class VoiceOrchestrator:
             session.state = VoiceSessionState.IDLE
             return
 
-        # Send transcript to client
         await send_json(TranscriptMsg(
             text=result.text,
             is_final=True,
@@ -152,7 +148,6 @@ class VoiceOrchestrator:
 
         # ── 3. Consume agent stream ─────────────────────────────────────
         token_buffer: list[str] = []
-        speaking_task: asyncio.Task | None = None
 
         try:
             async for sse_raw in self._agent.run_stream(agent_input):
@@ -163,20 +158,18 @@ class VoiceOrchestrator:
                 if event_name is None:
                     continue
 
-                # Forward all agent events as JSON (same types as text chat)
+                # Forward all agent events as JSON (semantic events — UI source of truth)
                 if event_name in _FORWARDED_EVENTS:
                     await send_json({"type": event_name, **event_data})
 
-                # Speak thoughts aloud — wait for each to finish before next
+                # Speak thoughts aloud — sequential, one at a time
                 extractor = _SPEAKABLE_EVENTS.get(event_name)
                 if extractor and not session.is_cancelled:
                     phrase = extractor(event_data)
                     if phrase and phrase.strip():
-                        # Wait for any previous speech to finish
-                        if speaking_task and not speaking_task.done():
-                            await speaking_task
-                        speaking_task = asyncio.create_task(
-                            self._speak(phrase, send_bytes, session)
+                        await self._speak(
+                            phrase, send_json, send_bytes, session,
+                            segment_type=event_name,
                         )
 
                 # Accumulate response tokens
@@ -192,18 +185,18 @@ class VoiceOrchestrator:
                     if not full_response:
                         full_response = "".join(token_buffer)
 
-                    # Send text for display
+                    # Semantic event (Flutter shows text from this)
                     await send_json(ResponseTextMsg(text=full_response).model_dump())
-
-                    # Wait for any in-flight thought speech to finish
-                    if speaking_task and not speaking_task.done():
-                        await speaking_task
 
                     # One TTS stream for the full response
                     if full_response.strip() and not session.is_cancelled:
                         session.state = VoiceSessionState.SPEAKING
-                        await self._speak(full_response, send_bytes, session)
+                        await self._speak(
+                            full_response, send_json, send_bytes, session,
+                            segment_type="response_text",
+                        )
 
+                    # done always after the final audio_end
                     await send_json({"type": "done", **event_data})
                     session.state = VoiceSessionState.IDLE
                     return
@@ -212,14 +205,17 @@ class VoiceOrchestrator:
                 if event_name == "error":
                     error_msg = event_data.get("message", "Something went wrong.")
                     fallback = event_data.get("fallback_text", error_msg)
+
+                    # Semantic event
                     await send_json(VoiceErrorMsg(
                         code="agent_error", message=error_msg,
                     ).model_dump())
 
-                    if speaking_task and not speaking_task.done():
-                        await speaking_task
                     if not session.is_cancelled:
-                        await self._speak(fallback, send_bytes, session)
+                        await self._speak(
+                            fallback, send_json, send_bytes, session,
+                            segment_type="error",
+                        )
 
                     session.state = VoiceSessionState.IDLE
                     return
@@ -231,38 +227,76 @@ class VoiceOrchestrator:
                 message="Sorry, something went wrong. Please try again.",
             ).model_dump())
         finally:
-            if speaking_task and not speaking_task.done():
-                speaking_task.cancel()
             session.state = VoiceSessionState.IDLE
 
-    # ── TTS ──────────────────────────────────────────────────────────────
+    # ── TTS with explicit audio boundaries ───────────────────────────────
 
     async def _speak(
         self,
         text: str,
+        send_json: SendJson,
         send_bytes: SendBytes,
         session: VoiceSession,
+        *,
+        segment_type: str,
     ) -> None:
-        """Stream TTS audio to client, respecting interruption."""
+        """Stream TTS audio wrapped in audio_start/audio_end.
+
+        Guarantees:
+        - audio_start always before any binary
+        - audio_end always after, even on interrupt/error
+        - No orphan binary outside start/end
+        - completed=false + reason on interruption/error
+        - No unrelated JSON between audio_start and audio_end
+        - Only one segment open at a time (enforced by sequential awaits)
+        - Any binary outside an open segment is a protocol error
+        """
         if not text.strip():
             return
 
-        logger.info("TTS: speaking %d chars: %s", len(text), text[:80])
+        segment_id = f"seg_{secrets.token_hex(6)}"
+
+        await send_json({
+            "type": "audio_start",
+            "segment_id": segment_id,
+            "segment_type": segment_type,
+            "text": text,
+        })
+
         total_bytes = 0
+        completed = True
+        reason: str | None = None
+
         try:
             async for chunk in self._tts.synthesize_stream(text):
                 if session.is_cancelled:
+                    completed = False
+                    reason = "interrupted"
                     break
                 total_bytes += len(chunk)
                 await send_bytes(chunk)
-            logger.info("TTS: sent %d bytes", total_bytes)
         except asyncio.CancelledError:
-            pass
+            completed = False
+            reason = "cancelled"
         except Exception:
-            logger.error("TTS failed for session %s", session.session_id, exc_info=True)
+            completed = False
+            reason = "tts_error"
+            logger.error("TTS failed [%s/%s]", segment_id, segment_type, exc_info=True)
+
+        end_payload: dict[str, Any] = {
+            "type": "audio_end",
+            "segment_id": segment_id,
+            "segment_type": segment_type,
+            "bytes_sent": total_bytes,
+            "completed": completed,
+        }
+        if reason:
+            end_payload["reason"] = reason
+
+        await send_json(end_payload)
 
 
-import random
+# ── Greetings ────────────────────────────────────────────────────────────
 
 _GREETINGS_WITH_NAME = [
     "Hey {name}! What's on your mind today?",
