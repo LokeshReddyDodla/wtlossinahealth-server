@@ -9,6 +9,7 @@ from lib.workers.tasks.gamification.tasks import (
     process_challenge_lifecycle,
     process_streaks_for_all,
     refresh_leaderboards,
+    send_streak_reminders,
 )
 
 GAMIFICATION_CRON_JOBS = [
@@ -45,6 +46,13 @@ GAMIFICATION_CRON_JOBS = [
         process_challenge_lifecycle,
         minute=10,
         timeout=600,
+        unique=True,
+    ),
+    # Run hourly; worker filters by patient-local 8:00 PM.
+    cron(
+        send_streak_reminders,
+        minute=25,
+        timeout=1800,
         unique=True,
     ),
     # Feed + leaderboard cleanup — daily

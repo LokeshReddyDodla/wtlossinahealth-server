@@ -149,6 +149,18 @@ class ChallengeService:
 
         await postgres_session.commit()
         await postgres_session.refresh(challenge)
+
+        # Notify auto-enrolled patients about the new challenge
+        from lib.services.gamification.notifications import send_gamification_notification
+        notify_ids = (enrolled_patient_ids - {created_by_id}) if created_by_type == "patient" else enrolled_patient_ids
+        for pid in notify_ids:
+            await send_gamification_notification(
+                str(pid),
+                title="New challenge",
+                body=f"You've been enrolled in {title}.",
+                data={"event_type": "challenge_enrolled", "challenge_id": str(challenge.challenge_id)},
+            )
+
         return challenge
 
     @with_postgres_session
