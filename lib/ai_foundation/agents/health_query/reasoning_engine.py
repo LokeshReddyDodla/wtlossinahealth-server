@@ -365,7 +365,7 @@ class ReasoningEngine:
                     with _track_perf(perf, "tool_exec_ms"):
                         fallback_result = await self._tools.execute(
                             "look_up",
-                            {"data_types": intent_data_types, "limit": 15},
+                            {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
                             patient_ids,
                             patient_names=patient_names,
                         )
@@ -373,7 +373,7 @@ class ReasoningEngine:
                     total_tools += 1
                     evidence_ledger.append(extract_evidence_from_fallback(
                         "look_up",
-                        {"data_types": intent_data_types, "limit": 15},
+                        {"data_types": intent_data_types, "limit": settings.LOOKUP_DEFAULT_LIMIT},
                         fallback_result,
                     ))
                     steps.append(ReasoningStep(
@@ -426,6 +426,11 @@ class ReasoningEngine:
 
             total_tools += tool_round.executed_count
             evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
+
+            # Stop if cumulative tool calls have reached the budget
+            if total_tools >= tier_cfg.max_tool_calls:
+                rounds_used = round_num
+                break
 
             # Emit tool events (streaming only)
             if emit_events and tier_cfg.show_reasoning:
@@ -637,7 +642,7 @@ class ReasoningEngine:
         Returns dict with: cost, tools_called, steps, plan_obj.
         """
         try:
-            plan = await self._planner.plan(
+            plan, plan_cost = await self._planner.plan(
                 messages=messages,
                 tool_schemas=tool_schemas,
                 planning_prompt="Plan the investigation. Output a structured InvestigationPlan.",
@@ -660,7 +665,7 @@ class ReasoningEngine:
             })
 
             return {
-                "cost": 0,
+                "cost": plan_cost,
                 "tools_called": 0,
                 "steps": [],
                 "plan_obj": plan,

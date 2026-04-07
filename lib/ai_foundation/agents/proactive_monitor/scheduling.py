@@ -2,8 +2,8 @@
 Timezone-aware scan scheduling for the Proactive Monitor.
 
 Provides utilities to determine whether a patient is within their local
-scan window (7 AM - 10 PM).  Defaults to Asia/Kolkata when the patient's
-timezone is unknown (most patients are in India).
+scan window (7 AM - 10 PM).  Defaults to the configured patient timezone
+when the patient's timezone is unknown.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from lib.ai_foundation.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Scan window: only scan patients between these local hours
@@ -19,7 +21,7 @@ SCAN_WINDOW_START = 7   # 7:00 AM local
 SCAN_WINDOW_END = 22    # 10:00 PM local
 
 # Default timezone when patient profile doesn't specify one
-DEFAULT_TIMEZONE = "Asia/Kolkata"
+DEFAULT_TIMEZONE = settings.DEFAULT_PATIENT_TIMEZONE
 
 
 def is_within_scan_window(

@@ -612,13 +612,13 @@ class ToolExecutor:
         limit = args.get("limit", 5)
 
         # Resolve patient timezone for timestamp display
-        tz_name = "Asia/Kolkata"
+        tz_name = settings.DEFAULT_PATIENT_TIMEZONE
         if patient_ids and self._patient_resolver:
             try:
                 tzs = await self._patient_resolver.resolve_timezones(patient_ids[:1])
                 tz_name = tzs.get(patient_ids[0], tz_name)
             except Exception:
-                pass
+                logger.debug("Timezone resolution failed for %s", patient_ids, exc_info=True)
         try:
             tz = ZoneInfo(tz_name)
         except Exception:

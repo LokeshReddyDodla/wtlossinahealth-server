@@ -59,6 +59,18 @@ def _circuit_key(spec: ModelSpec) -> str:
     return f"{spec.provider.value}:{spec.model_id}"
 
 
+def _is_retryable(exc: Exception) -> bool:
+    """Check if an error is transient (rate-limit or timeout) and worth a brief delay."""
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    # LiteLLM wraps provider errors — check status code and message
+    status = getattr(exc, "status_code", None)
+    if status in (429, 408, 503):
+        return True
+    msg = str(exc).lower()
+    return "rate" in msg and "limit" in msg
+
+
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
@@ -587,6 +599,9 @@ class ModelGateway:
                 logger.warning(
                     "%s failed for %s: %s", method_name, spec.model_id, exc
                 )
+                # Brief delay on rate-limit / timeout before trying next provider
+                if _is_retryable(exc):
+                    await asyncio.sleep(0.5)
 
         raise AllProvidersUnavailableError(
             f"All models failed for task {task.value!r}. "

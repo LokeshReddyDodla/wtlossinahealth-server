@@ -12,6 +12,7 @@ Two modes:
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
@@ -20,9 +21,6 @@ from lib.ai_foundation.voice.config import VoiceSettings
 
 logger = logging.getLogger(__name__)
 
-# Chunk size for streaming TTS audio (4KB)
-_STREAM_CHUNK_SIZE = 4096
-
 
 class TextToSpeech:
     """Async OpenAI TTS client with streaming support."""
@@ -30,7 +28,7 @@ class TextToSpeech:
     def __init__(self, settings: VoiceSettings) -> None:
         self._client = AsyncOpenAI()
         self._settings = settings
-        self._filler_cache: dict[str, bytes] = {}
+        self._filler_cache: OrderedDict[str, bytes] = OrderedDict()
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         """Stream TTS audio chunks as they arrive from OpenAI.
@@ -50,7 +48,7 @@ class TextToSpeech:
             speed=self._settings.TTS_SPEED,
             response_format=self._settings.TTS_RESPONSE_FORMAT,
         ) as response:
-            async for chunk in response.iter_bytes(chunk_size=_STREAM_CHUNK_SIZE):
+            async for chunk in response.iter_bytes(chunk_size=self._settings.TTS_STREAM_CHUNK_SIZE):
                 yield chunk
 
     async def synthesize(self, text: str) -> bytes:
@@ -79,6 +77,9 @@ class TextToSpeech:
         # Cache short phrases (filler) to avoid re-synthesizing
         if len(text) <= 80:
             self._filler_cache[text] = audio
+            # Evict oldest entries when cache is full
+            while len(self._filler_cache) > self._settings.TTS_FILLER_CACHE_MAX_SIZE:
+                self._filler_cache.popitem(last=False)
 
         return audio
 

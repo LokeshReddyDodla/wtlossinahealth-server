@@ -35,6 +35,8 @@ class VoiceSettings(BaseSettings):
     TTS_VOICE: str = Field(default="nova", description="TTS voice: alloy, echo, fable, onyx, nova, shimmer")
     TTS_SPEED: float = Field(default=1.0, description="TTS playback speed (0.25-4.0)")
     TTS_RESPONSE_FORMAT: str = Field(default="opus", description="TTS audio format: opus, mp3, aac, flac, wav, pcm")
+    TTS_STREAM_CHUNK_SIZE: int = Field(default=4096, description="Chunk size for streaming TTS audio (bytes)")
+    TTS_FILLER_CACHE_MAX_SIZE: int = Field(default=256, description="Max cached filler phrases (LRU eviction)")
 
     # ── Session ──────────────────────────────────────────────────────────
 

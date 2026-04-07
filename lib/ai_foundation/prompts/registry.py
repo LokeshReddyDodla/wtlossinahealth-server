@@ -125,7 +125,7 @@ class PromptRegistry:
                     content_hash="langfuse",
                 )
             except Exception:
-                logger.debug("Langfuse prompt fetch failed for %r, using local", name)
+                logger.warning("Langfuse prompt fetch failed for %r, using local", name, exc_info=True)
 
         # Fall back to local .md files
         template = self._prompts.get(name)

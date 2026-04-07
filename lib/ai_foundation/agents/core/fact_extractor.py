@@ -140,6 +140,10 @@ class FactExtractor:
                 value = f.value.strip()
                 if not key or not value:
                     continue
+                # Guard against LLM generating excessively large memory values
+                if len(value) > 1000:
+                    logger.debug("Memory value too long (%d chars) for key %s, truncating", len(value), key)
+                    value = value[:1000]
 
                 # Look up canonical metadata
                 meta = CANONICAL_MEMORY_KEYS.get(key, {"category": "other", "permanent": False})
