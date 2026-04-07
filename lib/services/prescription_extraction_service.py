@@ -42,8 +42,6 @@ class PrescriptionExtractionService:
     async def extract(
         self,
         image_urls: list[str],
-        *,
-        model_id: str | None = None,
     ) -> ExtractedPrescription:
         """Extract structured prescription data from one or more images."""
         image_content = [
@@ -66,7 +64,6 @@ class PrescriptionExtractionService:
             messages=messages,
             response_model=ExtractedPrescription,
             task=ModelTask.STRUCTURED_ANALYSIS,
-            model_id=model_id or "gpt-4o",
         )
 
         logger.info(
