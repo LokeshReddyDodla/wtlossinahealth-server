@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, select, or_
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
+from lib.models.patient import Patient
 from lib.models.patient_medication import PatientMedication
 from lib.models.patient_prescription import PatientPrescription
 from lib.schemas.medication import (
@@ -207,7 +208,7 @@ class MedicationService:
         today = date.today()
         active, as_needed, completed = [], [], []
         for med in medications:
-            resp = self._to_response(med, today)
+            resp = self.to_response(med, today)
             if med.status == "as_needed":
                 as_needed.append(resp)
             elif med.status in ("completed", "discontinued"):
@@ -403,8 +404,6 @@ class MedicationService:
     ) -> list[PatientMedication]:
         """Get active medications expiring within N days."""
         today = date.today()
-        from datetime import timedelta
-
         target = today + timedelta(days=within_days)
         result = await postgres_session.execute(
             select(PatientMedication).where(
@@ -469,11 +468,19 @@ class MedicationService:
             for m in medications
         ]
 
+        # Fetch patient metadata for richer vector context
+        patient_result = await session.execute(
+            select(Patient).where(Patient.patient_id == patient_id)
+        )
+        patient = patient_result.scalars().first()
+        patient_age = patient.age if patient and hasattr(patient, "age") and patient.age else 0
+        patient_gender = patient.gender if patient and patient.gender else "unknown"
+
         await self.medication_vector_service.upsert_medications_vector(
             patient_id=patient_id,
             medications=med_dicts,
-            patient_age=0,
-            patient_gender="unknown",
+            patient_age=patient_age,
+            patient_gender=patient_gender,
         )
 
     # ── Helpers ──────────────────────────────────────────────────────────
@@ -489,7 +496,7 @@ class MedicationService:
         return result.scalars().first()
 
     @staticmethod
-    def _to_response(med: PatientMedication, today: date) -> MedicationResponse:
+    def to_response(med: PatientMedication, today: date) -> MedicationResponse:
         days_remaining = None
         if med.end_date and med.status == "active":
             days_remaining = max(0, (med.end_date - today).days)

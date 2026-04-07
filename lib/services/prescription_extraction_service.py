@@ -6,6 +6,7 @@ Single responsibility: image → structured JSON. No summaries, no intelligence.
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
@@ -44,6 +45,13 @@ class PrescriptionExtractionService:
         image_urls: list[str],
     ) -> ExtractedPrescription:
         """Extract structured prescription data from one or more images."""
+        trace_id = str(uuid4())
+        self.gateway.langfuse_trace_input(
+            trace_id=trace_id,
+            name="prescription-extraction",
+            input_text=f"Extract prescription from {len(image_urls)} image(s)",
+        )
+
         image_content = [
             {"type": "image_url", "image_url": {"url": url}}
             for url in image_urls
@@ -65,13 +73,27 @@ class PrescriptionExtractionService:
             response_model=ExtractedPrescription,
             task=ModelTask.STRUCTURED_ANALYSIS,
             model_id="gpt-4o",
+            trace_id=trace_id,
         )
 
+        cost = meta.usage.cost.total_cost if meta.usage else 0
         logger.info(
             "Prescription extracted: %d medicines, %dms, $%.4f",
             len(extracted.medicines),
             meta.latency_ms,
-            meta.usage.cost if meta.usage else 0,
+            cost,
+        )
+
+        self.gateway.langfuse_trace_output(
+            trace_id=trace_id,
+            output_text=f"Extracted {len(extracted.medicines)} medicines",
+            metadata={
+                "cost_usd": cost,
+                "input_tokens": meta.usage.input_tokens if meta.usage else 0,
+                "output_tokens": meta.usage.output_tokens if meta.usage else 0,
+                "model_id": meta.model_id,
+                "latency_ms": meta.latency_ms,
+            },
         )
 
         return extracted

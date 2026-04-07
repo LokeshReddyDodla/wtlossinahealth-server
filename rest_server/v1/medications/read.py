@@ -75,7 +75,7 @@ async def get_medication(
         )
 
     today = date.today()
-    data = MedicationService._to_response(med, today).model_dump(mode="json")
+    data = MedicationService.to_response(med, today).model_dump(mode="json")
 
     return SuccessResponse(
         message="Medication retrieved",
