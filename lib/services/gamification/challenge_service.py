@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import List, Optional
@@ -30,6 +31,8 @@ from lib.schemas.gamification import (
 from lib.services.gamification.time_utils import local_today
 from lib.services.gamification.xp_service import XPService
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+logger = logging.getLogger(__name__)
 
 
 class ChallengeService:
@@ -111,8 +114,8 @@ class ChallengeService:
                 postgres_session.add(participant)
                 enrolled_patient_ids.add(pid)
 
-        # Auto-enroll groups
-        if group_ids:
+        # Auto-enroll groups (only for non-opt-in challenges)
+        if group_ids and not is_opt_in:
             for gid in group_ids:
                 participant = ChallengeParticipant(
                     challenge_id=challenge.challenge_id,
@@ -244,7 +247,7 @@ class ChallengeService:
             participant = row.ChallengeParticipant
             challenge = row.Challenge
             participant.current_value += increment
-            if participant.current_value >= challenge.target_value:
+            if participant.current_value >= challenge.target_value and participant.status != "completed":
                 participant.status = "completed"
                 participant.completed_at = now
 
@@ -608,7 +611,7 @@ class ChallengeService:
                             ),
                         )
         except Exception:
-            pass
+            logger.warning("Failed to post feed events for challenge %s", challenge_id, exc_info=True)
 
     @with_postgres_session
     async def get_finalizable_challenge_ids(
