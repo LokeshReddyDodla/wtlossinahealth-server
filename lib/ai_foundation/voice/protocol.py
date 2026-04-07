@@ -9,7 +9,7 @@ Shared event types (same as text chat SSE):
     reflection, specialist_start, specialist_done, token, done, error
 
 Voice-only event types:
-    session_ready, transcript, response_text, session_ended
+    session_ready, greeting, transcript, response_text, session_ended
 """
 
 from __future__ import annotations

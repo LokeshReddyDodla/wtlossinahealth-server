@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
 from lib.ai_foundation.voice.config import VoiceSettings
@@ -60,12 +61,32 @@ class VoiceOrchestrator:
         stt: SpeechToText,
         tts: TextToSpeech,
         agent: HealthQueryAgent,
+        patient_resolver: PatientNameResolver,
         settings: VoiceSettings,
     ) -> None:
         self._stt = stt
         self._tts = tts
         self._agent = agent
+        self._patient_resolver = patient_resolver
         self._settings = settings
+
+    async def greet(
+        self,
+        session: VoiceSession,
+        *,
+        send_json: SendJson,
+        send_bytes: SendBytes,
+    ) -> None:
+        """Send a spoken greeting when the voice session starts."""
+        try:
+            name = await self._patient_resolver.resolve_name(session.patient_id or session.user_id)
+            first_name = name.split()[0] if name else ""
+            greeting = f"Hi {first_name}, how can I help you today?" if first_name else "Hi, how can I help you today?"
+
+            await send_json({"type": "greeting", "text": greeting})
+            await self._speak(greeting, send_bytes, session)
+        except Exception:
+            logger.warning("Greeting failed for session %s", session.session_id, exc_info=True)
 
     async def handle_utterance(
         self,
