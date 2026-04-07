@@ -440,11 +440,10 @@ class MedicationService:
     async def _sync_qdrant(
         self, patient_id: str, session: AsyncSession
     ) -> None:
-        """Re-vectorize all active medications for a patient."""
+        """Re-vectorize all medications (current + past) for a patient."""
         result = await session.execute(
             select(PatientMedication).where(
                 PatientMedication.patient_id == patient_id,
-                PatientMedication.status.in_(["active", "as_needed"]),
             )
         )
         medications = result.scalars().all()
@@ -463,6 +462,8 @@ class MedicationService:
                 "doses": m.doses,
                 "food_timing": m.food_timing,
                 "purpose": m.purpose,
+                "status": m.status,
+                "start_date": str(m.start_date) if m.start_date else None,
                 "end_date": str(m.end_date) if m.end_date else None,
             }
             for m in medications

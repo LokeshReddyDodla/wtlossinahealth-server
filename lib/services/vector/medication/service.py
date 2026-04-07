@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class MedicationVectorService(BaseVectorService):
-    """Vectorizes a patient's active medications as a single Qdrant point."""
+    """Vectorizes all of a patient's medications (current + past) as a single Qdrant point."""
 
     def __init__(
         self, qdrant_store: QdrantStore, collection_name: str = "patient_data"
@@ -32,7 +32,7 @@ class MedicationVectorService(BaseVectorService):
         patient_age: int,
         patient_gender: str,
     ) -> dict[str, int]:
-        """Upsert a single vector point representing all active medications."""
+        """Upsert a single vector point representing all medications (current + past)."""
         try:
             text = self._build_text_repr(medications)
             if not text:
@@ -45,7 +45,7 @@ class MedicationVectorService(BaseVectorService):
                 "patient_id": patient_id,
                 "patient_age": patient_age,
                 "patient_gender": patient_gender,
-                "data_type": "active_medication",
+                "data_type": "medication",
                 "text_repr": text,
                 "medication_names": [m["name"] for m in medications],
                 "medication_count": len(medications),
@@ -122,7 +122,11 @@ class MedicationVectorService(BaseVectorService):
         for med in medications:
             name = med.get("name", "Unknown")
             strength = med.get("strength", "")
-            line = f"Patient takes {name}"
+            status = med.get("status", "active")
+
+            is_current = status in ("active", "as_needed")
+            verb = "takes" if is_current else "took"
+            line = f"Patient {verb} {name}"
             if strength:
                 line += f" {strength}"
 
@@ -140,9 +144,17 @@ class MedicationVectorService(BaseVectorService):
             if purpose:
                 line += f" for {purpose}"
 
-            end_date = med.get("end_date")
-            if end_date:
-                line += f". Course ends {end_date}."
+            if not is_current:
+                start = med.get("start_date")
+                end = med.get("end_date")
+                if start and end:
+                    line += f". Taken from {start} to {end}. Status: {status}."
+                elif end:
+                    line += f". Ended {end}. Status: {status}."
+                else:
+                    line += f". Status: {status}."
+            elif med.get("end_date"):
+                line += f". Course ends {med['end_date']}."
             else:
                 line += ". Ongoing."
 

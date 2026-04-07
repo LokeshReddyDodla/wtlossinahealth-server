@@ -50,7 +50,7 @@ class HealthDataType(str, Enum):
     FITNESS_PLAN = "fitness_plan"
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
-    ACTIVE_MEDICATION = "active_medication"
+    MEDICATION = "medication"
 
     @classmethod
     def _missing_(cls, value: object):
@@ -105,7 +105,7 @@ DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
     DomainName.PLANS: [HealthDataType.DIET_PLAN, HealthDataType.FITNESS_PLAN],
     DomainName.PROFILE: [HealthDataType.PROFILE],
     DomainName.DOCUMENTS: [HealthDataType.DOCUMENTS],
-    DomainName.MEDICATION: [HealthDataType.ACTIVE_MEDICATION],
+    DomainName.MEDICATION: [HealthDataType.MEDICATION],
 }
 
 # Reverse mapping: HealthDataType → DomainName
