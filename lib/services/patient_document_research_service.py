@@ -22,13 +22,11 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
     AiConversationService,
 )
 from lib.services.patient_document_service import PatientDocumentService
-from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
+from lib.services.medication_service import MedicationService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.utils.http_exceptions import raise_http_exception
-from lib.models.patient_prescription_legacy import (
-    PatientPrescriptionLegacy as PatientPrescriptionModel,
-)
+from lib.models.patient_prescription import PatientPrescription as PatientPrescriptionModel
 
 
 class PatientDocumentResearchService:
@@ -42,7 +40,7 @@ class PatientDocumentResearchService:
         patient_document_collection: Any,
         patient_document_summary_interactions_collection: Any,
         patient_document_service: PatientDocumentService,
-        prescription_service: PrescriptionService,
+        medication_service: MedicationService,
         weight_loss_agent_service: WeightLossAgentService,
         token_usage_service: TokenUsageService,
     ):
@@ -51,7 +49,7 @@ class PatientDocumentResearchService:
             patient_document_summary_interactions_collection
         )
         self.patient_document_service = patient_document_service
-        self.prescription_service = prescription_service
+        self.medication_service = medication_service
         self.weight_loss_agent_service = weight_loss_agent_service
         self.token_usage_service = token_usage_service
 
@@ -345,48 +343,8 @@ class PatientDocumentResearchService:
         patient_id: str,
         order: Optional[str] = "asc",
     ) -> List[Any]:
-        try:
-            return await self.prescription_service.fetch_prescriptions(
-                patient_id=patient_id,
-                order=order,
-            )
-        except HTTPException as exc:
-            if self._is_medicine_schema_mismatch(exc):
-                return await self._fetch_prescriptions_without_medicines(
-                    patient_id=patient_id,
-                    order=order,
-                )
-            raise
-
-    async def _fetch_prescriptions_without_medicines(
-        self,
-        patient_id: str,
-        order: Optional[str] = "asc",
-    ) -> List[Any]:
-        async with self.prescription_service.postgres_store.get_session() as session:
-            query = select(PatientPrescriptionModel).where(
-                PatientPrescriptionModel.patient_id == patient_id
-            )
-            if order == "asc":
-                query = query.order_by(
-                    asc(PatientPrescriptionModel.created_at)
-                )
-            else:
-                query = query.order_by(
-                    desc(PatientPrescriptionModel.created_at)
-                )
-            result = await session.execute(query)
-            return result.scalars().all()
-
-    def _is_medicine_schema_mismatch(self, exc: HTTPException) -> bool:
-        detail = ""
-        if isinstance(exc.detail, dict):
-            detail = str(exc.detail.get("detail", "")).lower()
-        else:
-            detail = str(exc.detail).lower()
-        return (
-            "patient_prescription_medicines" in detail
-            and "does not exist" in detail
+        return await self.medication_service.get_patient_prescriptions(
+            patient_id=patient_id,
         )
 
     async def _fetch_source_documents(

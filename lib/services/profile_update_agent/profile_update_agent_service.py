@@ -25,9 +25,6 @@ from lib.models.patient import Patient as PatientModel
 from lib.models.patient_alcohol_consumption import (
     PatientAlcoholConsumption as PatientAlcoholConsumptionModel,
 )
-from lib.models.patient_current_medication_legacy import (
-    PatientCurrentMedicationLegacy as PatientCurrentMedicationModel,
-)
 from lib.models.patient_daily_activity import (
     PatientDailyActivity as PatientDailyActivityModel,
 )
@@ -491,14 +488,6 @@ class ProfileUpdateAgentService:
             else:
                 patient.diabetic_history = PatientDiabeticHistoryModel(
                     patient_id=patient_id, type_of_diabetes=value
-                )
-
-        elif field == "has_medication":
-            if patient.current_medication_legacy:
-                patient.current_medication_legacy.has_medication = value
-            else:
-                patient.current_medication_legacy = PatientCurrentMedicationModel(
-                    patient_id=patient_id, has_medication=value
                 )
 
         elif field == "drug_allergies":

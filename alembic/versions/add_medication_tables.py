@@ -1,7 +1,7 @@
-"""Rename old prescription/medication tables to *_legacy, create new clean tables.
+"""Drop old prescription/medication tables, create new clean tables.
 
 Revision ID: add_medication_tables
-Revises: redesign_diet_fitness_plans
+Revises: f1cef9197757
 Create Date: 2026-04-08
 
 """
@@ -19,27 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Rename old tables to *_legacy ────────────────────────────────────
+    # ── Drop old tables ──────────────────────────────────────────────────
 
-    # Must rename child table first (FK references parent)
-    op.rename_table("patient_prescription_medicines", "patient_prescription_medicines_legacy")
-    op.rename_table("patient_prescriptions", "patient_prescriptions_legacy")
-    op.rename_table("patient_current_medication", "patient_current_medications_legacy")
-
-    # Update FK on legacy child table to point to renamed parent
-    op.drop_constraint(
-        "patient_prescription_medicines_prescription_id_fkey",
-        "patient_prescription_medicines_legacy",
-        type_="foreignkey",
-    )
-    op.create_foreign_key(
-        "patient_prescription_medicines_legacy_prescription_id_fkey",
-        "patient_prescription_medicines_legacy",
-        "patient_prescriptions_legacy",
-        ["prescription_id"],
-        ["prescription_id"],
-        ondelete="CASCADE",
-    )
+    # Child table first (FK references parent)
+    op.drop_table("patient_prescription_medicines")
+    op.drop_table("patient_prescriptions")
+    op.drop_table("patient_current_medication")
 
     # ── Create new patient_prescriptions ─────────────────────────────────
 
@@ -117,22 +102,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("patient_medications")
     op.drop_table("patient_prescriptions")
-
-    # Restore FK on legacy child table
-    op.drop_constraint(
-        "patient_prescription_medicines_legacy_prescription_id_fkey",
-        "patient_prescription_medicines_legacy",
-        type_="foreignkey",
-    )
-    op.create_foreign_key(
-        "patient_prescription_medicines_prescription_id_fkey",
-        "patient_prescription_medicines_legacy",
-        "patient_prescriptions_legacy",
-        ["prescription_id"],
-        ["prescription_id"],
-        ondelete="CASCADE",
-    )
-
-    op.rename_table("patient_current_medications_legacy", "patient_current_medication")
-    op.rename_table("patient_prescriptions_legacy", "patient_prescriptions")
-    op.rename_table("patient_prescription_medicines_legacy", "patient_prescription_medicines")

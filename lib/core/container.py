@@ -111,7 +111,6 @@ from lib.services.osteoflag_service import OsteoFlagService
 from lib.services.prescription_analysis_service import (
     PrescriptionAnalysisService,
 )
-from lib.services.prescription_service import PrescriptionServiceLegacy as PrescriptionService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
@@ -630,8 +629,8 @@ container.register(
         patient_document_service=cast(
             PatientDocumentService, container.resolve(PatientDocumentService)
         ),
-        prescription_service=cast(
-            PrescriptionService, container.resolve(PrescriptionService)
+        medication_service=cast(
+            MedicationService, container.resolve(MedicationService)
         ),
         weight_loss_agent_service=cast(
             WeightLossAgentService, container.resolve(WeightLossAgentService)
@@ -669,21 +668,6 @@ container.register(
         ),
         meal_vector_service=cast(
             MealVectorService, container.resolve(MealVectorService)
-        ),
-    ),
-)
-
-# 🔹 Prescription Service (legacy)
-container.register(
-    PrescriptionService,
-    lambda: PrescriptionService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        prescription_analysis_service=cast(
-            PrescriptionAnalysisService,
-            container.resolve(PrescriptionAnalysisService),
-        ),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
         ),
     ),
 )
