@@ -1699,6 +1699,7 @@ container.register(
         stt=cast(SpeechToText, container.resolve(SpeechToText)),
         tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
+        patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
     ),
     scope=Scope.singleton,

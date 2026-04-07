@@ -135,6 +135,12 @@ class VoiceConnectionHandler:
                         "Voice session started: %s (user=%s, thread=%s)",
                         session.session_id, user_id, session.thread_id,
                     )
+                    # Spoken greeting
+                    await self._orchestrator.greet(
+                        session,
+                        send_json=lambda d: self._send_json(websocket, d),
+                        send_bytes=lambda b: self._send_bytes(websocket, b),
+                    )
 
                 elif msg_type == "end_of_speech" and session is not None:
                     if session.has_audio:

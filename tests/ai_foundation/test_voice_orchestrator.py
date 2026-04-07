@@ -72,7 +72,7 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -133,7 +133,7 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: fake_run_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -160,7 +160,7 @@ class TestVoiceOrchestrator:
         )
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -185,7 +185,7 @@ class TestVoiceOrchestrator:
         mock_stt.transcribe.side_effect = RuntimeError("API error")
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), settings=settings,
+            stt=mock_stt, tts=AsyncMock(), agent=AsyncMock(), patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -222,7 +222,7 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: slow_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)
@@ -263,7 +263,7 @@ class TestVoiceOrchestrator:
         mock_agent.run_stream = MagicMock(side_effect=lambda i: capture_stream(i))
 
         orchestrator = VoiceOrchestrator(
-            stt=mock_stt, tts=mock_tts, agent=mock_agent, settings=settings,
+            stt=mock_stt, tts=mock_tts, agent=mock_agent, patient_resolver=AsyncMock(), settings=settings,
         )
 
         session = _session(settings)

@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
 from lib.ai_foundation.voice.config import VoiceSettings
@@ -60,12 +61,32 @@ class VoiceOrchestrator:
         stt: SpeechToText,
         tts: TextToSpeech,
         agent: HealthQueryAgent,
+        patient_resolver: PatientNameResolver,
         settings: VoiceSettings,
     ) -> None:
         self._stt = stt
         self._tts = tts
         self._agent = agent
+        self._patient_resolver = patient_resolver
         self._settings = settings
+
+    async def greet(
+        self,
+        session: VoiceSession,
+        *,
+        send_json: SendJson,
+        send_bytes: SendBytes,
+    ) -> None:
+        """Send a warm spoken greeting when the voice session starts."""
+        try:
+            name = await self._patient_resolver.resolve_name(session.patient_id or session.user_id)
+            first_name = name.split()[0] if name else ""
+            greeting = _pick_greeting(first_name)
+
+            await send_json({"type": "greeting", "text": greeting})
+            await self._speak(greeting, send_bytes, session)
+        except Exception:
+            logger.warning("Greeting failed for session %s", session.session_id, exc_info=True)
 
     async def handle_utterance(
         self,
@@ -239,3 +260,30 @@ class VoiceOrchestrator:
             pass
         except Exception:
             logger.error("TTS failed for session %s", session.session_id, exc_info=True)
+
+
+import random
+
+_GREETINGS_WITH_NAME = [
+    "Hey {name}! What's on your mind today?",
+    "Hi {name}! How are you doing? What would you like to check?",
+    "Hey {name}! Good to hear from you. What can I help with?",
+    "Hi {name}! What would you like to know today?",
+    "Hey {name}! Ready when you are. What's up?",
+    "Hi {name}! How's it going? Ask me anything.",
+    "Hey {name}! What can I look into for you today?",
+]
+
+_GREETINGS_NO_NAME = [
+    "Hey! What's on your mind today?",
+    "Hi there! What would you like to check?",
+    "Hey! Good to hear from you. What can I help with?",
+    "Hi! Ready when you are. What's up?",
+]
+
+
+def _pick_greeting(first_name: str) -> str:
+    """Pick a random warm greeting, using the patient's name if available."""
+    if first_name:
+        return random.choice(_GREETINGS_WITH_NAME).format(name=first_name)
+    return random.choice(_GREETINGS_NO_NAME)
