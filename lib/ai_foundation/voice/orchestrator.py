@@ -20,6 +20,7 @@ from typing import Any
 from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
+from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.voice.config import VoiceSettings
 from lib.ai_foundation.voice.protocol import (
     ResponseTextMsg,
@@ -62,12 +63,14 @@ class VoiceOrchestrator:
         tts: TextToSpeech,
         agent: HealthQueryAgent,
         patient_resolver: PatientNameResolver,
+        memory: MongoMemoryStore,
         settings: VoiceSettings,
     ) -> None:
         self._stt = stt
         self._tts = tts
         self._agent = agent
         self._patient_resolver = patient_resolver
+        self._memory = memory
         self._settings = settings
 
     async def greet(
@@ -77,16 +80,28 @@ class VoiceOrchestrator:
         send_json: SendJson,
         send_bytes: SendBytes,
     ) -> None:
-        """Send a spoken greeting when the voice session starts."""
+        """Send a personalized spoken greeting when the voice session starts."""
         try:
-            name = await self._patient_resolver.resolve_name(session.patient_id or session.user_id)
+            pid = session.patient_id or session.user_id
+
+            # Fetch name + facts in parallel
+            name_coro = self._patient_resolver.resolve_name(pid)
+            facts_coro = self._memory.get_patient_facts(pid)
+            name, facts = await asyncio.gather(name_coro, facts_coro)
+
             first_name = name.split()[0] if name else ""
-            greeting = f"Hi {first_name}, how can I help you today?" if first_name else "Hi, how can I help you today?"
+            greeting = _build_greeting(first_name, facts)
 
             await send_json({"type": "greeting", "text": greeting})
             await self._speak(greeting, send_bytes, session)
         except Exception:
             logger.warning("Greeting failed for session %s", session.session_id, exc_info=True)
+            # Fallback greeting
+            try:
+                await send_json({"type": "greeting", "text": "Hey, how can I help you today?"})
+                await self._speak("Hey, how can I help you today?", send_bytes, session)
+            except Exception:
+                pass
 
     async def handle_utterance(
         self,
@@ -260,3 +275,28 @@ class VoiceOrchestrator:
             pass
         except Exception:
             logger.error("TTS failed for session %s", session.session_id, exc_info=True)
+
+
+def _build_greeting(first_name: str, facts: list) -> str:
+    """Build a personal greeting from the patient's name and stored facts."""
+    name = first_name or "there"
+
+    # Try to find something personal to reference
+    goal = None
+    condition = None
+    for f in facts:
+        key = getattr(f, "key", "") or ""
+        value = getattr(f, "value", "") or ""
+        category = getattr(f, "category", "") or ""
+        if not goal and category == "goal" and value:
+            goal = value
+        if not condition and key in ("diagnosis", "condition", "medical_condition") and value:
+            condition = value
+        if goal:
+            break  # Goal is the best hook
+
+    if goal:
+        return f"Hey {name}! How's the {goal} journey going? What can I help with?"
+    if condition:
+        return f"Hey {name}! How are you feeling today? What would you like to check?"
+    return f"Hey {name}! What would you like to know about your health today?"
