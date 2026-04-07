@@ -94,7 +94,7 @@ class GamificationService:
                 )
         except Exception as exc:
             from loguru import logger
-            logger.debug(f"Feed event posting failed for {patient_id}: {exc}")
+            logger.warning(f"Feed event posting failed for {patient_id}: {exc}")
 
     # ── Player Profile ───────────────────────────────────────────────────
 
@@ -270,7 +270,8 @@ class GamificationService:
             await handler._update_quest_progress(patient_id, task.task_type)
             await handler._try_process_streak(patient_id)
         except Exception:
-            pass
+            from loguru import logger
+            logger.warning(f"Quest/streak progress update failed for {patient_id}")
 
         xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
             patient_id=patient_id,
