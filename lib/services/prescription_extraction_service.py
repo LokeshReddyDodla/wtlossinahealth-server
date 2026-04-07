@@ -71,7 +71,7 @@ class PrescriptionExtractionService:
             "Prescription extracted: %d medicines, %dms, $%.4f",
             len(extracted.medicines),
             meta.latency_ms,
-            meta.usage.cost if meta.usage else 0,
+            meta.usage.cost.total_cost if meta.usage else 0,
         )
 
         return extracted
