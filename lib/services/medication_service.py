@@ -48,6 +48,25 @@ class MedicationService:
         postgres_session: AsyncSession,
     ) -> PatientPrescription:
         """Save confirmed prescription and create/update active medications."""
+        # Prevent duplicate confirms — check if same file_urls already confirmed
+        if data.file_urls:
+            result = await postgres_session.execute(
+                select(PatientPrescription)
+                .where(
+                    PatientPrescription.patient_id == patient_id,
+                    PatientPrescription.status == "confirmed",
+                    PatientPrescription.file_urls == data.file_urls,
+                )
+                .options(selectinload(PatientPrescription.medications))
+            )
+            duplicate = result.scalars().first()
+            if duplicate:
+                logger.warning(
+                    "Duplicate prescription confirm for patient %s — same file_urls",
+                    patient_id,
+                )
+                return duplicate
+
         prescription = PatientPrescription(
             patient_id=patient_id,
             doctor_name=data.doctor_name,
@@ -89,21 +108,34 @@ class MedicationService:
         med_data: ConfirmedMedicine,
         session: AsyncSession,
     ) -> PatientMedication:
-        """Create a new medication, discontinuing any existing active one with the same name.
+        """Create or renew a medication, preserving history when something changed.
 
-        Never silently replaces — old medication is preserved with status=discontinued
-        so the health agent can see the full medication history and correlate changes.
+        - If same medicine exists with identical strength + doses → renewal:
+          just update prescription_id and extend end_date (nothing clinically changed).
+        - If same medicine exists but strength/doses differ → discontinue old,
+          create new (something changed — health agent needs to see the timeline).
+        - If no existing match → create fresh.
         """
-        # Discontinue any existing active medication with the same generic name
         existing = await self._find_active_by_name(
             patient_id, med_data.name, session
         )
+        doses_json = [d.model_dump() for d in med_data.doses]
+        new_status = "as_needed" if med_data.is_sos else "active"
+
+        # Check for exact match (renewal/refill — nothing changed)
+        for med in existing:
+            if self._is_same_medication(med, med_data, doses_json):
+                # Renewal — extend the course, link to new prescription
+                med.prescription_id = prescription_id
+                med.end_date = med_data.end_date
+                med.updated_at = datetime.now().replace(tzinfo=None)
+                return med
+
+        # Something changed (or no existing) — discontinue old, create new
         now = datetime.now().replace(tzinfo=None)
         for med in existing:
             med.status = "discontinued"
             med.discontinued_at = now
-
-        doses_json = [d.model_dump() for d in med_data.doses]
 
         medication = PatientMedication(
             patient_id=patient_id,
@@ -119,10 +151,32 @@ class MedicationService:
             doses=doses_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status="as_needed" if med_data.is_sos else "active",
+            status=new_status,
         )
         session.add(medication)
         return medication
+
+    @staticmethod
+    def _is_same_medication(
+        existing: PatientMedication,
+        new: ConfirmedMedicine,
+        new_doses_json: list[dict],
+    ) -> bool:
+        """Check if the medication is essentially the same (renewal, not a change)."""
+        if (existing.strength or "").lower().strip() != (new.strength or "").lower().strip():
+            return False
+
+        # Compare dose slots + quantities
+        existing_doses = sorted(
+            [(d.get("slot"), d.get("quantity", 1)) for d in (existing.doses or [])],
+        )
+        new_doses = sorted(
+            [(d.get("slot"), d.get("quantity", 1)) for d in new_doses_json],
+        )
+        if existing_doses != new_doses:
+            return False
+
+        return True
 
     async def _find_active_by_name(
         self,
