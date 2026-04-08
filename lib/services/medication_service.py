@@ -108,33 +108,29 @@ class MedicationService:
         med_data: ConfirmedMedicine,
         session: AsyncSession,
     ) -> PatientMedication:
-        """Create or renew a medication, preserving history when something changed.
+        """Always create a new medication record. Every prescription = new entry.
 
-        - If same medicine exists with identical strength + doses → renewal:
-          just update prescription_id and extend end_date (nothing clinically changed).
-        - If same medicine exists but strength/doses differ → discontinue old,
-          create new (something changed — health agent needs to see the timeline).
-        - If no existing match → create fresh.
+        - Same medicine, same everything (renewal): old marked "completed", new created.
+          Agent sees the full renewal timeline.
+        - Same medicine, something changed (dose/strength): old marked "discontinued",
+          new created. Agent can correlate why the change happened.
+        - No existing match: created fresh.
+
+        The status difference (completed vs discontinued) tells the agent WHY it ended.
         """
         existing = await self._find_active_by_name(
             patient_id, med_data.name, session
         )
         doses_json = [d.model_dump() for d in med_data.doses]
-        new_status = "as_needed" if med_data.is_sos else "active"
+        now = datetime.now().replace(tzinfo=None)
 
-        # Check for exact match (renewal/refill — nothing changed)
         for med in existing:
             if self._is_same_medication(med, med_data, doses_json):
-                # Renewal — extend the course, link to new prescription
-                med.prescription_id = prescription_id
-                med.end_date = med_data.end_date
-                med.updated_at = datetime.now().replace(tzinfo=None)
-                return med
-
-        # Something changed (or no existing) — discontinue old, create new
-        now = datetime.now().replace(tzinfo=None)
-        for med in existing:
-            med.status = "discontinued"
+                # Renewal — course finished naturally, continued with new prescription
+                med.status = "completed"
+            else:
+                # Something changed — doctor modified the medication
+                med.status = "discontinued"
             med.discontinued_at = now
 
         medication = PatientMedication(
