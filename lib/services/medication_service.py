@@ -62,7 +62,7 @@ class MedicationService:
         await postgres_session.flush()
 
         for med_data in data.medicines:
-            await self._upsert_medication(
+            await self._create_medication(
                 patient_id=patient_id,
                 prescription_id=prescription.prescription_id,
                 med_data=med_data,
@@ -82,38 +82,28 @@ class MedicationService:
 
         return prescription
 
-    async def _upsert_medication(
+    async def _create_medication(
         self,
         patient_id: str,
         prescription_id: UUID,
         med_data: ConfirmedMedicine,
         session: AsyncSession,
     ) -> PatientMedication:
-        """Create or update an active medication.
+        """Create a new medication, discontinuing any existing active one with the same name.
 
-        Dedup: same name (case-insensitive) + strength → update existing.
+        Never silently replaces — old medication is preserved with status=discontinued
+        so the health agent can see the full medication history and correlate changes.
         """
-        existing = await self._find_active_medication(
-            patient_id, med_data.name, med_data.strength, session
+        # Discontinue any existing active medication with the same generic name
+        existing = await self._find_active_by_name(
+            patient_id, med_data.name, session
         )
+        now = datetime.now().replace(tzinfo=None)
+        for med in existing:
+            med.status = "discontinued"
+            med.discontinued_at = now
 
         doses_json = [d.model_dump() for d in med_data.doses]
-
-        if existing:
-            existing.prescription_id = prescription_id
-            existing.brand_name = med_data.brand_name
-            existing.strength = med_data.strength
-            existing.formulation = med_data.formulation
-            existing.route = med_data.route
-            existing.food_timing = med_data.food_timing
-            existing.purpose = med_data.purpose
-            existing.instructions = med_data.instructions
-            existing.doses = doses_json
-            existing.start_date = med_data.start_date
-            existing.end_date = med_data.end_date
-            existing.status = "as_needed" if med_data.is_sos else "active"
-            existing.updated_at = datetime.now().replace(tzinfo=None)
-            return existing
 
         medication = PatientMedication(
             patient_id=patient_id,
@@ -134,25 +124,21 @@ class MedicationService:
         session.add(medication)
         return medication
 
-    async def _find_active_medication(
+    async def _find_active_by_name(
         self,
         patient_id: str,
         name: str,
-        strength: str | None,
         session: AsyncSession,
-    ) -> PatientMedication | None:
-        """Find existing active medication by name + strength."""
-        query = select(PatientMedication).where(
-            PatientMedication.patient_id == patient_id,
-            PatientMedication.status.in_(["active", "as_needed"]),
-            PatientMedication.name.ilike(name.strip()),
-        )
-        if strength:
-            query = query.where(
-                PatientMedication.strength.ilike(strength.strip())
+    ) -> list[PatientMedication]:
+        """Find all active medications matching a generic name (case-insensitive)."""
+        result = await session.execute(
+            select(PatientMedication).where(
+                PatientMedication.patient_id == patient_id,
+                PatientMedication.status.in_(["active", "as_needed"]),
+                PatientMedication.name.ilike(name.strip()),
             )
-        result = await session.execute(query)
-        return result.scalars().first()
+        )
+        return list(result.scalars().all())
 
     # ── Read operations ──────────────────────────────────────────────────
 
