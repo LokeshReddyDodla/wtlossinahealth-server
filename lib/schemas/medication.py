@@ -79,7 +79,7 @@ class ConfirmPrescriptionRequest(BaseModel):
     doctor_name: str | None = None
     prescription_date: date | None = None
     file_urls: list[str]
-    medicines: list[ConfirmedMedicine]
+    medicines: list[ConfirmedMedicine] = Field(..., min_length=1)
     follow_up_required: bool = False
     follow_up_date: date | None = None
     notes: str | None = None

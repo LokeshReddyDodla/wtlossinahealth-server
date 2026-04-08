@@ -48,6 +48,25 @@ class MedicationService:
         postgres_session: AsyncSession,
     ) -> PatientPrescription:
         """Save confirmed prescription and create/update active medications."""
+        # Prevent duplicate confirms — check if same file_urls already confirmed
+        if data.file_urls:
+            result = await postgres_session.execute(
+                select(PatientPrescription)
+                .where(
+                    PatientPrescription.patient_id == patient_id,
+                    PatientPrescription.status == "confirmed",
+                    PatientPrescription.file_urls == data.file_urls,
+                )
+                .options(selectinload(PatientPrescription.medications))
+            )
+            duplicate = result.scalars().first()
+            if duplicate:
+                logger.warning(
+                    "Duplicate prescription confirm for patient %s — same file_urls",
+                    patient_id,
+                )
+                return duplicate
+
         prescription = PatientPrescription(
             patient_id=patient_id,
             doctor_name=data.doctor_name,
@@ -62,7 +81,7 @@ class MedicationService:
         await postgres_session.flush()
 
         for med_data in data.medicines:
-            await self._upsert_medication(
+            await self._create_medication(
                 patient_id=patient_id,
                 prescription_id=prescription.prescription_id,
                 med_data=med_data,
@@ -82,38 +101,37 @@ class MedicationService:
 
         return prescription
 
-    async def _upsert_medication(
+    async def _create_medication(
         self,
         patient_id: str,
         prescription_id: UUID,
         med_data: ConfirmedMedicine,
         session: AsyncSession,
     ) -> PatientMedication:
-        """Create or update an active medication.
+        """Always create a new medication record. Every prescription = new entry.
 
-        Dedup: same name (case-insensitive) + strength → update existing.
+        - Same medicine, same everything (renewal): old marked "completed", new created.
+          Agent sees the full renewal timeline.
+        - Same medicine, something changed (dose/strength): old marked "discontinued",
+          new created. Agent can correlate why the change happened.
+        - No existing match: created fresh.
+
+        The status difference (completed vs discontinued) tells the agent WHY it ended.
         """
-        existing = await self._find_active_medication(
-            patient_id, med_data.name, med_data.strength, session
+        existing = await self._find_active_by_name(
+            patient_id, med_data.name, session
         )
-
         doses_json = [d.model_dump() for d in med_data.doses]
+        now = datetime.now().replace(tzinfo=None)
 
-        if existing:
-            existing.prescription_id = prescription_id
-            existing.brand_name = med_data.brand_name
-            existing.strength = med_data.strength
-            existing.formulation = med_data.formulation
-            existing.route = med_data.route
-            existing.food_timing = med_data.food_timing
-            existing.purpose = med_data.purpose
-            existing.instructions = med_data.instructions
-            existing.doses = doses_json
-            existing.start_date = med_data.start_date
-            existing.end_date = med_data.end_date
-            existing.status = "as_needed" if med_data.is_sos else "active"
-            existing.updated_at = datetime.now().replace(tzinfo=None)
-            return existing
+        for med in existing:
+            if self._is_same_medication(med, med_data, doses_json):
+                # Renewal — course finished naturally, continued with new prescription
+                med.status = "completed"
+            else:
+                # Something changed — doctor modified the medication
+                med.status = "discontinued"
+            med.discontinued_at = now
 
         medication = PatientMedication(
             patient_id=patient_id,
@@ -129,30 +147,48 @@ class MedicationService:
             doses=doses_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status="as_needed" if med_data.is_sos else "active",
+            status=new_status,
         )
         session.add(medication)
         return medication
 
-    async def _find_active_medication(
+    @staticmethod
+    def _is_same_medication(
+        existing: PatientMedication,
+        new: ConfirmedMedicine,
+        new_doses_json: list[dict],
+    ) -> bool:
+        """Check if the medication is essentially the same (renewal, not a change)."""
+        if (existing.strength or "").lower().strip() != (new.strength or "").lower().strip():
+            return False
+
+        # Compare dose slots + quantities
+        existing_doses = sorted(
+            [(d.get("slot"), d.get("quantity", 1)) for d in (existing.doses or [])],
+        )
+        new_doses = sorted(
+            [(d.get("slot"), d.get("quantity", 1)) for d in new_doses_json],
+        )
+        if existing_doses != new_doses:
+            return False
+
+        return True
+
+    async def _find_active_by_name(
         self,
         patient_id: str,
         name: str,
-        strength: str | None,
         session: AsyncSession,
-    ) -> PatientMedication | None:
-        """Find existing active medication by name + strength."""
-        query = select(PatientMedication).where(
-            PatientMedication.patient_id == patient_id,
-            PatientMedication.status.in_(["active", "as_needed"]),
-            PatientMedication.name.ilike(name.strip()),
-        )
-        if strength:
-            query = query.where(
-                PatientMedication.strength.ilike(strength.strip())
+    ) -> list[PatientMedication]:
+        """Find all active medications matching a generic name (case-insensitive)."""
+        result = await session.execute(
+            select(PatientMedication).where(
+                PatientMedication.patient_id == patient_id,
+                PatientMedication.status.in_(["active", "as_needed"]),
+                PatientMedication.name.ilike(name.strip()),
             )
-        result = await session.execute(query)
-        return result.scalars().first()
+        )
+        return list(result.scalars().all())
 
     # ── Read operations ──────────────────────────────────────────────────
 

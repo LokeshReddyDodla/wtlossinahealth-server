@@ -302,6 +302,29 @@ async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
 # ── Medication cron tasks ────────────────────────────────────────────────
 
 
+async def _send_medication_notification(
+    patient_id: str,
+    *,
+    title: str,
+    body: str,
+    data: dict[str, Any] | None = None,
+) -> None:
+    """FCM notification on the 'reminders' channel — separate from gamification."""
+    try:
+        from lib.services.fcm_service import FCMService
+
+        await FCMService().send_fcm_notification_to_user_devices(
+            user_id=patient_id,
+            title=title,
+            body=body,
+            channel_key="reminders",
+            group_key="reminder_group",
+            data={"type": "medication", **(data or {})},
+        )
+    except Exception as exc:
+        logger.warning("Failed medication notification for %s: %s", patient_id, exc)
+
+
 _MEDICATION_REMINDER_SLOTS = {
     10: "TAKE_MEDICATION_MORNING",
     15: "TAKE_MEDICATION_AFTERNOON",
@@ -319,13 +342,11 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
     from lib.core.postgres_store import PostgresStore
     from lib.models.gamification import DailyTask
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
-    from lib.services.gamification.notifications import send_gamification_notification
     from lib.schemas.gamification import TaskStatus
 
     store = container.resolve(PostgresStore)
     resolver = container.resolve(PatientNameResolver)
 
-    # Get all patients who have active medications
     from lib.models.patient_medication import PatientMedication
 
     async with store.get_session() as session:
@@ -364,7 +385,7 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
 
                 if pending_task:
                     slot_name = task_type.replace("TAKE_MEDICATION_", "").lower()
-                    await send_gamification_notification(
+                    await _send_medication_notification(
                         str(pid),
                         title="Medication reminder",
                         body=f"Time to take your {slot_name} medications",
@@ -435,7 +456,7 @@ async def send_refill_reminders(ctx: Dict[str, Any]) -> None:
                 continue
 
             name = f"{med.name} {med.strength}" if med.strength else med.name
-            await send_gamification_notification(
+            await _send_medication_notification(
                 pid,
                 title="Course ending soon",
                 body=f"Your {name} course ends in 3 days. Contact your doctor if you need a refill.",
