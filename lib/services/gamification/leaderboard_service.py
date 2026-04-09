@@ -53,7 +53,8 @@ class LeaderboardService:
             next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
             period_end = next_month - timedelta(days=1)
         else:
-            period_start = today - timedelta(days=30)
+            # streak and other non-periodic boards use today as period_start
+            period_start = today
             period_end = today
 
         result = await postgres_session.execute(
