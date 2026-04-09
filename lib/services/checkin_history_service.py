@@ -57,24 +57,21 @@ class CheckinHistoryService:
         end = end_date or today
         start = start_date or (end - timedelta(days=limit - 1))
 
-        # Run all queries in parallel
-        (
-            sleep_rows,
-            mood_rows,
-            symptom_rows,
-            task_rows,
-            xp_rows,
-            profile,
-            insights,
-        ) = await asyncio.gather(
-            self._fetch_sleep(postgres_session, patient_id, start, end),
-            self._fetch_moods(postgres_session, patient_id, start, end),
-            self._fetch_symptoms(postgres_session, patient_id, start, end),
-            self._fetch_tasks(postgres_session, patient_id, start, end),
-            self._fetch_xp_per_day(postgres_session, patient_id, start, end),
-            self._fetch_profile(postgres_session, patient_id),
-            self._fetch_insights(patient_id, start, end),
+        # Start MongoDB query in background (different DB, safe to parallelize)
+        insights_task = asyncio.create_task(
+            self._fetch_insights(patient_id, start, end)
         )
+
+        # PostgreSQL queries run sequentially on the same session
+        # (async SQLAlchemy doesn't allow concurrent ops on one session)
+        sleep_rows = await self._fetch_sleep(postgres_session, patient_id, start, end)
+        mood_rows = await self._fetch_moods(postgres_session, patient_id, start, end)
+        symptom_rows = await self._fetch_symptoms(postgres_session, patient_id, start, end)
+        task_rows = await self._fetch_tasks(postgres_session, patient_id, start, end)
+        xp_rows = await self._fetch_xp_per_day(postgres_session, patient_id, start, end)
+        profile = await self._fetch_profile(postgres_session, patient_id)
+
+        insights = await insights_task
 
         # Build lookup maps
         sleep_map = {r.checkin_date: r for r in sleep_rows}
