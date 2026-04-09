@@ -22,6 +22,7 @@ from lib.services.gamification.time_utils import local_now
 
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
+    from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.services.gamification.service import GamificationService
@@ -39,6 +40,7 @@ class AgentContext(BaseModel):
     recent_insights: list[dict] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
     gamification: dict[str, Any] | None = None
+    medications_text: str | None = None  # all medications (active + past) from Qdrant
     # Panel (multi-patient) mode — keyed by patient_id
     panel_facts: dict[str, list[dict]] = Field(default_factory=dict)
     panel_insights: dict[str, list[dict]] = Field(default_factory=dict)
@@ -97,6 +99,9 @@ def build_context_messages(
             f"- Active challenges: {g.get('active_challenges', [])}\n"
             f"- Buddy streak: {g.get('buddy_streak') or 0}"
         )
+
+    if context.medications_text:
+        context_parts.append(f"Patient Medications:\n{context.medications_text}")
 
     if context_parts:
         messages.append({
@@ -209,11 +214,13 @@ class ContextLoader:
         patient_resolver: PatientNameResolver | None = None,
         insight_tracker: InsightTracker | None = None,
         gamification_service: GamificationService | None = None,
+        retriever: QdrantRetriever | None = None,
     ) -> None:
         self._memory = memory
         self._resolver = patient_resolver
         self._insight_tracker = insight_tracker
         self._gamification_service = gamification_service
+        self._retriever = retriever
 
     async def load(
         self,
@@ -250,7 +257,7 @@ class ContextLoader:
             )
 
         # Single-patient mode: original behaviour
-        facts, history, summary, names, insights, gamification, local_time = await asyncio.gather(
+        facts, history, summary, names, insights, gamification, local_time, medications_text = await asyncio.gather(
             self._load_facts(patient_id),
             self._load_history(thread_id),
             self._load_summary(thread_id),
@@ -258,6 +265,7 @@ class ContextLoader:
             self._load_recent_insights(patient_id),
             self._load_gamification(patient_id),
             self._load_local_time(patient_id),
+            self._load_medications(patient_id),
         )
 
         return AgentContext(
@@ -268,6 +276,7 @@ class ContextLoader:
             recent_insights=insights,
             gamification=gamification,
             local_time=local_time,
+            medications_text=medications_text,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -279,6 +288,26 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to load patient facts: %s", exc)
             return []
+
+    async def _load_medications(self, patient_id: str | None) -> str | None:
+        """Load all medications from Qdrant (no date filter — persistent context)."""
+        if not self._retriever or not patient_id:
+            return None
+        try:
+            from lib.ai_foundation.retrieval.base import RetrievalRequest
+
+            results = await self._retriever.retrieve_filtered(
+                RetrievalRequest(
+                    patient_ids=[patient_id],
+                    data_types=["medication"],
+                    limit=1,
+                )
+            )
+            if results:
+                return results[0].payload.get("text_repr", "")
+        except Exception as exc:
+            logger.debug("Failed to load medications: %s", exc)
+        return None
 
     async def _load_history(self, thread_id: str | None) -> list[dict[str, str]]:
         if not self._memory or not thread_id:

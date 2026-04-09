@@ -64,6 +64,12 @@ class InsightCategory(str, Enum):
     TARGET_HIT = "target_hit"
     IMPROVEMENT_TREND = "improvement_trend"
 
+    # Coaching nudges (LLM-generated, actionable recommendations)
+    COACHING_HABIT = "coaching_habit"
+    COACHING_CELEBRATION = "coaching_celebration"
+    COACHING_CORRECTION = "coaching_correction"
+    COACHING_MEDICATION = "coaching_medication"
+
     # Static only (generated without LLM, never by LLM)
     MEAL_MISSED = "meal_missed"
     ENGAGEMENT_DROP = "engagement_drop"
