@@ -76,9 +76,10 @@ class ConfirmedMedicine(BaseModel):
 
 
 class ConfirmPrescriptionRequest(BaseModel):
+    prescription_id: str | None = None  # if confirming an existing draft
     doctor_name: str | None = None
     prescription_date: date | None = None
-    file_urls: list[str]
+    file_urls: list[str] = Field(default_factory=list)
     medicines: list[ConfirmedMedicine] = Field(..., min_length=1)
     follow_up_required: bool = False
     follow_up_date: date | None = None
@@ -116,6 +117,9 @@ class PrescriptionResponse(BaseModel):
     prescription_date: date | None = None
     file_urls: list[str] = Field(default_factory=list)
     status: str
+    extracted_data: dict | None = None
+    uploaded_by_id: str | None = None
+    uploaded_by_type: str | None = None
     follow_up_required: bool = False
     follow_up_date: date | None = None
     notes: str | None = None

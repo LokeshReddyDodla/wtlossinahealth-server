@@ -1,4 +1,4 @@
-"""POST /prescriptions/{patient_id}/preview — extract structured data from prescription images."""
+"""POST /prescriptions/{patient_id}/preview — upload, extract, and save as draft."""
 
 from typing import List
 
@@ -6,13 +6,13 @@ from fastapi import Depends, UploadFile, File, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_prescription_extraction_service
+from lib.dependencies.service_dependencies import (
+    get_medication_service,
+    get_prescription_extraction_service,
+)
+from lib.services.medication_service import MedicationService
 from lib.services.prescription_extraction_service import PrescriptionExtractionService
 from lib.utils.s3_utils import upload_file_to_s3
-from lib.utils.care_provider_permissions import (
-    CareProviderFeature,
-    CareProviderPermissionAction,
-)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -31,19 +31,20 @@ async def preview_prescription(
     extraction_service: PrescriptionExtractionService = Depends(
         get_prescription_extraction_service
     ),
+    medication_service: MedicationService = Depends(get_medication_service),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[
                 ProfileTypeEnum.ADMIN,
                 ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.PATIENT,
             ],
-            care_provider_feature=CareProviderFeature.REPORTS,
-            care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
 ):
-    """Upload one or more prescription images, extract structured data for confirmation."""
+    """Upload prescription images, extract structured data, save as draft."""
     try:
+        # Upload to S3
         file_urls = []
         for file in files:
             file_bytes = await file.read()
@@ -63,12 +64,24 @@ async def preview_prescription(
                 message="Failed to upload prescription files",
             )
 
+        # Extract via LLM
         extracted = await extraction_service.extract(image_urls=file_urls)
 
+        # Save as draft
+        draft = await medication_service.save_draft_prescription(
+            patient_id=patient_id,
+            file_urls=file_urls,
+            extracted_data=extracted.model_dump(mode="json"),
+            uploaded_by_id=str(current_actor.id),
+            uploaded_by_type=current_actor.role.value,
+        )
+
         return SuccessResponse(
-            message="Prescription data extracted successfully",
+            message="Prescription uploaded and saved as draft",
             data={
+                "prescription_id": str(draft.prescription_id),
                 "file_urls": file_urls,
+                "status": draft.status,
                 "extracted": extracted.model_dump(mode="json"),
             },
         )
