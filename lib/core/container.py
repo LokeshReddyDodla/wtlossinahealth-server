@@ -703,7 +703,6 @@ container.register(
     CheckinHistoryService,
     lambda: CheckinHistoryService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
     ),
 )
 

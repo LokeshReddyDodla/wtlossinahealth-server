@@ -48,14 +48,6 @@ class CheckinDay(BaseModel):
     tasks_completed: list[str] = Field(default_factory=list)
 
 
-class CheckinInsight(BaseModel):
-    insight_id: str
-    category: str
-    severity: str
-    title: str
-    body: str
-
-
 class WeeklyRecap(BaseModel):
     week_label: str
     dominant_mood_level: int | None = None
@@ -86,6 +78,5 @@ class CheckinSummary(BaseModel):
 class CheckinHistoryResponse(BaseModel):
     days: list[CheckinDay] = Field(default_factory=list)
     summary: CheckinSummary = Field(default_factory=CheckinSummary)
-    insights: list[CheckinInsight] = Field(default_factory=list)
     weekly_recaps: list[WeeklyRecap] = Field(default_factory=list)
     total: int = 0
