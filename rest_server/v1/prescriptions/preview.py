@@ -67,6 +67,13 @@ async def preview_prescription(
         # Extract via LLM
         extracted = await extraction_service.extract(image_urls=file_urls)
 
+        # Validate — must look like an actual prescription
+        if not extracted.medicines:
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="This doesn't look like a prescription. Please upload a clear image of a medical prescription.",
+            )
+
         # Save as draft
         draft = await medication_service.save_draft_prescription(
             patient_id=patient_id,
