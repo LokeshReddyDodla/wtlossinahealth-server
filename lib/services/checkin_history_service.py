@@ -28,7 +28,6 @@ from lib.schemas.checkin_history import (
     SymptomSnapshot,
     WeeklyRecap,
 )
-from lib.utils.postgres_session_decorator import with_postgres_session
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,6 @@ class CheckinHistoryService:
         self.postgres_store = postgres_store
         self.insight_tracker = insight_tracker
 
-    @with_postgres_session
     async def get_history(
         self,
         patient_id: str,
@@ -50,14 +48,19 @@ class CheckinHistoryService:
         end_date: date | None = None,
         limit: int = 30,
         offset: int = 0,
-        *,
-        postgres_session: AsyncSession,
     ) -> CheckinHistoryResponse:
         today = date.today()
         end = end_date or today
         start = start_date or (end - timedelta(days=limit - 1))
 
-        # Run all queries in parallel
+        # All queries in parallel — each PostgreSQL query gets its own session
+        # (async SQLAlchemy doesn't allow concurrent ops on one session)
+        store = self.postgres_store
+
+        async def _with_session(coro_fn, *args):
+            async with store.get_session() as session:
+                return await coro_fn(session, *args)
+
         (
             sleep_rows,
             mood_rows,
@@ -67,12 +70,12 @@ class CheckinHistoryService:
             profile,
             insights,
         ) = await asyncio.gather(
-            self._fetch_sleep(postgres_session, patient_id, start, end),
-            self._fetch_moods(postgres_session, patient_id, start, end),
-            self._fetch_symptoms(postgres_session, patient_id, start, end),
-            self._fetch_tasks(postgres_session, patient_id, start, end),
-            self._fetch_xp_per_day(postgres_session, patient_id, start, end),
-            self._fetch_profile(postgres_session, patient_id),
+            _with_session(self._fetch_sleep, patient_id, start, end),
+            _with_session(self._fetch_moods, patient_id, start, end),
+            _with_session(self._fetch_symptoms, patient_id, start, end),
+            _with_session(self._fetch_tasks, patient_id, start, end),
+            _with_session(self._fetch_xp_per_day, patient_id, start, end),
+            _with_session(self._fetch_profile, patient_id),
             self._fetch_insights(patient_id, start, end),
         )
 
