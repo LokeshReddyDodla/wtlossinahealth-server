@@ -447,7 +447,7 @@ class ProactiveMonitorAgent(BaseAgent):
         try:
             from lib.ai_foundation.retrieval.base import RetrievalRequest
 
-            results = await self.qdrant.retrieve_filtered(
+            results = await self._qdrant.retrieve_filtered(
                 RetrievalRequest(
                     patient_ids=[patient_id],
                     data_types=["medication"],
