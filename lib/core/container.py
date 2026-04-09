@@ -1558,6 +1558,7 @@ container.register(
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         gamification_service=cast(GamificationService, container.resolve(GamificationService)),
+        retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
     ),
     scope=Scope.singleton,
 )

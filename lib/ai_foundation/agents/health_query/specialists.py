@@ -71,7 +71,10 @@ GLUCOSE_SPEC = DomainSpec(
         "- Hypo/hyper event clustering and triggers\n"
         "- Day-to-day and week-to-week trends\n"
         "- Compare against the patient's OWN baseline, not population norms\n"
-        "- When reporting spikes or unusual readings, note exact time when available — helps correlate with meals and activity"
+        "- When reporting spikes or unusual readings, note exact time when available — helps correlate with meals and activity\n"
+        "- Consider the patient's medications when analyzing glucose. Metformin lowers fasting glucose. "
+        "GLP-1 agonists reduce appetite and post-meal spikes. Insulin timing affects when glucose drops. "
+        "Don't attribute patterns solely to meals/activity when medication is likely the driver."
         + _LANE_RULE
     ),
 )
@@ -90,7 +93,8 @@ NUTRITION_SPEC = DomainSpec(
         "- Fitness plan goals: reference step goals, workout schedules, weekly active minutes\n"
         "- Plan adherence: are they hitting their plan targets? Where are the gaps?\n"
         "- Specific, actionable food recommendations based on their actual data and plan\n"
-        "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses"
+        "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses\n"
+        "- GLP-1 medications reduce appetite. If the patient is eating less, check if they recently started or increased GLP-1. Expected, not concerning."
         + _LANE_RULE
     ),
 )

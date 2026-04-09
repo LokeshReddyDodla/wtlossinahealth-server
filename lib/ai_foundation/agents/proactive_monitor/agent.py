@@ -190,8 +190,11 @@ class ProactiveMonitorAgent(BaseAgent):
                 ", ".join(f"{k}={v}" for k, v in domain_counts.items()) or "no data",
             )
 
-            # 3. Load patient facts for context
+            # 3. Load patient facts + medications for context
             facts_text = await self._load_facts(patient_id)
+            med_text = await self._load_medications(patient_id)
+            if med_text:
+                facts_text = f"{facts_text}\n\nPatient Medications:\n{med_text}" if facts_text else f"Patient Medications:\n{med_text}"
 
             # 4. Langfuse tracing — log what the LLM will see
             await _maybe_await(self.gateway.set_langfuse_context(
@@ -438,6 +441,24 @@ class ProactiveMonitorAgent(BaseAgent):
             return "\n\n".join(parts)
         except Exception:
             return ""
+
+    async def _load_medications(self, patient_id: str) -> str:
+        """Load all medications from Qdrant (no date filter — persistent context)."""
+        try:
+            from lib.ai_foundation.retrieval.base import RetrievalRequest
+
+            results = await self._qdrant.retrieve_filtered(
+                RetrievalRequest(
+                    patient_ids=[patient_id],
+                    data_types=["medication"],
+                    limit=1,
+                )
+            )
+            if results:
+                return results[0].payload.get("text_repr", "")
+        except Exception:
+            pass
+        return ""
 
     async def _analyze_data(
         self,

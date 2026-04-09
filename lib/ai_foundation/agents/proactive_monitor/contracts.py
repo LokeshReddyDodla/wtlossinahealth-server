@@ -64,6 +64,12 @@ class InsightCategory(str, Enum):
     TARGET_HIT = "target_hit"
     IMPROVEMENT_TREND = "improvement_trend"
 
+    # Coaching nudges (LLM-generated, actionable recommendations)
+    COACHING_HABIT = "coaching_habit"
+    COACHING_CELEBRATION = "coaching_celebration"
+    COACHING_CORRECTION = "coaching_correction"
+    COACHING_MEDICATION = "coaching_medication"
+
     # Static only (generated without LLM, never by LLM)
     MEAL_MISSED = "meal_missed"
     ENGAGEMENT_DROP = "engagement_drop"
@@ -90,6 +96,12 @@ _POSITIVE_CATEGORIES = [
     InsightCategory.STREAK_MAINTAINED, InsightCategory.TARGET_HIT,
     InsightCategory.IMPROVEMENT_TREND,
 ]
+_COACHING_CATEGORIES = [
+    InsightCategory.COACHING_HABIT,
+    InsightCategory.COACHING_CELEBRATION,
+    InsightCategory.COACHING_CORRECTION,
+    InsightCategory.COACHING_MEDICATION,
+]
 _CROSS_DOMAIN_CATEGORIES = [
     InsightCategory.SLEEP_GLUCOSE_CORRELATION,
     InsightCategory.SLEEP_MOOD_CORRELATION,
@@ -103,6 +115,7 @@ LLM_INSIGHT_CATEGORIES_PROMPT = (
     f"Concerns: {', '.join(c.value for c in _CONCERN_CATEGORIES)}\n"
     f"Positives: {', '.join(c.value for c in _POSITIVE_CATEGORIES)}\n"
     f"Cross-domain: {', '.join(c.value for c in _CROSS_DOMAIN_CATEGORIES)}\n"
+    f"Coaching nudges: {', '.join(c.value for c in _COACHING_CATEGORIES)}\n"
     "Neutral: general"
 )
 

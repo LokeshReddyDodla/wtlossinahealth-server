@@ -26,7 +26,12 @@ Check each of these:
 - Were meal timing patterns explored when relevant?
 - Were other relevant domains checked ($available_data_types)?
 
-### 4. Safety check
+### 4. Was medication context considered?
+- If glucose patterns were analyzed, was the patient's medication factored in?
+- If symptoms were reported, were they checked against known medication side effects?
+- If a medication was recently started or changed, was the timeline correlated with health data changes?
+
+### 5. Safety check
 - Are there dangerously low glucose readings (< 54 mg/dL) that need flagging?
 - Are there repeated severe spikes that suggest poor control?
 - Any patterns that warrant "discuss with your care team"?
