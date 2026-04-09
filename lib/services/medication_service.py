@@ -39,45 +39,115 @@ class MedicationService:
 
     # ── Prescription + Medication creation ────────────────────────────────
 
+    # ── Draft ─────────────────────────────────────────────────────────────
+
     @with_postgres_session
-    async def create_prescription_with_medications(
+    async def save_draft_prescription(
+        self,
+        patient_id: str,
+        file_urls: list[str],
+        extracted_data: dict,
+        uploaded_by_id: str,
+        uploaded_by_type: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientPrescription:
+        """Save a draft prescription with LLM-extracted data. No medications created yet."""
+        # Check for duplicate draft with same file_urls
+        if file_urls:
+            result = await postgres_session.execute(
+                select(PatientPrescription).where(
+                    PatientPrescription.patient_id == patient_id,
+                    PatientPrescription.file_urls == file_urls,
+                )
+            )
+            existing = result.scalars().first()
+            if existing:
+                # Update extraction data on existing draft
+                existing.extracted_data = extracted_data
+                existing.updated_at = datetime.now().replace(tzinfo=None)
+                await postgres_session.commit()
+                return existing
+
+        prescription = PatientPrescription(
+            patient_id=patient_id,
+            file_urls=file_urls,
+            status="draft",
+            extracted_data=extracted_data,
+            uploaded_by_id=uploaded_by_id,
+            uploaded_by_type=uploaded_by_type,
+        )
+        postgres_session.add(prescription)
+        await postgres_session.commit()
+        await postgres_session.refresh(prescription)
+        return prescription
+
+    # ── Confirm ──────────────────────────────────────────────────────────
+
+    @with_postgres_session
+    async def confirm_prescription(
         self,
         patient_id: str,
         data: ConfirmPrescriptionRequest,
         *,
         postgres_session: AsyncSession,
     ) -> PatientPrescription:
-        """Save confirmed prescription and create/update active medications."""
-        # Prevent duplicate confirms — check if same file_urls already confirmed
-        if data.file_urls:
+        """Confirm a prescription (draft or new) and create active medications."""
+        prescription: PatientPrescription | None = None
+
+        # If confirming an existing draft
+        if data.prescription_id:
             result = await postgres_session.execute(
                 select(PatientPrescription)
                 .where(
+                    PatientPrescription.prescription_id == data.prescription_id,
                     PatientPrescription.patient_id == patient_id,
-                    PatientPrescription.status == "confirmed",
-                    PatientPrescription.file_urls == data.file_urls,
                 )
                 .options(selectinload(PatientPrescription.medications))
             )
-            duplicate = result.scalars().first()
-            if duplicate:
+            prescription = result.scalars().first()
+
+            if not prescription:
+                from lib.utils.http_exceptions import raise_http_exception
+                raise_http_exception(
+                    status_code=404,
+                    message="Prescription not found",
+                )
+
+            if prescription.status == "confirmed":
                 logger.warning(
-                    "Duplicate prescription confirm for patient %s — same file_urls",
+                    "Prescription %s already confirmed for patient %s",
+                    data.prescription_id,
                     patient_id,
                 )
-                return duplicate
+                return prescription
 
-        prescription = PatientPrescription(
-            patient_id=patient_id,
-            doctor_name=data.doctor_name,
-            prescription_date=data.prescription_date,
-            file_urls=data.file_urls,
-            status="confirmed",
-            follow_up_required=data.follow_up_required,
-            follow_up_date=data.follow_up_date,
-            notes=data.notes,
-        )
-        postgres_session.add(prescription)
+        if prescription:
+            # Update the draft with confirmed data
+            prescription.doctor_name = data.doctor_name
+            prescription.prescription_date = data.prescription_date
+            if data.file_urls:
+                prescription.file_urls = data.file_urls
+            prescription.status = "confirmed"
+            prescription.follow_up_required = data.follow_up_required
+            prescription.follow_up_date = data.follow_up_date
+            prescription.notes = data.notes
+            prescription.extracted_data = None  # clear draft data
+            prescription.updated_at = datetime.now().replace(tzinfo=None)
+        else:
+            # Direct confirm without draft
+            prescription = PatientPrescription(
+                patient_id=patient_id,
+                doctor_name=data.doctor_name,
+                prescription_date=data.prescription_date,
+                file_urls=data.file_urls,
+                status="confirmed",
+                follow_up_required=data.follow_up_required,
+                follow_up_date=data.follow_up_date,
+                notes=data.notes,
+            )
+            postgres_session.add(prescription)
+
         await postgres_session.flush()
 
         for med_data in data.medicines:
@@ -147,7 +217,7 @@ class MedicationService:
             doses=doses_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status=new_status,
+            status="as_needed" if med_data.is_sos else "active",
         )
         session.add(medication)
         return medication

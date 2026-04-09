@@ -38,6 +38,11 @@ class PatientPrescription(Base):
 
     status = Column(String, nullable=False, default="draft")
 
+    extracted_data = Column(JSONB, nullable=True)
+
+    uploaded_by_id = Column(UUID(as_uuid=True), nullable=True)
+    uploaded_by_type = Column(String, nullable=True)
+
     follow_up_required = Column(Boolean, nullable=False, default=False)
     follow_up_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)

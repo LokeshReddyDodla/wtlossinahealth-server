@@ -1,4 +1,4 @@
-"""POST /prescriptions/{patient_id}/confirm — save confirmed prescription + create medications."""
+"""POST /prescriptions/{patient_id}/confirm — confirm a draft or create new prescription + medications."""
 
 from fastapi import Depends, status
 
@@ -36,13 +36,11 @@ async def confirm_prescription(
         )
     ),
 ):
-    """Save confirmed prescription and create active medications."""
+    """Confirm a prescription and create active medications. CP only."""
     try:
-        prescription = (
-            await medication_service.create_prescription_with_medications(
-                patient_id=patient_id,
-                data=payload,
-            )
+        prescription = await medication_service.confirm_prescription(
+            patient_id=patient_id,
+            data=payload,
         )
 
         return SuccessResponse(
@@ -52,6 +50,6 @@ async def confirm_prescription(
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Failed to save prescription",
+            message="Failed to confirm prescription",
             detail=str(e),
         )

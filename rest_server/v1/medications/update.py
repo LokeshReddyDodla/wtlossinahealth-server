@@ -39,7 +39,7 @@ async def discontinue_medication(
     """Discontinue a medication. Tasks will stop generating."""
     med = await medication_service.discontinue_medication(
         medication_id=medication_id,
-        discontinued_by=str(current_actor.actor_id),
+        discontinued_by=str(current_actor.id),
     )
 
     if not med:
