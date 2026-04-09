@@ -70,6 +70,7 @@ from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
+from lib.services.checkin_history_service import CheckinHistoryService
 from lib.services.medication_service import MedicationService
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
@@ -696,6 +697,15 @@ container.register(
     ),
 )
 
+
+# 🔹 Check-in History Service
+container.register(
+    CheckinHistoryService,
+    lambda: CheckinHistoryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+    ),
+)
 
 # 🔹 OsteoFlag Screening Service
 container.register(
