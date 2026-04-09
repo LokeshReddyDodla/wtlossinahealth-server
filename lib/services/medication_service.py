@@ -210,7 +210,7 @@ class MedicationService:
             doses=doses_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status=new_status,
+            status="as_needed" if med_data.is_sos else "active",
         )
         session.add(medication)
         return medication
