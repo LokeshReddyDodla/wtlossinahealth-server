@@ -320,6 +320,11 @@ def get_prescription_extraction_service():
     return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
 
 
+def get_checkin_history_service():
+    from lib.services.checkin_history_service import CheckinHistoryService  # avoid circular
+    return cast(CheckinHistoryService, container.resolve(CheckinHistoryService))
+
+
 def get_weightloss_analytics_service() -> AnalyticsService:
     return cast(AnalyticsService, container.resolve(AnalyticsService))
 
