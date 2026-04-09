@@ -6,7 +6,6 @@ import asyncio
 import logging
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +19,6 @@ from lib.models.symptom_entry import SymptomEntry
 from lib.schemas.checkin_history import (
     CheckinDay,
     CheckinHistoryResponse,
-    CheckinInsight,
     CheckinSummary,
     MoodSnapshot,
     SleepSnapshot,
@@ -33,13 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 class CheckinHistoryService:
-    def __init__(
-        self,
-        postgres_store: PostgresStore,
-        insight_tracker: Any,
-    ):
+    def __init__(self, postgres_store: PostgresStore):
         self.postgres_store = postgres_store
-        self.insight_tracker = insight_tracker
 
     async def get_history(
         self,
@@ -68,7 +61,6 @@ class CheckinHistoryService:
             task_rows,
             xp_rows,
             profile,
-            insights,
         ) = await asyncio.gather(
             _with_session(self._fetch_sleep, patient_id, start, end),
             _with_session(self._fetch_moods, patient_id, start, end),
@@ -76,7 +68,6 @@ class CheckinHistoryService:
             _with_session(self._fetch_tasks, patient_id, start, end),
             _with_session(self._fetch_xp_per_day, patient_id, start, end),
             _with_session(self._fetch_profile, patient_id),
-            self._fetch_insights(patient_id, start, end),
         )
 
         # Build lookup maps
@@ -137,17 +128,6 @@ class CheckinHistoryService:
         return CheckinHistoryResponse(
             days=days,
             summary=summary,
-            insights=[
-                CheckinInsight(
-                    insight_id=ins.get("insight_id", ""),
-                    category=ins.get("category", ""),
-                    severity=ins.get("severity", "info"),
-                    title=ins.get("title", ""),
-                    body=ins.get("message", ""),
-                )
-                for ins in insights
-                if ins.get("insight_id")
-            ],
             weekly_recaps=weekly_recaps,
             total=len(all_dates),
         )
@@ -235,28 +215,6 @@ class CheckinHistoryService:
             select(PlayerProfile).where(PlayerProfile.patient_id == pid)
         )
         return result.scalars().first()
-
-    # ── MongoDB query ────────────────────────────────────────────────────
-
-    async def _fetch_insights(
-        self, pid: str, start: date, end: date
-    ) -> list[dict]:
-        try:
-            start_dt = datetime.combine(start, datetime.min.time())
-            end_dt = datetime.combine(end, datetime.max.time())
-            cursor = self.insight_tracker._collection.find(
-                {
-                    "patient_id": pid,
-                    "insight_id": {"$exists": True},
-                    "created_at": {"$gte": start_dt, "$lte": end_dt},
-                },
-                sort=[("created_at", -1)],
-                limit=10,
-            )
-            return [doc async for doc in cursor]
-        except Exception:
-            logger.exception("Failed to fetch insights for %s", pid)
-            return []
 
     # ── Snapshot builders ────────────────────────────────────────────────
 
