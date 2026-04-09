@@ -107,7 +107,14 @@ class MedicationService:
             )
             prescription = result.scalars().first()
 
-            if prescription and prescription.status == "confirmed":
+            if not prescription:
+                from lib.utils.http_exceptions import raise_http_exception
+                raise_http_exception(
+                    status_code=404,
+                    message="Prescription not found",
+                )
+
+            if prescription.status == "confirmed":
                 logger.warning(
                     "Prescription %s already confirmed for patient %s",
                     data.prescription_id,
