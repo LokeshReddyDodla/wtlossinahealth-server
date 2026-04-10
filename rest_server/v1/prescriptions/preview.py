@@ -1,19 +1,24 @@
 """POST /prescriptions/{patient_id}/preview — upload, extract, and save as draft."""
 
 from typing import List
+from uuid import UUID
 
 from fastapi import Depends, UploadFile, File, status
+from fastapi.exceptions import HTTPException
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.patient_access import resolve_patient_access
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
 from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
     get_medication_service,
     get_prescription_extraction_service,
 )
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.medication_service import MedicationService
 from lib.services.prescription_extraction_service import PrescriptionExtractionService
 from lib.utils.s3_utils import upload_file_to_s3
@@ -47,8 +52,18 @@ async def preview_prescription(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Upload prescription images, extract structured data, save as draft."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+    pid = str(verified_pid)
+
     try:
         # Upload to S3
         file_urls = []
@@ -59,7 +74,7 @@ async def preview_prescription(
                 bucket_name=_S3_BUCKET,
                 file_name=file.filename or "prescription.jpg",
                 content_type=file.content_type or "image/jpeg",
-                folder_path=f"patients/{patient_id}/documents/prescription",
+                folder_path=f"patients/{pid}/documents/prescription",
             )
             if file_url:
                 file_urls.append(file_url)
@@ -82,7 +97,7 @@ async def preview_prescription(
 
         # Save as draft
         draft = await medication_service.save_draft_prescription(
-            patient_id=patient_id,
+            patient_id=pid,
             file_urls=file_urls,
             extracted_data=extracted.model_dump(mode="json"),
             uploaded_by_id=str(current_actor.id),
@@ -98,6 +113,8 @@ async def preview_prescription(
                 "extracted": extracted.model_dump(mode="json"),
             },
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

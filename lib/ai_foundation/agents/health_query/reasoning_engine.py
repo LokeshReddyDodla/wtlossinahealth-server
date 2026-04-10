@@ -315,7 +315,8 @@ class ReasoningEngine:
         # ── Planning phase (STANDARD+ tiers) ──
         if self._planner and settings.PLANNING_ENABLED and tier_cfg.max_tool_calls > 2:
             with _track_perf(perf, "planning_ms"):
-                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
+                _meta = getattr(context, "metadata", None) or {}
+                is_voice = _meta.get("output_mode") == "voice"
                 plan = await self._execute_plan(
                     messages=messages,
                     tool_schemas=tool_schemas,

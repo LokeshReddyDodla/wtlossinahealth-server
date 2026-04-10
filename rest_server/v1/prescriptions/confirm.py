@@ -1,17 +1,23 @@
 """POST /prescriptions/{patient_id}/confirm — confirm a draft or create new prescription + medications."""
 
-from fastapi import Depends, status
+from uuid import UUID
+
+from fastapi import Depends
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_medication_service
+from lib.dependencies.patient_access import resolve_patient_access
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_medication_service,
+)
 from lib.schemas.medication import ConfirmPrescriptionRequest
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.medication_service import MedicationService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
-from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
@@ -35,21 +41,23 @@ async def confirm_prescription(
             care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Confirm a prescription and create active medications. CP only."""
-    try:
-        prescription = await medication_service.confirm_prescription(
-            patient_id=patient_id,
-            data=payload,
-        )
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
 
-        return SuccessResponse(
-            message="Prescription confirmed and medications created",
-            data={"prescription_id": str(prescription.prescription_id)},
-        )
-    except Exception as e:
-        raise_http_exception(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Failed to confirm prescription",
-            detail=str(e),
-        )
+    prescription = await medication_service.confirm_prescription(
+        patient_id=str(verified_pid),
+        data=payload,
+    )
+
+    return SuccessResponse(
+        message="Prescription confirmed and medications created",
+        data={"prescription_id": str(prescription.prescription_id)},
+    )
