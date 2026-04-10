@@ -124,8 +124,10 @@ class MedicationVectorService(BaseVectorService):
             strength = med.get("strength", "")
             status = med.get("status", "active")
 
-            is_current = status in ("active", "as_needed", "paused")
-            if status == "paused":
+            is_current = status in ("active", "as_needed", "paused", "scheduled")
+            if status == "scheduled":
+                verb = "will start taking"
+            elif status == "paused":
                 verb = "takes (currently paused)"
             elif status == "as_needed":
                 verb = "takes as needed"

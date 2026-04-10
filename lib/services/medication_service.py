@@ -176,16 +176,7 @@ class MedicationService:
             logger.exception("Qdrant sync failed for patient %s", patient_id)
 
         # Generate medication tasks for today immediately
-        try:
-            from lib.core.container import container
-            from lib.services.gamification.task_generator import TaskGeneratorService
-            task_gen = container.resolve(TaskGeneratorService)
-            await task_gen.generate_daily_tasks(
-                patient_id=UUID(patient_id),
-                task_date=date.today(),
-            )
-        except Exception:
-            logger.exception("Immediate task generation failed for patient %s", patient_id)
+        await self._refresh_medication_tasks(UUID(patient_id))
 
         return prescription
 
@@ -235,7 +226,7 @@ class MedicationService:
             doses=doses_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
-            status="as_needed" if med_data.is_sos else "active",
+            status=self._initial_status(med_data),
         )
         session.add(medication)
         return medication
@@ -261,6 +252,17 @@ class MedicationService:
             return False
 
         return True
+
+    @staticmethod
+    def _initial_status(med_data: ConfirmedMedicine) -> str:
+        if med_data.is_sos:
+            return "as_needed"
+        today = date.today()
+        if med_data.end_date and med_data.end_date < today:
+            return "completed"
+        if med_data.start_date > today:
+            return "scheduled"
+        return "active"
 
     async def _find_active_by_name(
         self,
@@ -339,7 +341,7 @@ class MedicationService:
                 paused.append(resp)
             elif med.status in ("completed", "discontinued"):
                 completed.append(resp)
-            else:
+            else:  # active, scheduled
                 active.append(resp)
 
         return MedicationListResponse(
@@ -416,6 +418,7 @@ class MedicationService:
         med.discontinued_by = discontinued_by
         await postgres_session.commit()
         await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._refresh_medication_tasks(med.patient_id)
         return med
 
     @with_postgres_session
@@ -431,6 +434,7 @@ class MedicationService:
         med.status = "paused"
         await postgres_session.commit()
         await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._refresh_medication_tasks(med.patient_id)
         return med
 
     @with_postgres_session
@@ -448,6 +452,7 @@ class MedicationService:
         med.discontinued_by = None
         await postgres_session.commit()
         await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._refresh_medication_tasks(med.patient_id)
         return med
 
     @with_postgres_session
@@ -494,8 +499,12 @@ class MedicationService:
         *,
         postgres_session: AsyncSession,
     ) -> int:
-        """Mark medications past their end_date as completed. Cron target."""
+        """Mark medications past their end_date as completed and activate scheduled ones. Cron target."""
         today = date.today()
+        changed = 0
+        patient_ids: set[str] = set()
+
+        # 1. Complete expired active medications
         result = await postgres_session.execute(
             select(PatientMedication).where(
                 PatientMedication.status == "active",
@@ -503,14 +512,25 @@ class MedicationService:
                 PatientMedication.end_date < today,
             )
         )
-        medications = result.scalars().all()
-        if not medications:
-            return 0
-
-        patient_ids: set[str] = set()
-        for med in medications:
+        for med in result.scalars().all():
             med.status = "completed"
             patient_ids.add(str(med.patient_id))
+            changed += 1
+
+        # 2. Activate scheduled medications whose start_date has arrived
+        result = await postgres_session.execute(
+            select(PatientMedication).where(
+                PatientMedication.status == "scheduled",
+                PatientMedication.start_date <= today,
+            )
+        )
+        for med in result.scalars().all():
+            med.status = "active"
+            patient_ids.add(str(med.patient_id))
+            changed += 1
+
+        if not changed:
+            return 0
 
         await postgres_session.commit()
 
@@ -520,7 +540,7 @@ class MedicationService:
             except Exception:
                 logger.exception("Qdrant sync failed for patient %s", pid)
 
-        return len(medications)
+        return changed
 
     # ── Query helpers (for gamification task generator) ───────────────────
 
@@ -636,6 +656,44 @@ class MedicationService:
         )
 
     # ── Helpers ──────────────────────────────────────────────────────────
+
+    async def _refresh_medication_tasks(self, patient_id: UUID) -> None:
+        """Delete today's pending medication tasks and regenerate from current active meds."""
+        try:
+            from lib.core.container import container
+            from lib.models.gamification import DailyTask
+            from lib.services.gamification.task_generator import TaskGeneratorService
+
+            today = date.today()
+            med_task_types = [
+                "TAKE_MEDICATION_MORNING",
+                "TAKE_MEDICATION_AFTERNOON",
+                "TAKE_MEDICATION_EVENING",
+                "TAKE_MEDICATION_NIGHT",
+            ]
+
+            async with self.postgres_store.get_session() as session:
+                # Delete only pending (not completed) medication tasks for today
+                result = await session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == patient_id,
+                        DailyTask.task_date == today,
+                        DailyTask.task_type.in_(med_task_types),
+                        DailyTask.status == "pending",
+                    )
+                )
+                for task in result.scalars().all():
+                    await session.delete(task)
+                await session.commit()
+
+            # Regenerate — will create fresh tasks based on current active meds
+            task_gen = container.resolve(TaskGeneratorService)
+            await task_gen.generate_daily_tasks(
+                patient_id=patient_id,
+                task_date=today,
+            )
+        except Exception:
+            logger.exception("Medication task refresh failed for %s", patient_id)
 
     async def _get_med(
         self, medication_id: str, session: AsyncSession
