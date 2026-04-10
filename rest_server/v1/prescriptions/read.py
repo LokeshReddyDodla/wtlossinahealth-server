@@ -6,6 +6,10 @@ from fastapi import Depends, status
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_medication_service
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.schemas.medication import MedicationResponse, PrescriptionResponse
 from lib.services.medication_service import MedicationService
 from lib.utils.http_exceptions import raise_http_exception
@@ -28,6 +32,8 @@ async def list_prescriptions(
                 ProfileTypeEnum.CARE_PROVIDER,
                 ProfileTypeEnum.PATIENT,
             ],
+            care_provider_feature=CareProviderFeature.REPORTS,
+            care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
 ):
@@ -80,6 +86,8 @@ async def get_prescription(
                 ProfileTypeEnum.CARE_PROVIDER,
                 ProfileTypeEnum.PATIENT,
             ],
+            care_provider_feature=CareProviderFeature.REPORTS,
+            care_provider_action=CareProviderPermissionAction.READ,
         )
     ),
 ):
