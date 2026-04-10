@@ -17,11 +17,38 @@ from pydantic import BaseModel, Field, model_validator
 # ── Shared types ─────────────────────────────────────────────────────────────
 
 MedicationSlot = Literal["morning", "afternoon", "evening", "night"]
+DayOfWeek = Literal[0, 1, 2, 3, 4, 5, 6]  # Mon=0 .. Sun=6
 
 
 class MedicationDose(BaseModel):
     slot: MedicationSlot
-    quantity: int = 1
+    quantity: float = 1
+
+
+class MedicationSchedule(BaseModel):
+    """Dosing frequency. NULL/absent = daily (all 7 days).
+
+    type="weekly": alarm-style day selector, days_of_week controls which days.
+    type="interval": every N days from an anchor date.
+    """
+
+    type: Literal["weekly", "interval"] = "weekly"
+    days_of_week: list[DayOfWeek] = Field(
+        default_factory=lambda: [0, 1, 2, 3, 4, 5, 6]
+    )
+    interval_days: int | None = None
+    interval_anchor: date | None = None
+
+    @model_validator(mode="after")
+    def validate_schedule(self):
+        if self.type == "weekly" and not self.days_of_week:
+            raise ValueError("weekly schedule must have at least one day")
+        if self.type == "interval":
+            if not self.interval_days or self.interval_days < 1:
+                raise ValueError("interval schedule requires interval_days >= 1")
+            if not self.interval_anchor:
+                raise ValueError("interval schedule requires interval_anchor")
+        return self
 
 
 # ── Extraction schemas (LLM output via gateway.extract) ─────────────────────
@@ -37,6 +64,7 @@ class ExtractedMedicine(BaseModel):
     purpose: str | None = None
     instructions: str | None = None
     doses: list[MedicationDose] = Field(default_factory=list)
+    schedule: MedicationSchedule | None = None
     start_date: date | None = None
     end_date: date | None = None
     is_sos: bool = False
@@ -64,6 +92,7 @@ class ConfirmedMedicine(BaseModel):
     purpose: str | None = None
     instructions: str | None = None
     doses: list[MedicationDose] = Field(default_factory=list)
+    schedule: MedicationSchedule | None = None
     start_date: date
     end_date: date | None = None
     is_sos: bool = False
@@ -92,6 +121,7 @@ class ConfirmPrescriptionRequest(BaseModel):
 class MedicationResponse(BaseModel):
     medication_id: str
     prescription_id: str | None = None
+    previous_medication_id: str | None = None
     name: str
     brand_name: str | None = None
     strength: str | None = None
@@ -101,6 +131,7 @@ class MedicationResponse(BaseModel):
     purpose: str | None = None
     instructions: str | None = None
     doses: list[MedicationDose] = Field(default_factory=list)
+    schedule: MedicationSchedule | None = None
     start_date: date
     end_date: date | None = None
     is_sos: bool = False

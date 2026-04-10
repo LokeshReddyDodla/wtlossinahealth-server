@@ -203,14 +203,19 @@ class MedicationService:
         doses_json = [d.model_dump() for d in med_data.doses]
         now = datetime.now().replace(tzinfo=None)
 
+        # Track the most recent existing med for lineage
+        previous_med_id = None
         for med in existing:
             if self._is_same_medication(med, med_data, doses_json):
-                # Renewal — course finished naturally, continued with new prescription
                 med.status = "completed"
             else:
-                # Something changed — doctor modified the medication
                 med.status = "discontinued"
             med.discontinued_at = now
+            previous_med_id = med.medication_id  # link to the most recent one
+
+        schedule_json = (
+            med_data.schedule.model_dump(mode="json") if med_data.schedule else None
+        )
 
         medication = PatientMedication(
             patient_id=patient_id,
@@ -224,9 +229,11 @@ class MedicationService:
             purpose=med_data.purpose,
             instructions=med_data.instructions,
             doses=doses_json,
+            schedule=schedule_json,
             start_date=med_data.start_date,
             end_date=med_data.end_date,
             status=self._initial_status(med_data),
+            previous_medication_id=previous_med_id,
         )
         session.add(medication)
         return medication
@@ -249,6 +256,12 @@ class MedicationService:
             [(d.get("slot"), d.get("quantity", 1)) for d in new_doses_json],
         )
         if existing_doses != new_doses:
+            return False
+
+        # Compare schedule
+        existing_schedule = existing.schedule or {}
+        new_schedule = new.schedule.model_dump(mode="json") if new.schedule else {}
+        if existing_schedule != new_schedule:
             return False
 
         return True
@@ -631,6 +644,7 @@ class MedicationService:
                 "brand_name": m.brand_name,
                 "strength": m.strength,
                 "doses": m.doses,
+                "schedule": m.schedule,
                 "food_timing": m.food_timing,
                 "purpose": m.purpose,
                 "status": m.status,
@@ -716,6 +730,9 @@ class MedicationService:
             prescription_id=(
                 str(med.prescription_id) if med.prescription_id else None
             ),
+            previous_medication_id=(
+                str(med.previous_medication_id) if med.previous_medication_id else None
+            ),
             name=med.name,
             brand_name=med.brand_name,
             strength=med.strength,
@@ -725,6 +742,7 @@ class MedicationService:
             purpose=med.purpose,
             instructions=med.instructions,
             doses=med.doses or [],
+            schedule=med.schedule,
             start_date=med.start_date,
             end_date=med.end_date,
             is_sos=med.status == "as_needed",

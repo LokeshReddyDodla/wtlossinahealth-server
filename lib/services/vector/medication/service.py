@@ -142,8 +142,15 @@ class MedicationVectorService(BaseVectorService):
             # Dose schedule
             doses = med.get("doses", [])
             if doses:
-                slots = [d["slot"] for d in doses]
-                line += f" ({' and '.join(slots)})"
+                slot_parts = []
+                for d in doses:
+                    qty = d.get("quantity", 1)
+                    slot = d["slot"]
+                    if qty != 1:
+                        slot_parts.append(f"{qty} in the {slot}")
+                    else:
+                        slot_parts.append(slot)
+                line += f" ({' and '.join(slot_parts)})"
 
             food = med.get("food_timing")
             if food:
@@ -152,6 +159,23 @@ class MedicationVectorService(BaseVectorService):
             purpose = med.get("purpose")
             if purpose:
                 line += f" for {purpose}"
+
+            # Schedule info
+            schedule = med.get("schedule")
+            if schedule:
+                stype = schedule.get("type", "weekly")
+                if stype == "weekly":
+                    days = schedule.get("days_of_week", [])
+                    if 0 < len(days) < 7:
+                        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        day_str = ", ".join(day_names[d] for d in sorted(days))
+                        line += f", on {day_str}"
+                elif stype == "interval":
+                    interval = schedule.get("interval_days")
+                    if interval == 2:
+                        line += ", every other day"
+                    elif interval:
+                        line += f", every {interval} days"
 
             if not is_current:
                 start = med.get("start_date")

@@ -16,6 +16,7 @@ from .patient_connected_app import (
     PatientOtherApp,
 )
 from .patient_medication import PatientMedication
+from .medication_dose_log import MedicationDoseLog
 from .patient_daily_activity import PatientDailyActivity
 from .patient_diabetic_history import PatientDiabeticHistory
 from .patient_diet_plan import PatientDietPlan
