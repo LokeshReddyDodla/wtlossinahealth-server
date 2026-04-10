@@ -124,8 +124,15 @@ class MedicationVectorService(BaseVectorService):
             strength = med.get("strength", "")
             status = med.get("status", "active")
 
-            is_current = status in ("active", "as_needed")
-            verb = "takes" if is_current else "took"
+            is_current = status in ("active", "as_needed", "paused")
+            if status == "paused":
+                verb = "takes (currently paused)"
+            elif status == "as_needed":
+                verb = "takes as needed"
+            elif is_current:
+                verb = "takes"
+            else:
+                verb = "took"
             line = f"Patient {verb} {name}"
             if strength:
                 line += f" {strength}"
@@ -138,7 +145,7 @@ class MedicationVectorService(BaseVectorService):
 
             food = med.get("food_timing")
             if food:
-                line += f" {food} food"
+                line += f", {food}"
 
             purpose = med.get("purpose")
             if purpose:

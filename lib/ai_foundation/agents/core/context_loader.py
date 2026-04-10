@@ -300,11 +300,18 @@ class ContextLoader:
                 RetrievalRequest(
                     patient_ids=[patient_id],
                     data_types=["medication"],
-                    limit=1,
+                    limit=5,
                 )
             )
-            if results:
-                return results[0].payload.get("text_repr", "")
+
+            print("==> medication results: ", results)
+            # Filter to medication only — the should-filter also returns profile
+            for r in results:
+                dt = r.data_type or r.payload.get("data_type")
+                if dt == "medication":
+                    text = r.payload.get("text_repr", "")
+                    if text:
+                        return text
         except Exception as exc:
             logger.debug("Failed to load medications: %s", exc)
         return None
