@@ -175,6 +175,18 @@ class MedicationService:
         except Exception:
             logger.exception("Qdrant sync failed for patient %s", patient_id)
 
+        # Generate medication tasks for today immediately
+        try:
+            from lib.core.container import container
+            from lib.services.gamification.task_generator import TaskGeneratorService
+            task_gen = container.resolve(TaskGeneratorService)
+            await task_gen.generate_daily_tasks(
+                patient_id=UUID(patient_id),
+                task_date=date.today(),
+            )
+        except Exception:
+            logger.exception("Immediate task generation failed for patient %s", patient_id)
+
         return prescription
 
     async def _create_medication(
