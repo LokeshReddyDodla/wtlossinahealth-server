@@ -304,7 +304,6 @@ class ContextLoader:
                 )
             )
 
-            print("==> medication results: ", results)
             # Filter to medication only — the should-filter also returns profile
             for r in results:
                 dt = r.data_type or r.payload.get("data_type")
