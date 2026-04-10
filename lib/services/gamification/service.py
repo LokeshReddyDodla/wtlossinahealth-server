@@ -262,16 +262,17 @@ class GamificationService:
         task.completed_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
 
-        # Update quest progress + streak (same as event_handler auto-completion path)
+        # Update challenge + quest progress + streak (same as event_handler auto-completion path)
         try:
             from lib.core.container import container
             from lib.services.gamification.event_handler import GamificationEventHandler
             handler = container.resolve(GamificationEventHandler)
+            await handler._update_challenge_progress(patient_id, task.task_type)
             await handler._update_quest_progress(patient_id, task.task_type)
             await handler._try_process_streak(patient_id)
         except Exception:
             from loguru import logger
-            logger.warning(f"Quest/streak progress update failed for {patient_id}")
+            logger.warning(f"Challenge/quest/streak progress update failed for {patient_id}")
 
         xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
             patient_id=patient_id,
