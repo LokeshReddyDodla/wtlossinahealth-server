@@ -103,6 +103,7 @@ class MedicationResponse(BaseModel):
     doses: list[MedicationDose] = Field(default_factory=list)
     start_date: date
     end_date: date | None = None
+    is_sos: bool = False
     status: str
     days_remaining: int | None = None
     created_at: datetime
@@ -132,5 +133,6 @@ class PrescriptionResponse(BaseModel):
 
 class MedicationListResponse(BaseModel):
     active: list[MedicationResponse] = Field(default_factory=list)
+    paused: list[MedicationResponse] = Field(default_factory=list)
     as_needed: list[MedicationResponse] = Field(default_factory=list)
     completed: list[MedicationResponse] = Field(default_factory=list)

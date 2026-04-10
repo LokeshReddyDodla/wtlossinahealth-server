@@ -1,11 +1,17 @@
 """PATCH /medications/{patient_id}/{medication_id}/* — lifecycle actions."""
 
-from datetime import date
+from uuid import UUID
+
 from fastapi import Depends, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_medication_service
+from lib.dependencies.patient_access import resolve_patient_access
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_medication_service,
+)
+from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.services.medication_service import MedicationService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -35,8 +41,17 @@ async def discontinue_medication(
             care_provider_action=CareProviderPermissionAction.UPDATE,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Discontinue a medication. Tasks will stop generating."""
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+
     med = await medication_service.discontinue_medication(
         medication_id=medication_id,
         discontinued_by=str(current_actor.id),
@@ -69,8 +84,17 @@ async def pause_medication(
             care_provider_action=CareProviderPermissionAction.UPDATE,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Pause a medication temporarily. Tasks will stop generating."""
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+
     med = await medication_service.pause_medication(
         medication_id=medication_id,
     )
@@ -102,8 +126,17 @@ async def resume_medication(
             care_provider_action=CareProviderPermissionAction.UPDATE,
         )
     ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
 ):
     """Resume a paused medication. Tasks will start generating again."""
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+
     med = await medication_service.resume_medication(
         medication_id=medication_id,
     )

@@ -58,6 +58,7 @@ class MedicationService:
             result = await postgres_session.execute(
                 select(PatientPrescription).where(
                     PatientPrescription.patient_id == patient_id,
+                    PatientPrescription.status == "draft",
                     PatientPrescription.file_urls == file_urls,
                 )
             )
@@ -114,13 +115,18 @@ class MedicationService:
                     message="Prescription not found",
                 )
 
-            if prescription.status == "confirmed":
+            if prescription.status != "draft":
                 logger.warning(
-                    "Prescription %s already confirmed for patient %s",
+                    "Prescription %s is %s, cannot confirm for patient %s",
                     data.prescription_id,
+                    prescription.status,
                     patient_id,
                 )
-                return prescription
+                from lib.utils.http_exceptions import raise_http_exception
+                raise_http_exception(
+                    status_code=400,
+                    message=f"Prescription is already {prescription.status}",
+                )
 
         if prescription:
             # Update the draft with confirmed data
@@ -250,11 +256,11 @@ class MedicationService:
         name: str,
         session: AsyncSession,
     ) -> list[PatientMedication]:
-        """Find all active medications matching a generic name (case-insensitive)."""
+        """Find all active/paused medications matching a generic name (case-insensitive)."""
         result = await session.execute(
             select(PatientMedication).where(
                 PatientMedication.patient_id == patient_id,
-                PatientMedication.status.in_(["active", "as_needed"]),
+                PatientMedication.status.in_(["active", "as_needed", "paused"]),
                 PatientMedication.name.ilike(name.strip()),
             )
         )
@@ -312,18 +318,20 @@ class MedicationService:
         medications = result.scalars().all()
 
         today = date.today()
-        active, as_needed, completed = [], [], []
+        active, paused, as_needed, completed = [], [], [], []
         for med in medications:
             resp = self.to_response(med, today)
             if med.status == "as_needed":
                 as_needed.append(resp)
+            elif med.status == "paused":
+                paused.append(resp)
             elif med.status in ("completed", "discontinued"):
                 completed.append(resp)
             else:
                 active.append(resp)
 
         return MedicationListResponse(
-            active=active, as_needed=as_needed, completed=completed
+            active=active, paused=paused, as_needed=as_needed, completed=completed
         )
 
     @with_postgres_session
@@ -335,7 +343,10 @@ class MedicationService:
     ) -> list[PatientPrescription]:
         result = await postgres_session.execute(
             select(PatientPrescription)
-            .where(PatientPrescription.patient_id == patient_id)
+            .where(
+                PatientPrescription.patient_id == patient_id,
+                PatientPrescription.status != "archived",
+            )
             .options(selectinload(PatientPrescription.medications))
             .order_by(PatientPrescription.created_at.desc())
         )
@@ -345,6 +356,7 @@ class MedicationService:
     async def get_prescription(
         self,
         prescription_id: str,
+        patient_id: str,
         *,
         postgres_session: AsyncSession,
     ) -> PatientPrescription | None:
@@ -352,6 +364,7 @@ class MedicationService:
             select(PatientPrescription)
             .where(
                 PatientPrescription.prescription_id == prescription_id,
+                PatientPrescription.patient_id == patient_id,
             )
             .options(selectinload(PatientPrescription.medications))
         )
@@ -361,12 +374,14 @@ class MedicationService:
     async def get_medication(
         self,
         medication_id: str,
+        patient_id: str,
         *,
         postgres_session: AsyncSession,
     ) -> PatientMedication | None:
         result = await postgres_session.execute(
             select(PatientMedication).where(
                 PatientMedication.medication_id == medication_id,
+                PatientMedication.patient_id == patient_id,
             )
         )
         return result.scalars().first()
@@ -427,19 +442,38 @@ class MedicationService:
     async def archive_prescription(
         self,
         prescription_id: str,
+        patient_id: str,
         *,
         postgres_session: AsyncSession,
     ) -> PatientPrescription | None:
         result = await postgres_session.execute(
-            select(PatientPrescription).where(
+            select(PatientPrescription)
+            .where(
                 PatientPrescription.prescription_id == prescription_id,
+                PatientPrescription.patient_id == patient_id,
             )
+            .options(selectinload(PatientPrescription.medications))
         )
         prescription = result.scalars().first()
         if not prescription:
             return None
+
         prescription.status = "archived"
+
+        # Discontinue all active/paused child medications
+        now = datetime.now().replace(tzinfo=None)
+        for med in (prescription.medications or []):
+            if med.status in ("active", "paused", "as_needed"):
+                med.status = "discontinued"
+                med.discontinued_at = now
+
         await postgres_session.commit()
+
+        try:
+            await self._sync_qdrant(patient_id, postgres_session)
+        except Exception:
+            logger.exception("Qdrant sync failed for patient %s", patient_id)
+
         return prescription
 
     @with_postgres_session
@@ -623,6 +657,7 @@ class MedicationService:
             doses=med.doses or [],
             start_date=med.start_date,
             end_date=med.end_date,
+            is_sos=med.status == "as_needed",
             status=med.status,
             days_remaining=days_remaining,
             created_at=med.created_at,
