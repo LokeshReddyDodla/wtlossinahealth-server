@@ -6,6 +6,10 @@ from fastapi import Depends, UploadFile, File, status
 
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.dependencies.service_dependencies import (
     get_medication_service,
     get_prescription_extraction_service,
@@ -39,6 +43,8 @@ async def preview_prescription(
                 ProfileTypeEnum.CARE_PROVIDER,
                 ProfileTypeEnum.PATIENT,
             ],
+            care_provider_feature=CareProviderFeature.REPORTS,
+            care_provider_action=CareProviderPermissionAction.CREATE,
         )
     ),
 ):
