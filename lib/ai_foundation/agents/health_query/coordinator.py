@@ -208,7 +208,8 @@ class Coordinator:
         plan_cost = 0.0
         if self._planner and settings.PLANNING_ENABLED:
             try:
-                is_voice = context.metadata.get("output_mode") == "voice" if context.metadata else False
+                _meta = getattr(context, "metadata", None) or {}
+                is_voice = _meta.get("output_mode") == "voice"
                 planning_prompt = (
                     "Plan the multi-domain investigation. "
                     "Write the strategy field as if you are a doctor explaining your plan "
