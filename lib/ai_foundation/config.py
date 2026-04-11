@@ -49,8 +49,8 @@ class AIFoundationSettings(BaseSettings):
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
     REASONING_DEFAULT_TIER: str = Field(default="standard", description="Default reasoning tier: basic, standard, advanced, unlimited")
-    REASONING_THINKER_MODEL: str = Field(default="gpt-4.1-mini", description="Model for reasoning/tool decisions")
-    REASONING_RESPONDER_MODEL: str = Field(default="gpt-5.1", description="Model for final response generation")
+    REASONING_THINKER_MODEL: str = Field(default="claude-haiku-4-5-20251001", description="Model for reasoning/tool decisions")
+    REASONING_RESPONDER_MODEL: str = Field(default="claude-sonnet-4-6", description="Model for final response generation")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=2000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
@@ -66,7 +66,7 @@ class AIFoundationSettings(BaseSettings):
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
 
-    REASONING_ADVANCED_THINKER_MODEL: str = Field(default="gpt-4.1", description="Thinker model for ADVANCED/UNLIMITED tiers")
+    REASONING_ADVANCED_THINKER_MODEL: str = Field(default="claude-sonnet-4-6", description="Thinker model for ADVANCED/UNLIMITED tiers")
 
     # ── Coordinator ──────────────────────────────────────────────────────
 

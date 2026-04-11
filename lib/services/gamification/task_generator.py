@@ -465,6 +465,27 @@ class TaskGeneratorService:
 
         return tasks
 
+    @staticmethod
+    def _is_medication_due(med: PatientMedication, task_date: date) -> bool:
+        """Check if a medication is due on a specific date based on its schedule."""
+        schedule = med.schedule
+        if not schedule:
+            return True  # null schedule = daily (all 7 days)
+
+        stype = schedule.get("type", "weekly")
+        if stype == "weekly":
+            days = schedule.get("days_of_week", [0, 1, 2, 3, 4, 5, 6])
+            return task_date.weekday() in days
+        elif stype == "interval":
+            anchor_str = schedule.get("interval_anchor")
+            interval = schedule.get("interval_days")
+            if not anchor_str or not interval:
+                return True  # malformed → safe default
+            anchor = date.fromisoformat(str(anchor_str))
+            return (task_date - anchor).days % interval == 0
+
+        return True  # unknown type = daily
+
     async def _medication_tasks(
         self,
         patient_id: UUID,
@@ -487,9 +508,14 @@ class TaskGeneratorService:
         if not medications:
             return []
 
+        # Filter by schedule — skip meds not due on this day
+        due_meds = [m for m in medications if self._is_medication_due(m, task_date)]
+        if not due_meds:
+            return []
+
         # Group medications by dose slot
         slot_meds: dict[str, list[PatientMedication]] = {}
-        for med in medications:
+        for med in due_meds:
             for dose in (med.doses or []):
                 slot = dose.get("slot", "morning")
                 slot_meds.setdefault(slot, []).append(med)

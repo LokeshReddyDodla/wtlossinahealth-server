@@ -28,6 +28,16 @@ dose slots: morning, afternoon, evening, night.
   - "Once a day" means morning.
   - "At bedtime" / "HS" means night.
   - "SOS" / "PRN" / "As needed" means is_sos=true with no doses.
+  - Quantity can be fractional: "half tablet" = 0.5, "1.5 tablets" = 1.5.
+- For scheduling frequency:
+  - "Daily" / "OD" / no explicit frequency → schedule is null (defaults to every day).
+  - "Once a week" / "Weekly on Monday" → schedule.type="weekly", schedule.days_of_week=[0] (Mon=0..Sun=6).
+  - "Twice a week" → schedule.type="weekly", pick two spread-out days like [0, 3] (Mon, Thu).
+  - "Mon/Wed/Fri" or "MWF" → schedule.type="weekly", schedule.days_of_week=[0, 2, 4].
+  - "Weekdays only" → schedule.type="weekly", schedule.days_of_week=[0,1,2,3,4].
+  - "Alternate days" / "Every other day" / "QOD" → schedule.type="interval", schedule.interval_days=2, schedule.interval_anchor=start_date.
+  - "Every 3 days" / "Every 72 hours" → schedule.type="interval", schedule.interval_days=3, schedule.interval_anchor=start_date.
+  - If frequency is unclear, set schedule to null (daily is the safe default).
 - Calculate end_date from the prescription date + duration if both are available.
 - Calculate follow_up_date from the prescription date + follow-up interval if \
 mentioned.

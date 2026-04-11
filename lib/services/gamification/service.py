@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -262,6 +262,14 @@ class GamificationService:
         task.completed_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
 
+        # Log per-dose adherence for medication tasks
+        if task.task_type.startswith("TAKE_MEDICATION_"):
+            try:
+                await self._log_medication_doses(patient_id, task)
+            except Exception:
+                from loguru import logger
+                logger.warning(f"Dose log creation failed for {patient_id}/{task.task_type}")
+
         # Update challenge + quest progress + streak (same as event_handler auto-completion path)
         try:
             from lib.core.container import container
@@ -334,6 +342,79 @@ class GamificationService:
             )
 
         return response
+
+    # ── Dose logging ────────────────────────────────────────────────────
+
+    async def _log_medication_doses(self, patient_id: UUID, task: DailyTask) -> None:
+        """Create per-medication dose log entries when a medication task is completed."""
+        from lib.models.medication_dose_log import MedicationDoseLog
+        from lib.models.patient_medication import PatientMedication
+
+        # Extract slot from task type: TAKE_MEDICATION_MORNING → morning
+        slot = task.task_type.replace("TAKE_MEDICATION_", "").lower()
+
+        async with self.postgres_store.get_session() as session:
+            # Find active medications with this dose slot for today
+            result = await session.execute(
+                select(PatientMedication).where(
+                    PatientMedication.patient_id == patient_id,
+                    PatientMedication.status == "active",
+                    PatientMedication.start_date <= task.task_date,
+                    or_(
+                        PatientMedication.end_date.is_(None),
+                        PatientMedication.end_date >= task.task_date,
+                    ),
+                )
+            )
+            medications = result.scalars().all()
+
+            now = datetime.now().replace(tzinfo=None)
+            for med in medications:
+                # Check if this medication has a dose in this slot
+                has_slot = any(
+                    d.get("slot") == slot for d in (med.doses or [])
+                )
+                if not has_slot:
+                    continue
+
+                # Check schedule — only log if med is due today
+                schedule = med.schedule
+                if schedule:
+                    stype = schedule.get("type", "weekly")
+                    if stype == "weekly":
+                        if task.task_date.weekday() not in schedule.get("days_of_week", [0,1,2,3,4,5,6]):
+                            continue
+                    elif stype == "interval":
+                        anchor_str = schedule.get("interval_anchor")
+                        interval = schedule.get("interval_days")
+                        if anchor_str and interval:
+                            from datetime import date as date_type
+                            anchor = date_type.fromisoformat(str(anchor_str))
+                            if (task.task_date - anchor).days % interval != 0:
+                                continue
+
+                # Upsert — don't duplicate if already logged
+                existing = await session.execute(
+                    select(MedicationDoseLog).where(
+                        MedicationDoseLog.patient_id == patient_id,
+                        MedicationDoseLog.medication_id == med.medication_id,
+                        MedicationDoseLog.log_date == task.task_date,
+                        MedicationDoseLog.slot == slot,
+                    )
+                )
+                if existing.scalars().first():
+                    continue
+
+                session.add(MedicationDoseLog(
+                    patient_id=patient_id,
+                    medication_id=med.medication_id,
+                    log_date=task.task_date,
+                    slot=slot,
+                    status="taken",
+                    taken_at=now,
+                ))
+
+            await session.commit()
 
     # ── Achievements ─────────────────────────────────────────────────────
 

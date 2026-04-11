@@ -316,6 +316,41 @@ def build_default_registry(
     registry = ModelRegistry()
 
     registry.register_many([
+        # Anthropic Claude models
+        ModelSpec(
+            model_id="claude-sonnet-4-6",
+            provider=ModelProvider.ANTHROPIC,
+            temperature=0.0,
+            timeout_seconds=15.0,
+            cost_per_1k_input=0.003,
+            cost_per_1k_output=0.015,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["fast", "structured", "anthropic"],
+        ),
+        ModelSpec(
+            model_id="claude-opus-4-6",
+            provider=ModelProvider.ANTHROPIC,
+            temperature=0.0,
+            timeout_seconds=60.0,
+            cost_per_1k_input=0.015,
+            cost_per_1k_output=0.075,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["powerful", "reasoning", "anthropic"],
+        ),
+        ModelSpec(
+            model_id="claude-haiku-4-5-20251001",
+            provider=ModelProvider.ANTHROPIC,
+            temperature=0.0,
+            timeout_seconds=10.0,
+            cost_per_1k_input=0.0008,
+            cost_per_1k_output=0.004,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["fast", "cheap", "anthropic"],
+        ),
+        # OpenAI models (fallbacks)
         ModelSpec(
             model_id="gpt-4.1-mini",
             provider=ModelProvider.OPENAI,
@@ -395,31 +430,31 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes use config-driven model IDs so env vars take effect
+    # Task routes: Claude primary, OpenAI/Google as fallbacks
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
-        fallbacks=["gemini-2.5-flash", adv_thinker],
+        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.RESPONSE_GENERATION,
         primary=responder,
-        fallbacks=["gemini-2.5-pro", adv_thinker],
+        fallbacks=["gpt-5.1", "gemini-2.5-pro"],
     )
     registry.set_task_route(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
-        fallbacks=["gemini-2.5-flash"],
+        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
         primary=thinker,
-        fallbacks=["gemini-2.5-flash"],
+        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.SUMMARIZATION,
         primary=thinker,
-        fallbacks=["gemini-2.5-flash"],
+        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
     registry.set_task_route(
         ModelTask.EMBEDDING,
