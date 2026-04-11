@@ -358,6 +358,7 @@ class Coordinator:
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
+                    timeout=60.0,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
