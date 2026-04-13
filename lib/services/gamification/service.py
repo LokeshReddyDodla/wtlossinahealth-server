@@ -262,21 +262,28 @@ class GamificationService:
         task.completed_at = datetime.now().replace(tzinfo=None)
         await postgres_session.commit()
 
+        # Capture task fields BEFORE any operations that may expire the session
+        task_id_str = str(task.task_id)
+        task_type = task.task_type
+        task_title = task.title
+        task_xp_reward = task.xp_reward
+        task_date = task.task_date
+
         # Log per-dose adherence for medication tasks
-        if task.task_type.startswith("TAKE_MEDICATION_"):
+        if task_type.startswith("TAKE_MEDICATION_"):
             try:
-                await self._log_medication_doses(patient_id, task)
+                await self._log_medication_doses(patient_id, task_type, task_date)
             except Exception:
                 from loguru import logger
-                logger.warning(f"Dose log creation failed for {patient_id}/{task.task_type}")
+                logger.warning(f"Dose log creation failed for {patient_id}/{task_type}")
 
         # Update challenge + quest progress + streak (same as event_handler auto-completion path)
         try:
             from lib.core.container import container
             from lib.services.gamification.event_handler import GamificationEventHandler
             handler = container.resolve(GamificationEventHandler)
-            await handler._update_challenge_progress(patient_id, task.task_type)
-            await handler._update_quest_progress(patient_id, task.task_type)
+            await handler._update_challenge_progress(patient_id, task_type)
+            await handler._update_quest_progress(patient_id, task_type)
             await handler._try_process_streak(patient_id)
         except Exception:
             from loguru import logger
@@ -284,10 +291,10 @@ class GamificationService:
 
         xp_granted, new_level, leveled_up = await self.xp_service.grant_xp(
             patient_id=patient_id,
-            amount=task.xp_reward,
+            amount=task_xp_reward,
             source_type="task",
-            source_id=task.task_id,
-            description=f"Task: {task.title}",
+            source_id=task_id_str,
+            description=f"Task: {task_title}",
         )
 
         newly_earned = await self.achievement_evaluator.evaluate_all(
@@ -304,7 +311,7 @@ class GamificationService:
         profile = profile_result.scalars().first()
 
         response = TaskCompletionResponse(
-            task_id=str(task.task_id),
+            task_id=task_id_str,
             xp_earned=xp_granted,
             new_total_xp=profile.total_xp if profile else 0,
             level_up=leveled_up,
@@ -345,13 +352,18 @@ class GamificationService:
 
     # ── Dose logging ────────────────────────────────────────────────────
 
-    async def _log_medication_doses(self, patient_id: UUID, task: DailyTask) -> None:
+    async def _log_medication_doses(
+        self,
+        patient_id: UUID,
+        task_type: str,
+        task_date,
+    ) -> None:
         """Create per-medication dose log entries when a medication task is completed."""
         from lib.models.medication_dose_log import MedicationDoseLog
         from lib.models.patient_medication import PatientMedication
 
         # Extract slot from task type: TAKE_MEDICATION_MORNING → morning
-        slot = task.task_type.replace("TAKE_MEDICATION_", "").lower()
+        slot = task_type.replace("TAKE_MEDICATION_", "").lower()
 
         async with self.postgres_store.get_session() as session:
             # Find active medications with this dose slot for today
@@ -359,10 +371,10 @@ class GamificationService:
                 select(PatientMedication).where(
                     PatientMedication.patient_id == patient_id,
                     PatientMedication.status == "active",
-                    PatientMedication.start_date <= task.task_date,
+                    PatientMedication.start_date <= task_date,
                     or_(
                         PatientMedication.end_date.is_(None),
-                        PatientMedication.end_date >= task.task_date,
+                        PatientMedication.end_date >= task_date,
                     ),
                 )
             )
@@ -382,7 +394,7 @@ class GamificationService:
                 if schedule:
                     stype = schedule.get("type", "weekly")
                     if stype == "weekly":
-                        if task.task_date.weekday() not in schedule.get("days_of_week", [0,1,2,3,4,5,6]):
+                        if task_date.weekday() not in schedule.get("days_of_week", [0,1,2,3,4,5,6]):
                             continue
                     elif stype == "interval":
                         anchor_str = schedule.get("interval_anchor")
@@ -390,7 +402,7 @@ class GamificationService:
                         if anchor_str and interval:
                             from datetime import date as date_type
                             anchor = date_type.fromisoformat(str(anchor_str))
-                            if (task.task_date - anchor).days % interval != 0:
+                            if (task_date - anchor).days % interval != 0:
                                 continue
 
                 # Upsert — don't duplicate if already logged
@@ -398,7 +410,7 @@ class GamificationService:
                     select(MedicationDoseLog).where(
                         MedicationDoseLog.patient_id == patient_id,
                         MedicationDoseLog.medication_id == med.medication_id,
-                        MedicationDoseLog.log_date == task.task_date,
+                        MedicationDoseLog.log_date == task_date,
                         MedicationDoseLog.slot == slot,
                     )
                 )
@@ -408,7 +420,7 @@ class GamificationService:
                 session.add(MedicationDoseLog(
                     patient_id=patient_id,
                     medication_id=med.medication_id,
-                    log_date=task.task_date,
+                    log_date=task_date,
                     slot=slot,
                     status="taken",
                     taken_at=now,
