@@ -180,6 +180,87 @@ class MedicationService:
 
         return prescription
 
+    @with_postgres_session
+    async def edit_prescription(
+        self,
+        patient_id: str,
+        prescription_id: str,
+        data: ConfirmPrescriptionRequest,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientPrescription:
+        """Edit a confirmed prescription — replace medications, update metadata.
+
+        All current active/paused/scheduled medications are discontinued, and
+        new medications are created from the payload. Completed/discontinued
+        medications are left untouched (history preserved).
+        """
+        from lib.utils.http_exceptions import raise_http_exception
+
+        result = await postgres_session.execute(
+            select(PatientPrescription)
+            .where(
+                PatientPrescription.prescription_id == prescription_id,
+                PatientPrescription.patient_id == patient_id,
+            )
+            .options(selectinload(PatientPrescription.medications))
+        )
+        prescription = result.scalars().first()
+
+        if not prescription:
+            raise_http_exception(
+                status_code=404,
+                message="Prescription not found",
+            )
+
+        if prescription.status != "confirmed":
+            raise_http_exception(
+                status_code=400,
+                message=f"Cannot edit prescription with status {prescription.status}",
+            )
+
+        # Update prescription metadata
+        prescription.doctor_name = data.doctor_name
+        prescription.prescription_date = data.prescription_date
+        if data.file_urls:
+            prescription.file_urls = data.file_urls
+        prescription.follow_up_required = data.follow_up_required
+        prescription.follow_up_date = data.follow_up_date
+        prescription.notes = data.notes
+        prescription.updated_at = datetime.now().replace(tzinfo=None)
+
+        # Discontinue all active medications under this prescription
+        now = datetime.now().replace(tzinfo=None)
+        for med in (prescription.medications or []):
+            if med.status in ("active", "paused", "as_needed", "scheduled"):
+                med.status = "discontinued"
+                med.discontinued_at = now
+
+        await postgres_session.flush()
+
+        # Create new medications from payload
+        for med_data in data.medicines:
+            await self._create_medication(
+                patient_id=patient_id,
+                prescription_id=prescription.prescription_id,
+                med_data=med_data,
+                session=postgres_session,
+            )
+
+        await postgres_session.commit()
+        await postgres_session.refresh(
+            prescription, attribute_names=["medications"]
+        )
+
+        try:
+            await self._sync_qdrant(patient_id, postgres_session)
+        except Exception:
+            logger.exception("Qdrant sync failed for patient %s", patient_id)
+
+        await self._refresh_medication_tasks(UUID(patient_id))
+
+        return prescription
+
     async def _create_medication(
         self,
         patient_id: str,
@@ -203,15 +284,12 @@ class MedicationService:
         doses_json = [d.model_dump() for d in med_data.doses]
         now = datetime.now().replace(tzinfo=None)
 
-        # Track the most recent existing med for lineage
-        previous_med_id = None
         for med in existing:
             if self._is_same_medication(med, med_data, doses_json):
                 med.status = "completed"
             else:
                 med.status = "discontinued"
             med.discontinued_at = now
-            previous_med_id = med.medication_id  # link to the most recent one
 
         schedule_json = (
             med_data.schedule.model_dump(mode="json") if med_data.schedule else None
@@ -233,7 +311,6 @@ class MedicationService:
             start_date=med_data.start_date,
             end_date=med_data.end_date,
             status=self._initial_status(med_data),
-            previous_medication_id=previous_med_id,
         )
         session.add(medication)
         return medication
@@ -729,9 +806,6 @@ class MedicationService:
             medication_id=str(med.medication_id),
             prescription_id=(
                 str(med.prescription_id) if med.prescription_id else None
-            ),
-            previous_medication_id=(
-                str(med.previous_medication_id) if med.previous_medication_id else None
             ),
             name=med.name,
             brand_name=med.brand_name,

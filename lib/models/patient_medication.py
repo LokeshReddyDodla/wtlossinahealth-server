@@ -65,13 +65,6 @@ class PatientMedication(Base):
     discontinued_at = Column(DateTime, nullable=True)
     discontinued_by = Column(UUID(as_uuid=True), nullable=True)
 
-    # Dose adjustment lineage
-    previous_medication_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("patient_medications.medication_id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
     created_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

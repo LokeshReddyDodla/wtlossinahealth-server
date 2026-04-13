@@ -121,7 +121,6 @@ class ConfirmPrescriptionRequest(BaseModel):
 class MedicationResponse(BaseModel):
     medication_id: str
     prescription_id: str | None = None
-    previous_medication_id: str | None = None
     name: str
     brand_name: str | None = None
     strength: str | None = None

@@ -6,3 +6,4 @@ from .preview import *
 from .confirm import *
 from .read import *
 from .delete import *
+from .edit import *
