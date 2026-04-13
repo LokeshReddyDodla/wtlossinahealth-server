@@ -76,6 +76,7 @@ class MealReportService:
             )
             if not report:
                 self.trigger_daily_report_generation(patient_id, report_date)
+                return None
 
             if "meals" in report and isinstance(report["meals"], list):
                 report["meals"].sort(key=lambda m: m.get("time", ""))
