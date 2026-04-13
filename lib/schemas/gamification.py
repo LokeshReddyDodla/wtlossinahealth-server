@@ -172,13 +172,8 @@ CHALLENGE_LEADERBOARD_LIMIT = 20
 BUDDY_REQUESTS_PER_DAY = 5
 MAX_LEVEL = 200
 
-# Task types that can be manually completed
+# Task types that can be manually completed.
 MANUALLY_COMPLETABLE_TASKS = {
-    TaskType.LOG_MEAL.value,
-    TaskType.LOG_SLEEP.value,
-    TaskType.LOG_MOOD.value,
-    TaskType.LOG_GLUCOSE.value,
-    TaskType.LOG_WEIGHT.value,
     TaskType.TAKE_MEDICATION_MORNING.value,
     TaskType.TAKE_MEDICATION_AFTERNOON.value,
     TaskType.TAKE_MEDICATION_EVENING.value,
