@@ -24,6 +24,7 @@ from lib.models.patient_smbg import PatientSMBG
 from lib.models.patient_prescription import PatientPrescription
 from lib.models.patient_medication import PatientMedication
 from lib.models.gamification import DailyTask
+from lib.models.patient_report import PatientReport
 from rest_server.response_models import SuccessResponse
 from sqlalchemy import func, select
 
@@ -95,6 +96,7 @@ async def _count_postgres(store: PostgresStore) -> dict[str, dict[str, int]]:
         ("prescriptions", PatientPrescription),
         ("medications", PatientMedication),
         ("tasks_completed", DailyTask),
+        ("reports", PatientReport),
     ]
 
     counts: dict[str, dict[str, int]] = defaultdict(dict)
@@ -148,6 +150,10 @@ async def _count_mongo(mongo: MongoStore) -> dict[str, dict[str, int]]:
         ("ai_conversations", "ai_conversation_messages", "user_id"),
         ("patient_documents", "patient_documents", "patient_id"),
         ("proactive_insights", "ai_proactive_insights", "patient_id"),
+        ("cgm_reports", "cgm_reports", "patient_id"),
+        ("fitness_reports", "fitness_reports", "patient_id"),
+        ("sleep_reports", "sleep_reports", "patient_id"),
+        ("meal_reports", "meal_reports", "patient_id"),
     ]
 
     for label, collection_name, id_field in collections:
