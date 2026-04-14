@@ -265,13 +265,18 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
             if completed_types >= ACTIVITY_THRESHOLD:
                 continue
 
+            from lib.services.notification_budget import can_send, record_sent
+
             streak = streak_map[pid]
+            if not can_send(str(pid), "streak_reminder"):
+                continue
             await send_gamification_notification(
                 str(pid),
                 title="Don't lose your streak!",
                 body=f"You're on a {streak}-day streak. Complete a task to keep it going!",
                 data={"event_type": "streak_reminder", "current_streak": streak},
             )
+            record_sent(str(pid))
             sent += 1
         except Exception:
             logger.opt(exception=True).warning(f"Streak reminder failed for {pid}")
@@ -385,10 +390,15 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
 
                 if pending_task:
                     slot_name = task_type.replace("TAKE_MEDICATION_", "").lower()
+                    body = (
+                        f"Time to take: {pending_task.description}"
+                        if pending_task.description
+                        else f"Time to take your {slot_name} medications"
+                    )
                     await _send_medication_notification(
                         str(pid),
                         title="Medication reminder",
-                        body=f"Time to take your {slot_name} medications",
+                        body=body,
                         data={"event_type": "medication_reminder", "slot": slot_name},
                     )
                     sent += 1
@@ -396,6 +406,69 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
             logger.opt(exception=True).warning(f"Medication reminder failed for {pid}")
 
     logger.info(f"Sent medication reminders to {sent} patients")
+
+
+@task_with_logging
+async def send_follow_up_reminders(ctx: Dict[str, Any]) -> None:
+    """Follow-up appointment reminder — notify patients at 8 AM local.
+    Runs hourly; filters by patient-local 8:00 AM.
+    """
+    from lib.core.container import container
+    from lib.core.postgres_store import PostgresStore
+    from lib.models.gamification import DailyTask
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.schemas.gamification import TaskStatus, TaskType
+
+    store = container.resolve(PostgresStore)
+    resolver = container.resolve(PatientNameResolver)
+
+    async with store.get_session() as session:
+        result = await session.execute(
+            select(DailyTask.patient_id)
+            .where(
+                DailyTask.task_type == TaskType.FOLLOW_UP_APPOINTMENT.value,
+                DailyTask.status == TaskStatus.PENDING.value,
+            )
+            .distinct()
+        )
+        patient_ids = [r[0] for r in result.all()]
+
+    if not patient_ids:
+        return
+
+    tz_map = await resolver.resolve_timezones([str(pid) for pid in patient_ids])
+
+    sent = 0
+    for pid in patient_ids:
+        try:
+            tz_name = tz_map.get(str(pid))
+            if not matches_local_hour(tz_name, 8):
+                continue
+
+            today = local_today(tz_name)
+            async with store.get_session() as session:
+                task_result = await session.execute(
+                    select(DailyTask).where(
+                        DailyTask.patient_id == pid,
+                        DailyTask.task_date == today,
+                        DailyTask.task_type == TaskType.FOLLOW_UP_APPOINTMENT.value,
+                        DailyTask.status == TaskStatus.PENDING.value,
+                    )
+                )
+                pending_task = task_result.scalars().first()
+
+            if pending_task:
+                await _send_medication_notification(
+                    str(pid),
+                    title="Follow-up appointment today",
+                    body=pending_task.description or "You have a scheduled follow-up appointment today",
+                    data={"event_type": "follow_up_reminder"},
+                )
+                sent += 1
+        except Exception:
+            logger.opt(exception=True).warning(f"Follow-up reminder failed for {pid}")
+
+    logger.info(f"Sent follow-up reminders to {sent} patients")
 
 
 @task_with_logging
@@ -449,17 +522,18 @@ async def send_refill_reminders(ctx: Dict[str, Any]) -> None:
             if not matches_local_hour(tz_name, 9):
                 continue
 
-            # Use patient-local date for the 3-day check
             today = local_today(tz_name)
-            target_date = today + td(days=3)
-            if med.end_date != target_date:
+            name = f"{med.name} {med.strength}" if med.strength else med.name
+
+            # Check 7-day and 3-day thresholds
+            days_left = (med.end_date - today).days
+            if days_left not in (7, 3):
                 continue
 
-            name = f"{med.name} {med.strength}" if med.strength else med.name
             await _send_medication_notification(
                 pid,
                 title="Course ending soon",
-                body=f"Your {name} course ends in 3 days. Contact your doctor if you need a refill.",
+                body=f"Your {name} course ends in {days_left} days. Contact your doctor if you need a refill.",
                 data={"event_type": "refill_reminder", "medication_id": str(med.medication_id)},
             )
             sent += 1

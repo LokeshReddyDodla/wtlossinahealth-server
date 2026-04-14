@@ -178,6 +178,17 @@ class MedicationService:
         # Generate medication tasks for today immediately
         await self._refresh_medication_tasks(UUID(patient_id))
 
+        # Notify patient
+        med_names = [m.name for m in data.medicines]
+        doctor = data.doctor_name or "Your doctor"
+        await self._notify_patient(
+            patient_id,
+            title="New prescription",
+            body=f"Dr. {doctor} prescribed: {', '.join(med_names)}",
+            event_type="prescription_confirmed",
+            prescription_id=str(prescription.prescription_id),
+        )
+
         return prescription
 
     @with_postgres_session
@@ -258,6 +269,15 @@ class MedicationService:
             logger.exception("Qdrant sync failed for patient %s", patient_id)
 
         await self._refresh_medication_tasks(UUID(patient_id))
+
+        doctor = data.doctor_name or "Your care team"
+        await self._notify_patient(
+            patient_id,
+            title="Prescription updated",
+            body=f"Dr. {doctor} updated your prescription. Check your medication list.",
+            event_type="prescription_edited",
+            prescription_id=str(prescription.prescription_id),
+        )
 
         return prescription
 
@@ -503,12 +523,19 @@ class MedicationService:
         med = await self._get_med(medication_id, postgres_session)
         if not med:
             return None
+        med_name = med.name
+        pid = str(med.patient_id)
         med.status = "discontinued"
         med.discontinued_at = datetime.now().replace(tzinfo=None)
         med.discontinued_by = discontinued_by
         await postgres_session.commit()
-        await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._sync_qdrant(pid, postgres_session)
         await self._refresh_medication_tasks(med.patient_id)
+        await self._notify_patient(
+            pid, title="Medication discontinued",
+            body=f"Your {med_name} has been discontinued by your care team.",
+            event_type="medication_discontinued",
+        )
         return med
 
     @with_postgres_session
@@ -521,10 +548,17 @@ class MedicationService:
         med = await self._get_med(medication_id, postgres_session)
         if not med:
             return None
+        med_name = med.name
+        pid = str(med.patient_id)
         med.status = "paused"
         await postgres_session.commit()
-        await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._sync_qdrant(pid, postgres_session)
         await self._refresh_medication_tasks(med.patient_id)
+        await self._notify_patient(
+            pid, title="Medication paused",
+            body=f"Your {med_name} has been paused by your care team.",
+            event_type="medication_paused",
+        )
         return med
 
     @with_postgres_session
@@ -537,12 +571,19 @@ class MedicationService:
         med = await self._get_med(medication_id, postgres_session)
         if not med:
             return None
+        med_name = med.name
+        pid = str(med.patient_id)
         med.status = "active"
         med.discontinued_at = None
         med.discontinued_by = None
         await postgres_session.commit()
-        await self._sync_qdrant(str(med.patient_id), postgres_session)
+        await self._sync_qdrant(pid, postgres_session)
         await self._refresh_medication_tasks(med.patient_id)
+        await self._notify_patient(
+            pid, title="Medication resumed",
+            body=f"Your {med_name} has been resumed. Check your tasks.",
+            event_type="medication_resumed",
+        )
         return med
 
     @with_postgres_session
@@ -608,6 +649,7 @@ class MedicationService:
             changed += 1
 
         # 2. Activate scheduled medications whose start_date has arrived
+        activated_meds: list[tuple[str, str]] = []  # (patient_id, med_name)
         result = await postgres_session.execute(
             select(PatientMedication).where(
                 PatientMedication.status == "scheduled",
@@ -617,6 +659,7 @@ class MedicationService:
         for med in result.scalars().all():
             med.status = "active"
             patient_ids.add(str(med.patient_id))
+            activated_meds.append((str(med.patient_id), med.name))
             changed += 1
 
         if not changed:
@@ -629,6 +672,15 @@ class MedicationService:
                 await self._sync_qdrant(pid, postgres_session)
             except Exception:
                 logger.exception("Qdrant sync failed for patient %s", pid)
+
+        # Notify patients about newly activated medications
+        for pid, med_name in activated_meds:
+            await self._notify_patient(
+                pid,
+                title="Medication starts today",
+                body=f"Your {med_name} course begins today. Check your tasks.",
+                event_type="medication_activated",
+            )
 
         return changed
 
@@ -785,6 +837,24 @@ class MedicationService:
             )
         except Exception:
             logger.exception("Medication task refresh failed for %s", patient_id)
+
+    @staticmethod
+    async def _notify_patient(patient_id: str, title: str, body: str, event_type: str, **extra_data) -> None:
+        """Send medication-related FCM notification to the patient."""
+        try:
+            from lib.services.fcm_service import FCMService
+            from lib.services.notification_budget import record_sent
+            await FCMService().send_fcm_notification_to_user_devices(
+                user_id=patient_id,
+                title=title,
+                body=body,
+                channel_key="reminders",
+                group_key="reminder_group",
+                data={"type": "medication", "event_type": event_type, **extra_data},
+            )
+            record_sent(patient_id)
+        except Exception:
+            logger.debug("Medication notification failed for %s: %s", patient_id, event_type)
 
     async def _get_med(
         self, medication_id: str, session: AsyncSession

@@ -533,10 +533,23 @@ class TaskGeneratorService:
             if not task_type:
                 continue
 
-            med_names = [
-                f"{m.name} {m.strength}" if m.strength else m.name
-                for m in meds
-            ]
+            med_names = []
+            for m in meds:
+                name = f"{m.name} {m.strength}" if m.strength else m.name
+                schedule = m.schedule
+                if schedule:
+                    stype = schedule.get("type", "weekly")
+                    if stype == "weekly":
+                        days = schedule.get("days_of_week", [0,1,2,3,4,5,6])
+                        if len(days) < 7:
+                            name += " (weekly)" if len(days) <= 2 else f" ({len(days)}x/week)"
+                    elif stype == "interval":
+                        interval = schedule.get("interval_days")
+                        if interval == 2:
+                            name += " (alternate days)"
+                        elif interval:
+                            name += f" (every {interval} days)"
+                med_names.append(name)
             description = ", ".join(med_names)
 
             tasks.append(
