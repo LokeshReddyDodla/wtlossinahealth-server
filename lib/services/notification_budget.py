@@ -6,7 +6,6 @@ capped at DAILY_CAP per patient per day.
 """
 
 from datetime import date
-from typing import Optional
 
 DAILY_CAP = 8
 

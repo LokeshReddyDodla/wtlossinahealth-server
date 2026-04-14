@@ -270,7 +270,7 @@ class MedicationService:
 
         await self._refresh_medication_tasks(UUID(patient_id))
 
-        doctor = data.doctor_name or "Your care team"
+        doctor = data.doctor_name or "Your doctor"
         await self._notify_patient(
             patient_id,
             title="Prescription updated",

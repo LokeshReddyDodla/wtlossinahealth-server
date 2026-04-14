@@ -462,7 +462,7 @@ async def send_follow_up_reminders(ctx: Dict[str, Any]) -> None:
                 await _send_medication_notification(
                     str(pid),
                     title="Follow-up appointment today",
-                    body=pending_task.description or "You have a scheduled follow-up appointment today",
+                    body=pending_task.title or "You have a scheduled follow-up appointment today",
                     data={"event_type": "follow_up_reminder"},
                 )
                 sent += 1
