@@ -221,6 +221,7 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
     from lib.services.gamification.notifications import send_gamification_notification
     from lib.services.gamification.streak_service import ACTIVITY_TASK_TYPES, ACTIVITY_THRESHOLD
     from lib.schemas.gamification import TaskStatus
+    from lib.services.notification_budget import can_send, record_sent
 
     store = container.resolve(PostgresStore)
     resolver = container.resolve(PatientNameResolver)
@@ -264,8 +265,6 @@ async def send_streak_reminders(ctx: Dict[str, Any]) -> None:
 
             if completed_types >= ACTIVITY_THRESHOLD:
                 continue
-
-            from lib.services.notification_budget import can_send, record_sent
 
             streak = streak_map[pid]
             if not can_send(str(pid), "streak_reminder"):
@@ -317,6 +316,7 @@ async def _send_medication_notification(
     """FCM notification on the 'reminders' channel — separate from gamification."""
     try:
         from lib.services.fcm_service import FCMService
+        from lib.services.notification_budget import record_sent
 
         await FCMService().send_fcm_notification_to_user_devices(
             user_id=patient_id,
@@ -326,6 +326,7 @@ async def _send_medication_notification(
             group_key="reminder_group",
             data={"type": "medication", **(data or {})},
         )
+        record_sent(patient_id)
     except Exception as exc:
         logger.warning("Failed medication notification for %s: %s", patient_id, exc)
 

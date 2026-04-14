@@ -30,6 +30,7 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
             is_within_scan_window,
         )
         from lib.services.fcm_service import FCMService
+        from lib.services.notification_budget import can_send, record_sent
 
         from .templates import get_message, get_tier
 
@@ -103,7 +104,6 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
                 attempt = attempt_counts.get(pid, 0) + 1
                 title, body = get_message(tier, first_name, days_inactive, attempt)
 
-                from lib.services.notification_budget import can_send, record_sent
                 if not can_send(pid, "re_engagement"):
                     continue
 
