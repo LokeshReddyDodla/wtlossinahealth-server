@@ -36,6 +36,11 @@ def _make_module(name: str, **attrs) -> types.ModuleType:
     return module
 
 
+async def _async_noop(*_a, **_k):
+    """Awaitable no-op for stubbing async functions in tests."""
+    return None
+
+
 def _load_module(monkeypatch, relative_path: str, module_name: str, stubs: dict[str, types.ModuleType]):
     for name, module in stubs.items():
         monkeypatch.setitem(sys.modules, name, module)
@@ -86,8 +91,25 @@ def _base_stubs() -> dict[str, types.ModuleType]:
         LeaderboardResponse=type("LeaderboardResponse", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}),
         FeedEventResponse=type("FeedEventResponse", (), {"__init__": lambda self, **kw: self.__dict__.update(kw)}),
         TaskStatus=SimpleNamespace(COMPLETED=SimpleNamespace(value="completed"), PENDING=SimpleNamespace(value="pending")),
-        TaskType=_make_str_enum("TaskType", LOG_MEAL="LOG_MEAL", HIT_CALORIE_TARGET="HIT_CALORIE_TARGET", HIT_PROTEIN_TARGET="HIT_PROTEIN_TARGET", HIT_STEP_GOAL="HIT_STEP_GOAL", COMPLETE_WORKOUT="COMPLETE_WORKOUT", LOG_SLEEP="LOG_SLEEP", LOG_MOOD="LOG_MOOD", LOG_GLUCOSE="LOG_GLUCOSE", LOG_WEIGHT="LOG_WEIGHT", CHALLENGE_TASK="CHALLENGE_TASK"),
-        SourceType=_make_str_enum("SourceType", DIET_PLAN="diet_plan", FITNESS_PLAN="fitness_plan", HABIT="habit", QUEST="quest", CHALLENGE="challenge"),
+        TaskType=_make_str_enum(
+            "TaskType",
+            LOG_MEAL="LOG_MEAL", HIT_CALORIE_TARGET="HIT_CALORIE_TARGET",
+            HIT_PROTEIN_TARGET="HIT_PROTEIN_TARGET", HIT_STEP_GOAL="HIT_STEP_GOAL",
+            COMPLETE_WORKOUT="COMPLETE_WORKOUT", LOG_SLEEP="LOG_SLEEP",
+            LOG_MOOD="LOG_MOOD", LOG_GLUCOSE="LOG_GLUCOSE",
+            LOG_WEIGHT="LOG_WEIGHT", CHALLENGE_TASK="CHALLENGE_TASK",
+            TAKE_MEDICATION_MORNING="TAKE_MEDICATION_MORNING",
+            TAKE_MEDICATION_AFTERNOON="TAKE_MEDICATION_AFTERNOON",
+            TAKE_MEDICATION_EVENING="TAKE_MEDICATION_EVENING",
+            TAKE_MEDICATION_NIGHT="TAKE_MEDICATION_NIGHT",
+            FOLLOW_UP_APPOINTMENT="FOLLOW_UP_APPOINTMENT",
+        ),
+        SourceType=_make_str_enum(
+            "SourceType",
+            DIET_PLAN="diet_plan", FITNESS_PLAN="fitness_plan",
+            HABIT="habit", QUEST="quest", CHALLENGE="challenge",
+            MEDICATION="medication", PRESCRIPTION="prescription",
+        ),
         ParticipantStatus=_make_str_enum("ParticipantStatus", ACTIVE="active", COMPLETED="completed", WITHDRAWN="withdrawn"),
         ParticipantType=_make_str_enum("ParticipantType", PATIENT="patient", GROUP="group"),
         BuddyStatus=_make_str_enum("BuddyStatus", ACTIVE="active", PENDING="pending", REMOVED="removed"),
@@ -113,13 +135,38 @@ def _base_stubs() -> dict[str, types.ModuleType]:
         xp_for_level=lambda level: 0 if level <= 1 else int(200 * (level ** 1.5)),
     )
 
+    # Stub lib.models as a package so service modules importing
+    # `from lib.models.x import Y` don't trigger the real package init.
+    lib_models_pkg = _make_module("lib.models", Base=type("Base", (), {}))
+    lib_models_pkg.__path__ = []
+
     return {
         "sqlalchemy": sqlalchemy,
         "sqlalchemy.ext": sqlalchemy_ext,
         "sqlalchemy.ext.asyncio": sqlalchemy_asyncio,
+        "sqlalchemy.orm": _make_module(
+            "sqlalchemy.orm",
+            declarative_base=lambda: type("Base", (), {}),
+            sessionmaker=lambda *a, **k: None,
+            relationship=lambda *a, **k: None,
+            selectinload=lambda *a, **k: None,
+        ),
         "lib.core.postgres_store": _make_module("lib.core.postgres_store", PostgresStore=type("PostgresStore", (), {})),
+        "lib.models": lib_models_pkg,
         "lib.models.gamification": gamification_models,
         "lib.models.patient": _make_module("lib.models.patient", Patient=type("Patient", (), {})),
+        "lib.models.patient_diabetic_history": _make_module(
+            "lib.models.patient_diabetic_history",
+            PatientDiabeticHistory=type("PatientDiabeticHistory", (), {}),
+        ),
+        "lib.models.patient_medication": _make_module(
+            "lib.models.patient_medication",
+            PatientMedication=type("PatientMedication", (), {}),
+        ),
+        "lib.models.patient_prescription": _make_module(
+            "lib.models.patient_prescription",
+            PatientPrescription=type("PatientPrescription", (), {}),
+        ),
         "lib.schemas.gamification": gamification_schemas,
         "lib.services.gamification.time_utils": _make_module(
             "lib.services.gamification.time_utils",
@@ -128,7 +175,7 @@ def _base_stubs() -> dict[str, types.ModuleType]:
         ),
         "lib.services.gamification.notifications": _make_module(
             "lib.services.gamification.notifications",
-            send_gamification_notification=lambda *a, **k: None,
+            send_gamification_notification=_async_noop,
         ),
         "lib.services.gamification.xp_service": _make_module(
             "lib.services.gamification.xp_service",
