@@ -208,7 +208,8 @@ class GamificationService:
                 for override in _local_overrides.STATIC_TASK_OVERRIDES.get(
                     str(patient_id), []
                 ):
-                    task_responses.append(
+                    task_responses.insert(
+                        0,
                         DailyTaskResponse(
                             task_id=override["task_id"],
                             task_date=task_date,
