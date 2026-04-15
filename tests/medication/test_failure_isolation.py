@@ -200,6 +200,9 @@ class TestConfirmPrescriptionFailureIsolation:
 class TestLifecycleSideEffectFailures:
     @pytest.mark.asyncio
     async def test_pause_qdrant_failure_does_not_raise(self):
+        """pause_medication wraps _sync_qdrant in try/except — Qdrant outage
+        must NOT surface a 500 to the caller after the DB commit succeeded.
+        Refresh + notify still run."""
         svc = _service()
         med = _fake_med(status="active")
 
@@ -211,17 +214,53 @@ class TestLifecycleSideEffectFailures:
         svc._refresh_medication_tasks = AsyncMock()
         svc._notify_patient = AsyncMock()
 
-        # In the current implementation pause_medication does not wrap
-        # _sync_qdrant in try/except — it WILL raise. Document that.
-        with pytest.raises(Exception, match="Qdrant exploded"):
-            await svc.pause_medication(
-                medication_id=str(med.medication_id),
-                postgres_session=session,
-            )
-        # But the DB commit already happened (med.status set + committed
-        # before _sync_qdrant call)
+        result = await svc.pause_medication(
+            medication_id=str(med.medication_id),
+            postgres_session=session,
+        )
+        assert result is med
         assert med.status == "paused"
         assert session.commit.await_count == 1
+        # Downstream side effects still ran
+        svc._refresh_medication_tasks.assert_awaited_once()
+        svc._notify_patient.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_resume_qdrant_failure_does_not_raise(self):
+        svc = _service()
+        med = _fake_med(status="paused")
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=_scalars_first(med))
+        session.commit = AsyncMock()
+
+        svc._sync_qdrant = AsyncMock(side_effect=Exception("Qdrant exploded"))
+        svc._refresh_medication_tasks = AsyncMock()
+        svc._notify_patient = AsyncMock()
+
+        result = await svc.resume_medication(
+            medication_id=str(med.medication_id),
+            postgres_session=session,
+        )
+        assert result.status == "active"
+
+    @pytest.mark.asyncio
+    async def test_discontinue_qdrant_failure_does_not_raise(self):
+        svc = _service()
+        med = _fake_med(status="active")
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=_scalars_first(med))
+        session.commit = AsyncMock()
+
+        svc._sync_qdrant = AsyncMock(side_effect=Exception("Qdrant exploded"))
+        svc._refresh_medication_tasks = AsyncMock()
+        svc._notify_patient = AsyncMock()
+
+        result = await svc.discontinue_medication(
+            medication_id=str(med.medication_id),
+            discontinued_by=str(uuid4()),
+            postgres_session=session,
+        )
+        assert result.status == "discontinued"
 
     @pytest.mark.asyncio
     async def test_pause_notify_failure_does_not_raise(self):

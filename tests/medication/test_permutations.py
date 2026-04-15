@@ -131,7 +131,9 @@ class TestIsSameMedicationPermutations:
             ("500mg", " 500mg", True),        # leading ws
             ("500mg ", "500mg", True),        # trailing ws
             ("  500mg  ", "500mg", True),     # double ws
-            ("500mg", "500 mg", False),       # internal ws differs — not stripped
+            ("500mg", "500 mg", True),        # internal whitespace also normalised
+            ("500 mg", "500mg", True),
+            ("5 0 0 m g", "500mg", True),     # all whitespace stripped
             ("500mg", "1000mg", False),
             ("500mg", "0.5g", False),         # units differ
             (None, None, True),               # both null
