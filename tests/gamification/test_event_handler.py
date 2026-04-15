@@ -62,10 +62,13 @@ class TestGamificationEventHandler:
         class FakeXPService:
             async def grant_xp(self, **kwargs):
                 xp_calls.append(kwargs)
+                # Production unpacks (xp_granted, new_level, leveled_up)
+                return (kwargs.get("amount", 0), 1, False)
 
         class FakeAchievements:
             async def evaluate_all(self, **kwargs):
                 achievement_calls.append(kwargs)
+                return []  # Production iterates the result
 
         handler = module.GamificationEventHandler(
             postgres_store=None,
@@ -195,6 +198,7 @@ class TestGamificationEventHandler:
         class FakeXPService:
             async def grant_xp(self, **kwargs):
                 xp_calls.append(kwargs)
+                return (kwargs.get("amount", 0), 1, False)
 
         module = load_module(
             monkeypatch,

@@ -615,7 +615,12 @@ def base_stubs() -> dict[str, types.ModuleType]:
             relationship=lambda *a, **k: None,
             selectinload=lambda *a, **k: None,
             joinedload=lambda *a, **k: None,
+            aliased=lambda *a, **k: ExprStub(),
             Session=type("Session", (), {}),
+        ),
+        "sqlalchemy.orm.attributes": make_module(
+            "sqlalchemy.orm.attributes",
+            flag_modified=lambda *a, **k: None,
         ),
         "sqlalchemy.dialects": make_module("sqlalchemy.dialects"),
         "sqlalchemy.dialects.postgresql": make_module(
@@ -694,9 +699,17 @@ def base_stubs() -> dict[str, types.ModuleType]:
                 "patient_id",
                 "status",
                 "start_date",
+                "end_date",
                 "fitness_plan_id",
                 "steps_goal",
                 "content",
+            ),
+        ),
+        "lib.models.care_provider": make_module(
+            "lib.models.care_provider",
+            CareProvider=model_class(
+                "CareProvider",
+                "care_provider_id", "permissions",
             ),
         ),
         "lib.schemas.gamification": gamification_schemas,
@@ -750,6 +763,23 @@ def base_stubs() -> dict[str, types.ModuleType]:
         "lib.utils.postgres_session_decorator": make_module(
             "lib.utils.postgres_session_decorator",
             with_postgres_session=lambda fn: fn,
+        ),
+        # Short-circuit the deep service-graph imports.  Tests that need
+        # specific behavior should override these in `extra_stubs`.
+        "lib.services.patient_profile_service": make_module(
+            "lib.services.patient_profile_service",
+            PatientProfileService=type("PatientProfileService", (), {}),
+        ),
+        "lib.services.care_provider_profile_service": make_module(
+            "lib.services.care_provider_profile_service",
+            CareProviderProfileService=type("CareProviderProfileService", (), {}),
+        ),
+        "lib.core.container": make_module(
+            "lib.core.container",
+            container=SimpleNamespace(
+                resolve=lambda _cls: SimpleNamespace(),
+                register=lambda *a, **k: None,
+            ),
         ),
     }
 

@@ -153,3 +153,42 @@ class TestChallengeService:
         )
 
         assert active == [(shared_challenge.challenge_id, 3)]
+
+
+class TestParticipantRewardPolicy:
+    """Locks the XP-reward policy for `_participant_reward_xp`.
+
+    Salvaged from the now-deleted tests/test_gamification_unit_logic.py.
+    """
+
+    def _service(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            f"challenge_reward_policy_{uuid4().hex}",
+        )
+        return object.__new__(module.ChallengeService)
+
+    def test_group_competitive_winner_gets_base_plus_bonus(self, monkeypatch):
+        service = self._service(monkeypatch)
+        challenge = SimpleNamespace(
+            scope="group_competitive", xp_reward=50, bonus_xp_winner=25,
+        )
+        participant = SimpleNamespace(
+            participant_type="group", status="active", rank=1,
+        )
+        assert service._participant_reward_xp(challenge, participant) == 75
+
+    def test_cooperative_requires_completion(self, monkeypatch):
+        service = self._service(monkeypatch)
+        challenge = SimpleNamespace(
+            scope="group_cooperative", xp_reward=80, bonus_xp_winner=0,
+        )
+        incomplete = SimpleNamespace(
+            participant_type="group", status="active", rank=2,
+        )
+        complete = SimpleNamespace(
+            participant_type="group", status="completed", rank=2,
+        )
+        assert service._participant_reward_xp(challenge, incomplete) == 0
+        assert service._participant_reward_xp(challenge, complete) == 80
