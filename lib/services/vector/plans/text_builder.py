@@ -42,6 +42,8 @@ class PlansTextReprBuilder:
                 time = m.get("time")
                 cal = m.get("calories")
                 prot = m.get("protein")
+                carbs = m.get("carbs")
+                fats = m.get("fats")
                 suggestions = m.get("suggestions", [])
 
                 desc = slot.capitalize()
@@ -52,6 +54,10 @@ class PlansTextReprBuilder:
                     details.append(f"{cal:.0f} cal")
                 if prot:
                     details.append(f"{prot:.0f}g protein")
+                if carbs:
+                    details.append(f"{carbs:.0f}g carbs")
+                if fats:
+                    details.append(f"{fats:.0f}g fats")
                 if details:
                     desc += f" ({', '.join(details)})"
                 if suggestions:
