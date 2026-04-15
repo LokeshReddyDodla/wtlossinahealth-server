@@ -9,7 +9,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     String,
-    Boolean,
     Index,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -41,7 +40,6 @@ class PatientDietPlan(Base):
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
-    is_default = Column(Boolean, default=False, index=True)
     status = Column(String(20), default="ACTIVE", index=True)
     plan_reason = Column(String, nullable=True)
 
@@ -56,11 +54,5 @@ class PatientDietPlan(Base):
     patient = relationship("Patient", back_populates="diet_plans")
 
     __table_args__ = (
-        Index(
-            "ix_patient_diet_plan_default",
-            "patient_id",
-            unique=True,
-            postgresql_where="is_default = true",
-        ),
         Index("ix_patient_diet_plan_status_date", "patient_id", "status", "start_date"),
     )
