@@ -40,7 +40,6 @@ class PatientFitnessPlanService:
         fitness_plan_data: PatientFitnessPlanCreate,
         start_date: datetime_date,
         end_date: Optional[datetime_date] = None,
-        is_default: bool = False,
         status: str = "ACTIVE",
         plan_reason: Optional[str] = None,
         *,
@@ -69,16 +68,6 @@ class PatientFitnessPlanService:
                         message=f"You already have an active fitness plan from {overlapping_plan.start_date.strftime('%B %d, %Y')} to {end_date_display}. Please pause or archive it before creating a new one.",
                     )
 
-            if is_default:
-                existing_default = await self.get_default_fitness_plan(
-                    patient_id, postgres_session=postgres_session
-                )
-                if existing_default:
-                    raise_http_exception(
-                        status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message="A default fitness plan already exists. Please update the existing one or remove its default status first.",
-                    )
-
             fitness_plan = PatientFitnessPlanModel(
                 patient_id=patient_id,
                 **fitness_plan_data.model_dump(),
@@ -105,7 +94,6 @@ class PatientFitnessPlanService:
         fitness_plan_data: PatientFitnessPlanCreate,
         start_date: datetime_date,
         end_date: Optional[datetime_date] = None,
-        is_default: bool = False,
         plan_reason: Optional[str] = None,
         *,
         postgres_session: AsyncSession,
@@ -137,7 +125,6 @@ class PatientFitnessPlanService:
                 fitness_plan_data=fitness_plan_data,
                 start_date=start_date,
                 end_date=end_date,
-                is_default=is_default,
                 status="ACTIVE",
                 plan_reason=plan_reason,
                 postgres_session=postgres_session,
@@ -183,30 +170,6 @@ class PatientFitnessPlanService:
             raise_http_exception(
                 status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
                 message="Unable to load your active fitness plan. Please try again.",
-                detail=str(e),
-            )
-
-    @with_postgres_session
-    async def get_default_fitness_plan(
-        self,
-        patient_id: str,
-        *,
-        postgres_session: AsyncSession,
-    ) -> Optional[PatientFitnessPlanModel]:
-        """Get the default fitness plan for a patient (set during onboarding)."""
-        try:
-            stmt = select(PatientFitnessPlanModel).where(
-                PatientFitnessPlanModel.patient_id == patient_id,
-                PatientFitnessPlanModel.is_default.is_(True),
-                PatientFitnessPlanModel.status == "ACTIVE",
-            )
-
-            result = await postgres_session.execute(stmt)
-            return result.scalars().first()
-        except SQLAlchemyError as e:
-            raise_http_exception(
-                status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Unable to load your default fitness plan. Please try again.",
                 detail=str(e),
             )
 
@@ -391,7 +354,6 @@ class PatientFitnessPlanService:
                 "end_date": str(plan.end_date) if plan.end_date else None,
                 "status": plan.status,
                 "plan_reason": plan.plan_reason,
-                "is_default": plan.is_default,
                 "steps_goal": plan.steps_goal,
                 "content": plan.content,
             }

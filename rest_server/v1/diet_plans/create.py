@@ -68,7 +68,6 @@ async def create_diet_plan(
             diet_plan_data=payload,
             start_date=payload.start_date,
             end_date=payload.end_date,
-            is_default=payload.is_default,
             status=payload.status,
         )  # type: ignore
 

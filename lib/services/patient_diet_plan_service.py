@@ -40,7 +40,6 @@ class PatientDietPlanService:
         diet_plan_data: PatientDietPlanCreate,
         start_date: datetime_date,
         end_date: Optional[datetime_date] = None,
-        is_default: bool = False,
         status: str = "ACTIVE",
         *,
         postgres_session: AsyncSession,
@@ -66,16 +65,6 @@ class PatientDietPlanService:
                     raise_http_exception(
                         status_code=responseStatus.HTTP_400_BAD_REQUEST,
                         message=f"You already have an active diet plan from {overlapping_plan.start_date.strftime('%B %d, %Y')} to {end_date_display}. Please pause or archive it before creating a new one.",
-                    )
-
-            if is_default:
-                existing_default = await self.get_default_diet_plan(
-                    patient_id, postgres_session=postgres_session
-                )
-                if existing_default:
-                    raise_http_exception(
-                        status_code=responseStatus.HTTP_400_BAD_REQUEST,
-                        message="A default diet plan already exists. Please update the existing one or remove its default status first.",
                     )
 
             diet_plan = PatientDietPlanModel(
@@ -104,7 +93,6 @@ class PatientDietPlanService:
         diet_plan_data: PatientDietPlanCreate,
         start_date: datetime_date,
         end_date: Optional[datetime_date] = None,
-        is_default: bool = False,
         plan_reason: Optional[str] = None,
         *,
         postgres_session: AsyncSession,
@@ -136,7 +124,6 @@ class PatientDietPlanService:
                 diet_plan_data=diet_plan_data,
                 start_date=start_date,
                 end_date=end_date,
-                is_default=is_default,
                 status="ACTIVE",
                 plan_reason=plan_reason,
                 postgres_session=postgres_session,
@@ -191,24 +178,6 @@ class PatientDietPlanService:
         patient_id: str,
         *,
         postgres_session: AsyncSession,
-    ) -> Optional[PatientDietPlanModel]:
-        """Get the default diet plan for a patient (set during onboarding)."""
-        try:
-            stmt = select(PatientDietPlanModel).where(
-                PatientDietPlanModel.patient_id == patient_id,
-                PatientDietPlanModel.is_default.is_(True),
-                PatientDietPlanModel.status == "ACTIVE",
-            )
-
-            result = await postgres_session.execute(stmt)
-            return result.scalars().first()
-        except SQLAlchemyError as e:
-            raise_http_exception(
-                status_code=responseStatus.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Unable to load your default diet plan. Please try again.",
-                detail=str(e),
-            )
-
     @with_postgres_session
     async def get_patient_diet_plans(
         self,
@@ -391,7 +360,6 @@ class PatientDietPlanService:
                 "end_date": str(plan.end_date) if plan.end_date else None,
                 "status": plan.status,
                 "plan_reason": plan.plan_reason,
-                "is_default": plan.is_default,
                 "calories": plan.calories,
                 "protein": plan.protein,
                 "carbs": plan.carbs,
