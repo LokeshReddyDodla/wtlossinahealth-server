@@ -365,6 +365,8 @@ def base_stubs() -> dict[str, types.ModuleType]:
             DIET_PLAN=EnumValue("diet_plan"),
             FITNESS_PLAN=EnumValue("fitness_plan"),
             CHALLENGE=EnumValue("challenge"),
+            MEDICATION=EnumValue("medication"),
+            PRESCRIPTION=EnumValue("prescription"),
         ),
         TaskType=SimpleNamespace(
             LOG_MEAL=EnumValue("LOG_MEAL"),

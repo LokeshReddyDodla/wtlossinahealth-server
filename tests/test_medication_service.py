@@ -127,14 +127,16 @@ class TestIsSameMedication:
         assert self._check() is True
 
     def test_same_weekly_schedule_is_same(self):
+        full_sched = {"type": "weekly", "days_of_week": [0, 2, 4], "interval_days": None, "interval_anchor": None}
         assert self._check(
-            existing_overrides={"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
+            existing_overrides={"schedule": full_sched},
             new_overrides={"schedule": MedicationSchedule(type="weekly", days_of_week=[0, 2, 4])},
         ) is True
 
     def test_different_weekly_days_not_same(self):
+        full_sched = {"type": "weekly", "days_of_week": [0, 2, 4], "interval_days": None, "interval_anchor": None}
         assert self._check(
-            existing_overrides={"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
+            existing_overrides={"schedule": full_sched},
             new_overrides={"schedule": MedicationSchedule(type="weekly", days_of_week=[1, 3, 5])},
         ) is False
 
