@@ -506,20 +506,20 @@ async def get_buddy_progress(
 
 
 @router.get(
-    "/patients/{patient_id}/buddies/{buddy_id}",
+    "/patients/{patient_id}/buddies/by-code/{buddy_code}",
     response_model=SuccessResponse[BuddyDetailResponse],
 )
 async def get_buddy_detail(
     patient_id: UUID,
-    buddy_id: UUID,
+    buddy_code: str,
     service: BuddyService = Depends(get_buddy_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    """Rich buddy details — name, picture, level, streaks, achievements."""
+    """Rich buddy details by buddy_code — name, picture, level, streaks, achievements."""
     pid = await _resolve_patient(patient_id, actor, cp_access)
     try:
-        detail = await service.get_buddy_detail(buddy_id, pid)
+        detail = await service.get_buddy_detail(buddy_code, pid)
         return SuccessResponse(message="Buddy detail", data=detail)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -585,19 +585,19 @@ async def get_group(
 
 
 @router.get(
-    "/patients/{patient_id}/groups/{group_id}/info",
+    "/patients/{patient_id}/groups/by-code/{invite_code}",
     response_model=SuccessResponse[GroupInfoResponse],
 )
 async def get_group_info(
     patient_id: UUID,
-    group_id: UUID,
+    invite_code: str,
     service: GroupService = Depends(get_group_service),
     actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
     cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
 ):
-    """Rich group info — avatar, your role, top member previews."""
+    """Rich group info by invite_code — avatar, your role, top member previews."""
     pid = await _resolve_patient(patient_id, actor, cp_access)
-    info = await service.get_group_info(group_id, pid)
+    info = await service.get_group_info(invite_code, pid)
     if not info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return SuccessResponse(message="Group info", data=info)

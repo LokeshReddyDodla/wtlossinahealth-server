@@ -409,21 +409,31 @@ class BuddyService:
     @with_postgres_session
     async def get_buddy_detail(
         self,
-        buddy_id: UUID,
+        buddy_code: str,
         patient_id: UUID,
         *,
         postgres_session: AsyncSession,
     ):
-        """Rich buddy details for the buddy profile screen — name, picture, level, streaks, etc."""
+        """Rich buddy details by buddy_code (the buddy's personal share code)."""
         from lib.schemas.gamification import BuddyDetailResponse
         from lib.models.gamification import Achievement
 
+        # Resolve buddy_code → other patient_id
+        code_result = await postgres_session.execute(
+            select(PlayerProfile.patient_id).where(
+                PlayerProfile.buddy_code == buddy_code.upper().strip()
+            )
+        )
+        other_id = code_result.scalar()
+        if not other_id:
+            raise ValueError("Buddy not found")
+
+        # Find the buddy relationship between this patient and the resolved one
         result = await postgres_session.execute(
             select(Buddy).where(
-                Buddy.buddy_id == buddy_id,
                 or_(
-                    Buddy.requester_id == patient_id,
-                    Buddy.accepter_id == patient_id,
+                    (Buddy.requester_id == patient_id) & (Buddy.accepter_id == other_id),
+                    (Buddy.accepter_id == patient_id) & (Buddy.requester_id == other_id),
                 ),
                 Buddy.status.in_(["active", "pending"]),
             )
@@ -431,12 +441,6 @@ class BuddyService:
         buddy = result.scalars().first()
         if not buddy:
             raise ValueError("Buddy not found")
-
-        other_id = (
-            buddy.accepter_id
-            if buddy.requester_id == patient_id
-            else buddy.requester_id
-        )
 
         direction = None
         if buddy.status == "pending":
