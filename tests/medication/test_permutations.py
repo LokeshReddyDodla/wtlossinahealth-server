@@ -423,8 +423,10 @@ class TestMedicationDoseValidator:
             ("morning", 0.25, True),       # quarter
             ("morning", 1.5, True),        # odd float
             ("morning", 10, True),         # large but valid
-            ("morning", 0, True),          # zero — schema doesn't constrain (documented behavior)
-            ("morning", -1, True),         # schema doesn't constrain negative (documented behavior)
+            ("morning", 0, False),         # zero rejected (must be > 0)
+            ("morning", -1, False),        # negative rejected
+            ("morning", -0.5, False),      # any negative
+            ("morning", -100, False),
             # invalid slots
             ("MORNING", 1, False),
             ("", 1, False),

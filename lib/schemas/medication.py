@@ -22,7 +22,7 @@ DayOfWeek = Literal[0, 1, 2, 3, 4, 5, 6]  # Mon=0 .. Sun=6
 
 class MedicationDose(BaseModel):
     slot: MedicationSlot
-    quantity: float = 1
+    quantity: float = Field(1, gt=0, description="Number of units per dose; must be > 0.")
 
 
 class MedicationSchedule(BaseModel):
