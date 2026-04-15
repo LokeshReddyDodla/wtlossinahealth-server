@@ -49,9 +49,11 @@ def test_write_dataset_chunks_splits_and_writes_valid_ndjson(tmp_path: Path):
 
     assert len(chunks) > 1
 
+    # `chunk["path"]` is relative to dataset_dir.parent (the exports root),
+    # not dataset_dir itself.
     read_rows = 0
     for chunk in chunks:
-        chunk_path = tmp_path / chunk["path"]
+        chunk_path = tmp_path.parent / chunk["path"]
         assert chunk_path.exists()
         with open(chunk_path, "r", encoding="utf-8") as f:
             for line in f:

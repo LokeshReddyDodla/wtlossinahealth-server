@@ -200,10 +200,39 @@ class TestGamificationEventHandler:
                 xp_calls.append(kwargs)
                 return (kwargs.get("amount", 0), 1, False)
 
+        # _update_quest_progress now calls task_gen.generate_weekly_quest()
+        # via container.resolve(). Stub the container to return a real fake.
+        from tests.gamification.helpers import make_module
+
+        class FakeTaskGenerator:
+            async def generate_weekly_quest(self, _pid, _week_start):
+                return None
+
+        class FakeFeed:
+            async def post_event(self, **_kw):
+                return None
+
+        def _resolve(cls):
+            name = getattr(cls, "__name__", "")
+            if "TaskGenerator" in name:
+                return FakeTaskGenerator()
+            if "Feed" in name:
+                return FakeFeed()
+            return SimpleNamespace()
+
         module = load_module(
             monkeypatch,
             "lib/services/gamification/event_handler.py",
             "gamification_test_event_handler_quest",
+            extra_stubs={
+                "lib.core.container": make_module(
+                    "lib.core.container",
+                    container=SimpleNamespace(
+                        resolve=_resolve,
+                        register=lambda *a, **k: None,
+                    ),
+                ),
+            },
         )
         handler = module.GamificationEventHandler(
             postgres_store=FakeStore(),

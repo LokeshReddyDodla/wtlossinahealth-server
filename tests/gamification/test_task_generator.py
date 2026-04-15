@@ -100,6 +100,7 @@ class TestTaskGeneratorService:
             title="April Steps",
             scope="group_competitive",
             target_value=100000.0,
+            xp_reward=100,
         )
         patient_participant = SimpleNamespace(
             participant_type="patient",

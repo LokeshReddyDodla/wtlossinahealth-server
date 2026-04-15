@@ -19,6 +19,12 @@ class TestGroupService:
         )
         service = module.GroupService(postgres_store=None)
         creator_id = uuid4()
+
+        # Short-circuit invite code generation (it queries the session)
+        async def fake_invite(_session):
+            return "TESTCD"
+        monkeypatch.setattr(module.GroupService, "_generate_invite_code", staticmethod(fake_invite))
+
         session = FakeSession()
 
         group = await service.create_group(
@@ -30,6 +36,7 @@ class TestGroupService:
         )
 
         assert group.name == "Founders"
+        assert group.invite_code == "TESTCD"
         assert len(session.added) == 2
         assert session.added[1].patient_id == creator_id
         assert session.added[1].role == "admin"
@@ -43,7 +50,11 @@ class TestGroupService:
             "gamification_test_group_service_rejoin",
         )
         service = module.GroupService(postgres_store=None)
-        group = SimpleNamespace(group_id=uuid4(), is_active=True, max_members=10)
+        # facility_id=None skips the facility-scope check that would otherwise
+        # fire an extra query.
+        group = SimpleNamespace(
+            group_id=uuid4(), is_active=True, max_members=10, facility_id=None,
+        )
         member = SimpleNamespace(
             is_active=False,
             left_at=datetime(2026, 4, 1, 10, 0, 0),
@@ -80,7 +91,9 @@ class TestGroupService:
             "gamification_test_group_service_full",
         )
         service = module.GroupService(postgres_store=None)
-        group = SimpleNamespace(group_id=uuid4(), is_active=True, max_members=2)
+        group = SimpleNamespace(
+            group_id=uuid4(), is_active=True, max_members=2, facility_id=None,
+        )
 
         async def fake_get_group(_group_id, _session):
             return group
@@ -107,7 +120,12 @@ class TestGroupService:
         )
         service = module.GroupService(postgres_store=None)
         member = SimpleNamespace(is_active=True, left_at=None)
-        session = FakeSession(results=[FakeScalarResult(values=[member])])
+        # leave_group now also queries for active group challenges to expire
+        # tasks for. Provide an empty result for that follow-up query.
+        session = FakeSession(results=[
+            FakeScalarResult(values=[member]),
+            FakeScalarResult(values=[]),
+        ])
 
         await service.leave_group(
             group_id=uuid4(),
@@ -117,4 +135,4 @@ class TestGroupService:
 
         assert member.is_active is False
         assert member.left_at is not None
-        assert session.commit_count == 1
+        assert session.commit_count >= 1

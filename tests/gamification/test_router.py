@@ -216,8 +216,14 @@ class TestGamificationRouter:
             async def get_patient_groups(self, _patient_id):
                 return []
 
+        # Stub _resolve_patient — production resolves patient_id via cp_access
+        async def fake_resolve(_pid, _actor, _cp):
+            return actor.model.patient_id
+        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
+
         with pytest.raises(module.HTTPException) as exc:
             await module.canonical_get_group_members(
+                patient_id=actor.model.patient_id,
                 group_id=uuid4(),
                 service=FakeGroupService(),
                 actor=actor,
@@ -236,8 +242,13 @@ class TestGamificationRouter:
             async def join_challenge(self, _challenge_id, _patient_id):
                 raise ValueError("Challenge has ended")
 
+        async def fake_resolve(_pid, _actor, _cp):
+            return actor.model.patient_id
+        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
+
         with pytest.raises(module.HTTPException) as exc:
             await module.canonical_join_challenge(
+                patient_id=actor.model.patient_id,
                 challenge_id=uuid4(),
                 service=FakeChallengeService(),
                 actor=actor,
@@ -254,10 +265,17 @@ class TestGamificationRouter:
 
         class FakeFeedService:
             async def send_cheer(self, _patient_id, _feed_event_id, _reaction):
-                raise ValueError("Already cheered this event")
+                # Production no longer raises this — kept for back-compat
+                # of the bad-request mapping behavior
+                raise ValueError("Cannot cheer your own event")
+
+        async def fake_resolve(_pid, _actor, _cp):
+            return actor.model.patient_id
+        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
 
         with pytest.raises(module.HTTPException) as exc:
             await module.canonical_send_cheer(
+                patient_id=actor.model.patient_id,
                 feed_event_id=uuid4(),
                 body=SimpleNamespace(reaction=SimpleNamespace(value="fire")),
                 service=FakeFeedService(),
@@ -266,7 +284,7 @@ class TestGamificationRouter:
             )
 
         assert exc.value.status_code == 400
-        assert exc.value.detail == "Already cheered this event"
+        assert exc.value.detail == "Cannot cheer your own event"
 
     @pytest.mark.asyncio
     async def test_canonical_create_group_uses_actor_identity(self, monkeypatch):
@@ -285,7 +303,14 @@ class TestGamificationRouter:
                 get_calls.append(incoming_group_id)
                 return {"group_id": str(incoming_group_id)}
 
+        # canonical_create_group now thunks to the legacy create_group
+        # function which expects cp_access dependency.
+        async def fake_resolve(_pid, _actor, _cp):
+            return actor.id
+        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
+
         response = await module.canonical_create_group(
+            patient_id=actor.id,
             body=SimpleNamespace(
                 name="Friends",
                 group_type=SimpleNamespace(value="patient_created"),
@@ -295,6 +320,7 @@ class TestGamificationRouter:
             ),
             service=FakeGroupService(),
             actor=actor,
+            cp_access=SimpleNamespace(),
         )
 
         assert response.message == "Group created"
