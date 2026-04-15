@@ -285,17 +285,17 @@ class Patient(Base):
 
     @property
     def default_diet_plan(self):
-        """Returns the default diet plan (set during onboarding)"""
+        """Returns the active diet plan."""
         return next(
-            (plan for plan in self.diet_plans if plan.is_default and plan.status == "ACTIVE"),
+            (plan for plan in self.diet_plans if plan.status == "ACTIVE"),
             None,
         )
 
     @property
     def default_fitness_plan(self):
-        """Returns the default fitness plan (set during onboarding)"""
+        """Returns the active fitness plan."""
         return next(
-            (plan for plan in self.fitness_plans if plan.is_default and plan.status == "ACTIVE"),
+            (plan for plan in self.fitness_plans if plan.status == "ACTIVE"),
             None,
         )
 

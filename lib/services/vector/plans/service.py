@@ -123,7 +123,6 @@ class PlansVectorService(BaseVectorService):
                 "fats": plan_data.get("fats"),
                 "fiber": plan_data.get("fiber"),
                 "plan_status": plan_data.get("status", "ACTIVE"),
-                "is_default": plan_data.get("is_default", False),
             },
         )
 
@@ -160,7 +159,6 @@ class PlansVectorService(BaseVectorService):
                 "sessions_per_week": content.get("sessions_per_week"),
                 "weekly_active_minutes": content.get("weekly_active_minutes"),
                 "plan_status": plan_data.get("status", "ACTIVE"),
-                "is_default": plan_data.get("is_default", False),
             },
         )
 

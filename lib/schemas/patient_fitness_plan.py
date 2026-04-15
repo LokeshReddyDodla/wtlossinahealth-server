@@ -87,7 +87,6 @@ class PatientFitnessPlanCreate(BaseModel):
           "steps_goal": 8000,
           "start_date": "2026-04-03",
           "end_date": "2026-06-30",
-          "is_default": false,
           "status": "ACTIVE",
           "plan_reason": "Increase daily activity",
           "content": {
@@ -130,7 +129,6 @@ class PatientFitnessPlanCreate(BaseModel):
     content: Optional[FitnessPlanContent] = None
     start_date: datetime_date
     end_date: Optional[datetime_date] = None
-    is_default: bool = False
     status: str = "ACTIVE"
     plan_reason: Optional[str] = None
 
@@ -148,7 +146,6 @@ class PatientFitnessPlanUpdate(BaseModel):
     content: Optional[FitnessPlanContent] = None
     start_date: Optional[datetime_date] = None
     end_date: Optional[datetime_date] = None
-    is_default: Optional[bool] = None
     status: Optional[str] = None
     plan_reason: Optional[str] = None
 

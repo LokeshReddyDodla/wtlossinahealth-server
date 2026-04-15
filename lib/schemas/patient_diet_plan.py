@@ -121,7 +121,6 @@ class PatientDietPlanCreate(BaseModel):
           "fiber": 30,
           "start_date": "2026-04-03",
           "end_date": "2026-06-30",
-          "is_default": false,
           "status": "ACTIVE",
           "plan_reason": "Weight loss program",
           "content": {
@@ -178,7 +177,6 @@ class PatientDietPlanCreate(BaseModel):
     content: Optional[DietPlanContent] = None
     start_date: datetime_date
     end_date: Optional[datetime_date] = None
-    is_default: bool = False
     status: str = "ACTIVE"
     plan_reason: Optional[str] = None
 
@@ -192,7 +190,6 @@ class PatientDietPlanUpdate(BaseModel):
     content: Optional[DietPlanContent] = None
     start_date: Optional[datetime_date] = None
     end_date: Optional[datetime_date] = None
-    is_default: Optional[bool] = None
     status: Optional[str] = None
     plan_reason: Optional[str] = None
 
@@ -208,7 +205,6 @@ class PatientDietPlan(BaseModel):
     content: Optional[DietPlanContent] = None
     start_date: datetime_date
     end_date: Optional[datetime_date] = None
-    is_default: bool = False
     status: str = "ACTIVE"
     plan_reason: Optional[str] = None
     created_at: datetime

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, Column, Date, DateTime, Float, ForeignKey, String, Boolean, Index
+from sqlalchemy import UUID, Column, Date, DateTime, Float, ForeignKey, String, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -26,7 +26,6 @@ class PatientFitnessPlan(Base):
 
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
-    is_default = Column(Boolean, default=False, index=True)
     status = Column(String(20), default="ACTIVE", index=True)
     plan_reason = Column(String, nullable=True)
 
@@ -43,6 +42,5 @@ class PatientFitnessPlan(Base):
     patient = relationship("Patient", back_populates="fitness_plans")
 
     __table_args__ = (
-        Index("ix_patient_fitness_plan_default", "patient_id", unique=True, postgresql_where="is_default = true"),
         Index("ix_patient_fitness_plan_status_date", "patient_id", "status", "start_date"),
     )

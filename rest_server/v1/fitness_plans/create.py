@@ -71,7 +71,6 @@ async def create_fitness_plan(
             fitness_plan_data=payload,
             start_date=payload.start_date,
             end_date=payload.end_date,
-            is_default=payload.is_default,
             status=payload.status,
             plan_reason=payload.plan_reason,
         )  # type: ignore
