@@ -147,3 +147,8 @@ fcm-notification-sender-key.json
 
 # Microservices
 microservices/**
+
+.opencode/**
+
+# Local-only developer overrides (not checked in)
+lib/services/gamification/_local_overrides.py
