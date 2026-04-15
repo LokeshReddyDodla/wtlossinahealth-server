@@ -36,19 +36,53 @@ async def transfer_patient_facility(
         get_current_actor(allowed_roles=[ProfileTypeEnum.ADMIN])
     ),
 ):
-    """Atomically transfer a patient to a new facility.
+    """Atomically transfer a patient to a new facility (admin only).
 
-    Cleans up:
-    - All buddy relationships (different facility = can't be buddies)
-    - Memberships in old facility's groups
-    - Direct participations in old facility's challenges
+    ## What happens (single transaction)
 
-    Preserves:
-    - Patient's gamification profile (XP, level, streaks)
-    - Achievements, daily tasks, weekly quests
-    - Health data (meals, glucose, sleep, mood, medications)
-    - Diet/fitness plans
-    - Patient-created groups (if not facility-scoped)
+    1. Validates patient + new facility exist, no-op guard if same facility
+    2. Removes all active/pending buddy relationships (sets status="removed")
+    3. Leaves all groups tied to old facility (sets is_active=False, left_at=now)
+    4. Expires today's pending challenge tasks for those groups
+    5. Withdraws from direct challenge participations in old facility
+       (sets status="withdrawn")
+    6. Expires today's pending challenge tasks for withdrawn challenges
+    7. Updates patient.health_facility_id
+    8. Single commit — all-or-nothing
+    9. Post-commit: FCM notifications to the patient and each removed
+       buddy (best-effort, failures don't roll back)
+
+    ## What's preserved
+
+    - Gamification profile (XP, level, streaks, buddy_code)
+    - Achievements, daily tasks (non-challenge), weekly quests
+    - All health data (meals, glucose, sleep, mood, symptoms, vitals)
+    - Medications and prescriptions
+    - Diet and fitness plans
+    - Patient-created groups (no facility_id)
+    - Care provider access via explicit assignment (many-to-many)
+
+    ## What auto-updates without action
+
+    - Facility leaderboards (refreshed daily — patient appears in new,
+      disappears from old)
+    - Care provider admin access (computed at request time — new facility
+      admins gain access, old lose it)
+
+    ## Response
+
+    Returns a summary of the migration:
+    ```json
+    {
+      "patient_id": "uuid",
+      "old_facility_id": "uuid",
+      "new_facility_id": "uuid",
+      "buddies_removed": 3,
+      "groups_left": 2,
+      "challenges_withdrawn": 1,
+      "removed_buddy_partner_ids": ["uuid", "uuid", "uuid"]
+    }
+    ```
     """
     summary = await service.transfer_patient(
         patient_id=patient_id,
