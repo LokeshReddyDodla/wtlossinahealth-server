@@ -389,7 +389,7 @@ class TestSpecialists:
         names = [s["function"]["name"] for s in schemas]
         assert names == ["look_up", "investigate_day", "compare_baseline", "find_patterns", "get_recent_insights"]
         lookup_enum = schemas[0]["function"]["parameters"]["properties"]["data_types"]["items"]["enum"]
-        assert lookup_enum == ["meal"]
+        assert lookup_enum == ["meal", "diet_plan", "fitness_plan"]
 
     @pytest.mark.asyncio
     async def test_specialist_forces_lookup_on_first_round(self):
