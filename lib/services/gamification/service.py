@@ -200,6 +200,33 @@ class GamificationService:
             for t in tasks
         ]
 
+        # Local-only override hook. Loads from a gitignored module if present;
+        # used for dev/QA task-list rendering without touching the database.
+        if task_date == patient_today:
+            try:
+                from lib.services.gamification import _local_overrides
+                for override in _local_overrides.STATIC_TASK_OVERRIDES.get(
+                    str(patient_id), []
+                ):
+                    task_responses.append(
+                        DailyTaskResponse(
+                            task_id=override["task_id"],
+                            task_date=task_date,
+                            task_type=override.get("task_type", "PERSONAL_NOTE"),
+                            title=override["title"],
+                            description=override.get("description"),
+                            source_type="system",
+                            source_id=None,
+                            target_value=None,
+                            current_value=None,
+                            status="pending",
+                            xp_reward=0,
+                            completed_at=None,
+                        )
+                    )
+            except ImportError:
+                pass
+
         completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
         xp_earned = await self.xp_service.get_xp_earned_for_date(
             patient_id,
@@ -237,6 +264,26 @@ class GamificationService:
         *,
         postgres_session: AsyncSession,
     ) -> TaskCompletionResponse:
+        # Local override tasks have no DB row — short-circuit to a no-op response.
+        try:
+            from lib.services.gamification import _local_overrides
+            override_ids = {
+                o["task_id"]
+                for overrides in _local_overrides.STATIC_TASK_OVERRIDES.values()
+                for o in overrides
+            }
+            if str(task_id) in override_ids:
+                return TaskCompletionResponse(
+                    task_id=str(task_id),
+                    xp_earned=0,
+                    new_total_xp=0,
+                    level_up=False,
+                    new_level=0,
+                    achievements_unlocked=[],
+                )
+        except ImportError:
+            pass
+
         result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.task_id == task_id,

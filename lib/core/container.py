@@ -72,6 +72,7 @@ from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
 from lib.services.checkin_history_service import CheckinHistoryService
 from lib.services.medication_service import MedicationService
+from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
 from lib.services.prescription_extraction_service import PrescriptionExtractionService
@@ -697,6 +698,14 @@ container.register(
     ),
 )
 
+
+# 🔹 Patient Facility Transfer Service
+container.register(
+    PatientFacilityTransferService,
+    lambda: PatientFacilityTransferService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
 
 # 🔹 Check-in History Service
 container.register(

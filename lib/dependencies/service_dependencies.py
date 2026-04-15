@@ -325,6 +325,11 @@ def get_checkin_history_service():
     return cast(CheckinHistoryService, container.resolve(CheckinHistoryService))
 
 
+def get_patient_facility_transfer_service():
+    from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
+    return cast(PatientFacilityTransferService, container.resolve(PatientFacilityTransferService))
+
+
 def get_weightloss_analytics_service() -> AnalyticsService:
     return cast(AnalyticsService, container.resolve(AnalyticsService))
 
