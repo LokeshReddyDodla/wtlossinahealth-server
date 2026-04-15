@@ -419,14 +419,19 @@ class BuddyService:
         from lib.models.gamification import Achievement
 
         # Resolve buddy_code → other patient_id
+        code_normalized = buddy_code.upper().strip()
         code_result = await postgres_session.execute(
             select(PlayerProfile.patient_id).where(
-                PlayerProfile.buddy_code == buddy_code.upper().strip()
+                PlayerProfile.buddy_code == code_normalized
             )
         )
         other_id = code_result.scalar()
         if not other_id:
-            raise ValueError("Buddy not found")
+            raise ValueError(f"No patient found with buddy code '{code_normalized}'")
+
+        # Don't let patient look up themselves
+        if other_id == patient_id:
+            raise ValueError("That's your own buddy code")
 
         # Find the buddy relationship between this patient and the resolved one
         result = await postgres_session.execute(
@@ -440,7 +445,7 @@ class BuddyService:
         )
         buddy = result.scalars().first()
         if not buddy:
-            raise ValueError("Buddy not found")
+            raise ValueError("No buddy relationship exists with this patient. Send a buddy request first.")
 
         direction = None
         if buddy.status == "pending":
