@@ -406,6 +406,106 @@ class BuddyService:
             recent_achievements=recent_slugs,
         )
 
+    @with_postgres_session
+    async def get_buddy_detail(
+        self,
+        buddy_id: UUID,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ):
+        """Rich buddy details for the buddy profile screen — name, picture, level, streaks, etc."""
+        from lib.schemas.gamification import BuddyDetailResponse
+        from lib.models.gamification import Achievement
+
+        result = await postgres_session.execute(
+            select(Buddy).where(
+                Buddy.buddy_id == buddy_id,
+                or_(
+                    Buddy.requester_id == patient_id,
+                    Buddy.accepter_id == patient_id,
+                ),
+                Buddy.status.in_(["active", "pending"]),
+            )
+        )
+        buddy = result.scalars().first()
+        if not buddy:
+            raise ValueError("Buddy not found")
+
+        other_id = (
+            buddy.accepter_id
+            if buddy.requester_id == patient_id
+            else buddy.requester_id
+        )
+
+        direction = None
+        if buddy.status == "pending":
+            direction = "outgoing" if buddy.requester_id == patient_id else "incoming"
+
+        # Buddy's profile (name, picture, locale)
+        patient_result = await postgres_session.execute(
+            select(
+                Patient.first_name,
+                Patient.last_name,
+                Patient.profile_picture,
+                Patient.locale,
+            ).where(Patient.patient_id == other_id)
+        )
+        patient_row = patient_result.first()
+
+        # Buddy's gamification profile
+        profile_result = await postgres_session.execute(
+            select(PlayerProfile).where(PlayerProfile.patient_id == other_id)
+        )
+        profile = profile_result.scalars().first()
+
+        # Today's tasks in buddy's timezone
+        today = local_today(patient_row.locale if patient_row else None)
+        task_result = await postgres_session.execute(
+            select(DailyTask).where(
+                DailyTask.patient_id == other_id,
+                DailyTask.task_date == today,
+            )
+        )
+        tasks = task_result.scalars().all()
+        completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED.value)
+
+        # Recent achievements (last 5)
+        ach_result = await postgres_session.execute(
+            select(PatientAchievement, Achievement)
+            .join(Achievement)
+            .where(PatientAchievement.patient_id == other_id)
+            .order_by(PatientAchievement.earned_at.desc())
+            .limit(5)
+        )
+        recent_slugs = [
+            row.Achievement.slug
+            for row in ach_result.all()
+            if row.Achievement.slug
+        ]
+
+        return BuddyDetailResponse(
+            buddy_id=str(buddy.buddy_id),
+            buddy_patient_id=str(other_id),
+            first_name=patient_row.first_name if patient_row else None,
+            last_name=patient_row.last_name if patient_row else None,
+            profile_picture=patient_row.profile_picture if patient_row else None,
+            status=buddy.status,
+            direction=direction,
+            buddy_streak=buddy.buddy_streak,
+            buddy_streak_longest=buddy.buddy_streak_longest,
+            level=profile.level if profile else 1,
+            title=title_for_level(profile.level if profile else 1),
+            total_xp=profile.total_xp if profile else 0,
+            current_streak=profile.current_streak if profile else 0,
+            longest_streak=profile.longest_streak if profile else 0,
+            tasks_completed_today=completed,
+            tasks_total_today=len(tasks),
+            recent_achievements=recent_slugs,
+            created_at=buddy.created_at,
+            accepted_at=buddy.accepted_at,
+        )
+
     async def _active_buddy_count(
         self, patient_id: UUID, session: AsyncSession
     ) -> int:
