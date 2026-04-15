@@ -77,6 +77,17 @@ class GroupService:
         if not group or not group.is_active:
             raise ValueError("Group not found or inactive")
 
+        # Facility-scoped groups: patient must belong to the same facility
+        if group.facility_id:
+            facility_result = await postgres_session.execute(
+                select(Patient.health_facility_id).where(
+                    Patient.patient_id == patient_id
+                )
+            )
+            patient_facility = facility_result.scalar()
+            if patient_facility != group.facility_id:
+                raise ValueError("This group is restricted to patients of a specific facility")
+
         # Check member count
         count = await self._member_count(group_id, postgres_session)
         if count >= group.max_members:
@@ -193,6 +204,17 @@ class GroupService:
         if not group:
             return None
         group_id = group.group_id
+
+        # Facility-scoped groups: only patients of that facility can preview
+        if group.facility_id:
+            facility_result = await postgres_session.execute(
+                select(Patient.health_facility_id).where(
+                    Patient.patient_id == patient_id
+                )
+            )
+            patient_facility = facility_result.scalar()
+            if patient_facility != group.facility_id:
+                return None  # treated as 404 by the endpoint
 
         count = await self._member_count(group_id, postgres_session)
 
