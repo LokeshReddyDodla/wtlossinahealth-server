@@ -15,10 +15,31 @@ class TestBuddyService:
         self,
         monkeypatch,
     ):
+        # Stub the PatientNameResolver that send_request resolves via container
+        # to fetch the requester's first name for the notification body.
+        from tests.gamification.helpers import make_module
+
+        class FakeResolver:
+            async def resolve_first_name(self, _pid):
+                return "Alice"
+
         module = load_module(
             monkeypatch,
             "lib/services/gamification/buddy_service.py",
             "gamification_test_buddy_service_send",
+            extra_stubs={
+                "lib.core.container": make_module(
+                    "lib.core.container",
+                    container=SimpleNamespace(
+                        resolve=lambda _cls: FakeResolver(),
+                        register=lambda *a, **k: None,
+                    ),
+                ),
+                "lib.ai_foundation.agents.core.patient_resolver": make_module(
+                    "lib.ai_foundation.agents.core.patient_resolver",
+                    PatientNameResolver=type("PatientNameResolver", (), {}),
+                ),
+            },
         )
         service = module.BuddyService(postgres_store=None)
         requester_id = uuid4()

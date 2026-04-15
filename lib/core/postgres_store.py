@@ -4,8 +4,7 @@ from typing import AsyncGenerator
 
 from decouple import config
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

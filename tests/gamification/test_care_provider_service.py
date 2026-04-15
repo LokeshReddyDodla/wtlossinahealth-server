@@ -114,6 +114,8 @@ class TestCPGamificationService:
             max_members=50,
             is_active=True,
             created_at=date(2026, 4, 3),
+            invite_code="ABC123",
+            avatar_url=None,
         )
         session = FakeSession(
             results=[

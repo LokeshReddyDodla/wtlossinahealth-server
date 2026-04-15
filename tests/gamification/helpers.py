@@ -192,6 +192,12 @@ def base_stubs() -> dict[str, types.ModuleType]:
         delete=lambda *a, **k: QueryStub(),
         and_=lambda *a, **k: ExprStub(),
         or_=lambda *a, **k: ExprStub(),
+        # Top-level helpers used by some services
+        distinct=lambda *a, **k: ExprStub(),
+        exists=lambda *a, **k: ExprStub(),
+        case=lambda *a, **k: ExprStub(),
+        cast=lambda *a, **k: ExprStub(),
+        text=lambda *a, **k: ExprStub(),
     )
 
     gamification_models = make_module(
@@ -244,6 +250,9 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "facility_id",
             "max_members",
             "created_at",
+            "invite_code",
+            "avatar_url",
+            "updated_at",
         ),
         GroupMember=model_class(
             "GroupMember",
@@ -445,6 +454,21 @@ def base_stubs() -> dict[str, types.ModuleType]:
             (),
             {"__init__": lambda self, **kw: self.__dict__.update(kw)},
         ),
+        GroupInfoResponse=type(
+            "GroupInfoResponse",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
+        AddGroupMembersInput=type(
+            "AddGroupMembersInput",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
+        JoinByCodeInput=type(
+            "JoinByCodeInput",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
         BuddyResponse=type(
             "BuddyResponse",
             (),
@@ -455,8 +479,18 @@ def base_stubs() -> dict[str, types.ModuleType]:
             (),
             {"__init__": lambda self, **kw: self.__dict__.update(kw)},
         ),
+        BuddyRequestByCodeInput=type(
+            "BuddyRequestByCodeInput",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
         BuddyProgressResponse=type(
             "BuddyProgressResponse",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
+        BuddyDetailResponse=type(
+            "BuddyDetailResponse",
             (),
             {"__init__": lambda self, **kw: self.__dict__.update(kw)},
         ),
@@ -560,6 +594,13 @@ def base_stubs() -> dict[str, types.ModuleType]:
         xp_for_level=lambda level: 0 if level <= 1 else int(200 * (level ** 1.5)),
     )
 
+    # Stub lib.models as a package with just `Base` so that any service
+    # importing `from lib.models import Base` (or sub-modules) does NOT
+    # trigger the real `lib/models/__init__.py` chain — which pulls in
+    # every ORM model and their pydantic schemas.
+    lib_models_pkg = make_module("lib.models", Base=type("Base", (), {}))
+    lib_models_pkg.__path__ = []  # mark as a package
+
     return {
         "sqlalchemy": sqlalchemy,
         "sqlalchemy.ext": make_module("sqlalchemy.ext"),
@@ -567,14 +608,67 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "sqlalchemy.ext.asyncio",
             AsyncSession=type("AsyncSession", (), {}),
         ),
+        "sqlalchemy.orm": make_module(
+            "sqlalchemy.orm",
+            declarative_base=lambda: type("Base", (), {}),
+            sessionmaker=lambda *a, **k: None,
+            relationship=lambda *a, **k: None,
+            selectinload=lambda *a, **k: None,
+            joinedload=lambda *a, **k: None,
+            aliased=lambda *a, **k: ExprStub(),
+            Session=type("Session", (), {}),
+        ),
+        "sqlalchemy.orm.attributes": make_module(
+            "sqlalchemy.orm.attributes",
+            flag_modified=lambda *a, **k: None,
+        ),
+        "sqlalchemy.dialects": make_module("sqlalchemy.dialects"),
+        "sqlalchemy.dialects.postgresql": make_module(
+            "sqlalchemy.dialects.postgresql",
+            JSONB=type("JSONB", (), {}),
+            UUID=type("UUID", (), {}),
+        ),
+        "sqlalchemy.exc": make_module(
+            "sqlalchemy.exc",
+            IntegrityError=type("IntegrityError", (Exception,), {}),
+            SQLAlchemyError=type("SQLAlchemyError", (Exception,), {}),
+        ),
+        "sqlalchemy.future": make_module(
+            "sqlalchemy.future",
+            select=lambda *a, **k: QueryStub(),
+        ),
         "lib.core.postgres_store": make_module(
             "lib.core.postgres_store",
             PostgresStore=type("PostgresStore", (), {}),
         ),
+        "lib.models": lib_models_pkg,
         "lib.models.gamification": gamification_models,
         "lib.models.patient": make_module(
             "lib.models.patient",
             Patient=model_class("Patient", "patient_id", "locale", "first_name", "health_facility_id"),
+        ),
+        "lib.models.patient_diabetic_history": make_module(
+            "lib.models.patient_diabetic_history",
+            PatientDiabeticHistory=model_class(
+                "PatientDiabeticHistory",
+                "patient_id", "diabetic_type",
+            ),
+        ),
+        "lib.models.patient_medication": make_module(
+            "lib.models.patient_medication",
+            PatientMedication=model_class(
+                "PatientMedication",
+                "patient_id", "medication_id", "name", "status",
+                "start_date", "end_date", "doses", "schedule", "strength",
+            ),
+        ),
+        "lib.models.patient_prescription": make_module(
+            "lib.models.patient_prescription",
+            PatientPrescription=model_class(
+                "PatientPrescription",
+                "patient_id", "prescription_id", "status",
+                "follow_up_required", "follow_up_date", "doctor_name",
+            ),
         ),
         "lib.models.associations": make_module(
             "lib.models.associations",
@@ -605,9 +699,17 @@ def base_stubs() -> dict[str, types.ModuleType]:
                 "patient_id",
                 "status",
                 "start_date",
+                "end_date",
                 "fitness_plan_id",
                 "steps_goal",
                 "content",
+            ),
+        ),
+        "lib.models.care_provider": make_module(
+            "lib.models.care_provider",
+            CareProvider=model_class(
+                "CareProvider",
+                "care_provider_id", "permissions",
             ),
         ),
         "lib.schemas.gamification": gamification_schemas,
@@ -634,7 +736,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
         ),
         "lib.services.gamification.notifications": make_module(
             "lib.services.gamification.notifications",
-            send_gamification_notification=lambda *a, **k: None,
+            send_gamification_notification=_async_return(None),
         ),
         "lib.services.gamification.queries": make_module(
             "lib.services.gamification.queries",
@@ -661,6 +763,23 @@ def base_stubs() -> dict[str, types.ModuleType]:
         "lib.utils.postgres_session_decorator": make_module(
             "lib.utils.postgres_session_decorator",
             with_postgres_session=lambda fn: fn,
+        ),
+        # Short-circuit the deep service-graph imports.  Tests that need
+        # specific behavior should override these in `extra_stubs`.
+        "lib.services.patient_profile_service": make_module(
+            "lib.services.patient_profile_service",
+            PatientProfileService=type("PatientProfileService", (), {}),
+        ),
+        "lib.services.care_provider_profile_service": make_module(
+            "lib.services.care_provider_profile_service",
+            CareProviderProfileService=type("CareProviderProfileService", (), {}),
+        ),
+        "lib.core.container": make_module(
+            "lib.core.container",
+            container=SimpleNamespace(
+                resolve=lambda _cls: SimpleNamespace(),
+                register=lambda *a, **k: None,
+            ),
         ),
     }
 

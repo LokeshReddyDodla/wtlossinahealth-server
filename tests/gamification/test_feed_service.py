@@ -27,10 +27,10 @@ class TestFeedService:
             },
         )
         sender_id = uuid4()
+        # send_cheer first loads the ActivityFeedEvent — provide one whose
+        # actor_id matches sender_id so the self-cheer guard fires.
         session = FakeSession(
             results=[
-                FakeScalarResult(scalar="Asia/Kolkata"),
-                FakeScalarResult(scalar=0),
                 FakeScalarResult(values=[SimpleNamespace(feed_id=uuid4(), actor_id=sender_id)]),
             ]
         )
@@ -45,14 +45,16 @@ class TestFeedService:
             )
 
     @pytest.mark.asyncio
-    async def test_send_cheer_rejects_duplicate_reaction(self, monkeypatch):
+    async def test_send_cheer_with_same_reaction_undoes(self, monkeypatch):
+        """Tapping the same emoji twice undoes the cheer (replaces the old
+        'reject duplicate' behavior)."""
         async def fake_notify(*_args, **_kwargs):
             return None
 
         module = load_module(
             monkeypatch,
             "lib/services/gamification/feed_service.py",
-            "gamification_test_feed_service_duplicate",
+            "gamification_test_feed_service_undo",
             {
                 "lib.services.gamification.notifications": make_module(
                     "lib.services.gamification.notifications",
@@ -62,24 +64,75 @@ class TestFeedService:
         )
         sender_id = uuid4()
         recipient_id = uuid4()
+        existing_cheer = SimpleNamespace(
+            cheer_id=uuid4(), sender_id=sender_id,
+            feed_event_id=uuid4(), reaction="star",
+        )
         session = FakeSession(
             results=[
-                FakeScalarResult(scalar="Asia/Kolkata"),
-                FakeScalarResult(scalar=0),
+                # Event lookup
                 FakeScalarResult(values=[SimpleNamespace(feed_id=uuid4(), actor_id=recipient_id)]),
+                # Buddy check (yes)
                 FakeScalarResult(scalar=uuid4()),
-                FakeScalarResult(values=[SimpleNamespace()]),
+                # Existing cheer with same reaction
+                FakeScalarResult(values=[existing_cheer]),
+            ]
+        )
+        # delete() is awaited on the session
+        async def _async_delete(obj):
+            return None
+        session.delete = _async_delete
+        service = module.FeedService(postgres_store=None, xp_service=SimpleNamespace())
+
+        result = await service.send_cheer(
+            sender_id=sender_id,
+            feed_event_id=existing_cheer.feed_event_id,
+            reaction="star",  # same as existing
+            postgres_session=session,
+        )
+        # Same-reaction tap returns None (undone)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_send_cheer_with_different_reaction_replaces(self, monkeypatch):
+        """Different emoji on existing cheer replaces the reaction."""
+        async def fake_notify(*_args, **_kwargs):
+            return None
+
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/feed_service.py",
+            "gamification_test_feed_service_replace",
+            {
+                "lib.services.gamification.notifications": make_module(
+                    "lib.services.gamification.notifications",
+                    send_gamification_notification=fake_notify,
+                ),
+            },
+        )
+        sender_id = uuid4()
+        recipient_id = uuid4()
+        existing_cheer = SimpleNamespace(
+            cheer_id=uuid4(), sender_id=sender_id,
+            feed_event_id=uuid4(), reaction="fire",
+        )
+        session = FakeSession(
+            results=[
+                FakeScalarResult(values=[SimpleNamespace(feed_id=uuid4(), actor_id=recipient_id)]),
+                FakeScalarResult(scalar=uuid4()),  # buddy check
+                FakeScalarResult(values=[existing_cheer]),
             ]
         )
         service = module.FeedService(postgres_store=None, xp_service=SimpleNamespace())
 
-        with pytest.raises(ValueError, match="Already cheered this event"):
-            await service.send_cheer(
-                sender_id=sender_id,
-                feed_event_id=uuid4(),
-                reaction="star",
-                postgres_session=session,
-            )
+        result = await service.send_cheer(
+            sender_id=sender_id,
+            feed_event_id=existing_cheer.feed_event_id,
+            reaction="star",  # different
+            postgres_session=session,
+        )
+        assert result is existing_cheer
+        assert existing_cheer.reaction == "star"
 
     @pytest.mark.asyncio
     async def test_send_cheer_grants_xp_and_notifies_recipient(self, monkeypatch):
@@ -101,6 +154,12 @@ class TestFeedService:
                 xp_calls.append(kwargs)
                 return (5, 1, False)
 
+        # Stub PatientNameResolver — production now resolves the sender's
+        # first name for the notification body.
+        class FakeResolver:
+            async def resolve_first_name(self, _pid):
+                return "Alice"
+
         module = load_module(
             monkeypatch,
             "lib/services/gamification/feed_service.py",
@@ -110,18 +169,28 @@ class TestFeedService:
                     "lib.services.gamification.notifications",
                     send_gamification_notification=fake_notify,
                 ),
+                "lib.core.container": make_module(
+                    "lib.core.container",
+                    container=SimpleNamespace(
+                        resolve=lambda _cls: FakeResolver(),
+                        register=lambda *a, **k: None,
+                    ),
+                ),
+                "lib.ai_foundation.agents.core.patient_resolver": make_module(
+                    "lib.ai_foundation.agents.core.patient_resolver",
+                    PatientNameResolver=type("PatientNameResolver", (), {}),
+                ),
             },
         )
         sender_id = uuid4()
         recipient_id = uuid4()
         event_id = uuid4()
+        # Sequence: event lookup → buddy check (yes) → existing cheer (none)
         session = FakeSession(
             results=[
-                FakeScalarResult(scalar="Asia/Kolkata"),
-                FakeScalarResult(scalar=0),
                 FakeScalarResult(values=[SimpleNamespace(feed_id=event_id, actor_id=recipient_id)]),
-                FakeScalarResult(scalar=uuid4()),
-                FakeScalarResult(values=[]),
+                FakeScalarResult(scalar=uuid4()),  # buddy_id (truthy = is buddy)
+                FakeScalarResult(values=[]),       # no existing cheer
             ]
         )
         service = module.FeedService(postgres_store=None, xp_service=FakeXPService())
@@ -138,18 +207,15 @@ class TestFeedService:
         assert session.commit_count == 1
         assert xp_calls[0]["amount"] == module.CHEER_XP_REWARD
         assert xp_calls[0]["source_type"] == "cheer"
-        assert notification_calls == [
-            {
-                "patient_id": str(recipient_id),
-                "title": "You got a cheer",
-                "body": "A buddy reacted to your progress update.",
-                "data": {
-                    "event_type": "buddy_cheer",
-                    "feed_event_id": str(event_id),
-                    "sender_id": str(sender_id),
-                },
-            }
-        ]
+        # Notification: title fixed, body now includes resolved sender name
+        assert len(notification_calls) == 1
+        call = notification_calls[0]
+        assert call["patient_id"] == str(recipient_id)
+        assert call["title"] == "You got a cheer"
+        assert "Alice" in call["body"]
+        assert call["data"]["event_type"] == "buddy_cheer"
+        assert call["data"]["feed_event_id"] == str(event_id)
+        assert call["data"]["sender_id"] == str(sender_id)
 
     @pytest.mark.asyncio
     async def test_enrich_events_masks_identity_outside_group_context(self, monkeypatch):

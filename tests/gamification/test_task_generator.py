@@ -18,8 +18,9 @@ class TestTaskGeneratorService:
         )
         service = module.TaskGeneratorService(postgres_store=None)
 
-        monday_tasks = service._habit_tasks(uuid4(), date(2026, 4, 6))
-        tuesday_tasks = service._habit_tasks(uuid4(), date(2026, 4, 7))
+        # Diabetic patient gets the weight task on Mondays
+        monday_tasks = service._habit_tasks(uuid4(), date(2026, 4, 6), is_diabetic=True)
+        tuesday_tasks = service._habit_tasks(uuid4(), date(2026, 4, 7), is_diabetic=True)
 
         assert [task.task_type for task in monday_tasks] == [
             "LOG_MEAL",
@@ -99,6 +100,7 @@ class TestTaskGeneratorService:
             title="April Steps",
             scope="group_competitive",
             target_value=100000.0,
+            xp_reward=100,
         )
         patient_participant = SimpleNamespace(
             participant_type="patient",

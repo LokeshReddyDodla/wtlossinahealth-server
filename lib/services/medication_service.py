@@ -342,7 +342,13 @@ class MedicationService:
         new_doses_json: list[dict],
     ) -> bool:
         """Check if the medication is essentially the same (renewal, not a change)."""
-        if (existing.strength or "").lower().strip() != (new.strength or "").lower().strip():
+        # Normalise strength: lowercase + strip *all* whitespace so that
+        # "500mg", " 500 MG ", and "500 mg" all compare as equal.
+        # Internal whitespace shouldn't trigger a spurious discontinue+create.
+        def _normalize_strength(s: str | None) -> str:
+            return "".join((s or "").lower().split())
+
+        if _normalize_strength(existing.strength) != _normalize_strength(new.strength):
             return False
 
         # Compare dose slots + quantities
@@ -529,7 +535,12 @@ class MedicationService:
         med.discontinued_at = datetime.now().replace(tzinfo=None)
         med.discontinued_by = discontinued_by
         await postgres_session.commit()
-        await self._sync_qdrant(pid, postgres_session)
+        # Best-effort downstream sync — Qdrant outage shouldn't surface
+        # a 500 to the caller after the DB commit already succeeded.
+        try:
+            await self._sync_qdrant(pid, postgres_session)
+        except Exception:
+            logger.exception("Qdrant sync failed for patient %s", pid)
         await self._refresh_medication_tasks(med.patient_id)
         await self._notify_patient(
             pid, title="Medication discontinued",
@@ -552,7 +563,10 @@ class MedicationService:
         pid = str(med.patient_id)
         med.status = "paused"
         await postgres_session.commit()
-        await self._sync_qdrant(pid, postgres_session)
+        try:
+            await self._sync_qdrant(pid, postgres_session)
+        except Exception:
+            logger.exception("Qdrant sync failed for patient %s", pid)
         await self._refresh_medication_tasks(med.patient_id)
         await self._notify_patient(
             pid, title="Medication paused",
@@ -577,7 +591,10 @@ class MedicationService:
         med.discontinued_at = None
         med.discontinued_by = None
         await postgres_session.commit()
-        await self._sync_qdrant(pid, postgres_session)
+        try:
+            await self._sync_qdrant(pid, postgres_session)
+        except Exception:
+            logger.exception("Qdrant sync failed for patient %s", pid)
         await self._refresh_medication_tasks(med.patient_id)
         await self._notify_patient(
             pid, title="Medication resumed",

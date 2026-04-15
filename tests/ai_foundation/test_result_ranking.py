@@ -189,6 +189,9 @@ class TestFormatResultsIntegration:
         # Create mock executor to access _format_results
         executor = MagicMock(spec=ToolExecutor)
         executor._format_results = ToolExecutor._format_results.__get__(executor)
+        executor._panel_records_per_type = lambda pids: 10
+        executor._panel_char_limit = lambda pids: 2000
+        executor._cap_result = ToolExecutor._cap_result
 
         results = [
             _result({"start_time": 1000, "value": "glucose1"}, data_type="cgm_range_stats"),
@@ -211,6 +214,9 @@ class TestFormatResultsIntegration:
 
         executor = MagicMock(spec=ToolExecutor)
         executor._format_results = ToolExecutor._format_results.__get__(executor)
+        executor._panel_records_per_type = lambda pids: 10
+        executor._panel_char_limit = lambda pids: 2000
+        executor._cap_result = ToolExecutor._cap_result
 
         results = [
             _result({"start_time": 1000, "calories": 100}, data_type="meal"),

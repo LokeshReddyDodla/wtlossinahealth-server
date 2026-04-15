@@ -138,11 +138,15 @@ class TestDefaultRegistry:
 
     def test_intent_extraction_route(self, registry):
         spec = registry.route(ModelTask.INTENT_EXTRACTION)
-        assert spec.model_id == "gpt-4.1-mini"
+        # Primary thinker is configurable via REASONING_THINKER_MODEL;
+        # default is claude-haiku-4-5 with gpt-4.1-mini in the fallback chain.
+        assert spec.model_id == "claude-haiku-4-5-20251001"
 
     def test_response_generation_route(self, registry):
         spec = registry.route(ModelTask.RESPONSE_GENERATION)
-        assert spec.model_id == "gpt-5.1"
+        # Primary responder is configurable via REASONING_RESPONDER_MODEL;
+        # default is claude-sonnet-4-6 with gpt-5.1 in the fallback chain.
+        assert spec.model_id == "claude-sonnet-4-6"
 
     def test_fallback_chains_exist(self, registry):
         chain = registry.get_fallback_chain(ModelTask.RESPONSE_GENERATION)

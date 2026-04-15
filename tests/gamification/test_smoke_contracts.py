@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+# tests/gamification/test_smoke_contracts.py → repo root is parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _read(relative_path: str) -> str:
