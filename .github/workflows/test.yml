@@ -48,4 +48,9 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
+        # Tests mock the database — no real Postgres needed. But several
+        # service modules (postgres_store.py, etc.) read env vars at import
+        # time, so we need to satisfy them with valid-looking dummy URLs.
+        env:
+          POSTGRES_ASYNCPG_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
         run: poetry run pytest tests/ -v --tb=short
