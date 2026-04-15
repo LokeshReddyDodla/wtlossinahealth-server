@@ -174,6 +174,75 @@ class GroupService:
         return self.to_response(group, count)
 
     @with_postgres_session
+    async def get_group_info(
+        self,
+        group_id: UUID,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ):
+        """Rich group info — avatar, your role, top member previews."""
+        from lib.schemas.gamification import GroupInfoResponse, GroupMemberPreview
+        from lib.models.patient import Patient
+
+        group = await self._get_group(group_id, postgres_session)
+        if not group:
+            return None
+
+        count = await self._member_count(group_id, postgres_session)
+
+        # Patient's role in this group (if member)
+        role_result = await postgres_session.execute(
+            select(GroupMember.role).where(
+                GroupMember.group_id == group_id,
+                GroupMember.patient_id == patient_id,
+                GroupMember.is_active == True,
+            )
+        )
+        your_role = role_result.scalar()
+
+        # Top 5 members (admins first, then members) with profile info
+        members_result = await postgres_session.execute(
+            select(
+                GroupMember.patient_id,
+                GroupMember.role,
+                Patient.first_name,
+                Patient.profile_picture,
+            )
+            .join(Patient, Patient.patient_id == GroupMember.patient_id)
+            .where(
+                GroupMember.group_id == group_id,
+                GroupMember.is_active == True,
+            )
+            .order_by(GroupMember.role.desc(), GroupMember.joined_at.asc())
+            .limit(5)
+        )
+        top_members = [
+            GroupMemberPreview(
+                patient_id=str(row.patient_id),
+                first_name=row.first_name,
+                profile_picture=row.profile_picture,
+                role=row.role or "member",
+            )
+            for row in members_result.all()
+        ]
+
+        return GroupInfoResponse(
+            group_id=str(group.group_id),
+            name=group.name,
+            description=group.description,
+            avatar_url=group.avatar_url,
+            group_type=group.group_type,
+            member_count=count,
+            max_members=group.max_members,
+            is_active=group.is_active,
+            invite_code=group.invite_code if your_role else None,  # only show code if member
+            your_role=your_role,
+            top_members=top_members,
+            created_at=group.created_at,
+        )
+
+    @with_postgres_session
     async def get_patient_groups(
         self,
         patient_id: UUID,
@@ -354,6 +423,7 @@ class GroupService:
             created_by_type=group.created_by_type,
             facility_id=str(group.facility_id) if group.facility_id else None,
             invite_code=group.invite_code,
+            avatar_url=group.avatar_url,
             member_count=member_count,
             max_members=group.max_members,
             is_active=group.is_active,

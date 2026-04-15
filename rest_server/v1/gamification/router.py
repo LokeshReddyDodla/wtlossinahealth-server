@@ -39,6 +39,7 @@ from lib.schemas.gamification import (
     FeedEventResponse,
     GroupCreateInput,
     GroupMemberResponse,
+    GroupInfoResponse,
     GroupResponse,
     JoinByCodeInput,
     LeaderboardResponse,
@@ -581,6 +582,25 @@ async def get_group(
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return SuccessResponse(message="Group details", data=group)
+
+
+@router.get(
+    "/patients/{patient_id}/groups/{group_id}/info",
+    response_model=SuccessResponse[GroupInfoResponse],
+)
+async def get_group_info(
+    patient_id: UUID,
+    group_id: UUID,
+    service: GroupService = Depends(get_group_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Rich group info — avatar, your role, top member previews."""
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    info = await service.get_group_info(group_id, pid)
+    if not info:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return SuccessResponse(message="Group info", data=info)
 
 
 @router.post("/patients/{patient_id}/groups/{group_id}/join", response_model=SuccessResponse)
