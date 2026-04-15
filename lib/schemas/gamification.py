@@ -333,13 +333,17 @@ class BuddyProgressResponse(BaseModel):
 
 
 class BuddyDetailResponse(BaseModel):
-    """Rich buddy details for the buddy profile/details screen."""
-    buddy_id: str
+    """Rich buddy details for the buddy profile/details screen.
+
+    Works for BOTH preview (no relationship yet) and existing buddies.
+    status="none" means no relationship — preview mode.
+    """
+    buddy_id: Optional[str] = None  # null if no relationship exists yet
     buddy_patient_id: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     profile_picture: Optional[str] = None
-    status: str  # pending/active/removed
+    status: str  # none/pending/active/removed
     direction: Optional[str] = None  # outgoing/incoming for pending
     buddy_streak: int = 0
     buddy_streak_longest: int = 0
@@ -351,7 +355,7 @@ class BuddyDetailResponse(BaseModel):
     tasks_completed_today: int = 0
     tasks_total_today: int = 0
     recent_achievements: List[str] = []
-    created_at: datetime
+    created_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
 
 
