@@ -332,6 +332,29 @@ class BuddyProgressResponse(BaseModel):
     recent_achievements: List[str] = []
 
 
+class BuddyDetailResponse(BaseModel):
+    """Rich buddy details for the buddy profile/details screen."""
+    buddy_id: str
+    buddy_patient_id: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    profile_picture: Optional[str] = None
+    status: str  # pending/active/removed
+    direction: Optional[str] = None  # outgoing/incoming for pending
+    buddy_streak: int = 0
+    buddy_streak_longest: int = 0
+    level: int = 1
+    title: Optional[str] = None
+    total_xp: int = 0
+    current_streak: int = 0  # buddy's personal streak
+    longest_streak: int = 0
+    tasks_completed_today: int = 0
+    tasks_total_today: int = 0
+    recent_achievements: List[str] = []
+    created_at: datetime
+    accepted_at: Optional[datetime] = None
+
+
 # ── Groups ───────────────────────────────────────────────────────────────────
 
 

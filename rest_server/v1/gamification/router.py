@@ -25,6 +25,7 @@ from lib.schemas.gamification import (
     AddGroupMembersInput,
     AchievementResponse,
     ChallengeParticipantResponse,
+    BuddyDetailResponse,
     BuddyProgressResponse,
     BuddyRequestByCodeInput,
     BuddyRequestInput,
@@ -499,6 +500,26 @@ async def get_buddy_progress(
     try:
         progress = await service.get_buddy_progress(buddy_id, pid)
         return SuccessResponse(message="Buddy progress", data=progress)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get(
+    "/patients/{patient_id}/buddies/{buddy_id}",
+    response_model=SuccessResponse[BuddyDetailResponse],
+)
+async def get_buddy_detail(
+    patient_id: UUID,
+    buddy_id: UUID,
+    service: BuddyService = Depends(get_buddy_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Rich buddy details — name, picture, level, streaks, achievements."""
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        detail = await service.get_buddy_detail(buddy_id, pid)
+        return SuccessResponse(message="Buddy detail", data=detail)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
