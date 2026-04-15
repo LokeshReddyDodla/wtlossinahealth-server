@@ -18,6 +18,69 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Job-level env — shared by pytest + smoke test. Tests mock every
+    # external dependency (no real Postgres / Redis / OpenAI / S3 / Qdrant
+    # / Twilio), but many service modules read env vars at import time
+    # (decouple.config, AsyncOpenAI(), boto3.client), so they need *some*
+    # value set or the module crashes during collection. All values below
+    # are placeholders; nothing is ever dialled.
+    env:
+      # Database
+      POSTGRES_ASYNCPG_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
+      MONGO_URL: "mongodb://localhost:27017"
+      MONGO_DB_NAME: "test"
+      # Redis / queue
+      REDIS_HOST: "localhost"
+      REDIS_PASSWORD: ""
+      ARQ_REDIS_HOST: "localhost"
+      ARQ_REDIS_PORT: "6379"
+      ARQ_REDIS_PASSWORD: ""
+      ARQ_REDIS_DB: "0"
+      # AWS
+      AWS_REGION: "us-east-1"
+      AWS_S3_ACCESS_KEY: "test"
+      AWS_S3_SECRET_KEY: "test"
+      AWS_SQS_ACCESS_KEY_ID: "test"
+      AWS_SQS_SECRET_ACCESS_KEY: "test"
+      PATIENT_EXPORTS_BUCKET: "test-bucket"
+      # LLM providers
+      OPENAI_API_KEY: "sk-test-not-a-real-key"
+      GOOGLE_API_KEY: "test"
+      PERPLEXITY_API_KEY: "test"
+      # Vector store
+      QDRANT_HOST: "localhost"
+      QDRANT_PORT: "6333"
+      QDRANT_COLLECTION: "test"
+      # Auth
+      JWT_SECRET: "test-secret-not-real"
+      JWT_ALGORITHM: "HS256"
+      JWT_AUDIENCE: "test"
+      # Notifications
+      FCM_JSON_KEY_PATH: "/tmp/fake-fcm.json"
+      TWILIO_ACCOUNT_SID: "test"
+      TWILIO_AUTH_TOKEN: "test"
+      TWILIO_SMS_FROM: "+10000000000"
+      TWILIO_WHATSAPP_FROM: "+10000000000"
+      TWILIO_CONTENT_SID: "test"
+      MSG91_AUTH_KEY: "test"
+      MSG91_TEMPLATE_ID: "test"
+      # ClickHouse
+      CLICKHOUSE_HOST: "localhost"
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_USER: "default"
+      CLICKHOUSE_PASSWORD: ""
+      # LibreView (CGM upload)
+      LIBREVIEW_API_BASE_URL: "https://api.libreview.test"
+      LIBREVIEW_EMAIL: "test@test.com"
+      LIBREVIEW_PASSWORD: "test"
+      LIBREVIEW_ACCOUNT_ID: "test"
+      LIBREVIEW_SITE_KEY: "test"
+      LIBREVIEW_TRUSTED_DEVICE_TOKEN: "test"
+      LIBREVIEW_SYNC_QUEUE_URL: "https://sqs.test"
+      # Misc
+      ENV: "test"
+      TWOCAPTCHA_API_KEY: "test"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,65 +111,10 @@ jobs:
         run: poetry install --no-interaction --no-root
 
       - name: Run pytest
-        # Tests mock every external dependency — no real Postgres / Redis /
-        # OpenAI / S3 / Qdrant / Twilio etc. needed. But many service modules
-        # read env vars at import time (decouple.config, AsyncOpenAI(), etc.),
-        # so they need *something* set or the import crashes during collection.
-        # All values below are placeholders; nothing is ever dialled.
-        env:
-          # Database
-          POSTGRES_ASYNCPG_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
-          MONGO_URL: "mongodb://localhost:27017"
-          MONGO_DB_NAME: "test"
-          # Redis / queue
-          REDIS_HOST: "localhost"
-          REDIS_PASSWORD: ""
-          ARQ_REDIS_HOST: "localhost"
-          ARQ_REDIS_PORT: "6379"
-          ARQ_REDIS_PASSWORD: ""
-          ARQ_REDIS_DB: "0"
-          # AWS
-          AWS_REGION: "us-east-1"
-          AWS_S3_ACCESS_KEY: "test"
-          AWS_S3_SECRET_KEY: "test"
-          AWS_SQS_ACCESS_KEY_ID: "test"
-          AWS_SQS_SECRET_ACCESS_KEY: "test"
-          PATIENT_EXPORTS_BUCKET: "test-bucket"
-          # LLM providers
-          OPENAI_API_KEY: "sk-test-not-a-real-key"
-          GOOGLE_API_KEY: "test"
-          PERPLEXITY_API_KEY: "test"
-          # Vector store
-          QDRANT_HOST: "localhost"
-          QDRANT_PORT: "6333"
-          QDRANT_COLLECTION: "test"
-          # Auth
-          JWT_SECRET: "test-secret-not-real"
-          JWT_ALGORITHM: "HS256"
-          JWT_AUDIENCE: "test"
-          # Notifications
-          FCM_JSON_KEY_PATH: "/tmp/fake-fcm.json"
-          TWILIO_ACCOUNT_SID: "test"
-          TWILIO_AUTH_TOKEN: "test"
-          TWILIO_SMS_FROM: "+10000000000"
-          TWILIO_WHATSAPP_FROM: "+10000000000"
-          TWILIO_CONTENT_SID: "test"
-          MSG91_AUTH_KEY: "test"
-          MSG91_TEMPLATE_ID: "test"
-          # ClickHouse
-          CLICKHOUSE_HOST: "localhost"
-          CLICKHOUSE_PORT: "9000"
-          CLICKHOUSE_USER: "default"
-          CLICKHOUSE_PASSWORD: ""
-          # LibreView (CGM upload)
-          LIBREVIEW_API_BASE_URL: "https://api.libreview.test"
-          LIBREVIEW_EMAIL: "test@test.com"
-          LIBREVIEW_PASSWORD: "test"
-          LIBREVIEW_ACCOUNT_ID: "test"
-          LIBREVIEW_SITE_KEY: "test"
-          LIBREVIEW_TRUSTED_DEVICE_TOKEN: "test"
-          LIBREVIEW_SYNC_QUEUE_URL: "https://sqs.test"
-          # Misc
-          ENV: "test"
-          TWOCAPTCHA_API_KEY: "test"
         run: poetry run pytest tests/ -v --tb=short
+
+      - name: Smoke test — app imports cleanly
+        # Catches module-load bugs that pytest collection may miss
+        # (undefined names, broken imports, typos in @app.on_event handlers,
+        # circular imports, etc.).
+        run: poetry run python -c "import app.main; print('app.main imports OK')"

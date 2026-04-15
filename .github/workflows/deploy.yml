@@ -28,7 +28,32 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          # After `docker-compose up -d` returns, verify the services
+          # actually STAY up. `up -d` can exit 0 even if a container
+          # crashes on startup (uncaught import error, missing env var,
+          # failed DB connection, etc.) — without this check the deploy
+          # reports "success" but the app is dead.
+          #
+          # We wait 30 seconds for startup, then check docker-compose ps.
+          # If any service is in Exit / Restarting state, the script
+          # exits non-zero and the workflow fails (visible on the Actions
+          # tab and via any GitHub notifications you subscribe to).
           script: |
+            set -e
             cd /home/deployer/aihealth-deployment/aihealth-server
             git pull origin main
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose up --build -d --no-deps
+
+            echo "Waiting 30s for services to stabilise..."
+            sleep 30
+
+            echo "--- docker-compose ps ---"
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose ps
+
+            if echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose ps | grep -qE "Exit|Restarting"; then
+              echo "❌ One or more services failed to stay up. Recent logs:"
+              echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S docker-compose logs --tail=100
+              exit 1
+            fi
+
+            echo "✅ All services up and stable"
