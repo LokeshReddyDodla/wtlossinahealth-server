@@ -546,7 +546,7 @@ class PatientDataExportService:
                 if row.get("prescription_id")
             ]
             if prescription_ids:
-                meds_table = Base.metadata.tables.get("patient_prescription_medicines")
+                meds_table = Base.metadata.tables.get("patient_medications")
                 if meds_table is not None:
                     meds_rows = await self._fetch_rows(
                         session,
