@@ -176,18 +176,23 @@ class GroupService:
     @with_postgres_session
     async def get_group_info(
         self,
-        group_id: UUID,
+        invite_code: str,
         patient_id: UUID,
         *,
         postgres_session: AsyncSession,
     ):
-        """Rich group info — avatar, your role, top member previews."""
+        """Rich group info by invite_code — avatar, your role, top member previews."""
         from lib.schemas.gamification import GroupInfoResponse, GroupMemberPreview
         from lib.models.patient import Patient
 
-        group = await self._get_group(group_id, postgres_session)
+        # Resolve invite_code → group
+        group_result = await postgres_session.execute(
+            select(Group).where(Group.invite_code == invite_code.upper().strip())
+        )
+        group = group_result.scalars().first()
         if not group:
             return None
+        group_id = group.group_id
 
         count = await self._member_count(group_id, postgres_session)
 
