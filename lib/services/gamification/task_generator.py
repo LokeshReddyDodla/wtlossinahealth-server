@@ -593,7 +593,7 @@ class TaskGeneratorService:
                     patient_id=patient_id,
                     task_date=task_date,
                     task_type=TaskType.FOLLOW_UP_APPOINTMENT.value,
-                    title=f"Follow up with Dr. {doctor}",
+                    title=f"Follow up with {doctor}",
                     description="You have a scheduled follow-up appointment today",
                     source_type=SourceType.PRESCRIPTION.value,
                     source_id=rx.prescription_id,
