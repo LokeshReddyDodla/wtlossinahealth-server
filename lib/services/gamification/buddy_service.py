@@ -433,6 +433,16 @@ class BuddyService:
         if other_id == patient_id:
             raise ValueError("That's your own buddy code")
 
+        # Same-facility constraint — preview only patients you can actually buddy with
+        facility_result = await postgres_session.execute(
+            select(Patient.patient_id, Patient.health_facility_id).where(
+                Patient.patient_id.in_([patient_id, other_id])
+            )
+        )
+        facility_map = {row.patient_id: row.health_facility_id for row in facility_result.all()}
+        if facility_map.get(patient_id) != facility_map.get(other_id):
+            raise ValueError("Buddy preview is limited to patients in the same facility")
+
         # Find existing buddy relationship (if any) — optional for preview flow
         result = await postgres_session.execute(
             select(Buddy).where(
