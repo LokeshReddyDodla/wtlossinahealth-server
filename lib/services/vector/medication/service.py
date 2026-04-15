@@ -139,6 +139,19 @@ class MedicationVectorService(BaseVectorService):
             if strength:
                 line += f" {strength}"
 
+            brand = med.get("brand_name")
+            if brand:
+                line += f" ({brand})"
+
+            formulation = med.get("formulation")
+            route = med.get("route")
+            if formulation and route:
+                line += f", {formulation} {route}"
+            elif formulation:
+                line += f", {formulation}"
+            elif route:
+                line += f", {route}"
+
             # Dose schedule
             doses = med.get("doses", [])
             if doses:
@@ -176,6 +189,10 @@ class MedicationVectorService(BaseVectorService):
                         line += ", every other day"
                     elif interval:
                         line += f", every {interval} days"
+
+            instructions = med.get("instructions")
+            if instructions:
+                line += f". Note: {instructions}"
 
             if not is_current:
                 start = med.get("start_date")

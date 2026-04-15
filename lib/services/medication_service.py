@@ -184,7 +184,7 @@ class MedicationService:
         await self._notify_patient(
             patient_id,
             title="New prescription",
-            body=f"Dr. {doctor} prescribed: {', '.join(med_names)}",
+            body=f"{doctor} prescribed: {', '.join(med_names)}",
             event_type="prescription_confirmed",
             prescription_id=str(prescription.prescription_id),
         )
@@ -274,7 +274,7 @@ class MedicationService:
         await self._notify_patient(
             patient_id,
             title="Prescription updated",
-            body=f"Dr. {doctor} updated your prescription. Check your medication list.",
+            body=f"{doctor} updated your prescription. Check your medication list.",
             event_type="prescription_edited",
             prescription_id=str(prescription.prescription_id),
         )
