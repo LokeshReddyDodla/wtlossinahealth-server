@@ -433,7 +433,7 @@ class BuddyService:
         if other_id == patient_id:
             raise ValueError("That's your own buddy code")
 
-        # Find the buddy relationship between this patient and the resolved one
+        # Find existing buddy relationship (if any) — optional for preview flow
         result = await postgres_session.execute(
             select(Buddy).where(
                 or_(
@@ -444,11 +444,11 @@ class BuddyService:
             )
         )
         buddy = result.scalars().first()
-        if not buddy:
-            raise ValueError("No buddy relationship exists with this patient. Send a buddy request first.")
 
+        # If no relationship: return profile preview with status="none"
+        # If relationship exists: return full details with relationship info
         direction = None
-        if buddy.status == "pending":
+        if buddy and buddy.status == "pending":
             direction = "outgoing" if buddy.requester_id == patient_id else "incoming"
 
         # Buddy's profile (name, picture, locale)
@@ -494,15 +494,15 @@ class BuddyService:
         ]
 
         return BuddyDetailResponse(
-            buddy_id=str(buddy.buddy_id),
+            buddy_id=str(buddy.buddy_id) if buddy else None,
             buddy_patient_id=str(other_id),
             first_name=patient_row.first_name if patient_row else None,
             last_name=patient_row.last_name if patient_row else None,
             profile_picture=patient_row.profile_picture if patient_row else None,
-            status=buddy.status,
+            status=buddy.status if buddy else "none",
             direction=direction,
-            buddy_streak=buddy.buddy_streak,
-            buddy_streak_longest=buddy.buddy_streak_longest,
+            buddy_streak=buddy.buddy_streak if buddy else 0,
+            buddy_streak_longest=buddy.buddy_streak_longest if buddy else 0,
             level=profile.level if profile else 1,
             title=title_for_level(profile.level if profile else 1),
             total_xp=profile.total_xp if profile else 0,
@@ -511,8 +511,8 @@ class BuddyService:
             tasks_completed_today=completed,
             tasks_total_today=len(tasks),
             recent_achievements=recent_slugs,
-            created_at=buddy.created_at,
-            accepted_at=buddy.accepted_at,
+            created_at=buddy.created_at if buddy else None,
+            accepted_at=buddy.accepted_at if buddy else None,
         )
 
     async def _active_buddy_count(

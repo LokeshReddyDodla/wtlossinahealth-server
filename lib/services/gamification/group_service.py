@@ -241,8 +241,8 @@ class GroupService:
             member_count=count,
             max_members=group.max_members,
             is_active=group.is_active,
-            invite_code=group.invite_code if your_role else None,  # only show code if member
-            your_role=your_role,
+            invite_code=group.invite_code,
+            your_role=your_role,  # null if not a member (preview mode)
             top_members=top_members,
             created_at=group.created_at,
         )
