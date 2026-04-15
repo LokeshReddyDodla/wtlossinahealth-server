@@ -2,7 +2,7 @@ from datetime import datetime, date as datetime_date
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +133,14 @@ class PatientFitnessPlanCreate(BaseModel):
     is_default: bool = False
     status: str = "ACTIVE"
     plan_reason: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_has_target(self):
+        has_steps = self.steps_goal is not None
+        has_sessions = self.content and self.content.weekly_sessions
+        if not has_steps and not has_sessions:
+            raise ValueError("Fitness plan must have at least steps_goal or weekly_sessions")
+        return self
 
 
 class PatientFitnessPlanUpdate(BaseModel):
