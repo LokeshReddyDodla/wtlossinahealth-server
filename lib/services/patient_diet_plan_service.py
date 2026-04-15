@@ -178,6 +178,12 @@ class PatientDietPlanService:
         patient_id: str,
         *,
         postgres_session: AsyncSession,
+    ) -> Optional[PatientDietPlanModel]:
+        """Get the active diet plan for a patient."""
+        return await self.get_active_diet_plan(
+            patient_id, postgres_session=postgres_session
+        )
+
     @with_postgres_session
     async def get_patient_diet_plans(
         self,

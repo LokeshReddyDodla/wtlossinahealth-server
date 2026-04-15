@@ -121,7 +121,6 @@ class PatientDietPlanCreate(BaseModel):
           "fiber": 30,
           "start_date": "2026-04-03",
           "end_date": "2026-06-30",
-          "is_default": false,
           "status": "ACTIVE",
           "plan_reason": "Weight loss program",
           "content": {

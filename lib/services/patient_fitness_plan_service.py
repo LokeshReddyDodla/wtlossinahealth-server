@@ -174,6 +174,18 @@ class PatientFitnessPlanService:
             )
 
     @with_postgres_session
+    async def get_default_fitness_plan(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> Optional[PatientFitnessPlanModel]:
+        """Get the active fitness plan for a patient."""
+        return await self.get_active_fitness_plan(
+            patient_id, postgres_session=postgres_session
+        )
+
+    @with_postgres_session
     async def get_patient_fitness_plans(
         self,
         patient_id: str,
