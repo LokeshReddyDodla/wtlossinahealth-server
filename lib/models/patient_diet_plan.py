@@ -30,10 +30,10 @@ class PatientDietPlan(Base):
     )
 
     # Daily macro targets (top-level columns for SQL queries)
-    calories = Column(Float, nullable=True)
-    protein = Column(Float, nullable=True)
-    carbs = Column(Float, nullable=True)
-    fats = Column(Float, nullable=True)
+    calories = Column(Float, nullable=False)
+    protein = Column(Float, nullable=False)
+    carbs = Column(Float, nullable=False)
+    fats = Column(Float, nullable=False)
     fiber = Column(Float, nullable=True)
 
     # Structured content: meals, restrictions, micronutrients, notes

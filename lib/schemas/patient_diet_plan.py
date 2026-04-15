@@ -170,10 +170,10 @@ class PatientDietPlanCreate(BaseModel):
           }
         }
     """
-    calories: Optional[float] = None
-    protein: Optional[float] = None
-    carbs: Optional[float] = None
-    fats: Optional[float] = None
+    calories: float
+    protein: float
+    carbs: float
+    fats: float
     fiber: Optional[float] = None
     content: Optional[DietPlanContent] = None
     start_date: datetime_date
@@ -200,10 +200,10 @@ class PatientDietPlanUpdate(BaseModel):
 class PatientDietPlan(BaseModel):
     diet_plan_id: UUID
     patient_id: UUID
-    calories: Optional[float] = None
-    protein: Optional[float] = None
-    carbs: Optional[float] = None
-    fats: Optional[float] = None
+    calories: float
+    protein: float
+    carbs: float
+    fats: float
     fiber: Optional[float] = None
     content: Optional[DietPlanContent] = None
     start_date: datetime_date
