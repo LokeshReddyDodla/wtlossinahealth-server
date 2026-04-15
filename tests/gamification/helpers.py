@@ -376,6 +376,11 @@ def base_stubs() -> dict[str, types.ModuleType]:
             LOG_MOOD=EnumValue("LOG_MOOD"),
             LOG_GLUCOSE=EnumValue("LOG_GLUCOSE"),
             LOG_WEIGHT=EnumValue("LOG_WEIGHT"),
+            TAKE_MEDICATION_MORNING=EnumValue("TAKE_MEDICATION_MORNING"),
+            TAKE_MEDICATION_AFTERNOON=EnumValue("TAKE_MEDICATION_AFTERNOON"),
+            TAKE_MEDICATION_EVENING=EnumValue("TAKE_MEDICATION_EVENING"),
+            TAKE_MEDICATION_NIGHT=EnumValue("TAKE_MEDICATION_NIGHT"),
+            FOLLOW_UP_APPOINTMENT=EnumValue("FOLLOW_UP_APPOINTMENT"),
             CHALLENGE_TASK=EnumValue("CHALLENGE_TASK"),
         ),
         ChallengeDetailResponse=type(

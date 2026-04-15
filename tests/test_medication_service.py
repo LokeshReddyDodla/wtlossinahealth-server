@@ -33,11 +33,12 @@ class TestInitialStatus:
         assert self._status(is_sos=True) == "as_needed"
 
     def test_end_date_in_past_is_completed(self):
-        assert self._status(end_date=date.today() - timedelta(days=1)) == "completed"
+        past = date.today() - timedelta(days=10)
+        assert self._status(start_date=past, end_date=date.today() - timedelta(days=1)) == "completed"
 
     def test_end_date_today_is_active(self):
-        # end_date < today triggers completed; end_date == today is still active
-        assert self._status(end_date=date.today()) == "active"
+        past = date.today() - timedelta(days=10)
+        assert self._status(start_date=past, end_date=date.today()) == "active"
 
     def test_start_date_in_future_is_scheduled(self):
         assert self._status(start_date=date.today() + timedelta(days=5)) == "scheduled"
@@ -52,8 +53,10 @@ class TestInitialStatus:
         ) == "as_needed"
 
     def test_sos_takes_priority_over_past_end(self):
+        past = date.today() - timedelta(days=10)
         assert self._status(
             is_sos=True,
+            start_date=past,
             end_date=date.today() - timedelta(days=1),
         ) == "as_needed"
 
@@ -62,15 +65,16 @@ class TestInitialStatus:
 
 
 class TestIsSameMedication:
-    def _check(self, existing_kwargs, new_kwargs):
+    def _check(self, existing_overrides=None, new_overrides=None):
         from lib.services.medication_service import MedicationService
 
-        existing = SimpleNamespace(
-            strength="500mg",
-            doses=[{"slot": "morning", "quantity": 1}],
-            schedule=None,
-            **existing_kwargs,
-        )
+        existing_defaults = {
+            "strength": "500mg",
+            "doses": [{"slot": "morning", "quantity": 1}],
+            "schedule": None,
+        }
+        existing_defaults.update(existing_overrides or {})
+        existing = SimpleNamespace(**existing_defaults)
 
         new_defaults = {
             "name": "Test",
@@ -79,73 +83,65 @@ class TestIsSameMedication:
             "doses": [MedicationDose(slot="morning", quantity=1)],
             "schedule": None,
         }
-        new_defaults.update(new_kwargs)
+        new_defaults.update(new_overrides or {})
         new = ConfirmedMedicine(**new_defaults)
 
         new_doses_json = [d.model_dump() for d in new.doses]
         return MedicationService._is_same_medication(existing, new, new_doses_json)
 
     def test_identical_is_same(self):
-        assert self._check({}, {}) is True
+        assert self._check() is True
 
     def test_different_strength_not_same(self):
         assert self._check(
-            {"strength": "500mg"},
-            {"strength": "1000mg"},
+            new_overrides={"strength": "1000mg"},
         ) is False
 
     def test_strength_case_insensitive(self):
         assert self._check(
-            {"strength": "500MG"},
-            {"strength": "500mg"},
+            existing_overrides={"strength": "500MG"},
+            new_overrides={"strength": "500mg"},
         ) is True
 
     def test_strength_whitespace_stripped(self):
         assert self._check(
-            {"strength": " 500mg "},
-            {"strength": "500mg"},
+            existing_overrides={"strength": " 500mg "},
         ) is True
 
     def test_different_doses_not_same(self):
         assert self._check(
-            {"doses": [{"slot": "morning", "quantity": 1}]},
-            {"doses": [MedicationDose(slot="morning", quantity=1), MedicationDose(slot="evening", quantity=1)]},
+            new_overrides={"doses": [MedicationDose(slot="morning", quantity=1), MedicationDose(slot="evening", quantity=1)]},
         ) is False
 
     def test_different_quantity_not_same(self):
         assert self._check(
-            {"doses": [{"slot": "morning", "quantity": 1}]},
-            {"doses": [MedicationDose(slot="morning", quantity=0.5)]},
+            new_overrides={"doses": [MedicationDose(slot="morning", quantity=0.5)]},
         ) is False
 
     def test_different_schedule_not_same(self):
         assert self._check(
-            {"schedule": None},
-            {"schedule": MedicationSchedule(type="weekly", days_of_week=[0])},
+            new_overrides={"schedule": MedicationSchedule(type="weekly", days_of_week=[0])},
         ) is False
 
     def test_both_null_schedule_is_same(self):
-        assert self._check(
-            {"schedule": None},
-            {"schedule": None},
-        ) is True
+        assert self._check() is True
 
     def test_same_weekly_schedule_is_same(self):
         assert self._check(
-            {"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
-            {"schedule": MedicationSchedule(type="weekly", days_of_week=[0, 2, 4])},
+            existing_overrides={"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
+            new_overrides={"schedule": MedicationSchedule(type="weekly", days_of_week=[0, 2, 4])},
         ) is True
 
     def test_different_weekly_days_not_same(self):
         assert self._check(
-            {"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
-            {"schedule": MedicationSchedule(type="weekly", days_of_week=[1, 3, 5])},
+            existing_overrides={"schedule": {"type": "weekly", "days_of_week": [0, 2, 4]}},
+            new_overrides={"schedule": MedicationSchedule(type="weekly", days_of_week=[1, 3, 5])},
         ) is False
 
     def test_null_strength_both_sides(self):
         assert self._check(
-            {"strength": None},
-            {"strength": None},
+            existing_overrides={"strength": None},
+            new_overrides={"strength": None},
         ) is True
 
 
