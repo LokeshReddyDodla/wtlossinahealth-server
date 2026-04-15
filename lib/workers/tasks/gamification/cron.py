@@ -10,6 +10,7 @@ from lib.workers.tasks.gamification.tasks import (
     process_challenge_lifecycle,
     process_streaks_for_all,
     refresh_leaderboards,
+    send_follow_up_reminders,
     send_medication_reminders,
     send_refill_reminders,
     send_streak_reminders,
@@ -78,6 +79,13 @@ GAMIFICATION_CRON_JOBS = [
         complete_expired_medications,
         hour=1,
         minute=0,
+        timeout=600,
+        unique=True,
+    ),
+    # Follow-up appointment reminders — hourly, filtered by patient-local 8:00 AM
+    cron(
+        send_follow_up_reminders,
+        minute=50,
         timeout=600,
         unique=True,
     ),
