@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import (
@@ -12,7 +12,7 @@ from lib.dependencies.service_dependencies import (
 )
 from lib.models.patient import Patient
 from lib.schemas.profile_update_agent import (
-    ConversationListResponse,
+    DraftSummaryResponse,
     ProfileUpdateChatRequest,
     ProfileUpdateChatResponse,
 )
@@ -31,8 +31,9 @@ router = APIRouter(
     summary="Send a message to the profile-update agent",
     description=(
         "Multi-turn chat endpoint that helps the patient update their "
-        "profile fields conversationally.  Pass `conversation_id` to "
-        "continue an existing conversation."
+        "profile fields conversationally.  The active draft is resolved "
+        "automatically from the authenticated patient — no conversation ID "
+        "is needed."
     ),
 )
 async def chat(
@@ -45,34 +46,29 @@ async def chat(
     result = await service.chat(
         patient_id=str(current_patient.patient_id),
         message=body.message,
-        conversation_id=body.conversation_id,
     )
     return SuccessResponse(data=result, message="Agent response")
 
 
 @router.get(
-    "/conversations",
-    response_model=SuccessResponse[List[ConversationListResponse]],
-    summary="List profile-update conversations",
+    "/draft",
+    response_model=SuccessResponse[Optional[DraftSummaryResponse]],
+    summary="Get the active profile-update draft",
     description=(
-        "Returns a paginated list of the patient's profile-update "
-        "conversations, sorted by most recently updated first."
+        "Returns the current active draft for the authenticated patient, "
+        "or null if no draft is in progress."
     ),
 )
-async def list_conversations(
-    limit: int = Query(20, ge=1, le=100, description="Max items to return"),
-    skip: int = Query(0, ge=0, description="Number of items to skip"),
+async def get_draft(
     current_patient: Patient = Depends(get_current_patient),
     service: ProfileUpdateAgentService = Depends(
         get_profile_update_agent_service
     ),
-) -> SuccessResponse[List[ConversationListResponse]]:
-    conversations = await service.list_conversations(
+) -> SuccessResponse[Optional[DraftSummaryResponse]]:
+    draft = await service.get_active_draft(
         patient_id=str(current_patient.patient_id),
-        limit=limit,
-        skip=skip,
     )
     return SuccessResponse(
-        data=conversations,
-        message="Conversations retrieved successfully",
+        data=draft,
+        message="Active draft retrieved" if draft else "No active draft",
     )

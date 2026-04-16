@@ -1,8 +1,21 @@
-"""Profile Update micro-agent service.
+"""Profile Update micro-agent service — draft-change-set workflow.
 
-Manages a short multi-turn conversation to update a single profile field,
-backed by Mongo for conversation state and Postgres (via PatientProfileService)
-for the actual write.
+Manages a multi-turn conversation where the patient can propose, modify, and
+remove profile changes.  Changes accumulate in an in-memory Mongo-backed
+*draft*.  **No database write happens until the user gives final
+confirmation** for the entire draft.
+
+Architecture
+~~~~~~~~~~~~
+* **Prompting / parsing** — ``_extract_intent`` calls the LLM and returns a
+  structured ``LLMResponse`` (list of actions + reply text).
+* **Draft reducer** — ``_reduce_draft`` is a pure function that applies
+  parsed actions to the in-memory draft dict.  It is the *single source of
+  truth* for how draft changes are added, replaced, and removed.
+* **Validation / coercion** — ``_coerce_value`` and ``_validate_draft``
+  convert raw string values to typed Python objects and reject bad input.
+* **Persistence** — ``_apply_draft_batch`` writes all approved changes to
+  Postgres in **one transaction** (all-or-nothing).
 """
 
 from __future__ import annotations
@@ -12,11 +25,11 @@ import logging
 import re
 from datetime import date as _date
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from typing import Any, Dict, List, Optional, Tuple
 
 from motor.motor_asyncio import AsyncIOMotorCollection
 from openai import AsyncOpenAI
+from pymongo.errors import DuplicateKeyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -49,14 +62,15 @@ from lib.models.patient_sleep_habit import (
 from lib.models.patient_smoking_habit import (
     PatientSmokingHabit as PatientSmokingHabitModel,
 )
-from lib.schemas.patient import PatientUpdate
 from lib.schemas.profile_update_agent import (
     BASIC_FIELDS,
     FIELD_TO_SECTION,
     LIFESTYLE_FIELDS,
     MEDICAL_HISTORY_FIELDS,
-    ConversationListResponse,
-    ConversationState,
+    DraftState,
+    DraftSummaryResponse,
+    LLMAction,
+    LLMResponse,
     ProfileUpdateChatResponse,
     UpdatableField,
 )
@@ -77,21 +91,52 @@ _EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 _BOOL_TRUE = {"yes", "true", "1", "y"}
 _BOOL_FALSE = {"no", "false", "0", "n"}
 
+# Deterministic confirmation phrases — if the user's message (lowered &
+# stripped) matches one of these AND the LLM didn't already emit a
+# confirm_all/cancel_all, we inject confirm_all ourselves.  This guards
+# against LLM flakiness on short affirmative replies.
+_CONFIRM_PHRASES = {
+    "confirm",
+    "confirm all",
+    "yes",
+    "yes confirm",
+    "yes, confirm",
+    "go ahead",
+    "looks good",
+    "do it",
+    "yes please",
+    "yes, please",
+    "confirm changes",
+    "confirm these changes",
+    "yes, confirm these changes",
+    "yes confirm all",
+    "yes, confirm all",
+    "lgtm",
+    "save",
+    "save changes",
+    "apply",
+    "apply changes",
+}
+
+# Canonical field names — used for quick membership tests.
+_VALID_FIELDS = {f.value for f in UpdatableField}
+
+# Reducer signals returned alongside the mutated draft.
+_SIG_CONTINUE = "continue"
+_SIG_REVIEW = "review"
+_SIG_CANCEL = "cancel"
+
 
 class ProfileUpdateAgentService:
-    """Lightweight conversational agent for profile updates.
+    """Draft-change-set conversational agent for profile updates.
 
-    Design decisions:
-    * One Mongo document per conversation, keyed by ``conversation_id``.
-    * FSM states live in ``ConversationState``; transitions happen in
-      ``_advance_state``.
+    Design decisions
+    ~~~~~~~~~~~~~~~~
+    * One *active* Mongo document per patient (``status == "active"``).
     * The LLM is only used for *intent extraction* — all mutation logic is
-      deterministic so it can be tested / audited without an LLM in the loop.
-    * ``PatientProfileService.update_basic_patient_profile`` is reused for
-      basic-section writes, preserving existing validation, events, and vector
-      store sync.
-    * Lifestyle and medical-history fields are written directly via the ORM
-      with ``profile_completion`` flags updated accordingly.
+      deterministic so it can be tested / audited without an LLM.
+    * No DB write happens until the patient gives final confirmation.
+    * The batch-apply path runs in a single Postgres transaction.
     """
 
     def __init__(
@@ -105,223 +150,278 @@ class ProfileUpdateAgentService:
         self.conversation_collection = conversation_collection
         self.openai_client = AsyncOpenAI()
 
-    # ── Public entry-point ──────────────────────────────────────────────────
+    # ── One-time index setup ────────────────────────────────────────────────
+    async def ensure_indexes(self) -> None:
+        """Create a unique partial index so only one active draft per patient
+        can exist.  Safe to call on every boot — Mongo ignores duplicates."""
+        await self.conversation_collection.create_index(
+            [("patient_id", 1)],
+            unique=True,
+            partialFilterExpression={"status": "active"},
+            name="unique_active_draft_per_patient",
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Public API
+    # ═══════════════════════════════════════════════════════════════════════
+
     async def chat(
         self,
         patient_id: str,
         message: str,
-        conversation_id: Optional[str] = None,
     ) -> ProfileUpdateChatResponse:
         """Process a single user turn and return the agent's reply."""
 
-        # 1. Load or create conversation
-        conv = await self._get_or_create_conversation(
-            patient_id, conversation_id
+        # 1. Load or create the active draft for this patient.
+        draft = await self._get_or_create_draft(patient_id)
+
+        # 2. Append user message to history.
+        draft["messages"].append({"role": "user", "content": message})
+
+        # 3. Ask the LLM to extract intent.
+        parsed = await self._extract_intent(draft["messages"])
+
+        # 3b. Deterministic fallback: if the user clearly wants to confirm
+        #     but the LLM didn't emit confirm_all (or cancel_all), inject it.
+        has_confirm_or_cancel = any(
+            a.action in ("confirm_all", "cancel_all") for a in parsed.actions
         )
-        conv_id: str = conv["conversation_id"]
+        if (
+            not has_confirm_or_cancel
+            and draft.get("draft_changes")
+            and message.strip().lower().rstrip(".!") in _CONFIRM_PHRASES
+        ):
+            parsed.actions.append(LLMAction(action="confirm_all"))
 
-        # 2. Append user message to history
-        conv["messages"].append({"role": "user", "content": message})
+        # 4. Advance FSM — may modify draft and/or write to Postgres.
+        response = await self._advance_state(draft, parsed, patient_id)
 
-        # 3. Ask the LLM to extract intent
-        parsed = await self._extract_intent(conv["messages"])
-
-        # 4. Advance FSM and build reply
-        response = await self._advance_state(conv, parsed, patient_id)
-
-        # 5. Append assistant reply to history and persist
-        conv["messages"].append({"role": "assistant", "content": response.reply})
-        await self._save_conversation(conv)
+        # 5. Append assistant reply and persist draft.
+        draft["messages"].append({"role": "assistant", "content": response.reply})
+        await self._save_draft(draft)
 
         return response
 
-    # ── List conversations ──────────────────────────────────────────────────
-    async def list_conversations(
+    async def get_active_draft(
         self,
         patient_id: str,
-        limit: int = 20,
-        skip: int = 0,
-    ) -> List[ConversationListResponse]:
-        """Return a paginated list of conversation summaries for a patient."""
-
-        cursor = (
-            self.conversation_collection.find(
-                {"patient_id": patient_id},
-                {
-                    "conversation_id": 1,
-                    "state": 1,
-                    "target_field": 1,
-                    "created_at": 1,
-                    "updated_at": 1,
-                    "messages": 1,
-                    "_id": 0,
-                },
-            )
-            .sort("updated_at", -1)
-            .skip(skip)
-            .limit(limit)
+    ) -> Optional[DraftSummaryResponse]:
+        """Return the current active draft summary, or *None*."""
+        doc = await self.conversation_collection.find_one(
+            {"patient_id": patient_id, "status": "active"}
+        )
+        if not doc:
+            return None
+        return DraftSummaryResponse(
+            state=doc.get("state", DraftState.COLLECTING.value),
+            draft_changes=doc.get("draft_changes", {}),
+            message_count=len(doc.get("messages", [])),
+            created_at=doc.get("created_at"),
+            updated_at=doc.get("updated_at"),
         )
 
-        results: List[ConversationListResponse] = []
-        async for doc in cursor:
-            results.append(
-                ConversationListResponse(
-                    conversation_id=doc["conversation_id"],
-                    state=doc.get("state", ConversationState.IDLE.value),
-                    target_field=doc.get("target_field"),
-                    created_at=doc.get("created_at"),
-                    updated_at=doc.get("updated_at"),
-                    message_count=len(doc.get("messages", [])),
-                )
-            )
-        return results
+    # ═══════════════════════════════════════════════════════════════════════
+    #  FSM logic
+    # ═══════════════════════════════════════════════════════════════════════
 
-    # ── FSM logic ───────────────────────────────────────────────────────────
     async def _advance_state(
         self,
-        conv: Dict[str, Any],
-        parsed: Dict[str, Any],
+        draft: Dict[str, Any],
+        parsed: LLMResponse,
         patient_id: str,
     ) -> ProfileUpdateChatResponse:
         """Deterministic state-machine that decides what to do next."""
 
-        state = ConversationState(conv.get("state", ConversationState.IDLE.value))
-        field_from_llm = parsed.get("field")
-        value_from_llm = parsed.get("value")
-        confirmation = parsed.get("confirmation")
-        llm_reply: str = parsed.get("reply", "")
-        conv_id: str = conv["conversation_id"]
+        state = DraftState(draft.get("state", DraftState.COLLECTING.value))
+        draft_changes: Dict[str, str] = draft.get("draft_changes", {})
+        llm_reply: str = parsed.reply
+        actions = parsed.actions
 
-        # Helper: valid field?
-        valid_fields = {f.value for f in UpdatableField}
+        # If the draft was completed/cancelled and the user sends a new
+        # message, start a fresh collecting session.
+        if state in (DraftState.COMPLETED, DraftState.CANCELLED):
+            draft["state"] = DraftState.COLLECTING.value
+            draft["draft_changes"] = {}
+            draft_changes = draft["draft_changes"]
+            state = DraftState.COLLECTING
 
-        # ── IDLE / AWAITING_FIELD ───────────────────────────────────────────
-        if state in (ConversationState.IDLE, ConversationState.AWAITING_FIELD):
-            if field_from_llm and field_from_llm in valid_fields:
-                conv["target_field"] = field_from_llm
+        # ── COLLECTING ──────────────────────────────────────────────────────
+        if state == DraftState.COLLECTING:
+            draft_changes, signal = self._reduce_draft(draft_changes, actions)
+            draft["draft_changes"] = draft_changes
 
-                if value_from_llm:
-                    # User provided both field + value in one shot
-                    conv["target_value"] = value_from_llm
-                    conv["state"] = ConversationState.AWAITING_CONFIRMATION.value
-                    human_label = UpdatableField.human_labels().get(
-                        field_from_llm, field_from_llm
-                    )
-                    reply = (
-                        f"I'll update your {human_label} to '{value_from_llm}'. "
-                        "Shall I go ahead?"
-                    )
-                else:
-                    conv["state"] = ConversationState.AWAITING_VALUE.value
-                    reply = llm_reply or (
-                        f"What would you like your new "
-                        f"{UpdatableField.human_labels().get(field_from_llm, field_from_llm)} to be?"
-                    )
-            else:
-                conv["state"] = ConversationState.AWAITING_FIELD.value
-                reply = llm_reply or (
-                    "Which field would you like to update? "
-                    f"You can choose from: {UpdatableField.list_for_prompt()}."
+            if signal == _SIG_CANCEL:
+                draft["state"] = DraftState.CANCELLED.value
+                draft["status"] = "cancelled"
+                return ProfileUpdateChatResponse(
+                    reply=llm_reply or "All changes cancelled. Start a new request whenever you're ready.",
+                    state=DraftState.CANCELLED.value,
+                    draft_changes=None,
                 )
 
-            return ProfileUpdateChatResponse(
-                conversation_id=conv_id,
-                reply=reply,
-                state=conv["state"],
-            )
-
-        # ── AWAITING_VALUE ──────────────────────────────────────────────────
-        if state == ConversationState.AWAITING_VALUE:
-            if value_from_llm:
-                conv["target_value"] = value_from_llm
-                conv["state"] = ConversationState.AWAITING_CONFIRMATION.value
-                human_label = UpdatableField.human_labels().get(
-                    conv["target_field"], conv["target_field"]
-                )
-                reply = (
-                    f"I'll update your {human_label} to '{value_from_llm}'. "
-                    "Shall I go ahead?"
-                )
-            else:
-                reply = llm_reply or "Please provide the new value."
-
-            return ProfileUpdateChatResponse(
-                conversation_id=conv_id,
-                reply=reply,
-                state=conv["state"],
-            )
-
-        # ── AWAITING_CONFIRMATION ───────────────────────────────────────────
-        if state == ConversationState.AWAITING_CONFIRMATION:
-            if confirmation is True:
-                target_field = conv["target_field"]
-                target_value = conv["target_value"]
-
-                # Validate & coerce — on failure, ask for the value again.
-                try:
-                    coerced_value = self._coerce_value(target_field, target_value)
-                except ValueError as exc:
-                    conv["state"] = ConversationState.AWAITING_VALUE.value
-                    conv["target_value"] = None
+            if signal == _SIG_REVIEW:
+                if not draft_changes:
+                    # Nothing to confirm.
                     return ProfileUpdateChatResponse(
-                        conversation_id=conv_id,
-                        reply=str(exc),
-                        state=conv["state"],
+                        reply="There are no pending changes to confirm. Tell me what you'd like to update.",
+                        state=DraftState.COLLECTING.value,
+                        draft_changes=draft_changes,
+                    )
+                # Transition to REVIEWING.
+                draft["state"] = DraftState.REVIEWING.value
+                summary = self._build_review_summary(draft_changes)
+                return ProfileUpdateChatResponse(
+                    reply=summary,
+                    state=DraftState.REVIEWING.value,
+                    draft_changes=draft_changes,
+                )
+
+            # signal == _SIG_CONTINUE — stay collecting.
+            reply = llm_reply or "What would you like to update?"
+            return ProfileUpdateChatResponse(
+                reply=reply,
+                state=DraftState.COLLECTING.value,
+                draft_changes=draft_changes if draft_changes else None,
+            )
+
+        # ── REVIEWING ───────────────────────────────────────────────────────
+        if state == DraftState.REVIEWING:
+            # The user may confirm, cancel, or make further edits.
+            draft_changes, signal = self._reduce_draft(draft_changes, actions)
+            draft["draft_changes"] = draft_changes
+
+            if signal == _SIG_CANCEL:
+                draft["state"] = DraftState.CANCELLED.value
+                draft["status"] = "cancelled"
+                return ProfileUpdateChatResponse(
+                    reply=llm_reply or "All changes cancelled.",
+                    state=DraftState.CANCELLED.value,
+                    draft_changes=None,
+                )
+
+            if signal == _SIG_REVIEW:
+                # User confirmed — validate & apply.
+                if not draft_changes:
+                    draft["state"] = DraftState.COLLECTING.value
+                    return ProfileUpdateChatResponse(
+                        reply="The draft is now empty — nothing to confirm. Tell me what you'd like to change.",
+                        state=DraftState.COLLECTING.value,
+                        draft_changes=None,
                     )
 
-                # Perform the actual update
-                await self._apply_update(patient_id, target_field, coerced_value)
+                # Validate every field in the draft.
+                coerced, errors = self._validate_draft(draft_changes)
+                if errors:
+                    # Back to collecting so the user can fix.
+                    draft["state"] = DraftState.COLLECTING.value
+                    error_msg = "Some values need fixing:\n" + "\n".join(
+                        f"• {e}" for e in errors
+                    )
+                    return ProfileUpdateChatResponse(
+                        reply=error_msg,
+                        state=DraftState.COLLECTING.value,
+                        draft_changes=draft_changes,
+                    )
 
-                conv["state"] = ConversationState.COMPLETED.value
-                human_label = UpdatableField.human_labels().get(
-                    target_field, target_field
-                )
-                reply = (
-                    f"Done! Your {human_label} has been updated to '{target_value}'."
-                )
+                # All valid — apply in one transaction.
+                draft["state"] = DraftState.APPLYING.value
+                try:
+                    await self._apply_draft_batch(patient_id, coerced)
+                except Exception:
+                    logger.exception(
+                        "Failed to apply draft for patient %s", patient_id
+                    )
+                    draft["state"] = DraftState.COLLECTING.value
+                    return ProfileUpdateChatResponse(
+                        reply="Something went wrong while saving your changes. Please try confirming again.",
+                        state=DraftState.COLLECTING.value,
+                        draft_changes=draft_changes,
+                    )
 
+                # Success!
+                draft["state"] = DraftState.COMPLETED.value
+                draft["status"] = "completed"
+                applied = {
+                    k: str(v) for k, v in coerced.items()
+                }
+                labels = UpdatableField.human_labels()
+                field_list = ", ".join(
+                    f"{labels.get(f, f)}" for f in applied
+                )
                 return ProfileUpdateChatResponse(
-                    conversation_id=conv_id,
-                    reply=reply,
-                    state=conv["state"],
-                    updated_field=target_field,
-                    updated_value=target_value,
-                )
-            elif confirmation is False:
-                # User declined — reset to idle
-                conv["state"] = ConversationState.IDLE.value
-                conv["target_field"] = None
-                conv["target_value"] = None
-                reply = (
-                    "No problem, the update has been cancelled. "
-                    "Is there anything else you'd like to change?"
-                )
-                return ProfileUpdateChatResponse(
-                    conversation_id=conv_id,
-                    reply=reply,
-                    state=conv["state"],
-                )
-            else:
-                reply = llm_reply or "Please confirm — shall I go ahead with the update? (yes / no)"
-                return ProfileUpdateChatResponse(
-                    conversation_id=conv_id,
-                    reply=reply,
-                    state=conv["state"],
+                    reply=f"Done! Updated: {field_list}.",
+                    state=DraftState.COMPLETED.value,
+                    draft_changes=None,
+                    applied_changes=applied,
                 )
 
-        # ── COMPLETED (user keeps talking after a successful update) ────────
-        # Reset so they can start another update in the same conversation.
-        conv["state"] = ConversationState.IDLE.value
-        conv["target_field"] = None
-        conv["target_value"] = None
-        return await self._advance_state(conv, parsed, patient_id)
+            # signal == _SIG_CONTINUE — user made edits while reviewing.
+            # Go back to collecting so they can keep editing.
+            draft["state"] = DraftState.COLLECTING.value
+            reply = llm_reply or "Draft updated. Let me know when you're ready to confirm."
+            return ProfileUpdateChatResponse(
+                reply=reply,
+                state=DraftState.COLLECTING.value,
+                draft_changes=draft_changes if draft_changes else None,
+            )
 
-    # ── LLM intent extraction ──────────────────────────────────────────────
+        # Fallback — should not be reachable.
+        return ProfileUpdateChatResponse(
+            reply="Something went wrong. Please start a new request.",
+            state=DraftState.COLLECTING.value,
+        )
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Draft reducer (pure function — no I/O)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _reduce_draft(
+        draft_changes: Dict[str, str],
+        actions: List[LLMAction],
+    ) -> Tuple[Dict[str, str], str]:
+        """Apply a list of LLM actions to the draft and return
+        ``(updated_draft, signal)``.
+
+        Signals: ``"continue"`` (keep collecting), ``"review"`` (user wants
+        to confirm), ``"cancel"`` (user wants to cancel everything).
+        """
+        signal = _SIG_CONTINUE
+
+        for act in actions:
+            atype = act.action
+
+            if atype == "set":
+                field = act.field
+                if field and field in _VALID_FIELDS and act.value is not None:
+                    draft_changes[field] = act.value
+
+            elif atype == "remove":
+                field = act.field
+                if field:
+                    draft_changes.pop(field, None)
+
+            elif atype == "confirm_all":
+                signal = _SIG_REVIEW
+
+            elif atype == "cancel_all":
+                draft_changes.clear()
+                signal = _SIG_CANCEL
+
+            # "show_draft" — no mutation, just continue (the LLM reply
+            # will already describe the draft).
+
+        return draft_changes, signal
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  LLM intent extraction
+    # ═══════════════════════════════════════════════════════════════════════
+
     async def _extract_intent(
-        self, messages: list[Dict[str, str]]
-    ) -> Dict[str, Any]:
-        """Call the LLM to extract field, value, confirmation from the
-        conversation history.  Falls back gracefully on parse errors."""
+        self,
+        messages: List[Dict[str, str]],
+    ) -> LLMResponse:
+        """Call the LLM to extract structured actions from the conversation."""
 
         llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
 
@@ -330,205 +430,66 @@ class ProfileUpdateAgentService:
                 model=_LLM_MODEL,
                 messages=llm_messages,
                 temperature=0.0,
-                max_tokens=300,
+                max_tokens=400,
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content or "{}"
-            return json.loads(content)
+            raw = json.loads(content)
+
+            # Parse into our Pydantic model, tolerating partial data.
+            actions_raw = raw.get("actions", [])
+            actions: List[LLMAction] = []
+            for a in actions_raw:
+                try:
+                    actions.append(LLMAction(**a))
+                except Exception:
+                    logger.debug("Skipping invalid LLM action: %s", a)
+
+            return LLMResponse(
+                actions=actions,
+                reply=raw.get("reply", ""),
+            )
+
         except json.JSONDecodeError:
             logger.warning(
                 "LLM returned non-JSON response; falling back to empty intent."
             )
-            return {"reply": "Sorry, I didn't quite catch that. Could you rephrase?"}
+            return LLMResponse(
+                reply="Sorry, I didn't quite catch that. Could you rephrase?"
+            )
         except Exception:
             logger.exception("OpenAI call failed during profile-update agent chat.")
-            return {
-                "reply": "I'm having trouble processing your request right now. Please try again shortly."
-            }
+            return LLMResponse(
+                reply="I'm having trouble processing your request right now. Please try again shortly."
+            )
 
-    # ── Dispatcher — routes to the correct write path ──────────────────────
-    async def _apply_update(
-        self, patient_id: str, field: str, value: Any
-    ) -> None:
-        """Route the update to the correct persistence method based on the
-        field's profile section."""
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Validation & coercion
+    # ═══════════════════════════════════════════════════════════════════════
 
-        section = FIELD_TO_SECTION.get(field, "basic")
-
-        if section == "basic":
-            await self._apply_basic_update(patient_id, field, value)
-        elif section == "lifestyle":
-            await self._apply_lifestyle_update(patient_id, field, value)
-        elif section == "medical_history":
-            await self._apply_medical_history_update(patient_id, field, value)
-        else:
-            logger.error("Unknown section '%s' for field '%s'", section, field)
-
-    # ── Basic write (delegates to existing service) ─────────────────────────
-    async def _apply_basic_update(
-        self, patient_id: str, field: str, value: Any
-    ) -> None:
-        """Build a ``PatientUpdate`` with a single field and delegate to
-        ``PatientProfileService``."""
-
-        update_data = PatientUpdate.model_construct(
-            **{field: value, "phone_number": ""}
-        )
-        update_data.model_fields_set.add(field)
-
-        await self.patient_profile_service.update_basic_patient_profile(
-            patient_id=patient_id,
-            patient_data=update_data,
-        )
-        logger.info(
-            "Profile field '%s' updated for patient %s", field, patient_id
-        )
-
-    # ── Lifestyle write (per-field ORM update) ──────────────────────────────
-    @with_postgres_session
-    async def _apply_lifestyle_update(
-        self,
-        patient_id: str,
-        field: str,
-        value: Any,
-        *,
-        postgres_session: AsyncSession,
-    ) -> None:
-        """Update a single lifestyle-related child model and mark the
-        lifestyle section of ``profile_completion`` as complete."""
-
-        patient = await self.patient_profile_service.fetch_patient_profile(
-            patient_id, detailed=True, postgres_session=postgres_session
-        )
-
-        if field == "activity_level":
-            if patient.daily_activity:
-                patient.daily_activity.activity_level = value
-            else:
-                patient.daily_activity = PatientDailyActivityModel(
-                    patient_id=patient_id, activity_level=value
-                )
-
-        elif field == "consume_alcohol":
-            if patient.alcohol_consumption:
-                patient.alcohol_consumption.consume_alcohol = value
-            else:
-                patient.alcohol_consumption = PatientAlcoholConsumptionModel(
-                    patient_id=patient_id, consume_alcohol=value
-                )
-
-        elif field == "smoke_status":
-            if patient.smoking_habit:
-                patient.smoking_habit.smoke_status = value
-            else:
-                patient.smoking_habit = PatientSmokingHabitModel(
-                    patient_id=patient_id, smoke_status=value
-                )
-
-        elif field == "sleep_quality":
-            if patient.sleep_habit:
-                patient.sleep_habit.sleep_quality = value
-            else:
-                patient.sleep_habit = PatientSleepHabitModel(
-                    patient_id=patient_id, sleep_quality=value
-                )
-
-        elif field == "meals_per_day":
-            if patient.eating_habit:
-                patient.eating_habit.meals_per_day = value
-            else:
-                patient.eating_habit = PatientEatingHabitModel(
-                    patient_id=patient_id, meals_per_day=value
-                )
-
-        elif field == "snacks_count":
-            if patient.eating_habit:
-                patient.eating_habit.snacks_count = value
-            else:
-                patient.eating_habit = PatientEatingHabitModel(
-                    patient_id=patient_id, snacks_count=value
-                )
-
-        elif field == "food_allergies":
-            # value is a List[str] — replace existing list
-            new_allergies = [
-                PatientFoodAllergyModel(patient_id=patient_id, allergy_name=name)
-                for name in value
-            ]
-            patient.food_allergies = new_allergies
-
-        self._mark_profile_section_complete(patient, "lifestyle")
-
-        postgres_session.add(patient)
-        await postgres_session.commit()
-        logger.info(
-            "Lifestyle field '%s' updated for patient %s", field, patient_id
-        )
-
-    # ── Medical-history write (per-field ORM update) ────────────────────────
-    @with_postgres_session
-    async def _apply_medical_history_update(
-        self,
-        patient_id: str,
-        field: str,
-        value: Any,
-        *,
-        postgres_session: AsyncSession,
-    ) -> None:
-        """Update a single medical-history child model and mark the
-        medical_history section of ``profile_completion`` as complete."""
-
-        patient = await self.patient_profile_service.fetch_patient_profile(
-            patient_id, detailed=True, postgres_session=postgres_session
-        )
-
-        if field == "type_of_diabetes":
-            if patient.diabetic_history:
-                patient.diabetic_history.type_of_diabetes = value
-            else:
-                patient.diabetic_history = PatientDiabeticHistoryModel(
-                    patient_id=patient_id, type_of_diabetes=value
-                )
-
-        elif field == "drug_allergies":
-            # value is a List[str] — replace existing list
-            new_allergies = [
-                PatientDrugAllergyModel(patient_id=patient_id, allergy_name=name)
-                for name in value
-            ]
-            patient.drug_allergies = new_allergies
-
-        elif field == "medical_conditions":
-            # value is a List[str] — replace existing list
-            new_conditions = [
-                PatientMedicalHistoryModel(
-                    patient_id=patient_id, condition=name, duration_years=0
-                )
-                for name in value
-            ]
-            patient.medical_histories = new_conditions
-
-        self._mark_profile_section_complete(patient, "medical_history")
-
-        postgres_session.add(patient)
-        await postgres_session.commit()
-        logger.info(
-            "Medical-history field '%s' updated for patient %s",
-            field,
-            patient_id,
-        )
-
-    # ── profile_completion helper ───────────────────────────────────────────
     @staticmethod
-    def _mark_profile_section_complete(patient: PatientModel, section: str) -> None:
-        """Flip the ``is_complete`` flag on a profile_completion section and
-        tell SQLAlchemy the JSON column was mutated."""
-        pc = patient.profile_completion
-        if pc and not pc.get(section, {}).get("is_complete"):
-            pc[section]["is_complete"] = True
-            flag_modified(patient, "profile_completion")
+    def _validate_draft(
+        draft_changes: Dict[str, str],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Validate + coerce every field in the draft.
 
-    # ── Value coercion & validation ─────────────────────────────────────────
+        Returns ``(coerced_map, errors)`` — if ``errors`` is non-empty, no
+        DB write should happen.
+        """
+        coerced: Dict[str, Any] = {}
+        errors: List[str] = []
+        labels = UpdatableField.human_labels()
+
+        for field, raw_value in draft_changes.items():
+            try:
+                coerced[field] = ProfileUpdateAgentService._coerce_value(
+                    field, raw_value
+                )
+            except ValueError as exc:
+                errors.append(f"{labels.get(field, field)}: {exc}")
+
+        return coerced, errors
+
     @staticmethod
     def _coerce_value(field: str, raw_value: str) -> Any:
         """Convert the string value from the LLM into the Python type
@@ -630,9 +591,7 @@ class ProfileUpdateAgentService:
                 return True
             if normalised in _BOOL_FALSE:
                 return False
-            raise ValueError(
-                "Please answer with 'yes' or 'no'."
-            )
+            raise ValueError("Please answer with 'yes' or 'no'.")
 
         # ── Integer fields ──────────────────────────────────────────────────
         if field in ("meals_per_day", "snacks_count"):
@@ -660,38 +619,260 @@ class ProfileUpdateAgentService:
         # ── Fallback (string fields: first_name, last_name, locale, etc.) ──
         return raw_value
 
-    # ── Mongo helpers ───────────────────────────────────────────────────────
-    async def _get_or_create_conversation(
-        self, patient_id: str, conversation_id: Optional[str]
-    ) -> Dict[str, Any]:
-        if conversation_id:
-            doc = await self.conversation_collection.find_one(
-                {"conversation_id": conversation_id, "patient_id": patient_id}
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Batch persistence (single transaction)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    @with_postgres_session
+    async def _apply_draft_batch(
+        self,
+        patient_id: str,
+        coerced_changes: Dict[str, Any],
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Apply **all** approved draft changes in a single Postgres
+        transaction.  If anything fails the transaction is rolled back and
+        nothing is persisted."""
+
+        patient = await self.patient_profile_service.fetch_patient_profile(
+            patient_id, detailed=True, postgres_session=postgres_session
+        )
+
+        sections_touched: set[str] = set()
+
+        for field, value in coerced_changes.items():
+            section = FIELD_TO_SECTION.get(field, "basic")
+            sections_touched.add(section)
+
+            if section == "basic":
+                self._mutate_basic_field(patient, field, value)
+            elif section == "lifestyle":
+                self._mutate_lifestyle_field(patient, patient_id, field, value)
+            elif section == "medical_history":
+                self._mutate_medical_history_field(
+                    patient, patient_id, field, value
+                )
+
+        # Mark touched sections as complete.
+        for section in sections_touched:
+            self._mark_profile_section_complete(patient, section)
+
+        postgres_session.add(patient)
+        await postgres_session.commit()
+
+        logger.info(
+            "Draft batch applied for patient %s — fields: %s",
+            patient_id,
+            ", ".join(coerced_changes.keys()),
+        )
+
+        # ── Post-commit side effects ───────────────────────────────────────
+        # Fire-and-forget; failures here must not undo the committed write.
+        try:
+            await self.patient_profile_service.chat_notification_service.notify_participants(
+                message_key="chat_list_updated",
+                user_id=patient_id,
             )
-            if doc:
-                return doc
+        except Exception:
             logger.warning(
-                "Conversation %s not found for patient %s — creating new one.",
-                conversation_id,
+                "Failed to send chat notification after batch apply for %s",
                 patient_id,
+                exc_info=True,
             )
+
+        if sections_touched & {"basic"}:
+            try:
+                from lib.schemas.patient import CorePatientProfile
+                from lib.workers.tasks.profile.enqueue import (
+                    enqueue_generate_profile_vector_sync,
+                )
+
+                # Refresh to get the fully committed state.
+                await postgres_session.refresh(patient)
+                detailed = await self.patient_profile_service.fetch_patient_profile(
+                    patient_id, detailed=True, postgres_session=postgres_session
+                )
+                profile_data = CorePatientProfile.from_orm(detailed).model_dump(
+                    mode="json"
+                )
+                enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue vector sync after batch apply for %s",
+                    patient_id,
+                    exc_info=True,
+                )
+
+    # ── Pure ORM mutators (no commit, no session) ──────────────────────────
+
+    @staticmethod
+    def _mutate_basic_field(
+        patient: PatientModel, field: str, value: Any
+    ) -> None:
+        """Set a single column on the Patient ORM object."""
+        if field not in ("created_at", "updated_at", "phone_number"):
+            setattr(patient, field, value)
+
+    @staticmethod
+    def _mutate_lifestyle_field(
+        patient: PatientModel,
+        patient_id: str,
+        field: str,
+        value: Any,
+    ) -> None:
+        """Mutate a lifestyle child model on the patient ORM object."""
+
+        if field == "activity_level":
+            if patient.daily_activity:
+                patient.daily_activity.activity_level = value
+            else:
+                patient.daily_activity = PatientDailyActivityModel(
+                    patient_id=patient_id, activity_level=value
+                )
+
+        elif field == "consume_alcohol":
+            if patient.alcohol_consumption:
+                patient.alcohol_consumption.consume_alcohol = value
+            else:
+                patient.alcohol_consumption = PatientAlcoholConsumptionModel(
+                    patient_id=patient_id, consume_alcohol=value
+                )
+
+        elif field == "smoke_status":
+            if patient.smoking_habit:
+                patient.smoking_habit.smoke_status = value
+            else:
+                patient.smoking_habit = PatientSmokingHabitModel(
+                    patient_id=patient_id, smoke_status=value
+                )
+
+        elif field == "sleep_quality":
+            if patient.sleep_habit:
+                patient.sleep_habit.sleep_quality = value
+            else:
+                patient.sleep_habit = PatientSleepHabitModel(
+                    patient_id=patient_id, sleep_quality=value
+                )
+
+        elif field == "meals_per_day":
+            if patient.eating_habit:
+                patient.eating_habit.meals_per_day = value
+            else:
+                patient.eating_habit = PatientEatingHabitModel(
+                    patient_id=patient_id, meals_per_day=value
+                )
+
+        elif field == "snacks_count":
+            if patient.eating_habit:
+                patient.eating_habit.snacks_count = value
+            else:
+                patient.eating_habit = PatientEatingHabitModel(
+                    patient_id=patient_id, snacks_count=value
+                )
+
+        elif field == "food_allergies":
+            patient.food_allergies = [
+                PatientFoodAllergyModel(patient_id=patient_id, allergy_name=name)
+                for name in value
+            ]
+
+    @staticmethod
+    def _mutate_medical_history_field(
+        patient: PatientModel,
+        patient_id: str,
+        field: str,
+        value: Any,
+    ) -> None:
+        """Mutate a medical-history child model on the patient ORM object."""
+
+        if field == "type_of_diabetes":
+            if patient.diabetic_history:
+                patient.diabetic_history.type_of_diabetes = value
+            else:
+                patient.diabetic_history = PatientDiabeticHistoryModel(
+                    patient_id=patient_id, type_of_diabetes=value
+                )
+
+        elif field == "drug_allergies":
+            patient.drug_allergies = [
+                PatientDrugAllergyModel(patient_id=patient_id, allergy_name=name)
+                for name in value
+            ]
+
+        elif field == "medical_conditions":
+            patient.medical_histories = [
+                PatientMedicalHistoryModel(
+                    patient_id=patient_id, condition=name, duration_years=0
+                )
+                for name in value
+            ]
+
+    # ── profile_completion helper ───────────────────────────────────────────
+    @staticmethod
+    def _mark_profile_section_complete(
+        patient: PatientModel, section: str
+    ) -> None:
+        """Flip ``is_complete`` for a profile_completion section."""
+        pc = patient.profile_completion
+        if pc and not pc.get(section, {}).get("is_complete"):
+            pc[section]["is_complete"] = True
+            flag_modified(patient, "profile_completion")
+
+    # ── Review summary builder ──────────────────────────────────────────────
+    @staticmethod
+    def _build_review_summary(draft_changes: Dict[str, str]) -> str:
+        """Generate a human-readable summary of the pending draft."""
+        labels = UpdatableField.human_labels()
+        lines = [
+            f"• {labels.get(f, f)} → {v}" for f, v in draft_changes.items()
+        ]
+        summary = "Here's what I'll update:\n" + "\n".join(lines)
+        summary += "\n\nShall I confirm all these changes?"
+        return summary
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Mongo helpers
+    # ═══════════════════════════════════════════════════════════════════════
+
+    async def _get_or_create_draft(
+        self, patient_id: str
+    ) -> Dict[str, Any]:
+        """Return the active draft for *patient_id*, creating one if none
+        exists."""
+
+        doc = await self.conversation_collection.find_one(
+            {"patient_id": patient_id, "status": "active"}
+        )
+        if doc:
+            return doc
 
         now = datetime.now(timezone.utc).isoformat()
         new_doc: Dict[str, Any] = {
-            "conversation_id": uuid4().hex,
             "patient_id": patient_id,
-            "state": ConversationState.IDLE.value,
-            "target_field": None,
-            "target_value": None,
+            "status": "active",
+            "state": DraftState.COLLECTING.value,
+            "draft_changes": {},
             "messages": [],
             "created_at": now,
             "updated_at": now,
         }
-        await self.conversation_collection.insert_one(new_doc)
+        try:
+            await self.conversation_collection.insert_one(new_doc)
+        except DuplicateKeyError:
+            # Race condition — another request created the draft first.
+            doc = await self.conversation_collection.find_one(
+                {"patient_id": patient_id, "status": "active"}
+            )
+            if doc:
+                return doc
         return new_doc
 
-    async def _save_conversation(self, conv: Dict[str, Any]) -> None:
-        conv["updated_at"] = datetime.now(timezone.utc).isoformat()
+    async def _save_draft(self, draft: Dict[str, Any]) -> None:
+        """Persist the draft back to Mongo."""
+        draft["updated_at"] = datetime.now(timezone.utc).isoformat()
         await self.conversation_collection.replace_one(
-            {"conversation_id": conv["conversation_id"]}, conv, upsert=True
+            {"patient_id": draft["patient_id"], "status": "active"},
+            draft,
+            upsert=True,
         )

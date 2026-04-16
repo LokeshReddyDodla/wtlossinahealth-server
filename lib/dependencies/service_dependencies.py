@@ -19,6 +19,7 @@ from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
+from lib.services.patient_onboarding_agent.patient_onboarding_agent_service import PatientOnboardingAgentService
 from lib.services.reports import CGMReportService
 
 from lib.services.vector import CGMVectorService
@@ -618,6 +619,11 @@ def get_profile_update_agent_service() -> ProfileUpdateAgentService:
         container.resolve(ProfileUpdateAgentService),
     )
 
+def get_patient_onboarding_agent_service() -> PatientOnboardingAgentService:
+    return cast(
+        PatientOnboardingAgentService,
+        container.resolve(PatientOnboardingAgentService),
+    )
 
 def get_fcm_service() -> FCMService:
     return FCMService()

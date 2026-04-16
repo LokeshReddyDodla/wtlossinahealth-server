@@ -1,10 +1,13 @@
-"""Schemas for the Profile Update micro-agent."""
+"""Schemas for the Profile Update micro-agent.
+
+Implements a **draft-change-set** workflow: changes accumulate in a draft
+and are only written to the database after the user gives final confirmation.
+"""
 
 from __future__ import annotations
 
-from datetime import date
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -81,8 +84,10 @@ class UpdatableField(str, Enum):
 
     @classmethod
     def list_for_prompt(cls) -> str:
-        """Comma-separated list suitable for inclusion in an LLM prompt."""
-        return ", ".join(cls.human_labels().values())
+        """List of fields with their snake_case keys for the LLM prompt."""
+        labels = cls.human_labels()
+        lines = [f"- {key} ({label})" for key, label in labels.items()]
+        return "\n".join(lines)
 
 
 # ── Field → profile_completion section mapping ──────────────────────────────
@@ -132,80 +137,89 @@ MEDICAL_HISTORY_FIELDS: set[str] = {
 }
 
 
-# ── Conversation state (persisted in Mongo) ─────────────────────────────────
-class ConversationState(str, Enum):
-    """Finite-state machine states for a profile-update conversation."""
+# ── Draft state (persisted in Mongo) ────────────────────────────────────────
+class DraftState(str, Enum):
+    """Lifecycle states for a profile-update draft."""
 
-    IDLE = "idle"
-    AWAITING_FIELD = "awaiting_field"
-    AWAITING_VALUE = "awaiting_value"
-    AWAITING_CONFIRMATION = "awaiting_confirmation"
+    COLLECTING = "collecting"
+    REVIEWING = "reviewing"
+    APPLYING = "applying"
     COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
-# ── LLM structured-output schema ────────────────────────────────────────────
-class ParsedIntent(BaseModel):
-    """What the LLM extracts from the user's message."""
+# ── LLM structured-output types ─────────────────────────────────────────────
 
-    field: Optional[str] = Field(
-        None,
-        description="The profile field the user wants to update (snake_case). "
-        "Must be one of the UpdatableField values, or null if unclear.",
-    )
-    value: Optional[str] = Field(
-        None,
-        description="The new value the user wants to set, or null if not provided.",
-    )
-    confirmation: Optional[bool] = Field(
-        None,
-        description="True if the user confirmed the update, False if they declined, null if not applicable.",
-    )
+# Action types the LLM may emit.
+ActionType = Literal["set", "remove", "show_draft", "confirm_all", "cancel_all"]
+
+
+class LLMAction(BaseModel):
+    """A single intent-action extracted by the LLM."""
+
+    action: ActionType
+    field: Optional[str] = None
+    value: Optional[str] = None
+
+
+class LLMResponse(BaseModel):
+    """Structured output expected from the LLM."""
+
+    actions: List[LLMAction] = Field(default_factory=list)
+    reply: str = ""
 
 
 # ── API request / response ──────────────────────────────────────────────────
 class ProfileUpdateChatRequest(BaseModel):
-    """Payload sent by the client for each chat turn."""
+    """Payload sent by the client for each chat turn.
+
+    No ``conversation_id`` — the active draft is resolved automatically
+    from the authenticated ``patient_id``.
+    """
 
     message: str = Field(..., min_length=1, max_length=2000)
-    conversation_id: Optional[str] = Field(
-        None,
-        description="Existing conversation ID to continue. "
-        "Omit or set to null to start a new conversation.",
-    )
 
 
 class ProfileUpdateChatResponse(BaseModel):
     """Data returned to the client after each chat turn."""
 
-    conversation_id: str
     reply: str
     state: str = Field(
-        description="Current conversation state for client-side UX hints."
+        description="Current draft state for client-side UX hints."
     )
-    updated_field: Optional[str] = None
-    updated_value: Optional[Any] = None
+    draft_changes: Optional[Dict[str, str]] = Field(
+        None,
+        description="Current pending draft changes (field → raw value).",
+    )
+    applied_changes: Optional[Dict[str, str]] = Field(
+        None,
+        description="Fields actually written to DB. Only set when state=completed.",
+    )
 
 
-class ConversationListResponse(BaseModel):
-    """Summary of a single conversation, used in the list endpoint."""
+class DraftSummaryResponse(BaseModel):
+    """Summary of a patient's active draft, used by GET /draft."""
 
-    conversation_id: str
     state: str
-    target_field: Optional[str] = None
+    draft_changes: Dict[str, str] = Field(default_factory=dict)
+    message_count: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-    message_count: int = 0
 
 
 # ── Mongo document shape (for type-safety, not enforced at DB level) ────────
-class ConversationDocument(BaseModel):
-    """Shape of documents in the ``profile_update_conversations`` collection."""
+class DraftDocument(BaseModel):
+    """Shape of documents in the ``profile_update_conversations`` collection.
 
-    conversation_id: str
+    One *active* document per patient.  Completed / cancelled drafts have
+    ``status`` set to ``"completed"`` / ``"cancelled"`` and are kept for
+    history.
+    """
+
     patient_id: str
-    state: str = ConversationState.IDLE.value
-    target_field: Optional[str] = None
-    target_value: Optional[Any] = None
+    status: str = "active"  # "active" | "completed" | "cancelled"
+    state: str = DraftState.COLLECTING.value
+    draft_changes: Dict[str, str] = Field(default_factory=dict)
     messages: List[Dict[str, str]] = Field(default_factory=list)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
