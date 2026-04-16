@@ -16,6 +16,9 @@ from rest_server.patients.router import router as patients_router
 from rest_server.admin.router import router as admin_router
 from rest_server.weight_loss_agent.router import router as weight_loss_agent_router
 from rest_server.profile_update_agent.router import router as profile_update_agent_router
+from rest_server.patient_onboarding_agent.router import (
+    router as patient_onboarding_agent_router,
+)
 from rest_server.system_management import reload_cache
 from rest_server.test import test
 from rest_server.intake.router import router as intake_router
@@ -105,6 +108,11 @@ def import_routes(app: FastAPI) -> None:
     # Profile Update Agent
     ###########################################################################
     app.include_router(profile_update_agent_router)
+
+    ###########################################################################
+    # Patient Onboarding Agent
+    ###########################################################################
+    app.include_router(patient_onboarding_agent_router)
 
     ###########################################################################
     # Weight Loss Agent
