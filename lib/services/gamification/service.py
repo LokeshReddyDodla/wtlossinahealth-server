@@ -39,6 +39,7 @@ from lib.services.gamification.achievement_evaluator import AchievementEvaluator
 from lib.services.gamification.notifications import send_gamification_notification
 from lib.services.gamification.time_utils import local_today
 from lib.services.gamification.task_generator import TaskGeneratorService
+from lib.services.gamification.streak_service import ACTIVITY_TASK_TYPES, ACTIVITY_THRESHOLD
 from lib.services.gamification.xp_service import XPService, streak_multiplier
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -289,6 +290,12 @@ class GamificationService:
             completed = sum(
                 1 for t in day_tasks if t.status == TaskStatus.COMPLETED.value
             )
+            completed_types = {
+                t.task_type
+                for t in day_tasks
+                if t.status == TaskStatus.COMPLETED.value
+                and t.task_type in ACTIVITY_TASK_TYPES
+            }
             xp_earned = await self.xp_service.get_xp_earned_for_date(
                 patient_id, current, tz_name=tz_name
             )
@@ -298,6 +305,7 @@ class GamificationService:
                     completed_count=completed,
                     total_count=len(day_tasks),
                     xp_earned=xp_earned,
+                    active_day=len(completed_types) >= ACTIVITY_THRESHOLD,
                     tasks=[
                         DailyTaskResponse(
                             task_id=str(t.task_id),

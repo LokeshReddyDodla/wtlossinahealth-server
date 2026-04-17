@@ -271,6 +271,7 @@ class DailySummary(BaseModel):
     completed_count: int
     total_count: int
     xp_earned: int
+    active_day: bool
     tasks: List[DailyTaskResponse]
 
 
