@@ -273,7 +273,6 @@ class GamificationService:
                 DailyTask.patient_id == patient_id,
                 DailyTask.task_date >= start_date,
                 DailyTask.task_date <= end_date,
-                DailyTask.status != TaskStatus.EXPIRED.value,
             )
         )
         tasks = result.scalars().all()
