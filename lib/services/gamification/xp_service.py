@@ -81,12 +81,6 @@ class XPService:
         tz_name = await self._patient_timezone(patient_id, postgres_session)
 
         if respect_cap:
-            # Lock the profile row to serialise concurrent XP grants
-            await postgres_session.execute(
-                select(PlayerProfile)
-                .where(PlayerProfile.patient_id == patient_id)
-                .with_for_update()
-            )
             today_start, today_end = naive_day_bounds_for_local_date(
                 local_today(tz_name),
                 tz_name,
