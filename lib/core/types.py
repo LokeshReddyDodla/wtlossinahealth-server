@@ -66,4 +66,4 @@ ReportTypeLiteral = Literal[
     "index", "laboratory", "radiology", "eye_or_ophthalmology", "other"
 ]
 
-DocumentTypeLiteral = Literal["report", "prescription", "other"]
+DocumentTypeLiteral = Literal["report", "other"]
