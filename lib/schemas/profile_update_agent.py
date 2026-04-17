@@ -151,7 +151,7 @@ class DraftState(str, Enum):
 # ── LLM structured-output types ─────────────────────────────────────────────
 
 # Action types the LLM may emit.
-ActionType = Literal["set", "remove", "show_draft", "confirm_all", "cancel_all"]
+ActionType = Literal["set", "remove", "show_draft", "confirm_all", "cancel_all", "query"]
 
 
 class LLMAction(BaseModel):
