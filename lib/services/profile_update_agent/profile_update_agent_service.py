@@ -121,6 +121,12 @@ _CONFIRM_PHRASES = {
 # Canonical field names — used for quick membership tests.
 _VALID_FIELDS = {f.value for f in UpdatableField}
 
+# Fields where the exact value MUST appear in a user message.  The LLM is
+# prone to hallucinating common names (e.g. "Smith") when the user hasn't
+# actually provided a value.  For these fields we enforce that the value the
+# LLM emitted can be found verbatim in the user's conversation history.
+_USER_PROVIDED_VALUE_FIELDS = {"first_name", "last_name"}
+
 # Reducer signals returned alongside the mutated draft.
 _SIG_CONTINUE = "continue"
 _SIG_REVIEW = "review"
@@ -178,10 +184,45 @@ class ProfileUpdateAgentService:
         # 2. Append user message to history.
         draft["messages"].append({"role": "user", "content": message})
 
-        # 3. Ask the LLM to extract intent.
-        parsed = await self._extract_intent(draft["messages"])
+        # 2b. Fetch current profile for LLM context.
+        profile_context = await self._fetch_profile_context(patient_id)
 
-        # 3b. Deterministic fallback: if the user clearly wants to confirm
+        # 3. Ask the LLM to extract intent.
+        parsed = await self._extract_intent(
+            draft["messages"], profile_context=profile_context
+        )
+
+        # 3b. Guard against hallucinated values: for name fields, verify the
+        #     value actually appears in the user's messages.  If not, the LLM
+        #     invented it — drop the action and ask the user for the real value.
+        user_texts = " ".join(
+            m["content"] for m in draft["messages"] if m["role"] == "user"
+        ).lower()
+        filtered_actions: list[LLMAction] = []
+        hallucinated_fields: list[str] = []
+        for act in parsed.actions:
+            if (
+                act.action == "set"
+                and act.field in _USER_PROVIDED_VALUE_FIELDS
+                and act.value
+                and act.value.lower() not in user_texts
+            ):
+                hallucinated_fields.append(act.field)
+                logger.warning(
+                    "Blocked hallucinated value for %s: '%s' (not in user messages)",
+                    act.field, act.value,
+                )
+                continue
+            filtered_actions.append(act)
+        if hallucinated_fields:
+            labels = UpdatableField.human_labels()
+            field_names = " and ".join(
+                labels.get(f, f).lower() for f in hallucinated_fields
+            )
+            parsed.actions = filtered_actions
+            parsed.reply = f"What would you like to change your {field_names} to?"
+
+        # 3c. Deterministic fallback: if the user clearly wants to confirm
         #     but the LLM didn't emit confirm_all (or cancel_all), inject it.
         has_confirm_or_cancel = any(
             a.action in ("confirm_all", "cancel_all") for a in parsed.actions
@@ -414,16 +455,69 @@ class ProfileUpdateAgentService:
         return draft_changes, signal
 
     # ═══════════════════════════════════════════════════════════════════════
+    #  Profile context for LLM
+    # ═══════════════════════════════════════════════════════════════════════
+
+    @with_postgres_session
+    async def _fetch_profile_context(
+        self,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> Optional[str]:
+        """Fetch the patient's current profile and return a JSON string
+        for LLM context.  Returns *None* on failure so the agent degrades
+        gracefully."""
+        try:
+            from lib.schemas.patient import CorePatientProfile
+
+            patient = await self.patient_profile_service.fetch_patient_profile(
+                patient_id, detailed=True, postgres_session=postgres_session
+            )
+            profile_data = CorePatientProfile.from_orm(patient).model_dump(
+                mode="json"
+            )
+
+            updatable_keys = _VALID_FIELDS
+            nested_keys = {
+                "daily_activity", "alcohol_consumption", "smoking_habit",
+                "eating_habit", "sleep_habit", "diabetic_history",
+                "current_medication", "food_allergies", "drug_allergies",
+                "medical_histories",
+            }
+            relevant_keys = updatable_keys | nested_keys
+            filtered = {
+                k: v for k, v in profile_data.items() if k in relevant_keys
+            }
+
+            return json.dumps(filtered, indent=2, default=str)
+        except Exception:
+            logger.warning(
+                "Failed to fetch profile context for patient %s",
+                patient_id,
+                exc_info=True,
+            )
+            return None
+
+    # ═══════════════════════════════════════════════════════════════════════
     #  LLM intent extraction
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _extract_intent(
         self,
         messages: List[Dict[str, str]],
+        *,
+        profile_context: Optional[str] = None,
     ) -> LLMResponse:
         """Call the LLM to extract structured actions from the conversation."""
 
-        llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        system_content = SYSTEM_PROMPT
+        if profile_context:
+            system_content += (
+                f"\n\n## Patient's current profile\n```json\n{profile_context}\n```"
+            )
+
+        llm_messages = [{"role": "system", "content": system_content}] + messages
 
         try:
             response = await self.openai_client.chat.completions.create(
