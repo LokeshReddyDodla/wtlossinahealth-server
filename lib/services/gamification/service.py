@@ -21,7 +21,9 @@ from lib.models.gamification import (
 )
 from lib.schemas.gamification import (
     AchievementResponse,
+    DailyHistoryResponse,
     DailyProgressResponse,
+    DailySummary,
     DailyTaskResponse,
     GamificationContext,
     PlayerProfileResponse,
@@ -255,6 +257,73 @@ class GamificationService:
             total_count=len(tasks),
             xp_earned_today=xp_earned,
             streak_status=streak_status,
+        )
+
+    @with_postgres_session
+    async def get_daily_history(
+        self,
+        patient_id: UUID,
+        start_date: date,
+        end_date: date,
+        *,
+        postgres_session: AsyncSession,
+    ) -> DailyHistoryResponse:
+        result = await postgres_session.execute(
+            select(DailyTask).where(
+                DailyTask.patient_id == patient_id,
+                DailyTask.task_date >= start_date,
+                DailyTask.task_date <= end_date,
+                DailyTask.status != TaskStatus.EXPIRED.value,
+            )
+        )
+        tasks = result.scalars().all()
+
+        by_date: dict[date, list[DailyTask]] = {}
+        for t in tasks:
+            by_date.setdefault(t.task_date, []).append(t)
+
+        tz_name = await self._patient_timezone(patient_id, postgres_session)
+        days = []
+        current = start_date
+        while current <= end_date:
+            day_tasks = by_date.get(current, [])
+            completed = sum(
+                1 for t in day_tasks if t.status == TaskStatus.COMPLETED.value
+            )
+            xp_earned = await self.xp_service.get_xp_earned_for_date(
+                patient_id, current, tz_name=tz_name
+            )
+            days.append(
+                DailySummary(
+                    date=current,
+                    completed_count=completed,
+                    total_count=len(day_tasks),
+                    xp_earned=xp_earned,
+                    tasks=[
+                        DailyTaskResponse(
+                            task_id=str(t.task_id),
+                            task_date=t.task_date,
+                            task_type=t.task_type,
+                            title=t.title,
+                            description=t.description,
+                            source_type=t.source_type,
+                            source_id=str(t.source_id) if t.source_id else None,
+                            target_value=t.target_value,
+                            current_value=t.current_value,
+                            status=t.status,
+                            xp_reward=t.xp_reward,
+                            completed_at=t.completed_at,
+                        )
+                        for t in day_tasks
+                    ],
+                )
+            )
+            current += timedelta(days=1)
+
+        return DailyHistoryResponse(
+            start_date=start_date,
+            end_date=end_date,
+            days=days,
         )
 
     @with_postgres_session
