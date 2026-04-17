@@ -55,14 +55,9 @@ class StreakService:
         postgres_session: AsyncSession,
     ) -> dict:
         """Evaluate streak for the given date. Returns summary dict."""
-        # Ensure profile exists, then re-fetch with row lock
-        await self._get_or_create_profile(patient_id, postgres_session)
-        locked = await postgres_session.execute(
-            select(PlayerProfile)
-            .where(PlayerProfile.patient_id == patient_id)
-            .with_for_update()
+        profile = await self._get_or_create_profile(
+            patient_id, postgres_session
         )
-        profile = locked.scalars().first()
 
         if profile.last_active_date == for_date:
             return {"action": "already_processed", "streak": profile.current_streak}
@@ -276,14 +271,9 @@ class StreakService:
         *,
         postgres_session: AsyncSession,
     ) -> PlayerProfile:
-        # Ensure profile exists, then lock to prevent race with nightly cron
-        await self._get_or_create_profile(patient_id, postgres_session)
-        locked = await postgres_session.execute(
-            select(PlayerProfile)
-            .where(PlayerProfile.patient_id == patient_id)
-            .with_for_update()
+        profile = await self._get_or_create_profile(
+            patient_id, postgres_session
         )
-        profile = locked.scalars().first()
         if profile.streak_freezes <= 0:
             raise ValueError("No streak freezes available")
         if profile.current_streak <= 0:
