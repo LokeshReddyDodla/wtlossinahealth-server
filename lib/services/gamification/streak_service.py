@@ -55,9 +55,14 @@ class StreakService:
         postgres_session: AsyncSession,
     ) -> dict:
         """Evaluate streak for the given date. Returns summary dict."""
-        profile = await self._get_or_create_profile(
-            patient_id, postgres_session
+        # Ensure profile exists, then re-fetch with row lock
+        await self._get_or_create_profile(patient_id, postgres_session)
+        locked = await postgres_session.execute(
+            select(PlayerProfile)
+            .where(PlayerProfile.patient_id == patient_id)
+            .with_for_update()
         )
+        profile = locked.scalars().first()
 
         if profile.last_active_date == for_date:
             return {"action": "already_processed", "streak": profile.current_streak}
@@ -79,11 +84,11 @@ class StreakService:
                 profile.last_active_date is None
                 or (for_date - profile.last_active_date).days == 1
                 or (
-                    # Freeze bridged exactly 1 gap day between last_active and today
+                    # Freeze(s) bridged the gap — streak_frozen_on is the last
+                    # frozen day (updated each missed day by the cron), so we
+                    # just need yesterday to have been frozen.
                     profile.streak_frozen_on is not None
                     and (for_date - profile.streak_frozen_on).days == 1
-                    and profile.last_active_date is not None
-                    and (profile.streak_frozen_on - profile.last_active_date).days == 1
                 )
             )
             if is_consecutive:
@@ -144,7 +149,7 @@ class StreakService:
 
             return {"action": "incremented", "streak": profile.current_streak}
 
-        # Not active — try freeze
+        # Not active — try freeze (profile already locked at method entry)
         if profile.streak_freezes > 0 and profile.current_streak > 0:
             profile.streak_freezes -= 1
             profile.streak_frozen_on = for_date
@@ -171,6 +176,16 @@ class StreakService:
         if old_streak > 0:
             profile.streak_resets += 1
         await postgres_session.commit()
+
+        if old_streak > 0:
+            from lib.services.gamification.notifications import send_gamification_notification
+            await send_gamification_notification(
+                str(patient_id),
+                title="Streak lost",
+                body=f"Your {old_streak}-day streak has ended. Start a new one today!",
+                data={"event_type": "streak_broken", "old_streak": old_streak},
+            )
+
         return {
             "action": "broken",
             "old_streak": old_streak,
@@ -261,7 +276,14 @@ class StreakService:
         *,
         postgres_session: AsyncSession,
     ) -> PlayerProfile:
-        profile = await self._get_or_create_profile(patient_id, postgres_session)
+        # Ensure profile exists, then lock to prevent race with nightly cron
+        await self._get_or_create_profile(patient_id, postgres_session)
+        locked = await postgres_session.execute(
+            select(PlayerProfile)
+            .where(PlayerProfile.patient_id == patient_id)
+            .with_for_update()
+        )
+        profile = locked.scalars().first()
         if profile.streak_freezes <= 0:
             raise ValueError("No streak freezes available")
         if profile.current_streak <= 0:

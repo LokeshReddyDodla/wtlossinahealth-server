@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 from uuid import UUID
@@ -29,7 +30,8 @@ class GamificationEventHandler:
         self.postgres_store = postgres_store
         self.xp_service = xp_service
         self.achievement_evaluator = achievement_evaluator
-        self._tz_cache: dict[UUID, str | None] = {}  # patient_id -> timezone name
+        self._tz_cache: dict[UUID, tuple[str | None, float]] = {}  # patient_id -> (tz, timestamp)
+        self._tz_cache_ttl = 300  # 5 minutes
 
     async def _ensure_tasks_exist(self, patient_id: UUID) -> None:
         """Ensure daily tasks exist before trying to complete them."""
@@ -530,11 +532,13 @@ class GamificationEventHandler:
         return local_today(tz_name)
 
     async def _resolve_tz(self, patient_id: UUID) -> str | None:
-        if patient_id in self._tz_cache:
-            return self._tz_cache[patient_id]
+        now = time.monotonic()
+        cached = self._tz_cache.get(patient_id)
+        if cached and (now - cached[1]) < self._tz_cache_ttl:
+            return cached[0]
         from lib.services.gamification.time_utils import get_patient_timezone
 
         async with self.postgres_store.get_session() as session:
             tz_name = await get_patient_timezone(patient_id, session)
-        self._tz_cache[patient_id] = tz_name
+        self._tz_cache[patient_id] = (tz_name, now)
         return tz_name

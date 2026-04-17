@@ -44,7 +44,7 @@ class LeaderboardService:
         limit: int = 50,
         postgres_session: AsyncSession,
     ) -> LeaderboardResponse:
-        today = date.today()
+        today = datetime.utcnow().date()
         if board_type.startswith("weekly"):
             period_start = today - timedelta(days=today.weekday())
             period_end = period_start + timedelta(days=6)
@@ -150,7 +150,7 @@ class LeaderboardService:
         postgres_session: AsyncSession,
     ) -> None:
         """Recompute weekly XP leaderboard."""
-        today = date.today()
+        today = datetime.utcnow().date()
         period_start = today - timedelta(days=today.weekday())
         period_end = period_start + timedelta(days=6)
         start_dt = datetime.combine(period_start, datetime.min.time())
@@ -217,7 +217,7 @@ class LeaderboardService:
         scope_id: Optional[UUID] = None,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = datetime.utcnow().date()
         period_start = today.replace(day=1)
         next_month = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
         period_end = next_month - timedelta(days=1)
@@ -279,7 +279,7 @@ class LeaderboardService:
         scope_id: Optional[UUID] = None,
         postgres_session: AsyncSession,
     ) -> None:
-        today = date.today()
+        today = datetime.utcnow().date()
         period_start = today - timedelta(days=today.weekday())
         period_end = period_start + timedelta(days=6)
 
@@ -340,7 +340,7 @@ class LeaderboardService:
         postgres_session: AsyncSession,
     ) -> None:
         """Recompute streak leaderboard."""
-        today = date.today()
+        today = datetime.utcnow().date()
         period_start = today
         period_end = today
 
