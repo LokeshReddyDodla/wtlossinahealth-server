@@ -266,6 +266,20 @@ class DailyProgressResponse(BaseModel):
     streak_status: str  # active | frozen | broken
 
 
+class DailySummary(BaseModel):
+    date: date
+    completed_count: int
+    total_count: int
+    xp_earned: int
+    tasks: List[DailyTaskResponse]
+
+
+class DailyHistoryResponse(BaseModel):
+    start_date: date
+    end_date: date
+    days: List[DailySummary]
+
+
 class TaskCompletionResponse(BaseModel):
     task_id: str
     xp_earned: int

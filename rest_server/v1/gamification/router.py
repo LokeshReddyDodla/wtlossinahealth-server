@@ -35,6 +35,7 @@ from lib.schemas.gamification import (
     ChallengeDetailResponse,
     ChallengeResponse,
     CheerInput,
+    DailyHistoryResponse,
     DailyProgressResponse,
     FeedEventResponse,
     GroupCreateInput,
@@ -186,6 +187,36 @@ async def get_daily_progress(
     d = await _resolve_task_date(pid, task_date, service)
     progress = await service.get_daily_progress(pid, d)
     return SuccessResponse(message="Daily progress", data=progress)
+
+
+@router.get(
+    "/patients/{patient_id}/daily/history",
+    response_model=SuccessResponse[DailyHistoryResponse],
+)
+async def get_daily_history(
+    patient_id: UUID,
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    service: GamificationService = Depends(get_gamification_service),
+    actor: Actor = Depends(get_current_actor(**_PATIENT_ACTOR)),
+    cp_access: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    pid = await _resolve_patient(patient_id, actor, cp_access)
+    try:
+        sd = date.fromisoformat(start_date)
+        ed = date.fromisoformat(end_date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Use YYYY-MM-DD.",
+        ) from exc
+    if (ed - sd).days > 31:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Date range cannot exceed 31 days.",
+        )
+    history = await service.get_daily_history(pid, sd, ed)
+    return SuccessResponse(message="Daily history", data=history)
 
 
 @router.post(
