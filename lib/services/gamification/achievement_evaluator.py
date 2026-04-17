@@ -231,7 +231,7 @@ class AchievementEvaluator:
         self, patient_id: UUID, threshold: int, session: AsyncSession
     ) -> bool:
         result = await session.execute(
-            select(PlayerProfile.current_streak).where(
+            select(PlayerProfile.longest_streak).where(
                 PlayerProfile.patient_id == patient_id
             )
         )
@@ -441,7 +441,7 @@ class AchievementEvaluator:
 
         if ct == "streak_days":
             result = await postgres_session.execute(
-                select(PlayerProfile.current_streak).where(
+                select(PlayerProfile.longest_streak).where(
                     PlayerProfile.patient_id == patient_id
                 )
             )
@@ -498,13 +498,32 @@ class AchievementEvaluator:
             )
             current = result.scalar() or 0
         elif ct == "group_challenges_completed":
-            result = await postgres_session.execute(
+            # Count patient-direct completions
+            patient_result = await postgres_session.execute(
                 select(func.count(ChallengeParticipant.id)).where(
                     ChallengeParticipant.participant_id == patient_id,
                     ChallengeParticipant.participant_type == ParticipantType.PATIENT.value,
                     ChallengeParticipant.status == ParticipantStatus.COMPLETED.value,
                 )
             )
-            current = result.scalar() or 0
+            current = patient_result.scalar() or 0
+            # Also count group completions (matching _check_group_challenges)
+            from lib.models.gamification import GroupMember
+            group_ids_result = await postgres_session.execute(
+                select(GroupMember.group_id).where(
+                    GroupMember.patient_id == patient_id,
+                    GroupMember.is_active == True,
+                )
+            )
+            group_ids = list(group_ids_result.scalars().all())
+            if group_ids:
+                group_result = await postgres_session.execute(
+                    select(func.count(ChallengeParticipant.id)).where(
+                        ChallengeParticipant.participant_id.in_(group_ids),
+                        ChallengeParticipant.participant_type == ParticipantType.GROUP.value,
+                        ChallengeParticipant.status == ParticipantStatus.COMPLETED.value,
+                    )
+                )
+                current += group_result.scalar() or 0
 
         return min(1.0, current / threshold)
