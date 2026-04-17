@@ -56,7 +56,10 @@ class TestXPService:
         monkeypatch.setattr(service, "_get_or_create_profile", fake_get_or_create_profile)
         monkeypatch.setattr(service, "_patient_timezone", fake_patient_timezone)
 
-        session = FakeSession(results=[FakeScalarResult(scalar=450)])
+        session = FakeSession(results=[
+            FakeScalarResult(values=[profile]),  # SELECT ... FOR UPDATE (profile lock)
+            FakeScalarResult(scalar=450),  # SUM(xp_amount) cap check
+        ])
         amount, new_level, leveled_up = await service.grant_xp(
             patient_id=uuid4(),
             amount=100,
@@ -107,7 +110,10 @@ class TestXPService:
         monkeypatch.setattr(service, "_get_or_create_profile", fake_get_or_create_profile)
         monkeypatch.setattr(service, "_patient_timezone", fake_patient_timezone)
 
-        session = FakeSession(results=[FakeScalarResult(scalar=500)])
+        session = FakeSession(results=[
+            FakeScalarResult(values=[profile]),  # SELECT ... FOR UPDATE (profile lock)
+            FakeScalarResult(scalar=500),  # SUM(xp_amount) cap check
+        ])
         amount, new_level, leveled_up = await service.grant_xp(
             patient_id=uuid4(),
             amount=25,

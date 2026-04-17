@@ -69,7 +69,10 @@ def _make(monkeypatch, profile, earned_today=0, name="xp_test"):
     monkeypatch.setattr(service, "_get_or_create_profile", fake_get_or_create_profile)
     monkeypatch.setattr(service, "_patient_timezone", fake_patient_timezone)
 
-    session = FakeSession(results=[FakeScalarResult(scalar=earned_today)])
+    session = FakeSession(results=[
+        FakeScalarResult(values=[profile]),  # SELECT ... FOR UPDATE (profile lock)
+        FakeScalarResult(scalar=earned_today),  # SUM(xp_amount) cap check
+    ])
     return service, module, session
 
 
