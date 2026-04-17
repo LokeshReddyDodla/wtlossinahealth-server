@@ -509,6 +509,16 @@ def base_stubs() -> dict[str, types.ModuleType]:
             (),
             {"__init__": lambda self, **kw: self.__dict__.update(kw)},
         ),
+        DailyHistoryResponse=type(
+            "DailyHistoryResponse",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
+        DailySummary=type(
+            "DailySummary",
+            (),
+            {"__init__": lambda self, **kw: self.__dict__.update(kw)},
+        ),
         GamificationContext=type(
             "GamificationContext",
             (),
