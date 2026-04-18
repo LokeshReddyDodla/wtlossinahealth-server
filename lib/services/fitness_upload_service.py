@@ -62,10 +62,15 @@ class FitnessUploadService:
             from lib.services.gamification.event_handler import GamificationEventHandler
             handler = container.resolve(GamificationEventHandler)
 
-            # Sum total steps from the steps list
+            # Sum only today's steps (filter by end_datetime date to exclude multi-day batches)
             steps = None
             if fitness_data.steps:
-                steps = sum(item.value for item in fitness_data.steps)
+                today_date = end_datetime.date()
+                today_steps = [
+                    item for item in fitness_data.steps
+                    if parse(item.start_datetime).date() == today_date
+                ]
+                steps = sum(item.value for item in today_steps) or None
 
             # Detect workouts
             workout_completed = bool(fitness_data.workouts)
