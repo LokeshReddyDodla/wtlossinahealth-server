@@ -1,6 +1,6 @@
 """GET /exercises — search, detail, facets over the seeded exercise catalog."""
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, Query, status
 
@@ -23,10 +23,10 @@ _READ_ROLES = [
 @router.get("/search", response_model=SuccessResponse)
 async def search_exercises(
     q: Optional[str] = Query(None, description="Full-text query on name/muscles/equipment"),
-    muscle: Optional[str] = Query(None, description="Filter by primary muscle, e.g. 'chest'"),
-    equipment: Optional[str] = Query(None, description="Filter by equipment, e.g. 'barbell'"),
-    category: Optional[str] = Query(None, description="strength, cardio, stretching, ..."),
-    level: Optional[str] = Query(None, description="beginner, intermediate, expert"),
+    muscle: Optional[List[str]] = Query(None, description="Filter by primary muscle(s), e.g. ?muscle=chest&muscle=shoulders"),
+    equipment: Optional[List[str]] = Query(None, description="Filter by equipment(s), e.g. ?equipment=barbell&equipment=dumbbell"),
+    category: Optional[List[str]] = Query(None, description="strength, cardio, stretching, ..."),
+    level: Optional[List[str]] = Query(None, description="beginner, intermediate, expert"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     exercise_service: ExerciseService = Depends(get_exercise_service),

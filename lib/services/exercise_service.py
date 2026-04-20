@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -45,10 +45,10 @@ class ExerciseService:
         self,
         *,
         q: Optional[str] = None,
-        muscle: Optional[str] = None,
-        equipment: Optional[str] = None,
-        category: Optional[str] = None,
-        level: Optional[str] = None,
+        muscle: Optional[list[str]] = None,
+        equipment: Optional[list[str]] = None,
+        category: Optional[list[str]] = None,
+        level: Optional[list[str]] = None,
         limit: int = 20,
         offset: int = 0,
         postgres_session: AsyncSession,
@@ -58,27 +58,30 @@ class ExerciseService:
 
         if q:
             ts_query = func.plainto_tsquery("english", q)
-            stmt = stmt.where(Exercise.search_tsv.op("@@")(ts_query))
-            stmt = stmt.order_by(
-                func.ts_rank(Exercise.search_tsv, ts_query).desc(),
-                Exercise.name.asc(),
+            # Try tsvector first, fall back to ILIKE for rows with empty search_tsv
+            text_filter = or_(
+                Exercise.search_tsv.op("@@")(ts_query),
+                Exercise.name.ilike(f"%{q}%"),
             )
-            count_stmt = count_stmt.where(Exercise.search_tsv.op("@@")(ts_query))
+            stmt = stmt.where(text_filter)
+            count_stmt = count_stmt.where(text_filter)
+            stmt = stmt.order_by(Exercise.name.asc())
         else:
             stmt = stmt.order_by(Exercise.name.asc())
 
         if muscle:
-            stmt = stmt.where(Exercise.primary_muscles.any(muscle))
-            count_stmt = count_stmt.where(Exercise.primary_muscles.any(muscle))
+            muscle_filter = or_(*(Exercise.primary_muscles.any(m) for m in muscle))
+            stmt = stmt.where(muscle_filter)
+            count_stmt = count_stmt.where(muscle_filter)
         if equipment:
-            stmt = stmt.where(Exercise.equipment == equipment)
-            count_stmt = count_stmt.where(Exercise.equipment == equipment)
+            stmt = stmt.where(Exercise.equipment.in_(equipment))
+            count_stmt = count_stmt.where(Exercise.equipment.in_(equipment))
         if category:
-            stmt = stmt.where(Exercise.category == category)
-            count_stmt = count_stmt.where(Exercise.category == category)
+            stmt = stmt.where(Exercise.category.in_(category))
+            count_stmt = count_stmt.where(Exercise.category.in_(category))
         if level:
-            stmt = stmt.where(Exercise.level == level)
-            count_stmt = count_stmt.where(Exercise.level == level)
+            stmt = stmt.where(Exercise.level.in_(level))
+            count_stmt = count_stmt.where(Exercise.level.in_(level))
 
         stmt = stmt.limit(limit).offset(offset)
 
