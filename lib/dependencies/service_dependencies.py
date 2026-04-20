@@ -319,6 +319,12 @@ def get_meal_service() -> MealService:
     )
 
 
+def get_meal_analysis_agent():
+    from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
+
+    return cast(MealAnalysisAgent, container.resolve(MealAnalysisAgent))
+
+
 def get_medication_service():
     from lib.services.medication_service import MedicationService  # avoid circular
     return cast(MedicationService, container.resolve(MedicationService))
