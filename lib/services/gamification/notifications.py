@@ -1,4 +1,7 @@
-"""Shared FCM helper for gamification milestone notifications."""
+"""Shared FCM helper for gamification milestone notifications.
+
+Persists an inbox row via the central helper, then fires FCM.
+"""
 
 from __future__ import annotations
 
@@ -16,15 +19,14 @@ async def send_gamification_notification(
     data: dict[str, Any] | None = None,
 ) -> None:
     try:
-        from lib.services.fcm_service import FCMService
+        from lib.services.notifications import record_and_send_notification
 
-        await FCMService().send_fcm_notification_to_user_devices(
-            user_id=patient_id,
+        await record_and_send_notification(
+            patient_id,
+            category="gamification",
             title=title,
             body=body,
-            channel_key="gamification",
-            group_key="gamification_group",
-            data={"type": "gamification", **(data or {})},
+            data=data or {},
         )
     except Exception as exc:
         logger.warning("Failed gamification notification for %s: %s", patient_id, exc)

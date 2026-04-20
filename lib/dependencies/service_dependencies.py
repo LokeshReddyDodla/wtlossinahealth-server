@@ -16,6 +16,7 @@ from lib.services.care_provider_access_service import (
     CareProviderAccessService,
 )
 from lib.services.daily_checkin_service import DailyCheckinService
+from lib.services.notifications.service import PatientNotificationService
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -266,6 +267,13 @@ def get_daily_checkin_service() -> DailyCheckinService:
     return cast(
         DailyCheckinService,
         container.resolve(DailyCheckinService),
+    )
+
+
+def get_patient_notification_service() -> PatientNotificationService:
+    return cast(
+        PatientNotificationService,
+        container.resolve(PatientNotificationService),
     )
 
 

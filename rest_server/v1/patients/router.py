@@ -12,4 +12,5 @@ from .exports import *
 from .vitals import *
 from .checkins import *
 from .checkin_history import *
+from .notifications import *
 from .smbg import *

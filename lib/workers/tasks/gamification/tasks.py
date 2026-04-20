@@ -309,22 +309,22 @@ async def cleanup_feed_and_leaderboards(ctx: Dict[str, Any]) -> None:
 async def _send_medication_notification(
     patient_id: str,
     *,
+    category: str,
     title: str,
     body: str,
     data: dict[str, Any] | None = None,
 ) -> None:
-    """FCM notification on the 'reminders' channel — separate from gamification."""
+    """Persist an inbox row and fire FCM on the 'reminders' channel."""
     try:
-        from lib.services.fcm_service import FCMService
+        from lib.services.notifications import record_and_send_notification
         from lib.services.notification_budget import record_sent
 
-        await FCMService().send_fcm_notification_to_user_devices(
-            user_id=patient_id,
+        await record_and_send_notification(
+            patient_id,
+            category=category,  # type: ignore[arg-type]
             title=title,
             body=body,
-            channel_key="reminders",
-            group_key="reminder_group",
-            data={"type": "medication", **(data or {})},
+            data=data or {},
         )
         record_sent(patient_id)
     except Exception as exc:
@@ -398,9 +398,14 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
                     )
                     await _send_medication_notification(
                         str(pid),
+                        category="medication_dose",
                         title="Medication reminder",
                         body=body,
-                        data={"event_type": "medication_reminder", "slot": slot_name},
+                        data={
+                            "event_type": "medication_reminder",
+                            "slot": slot_name,
+                            "daily_task_id": str(pending_task.task_id),
+                        },
                     )
                     sent += 1
         except Exception:
@@ -461,6 +466,7 @@ async def send_follow_up_reminders(ctx: Dict[str, Any]) -> None:
             if pending_task:
                 await _send_medication_notification(
                     str(pid),
+                    category="follow_up",
                     title="Follow-up appointment today",
                     body=pending_task.title or "You have a scheduled follow-up appointment today",
                     data={"event_type": "follow_up_reminder"},
@@ -533,6 +539,7 @@ async def send_refill_reminders(ctx: Dict[str, Any]) -> None:
 
             await _send_medication_notification(
                 pid,
+                category="medication_refill",
                 title="Course ending soon",
                 body=f"Your {name} course ends in {days_left} days. Contact your doctor if you need a refill.",
                 data={"event_type": "refill_reminder", "medication_id": str(med.medication_id)},
