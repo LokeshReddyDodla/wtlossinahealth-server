@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
@@ -112,15 +112,18 @@ class ExerciseService:
         *,
         postgres_session: AsyncSession,
     ) -> ExerciseFacetsResponse:
-        unnested = func.unnest(Exercise.primary_muscles)
-        muscles_q = select(distinct(unnested)).order_by(unnested)
+        muscle_col = func.unnest(Exercise.primary_muscles).label("muscle")
+        muscles_q = select(muscle_col).distinct().order_by(muscle_col)
         equipment_q = (
-            select(distinct(Exercise.equipment))
+            select(Exercise.equipment)
             .where(Exercise.equipment.isnot(None))
+            .distinct()
             .order_by(Exercise.equipment)
         )
-        categories_q = select(distinct(Exercise.category)).order_by(Exercise.category)
-        levels_q = select(distinct(Exercise.level)).order_by(Exercise.level)
+        categories_q = (
+            select(Exercise.category).distinct().order_by(Exercise.category)
+        )
+        levels_q = select(Exercise.level).distinct().order_by(Exercise.level)
 
         muscles = (await postgres_session.execute(muscles_q)).scalars().all()
         equipment = (await postgres_session.execute(equipment_q)).scalars().all()
