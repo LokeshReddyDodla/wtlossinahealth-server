@@ -73,6 +73,7 @@ from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
 from lib.services.checkin_history_service import CheckinHistoryService
 from lib.services.medication_service import MedicationService
+from lib.services.exercise_service import ExerciseService
 from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
@@ -704,6 +705,15 @@ container.register(
         medication_vector_service=cast(
             MedicationVectorService, container.resolve(MedicationVectorService),
         ),
+    ),
+)
+
+
+# 🔹 Exercise Catalog Service
+container.register(
+    ExerciseService,
+    lambda: ExerciseService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
