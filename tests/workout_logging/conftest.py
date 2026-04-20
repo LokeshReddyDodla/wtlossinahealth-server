@@ -119,12 +119,27 @@ class FakeSession:
 
     async def commit(self):
         self.commit_count += 1
+        # Real SQLAlchemy auto-flushes pending changes on commit, which
+        # triggers Column(default=uuid4) on any newly-appended children.
+        self._assign_missing_ids()
 
     async def refresh(self, obj, fields=None):
         self.refresh_calls.append((obj, tuple(fields or ())))
+        self._assign_missing_ids()
 
     async def flush(self):
         self.flush_count += 1
+        self._assign_missing_ids()
+
+    def _assign_missing_ids(self):
+        """Emulate SQLAlchemy's Column(default=uuid4) assigning ids to any
+        parent or child object that's still missing one."""
+        for parent in (*self.added, *self._known_parents):
+            if getattr(parent, "id", None) is None:
+                parent.id = uuid4()
+            for child in getattr(parent, "exercises", []) or []:
+                if getattr(child, "id", None) is None:
+                    child.id = uuid4()
 
     async def rollback(self):
         return None
