@@ -52,6 +52,7 @@ from .patient_data_export import PatientDataExport
 from .sleep_checkin import SleepCheckin
 from .mood_entry import MoodEntry
 from .symptom_entry import SymptomEntry, SymptomEntryItem
+from .exercise import Exercise
 from .gamification import (
     Achievement,
     ActivityFeedEvent,

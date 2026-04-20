@@ -18,6 +18,7 @@ from .gamification.router import (
 from .voice_agent.router import router as voice_agent_router
 from .prescriptions.router import router as prescriptions_router
 from .medications.router import router as medications_router
+from .exercises.router import router as exercises_router
 
 
 router = APIRouter(prefix="/v1", tags=["V1"])
@@ -39,3 +40,4 @@ router.include_router(gamification_canonical_router)
 router.include_router(voice_agent_router)
 router.include_router(prescriptions_router)
 router.include_router(medications_router)
+router.include_router(exercises_router)
