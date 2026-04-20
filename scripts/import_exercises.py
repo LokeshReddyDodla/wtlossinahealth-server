@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from decouple import config  # noqa: E402
+from sqlalchemy import func  # noqa: E402
 from sqlalchemy.dialects.postgresql import insert  # noqa: E402
 
 from lib.core.postgres_store import PostgresStore  # noqa: E402
@@ -64,10 +65,26 @@ async def import_exercises(json_path: Path, base_url: str) -> None:
                 "image_urls": _rewrite_image_urls(ex.get("images", []) or [], base_url),
             }
 
-            stmt = insert(Exercise).values(**values)
+            # Build tsvector from name + muscles + equipment for full-text search
+            tsv_parts = [values["name"]]
+            tsv_parts.extend(values["primary_muscles"])
+            tsv_parts.extend(values["secondary_muscles"])
+            if values.get("equipment"):
+                tsv_parts.append(values["equipment"])
+            if values.get("category"):
+                tsv_parts.append(values["category"])
+            tsv_text = " ".join(tsv_parts)
+
+            stmt = insert(Exercise).values(
+                **values,
+                search_tsv=func.to_tsvector("english", tsv_text),
+            )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["id"],
-                set_={k: v for k, v in values.items() if k != "id"},
+                set_={
+                    **{k: v for k, v in values.items() if k != "id"},
+                    "search_tsv": func.to_tsvector("english", tsv_text),
+                },
             )
             result = await session.execute(stmt)
             # rowcount is 1 for both insert and update with ON CONFLICT DO UPDATE
