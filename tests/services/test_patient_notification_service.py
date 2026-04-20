@@ -10,12 +10,12 @@ from uuid import uuid4
 import pytest
 
 
-def _fake_notif(category, data=None, sent_at=None):
+def _fake_notif(category, data=None, created_at=None):
     return SimpleNamespace(
         id=uuid4(),
         category=category,
         data=data or {},
-        sent_at=sent_at,
+        created_at=created_at,
     )
 
 
@@ -36,7 +36,7 @@ async def test_dose_completed_becomes_taken():
     notif = _fake_notif(
         "medication_dose",
         data={"daily_task_id": str(tid)},
-        sent_at=datetime.now() - timedelta(hours=1),
+        created_at=datetime.now() - timedelta(hours=1),
     )
     session = _fake_session_with_tasks(
         [(tid, TaskStatus.COMPLETED.value, None)],
@@ -59,7 +59,7 @@ async def test_dose_pending_over_2h_becomes_missed():
     notif = _fake_notif(
         "medication_dose",
         data={"daily_task_id": str(tid)},
-        sent_at=datetime.now() - timedelta(hours=3),
+        created_at=datetime.now() - timedelta(hours=3),
     )
     session = _fake_session_with_tasks(
         [(tid, TaskStatus.PENDING.value, None)],
@@ -82,7 +82,7 @@ async def test_dose_pending_recent_stays_pending():
     notif = _fake_notif(
         "medication_dose",
         data={"daily_task_id": str(tid)},
-        sent_at=datetime.now() - timedelta(minutes=30),
+        created_at=datetime.now() - timedelta(minutes=30),
     )
     session = _fake_session_with_tasks(
         [(tid, TaskStatus.PENDING.value, None)],

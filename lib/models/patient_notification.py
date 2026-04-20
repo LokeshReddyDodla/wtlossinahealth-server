@@ -1,14 +1,9 @@
 import uuid
-from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from lib.models import Base
-
-
-def _now():
-    return datetime.now().replace(tzinfo=None)
 
 
 class PatientNotification(Base):
@@ -40,7 +35,8 @@ class PatientNotification(Base):
     deeplink = Column(String(500), nullable=True)
     data = Column(JSONB, nullable=False, default=dict)
 
-    sent_at = Column(DateTime, nullable=True)
     read_at = Column(DateTime, nullable=True)
     dismissed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_now)
+    # Server-side default so every writer gets a timestamp from the same
+    # clock (Postgres), avoiding drift between worker processes.
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
