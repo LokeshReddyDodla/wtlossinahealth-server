@@ -144,7 +144,16 @@ class StreakService:
 
             return {"action": "incremented", "streak": profile.current_streak}
 
-        # Not active — try freeze (profile already locked at method entry)
+        # Not active — try freeze (profile already locked at method entry).
+        # Idempotent: if this date was already frozen (by a prior run of this
+        # cron or a manual use_freeze), don't consume a second freeze.
+        if profile.streak_frozen_on == for_date:
+            return {
+                "action": "frozen",
+                "streak": profile.current_streak,
+                "freezes_remaining": profile.streak_freezes,
+            }
+
         if profile.streak_freezes > 0 and profile.current_streak > 0:
             profile.streak_freezes -= 1
             profile.streak_frozen_on = for_date
