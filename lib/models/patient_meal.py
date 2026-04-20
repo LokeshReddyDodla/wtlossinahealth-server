@@ -118,6 +118,7 @@ class PatientMeal(Base):
     )
     name = Column(String, nullable=True)
     type = Column(String)
+    slot = Column(String, nullable=True, index=True)
     date = Column(Date, nullable=False)
     time = Column(Time, nullable=False)
     items = relationship(
@@ -143,6 +144,8 @@ class PatientMeal(Base):
     score = Column(Float, nullable=True)
     analyzed = Column(Boolean, default=False)
     analyzed_at = Column(DateTime, nullable=True)
+    extraction_confidence = Column(String, nullable=True)
+    preview_trace_id = Column(String, nullable=True)
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

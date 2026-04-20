@@ -116,6 +116,14 @@ class AIFoundationSettings(BaseSettings):
     LANGFUSE_HOST: str = Field(default="http://langfuse-server:3000", description="Langfuse server URL", validation_alias="LANGFUSE_HOST")
     LANGFUSE_PROMPT_CACHE_TTL: int = Field(default=300, description="Langfuse prompt cache TTL in seconds", validation_alias="LANGFUSE_PROMPT_CACHE_TTL")
 
+    # ── Meal Analysis ─────────────────────────────────────────────────────
+
+    MEAL_HISTORY_DAYS: int = Field(default=30, description="Days of meal history to load for the meal analysis agent")
+    MEAL_CGM_EVENT_DAYS: int = Field(default=30, description="Days of CGM events to load for glucose prediction grounding")
+    MEAL_WORKOUT_LOOKBACK_HOURS: int = Field(default=24, description="Hours of recent workouts to load for post-workout meal context")
+    MEAL_HISTORY_LIMIT: int = Field(default=60, description="Max meal records pulled from Qdrant per preview")
+    MEAL_CGM_EVENT_LIMIT: int = Field(default=60, description="Max CGM events pulled from Qdrant per preview")
+
     # ── Context Window Management ────────────────────────────────────────
 
     CONTEXT_BUDGET_RATIO: float = Field(default=0.75, description="Fraction of context window to use as input budget")
