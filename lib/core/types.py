@@ -11,12 +11,34 @@ SleepReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 
 
 FCMNotificationChannelKeyLiteral = Literal[
-    "fitness_sync", "chat_messages", "reminders", "alerts", "health_insights", "other"
+    "fitness_sync",
+    "chat_messages",
+    "reminders",
+    "alerts",
+    "health_insights",
+    "gamification",
+    "other",
 ]
 
 FCMNotificationGroupKeyLiteral = Literal[
-    "fitness_group", "chat_group", "reminder_group", "alert_group", "health_insights_group", "other_group"
+    "fitness_group",
+    "chat_group",
+    "reminder_group",
+    "alert_group",
+    "health_insights_group",
+    "gamification_group",
+    "other_group",
 ]
+
+NotificationCategoryLiteral = Literal[
+    "gamification",
+    "medication_lifecycle",
+    "medication_refill",
+    "medication_dose",
+    "follow_up",
+]
+
+NotificationSeverityLiteral = Literal["info", "warning", "alert"]
 
 AiConversationRoleLiteral = Literal["system", "human", "ai"]
 

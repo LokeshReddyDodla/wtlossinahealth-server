@@ -804,13 +804,7 @@ class PatientOnboardingAgentService:
             values[OnboardingField.PREGNANCY_WEEKS.value] = (
                 patient.diabetic_history.pregnancy_weeks
             )
-        if patient.current_medication:
-            values[OnboardingField.HAS_MEDICATION.value] = (
-                patient.current_medication.has_medication
-            )
-            values[OnboardingField.PRESCRIPTION_DESCRIPTION.value] = (
-                patient.current_medication.prescription_description
-            )
+    
         if patient.drug_allergies:
             values[OnboardingField.DRUG_ALLERGIES.value] = [
                 allergy.allergy_name for allergy in patient.drug_allergies

@@ -860,17 +860,17 @@ class MedicationService:
 
     @staticmethod
     async def _notify_patient(patient_id: str, title: str, body: str, event_type: str, **extra_data) -> None:
-        """Send medication-related FCM notification to the patient."""
+        """Persist a medication-lifecycle inbox row and fire FCM."""
         try:
-            from lib.services.fcm_service import FCMService
+            from lib.services.notifications import record_and_send_notification
             from lib.services.notification_budget import record_sent
-            await FCMService().send_fcm_notification_to_user_devices(
-                user_id=patient_id,
+
+            await record_and_send_notification(
+                patient_id,
+                category="medication_lifecycle",
                 title=title,
                 body=body,
-                channel_key="reminders",
-                group_key="reminder_group",
-                data={"type": "medication", "event_type": event_type, **extra_data},
+                data={"event_type": event_type, **extra_data},
             )
             record_sent(patient_id)
         except Exception:

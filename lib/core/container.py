@@ -1268,6 +1268,16 @@ container.register(
     ),
 )
 
+# 🔹 Patient Notification Service
+from lib.services.notifications.service import PatientNotificationService
+
+container.register(
+    PatientNotificationService,
+    lambda: PatientNotificationService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
 # 🔹 Qdrant Search Engine
 container.register(
     QdrantSearchEngine,

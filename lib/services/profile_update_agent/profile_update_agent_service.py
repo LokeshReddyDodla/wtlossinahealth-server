@@ -482,7 +482,7 @@ class ProfileUpdateAgentService:
             nested_keys = {
                 "daily_activity", "alcohol_consumption", "smoking_habit",
                 "eating_habit", "sleep_habit", "diabetic_history",
-                "current_medication", "food_allergies", "drug_allergies",
+                "food_allergies", "drug_allergies",
                 "medical_histories",
             }
             relevant_keys = updatable_keys | nested_keys
