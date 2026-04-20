@@ -42,6 +42,17 @@ class VitalsMetrics(BaseModel):
     resting_heart_rate: Optional[float] = None
 
 
+class WorkoutMetrics(BaseModel):
+    """Manually-logged workout sessions for the day.
+
+    Distinct from FitnessMetrics (which comes from Apple Health / Health Connect
+    sync and reports steps + active energy). This reports user-intent gym sessions."""
+    session_count: int = 0
+    total_duration_minutes: int = 0
+    total_calories: float = 0.0
+    types: list[str] = []
+
+
 class PatientDailyOverviewResponse(BaseModel):
     date: date
     patient_id: str
@@ -51,4 +62,5 @@ class PatientDailyOverviewResponse(BaseModel):
     sleep: SleepMetrics
     glucose: GlucoseMetrics
     vitals: VitalsMetrics = VitalsMetrics()
+    workouts: WorkoutMetrics = WorkoutMetrics()
     current_weight: Optional[float] = None

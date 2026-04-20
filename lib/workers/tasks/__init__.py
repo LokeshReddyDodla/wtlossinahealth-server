@@ -24,6 +24,7 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.sleep import get_tasks as get_sleep_tasks
     from lib.workers.tasks.smbg import get_tasks as get_smbg_tasks
     from lib.workers.tasks.vitals import get_tasks as get_vitals_tasks
+    from lib.workers.tasks.workout import get_tasks as get_workout_tasks
     from lib.workers.tasks.weightloss_agent_tasks import get_tasks as get_weightloss_agent_tasks
     from lib.workers.tasks.proactive_monitor import get_tasks as get_proactive_monitor_tasks
     from lib.workers.tasks.reengagement import get_tasks as get_reengagement_tasks
@@ -50,6 +51,7 @@ def get_all_tasks() -> List[Callable]:
     tasks.extend(get_sleep_tasks())
     tasks.extend(get_smbg_tasks())
     tasks.extend(get_vitals_tasks())
+    tasks.extend(get_workout_tasks())
     tasks.extend(get_weightloss_agent_tasks())
     tasks.extend(get_proactive_monitor_tasks())
     tasks.extend(get_reengagement_tasks())

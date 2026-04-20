@@ -11,7 +11,10 @@ from lib.schemas.patient_daily_overview import (
     PatientDailyOverviewResponse,
     SleepMetrics,
     VitalsMetrics,
+    WorkoutMetrics,
 )
+from lib.models.patient_workout import PatientWorkout
+from uuid import UUID as _UUID
 from lib.services.reports.meal.service import MealReportService
 from lib.services.reports.cgm.service import CGMReportService
 from lib.services.reports.fitness.service import FitnessReportService
@@ -49,13 +52,14 @@ class PatientDailyOverviewService:
         postgres_session: AsyncSession,
     ) -> PatientDailyOverviewResponse:
 
-        meals, fitness, sleep, glucose, vitals, current_weight = await asyncio.gather(
+        meals, fitness, sleep, glucose, vitals, current_weight, workouts = await asyncio.gather(
             self._get_meal_data(patient_id, selected_date),
             self._get_fitness_data(patient_id, selected_date),
             self._get_sleep_data(patient_id, selected_date),
             self._get_cgm_data(patient_id, selected_date),
             self._get_vitals_data(patient_id, selected_date),
             self._get_current_weight(patient_id, selected_date, postgres_session),
+            self._get_workout_data(patient_id, selected_date, postgres_session),
         )
 
         return PatientDailyOverviewResponse(
@@ -66,7 +70,37 @@ class PatientDailyOverviewService:
             sleep=sleep,
             glucose=glucose,
             vitals=vitals,
+            workouts=workouts,
             current_weight=current_weight,
+        )
+
+    async def _get_workout_data(
+        self,
+        patient_id: str,
+        selected_date: date,
+        session: AsyncSession,
+    ) -> WorkoutMetrics:
+        rows = (
+            await session.execute(
+                select(PatientWorkout).where(
+                    PatientWorkout.patient_id == _UUID(patient_id),
+                    PatientWorkout.date == selected_date,
+                )
+            )
+        ).scalars().all()
+
+        if not rows:
+            return WorkoutMetrics()
+
+        total_duration = sum(r.duration_minutes or 0 for r in rows)
+        total_calories = sum(r.calories_burned or 0.0 for r in rows)
+        types = sorted({r.type for r in rows if r.type})
+
+        return WorkoutMetrics(
+            session_count=len(rows),
+            total_duration_minutes=total_duration,
+            total_calories=total_calories,
+            types=types,
         )
 
     async def _get_meal_data(

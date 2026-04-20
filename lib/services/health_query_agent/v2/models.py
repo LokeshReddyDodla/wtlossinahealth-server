@@ -17,6 +17,7 @@ class DomainName(str, Enum):
     SLEEP = "sleep"
     VITALS = "vitals"
     PATIENT_SUMMARY = "patient_summary"
+    WORKOUT = "workout"
 
 
 class ConversationMessageKind(str, Enum):
