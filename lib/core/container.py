@@ -74,6 +74,7 @@ from lib.services.reports import MealReportService
 from lib.services.checkin_history_service import CheckinHistoryService
 from lib.services.medication_service import MedicationService
 from lib.services.exercise_service import ExerciseService
+from lib.services.patient_workout_service import PatientWorkoutService
 from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
@@ -116,7 +117,7 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService
+from lib.services.vector import SMBGVectorService, WorkoutVectorService
 from lib.services.vector.checkin import CheckinVectorService
 from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
@@ -718,6 +719,15 @@ container.register(
 )
 
 
+# 🔹 Patient Workout Service
+container.register(
+    PatientWorkoutService,
+    lambda: PatientWorkoutService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
+
 # 🔹 Patient Facility Transfer Service
 container.register(
     PatientFacilityTransferService,
@@ -1254,6 +1264,15 @@ container.register(
 container.register(
     VitalsVectorService,
     lambda: VitalsVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
+# 🔹 Workout Vector Service
+container.register(
+    WorkoutVectorService,
+    lambda: WorkoutVectorService(
         qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
     ),
 )

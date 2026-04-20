@@ -85,7 +85,7 @@ from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService, VitalsVectorService
+from lib.services.vector import SMBGVectorService, VitalsVectorService, WorkoutVectorService
 from lib.services.sqs_service import SQSService
 from lib.services.token_usage_service import TokenUsageService
 from lib.services.user_device_service import UserDeviceService
@@ -329,6 +329,11 @@ def get_exercise_service():
     return cast(ExerciseService, container.resolve(ExerciseService))
 
 
+def get_patient_workout_service():
+    from lib.services.patient_workout_service import PatientWorkoutService  # avoid circular
+    return cast(PatientWorkoutService, container.resolve(PatientWorkoutService))
+
+
 def get_prescription_extraction_service():
     from lib.services.prescription_extraction_service import PrescriptionExtractionService  # avoid circular
     return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
@@ -520,6 +525,10 @@ def get_patient_profile_vector_service() -> PatientProfileVectorService:
 
 def get_vitals_vector_service() -> VitalsVectorService:
     return cast(VitalsVectorService, container.resolve(VitalsVectorService))
+
+
+def get_workout_vector_service() -> WorkoutVectorService:
+    return cast(WorkoutVectorService, container.resolve(WorkoutVectorService))
 
 
 def get_ai_conversation_messages_collection():

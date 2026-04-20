@@ -42,6 +42,7 @@ class MongoReportFetcher:
         DomainName.CGM: "cgm_reports",
         DomainName.FITNESS: "fitness_reports",
         DomainName.SLEEP: "sleep_reports",
+        DomainName.WORKOUT: "workout_reports",
     }
 
     async def fetch(

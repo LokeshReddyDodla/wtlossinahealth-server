@@ -51,6 +51,7 @@ class HealthDataType(str, Enum):
     PROFILE = "profile"
     DOCUMENTS = "patient_document"
     MEDICATION = "medication"
+    PATIENT_WORKOUT = "patient_workout"
 
     @classmethod
     def _missing_(cls, value: object):
@@ -74,6 +75,7 @@ class DomainName(str, Enum):
     SYMPTOMS = "symptoms"
     PLANS = "plans"
     MEDICATION = "medication"
+    WORKOUT = "workout"
 
 
 # Human-readable domain list for prompts — derived from DomainName enum.
@@ -106,6 +108,7 @@ DOMAIN_MAPPING: dict[DomainName, list[HealthDataType]] = {
     DomainName.PROFILE: [HealthDataType.PROFILE],
     DomainName.DOCUMENTS: [HealthDataType.DOCUMENTS],
     DomainName.MEDICATION: [HealthDataType.MEDICATION],
+    DomainName.WORKOUT: [HealthDataType.PATIENT_WORKOUT],
 }
 
 # Reverse mapping: HealthDataType → DomainName
@@ -129,6 +132,7 @@ _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
     DomainName.SYMPTOMS: "sleep",  # symptoms routed to sleep/wellness specialist
     DomainName.PLANS: "nutrition",  # plans routed to nutrition specialist
     DomainName.DOCUMENTS: "documents",
+    DomainName.WORKOUT: "fitness",
 }
 
 

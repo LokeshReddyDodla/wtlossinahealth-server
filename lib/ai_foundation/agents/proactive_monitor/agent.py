@@ -69,6 +69,7 @@ _SCAN_DATA_TYPES = [
     "vital",                # weight, BP, heart rate
     "diet_plan",            # active diet plan targets
     "fitness_plan",         # active fitness plan goals
+    "patient_workout",      # manually-logged workout sessions
     # "patient_document",     # new reports, prescriptions, lab results
 ]
 

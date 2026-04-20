@@ -14,3 +14,4 @@ from .checkins import *
 from .checkin_history import *
 from .notifications import *
 from .smbg import *
+from .workouts import *
