@@ -45,7 +45,6 @@ def _to_response(
         deeplink=notif.deeplink,
         data=notif.data or {},
         dose_status=dose_status,
-        sent_at=notif.sent_at,
         read_at=notif.read_at,
         dismissed_at=notif.dismissed_at,
         created_at=notif.created_at,

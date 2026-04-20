@@ -9,7 +9,6 @@ record for the patient to see.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
@@ -59,7 +58,6 @@ async def record_and_send_notification(
     channel_key, group_key = _CATEGORY_CHANNEL[category]
 
     store = container.resolve(PostgresStore)
-    now = datetime.now().replace(tzinfo=None)
 
     notif = PatientNotification(
         patient_id=UUID(patient_id),
@@ -69,10 +67,10 @@ async def record_and_send_notification(
         severity=severity,
         deeplink=deeplink,
         data=data,
-        sent_at=now,
-        created_at=now,
     )
 
+    # created_at is set by Postgres server_default=now() — single clock source
+    # so timestamps stay consistent across worker processes and containers.
     async with store.get_session() as session:
         session.add(notif)
         await session.commit()

@@ -23,7 +23,6 @@ class NotificationResponse(BaseModel):
         default=None,
         description="For medication_dose only: 'pending' | 'taken' | 'missed'",
     )
-    sent_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
     dismissed_at: Optional[datetime] = None
     created_at: datetime

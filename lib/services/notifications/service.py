@@ -66,7 +66,10 @@ class PatientNotificationService:
         rows = (
             (
                 await postgres_session.execute(
-                    base.order_by(PatientNotification.created_at.desc())
+                    base.order_by(
+                        PatientNotification.created_at.desc(),
+                        PatientNotification.id.desc(),
+                    )
                     .limit(limit)
                     .offset(offset)
                 )
@@ -121,11 +124,11 @@ class PatientNotificationService:
                 out[notif_id] = "pending"
             else:
                 out[notif_id] = status
-        # Apply "missed" heuristic using sent_at
+        # Apply "missed" heuristic using created_at (the row's send time).
         for n in notifications:
             nid = str(n.id)
-            if out.get(nid) == "pending" and n.sent_at:
-                if (now - n.sent_at).total_seconds() > 2 * 3600:
+            if out.get(nid) == "pending" and n.created_at:
+                if (now - n.created_at).total_seconds() > 2 * 3600:
                     out[nid] = "missed"
         return out
 
