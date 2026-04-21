@@ -331,6 +331,36 @@ class TestFreeze:
         assert prof.streak_freezes == 3  # not consumed
         assert prof.streak_resets == 0  # was 0 → no increment
 
+    @pytest.mark.asyncio
+    async def test_freeze_is_idempotent_for_same_date(self, monkeypatch):
+        """Processing the same missed date twice must not consume two freezes.
+
+        This can happen when a manual use_freeze runs for a date and then the
+        nightly cron re-processes it, or when the cron itself re-runs.
+        """
+        prof = _profile(
+            current_streak=5, longest_streak=5,
+            last_active_date=YESTERDAY, streak_freezes=2,
+        )
+        svc, module = _make_service(monkeypatch, prof, was_active=False)
+
+        # First run — freeze consumed
+        r1 = await svc.process_streak(
+            patient_id="p1", for_date=TODAY, postgres_session=FakeSession(),
+        )
+        assert r1["action"] == "frozen"
+        assert prof.streak_freezes == 1
+        assert prof.streak_frozen_on == TODAY
+
+        # Second run for the SAME date — must not consume another freeze
+        r2 = await svc.process_streak(
+            patient_id="p1", for_date=TODAY, postgres_session=FakeSession(),
+        )
+        assert r2["action"] == "frozen"
+        assert prof.streak_freezes == 1  # unchanged
+        assert prof.streak_frozen_on == TODAY
+        assert prof.current_streak == 5
+
 
 # ── BROKEN (was_active=False, allow_break=True, no freezes) ─────────────────
 
