@@ -15,20 +15,21 @@ from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
     get_meal_analysis_agent,
 )
-from lib.schemas.meal import MealAnalysisResult, MealPreviewRequest
+from lib.schemas.meal import MealPreviewRequest
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
     CareProviderPermissionAction,
 )
 from lib.utils.http_exceptions import raise_http_exception
+from rest_server.response_models import SuccessResponse
 
 from .router import router
 
 
 @router.post(
     "/{patient_id}/preview",
-    response_model=MealAnalysisResult,
+    response_model=SuccessResponse,
 )
 async def preview_meal(
     patient_id: str,
@@ -48,7 +49,7 @@ async def preview_meal(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
-) -> MealAnalysisResult:
+):
     """Analyze a meal (image/text/items) and return suggestions. No DB write."""
     verified_pid = await resolve_patient_access(
         actor=current_actor,
@@ -64,7 +65,11 @@ async def preview_meal(
         )
 
     try:
-        return await agent.analyze(patient_id=pid, request=body)
+        result = await agent.analyze(patient_id=pid, request=body)
+        return SuccessResponse(
+            message="Meal analyzed",
+            data=result.model_dump(mode="json"),
+        )
     except HTTPException:
         raise
     except ValueError as exc:
