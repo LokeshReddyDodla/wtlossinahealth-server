@@ -110,6 +110,7 @@ from lib.services.reports import (
 # Weight Loss Agent Service
 from lib.services.weight_loss_agent_service import WeightLossAgentService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
+from lib.services.profile_agent import ProfileAgentService
 from lib.services.weightloss_agent.analytics_service import AnalyticsService
 from lib.services.weightloss_agent.intake_service import IntakeService
 from lib.services.weightloss_agent.safety_rules_service import (
@@ -652,6 +653,14 @@ def get_patient_onboarding_agent_service() -> PatientOnboardingAgentService:
         PatientOnboardingAgentService,
         container.resolve(PatientOnboardingAgentService),
     )
+
+
+def get_profile_agent_service() -> ProfileAgentService:
+    return cast(
+        ProfileAgentService,
+        container.resolve(ProfileAgentService),
+    )
+
 
 def get_fcm_service() -> FCMService:
     return FCMService()

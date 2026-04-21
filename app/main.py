@@ -82,6 +82,18 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed to seed achievements: {e}")
 
+    # Profile Agent — validate config against schema and ensure Mongo index.
+    try:
+        from lib.services.profile_agent.introspection import assert_valid_config
+        assert_valid_config()
+        from lib.core.container import container
+        from lib.services.profile_agent import ProfileAgentService
+        svc: ProfileAgentService = container.resolve(ProfileAgentService)
+        await svc.ensure_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed profile_agent init: {e}")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
