@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -25,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 ALTERNATIVES_PROMPT_NAME = "meal_analysis_alternatives"
-RECENT_MEALS_LIMIT = 20
 
 
 class _LLMAlternativesOut(BaseModel):
@@ -61,7 +61,8 @@ class AlternativesEngine:
             glycemic_load=f"{glycemic_load:.1f}",
             recent_meals_json=json.dumps(recent, default=str),
             cgm_events_json=json.dumps(
-                context.cgm_events or [], default=str
+                (context.cgm_events or [])[: settings.MEAL_PROMPT_CGM_EVENTS_LIMIT],
+                default=str,
             ),
             medications_json=json.dumps(
                 context.medications or [], default=str
@@ -84,6 +85,7 @@ class AlternativesEngine:
             ],
             response_model=_LLMAlternativesOut,
             task=self._task,
+            timeout=settings.MEAL_LLM_TIMEOUT_SECONDS,
             trace_id=trace_id,
         )
 
@@ -98,7 +100,7 @@ class AlternativesEngine:
 def _prep_recent_meals(recent: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Trim to essentials so the LLM context stays tight."""
     trimmed: list[dict[str, Any]] = []
-    for meal in (recent or [])[:RECENT_MEALS_LIMIT]:
+    for meal in (recent or [])[: settings.MEAL_PROMPT_RECENT_MEALS_LIMIT]:
         trimmed.append(
             {
                 "meal_id": meal.get("meal_id"),

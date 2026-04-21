@@ -12,6 +12,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -89,6 +90,7 @@ class MealScorer:
             ],
             response_model=_LLMScoreOut,
             task=self._task,
+            timeout=settings.MEAL_LLM_TIMEOUT_SECONDS,
             trace_id=trace_id,
         )
 

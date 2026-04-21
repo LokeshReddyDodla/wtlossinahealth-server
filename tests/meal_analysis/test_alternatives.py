@@ -50,9 +50,10 @@ class TestPrepRecent:
         assert "ignored" not in out[0]["items"][0]
 
     def test_respects_limit(self):
+        from lib.ai_foundation.config import settings as _s
         many = [{"name": f"m{i}"} for i in range(50)]
         out = _prep_recent_meals(many)
-        assert len(out) == 20
+        assert len(out) == _s.MEAL_PROMPT_RECENT_MEALS_LIMIT
 
 
 @pytest.mark.asyncio

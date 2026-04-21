@@ -16,6 +16,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -78,7 +79,8 @@ class GlucosePredictor:
                 _prep_recent_meals(context.recent_meals), default=str
             ),
             cgm_events_json=json.dumps(
-                context.cgm_events or [], default=str
+                (context.cgm_events or [])[: settings.MEAL_PROMPT_CGM_EVENTS_LIMIT],
+                default=str,
             ),
             medications_json=json.dumps(
                 context.medications or [], default=str
@@ -98,6 +100,7 @@ class GlucosePredictor:
             ],
             response_model=_LLMGlucoseOut,
             task=self._task,
+            timeout=settings.MEAL_LLM_TIMEOUT_SECONDS,
             trace_id=trace_id,
         )
 

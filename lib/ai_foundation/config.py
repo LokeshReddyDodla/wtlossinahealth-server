@@ -123,6 +123,9 @@ class AIFoundationSettings(BaseSettings):
     MEAL_WORKOUT_LOOKBACK_HOURS: int = Field(default=24, description="Hours of recent workouts to load for post-workout meal context")
     MEAL_HISTORY_LIMIT: int = Field(default=60, description="Max meal records pulled from Qdrant per preview")
     MEAL_CGM_EVENT_LIMIT: int = Field(default=60, description="Max CGM events pulled from Qdrant per preview")
+    MEAL_LLM_TIMEOUT_SECONDS: float = Field(default=45.0, description="Per-call timeout for meal analysis LLM calls (big structured context)")
+    MEAL_PROMPT_RECENT_MEALS_LIMIT: int = Field(default=15, description="Max recent meals sent into meal analysis prompts")
+    MEAL_PROMPT_CGM_EVENTS_LIMIT: int = Field(default=15, description="Max CGM events sent into meal analysis prompts")
 
     # ── Context Window Management ────────────────────────────────────────
 
