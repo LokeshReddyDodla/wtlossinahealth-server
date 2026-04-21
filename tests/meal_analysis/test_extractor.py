@@ -112,19 +112,29 @@ class TestBuildMessages:
 
 @pytest.mark.asyncio
 class TestExtract:
-    async def test_items_path_skips_llm(self):
+    async def test_items_path_recomputes_via_llm(self):
+        """Items path re-calls the LLM so edits to portion/name re-score."""
+        ex = MealExtraction(
+            name="paratha",
+            items=[_item(cals=210, carbs=29)],  # recomputed by LLM
+            total_macros=MacroSet(calories=210, carbs=29),
+            overall_confidence=ConfidenceLevel.HIGH,
+        )
         gw = MagicMock()
-        gw.extract = AsyncMock()
+        gw.extract = AsyncMock(return_value=(ex, MagicMock()))
+        template = MagicMock()
+        template.render = MagicMock(return_value="PROMPT")
         prompts = MagicMock()
-        extractor = MealExtractor(gateway=gw, prompt_registry=prompts)
+        prompts.get = MagicMock(return_value=template)
 
+        extractor = MealExtractor(gateway=gw, prompt_registry=prompts)
         out = await extractor.extract(
             context=_ctx(),
             slot="breakfast",
             items=[_item()],
         )
-        assert out.name  # composed
-        gw.extract.assert_not_called()
+        assert out.total_macros.calories == 210
+        gw.extract.assert_awaited_once()
 
     async def test_calls_gateway_when_image(self):
         ex = MealExtraction(
