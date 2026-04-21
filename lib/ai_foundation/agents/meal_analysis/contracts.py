@@ -95,7 +95,14 @@ class ExtractedFoodItem(BaseModel):
     name: str
     portion: float = Field(..., description="Numeric portion amount")
     unit: str = Field(..., description="e.g. g, ml, piece, bowl, slice")
-    macros: MacroSet
+    macros: MacroSet = Field(
+        default_factory=MacroSet,
+        description=(
+            "Nutritional macros. Client may omit when submitting a new/edited "
+            "item (e.g. 'Add something we missed'); the agent re-estimates "
+            "from name + portion + unit."
+        ),
+    )
     micros: MicroSet | None = None
     portion_confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     needs_confirmation: bool = False
