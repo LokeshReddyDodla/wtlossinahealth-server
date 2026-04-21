@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Any
 
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -84,6 +85,7 @@ class MealExtractor:
             messages=user_messages,
             response_model=MealExtraction,
             task=self._task,
+            timeout=settings.MEAL_LLM_TIMEOUT_SECONDS,
             trace_id=trace_id,
         )
         _ensure_totals(extraction)
