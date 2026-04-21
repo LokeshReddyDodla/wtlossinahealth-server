@@ -58,11 +58,16 @@ class MealExtractor:
     ) -> MealExtraction:
         """Produce a MealExtraction.
 
-        Fast paths:
-            - `items` given → skip LLM, compose MealExtraction from items.
+        Paths:
+            - ``items`` given → LLM recomputes macros from name+portion+unit
+              so portion/name edits in the preview re-score accurately.
+            - image/text given → vision/text extraction.
         """
         if items is not None and len(items) > 0:
-            return _compose_from_items(items)
+            text_description = _items_to_text(items, portion_note=portion_note)
+            image_url = None
+            text = text_description
+            portion_note = None
 
         if not image_url and not text:
             raise ValueError(
@@ -115,6 +120,20 @@ class MealExtractor:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _items_to_text(
+    items: list[ExtractedFoodItem], *, portion_note: str | None = None
+) -> str:
+    """Convert a list of items into a natural-language description for the LLM."""
+    lines = [
+        f"- {it.name}: {it.portion} {it.unit}"
+        for it in items
+    ]
+    text = "\n".join(lines)
+    if portion_note:
+        text += f"\n\nPortion note: {portion_note}"
+    return text
 
 
 def _compose_from_items(items: list[ExtractedFoodItem]) -> MealExtraction:
