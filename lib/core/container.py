@@ -187,6 +187,18 @@ from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngi
 from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC, SLEEP_SPEC, DOCUMENTS_SPEC
 from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
+from lib.ai_foundation.agents.meal_analysis.alternatives import (
+    AlternativesEngine,
+)
+from lib.ai_foundation.agents.meal_analysis.context_loader import (
+    MealContextLoader,
+)
+from lib.ai_foundation.agents.meal_analysis.extractor import MealExtractor
+from lib.ai_foundation.agents.meal_analysis.glucose_predictor import (
+    GlucosePredictor,
+)
+from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
@@ -1757,6 +1769,76 @@ container.register(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 🍽️ Meal Analysis Agent — preview-first pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+
+container.register(
+    MealContextLoader,
+    lambda: MealContextLoader(
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        memory_store=cast(
+            MongoMemoryStore, container.resolve(MongoMemoryStore)
+        ),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealExtractor,
+    lambda: MealExtractor(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealScorer,
+    lambda: MealScorer(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    AlternativesEngine,
+    lambda: AlternativesEngine(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    GlucosePredictor,
+    lambda: GlucosePredictor(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealAnalysisAgent,
+    lambda: MealAnalysisAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        context_loader=cast(MealContextLoader, container.resolve(MealContextLoader)),
+        extractor=cast(MealExtractor, container.resolve(MealExtractor)),
+        scorer=cast(MealScorer, container.resolve(MealScorer)),
+        alternatives=cast(AlternativesEngine, container.resolve(AlternativesEngine)),
+        glucose_predictor=cast(
+            GlucosePredictor, container.resolve(GlucosePredictor)
+        ),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+    ),
+    scope=Scope.singleton,
+)
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 🎙️ Voice Agent Services
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1881,3 +1963,37 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔌 EventBus subscriptions
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _subscribe_event_handlers() -> None:
+    """Wire domain handlers to EventBus events."""
+    import logging
+    from uuid import UUID as _UUID
+
+    from lib.ai_foundation.events.bus import EventBus as _EventBus
+    from lib.ai_foundation.events.schemas import HealthEvent as _HealthEvent
+    from lib.ai_foundation.events.schemas import HealthEventType as _HealthEventType
+
+    bus = cast(_EventBus, container.resolve(_EventBus))
+    gamification = cast(
+        GamificationEventHandler,
+        container.resolve(GamificationEventHandler),
+    )
+
+    async def _on_meal_logged(event: _HealthEvent) -> None:
+        try:
+            await gamification.on_meal_logged(_UUID(event.patient_id))
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "gamification.on_meal_logged failed for %s", event.patient_id
+            )
+
+    bus.subscribe([_HealthEventType.MEAL_LOGGED.value], _on_meal_logged)
+
+
+_subscribe_event_handlers()

@@ -1,0 +1,169 @@
+"""
+Repeat detector.
+
+Deterministic flags based on the patient's recent meal history:
+- already logged this slot today (collision)
+- same as previous meal (one-tap repeat candidate)
+- how many times the patient has had this meal in the last 7 days
+
+No LLM. No DB access — operates on MealAnalysisContext already loaded.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any
+
+from .context_loader import MealAnalysisContext
+from .contracts import (
+    MealExtraction,
+    MealSlot,
+    PatientMealRef,
+    RepeatFlag,
+    RepeatSuggestion,
+)
+
+
+SIMILARITY_THRESHOLD = 0.6
+
+
+def detect_repeat(
+    *,
+    extraction: MealExtraction,
+    context: MealAnalysisContext,
+    slot: MealSlot,
+) -> RepeatFlag:
+    """Produce a RepeatFlag based on extraction vs context.today/recent."""
+    today_for_slot = (context.today_meals_by_slot or {}).get(slot, [])
+    slot_collision: PatientMealRef | None = today_for_slot[0] if today_for_slot else None
+
+    prev = _most_recent(context.recent_meals)
+    same_as_prev: PatientMealRef | None = None
+    if prev is not None and _names_match(extraction, prev):
+        same_as_prev = _to_ref(prev)
+
+    count_7d = _count_in_last_days(
+        extraction=extraction,
+        recent_meals=context.recent_meals,
+        now=context.local_now,
+        days=7,
+    )
+
+    suggestion = _suggest(
+        slot_collision=slot_collision is not None,
+        same_as_prev=same_as_prev is not None,
+        count_7d=count_7d,
+    )
+
+    return RepeatFlag(
+        already_logged_this_slot_today=slot_collision is not None,
+        same_slot_meal_today=slot_collision,
+        same_as_previous_meal=same_as_prev,
+        same_meal_count_last_7d=count_7d,
+        suggestion=suggestion,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _most_recent(recent: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not recent:
+        return None
+    return recent[0]  # context_loader sorts date desc, time desc
+
+
+def _names_match(extraction: MealExtraction, prev: dict[str, Any]) -> bool:
+    name_a = (extraction.name or "").strip().lower()
+    name_b = (prev.get("name") or "").strip().lower()
+    if name_a and name_b and name_a == name_b:
+        return True
+    return _item_overlap(extraction, prev) >= SIMILARITY_THRESHOLD
+
+
+def _item_overlap(extraction: MealExtraction, prev: dict[str, Any]) -> float:
+    """Jaccard-ish: shared item names / union item names."""
+    a = {it.name.strip().lower() for it in extraction.items}
+    b = {
+        (it.get("name") or "").strip().lower()
+        for it in (prev.get("items") or [])
+    }
+    a.discard("")
+    b.discard("")
+    if not a or not b:
+        return 0.0
+    union = a | b
+    return len(a & b) / len(union)
+
+
+def _count_in_last_days(
+    *,
+    extraction: MealExtraction,
+    recent_meals: list[dict[str, Any]],
+    now: datetime,
+    days: int,
+) -> int:
+    if not recent_meals:
+        return 0
+    cutoff = now - timedelta(days=days)
+    count = 0
+    for meal in recent_meals:
+        consumed_at_str = meal.get("consumed_at")
+        if not consumed_at_str:
+            continue
+        try:
+            consumed_at = datetime.fromisoformat(consumed_at_str)
+        except ValueError:
+            continue
+        if consumed_at.tzinfo is None and now.tzinfo is not None:
+            consumed_at = consumed_at.replace(tzinfo=now.tzinfo)
+        if consumed_at < cutoff:
+            continue
+        if _names_match(extraction, meal):
+            count += 1
+    return count
+
+
+def _suggest(
+    *, slot_collision: bool, same_as_prev: bool, count_7d: int
+) -> RepeatSuggestion:
+    if slot_collision:
+        return RepeatSuggestion.ASK_CONFIRM
+    if same_as_prev and count_7d >= 3:
+        return RepeatSuggestion.LOG_AGAIN
+    return RepeatSuggestion.NONE
+
+
+def _to_ref(meal: dict[str, Any]) -> PatientMealRef | None:
+    meal_id = meal.get("meal_id")
+    if not meal_id:
+        return None
+
+    try:
+        from uuid import UUID
+        meal_uuid = UUID(str(meal_id))
+    except (ValueError, TypeError):
+        return None
+
+    slot_raw = (meal.get("slot") or "").strip().lower()
+    try:
+        slot = MealSlot(slot_raw)
+    except ValueError:
+        return None
+
+    consumed_at_str = meal.get("consumed_at")
+    try:
+        consumed_at = (
+            datetime.fromisoformat(consumed_at_str) if consumed_at_str else datetime.utcnow()
+        )
+    except ValueError:
+        consumed_at = datetime.utcnow()
+
+    return PatientMealRef(
+        meal_id=meal_uuid,
+        meal_name=meal.get("name") or "",
+        consumed_at=consumed_at,
+        slot=slot,
+    )

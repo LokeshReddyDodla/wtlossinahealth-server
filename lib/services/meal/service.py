@@ -20,6 +20,7 @@ from lib.models.patient_meal import (
     PatientTotalMicroNutritionalValue as PatientTotalMicroNutritionalValueModel,
 )
 from lib.schemas.patient import CorePatientProfile
+from lib.schemas.meal import MealCreateRequest
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -462,6 +463,147 @@ class MealService:
         await postgres_session.commit()
 
         return meal
+
+    @with_postgres_session
+    async def save_from_preview(
+        self,
+        patient_id: str,
+        request: "MealCreateRequest",
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientMealModel:
+        """Persist a meal from a confirmed MealAnalysisResult extraction.
+
+        No AI enrichment happens here. This is the 'dumb save' path —
+        the intelligence already ran in the preview agent.
+        """
+        from lib.models.patient_meal import (
+            PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
+        )
+        from lib.models.patient_meal import (
+            PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
+        )
+
+        ext = request.extraction
+        try:
+            meal = PatientMealModel(
+                name=ext.name,
+                type=request.slot.value,
+                slot=request.slot.value,
+                date=request.consumed_at.date(),
+                time=request.consumed_at.time(),
+                source=request.source.value,
+                description=request.description,
+                image_url=request.image_url,
+                tags=ext.tags or [],
+                analyzed=True,
+                analyzed_at=datetime.now(),
+                extraction_confidence=ext.overall_confidence.value,
+                preview_trace_id=request.preview_trace_id,
+                patient_id=patient_id,
+            )
+
+            food_items = []
+            for it in ext.items:
+                food_item = PatientFoodItemModel(
+                    name=it.name,
+                    serving_size=str(it.portion),
+                    serving_quantity=float(it.portion),
+                    serving_unit=it.unit,
+                    meal=meal,
+                )
+                food_item.macro_nutritional_values = (
+                    PatientMacroNutritionalValueModel(
+                        food_item_id=food_item.id,
+                        calories=it.macros.calories,
+                        proteins=it.macros.protein,
+                        carbohydrates=it.macros.carbs,
+                        simple_carbs=it.macros.carbs_simple,
+                        complex_carbs=it.macros.carbs_complex,
+                        fats=it.macros.fat,
+                        fiber=it.macros.fiber,
+                    )
+                )
+                if it.micros is not None:
+                    food_item.micro_nutritional_values = (
+                        PatientMicroNutritionalValueModel(
+                            food_item_id=food_item.id,
+                            calcium=it.micros.calcium_mg or 0,
+                            iron=it.micros.iron_mg or 0,
+                            zinc=it.micros.zinc_mg or 0,
+                            magnesium=it.micros.magnesium_mg or 0,
+                        )
+                    )
+                food_items.append(food_item)
+            meal.items = food_items
+
+            meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValueModel(
+                meal_id=meal.id,
+                calories=ext.total_macros.calories,
+                proteins=ext.total_macros.protein,
+                carbohydrates=ext.total_macros.carbs,
+                simple_carbs=ext.total_macros.carbs_simple,
+                complex_carbs=ext.total_macros.carbs_complex,
+                fats=ext.total_macros.fat,
+                fiber=ext.total_macros.fiber,
+            )
+            if ext.total_micros is not None:
+                meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
+                    meal_id=meal.id,
+                    calcium=ext.total_micros.calcium_mg or 0,
+                    iron=ext.total_micros.iron_mg or 0,
+                    zinc=ext.total_micros.zinc_mg or 0,
+                    magnesium=ext.total_micros.magnesium_mg or 0,
+                )
+
+            postgres_session.add(meal)
+            await postgres_session.commit()
+            await postgres_session.refresh(meal)
+
+            trigger_meal_tasks(
+                patient_id=str(patient_id),
+                meal_id=str(meal.id),
+                meal_date=meal.date,
+                meal_obj=meal,
+            )
+
+            # EventBus publish — gamification and any future subscribers
+            # react from here.
+            try:
+                from lib.ai_foundation.events.bus import EventBus
+                from lib.ai_foundation.events.schemas import (
+                    HealthEvent,
+                    HealthEventType,
+                )
+                from lib.core.container import container
+
+                bus = container.resolve(EventBus)
+                await bus.publish(
+                    HealthEvent(
+                        event_type=HealthEventType.MEAL_LOGGED.value,
+                        patient_id=str(patient_id),
+                        data={
+                            "meal_id": str(meal.id),
+                            "slot": meal.slot or meal.type,
+                            "consumed_at": datetime.combine(
+                                meal.date, meal.time
+                            ).isoformat(),
+                            "source": meal.source,
+                        },
+                        source_agent="meal_analysis",
+                    )
+                )
+            except Exception:
+                pass
+
+            return meal
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
 
     @classmethod
     def _normalize_carb_distribution(

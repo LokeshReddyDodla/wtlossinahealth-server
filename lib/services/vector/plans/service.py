@@ -14,6 +14,17 @@ from ..base import BaseVectorService
 from ..utils.exceptions import VectorServiceError
 from .text_builder import PlansTextReprBuilder
 
+
+def _serialize_plan_content(content: Any) -> Dict[str, Any] | None:
+    """Qdrant payload must be JSON-serializable. Handle Pydantic + ORM + dict."""
+    if content is None:
+        return None
+    if hasattr(content, "model_dump"):
+        return content.model_dump(mode="json")
+    if isinstance(content, dict):
+        return content
+    return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -117,12 +128,14 @@ class PlansVectorService(BaseVectorService):
             start_time=start_dt,
             end_time=end_dt,
             additional_payload={
+                "plan_id": plan_id,
                 "calories": plan_data.get("calories"),
                 "protein": plan_data.get("protein"),
                 "carbs": plan_data.get("carbs"),
                 "fats": plan_data.get("fats"),
                 "fiber": plan_data.get("fiber"),
                 "plan_status": plan_data.get("status", "ACTIVE"),
+                "content": _serialize_plan_content(plan_data.get("content")),
             },
         )
 
