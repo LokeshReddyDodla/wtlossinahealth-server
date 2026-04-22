@@ -15,11 +15,15 @@ from datetime import date as date_cls
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import and_, select
+
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.memory.base import MemoryFact
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
+from lib.core.postgres_store import PostgresStore
+from lib.models.patient_meal import PatientMeal
 
 from .contracts import MealSlot, PatientMealRef
 
@@ -65,9 +69,11 @@ class MealContextLoader:
         *,
         qdrant_retriever: QdrantRetriever,
         memory_store: MongoMemoryStore,
+        postgres_store: PostgresStore,
     ) -> None:
         self._qdrant = qdrant_retriever
         self._memory = memory_store
+        self._postgres = postgres_store
 
     async def load(
         self,
@@ -88,6 +94,7 @@ class MealContextLoader:
         (
             profile,
             meals,
+            today_by_slot_pg,
             active_plan,
             memories,
             cgm_events,
@@ -96,6 +103,7 @@ class MealContextLoader:
         ) = await asyncio.gather(
             self._load_profile(patient_id),
             self._load_meals(patient_id, history_start, today),
+            self._load_today_meals_by_slot_postgres(patient_id, today),
             self._load_active_diet_plan(patient_id, today),
             self._memory.get_patient_facts(patient_id),
             self._load_cgm_events(patient_id, cgm_start, today),
@@ -105,7 +113,10 @@ class MealContextLoader:
         )
 
         meals = _unwrap(meals, [])
-        recent_meals, today_by_slot = _partition_meals_by_date(meals, today)
+        recent_meals, _ = _partition_meals_by_date(meals, today)
+        # Today's slot-by-slot grouping comes from Postgres (authoritative,
+        # no indexing lag), not Qdrant. History stays on Qdrant.
+        today_by_slot = _unwrap(today_by_slot_pg, {})
 
         return MealAnalysisContext(
             patient_id=patient_id,
@@ -243,6 +254,47 @@ class MealContextLoader:
                 "load_medications failed for %s: %s", patient_id, exc
             )
             return []
+
+    async def _load_today_meals_by_slot_postgres(
+        self, patient_id: str, today: date_cls
+    ) -> dict[MealSlot, list[PatientMealRef]]:
+        """Today's meals grouped by slot, read from Postgres for freshness.
+
+        Qdrant has indexing lag after a save — a meal logged seconds ago may
+        not be searchable yet. Repeat-detection must see the just-logged
+        meal, so we read the authoritative source.
+        """
+        try:
+            async with self._postgres.get_session() as session:
+                stmt = select(PatientMeal).where(
+                    and_(
+                        PatientMeal.patient_id == patient_id,
+                        PatientMeal.date == today,
+                    )
+                )
+                result = await session.execute(stmt)
+                meals = result.scalars().all()
+
+                by_slot: dict[MealSlot, list[PatientMealRef]] = {}
+                for meal in meals:
+                    slot = _coerce_slot(meal.slot or meal.type)
+                    if slot is None:
+                        continue
+                    ref = PatientMealRef(
+                        meal_id=meal.id,
+                        meal_name=meal.name or "",
+                        consumed_at=datetime.combine(meal.date, meal.time),
+                        slot=slot,
+                    )
+                    by_slot.setdefault(slot, []).append(ref)
+                return by_slot
+        except Exception as exc:
+            logger.warning(
+                "load_today_meals_by_slot_postgres failed for %s: %s",
+                patient_id,
+                exc,
+            )
+            return {}
 
     async def _load_recent_workouts(
         self, patient_id: str, start: datetime, end: datetime
