@@ -31,6 +31,8 @@ class PatientNotificationService:
         *,
         unread_only: bool = False,
         category: Optional[NotificationCategoryLiteral] = None,
+        from_date: Optional[datetime] = None,
+        to_date: Optional[datetime] = None,
         limit: int = 20,
         offset: int = 0,
         postgres_session: AsyncSession,
@@ -46,6 +48,14 @@ class PatientNotificationService:
             base = base.where(PatientNotification.read_at.is_(None))
         if category:
             base = base.where(PatientNotification.category == category)
+        if from_date is not None:
+            base = base.where(
+                PatientNotification.created_at >= from_date.replace(tzinfo=None)
+            )
+        if to_date is not None:
+            base = base.where(
+                PatientNotification.created_at <= to_date.replace(tzinfo=None)
+            )
 
         total = (
             await postgres_session.execute(

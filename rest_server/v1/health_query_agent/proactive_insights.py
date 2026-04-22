@@ -6,6 +6,7 @@ POST /health-query-agent/proactive-insights/feedback
 """
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Query
@@ -43,6 +44,12 @@ class InsightHistoryItem(BaseModel):
 async def get_insight_history(
     patient_id: str = Query(..., description="Patient ID to fetch insights for"),
     limit: int = Query(20, ge=1, le=100, description="Max insights to return"),
+    from_date: Optional[datetime] = Query(
+        None, description="ISO 8601 datetime — include insights created at or after this time"
+    ),
+    to_date: Optional[datetime] = Query(
+        None, description="ISO 8601 datetime — include insights created at or before this time"
+    ),
     current_actor: Actor = Depends(
         get_current_actor(
             allowed_roles=[ProfileTypeEnum.PATIENT, ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN],
@@ -67,7 +74,12 @@ async def get_insight_history(
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 
     tracker: InsightTracker = container.resolve(InsightTracker)
-    docs = await tracker.get_history(str(verified_pid), limit=limit)
+    docs = await tracker.get_history(
+        str(verified_pid),
+        limit=limit,
+        from_date=from_date,
+        to_date=to_date,
+    )
 
     items = [
         InsightHistoryItem(

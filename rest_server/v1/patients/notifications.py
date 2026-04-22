@@ -1,5 +1,6 @@
 """V1 patient notification inbox endpoints."""
 
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -59,6 +60,12 @@ async def list_notifications(
     patient_id: str = Path(...),
     unread_only: bool = Query(False),
     category: Optional[NotificationCategoryLiteral] = Query(None),
+    from_date: Optional[datetime] = Query(
+        None, description="ISO 8601 datetime — include notifications created at or after this time"
+    ),
+    to_date: Optional[datetime] = Query(
+        None, description="ISO 8601 datetime — include notifications created at or before this time"
+    ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     service: PatientNotificationService = Depends(get_patient_notification_service),
@@ -77,6 +84,8 @@ async def list_notifications(
             str(verified_pid),
             unread_only=unread_only,
             category=category,
+            from_date=from_date,
+            to_date=to_date,
             limit=limit,
             offset=offset,
         )
