@@ -60,6 +60,22 @@ class RepeatSuggestion(str, Enum):
     NONE = "none"
 
 
+class EvidenceSource(str, Enum):
+    """Where an insight draws its authority from.
+
+    Every concern, positive, pairing, or alternative MUST declare one of
+    these sources and supply a specific evidence string. Uncited outputs
+    are dropped server-side.
+    """
+
+    PROFILE = "profile"          # patient profile fact (diet pref, allergy, condition)
+    HISTORY = "history"          # cited past meal + CGM response
+    PLAN = "plan"                # cited active diet plan target
+    MEDICATION = "medication"    # cited active medication effect
+    GUIDELINE = "guideline"      # cited published clinical rule (ADA / AHA / WHO)
+    COMPOSITION = "composition"  # cited math on this meal's own macros
+
+
 # ---------------------------------------------------------------------------
 # Nutrition primitives
 # ---------------------------------------------------------------------------
@@ -124,12 +140,41 @@ class MealExtraction(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class Insight(BaseModel):
+    """A single cited concern or positive about the meal.
+
+    The server drops any Insight missing ``evidence`` or with an invalid
+    ``source`` before returning to the client.
+    """
+
+    text: str = Field(..., description="Short natural-language line shown to patient")
+    source: EvidenceSource
+    evidence: str = Field(
+        ...,
+        description=(
+            "Specific fact being cited, e.g. 'Plan target: 60g carbs; "
+            "this has 116g' or 'Past 3 parathas peaked 200+ mg/dL'."
+        ),
+    )
+
+
+class ScoreBreakdownItem(BaseModel):
+    """One weighted deduction (or bonus) that went into the score."""
+
+    delta: int = Field(..., description="Signed score delta, e.g. -20, +10")
+    source: EvidenceSource
+    evidence: str
+
+
 class MealScore(BaseModel):
-    overall: int = Field(..., ge=0, le=100, description="0-100 composite score")
-    glycemic_load: float = Field(..., description="Estimated GL: carbs_g * GI / 100")
-    processed_flag: bool = False
-    concerns: list[str] = Field(default_factory=list, description="Evidence-based, no moralizing")
-    positives: list[str] = Field(default_factory=list)
+    overall: int = Field(..., ge=0, le=100, description="Computed from cited concerns")
+    glycemic_load: float = Field(..., description="Internal GL, retained for math; frontend may hide")
+    concerns: list[Insight] = Field(default_factory=list)
+    positives: list[Insight] = Field(default_factory=list)
+    breakdown: list[ScoreBreakdownItem] = Field(
+        default_factory=list,
+        description="Transparent log of how 'overall' was computed from cited concerns + positives",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -148,19 +193,29 @@ class MealEvidenceRef(BaseModel):
 class Alternative(BaseModel):
     item_to_replace: str = Field(..., description="Item from current meal to swap")
     swap_with: str
-    reason: str
+    reason: str = Field(..., description="Why this swap — must reference the evidence")
     predicted_glucose_delta: int | None = Field(
         None, description="Estimated mg/dL reduction vs current item"
     )
     source: AlternativeSource
     frequency_in_history: int | None = None
-    evidence: list[MealEvidenceRef] = Field(default_factory=list)
+    evidence: list[MealEvidenceRef] = Field(
+        default_factory=list,
+        description="Required for source=history: at least one past meal with CGM peak. Empty for source=guideline, in which case the reason must cite a numeric clinical rule.",
+    )
 
 
 class Pairing(BaseModel):
     add: str = Field(..., description="Food to add to current meal")
     reason: str
     benefit: PairingBenefit
+    source: EvidenceSource = Field(
+        ..., description="Pairings must cite a source; uncited pairings are dropped"
+    )
+    evidence: str = Field(
+        ...,
+        description="e.g. 'You paired oats + milk 5x last month, peaks 20 mg/dL lower' (history) or 'ADA suggests fiber with carbs to slow absorption' (guideline)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +324,10 @@ class MealCreateRequest(BaseModel):
     extraction: MealExtraction
     image_url: str | None = None
     description: str | None = None
+    note: str | None = Field(
+        None,
+        description="Free-text note from the patient ('cheat meal — wedding', 'post-workout', etc). Surfaces to the health query agent for context.",
+    )
     preview_trace_id: str | None = Field(
         None, description="Links saved meal back to its preview for Langfuse quality tracking"
     )
@@ -287,6 +346,7 @@ class MealResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     image_url: str | None = None
     description: str | None = None
+    note: str | None = None
     created_at: datetime
     updated_at: datetime
 

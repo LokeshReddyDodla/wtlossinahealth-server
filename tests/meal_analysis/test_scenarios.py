@@ -141,7 +141,7 @@ async def test_priya_hero_case():
     agent = _make_agent(
         context=ctx,
         extraction=_paratha_extraction(),
-        score=MealScore(overall=45, glycemic_load=59.4, concerns=["high carbs"]),
+        score=MealScore(overall=45, glycemic_load=59.4, concerns=[], positives=[]),
         alts=[history_alt],
         glucose=prediction,
     )

@@ -2,32 +2,66 @@
 {"name": "meal_analysis_alternatives", "domain": "nutrition", "task": "structured_analysis"}
 ---
 
-# Meal Alternatives
+# Meal Alternatives — Cited Swaps and Pairings Only
 
-Suggest personalized swaps and pairings for the current meal.
+Suggest swaps (alternatives) and add-ons (pairings) for the current meal.
+Every item you return MUST carry its citation. Server drops anything
+uncited. If there's nothing to cite, return empty lists.
 
-## Priorities
+## Alternatives (swap one item for another)
 
-1. **Prefer history.** If `recent_meals` contains items the patient has actually eaten that would reduce glycemic impact or improve macros, surface those first. Set `source=history` and populate `frequency_in_history` and `evidence` with the referenced meals.
-2. **Fall back to guidelines** only when history is empty or inappropriate. Set `source=guideline`. Match the patient's cuisine/culture — do not suggest oats to replace paratha if the patient eats Indian; suggest besan chilla, moong dosa, poha.
-3. Propose **pairings** (things to add, not swap) whenever adding fiber/protein would blunt the meal's impact — often more adherence-friendly than a full swap.
+1. **Prefer `source=history`** — a specific past meal the patient actually
+   ate, ideally with a CGM peak. Populate `evidence` with at least one
+   `{meal_id, meal_name, consumed_at, glucose_peak, glucose_peak_minutes_after}`.
+   `frequency_in_history` is the number of times the patient ate this
+   alternative in the last 30 days.
+2. **Fall back to `source=guideline`** only when you can cite a specific
+   numeric clinical rule in `reason` (e.g. "ADA suggests ≤45g carbs/meal"
+   or "lower glycemic index per the ADA glycemic index table"). No vague
+   "generally healthier" — if you can't name a numeric rule, don't suggest
+   it. `evidence` stays empty for guidelines; the rule lives in `reason`.
+3. Cuisine-match. Don't suggest oats to replace paratha if the patient
+   eats Indian. Suggest besan chilla, moong dosa, poha — real culture-fit
+   swaps pulled from the cuisine preference in profile.
+4. Factor in active medications (GLP-1, insulin, metformin) — a swap that
+   would have been needed without the med may not be needed with it.
+5. If the meal already looks fine, return empty `alternatives`. Don't
+   fabricate.
 
-## Rules
+## Pairings (add to current meal, don't swap)
 
-- Each Alternative must name a specific item_to_replace from the current meal.
-- `reason` is evidence-based. When `source=history` and CGM data exists, cite it ("last 2 times you had besan chilla, glucose stayed below 135").
-- Never moralize. Don't use the words "bad", "unhealthy", "junk".
-- If the patient takes glucose-impacting medication (GLP-1, insulin, metformin), factor it in — a swap that would have been needed without meds may not be needed with them.
-- If the current meal already looks fine, return an empty `alternatives` list rather than fabricating swaps.
+Every pairing MUST declare `source` and `evidence`:
+
+- `source=history`, `evidence=` citing a specific past pattern
+  ("Paired oats + milk 5× last month, peaks 20 mg/dL lower")
+- `source=guideline`, `evidence=` citing a specific rule
+  ("ADA suggests pairing fiber with carbs to slow absorption")
+
+If you can't cite it, leave it out.
+
+`benefit` is one of: `glucose_blunt`, `satiety`, `fiber`, `protein`.
+
+## Rules across both
+
+- **Voice.** All user-facing text fields (`reason` on alternatives, `reason`
+  on pairings) address the patient in second person: "you", "your". NEVER
+  write "the patient", "patient has", "this patient". The reader IS the
+  patient. Evidence strings can stay technical ("CGM peaks 207, 192, 189
+  on 2026-04-08/10/15") since they're citations.
+- Never moralize. No "bad", "unhealthy", "junk".
+- No generic tips without a patient-specific citation or numeric rule.
+- Empty lists are a valid, preferable response over fabricated items.
 
 ## Inputs
 
 - Current meal extraction: $extraction_json
 - Glycemic load: $glycemic_load
-- Recent meal history (up to 20 entries, each with nutrition): $recent_meals_json
-- Recent CGM events (hyper/hypo/spike/drop with timestamps): $cgm_events_json
+- Recent meal history (each with nutrition + consumed_at): $recent_meals_json
+- Recent CGM events (hyper/hypo/spike/drop): $cgm_events_json
 - Active medications: $medications_json
 - Workouts in the last 24h: $recent_workouts_json
 - Patient has CGM: $has_cgm
-- Patient context: $patient_context
+- Patient context (profile + memories): $patient_context
 - Slot: $slot
+
+Return a single JSON with `alternatives` and `pairings` arrays.

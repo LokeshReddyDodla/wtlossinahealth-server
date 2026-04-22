@@ -24,6 +24,7 @@ from lib.ai_foundation.agents.meal_analysis.contracts import (
     Alternative,
     AlternativeSource,
     ConfidenceLevel,
+    EvidenceSource,
     ExtractedFoodItem,
     GlucosePrediction,
     MacroSet,
@@ -76,8 +77,7 @@ async def test_analyze_happy_path():
         return_value=MealScore(
             overall=45,
             glycemic_load=32.0,
-            processed_flag=False,
-            concerns=["high carbs"],
+            concerns=[],
             positives=[],
         )
     )
@@ -89,15 +89,17 @@ async def test_analyze_happy_path():
                 Alternative(
                     item_to_replace="aloo paratha",
                     swap_with="moong dosa",
-                    reason="lower GI",
+                    reason="ADA: ≤45g carbs/meal suggests lower-GI swap",
                     source=AlternativeSource.GUIDELINE,
                 )
             ],
             [
                 Pairing(
                     add="salad",
-                    reason="fiber",
+                    reason="fiber with carbs slows absorption",
                     benefit=PairingBenefit.FIBER,
+                    source=EvidenceSource.GUIDELINE,
+                    evidence="ADA suggests pairing fiber with carbs",
                 )
             ],
         )

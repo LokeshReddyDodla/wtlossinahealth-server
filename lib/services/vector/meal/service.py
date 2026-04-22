@@ -133,6 +133,7 @@ class MealVectorService(BaseVectorService):
                 "meal_time": meal.get("time"),
                 "image_url": meal.get("image_url"),
                 "description": meal.get("description"),
+                "note": meal.get("note"),
                 "analyzed": meal.get("analyzed"),
                 "tags": meal.get("tags", []),
                 "uploaded_at": uploaded_at_ms,
