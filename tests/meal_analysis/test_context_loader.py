@@ -32,7 +32,11 @@ def _make_loader(*, qdrant=None, memory=None) -> MealContextLoader:
         qdrant.retrieve_filtered = AsyncMock(return_value=[])
     m = memory or MagicMock()
     m.get_patient_facts = AsyncMock(return_value=[])
-    return MealContextLoader(qdrant_retriever=qdrant, memory_store=m)
+    return MealContextLoader(
+        qdrant_retriever=qdrant,
+        memory_store=m,
+        postgres_store=MagicMock(),
+    )
 
 
 class TestUnwrap:

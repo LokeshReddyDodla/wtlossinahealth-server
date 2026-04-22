@@ -1779,6 +1779,7 @@ container.register(
         memory_store=cast(
             MongoMemoryStore, container.resolve(MongoMemoryStore)
         ),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
     scope=Scope.singleton,
 )
