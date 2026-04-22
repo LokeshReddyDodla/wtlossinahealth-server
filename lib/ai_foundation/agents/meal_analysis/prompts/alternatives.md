@@ -43,6 +43,11 @@ If you can't cite it, leave it out.
 
 ## Rules across both
 
+- **Voice.** All user-facing text fields (`reason` on alternatives, `reason`
+  on pairings) address the patient in second person: "you", "your". NEVER
+  write "the patient", "patient has", "this patient". The reader IS the
+  patient. Evidence strings can stay technical ("CGM peaks 207, 192, 189
+  on 2026-04-08/10/15") since they're citations.
 - Never moralize. No "bad", "unhealthy", "junk".
 - No generic tips without a patient-specific citation or numeric rule.
 - Empty lists are a valid, preferable response over fabricated items.
