@@ -94,6 +94,7 @@ from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
+from lib.services.profile_agent import ProfileAgentService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.vector.plans import PlansVectorService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -329,6 +330,15 @@ container.register(
     factory=lambda: cast(
         MongoStore, container.resolve(MongoStore)
     ).get_collection("patient_onboarding_conversations"),
+    scope=Scope.singleton,
+)
+
+# Profile Agent Collection (unified onboarding + update)
+container.register(
+    "profile_agent_conversations_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "profile_agent_conversations"
+    ),
     scope=Scope.singleton,
 )
 
@@ -1463,6 +1473,20 @@ container.register(
         ),
         conversation_collection=container.resolve(
             "patient_onboarding_conversations_collection"
+        ),
+    ),
+)
+
+# 🔹 Profile Agent Service (unified onboarding + update)
+container.register(
+    ProfileAgentService,
+    lambda: ProfileAgentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
+        conversation_collection=container.resolve(
+            "profile_agent_conversations_collection"
         ),
     ),
 )
