@@ -500,6 +500,7 @@ class MealService:
                 analyzed_at=datetime.now(),
                 extraction_confidence=ext.overall_confidence.value,
                 preview_trace_id=request.preview_trace_id,
+                note=request.note,
                 patient_id=patient_id,
             )
             _attach_items_and_totals(meal, ext)
@@ -598,6 +599,8 @@ class MealService:
             meal.extraction_confidence = ext.overall_confidence.value
             if request.preview_trace_id is not None:
                 meal.preview_trace_id = request.preview_trace_id
+            if request.note is not None:
+                meal.note = request.note
 
             for item in list(meal.items):
                 await postgres_session.delete(item)

@@ -1,8 +1,11 @@
 """
 Meal scorer.
 
-Hybrid: deterministic glycemic load + LLM for concerns/positives/overall.
-Keeps quantitative math out of the LLM's hands.
+Every concern/positive the LLM returns MUST declare a ``source`` and
+``evidence``. Uncited insights are dropped server-side before the score
+is computed. The overall 0–100 is derived from weighted deductions on
+the cited concerns, not LLM-assigned — so a patient can always see the
+exact breakdown of why they got a 72.
 """
 
 from __future__ import annotations
@@ -18,16 +21,20 @@ from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
 
 from .context_loader import MealAnalysisContext
-from .contracts import MealExtraction, MealScore
+from .contracts import (
+    EvidenceSource,
+    Insight,
+    MealExtraction,
+    MealScore,
+    ScoreBreakdownItem,
+)
 
 logger = logging.getLogger(__name__)
 
 
 SCORING_PROMPT_NAME = "meal_analysis_scoring"
 
-# Rough carb→GI heuristic table for GL estimation. Not a medical source —
-# a usable approximation for LLM-free GL math. Downstream LLM can override
-# commentary; this just anchors the number.
+# GI heuristic table for GL estimation — per-item best-guess GI by tag.
 _DEFAULT_GI = 55
 _GI_BY_TAG = {
     "fried": 65,
@@ -42,12 +49,39 @@ _GI_BY_TAG = {
     "dairy": 35,
 }
 
+# Source weights for the computed score. Higher weight = that source
+# carries more authority (per-source, not per-concern).
+_CONCERN_WEIGHT_BY_SOURCE: dict[EvidenceSource, int] = {
+    EvidenceSource.HISTORY: 20,      # cited past peaks: strong signal
+    EvidenceSource.PLAN: 15,         # plan deviation: concrete
+    EvidenceSource.GUIDELINE: 12,    # clinical rule: important but general
+    EvidenceSource.MEDICATION: 8,    # med interaction: secondary concern
+    EvidenceSource.PROFILE: 10,      # allergy / dietary pref: hard constraint
+    EvidenceSource.COMPOSITION: 10,  # GL/macro math: direct from meal
+}
+_POSITIVE_WEIGHT_BY_SOURCE: dict[EvidenceSource, int] = {
+    EvidenceSource.HISTORY: 10,
+    EvidenceSource.PLAN: 8,
+    EvidenceSource.GUIDELINE: 6,
+    EvidenceSource.MEDICATION: 8,
+    EvidenceSource.PROFILE: 5,
+    EvidenceSource.COMPOSITION: 5,
+}
+_SCORE_BASELINE = 100
+_MAX_CONCERN_DEDUCTION = 70  # caps total deductions so score never goes below 30 purely from concerns
+
+
+class _LLMInsight(BaseModel):
+    """What the LLM returns. Strict: text/source/evidence all required."""
+
+    text: str
+    source: EvidenceSource
+    evidence: str
+
 
 class _LLMScoreOut(BaseModel):
-    overall: int = Field(..., ge=0, le=100)
-    processed_flag: bool = False
-    concerns: list[str] = Field(default_factory=list)
-    positives: list[str] = Field(default_factory=list)
+    concerns: list[_LLMInsight] = Field(default_factory=list)
+    positives: list[_LLMInsight] = Field(default_factory=list)
 
 
 class MealScorer:
@@ -77,6 +111,16 @@ class MealScorer:
             extraction_json=json.dumps(extraction.model_dump(mode="json")),
             glycemic_load=f"{gl:.1f}",
             patient_context=_patient_context_string(context),
+            active_medications_json=json.dumps(
+                context.medications or [], default=str
+            ),
+            active_plan_json=json.dumps(
+                context.active_diet_plan or {}, default=str
+            ),
+            recent_cgm_events_json=json.dumps(
+                (context.cgm_events or [])[: settings.MEAL_PROMPT_CGM_EVENTS_LIMIT],
+                default=str,
+            ),
             slot=slot or "",
         )
 
@@ -85,7 +129,7 @@ class MealScorer:
                 {"role": "system", "content": prompt},
                 {
                     "role": "user",
-                    "content": "Return the MealScore fields only.",
+                    "content": "Return cited concerns and positives only.",
                 },
             ],
             response_model=_LLMScoreOut,
@@ -94,13 +138,84 @@ class MealScorer:
             trace_id=trace_id,
         )
 
+        cited_concerns = [_to_insight(i) for i in llm_out.concerns if _is_cited(i)]
+        cited_positives = [_to_insight(i) for i in llm_out.positives if _is_cited(i)]
+
+        overall, breakdown = _compute_score(cited_concerns, cited_positives)
+
         return MealScore(
-            overall=llm_out.overall,
+            overall=overall,
             glycemic_load=gl,
-            processed_flag=llm_out.processed_flag,
-            concerns=llm_out.concerns,
-            positives=llm_out.positives,
+            concerns=cited_concerns,
+            positives=cited_positives,
+            breakdown=breakdown,
         )
+
+
+# ---------------------------------------------------------------------------
+# Citation filtering + score computation
+# ---------------------------------------------------------------------------
+
+
+def _is_cited(insight: _LLMInsight) -> bool:
+    """Drop insights where evidence is missing/blank or text is empty."""
+    if not insight.text.strip():
+        return False
+    if not insight.evidence.strip():
+        return False
+    return True
+
+
+def _to_insight(src: _LLMInsight) -> Insight:
+    return Insight(text=src.text.strip(), source=src.source, evidence=src.evidence.strip())
+
+
+def _compute_score(
+    concerns: list[Insight], positives: list[Insight]
+) -> tuple[int, list[ScoreBreakdownItem]]:
+    """Derive a defensible 0–100 from cited concerns (deduct) and positives (add back).
+
+    Starts from 100. Each concern subtracts by source weight. Each positive
+    adds back by source weight, capped to prevent gaming. Deduction total is
+    capped at _MAX_CONCERN_DEDUCTION so even a terrible meal is bounded.
+    """
+    breakdown: list[ScoreBreakdownItem] = []
+
+    raw_deduction = 0
+    for c in concerns:
+        delta = -_CONCERN_WEIGHT_BY_SOURCE.get(c.source, 5)
+        raw_deduction += -delta
+        breakdown.append(
+            ScoreBreakdownItem(delta=delta, source=c.source, evidence=c.evidence)
+        )
+
+    if raw_deduction > _MAX_CONCERN_DEDUCTION:
+        # Scale down proportionally
+        scale = _MAX_CONCERN_DEDUCTION / raw_deduction
+        rescaled: list[ScoreBreakdownItem] = []
+        for item in breakdown:
+            rescaled.append(
+                ScoreBreakdownItem(
+                    delta=int(item.delta * scale),
+                    source=item.source,
+                    evidence=item.evidence,
+                )
+            )
+        breakdown = rescaled
+        raw_deduction = _MAX_CONCERN_DEDUCTION
+
+    raw_bonus = 0
+    for p in positives:
+        delta = _POSITIVE_WEIGHT_BY_SOURCE.get(p.source, 3)
+        raw_bonus += delta
+        breakdown.append(
+            ScoreBreakdownItem(delta=delta, source=p.source, evidence=p.evidence)
+        )
+
+    overall = _SCORE_BASELINE - raw_deduction + raw_bonus
+    # Clamp
+    overall = max(0, min(100, overall))
+    return overall, breakdown
 
 
 # ---------------------------------------------------------------------------

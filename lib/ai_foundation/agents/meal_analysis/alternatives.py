@@ -1,9 +1,10 @@
 """
 Alternatives engine.
 
-Ranks swaps and pairings for the current meal. Prefers items from the
-patient's own history; falls back to culturally-matched guidelines when
-history is empty or unfit.
+Ranks swaps and pairings for the current meal. Every alternative and
+every pairing must cite its source — either a specific past meal with a
+CGM peak (``source=history``) or a specific numeric clinical rule
+(``source=guideline``). Uncited items are filtered out server-side.
 """
 
 from __future__ import annotations
@@ -20,7 +21,12 @@ from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
 
 from .context_loader import MealAnalysisContext
-from .contracts import Alternative, MealExtraction, Pairing
+from .contracts import (
+    Alternative,
+    AlternativeSource,
+    MealExtraction,
+    Pairing,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +95,36 @@ class AlternativesEngine:
             trace_id=trace_id,
         )
 
-        return list(llm_out.alternatives), list(llm_out.pairings)
+        kept_alts = [a for a in llm_out.alternatives if _alt_cited(a)]
+        kept_pairings = [p for p in llm_out.pairings if _pairing_cited(p)]
+        return kept_alts, kept_pairings
+
+
+def _alt_cited(alt: Alternative) -> bool:
+    """Drop alternatives that don't carry the right evidence for their source."""
+    if not alt.item_to_replace.strip() or not alt.swap_with.strip():
+        return False
+    if not alt.reason.strip():
+        return False
+    if alt.source == AlternativeSource.HISTORY:
+        # history swaps must cite at least one past meal
+        return bool(alt.evidence)
+    if alt.source == AlternativeSource.GUIDELINE:
+        # guideline swaps must at least have a non-empty reason that references
+        # a specific numeric rule — we trust the reason here but require it
+        # not to be empty
+        return True
+    return False
+
+
+def _pairing_cited(p: Pairing) -> bool:
+    if not p.add.strip():
+        return False
+    if not p.reason.strip():
+        return False
+    if not p.evidence.strip():
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
