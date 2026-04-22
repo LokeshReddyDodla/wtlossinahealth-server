@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import status
+from fastapi.exceptions import HTTPException
 from sqlalchemy import asc, delete, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,12 @@ from sqlalchemy.orm import selectinload
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_meal import PatientFoodItem as PatientFoodItemModel
 from lib.models.patient_meal import PatientMeal as PatientMealModel
+from lib.models.patient_meal import (
+    PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
+)
+from lib.models.patient_meal import (
+    PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
+)
 from lib.models.patient_meal import (
     PatientTotalMacroNutritionalValue as PatientTotalMacroNutritionalValueModel,
 )
@@ -477,13 +484,6 @@ class MealService:
         No AI enrichment happens here. This is the 'dumb save' path —
         the intelligence already ran in the preview agent.
         """
-        from lib.models.patient_meal import (
-            PatientMacroNutritionalValue as PatientMacroNutritionalValueModel,
-        )
-        from lib.models.patient_meal import (
-            PatientMicroNutritionalValue as PatientMicroNutritionalValueModel,
-        )
-
         ext = request.extraction
         try:
             meal = PatientMealModel(
@@ -502,59 +502,7 @@ class MealService:
                 preview_trace_id=request.preview_trace_id,
                 patient_id=patient_id,
             )
-
-            food_items = []
-            for it in ext.items:
-                food_item = PatientFoodItemModel(
-                    name=it.name,
-                    serving_size=str(it.portion),
-                    serving_quantity=float(it.portion),
-                    serving_unit=it.unit,
-                    meal=meal,
-                )
-                food_item.macro_nutritional_values = (
-                    PatientMacroNutritionalValueModel(
-                        food_item_id=food_item.id,
-                        calories=it.macros.calories,
-                        proteins=it.macros.protein,
-                        carbohydrates=it.macros.carbs,
-                        simple_carbs=it.macros.carbs_simple,
-                        complex_carbs=it.macros.carbs_complex,
-                        fats=it.macros.fat,
-                        fiber=it.macros.fiber,
-                    )
-                )
-                if it.micros is not None:
-                    food_item.micro_nutritional_values = (
-                        PatientMicroNutritionalValueModel(
-                            food_item_id=food_item.id,
-                            calcium=it.micros.calcium_mg or 0,
-                            iron=it.micros.iron_mg or 0,
-                            zinc=it.micros.zinc_mg or 0,
-                            magnesium=it.micros.magnesium_mg or 0,
-                        )
-                    )
-                food_items.append(food_item)
-            meal.items = food_items
-
-            meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValueModel(
-                meal_id=meal.id,
-                calories=ext.total_macros.calories,
-                proteins=ext.total_macros.protein,
-                carbohydrates=ext.total_macros.carbs,
-                simple_carbs=ext.total_macros.carbs_simple,
-                complex_carbs=ext.total_macros.carbs_complex,
-                fats=ext.total_macros.fat,
-                fiber=ext.total_macros.fiber,
-            )
-            if ext.total_micros is not None:
-                meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
-                    meal_id=meal.id,
-                    calcium=ext.total_micros.calcium_mg or 0,
-                    iron=ext.total_micros.iron_mg or 0,
-                    zinc=ext.total_micros.zinc_mg or 0,
-                    magnesium=ext.total_micros.magnesium_mg or 0,
-                )
+            _attach_items_and_totals(meal, ext)
 
             postgres_session.add(meal)
             await postgres_session.commit()
@@ -597,6 +545,102 @@ class MealService:
                 pass
 
             return meal
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def update_from_preview(
+        self,
+        patient_id: str,
+        meal_id: str,
+        request: "MealCreateRequest",
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientMealModel:
+        """Update an existing meal in place from a confirmed preview.
+
+        Preserves ``meal_id`` so client references stay valid. Single
+        transaction: updates top-level fields, replaces items + totals,
+        commits. Background tasks re-upsert the Qdrant point (same
+        deterministic point id) and regenerate the daily report. The
+        MEAL_LOGGED event is NOT re-fired — it already fired on the
+        first save; updates only refresh gamification's macro progress.
+        """
+        try:
+            meal = await self.fetch_meal(meal_id, postgres_session=postgres_session)
+
+            if str(meal.patient_id) != str(patient_id):
+                raise_http_exception(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="Meal does not belong to this patient.",
+                )
+
+            old_date = meal.date
+            ext = request.extraction
+
+            meal.name = ext.name
+            meal.type = request.slot.value
+            meal.slot = request.slot.value
+            meal.date = request.consumed_at.date()
+            meal.time = request.consumed_at.time()
+            meal.source = request.source.value
+            meal.description = request.description
+            if request.image_url is not None:
+                meal.image_url = request.image_url
+            meal.tags = list(ext.tags or [])
+            meal.analyzed = True
+            meal.analyzed_at = datetime.now()
+            meal.extraction_confidence = ext.overall_confidence.value
+            if request.preview_trace_id is not None:
+                meal.preview_trace_id = request.preview_trace_id
+
+            for item in list(meal.items):
+                await postgres_session.delete(item)
+            if meal.total_macro_nutritional_value:
+                await postgres_session.delete(meal.total_macro_nutritional_value)
+            if meal.total_micro_nutritional_value:
+                await postgres_session.delete(meal.total_micro_nutritional_value)
+            await postgres_session.flush()
+
+            _attach_items_and_totals(meal, ext)
+
+            await postgres_session.commit()
+            await postgres_session.refresh(meal)
+
+            trigger_meal_tasks(
+                patient_id=str(patient_id),
+                meal_id=str(meal.id),
+                meal_date=meal.date,
+                meal_obj=meal,
+            )
+            if old_date != meal.date:
+                try:
+                    enqueue_daily_meal_report_sync(str(patient_id), old_date)
+                except Exception:
+                    pass
+
+            # Gamification: macros changed, totals need refresh. Do NOT
+            # re-fire MEAL_LOGGED — would duplicate XP / task completion.
+            try:
+                from uuid import UUID as _UUID
+                from lib.core.container import container
+                from lib.services.gamification.event_handler import (
+                    GamificationEventHandler,
+                )
+
+                handler = container.resolve(GamificationEventHandler)
+                await handler._refresh_macro_progress(_UUID(patient_id))
+            except Exception:
+                pass
+
+            return meal
+        except HTTPException:
+            raise
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -735,3 +779,65 @@ class MealService:
                 message="Database Error",
                 detail=str(e),
             )
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by save_from_preview / update_from_preview
+# ---------------------------------------------------------------------------
+
+
+def _attach_items_and_totals(meal: PatientMealModel, ext: Any) -> None:
+    """Build food items + total macro/micro rows and link them to ``meal``.
+
+    ``ext`` is a MealExtraction (typed as Any here to avoid an import
+    cycle). The caller commits and, on update paths, is responsible for
+    deleting any pre-existing items before calling this.
+    """
+    food_items: List[PatientFoodItemModel] = []
+    for it in ext.items:
+        food_item = PatientFoodItemModel(
+            name=it.name,
+            serving_size=str(it.portion),
+            serving_quantity=float(it.portion),
+            serving_unit=it.unit,
+            meal=meal,
+        )
+        food_item.macro_nutritional_values = PatientMacroNutritionalValueModel(
+            food_item_id=food_item.id,
+            calories=it.macros.calories,
+            proteins=it.macros.protein,
+            carbohydrates=it.macros.carbs,
+            simple_carbs=it.macros.carbs_simple,
+            complex_carbs=it.macros.carbs_complex,
+            fats=it.macros.fat,
+            fiber=it.macros.fiber,
+        )
+        if it.micros is not None:
+            food_item.micro_nutritional_values = PatientMicroNutritionalValueModel(
+                food_item_id=food_item.id,
+                calcium=it.micros.calcium_mg or 0,
+                iron=it.micros.iron_mg or 0,
+                zinc=it.micros.zinc_mg or 0,
+                magnesium=it.micros.magnesium_mg or 0,
+            )
+        food_items.append(food_item)
+    meal.items = food_items
+
+    meal.total_macro_nutritional_value = PatientTotalMacroNutritionalValueModel(
+        meal_id=meal.id,
+        calories=ext.total_macros.calories,
+        proteins=ext.total_macros.protein,
+        carbohydrates=ext.total_macros.carbs,
+        simple_carbs=ext.total_macros.carbs_simple,
+        complex_carbs=ext.total_macros.carbs_complex,
+        fats=ext.total_macros.fat,
+        fiber=ext.total_macros.fiber,
+    )
+    if ext.total_micros is not None:
+        meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
+            meal_id=meal.id,
+            calcium=ext.total_micros.calcium_mg or 0,
+            iron=ext.total_micros.iron_mg or 0,
+            zinc=ext.total_micros.zinc_mg or 0,
+            magnesium=ext.total_micros.magnesium_mg or 0,
+        )
