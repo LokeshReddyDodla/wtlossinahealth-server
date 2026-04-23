@@ -44,6 +44,7 @@ class ModelTask(str, Enum):
     INTENT_EXTRACTION = "intent_extraction"
     RESPONSE_GENERATION = "response_generation"
     STRUCTURED_ANALYSIS = "structured_analysis"
+    MEAL_ANALYSIS = "meal_analysis"
     CLASSIFICATION = "classification"
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
@@ -445,6 +446,11 @@ def build_default_registry(
         ModelTask.STRUCTURED_ANALYSIS,
         primary=thinker,
         fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
+    )
+    registry.set_task_route(
+        ModelTask.MEAL_ANALYSIS,
+        primary="gpt-4o",
+        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash", thinker],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
