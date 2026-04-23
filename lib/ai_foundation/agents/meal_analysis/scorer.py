@@ -90,7 +90,7 @@ class MealScorer:
         *,
         gateway: ModelGateway,
         prompt_registry: PromptRegistry,
-        model_task: ModelTask = ModelTask.STRUCTURED_ANALYSIS,
+        model_task: ModelTask = ModelTask.MEAL_ANALYSIS,
     ) -> None:
         self._gateway = gateway
         self._prompts = prompt_registry
