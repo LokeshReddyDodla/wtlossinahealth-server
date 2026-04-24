@@ -266,11 +266,15 @@ class MealContextLoader:
         """
         try:
             async with self._postgres.get_session() as session:
-                stmt = select(PatientMeal).where(
-                    and_(
-                        PatientMeal.patient_id == patient_id,
-                        PatientMeal.date == today,
+                stmt = (
+                    select(PatientMeal)
+                    .where(
+                        and_(
+                            PatientMeal.patient_id == patient_id,
+                            PatientMeal.date == today,
+                        )
                     )
+                    .order_by(PatientMeal.time.desc())
                 )
                 result = await session.execute(stmt)
                 meals = result.scalars().all()
