@@ -318,17 +318,32 @@ class ProfileAgentService:
                         draft_changes=draft_changes,
                     )
 
-                draft["state"] = DraftState.COMPLETED.value
-                draft["status"] = "completed"
+                # Re-read the patient so we can prompt the next gap in the
+                # same turn instead of stranding the user after "Done!".
+                updated_patient = await self._fetch_patient(patient_id)
+                post_report = compute_gap_report(updated_patient, {})
+                next_missing = next_missing_field(post_report)
+
+                # Reset the draft so follow-up answers start a fresh batch
+                # in COLLECTING state on the next user message.
+                draft["state"] = DraftState.COLLECTING.value
+                draft["status"] = "collecting"
+                draft["draft_changes"] = {}
                 applied = {k: _stringify(v) for k, v in coerced.items()}
                 labels = ", ".join(
                     FIELD_TO_CONFIG[f]["label"] for f in applied if f in FIELD_TO_CONFIG
                 )
+                reply = f"Done! Updated: {labels}."
+                if next_missing:
+                    reply += f" Next — what's your {next_missing.label.lower()}?"
+                else:
+                    reply += " Your profile is all set."
                 return ProfileAgentChatResponse(
-                    reply=f"Done! Updated: {labels}.",
-                    state=DraftState.COMPLETED.value,
-                    mode=report.mode,
+                    reply=reply,
+                    state=DraftState.COLLECTING.value,
+                    mode=post_report.mode,
                     applied_changes=applied,
+                    next_field=next_missing.field if next_missing else None,
                 )
 
             # User made further edits while reviewing — bounce to COLLECTING.
