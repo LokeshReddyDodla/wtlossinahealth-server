@@ -1,5 +1,6 @@
 from typing import cast
 
+from lib.services.patient_onboarding_agent.patient_onboarding_agent_service import PatientOnboardingAgentService
 from punq import Container, Scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,7 +71,14 @@ from lib.services.health_facility_service import HealthFacilityService
 from lib.services.libreview_service import LibreViewService
 from lib.services.meal import MealAnalysisService, MealService
 from lib.services.reports import MealReportService
+from lib.services.checkin_history_service import CheckinHistoryService
+from lib.services.medication_service import MedicationService
+from lib.services.exercise_service import ExerciseService
+from lib.services.patient_workout_service import PatientWorkoutService
+from lib.services.patient_facility_transfer_service import PatientFacilityTransferService
 from lib.services.vector import MealVectorService
+from lib.services.vector.medication import MedicationVectorService
+from lib.services.prescription_extraction_service import PrescriptionExtractionService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -85,7 +93,6 @@ from lib.services.patient_package_assignment_service import (
 from lib.services.patient_diet_plan_service import PatientDietPlanService
 from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.services.patient_onboarding_agent import PatientOnboardingAgentService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
 from lib.services.vector import PatientProfileVectorService
@@ -107,15 +114,11 @@ from lib.services.package_query_service import PackageQueryService
 from lib.services.osteoflag_service import OsteoFlagService
 
 # Processors
-from lib.services.prescription_analysis_service import (
-    PrescriptionAnalysisService,
-)
-from lib.services.prescription_service import PrescriptionService
 from lib.services.qdrant_search_engine.qdrant_search_engine import (
     QdrantSearchEngine,
 )
 from lib.services.reports import SleepReportService
-from lib.services.vector import SMBGVectorService
+from lib.services.vector import SMBGVectorService, WorkoutVectorService
 from lib.services.vector.checkin import CheckinVectorService
 from lib.services.daily_checkin_service import DailyCheckinService
 from lib.services.sqs_service import SQSService
@@ -185,6 +188,18 @@ from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngi
 from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC, SLEEP_SPEC, DOCUMENTS_SPEC
 from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
+from lib.ai_foundation.agents.meal_analysis.alternatives import (
+    AlternativesEngine,
+)
+from lib.ai_foundation.agents.meal_analysis.context_loader import (
+    MealContextLoader,
+)
+from lib.ai_foundation.agents.meal_analysis.extractor import MealExtractor
+from lib.ai_foundation.agents.meal_analysis.glucose_predictor import (
+    GlucosePredictor,
+)
+from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
@@ -326,7 +341,6 @@ container.register(
     ),
     scope=Scope.singleton,
 )
-
 
 # Intake + patient app collections
 container.register(
@@ -647,8 +661,8 @@ container.register(
         patient_document_service=cast(
             PatientDocumentService, container.resolve(PatientDocumentService)
         ),
-        prescription_service=cast(
-            PrescriptionService, container.resolve(PrescriptionService)
+        medication_service=cast(
+            MedicationService, container.resolve(MedicationService)
         ),
         weight_loss_agent_service=cast(
             WeightLossAgentService, container.resolve(WeightLossAgentService)
@@ -690,107 +704,65 @@ container.register(
     ),
 )
 
-# 🔹 Prescription Service
+# 🔹 Medication Vector Service
 container.register(
-    PrescriptionService,
-    lambda: PrescriptionService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        prescription_analysis_service=cast(
-            PrescriptionAnalysisService,
-            container.resolve(PrescriptionAnalysisService),
-        ),
-        patient_profile_service=cast(
-            PatientProfileService, container.resolve(PatientProfileService)
-        ),
+    MedicationVectorService,
+    lambda: MedicationVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
     ),
 )
 
-
-# 🔹 Prescription Analysis Service
+# 🔹 Prescription Extraction Service (v1 — ModelGateway + vision)
 container.register(
-    PrescriptionAnalysisService,
-    lambda: PrescriptionAnalysisService(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        token_usage_service=cast(
-            TokenUsageService, container.resolve(TokenUsageService)
-        ),
-        selected_ai_model="gpt-4o",
-        ai_model_provider="openai",
+    PrescriptionExtractionService,
+    lambda: PrescriptionExtractionService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
     ),
 )
 
-# 🔹 Medication Services
-from lib.services.medication.adr_checker import ADRChecker
-from lib.services.medication.service import MedicationService
-from lib.services.medication.dose_slot_generator import DoseSlotGenerator
-from lib.services.medication.prescription_converter import PrescriptionToScheduleConverter
-from lib.services.medication.interaction_checker import DrugInteractionChecker
-from lib.services.medication.prescription_differ import PrescriptionDiffer
-from lib.services.medication.side_effects_service import MedicationSideEffectsService
-
-container.register(
-    ADRChecker,
-    lambda: ADRChecker(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-    ),
-)
-
+# 🔹 Medication Service (v1)
 container.register(
     MedicationService,
     lambda: MedicationService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        medication_vector_service=cast(
+            MedicationVectorService, container.resolve(MedicationVectorService),
+        ),
     ),
 )
 
+
+# 🔹 Exercise Catalog Service
 container.register(
-    DoseSlotGenerator,
-    lambda: DoseSlotGenerator(
+    ExerciseService,
+    lambda: ExerciseService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
-container.register(
-    PrescriptionToScheduleConverter,
-    lambda: PrescriptionToScheduleConverter(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        dose_slot_generator=cast(DoseSlotGenerator, container.resolve(DoseSlotGenerator)),
-    ),
-)
 
+# 🔹 Patient Workout Service
 container.register(
-    DrugInteractionChecker,
-    lambda: DrugInteractionChecker(
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        adr_checker=cast(ADRChecker, container.resolve(ADRChecker)),
-    ),
-)
-
-container.register(
-    PrescriptionDiffer,
-    lambda: PrescriptionDiffer(
+    PatientWorkoutService,
+    lambda: PatientWorkoutService(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
+
+# 🔹 Patient Facility Transfer Service
 container.register(
-    "medication_side_effects_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "medication_side_effects"
+    PatientFacilityTransferService,
+    lambda: PatientFacilityTransferService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
-    scope=Scope.singleton,
 )
+
+# 🔹 Check-in History Service
 container.register(
-    "sos_medication_logs_collection",
-    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "sos_medication_logs"
-    ),
-    scope=Scope.singleton,
-)
-container.register(
-    MedicationSideEffectsService,
-    lambda: MedicationSideEffectsService(
-        side_effects_collection=container.resolve("medication_side_effects_collection"),
-        sos_logs_collection=container.resolve("sos_medication_logs_collection"),
+    CheckinHistoryService,
+    lambda: CheckinHistoryService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -1319,6 +1291,15 @@ container.register(
 )
 
 
+# 🔹 Workout Vector Service
+container.register(
+    WorkoutVectorService,
+    lambda: WorkoutVectorService(
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore))
+    ),
+)
+
+
 # 🔹 Checkin Vector Service
 container.register(
     CheckinVectorService,
@@ -1335,6 +1316,16 @@ container.register(
         checkin_vector_service=cast(
             CheckinVectorService, container.resolve(CheckinVectorService)
         ),
+    ),
+)
+
+# 🔹 Patient Notification Service
+from lib.services.notifications.service import PatientNotificationService
+
+container.register(
+    PatientNotificationService,
+    lambda: PatientNotificationService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
 
@@ -1577,7 +1568,7 @@ container.register(
 # Model Registry — central model configuration with fallback chains
 container.register(
     ModelRegistry,
-    lambda: build_default_registry(),
+    lambda: build_default_registry(_ai_settings),
     scope=Scope.singleton,
 )
 
@@ -1674,6 +1665,7 @@ container.register(
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         gamification_service=cast(GamificationService, container.resolve(GamificationService)),
+        retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
     ),
     scope=Scope.singleton,
 )
@@ -1796,6 +1788,76 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+    ),
+    scope=Scope.singleton,
+)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🍽️ Meal Analysis Agent — preview-first pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+
+container.register(
+    MealContextLoader,
+    lambda: MealContextLoader(
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        memory_store=cast(
+            MongoMemoryStore, container.resolve(MongoMemoryStore)
+        ),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealExtractor,
+    lambda: MealExtractor(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealScorer,
+    lambda: MealScorer(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    AlternativesEngine,
+    lambda: AlternativesEngine(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    GlucosePredictor,
+    lambda: GlucosePredictor(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    MealAnalysisAgent,
+    lambda: MealAnalysisAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        qdrant_retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        context_loader=cast(MealContextLoader, container.resolve(MealContextLoader)),
+        extractor=cast(MealExtractor, container.resolve(MealExtractor)),
+        scorer=cast(MealScorer, container.resolve(MealScorer)),
+        alternatives=cast(AlternativesEngine, container.resolve(AlternativesEngine)),
+        glucose_predictor=cast(
+            GlucosePredictor, container.resolve(GlucosePredictor)
+        ),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
     ),
     scope=Scope.singleton,
 )
@@ -1925,3 +1987,37 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
 )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🔌 EventBus subscriptions
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _subscribe_event_handlers() -> None:
+    """Wire domain handlers to EventBus events."""
+    import logging
+    from uuid import UUID as _UUID
+
+    from lib.ai_foundation.events.bus import EventBus as _EventBus
+    from lib.ai_foundation.events.schemas import HealthEvent as _HealthEvent
+    from lib.ai_foundation.events.schemas import HealthEventType as _HealthEventType
+
+    bus = cast(_EventBus, container.resolve(_EventBus))
+    gamification = cast(
+        GamificationEventHandler,
+        container.resolve(GamificationEventHandler),
+    )
+
+    async def _on_meal_logged(event: _HealthEvent) -> None:
+        try:
+            await gamification.on_meal_logged(_UUID(event.patient_id))
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "gamification.on_meal_logged failed for %s", event.patient_id
+            )
+
+    bus.subscribe([_HealthEventType.MEAL_LOGGED.value], _on_meal_logged)
+
+
+_subscribe_event_handlers()

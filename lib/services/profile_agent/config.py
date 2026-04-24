@@ -259,15 +259,15 @@ SECTIONS: List[SectionConfig] = [
                     },
                     {
                         "key": "wake_up_fresh", "label": "Wake Up Fresh",
-                        "type": "bool", "required": True,
+                        "type": "bool",
                     },
                     {
                         "key": "drowsy_day", "label": "Drowsy During Day",
-                        "type": "bool", "required": True,
+                        "type": "bool",
                     },
                     {
                         "key": "average_sleep_duration", "label": "Average Sleep Duration",
-                        "type": "string", "required": True,
+                        "type": "string",
                     },
                 ],
             },
