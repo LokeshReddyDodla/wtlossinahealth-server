@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -37,6 +38,11 @@ class PatientNotification(Base):
 
     read_at = Column(DateTime, nullable=True)
     dismissed_at = Column(DateTime, nullable=True)
-    # Server-side default so every writer gets a timestamp from the same
-    # clock (Postgres), avoiding drift between worker processes.
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    # Python-side default ensures a value is always sent, even if the DB
+    # column's server_default is missing on a given environment.
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        server_default=func.now(),
+    )
