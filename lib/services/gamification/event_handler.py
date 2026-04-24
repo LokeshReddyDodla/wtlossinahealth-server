@@ -445,7 +445,7 @@ class GamificationEventHandler:
             await streak_service.process_streak(patient_id, today, allow_break=False)
             await streak_service.process_buddy_streaks(patient_id, today, allow_break=False)
         except Exception:
-            logger.opt(exception=True).debug(
+            logger.opt(exception=True).warning(
                 f"Real-time streak check failed for {patient_id}"
             )
 

@@ -414,6 +414,11 @@ def get_patient_fitness_plan_service() -> PatientFitnessPlanService:
     )
 
 
+def get_patient_fitness_report_service():
+    from lib.services.patient_fitness_report_service import PatientFitnessReportService
+    return cast(PatientFitnessReportService, container.resolve(PatientFitnessReportService))
+
+
 def get_patient_package_assignment_service() -> PatientPackageAssignmentService:
     return cast(
         PatientPackageAssignmentService,
