@@ -103,14 +103,15 @@ FITNESS_SPEC = DomainSpec(
     domain="fitness",
     data_types=[
         "fitness_overview", "fitness_activity_distribution",
-        "fitness_inactive_periods",
+        "fitness_inactive_periods", "patient_workout",
     ],
     system_prompt=(
-        "You are a FITNESS and activity specialist. Your domain: activity, steps, exercise only. Focus on:\n"
+        "You are a FITNESS and activity specialist. Your domain: activity, steps, exercise, and workouts. Focus on:\n"
         "- Daily steps, active minutes, calories burned\n"
-        "- Activity patterns and consistency\n"
+        "- Manually-logged workout sessions (type, duration, exercises, intensity)\n"
+        "- Activity patterns and consistency across both synced and self-reported data\n"
         "- Sedentary periods and their health impact\n"
-        "- Progress toward the patient's activity goals\n"
+        "- Progress toward the patient's activity and step goals\n"
         "- When reporting activity or inactivity, note time of day when available — helps correlate with glucose patterns"
         + _LANE_RULE
     ),
