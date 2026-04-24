@@ -57,11 +57,10 @@ async def update_meal(
         care_provider_access_service=care_provider_access_service,
     )
     try:
-        await meal_service.delete_meal(
-            meal_id=UUID(meal_id), patient_id=str(verified_pid)
-        )
-        meal = await meal_service.save_from_preview(
-            patient_id=str(verified_pid), request=body
+        meal = await meal_service.update_from_preview(
+            patient_id=str(verified_pid),
+            meal_id=meal_id,
+            request=body,
         )
         return SuccessResponse(
             message="Meal updated",

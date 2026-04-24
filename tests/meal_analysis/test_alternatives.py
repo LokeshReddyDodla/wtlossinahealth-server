@@ -58,6 +58,12 @@ class TestPrepRecent:
 
 @pytest.mark.asyncio
 async def test_rank_returns_llm_output():
+    from lib.ai_foundation.agents.meal_analysis.contracts import (
+        EvidenceSource,
+        MealEvidenceRef,
+    )
+    import uuid as _uuid
+
     out = _LLMAlternativesOut(
         alternatives=[
             Alternative(
@@ -67,11 +73,24 @@ async def test_rank_returns_llm_output():
                 predicted_glucose_delta=-30,
                 source=AlternativeSource.HISTORY,
                 frequency_in_history=2,
+                evidence=[
+                    MealEvidenceRef(
+                        meal_id=_uuid.uuid4(),
+                        meal_name="Moong dosa",
+                        consumed_at=datetime.utcnow(),
+                        glucose_peak=132,
+                        glucose_peak_minutes_after=55,
+                    )
+                ],
             )
         ],
         pairings=[
             Pairing(
-                add="salad with lemon", reason="fiber helps blunt spike", benefit=PairingBenefit.FIBER
+                add="salad with lemon",
+                reason="fiber with carbs slows absorption",
+                benefit=PairingBenefit.FIBER,
+                source=EvidenceSource.GUIDELINE,
+                evidence="ADA suggests pairing fiber with carbs",
             )
         ],
     )

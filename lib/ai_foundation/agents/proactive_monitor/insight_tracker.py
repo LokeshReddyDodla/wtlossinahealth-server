@@ -166,6 +166,9 @@ class InsightTracker:
         self,
         patient_id: str,
         limit: int = 20,
+        *,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
     ) -> list[dict]:
         """Get recent insight history for a patient (newest first).
 
@@ -173,8 +176,20 @@ class InsightTracker:
         created by daily briefs to block afternoon/evening duplicate topics.
         """
         await self._maybe_ensure_indexes()
+        query: dict = {"patient_id": patient_id, "insight_id": {"$exists": True}}
+        if from_date is not None or to_date is not None:
+            range_clause: dict = {}
+            if from_date is not None:
+                range_clause["$gte"] = (
+                    from_date if from_date.tzinfo else from_date.replace(tzinfo=timezone.utc)
+                )
+            if to_date is not None:
+                range_clause["$lte"] = (
+                    to_date if to_date.tzinfo else to_date.replace(tzinfo=timezone.utc)
+                )
+            query["created_at"] = range_clause
         cursor = self._collection.find(
-            {"patient_id": patient_id, "insight_id": {"$exists": True}},
+            query,
             sort=[("created_at", -1)],
             limit=limit,
         )
