@@ -53,16 +53,12 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 logger = logging.getLogger(__name__)
 
 # Deterministic confirmation phrases — inject confirm_all when the LLM
-# missed it but the user clearly said yes or signalled they're done.
+# missed it but the user clearly said yes.
 _CONFIRM_PHRASES = {
     "confirm", "confirm all", "yes", "yes confirm", "yes, confirm",
     "go ahead", "looks good", "do it", "yes please", "yes, please",
     "confirm changes", "confirm these changes", "save", "save changes",
     "apply", "apply changes", "lgtm",
-    # "I'm done" family — treat as confirm when the draft has pending work
-    "nothing else", "nothing more", "ntg", "that's all", "thats all",
-    "done", "i'm done", "im done", "no more", "no more changes",
-    "no changes", "finish", "finished",
 }
 
 
@@ -254,13 +250,12 @@ class ProfileAgentService:
                         mode=report.mode,
                         next_field=next_field_key,
                     )
-                # One-tap confirm: apply immediately instead of transitioning
-                # to REVIEWING and asking "Shall I confirm?" again.
-                return await self._finalize_draft(
-                    draft=draft,
+                draft["state"] = DraftState.REVIEWING.value
+                return ProfileAgentChatResponse(
+                    reply=self._build_review_summary(draft_changes),
+                    state=DraftState.REVIEWING.value,
+                    mode=report.mode,
                     draft_changes=draft_changes,
-                    patient_id=patient_id,
-                    report=report,
                 )
 
             if dropped:
@@ -300,11 +295,55 @@ class ProfileAgentService:
                         state=DraftState.COLLECTING.value,
                         mode=report.mode,
                     )
-                return await self._finalize_draft(
-                    draft=draft,
-                    draft_changes=draft_changes,
-                    patient_id=patient_id,
-                    report=report,
+
+                coerced, errors = validate_draft(draft_changes)
+                if errors:
+                    draft["state"] = DraftState.COLLECTING.value
+                    msg = "Some values need fixing:\n" + "\n".join(f"• {e}" for e in errors)
+                    return ProfileAgentChatResponse(
+                        reply=msg,
+                        state=DraftState.COLLECTING.value,
+                        mode=report.mode,
+                        draft_changes=draft_changes,
+                    )
+
+                try:
+                    await self._apply_batch(patient_id, coerced)
+                except Exception:
+                    logger.exception("apply failed for patient %s", patient_id)
+                    return ProfileAgentChatResponse(
+                        reply="Something went wrong saving your changes. Please try again.",
+                        state=DraftState.REVIEWING.value,
+                        mode=report.mode,
+                        draft_changes=draft_changes,
+                    )
+
+                # Re-read the patient so we can prompt the next gap in the
+                # same turn instead of stranding the user after "Done!".
+                updated_patient = await self._fetch_patient(patient_id)
+                post_report = compute_gap_report(updated_patient, {})
+                next_missing = next_missing_field(post_report)
+
+                # Reset the draft so follow-up answers start a fresh batch
+                # in COLLECTING state on the next user message.
+                draft["state"] = DraftState.COLLECTING.value
+                draft["status"] = "collecting"
+                draft["draft_changes"] = {}
+                applied = {k: _stringify(v) for k, v in coerced.items()}
+                labels = ", ".join(
+                    FIELD_TO_CONFIG[f]["label"] for f in applied if f in FIELD_TO_CONFIG
+                )
+                reply = f"Done! Updated: {labels}."
+                if next_missing:
+                    reply += f" Next — what's your {next_missing.label.lower()}?"
+                else:
+                    reply += " Your profile is all set."
+                return ProfileAgentChatResponse(
+                    reply=reply,
+                    state=DraftState.COLLECTING.value,
+                    mode=post_report.mode,
+                    applied_changes=applied,
+                    next_field=next_missing.field if next_missing else None,
                 )
 
             # User made further edits while reviewing — bounce to COLLECTING.
@@ -325,54 +364,6 @@ class ProfileAgentService:
         )
 
     # ── Apply path ─────────────────────────────────────────────────────
-
-    async def _finalize_draft(
-        self,
-        *,
-        draft: Dict[str, Any],
-        draft_changes: Dict[str, Any],
-        patient_id: str,
-        report: GapReport,
-    ) -> ProfileAgentChatResponse:
-        """Validate + persist the draft in one shot.
-
-        Replaces the two-step "show summary → wait for yes → apply" flow
-        with a single tap so users don't have to confirm twice.
-        """
-        coerced, errors = validate_draft(draft_changes)
-        if errors:
-            draft["state"] = DraftState.COLLECTING.value
-            msg = "Some values need fixing:\n" + "\n".join(f"• {e}" for e in errors)
-            return ProfileAgentChatResponse(
-                reply=msg,
-                state=DraftState.COLLECTING.value,
-                mode=report.mode,
-                draft_changes=draft_changes,
-            )
-
-        try:
-            await self._apply_batch(patient_id, coerced)
-        except Exception:
-            logger.exception("apply failed for patient %s", patient_id)
-            return ProfileAgentChatResponse(
-                reply="Something went wrong saving your changes. Please try again.",
-                state=DraftState.COLLECTING.value,
-                mode=report.mode,
-                draft_changes=draft_changes,
-            )
-
-        draft["state"] = DraftState.COMPLETED.value
-        draft["status"] = "completed"
-        applied = {k: _stringify(v) for k, v in coerced.items()}
-        labels = ", ".join(
-            FIELD_TO_CONFIG[f]["label"] for f in applied if f in FIELD_TO_CONFIG
-        )
-        return ProfileAgentChatResponse(
-            reply=f"Done! Updated: {labels}.",
-            state=DraftState.COMPLETED.value,
-            mode=report.mode,
-            applied_changes=applied,
-        )
 
     @with_postgres_session
     async def _apply_batch(
