@@ -209,6 +209,7 @@ class TestDeleteOrdering:
         row = SimpleNamespace(
             id=UUID(workout_id),
             patient_id=UUID(patient_id),
+            date=date(2026, 4, 25),
         )
         session = FakeSession(results=[FakeResult(scalar_one_or_none=row)])
 
