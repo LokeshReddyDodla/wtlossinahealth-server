@@ -750,21 +750,6 @@ container.register(
 )
 
 
-# 🔹 Patient Fitness Report Service
-from lib.services.patient_fitness_report_service import PatientFitnessReportService
-
-container.register(
-    PatientFitnessReportService,
-    lambda: PatientFitnessReportService(
-        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
-        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
-        fitness_plan_service=cast(
-            PatientFitnessPlanService, container.resolve(PatientFitnessPlanService)
-        ),
-    ),
-)
-
-
 # 🔹 Patient Facility Transfer Service
 container.register(
     PatientFacilityTransferService,

@@ -245,7 +245,8 @@ def generate_workouts_query(
         type,
         count() AS session_count,
         SUM(dateDiff('minute', start_datetime, end_datetime)) AS total_duration,
-        SUM(value) AS total_energy
+        SUM(value) AS total_energy,
+        any(source_platform) AS source
     FROM
         aihealth.fitness_data
     WHERE
