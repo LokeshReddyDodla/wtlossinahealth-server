@@ -273,6 +273,7 @@ class FitnessStatsProcessor:
                 session_count=row[1],
                 total_duration=row[2],
                 total_energy=row[3],
+                source=row[4] if len(row) > 4 and row[4] else "synced",
             )
             for row in data
         ]
