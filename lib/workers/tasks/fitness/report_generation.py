@@ -269,6 +269,7 @@ async def _merge_manual_workouts(
                     total_duration=float(w.duration_minutes or 0),
                     total_energy=float(w.calories_burned or 0),
                     source=w.source or "app",
+                    workout_id=str(w.id),
                 )
                 for w in workouts
                 if r_start.date() <= w.date <= r_end.date()
