@@ -10,18 +10,11 @@ from lib.dependencies.report_access import (
 )
 from lib.dependencies.service_dependencies import get_fitness_report_service
 from lib.services.reports import FitnessReportService
-from lib.utils.datetime_utils import parse_datetime
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .api_schema import FitnessReportResponse, GetFitnessReportResponse
 from .router import router
-
-
-def _extract_dates(report: dict) -> tuple:
-    """Extract start/end datetimes from report metadata."""
-    dr = report.get("metadata", {}).get("date_range", {})
-    return parse_datetime(dr.get("start")), parse_datetime(dr.get("end"))
 
 
 @router.get(
@@ -63,8 +56,6 @@ async def get_daily_fitness_report(
             message="Fitness report retrieved successfully",
             data=FitnessReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=_extract_dates(report)[0],
-                end_date=_extract_dates(report)[1],
                 report_type="daily",
                 data=report,
             ),
@@ -115,8 +106,6 @@ async def get_weekly_fitness_report(
             message="Fitness report retrieved successfully",
             data=FitnessReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=_extract_dates(report)[0],
-                end_date=_extract_dates(report)[1],
                 report_type="weekly",
                 data=report,
             ),
@@ -173,8 +162,6 @@ async def get_monthly_fitness_report(
             message="Fitness report retrieved successfully",
             data=FitnessReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=_extract_dates(report)[0],
-                end_date=_extract_dates(report)[1],
                 report_type="monthly",
                 data=report,
             ),

@@ -59,8 +59,6 @@ async def list_fitness_reports(
         report_responses = [
             FitnessReportResponse(
                 patient_id=str(access_info.target_patient_id),
-                start_date=report.get("start_date"),
-                end_date=report.get("end_date"),
                 report_type=report.get("report_type", "daily"),
                 data=report,
             )
