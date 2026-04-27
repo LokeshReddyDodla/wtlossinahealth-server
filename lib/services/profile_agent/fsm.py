@@ -13,12 +13,31 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from lib.schemas.profile_agent import DraftState, LLMAction
-from lib.services.profile_agent.config import ALL_FIELD_KEYS, fields_with_user_provided_value
+from lib.services.profile_agent.config import (
+    ALL_FIELD_KEYS,
+    FIELD_TO_CONFIG,
+    FIELD_TO_SECTION,
+    fields_with_user_provided_value,
+)
+
+# Sections whose fields are never skippable. Even an optional field in
+# these sections must hold a real value (no "idk", "n/a", etc.) before
+# it can land in the draft.
+_NEVER_SKIP_SECTIONS = {"basic"}
 
 # Reducer signals
 SIG_CONTINUE = "continue"
 SIG_REVIEW = "review"
 SIG_CANCEL = "cancel"
+
+# Sentinel strings the LLM sometimes emits when the user said "idk".
+# Required fields must hold a real, typed value — these placeholders
+# would mask the gap and let the agent skip past mandatory questions.
+_PLACEHOLDER_VALUES = {
+    "idk", "i don't know", "i dont know", "dont know", "don't know",
+    "unknown", "unsure", "not sure", "no idea", "n/a", "na",
+    "skip", "pass", "none", "null", "-", "?",
+}
 
 
 def reduce_draft(
@@ -49,6 +68,16 @@ def reduce_draft(
                 continue
             if value is None or (isinstance(value, str) and value.strip() == ""):
                 continue
+            if isinstance(value, str) and value.strip().lower() in _PLACEHOLDER_VALUES:
+                # User said "idk"/"skip" and the LLM tried to set a sentinel
+                # value. Drop it so the field stays flagged as missing.
+                cfg = FIELD_TO_CONFIG.get(field, {})
+                if (
+                    cfg.get("required")
+                    or cfg.get("type") not in ("string", "list_of_string")
+                    or FIELD_TO_SECTION.get(field) in _NEVER_SKIP_SECTIONS
+                ):
+                    continue
             if (
                 field in hallucination_fields
                 and isinstance(value, str)

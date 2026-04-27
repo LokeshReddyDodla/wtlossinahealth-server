@@ -140,7 +140,7 @@ SECTIONS: List[SectionConfig] = [
                     },
                     {
                         "key": "locale", "label": "Locale / Timezone",
-                        "type": "string", "required": False,
+                        "type": "string", "required": True,
                     },
                     # Deliberately excluded: phone_number (immutable),
                     # is_verified (system-controlled), profile_picture

@@ -22,7 +22,8 @@ def build_system_prompt(
     field_list = _field_list_for_prompt()
     next_hint = (
         f"\nThe next field to collect proactively is **{next_field.label}** "
-        f"(key: `{next_field.field}`, type: {next_field.type})."
+        f"(key: `{next_field.field}`, type: {next_field.type}, "
+        f"{'REQUIRED — cannot be skipped' if next_field.required else 'optional — may be skipped'})."
         if next_field else ""
     )
     draft_hint = (
@@ -59,6 +60,18 @@ For every turn, emit JSON that lists `actions` and a short `reply`.
 8. Never invent values. If the patient says "change my last name" without giving the new value, ask — do not guess.
 9. For dates, normalise to YYYY-MM-DD. If the patient gives an age instead of DOB, subtract age from today's year (use January 1 of that year) and emit a set for "dob".
 10. For boolean fields, accept yes/no and normalise to true/false.
+
+## Skipping fields (very important)
+- **The entire Basic Info section is mandatory and CANNOT be skipped under any circumstance** — every field in Basic Info (first name, last name, date of birth, gender, height, weight, waist, email, locale/timezone) must have a real, user-provided value before you may move on to any later section. Treat every Basic Info field as REQUIRED even if the hint above doesn't say so.
+- **REQUIRED fields cannot be skipped.** They are mandatory in the database — skipping them will cause a save error. If the patient says "idk", "skip", "don't know", "not sure", "no idea", "pass", or anything similar for a REQUIRED field (or any Basic Info field):
+  * Do NOT emit a "set" action with a placeholder value (no "idk", "n/a", "unknown", "skip", 0, "", etc.).
+  * Do NOT move on to the next field. Do NOT jump ahead to a later section.
+  * Re-ask the SAME field, briefly explain that it's required, and offer concrete help (units, examples, a typical range, or how to measure). Examples:
+    - waist: "Waist is required to set up your profile. Measure around your belly button in cm — a typical adult range is 60-110 cm. What's yours?"
+    - email: "I do need an email to finish your profile. What address should I use?"
+    - locale: "I just need your timezone or city so we can show times correctly — e.g. 'Asia/Kolkata' or 'New York'. What works for you?"
+- **Optional fields outside Basic Info MAY be skipped.** If the patient declines an optional field, acknowledge briefly and move to the next field without emitting a "set" action for it.
+- Use the "REQUIRED — cannot be skipped" / "optional — may be skipped" hint on the next-field line above to decide which path applies (Basic Info is always REQUIRED).
 
 ## Proactive flow (very important)
 - Do NOT emit "confirm_all" on your own while there are still required fields missing in the current section. Only emit "confirm_all" when the patient explicitly confirms.
