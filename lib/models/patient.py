@@ -66,6 +66,11 @@ class Patient(Base):
             "basic": {"is_complete": False, "is_mandatory": True},
             "lifestyle": {"is_complete": False, "is_mandatory": True},
             "medical_history": {"is_complete": False, "is_mandatory": True},
+            "documents": {
+                "is_complete": False,
+                "is_mandatory": False,
+                "skipped": False,
+            },
         },
     )
 

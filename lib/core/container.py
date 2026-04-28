@@ -95,6 +95,8 @@ from lib.services.patient_fitness_plan_service import PatientFitnessPlanService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.profile_update_agent import ProfileUpdateAgentService
 from lib.services.profile_agent import ProfileAgentService
+from lib.services.profile_agent.documents.service import ProfileAgentDocumentsService
+from lib.services.patient_documents_overview import PatientDocumentsOverviewService
 from lib.services.vector import PatientProfileVectorService
 from lib.services.vector.plans import PlansVectorService
 from lib.services.patient_sleep_service import PatientSleepService
@@ -283,6 +285,13 @@ container.register(
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "patient_documents"
     ),
+)
+container.register(
+    "patient_documents_overview_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "patient_documents_overview"
+    ),
+    scope=Scope.singleton,
 )
 container.register(
     "patient_document_summary_interactions_collection",
@@ -1502,6 +1511,31 @@ container.register(
         ),
         conversation_collection=container.resolve(
             "profile_agent_conversations_collection"
+        ),
+    ),
+)
+
+# 🔹 Patient Documents Overview Service (cross-document narrative + link groups)
+container.register(
+    PatientDocumentsOverviewService,
+    lambda: PatientDocumentsOverviewService(
+        overview_collection=container.resolve(
+            "patient_documents_overview_collection"
+        ),
+    ),
+)
+
+# 🔹 Profile Agent Documents Service (patient-facing reads + lifecycle)
+container.register(
+    ProfileAgentDocumentsService,
+    lambda: ProfileAgentDocumentsService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        patient_document_service=cast(
+            PatientDocumentService, container.resolve(PatientDocumentService)
+        ),
+        overview_service=cast(
+            PatientDocumentsOverviewService,
+            container.resolve(PatientDocumentsOverviewService),
         ),
     ),
 )

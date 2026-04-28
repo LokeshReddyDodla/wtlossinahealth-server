@@ -26,6 +26,7 @@ class PatientDietPlanService:
     def __init__(
         self,
         postgres_store: PostgresStore,
+        
         plans_vector_service: PlansVectorService,
         patient_profile_service: PatientProfileService,
     ):
