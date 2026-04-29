@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from lib.schemas.patient_diet_plan import DietMealSlot
 
@@ -119,20 +119,30 @@ class ExtractedFoodItem(BaseModel):
             "from name + portion + unit."
         ),
     )
-    micros: MicroSet | None = None
+    micros: MicroSet = Field(default_factory=MicroSet)
     portion_confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     needs_confirmation: bool = False
     tags: list[str] = Field(default_factory=list)
+
+    @field_validator("macros", "micros", mode="before")
+    @classmethod
+    def _coerce_null_nutrition(cls, v: object) -> object:
+        return v if v is not None else {}
 
 
 class MealExtraction(BaseModel):
     name: str = Field(..., description="Human-readable meal name, e.g. 'Aloo paratha with curd'")
     items: list[ExtractedFoodItem]
-    total_macros: MacroSet
-    total_micros: MicroSet | None = None
+    total_macros: MacroSet = Field(default_factory=MacroSet)
+    total_micros: MicroSet = Field(default_factory=MicroSet)
     tags: list[str] = Field(default_factory=list, description="e.g. high_carb, fried, plant_based")
     cuisine: str | None = None
     overall_confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+
+    @field_validator("total_macros", "total_micros", mode="before")
+    @classmethod
+    def _coerce_null_totals(cls, v: object) -> object:
+        return v if v is not None else {}
 
 
 # ---------------------------------------------------------------------------
