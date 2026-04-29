@@ -75,7 +75,8 @@ class TestEnsureTotals:
         assert ex.total_macros.calories == 100
         assert ex.total_macros.carbs == 20
 
-    def test_keeps_non_zero_totals(self):
+    def test_overrides_llm_totals_with_item_sum(self):
+        """Items are the source of truth. LLM totals are advisory and recomputed."""
         items = [_item(cals=100)]
         ex = MealExtraction(
             name="x",
@@ -84,7 +85,7 @@ class TestEnsureTotals:
             overall_confidence=ConfidenceLevel.HIGH,
         )
         _ensure_totals(ex)
-        assert ex.total_macros.calories == 999
+        assert ex.total_macros.calories == 100
 
 
 class TestLowestConfidence:
