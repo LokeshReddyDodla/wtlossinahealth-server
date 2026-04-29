@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from sqlalchemy import func, or_, select
@@ -11,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.core.postgres_store import PostgresStore
 from lib.models.exercise import Exercise
 from lib.schemas.exercise import (
+    ExerciseCreate,
     ExerciseFacetsResponse,
     ExerciseResponse,
     ExerciseSearchResponse,
+    ExerciseUpdate,
 )
 from lib.utils.postgres_session_decorator import with_postgres_session
 
@@ -139,3 +142,99 @@ class ExerciseService:
             categories=list(categories),
             levels=list(levels),
         )
+
+    @staticmethod
+    def _slugify(name: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_\-]", "_", name).strip("_")
+
+    @staticmethod
+    def _build_tsv_text(values: dict) -> str:
+        parts = [values["name"]]
+        parts.extend(values.get("primary_muscles") or [])
+        parts.extend(values.get("secondary_muscles") or [])
+        if values.get("equipment"):
+            parts.append(values["equipment"])
+        if values.get("category"):
+            parts.append(values["category"])
+        return " ".join(parts)
+
+    @with_postgres_session
+    async def create(
+        self,
+        data: ExerciseCreate,
+        *,
+        postgres_session: AsyncSession,
+    ) -> tuple[ExerciseResponse, bool]:
+        """Create an exercise. Returns (response, created) — created=False means name already exists."""
+        exercise_id = self._slugify(data.name)
+        existing = (
+            await postgres_session.execute(
+                select(Exercise).where(Exercise.id == exercise_id)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return self.to_response(existing), False
+
+        values = data.model_dump()
+        row = Exercise(
+            id=exercise_id,
+            **values,
+            search_tsv=func.to_tsvector("english", self._build_tsv_text(values)),
+        )
+        postgres_session.add(row)
+        await postgres_session.commit()
+        await postgres_session.refresh(row)
+        return self.to_response(row), True
+
+    @with_postgres_session
+    async def update(
+        self,
+        exercise_id: str,
+        data: ExerciseUpdate,
+        *,
+        postgres_session: AsyncSession,
+    ) -> Optional[ExerciseResponse]:
+        """Partial update. Returns None if exercise not found."""
+        row = (
+            await postgres_session.execute(
+                select(Exercise).where(Exercise.id == exercise_id)
+            )
+        ).scalar_one_or_none()
+        if not row:
+            return None
+
+        changes = data.model_dump(exclude_none=True)
+        for field, value in changes.items():
+            setattr(row, field, value)
+
+        tsv_values = {
+            "name": row.name,
+            "primary_muscles": row.primary_muscles,
+            "secondary_muscles": row.secondary_muscles,
+            "equipment": row.equipment,
+            "category": row.category,
+        }
+        row.search_tsv = func.to_tsvector("english", self._build_tsv_text(tsv_values))
+
+        await postgres_session.commit()
+        await postgres_session.refresh(row)
+        return self.to_response(row)
+
+    @with_postgres_session
+    async def delete(
+        self,
+        exercise_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> bool:
+        """Delete an exercise. Returns False if not found."""
+        row = (
+            await postgres_session.execute(
+                select(Exercise).where(Exercise.id == exercise_id)
+            )
+        ).scalar_one_or_none()
+        if not row:
+            return False
+        await postgres_session.delete(row)
+        await postgres_session.commit()
+        return True

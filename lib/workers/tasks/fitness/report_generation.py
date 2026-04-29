@@ -1,10 +1,14 @@
 """Fitness Report Generation Tasks - Optimized."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List
+from uuid import UUID
 
 from loguru import logger
+from sqlalchemy import select
 
+from lib.models.patient_workout import PatientWorkout
+from lib.schemas.fitness_stats import WorkoutSummary
 from lib.services.reports import FitnessReportType
 from lib.utils.date_utils import get_month_start_end, get_months_between_dates
 from lib.utils.datetime_utils import normalize_to_date_iso, parse_datetime
@@ -201,6 +205,11 @@ async def _generate_monthly_reports(
                 "reason": "no_data",
             }
 
+        # Merge manual workouts from Postgres into each report
+        await _merge_manual_workouts(
+            patient_id, reports, start_date.date(), end_date.date()
+        )
+
         await service.save_reports_bulk(patient_id, reports)
 
         logger.info(
@@ -222,6 +231,55 @@ async def _generate_monthly_reports(
             "start": start_date.isoformat(),
             "error": str(e),
         }
+
+
+async def _merge_manual_workouts(
+    patient_id: str, reports: list, start_date: date, end_date: date
+) -> None:
+    """Fetch manual workouts from Postgres and merge into report workout lists."""
+    try:
+        from lib.core.container import container
+        from lib.core.postgres_store import PostgresStore
+
+        postgres_store = container.resolve(PostgresStore)
+
+        async with postgres_store.get_session() as session:
+            result = await session.execute(
+                select(PatientWorkout).where(
+                    PatientWorkout.patient_id == UUID(patient_id),
+                    PatientWorkout.date >= start_date,
+                    PatientWorkout.date <= end_date,
+                )
+            )
+            workouts = result.scalars().all()
+
+        if not workouts:
+            return
+
+        for report in reports:
+            r_start = parse_datetime(report.metadata.date_range.start)
+            r_end = parse_datetime(report.metadata.date_range.end)
+            if not r_start or not r_end:
+                continue
+
+            matching = [
+                WorkoutSummary(
+                    type=w.type or "other",
+                    session_count=1,
+                    total_duration=float(w.duration_minutes or 0),
+                    total_energy=float(w.calories_burned or 0),
+                    source=w.source or "app",
+                    workout_id=str(w.id),
+                )
+                for w in workouts
+                if r_start.date() <= w.date <= r_end.date()
+            ]
+
+            if matching:
+                report.workouts = (report.workouts or []) + matching
+
+    except Exception as e:
+        logger.warning(f"Failed to merge manual workouts for {patient_id}: {e}")
 
 
 async def _enqueue_fitness_upload(

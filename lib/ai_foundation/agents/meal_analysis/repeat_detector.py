@@ -35,12 +35,24 @@ def detect_repeat(
 ) -> RepeatFlag:
     """Produce a RepeatFlag based on extraction vs context.today/recent."""
     today_for_slot = (context.today_meals_by_slot or {}).get(slot, [])
-    slot_collision: PatientMealRef | None = today_for_slot[0] if today_for_slot else None
+    slot_collision: PatientMealRef | None = _pick_slot_collision(
+        extraction=extraction,
+        today_for_slot=today_for_slot,
+        recent_meals=context.recent_meals,
+        slot=slot,
+    )
 
     prev = _most_recent(context.recent_meals)
     same_as_prev: PatientMealRef | None = None
     if prev is not None and _names_match(extraction, prev):
         same_as_prev = _to_ref(prev)
+
+    if (
+        same_as_prev is not None
+        and slot_collision is not None
+        and same_as_prev.meal_id == slot_collision.meal_id
+    ):
+        same_as_prev = None
 
     count_7d = _count_in_last_days(
         extraction=extraction,
@@ -67,6 +79,44 @@ def detect_repeat(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _pick_slot_collision(
+    *,
+    extraction: MealExtraction,
+    today_for_slot: list[PatientMealRef],
+    recent_meals: list[dict[str, Any]],
+    slot: MealSlot,
+) -> PatientMealRef | None:
+    """Select the meal (if any) that counts as "already logged this slot".
+
+    For BREAKFAST / LUNCH / DINNER: any existing meal in the slot collides —
+    the app assumes one entry per main-meal slot per day.
+
+    For SNACK: only collide when the food matches an existing snack — users
+    legitimately log several distinct snacks per day. Matching prefers
+    item-overlap via `recent_meals` (has full items) and falls back to
+    name-only match for snacks that Qdrant hasn't indexed yet.
+    """
+    if not today_for_slot:
+        return None
+    if slot != MealSlot.SNACK:
+        return today_for_slot[0]
+
+    recent_by_id = {
+        str(m.get("meal_id")): m for m in recent_meals if m.get("meal_id")
+    }
+    for ref in today_for_slot:
+        prior = recent_by_id.get(str(ref.meal_id))
+        if prior is not None:
+            if _names_match(extraction, prior):
+                return ref
+            continue
+        ext_name = (extraction.name or "").strip().lower()
+        ref_name = (ref.meal_name or "").strip().lower()
+        if ext_name and ref_name and ext_name == ref_name:
+            return ref
+    return None
 
 
 def _most_recent(recent: list[dict[str, Any]]) -> dict[str, Any] | None:

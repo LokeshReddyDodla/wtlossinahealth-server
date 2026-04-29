@@ -2,7 +2,33 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ExerciseCreate(BaseModel):
+    name: str
+    level: str = Field(..., description="beginner, intermediate, expert")
+    category: str = Field(..., description="strength, cardio, stretching, plyometrics, ...")
+    force: str | None = None
+    mechanic: str | None = None
+    equipment: str | None = None
+    primary_muscles: list[str] = []
+    secondary_muscles: list[str] = []
+    instructions: list[str] = []
+    image_urls: list[str] = []
+
+
+class ExerciseUpdate(BaseModel):
+    name: str | None = None
+    level: str | None = None
+    category: str | None = None
+    force: str | None = None
+    mechanic: str | None = None
+    equipment: str | None = None
+    primary_muscles: list[str] | None = None
+    secondary_muscles: list[str] | None = None
+    instructions: list[str] | None = None
+    image_urls: list[str] | None = None
 
 
 class ExerciseResponse(BaseModel):

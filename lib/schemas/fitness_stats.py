@@ -91,6 +91,8 @@ class WorkoutSummary(BaseModel):
     session_count: int
     total_duration: float
     total_energy: float
+    source: str = "app"  # actual source_platform from sync, or "app" for manual
+    workout_id: Optional[str] = None  # UUID for manual workouts, None for synced
 
 
 class FitnessStats(BaseModel):

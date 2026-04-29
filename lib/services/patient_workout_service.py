@@ -157,6 +157,7 @@ class PatientWorkoutService:
 
         response = self._to_response(workout)
         self._fire_vector(patient_id, response)
+        self._fire_report_regeneration(patient_id, workout.date)
         await self._fire_gamification(patient_id)
         return response
 
@@ -286,6 +287,7 @@ class PatientWorkoutService:
 
         response = self._to_response(row)
         self._fire_vector(patient_id, response)
+        self._fire_report_regeneration(patient_id, row.date)
         return response
 
     @with_postgres_session
@@ -306,6 +308,7 @@ class PatientWorkoutService:
         ).scalar_one_or_none()
         if not row:
             return False
+        workout_date = row.date
         await postgres_session.delete(row)
         await postgres_session.commit()
 
@@ -318,6 +321,7 @@ class PatientWorkoutService:
         except Exception as e:
             logger.warning(f"Failed to delete workout vector {workout_id}: {e}")
 
+        self._fire_report_regeneration(patient_id, workout_date)
         return True
 
     # ── Side effects (fire-and-forget) ───────────────────────────────────
@@ -336,6 +340,24 @@ class PatientWorkoutService:
             )
         except Exception as e:
             logger.warning(f"Failed to enqueue workout vector: {e}")
+
+    @staticmethod
+    def _fire_report_regeneration(patient_id: str, workout_date) -> None:
+        """Enqueue fitness report regeneration so MongoDB reports include this workout."""
+        try:
+            from datetime import datetime, time
+            from lib.workers.tasks.fitness.enqueue import (
+                enqueue_process_fitness_upload_sync,
+            )
+            start_dt = datetime.combine(workout_date, time.min)
+            end_dt = datetime.combine(workout_date, time.max)
+            enqueue_process_fitness_upload_sync(
+                patient_id=str(patient_id),
+                start_date=start_dt,
+                end_date=end_dt,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to enqueue report regeneration: {e}")
 
     @staticmethod
     async def _fire_gamification(patient_id: str) -> None:
