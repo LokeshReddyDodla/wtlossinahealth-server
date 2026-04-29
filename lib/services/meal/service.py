@@ -815,14 +815,13 @@ def _attach_items_and_totals(meal: PatientMealModel, ext: Any) -> None:
             fats=it.macros.fat,
             fiber=it.macros.fiber,
         )
-        if it.micros is not None:
-            food_item.micro_nutritional_values = PatientMicroNutritionalValueModel(
-                food_item_id=food_item.id,
-                calcium=it.micros.calcium_mg or 0,
-                iron=it.micros.iron_mg or 0,
-                zinc=it.micros.zinc_mg or 0,
-                magnesium=it.micros.magnesium_mg or 0,
-            )
+        food_item.micro_nutritional_values = PatientMicroNutritionalValueModel(
+            food_item_id=food_item.id,
+            calcium=it.micros.calcium_mg or 0,
+            iron=it.micros.iron_mg or 0,
+            zinc=it.micros.zinc_mg or 0,
+            magnesium=it.micros.magnesium_mg or 0,
+        )
         food_items.append(food_item)
     meal.items = food_items
 
@@ -836,11 +835,10 @@ def _attach_items_and_totals(meal: PatientMealModel, ext: Any) -> None:
         fats=ext.total_macros.fat,
         fiber=ext.total_macros.fiber,
     )
-    if ext.total_micros is not None:
-        meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
-            meal_id=meal.id,
-            calcium=ext.total_micros.calcium_mg or 0,
-            iron=ext.total_micros.iron_mg or 0,
-            zinc=ext.total_micros.zinc_mg or 0,
-            magnesium=ext.total_micros.magnesium_mg or 0,
-        )
+    meal.total_micro_nutritional_value = PatientTotalMicroNutritionalValueModel(
+        meal_id=meal.id,
+        calcium=ext.total_micros.calcium_mg or 0,
+        iron=ext.total_micros.iron_mg or 0,
+        zinc=ext.total_micros.zinc_mg or 0,
+        magnesium=ext.total_micros.magnesium_mg or 0,
+    )
