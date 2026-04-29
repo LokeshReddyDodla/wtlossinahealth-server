@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Meta types that must NEVER be pruned (system instructions + current question)
-CRITICAL_TYPES = frozenset({"system_prompt", "instruction", "user_question", "evidence_summary"})
+CRITICAL_TYPES = frozenset({"system_prompt", "instruction", "user_question", "evidence_summary", "pinned_insight"})
 
 # Floor for _hard_truncate_oldest — never truncate below this many characters
 MIN_TRUNCATION_CHARS = 500
