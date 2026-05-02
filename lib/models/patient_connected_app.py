@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from lib.models import Base
@@ -40,6 +40,17 @@ class PatientLibreView(Base):
     connected_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )
+
+    # LibreLinkUp follower-API live polling (sibling to the CSV export path).
+    # Same Abbott account, different endpoint family. Trial: default-on for
+    # all rows; flips off automatically on repeated 401/403.
+    llu_enabled = Column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+        nullable=False,
+    )
+    llu_last_sync_timestamp = Column(DateTime, nullable=True)
 
     connected_app = relationship(
         "PatientConnectedApp", back_populates="libreview"

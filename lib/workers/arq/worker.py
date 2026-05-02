@@ -17,6 +17,9 @@ def _get_all_cron_jobs():
     cron_jobs = []
 
     from lib.workers.tasks.device import get_cron_jobs as get_device_cron_jobs
+    from lib.workers.tasks.librelink_up import (
+        get_cron_jobs as get_librelink_up_cron_jobs,
+    )
     from lib.workers.tasks.libreview import get_cron_jobs as get_libreview_cron_jobs
     from lib.workers.tasks.meal import get_cron_jobs as get_meal_cron_jobs
     from lib.workers.tasks.package import get_cron_jobs as get_package_cron_jobs
@@ -31,6 +34,7 @@ def _get_all_cron_jobs():
     from lib.workers.tasks.platform.cron import PLATFORM_CRON_JOBS
 
     cron_jobs.extend(get_device_cron_jobs())
+    cron_jobs.extend(get_librelink_up_cron_jobs())
     cron_jobs.extend(get_libreview_cron_jobs())
     cron_jobs.extend(get_meal_cron_jobs())
     cron_jobs.extend(get_package_cron_jobs())

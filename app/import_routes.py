@@ -21,6 +21,7 @@ from rest_server.patient_onboarding_agent.router import (
 )
 from rest_server.system_management import reload_cache
 from rest_server.test import test
+from rest_server.test.librelink_up import router as test_llu_router
 from rest_server.intake.router import router as intake_router
 from rest_server.safety.router import router as safety_router
 from rest_server.plan.router import router as plan_router
@@ -125,6 +126,7 @@ def import_routes(app: FastAPI) -> None:
     # Test
     ###########################################################################
     app.include_router(test.router)
+    app.include_router(test_llu_router)
 
     ###########################################################################
     # DUMP
