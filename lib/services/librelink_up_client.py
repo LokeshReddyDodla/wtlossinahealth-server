@@ -125,12 +125,21 @@ class LibreLinkUpClient:
             self.AUTH_LOCK_KEY, "1", expire=self.LOCK_TTL, nx=True
         )
         if not lock:
-            await asyncio.sleep(1)
-            token = self.cache_store.get_key(self.AUTH_TOKEN_KEY)
-            account_id = self.cache_store.get_key(self.AUTH_ACCOUNT_ID_KEY)
-            base_url = self.cache_store.get_key(self.AUTH_BASE_URL_KEY)
-            if token and account_id and base_url:
-                return token.decode(), account_id.decode(), base_url.decode()
+            # Another caller holds the login lock. A real Abbott login can
+            # take several seconds (region redirect + chained TOU/PP acks),
+            # so wait up to LOCK_TTL polling for the cached token rather
+            # than bailing after a single short sleep.
+            for _ in range(self.LOCK_TTL):
+                await asyncio.sleep(1)
+                token = self.cache_store.get_key(self.AUTH_TOKEN_KEY)
+                account_id = self.cache_store.get_key(self.AUTH_ACCOUNT_ID_KEY)
+                base_url = self.cache_store.get_key(self.AUTH_BASE_URL_KEY)
+                if token and account_id and base_url:
+                    return (
+                        token.decode(),
+                        account_id.decode(),
+                        base_url.decode(),
+                    )
             raise RuntimeError("LibreLinkUp auth unavailable (lock held)")
 
         try:
