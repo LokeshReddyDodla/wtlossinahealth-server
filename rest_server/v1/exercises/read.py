@@ -8,6 +8,10 @@ from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.service_dependencies import get_exercise_service
 from lib.services.exercise_service import ExerciseService
+from lib.utils.care_provider_permissions import (
+    CareProviderFeature,
+    CareProviderPermissionAction,
+)
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -22,15 +26,37 @@ _READ_ROLES = [
 
 @router.get("/search", response_model=SuccessResponse)
 async def search_exercises(
-    q: Optional[str] = Query(None, description="Full-text query on name/muscles/equipment"),
-    muscle: Optional[List[str]] = Query(None, description="Filter by primary muscle(s), e.g. ?muscle=chest&muscle=shoulders"),
-    equipment: Optional[List[str]] = Query(None, description="Filter by equipment(s), e.g. ?equipment=barbell&equipment=dumbbell"),
-    category: Optional[List[str]] = Query(None, description="strength, cardio, stretching, ..."),
-    level: Optional[List[str]] = Query(None, description="beginner, intermediate, expert"),
+    q: Optional[str] = Query(
+        None, description="Full-text query on name/muscles/equipment"
+    ),
+    muscle: Optional[List[str]] = Query(
+        None,
+        description="Filter by primary muscle(s), e.g. ?muscle=chest&muscle=shoulders",
+    ),
+    equipment: Optional[List[str]] = Query(
+        None,
+        description="Filter by equipment(s), e.g. ?equipment=barbell&equipment=dumbbell",
+    ),
+    category: Optional[List[str]] = Query(
+        None, description="strength, cardio, stretching, ..."
+    ),
+    level: Optional[List[str]] = Query(
+        None, description="beginner, intermediate, expert"
+    ),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     exercise_service: ExerciseService = Depends(get_exercise_service),
-    current_actor: Actor = Depends(get_current_actor(allowed_roles=_READ_ROLES)),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.ADMIN,
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.PATIENT,
+            ],
+            care_provider_feature=CareProviderFeature.FITNESS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
 ):
     """Search the exercise catalog. All filters are optional and combine via AND."""
     result = await exercise_service.search(
@@ -51,7 +77,17 @@ async def search_exercises(
 @router.get("/facets", response_model=SuccessResponse)
 async def get_exercise_facets(
     exercise_service: ExerciseService = Depends(get_exercise_service),
-    current_actor: Actor = Depends(get_current_actor(allowed_roles=_READ_ROLES)),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.ADMIN,
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.PATIENT,
+            ],
+            care_provider_feature=CareProviderFeature.FITNESS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
 ):
     """Return distinct muscle/equipment/category/level values — useful for filter dropdowns."""
     facets = await exercise_service.get_facets()
@@ -65,7 +101,17 @@ async def get_exercise_facets(
 async def get_exercise(
     exercise_id: str,
     exercise_service: ExerciseService = Depends(get_exercise_service),
-    current_actor: Actor = Depends(get_current_actor(allowed_roles=_READ_ROLES)),
+    current_actor: Actor = Depends(
+        get_current_actor(
+            allowed_roles=[
+                ProfileTypeEnum.ADMIN,
+                ProfileTypeEnum.CARE_PROVIDER,
+                ProfileTypeEnum.PATIENT,
+            ],
+            care_provider_feature=CareProviderFeature.FITNESS,
+            care_provider_action=CareProviderPermissionAction.READ,
+        )
+    ),
 ):
     """Get a single exercise by id (slug, e.g. 'Barbell_Bench_Press_-_Medium_Grip')."""
     ex = await exercise_service.get_by_id(exercise_id)
