@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.agents.core.refs import Ref, ResolvedRef, resolve_refs
 from lib.services.gamification.time_utils import local_now
 
 if TYPE_CHECKING:
@@ -38,8 +39,10 @@ class AgentContext(BaseModel):
     thread_summary: str | None = None
     patient_names: dict[str, str] = Field(default_factory=dict)
     recent_insights: list[dict] = Field(default_factory=list)
-    pinned_insight: dict | None = None  # specific insight the user tapped from a notification
+    pinned_refs: list[ResolvedRef] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
+
+    model_config = {"arbitrary_types_allowed": True}
     gamification: dict[str, Any] | None = None
     medications_text: str | None = None  # all medications (active + past) from Qdrant
     # Panel (multi-patient) mode — keyed by patient_id
@@ -196,25 +199,25 @@ def build_context_messages(
         tagged = {**msg, "_meta": {"type": "history"}}
         messages.append(tagged)
 
-    # Pinned insight — injected last so it's the freshest context before the question
-    if context.pinned_insight:
-        ins = context.pinned_insight
+    # Pinned refs — injected last so they're the freshest context before the question.
+    # One system message per ref so each is independently traceable / prunable.
+    for ref in context.pinned_refs:
         lines = [
-            "USER TAPPED THIS NOTIFICATION:",
-            f"Title: {ins.get('title', '')}",
-            f"Message: {ins.get('message', '')}",
-            f"Category: {ins.get('category', '')} | Severity: {ins.get('severity', '')}",
+            f"USER REFERENCED THIS {ref.type.value.upper()}:",
+            f"Title: {ref.title}",
         ]
-        if ins.get("created_at"):
-            lines.append(f"Sent: {ins['created_at']}")
+        if ref.summary:
+            lines.append(ref.summary)
+        if ref.occurred_at:
+            lines.append(f"Occurred: {ref.occurred_at}")
         lines.append(
-            "\nThe user's question is specifically about this notification. "
-            "Anchor your investigation to the date it was sent."
+            "\nThe user's question is specifically about this entity. "
+            "Anchor your investigation to it."
         )
         messages.append({
             "role": "system",
             "content": "\n".join(lines),
-            "_meta": {"type": "pinned_insight"},
+            "_meta": {"type": "pinned_ref", "ref_type": ref.type.value, "ref_id": ref.id},
         })
 
     # User's question
@@ -250,7 +253,7 @@ class ContextLoader:
         patient_id: str | None = None,
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
-        insight_id: str | None = None,
+        refs: list[Ref] | None = None,
     ) -> AgentContext:
         """Load all context in parallel. Panel mode (>1 patient) loads per-patient facts/insights."""
         import asyncio
@@ -280,7 +283,7 @@ class ContextLoader:
             )
 
         # Single-patient mode: original behaviour
-        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_insight = await asyncio.gather(
+        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs = await asyncio.gather(
             self._load_facts(patient_id),
             self._load_history(thread_id),
             self._load_summary(thread_id),
@@ -289,7 +292,7 @@ class ContextLoader:
             self._load_gamification(patient_id),
             self._load_local_time(patient_id),
             self._load_medications(patient_id),
-            self._load_pinned_insight(insight_id, patient_id),
+            self._load_pinned_refs(refs, patient_id),
         )
 
         return AgentContext(
@@ -301,7 +304,7 @@ class ContextLoader:
             gamification=gamification,
             local_time=local_time,
             medications_text=medications_text,
-            pinned_insight=pinned_insight,
+            pinned_refs=pinned_refs,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -378,46 +381,28 @@ class ContextLoader:
             logger.debug("Failed to load recent insights: %s", exc)
             return []
 
-    async def _load_pinned_insight(self, insight_id: str | None, patient_id: str | None) -> dict | None:
-        if not self._insight_tracker or not insight_id:
-            return None
+    async def _load_pinned_refs(
+        self, refs: list[Ref] | None, patient_id: str | None
+    ) -> list[ResolvedRef]:
+        if not refs or not patient_id:
+            return []
+        tz_name: str | None = None
+        if self._resolver:
+            try:
+                timezones = await self._resolver.resolve_timezones([patient_id])
+                tz_name = timezones.get(patient_id)
+            except Exception as exc:
+                logger.debug("Failed to resolve tz for pinned refs: %s", exc)
         try:
-            from datetime import timezone
-            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-            doc = await self._insight_tracker.get_by_insight_id(insight_id)
-            if not doc:
-                return None
-
-            created_at = doc.get("created_at")
-            if created_at:
-                try:
-                    tz_name = None
-                    if self._resolver and patient_id:
-                        timezones = await self._resolver.resolve_timezones([patient_id])
-                        tz_name = timezones.get(patient_id)
-                    if tz_name:
-                        aware = created_at.replace(tzinfo=timezone.utc) if created_at.tzinfo is None else created_at
-                        local_dt = aware.astimezone(ZoneInfo(tz_name))
-                        created_at_str = local_dt.strftime("%b %d, %Y at %I:%M %p %Z")
-                    else:
-                        created_at_str = created_at.strftime("%b %d, %Y at %I:%M %p UTC")
-                except (ZoneInfoNotFoundError, Exception):
-                    created_at_str = str(created_at)
-            else:
-                created_at_str = None
-
-            return {
-                "insight_id": doc.get("insight_id", ""),
-                "title": doc.get("title", ""),
-                "message": doc.get("message", ""),
-                "category": doc.get("category", ""),
-                "severity": doc.get("severity", ""),
-                "created_at": created_at_str,
-            }
+            return await resolve_refs(
+                patient_id=patient_id,
+                refs=refs,
+                tz=tz_name,
+                insight_tracker=self._insight_tracker,
+            )
         except Exception as exc:
-            logger.debug("Failed to load pinned insight %s: %s", insight_id, exc)
-            return None
+            logger.debug("Failed to resolve pinned refs: %s", exc)
+            return []
 
     async def _load_gamification(self, patient_id: str | None) -> dict[str, Any] | None:
         if not patient_id or not self._gamification_service:

@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.agents.core.refs import Ref
+
 
 class RequestPriority(str, Enum):
     """Priority levels for request routing and rate limiting."""
@@ -39,6 +41,10 @@ class AgentContext(BaseModel):
     patient_ids: list[str] = Field(
         default_factory=list,
         description="For care providers querying multiple patients.",
+    )
+    refs: list[Ref] = Field(
+        default_factory=list,
+        description="Typed entity references the user is talking about (meal, cgm_report, insight, ...).",
     )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
