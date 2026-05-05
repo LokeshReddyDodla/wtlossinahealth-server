@@ -404,12 +404,11 @@ class HealthQueryAgent(BaseAgent):
         if not self.context_loader:
             from lib.ai_foundation.agents.core.context_loader import AgentContext as Ctx
             return Ctx()
-        insight_id = (input.context.metadata or {}).get("insight_id")
         return await self.context_loader.load(
             patient_id=input.context.patient_id,
             patient_ids=input.context.patient_ids,
             thread_id=input.context.thread_id,
-            insight_id=insight_id,
+            refs=input.context.refs,
         )
 
     async def _extract_intent(self, input: AgentInput, ctx: Any) -> tuple[QueryIntent, Any]:
@@ -430,13 +429,12 @@ class HealthQueryAgent(BaseAgent):
                 f"Use THIS for resolving 'today', 'yesterday', 'this week', etc."
             )})
 
-        # Inject pinned insight so intent extraction knows the date and data type
-        if ctx.pinned_insight:
-            ins = ctx.pinned_insight
-            parts = [f"User tapped notification: \"{ins.get('title', '')}\" — {ins.get('message', '')}"]
-            if ins.get("created_at"):
-                parts.append(f"Sent: {ins['created_at']}.")
-            parts.append(f"Focus intent on {ins.get('category', 'health')} data from around that date.")
+        # Inject pinned refs so intent extraction knows what the user is asking about.
+        for ref in getattr(ctx, "pinned_refs", []) or []:
+            parts = [f"User is asking about {ref.type.value} \"{ref.title}\"."]
+            if ref.occurred_at:
+                parts.append(f"Occurred: {ref.occurred_at}.")
+            parts.append("Anchor intent extraction to this entity.")
             messages.append({"role": "system", "content": " ".join(parts)})
 
         if ctx.thread_summary:

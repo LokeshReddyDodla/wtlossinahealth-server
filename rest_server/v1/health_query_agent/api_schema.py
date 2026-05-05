@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Any, Optional
 from datetime import datetime
 
+from lib.ai_foundation.agents.core.refs import Ref
+
 
 class QueryRequest(BaseModel):
     message: str = Field(
@@ -15,8 +17,13 @@ class QueryRequest(BaseModel):
     tier: Optional[str] = Field(
         None, description="Reasoning tier: basic, standard, advanced, unlimited. Defaults to config.",
     )
+    refs: list[Ref] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Typed entity references the user is talking about (e.g. tapped meal, opened CGM report, proactive insight).",
+    )
     metadata: Optional[dict[str, Any]] = Field(
-        None, description="Optional context — e.g. insight_id from a notification tap.",
+        None, description="Free-form UI hints. Use `refs` for entity references.",
     )
     local_time: Optional[str] = Field(
         None, description="Device local time as ISO string (e.g. '2026-03-28T14:27:00+05:30'). Used for resolving 'today', 'yesterday', etc.",

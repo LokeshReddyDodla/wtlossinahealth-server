@@ -95,6 +95,7 @@ def _build_agent_input(
             thread_id=thread_id,
             patient_ids=resolved_patient_ids,
             priority=_resolve_priority(current_actor.role),
+            refs=payload.refs,
             metadata=metadata,
         ),
         stream=stream,
