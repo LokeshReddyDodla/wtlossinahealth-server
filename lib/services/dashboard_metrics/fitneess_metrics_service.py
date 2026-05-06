@@ -49,7 +49,7 @@ class FitnessMetricsService:
 
             query = {
                 "metadata.report_type": FitnessReportType.DAILY,
-                "summary.metrics.steps": {mongo_op: steps_value},
+                "steps": {mongo_op: steps_value},
             }
 
             if start and end:
@@ -79,12 +79,8 @@ class FitnessMetricsService:
                     enrich_payload=lambda report, patient: {
                         "_id": str(report["_id"]),
                         "patient_id": report["patient_id"],
-                        "steps": report.get("summary", {})
-                        .get("metrics", {})
-                        .get("steps"),
-                        "active_duration": report.get("summary", {})
-                        .get("metrics", {})
-                        .get("active_duration"),
+                        "steps": report.get("steps"),
+                        "active_duration": report.get("active_duration"),
                         "start_date": report.get("metadata", {})
                         .get("date_range", {})
                         .get("start"),
