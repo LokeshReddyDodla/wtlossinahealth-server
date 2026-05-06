@@ -93,7 +93,11 @@ class FitnessMetricsService:
                             ),
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
-                            "age": calculate_age(patient.dob),
+                            "age": (
+                                calculate_age(patient.dob)
+                                if patient.dob
+                                else None
+                            ),
                             "diabetic_history": (
                                 PatientDiabeticHistory.from_orm(
                                     patient.diabetic_history
