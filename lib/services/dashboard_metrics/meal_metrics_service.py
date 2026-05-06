@@ -196,7 +196,11 @@ class MealMetricsService:
     ):
         if health_facility_id and is_facility_admin:
             return stmt.where(
-                PatientModel.health_facility_id == health_facility_id
+                PatientMealModel.patient_id.in_(
+                    select(PatientModel.patient_id).where(
+                        PatientModel.health_facility_id == health_facility_id
+                    )
+                )
             )
 
         if care_provider_id:
