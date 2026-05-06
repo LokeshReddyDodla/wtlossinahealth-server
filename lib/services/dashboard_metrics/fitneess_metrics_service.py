@@ -85,9 +85,12 @@ class FitnessMetricsService:
                         .get("date_range", {})
                         .get("start"),
                         "patient": {
-                            "name": patient.first_name
-                            + " "
-                            + patient.last_name,
+                            "name": " ".join(
+                                filter(
+                                    None,
+                                    [patient.first_name, patient.last_name],
+                                )
+                            ),
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
                             "age": calculate_age(patient.dob),
