@@ -48,18 +48,18 @@ class FitnessMetricsService:
                 raise ValueError(f"Invalid operator: {steps_op}")
 
             query = {
-                "report_type": FitnessReportType.DAILY,
-                "steps": {mongo_op: steps_value},
+                "metadata.report_type": FitnessReportType.DAILY,
+                "summary.metrics.steps": {mongo_op: steps_value},
             }
 
             if start and end:
-                query["start_date"] = {"$gte": start}
-                query["end_date"] = {"$lte": end}
+                query["metadata.date_range.start"] = {"$gte": start.isoformat()}
+                query["metadata.date_range.end"] = {"$lte": end.isoformat()}
 
             # Get reports
             cursor = (
                 self.fitness_report_collection.find(query)
-                .sort("start_date", -1)
+                .sort("metadata.date_range.start", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -79,9 +79,15 @@ class FitnessMetricsService:
                     enrich_payload=lambda report, patient: {
                         "_id": str(report["_id"]),
                         "patient_id": report["patient_id"],
-                        "steps": report.get("steps"),
-                        "active_duration": report.get("active_duration"),
-                        "start_date": report.get("start_date"),
+                        "steps": report.get("summary", {})
+                        .get("metrics", {})
+                        .get("steps"),
+                        "active_duration": report.get("summary", {})
+                        .get("metrics", {})
+                        .get("active_duration"),
+                        "start_date": report.get("metadata", {})
+                        .get("date_range", {})
+                        .get("start"),
                         "patient": {
                             "name": patient.first_name
                             + " "
