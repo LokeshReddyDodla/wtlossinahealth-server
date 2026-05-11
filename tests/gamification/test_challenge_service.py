@@ -192,3 +192,140 @@ class TestParticipantRewardPolicy:
         )
         assert service._participant_reward_xp(challenge, incomplete) == 0
         assert service._participant_reward_xp(challenge, complete) == 80
+
+
+class TestChallengeUpdateAndCancel:
+    @pytest.mark.asyncio
+    async def test_update_challenge_changes_title_and_target(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            "challenge_update_basic",
+        )
+        service = object.__new__(module.ChallengeService)
+        challenge = SimpleNamespace(
+            challenge_id=uuid4(),
+            is_active=True,
+            title="Old",
+            description=None,
+            target_value=100.0,
+            xp_reward=50,
+            bonus_xp_winner=0,
+        )
+
+        async def fake_get_challenge(_cid, _s):
+            return challenge
+
+        async def fake_participant_count(_cid, _s):
+            return 3
+
+        monkeypatch.setattr(service, "_get_challenge", fake_get_challenge)
+        monkeypatch.setattr(service, "_participant_count", fake_participant_count)
+
+        # Stub _to_response — staticmethod, doesn't need self
+        monkeypatch.setattr(
+            module.ChallengeService,
+            "_to_response",
+            staticmethod(
+                lambda c, count: SimpleNamespace(
+                    challenge_id=str(c.challenge_id),
+                    title=c.title,
+                    target_value=c.target_value,
+                    participant_count=count,
+                )
+            ),
+        )
+
+        result = await service.update_challenge(
+            challenge.challenge_id,
+            title="New title",
+            target_value=200.0,
+            postgres_session=FakeSession(),
+        )
+
+        assert challenge.title == "New title"
+        assert challenge.target_value == 200.0
+        assert result.title == "New title"
+        assert result.participant_count == 3
+
+    @pytest.mark.asyncio
+    async def test_update_challenge_rejects_inactive(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            "challenge_update_inactive",
+        )
+        service = object.__new__(module.ChallengeService)
+        challenge = SimpleNamespace(challenge_id=uuid4(), is_active=False)
+
+        async def fake_get(_c, _s):
+            return challenge
+
+        monkeypatch.setattr(service, "_get_challenge", fake_get)
+
+        with pytest.raises(ValueError, match="Cannot edit an inactive challenge"):
+            await service.update_challenge(
+                challenge.challenge_id, title="X", postgres_session=FakeSession(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_challenge_raises_when_not_found(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            "challenge_update_missing",
+        )
+        service = object.__new__(module.ChallengeService)
+
+        async def fake_get(_c, _s):
+            return None
+
+        monkeypatch.setattr(service, "_get_challenge", fake_get)
+
+        with pytest.raises(ValueError, match="Challenge not found"):
+            await service.update_challenge(uuid4(), title="X", postgres_session=FakeSession())
+
+    @pytest.mark.asyncio
+    async def test_cancel_challenge_marks_inactive_and_withdraws_active_participants(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            "challenge_cancel",
+        )
+        service = object.__new__(module.ChallengeService)
+        challenge = SimpleNamespace(challenge_id=uuid4(), is_active=True)
+        participants = [
+            SimpleNamespace(status="active"),
+            SimpleNamespace(status="active"),
+        ]
+
+        async def fake_get(_c, _s):
+            return challenge
+
+        monkeypatch.setattr(service, "_get_challenge", fake_get)
+        session = FakeSession(results=[FakeScalarResult(values=participants)])
+
+        await service.cancel_challenge(challenge.challenge_id, postgres_session=session)
+
+        assert challenge.is_active is False
+        assert all(p.status == "withdrawn" for p in participants)
+        assert session.commit_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cancel_challenge_is_noop_on_already_inactive(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/challenge_service.py",
+            "challenge_cancel_noop",
+        )
+        service = object.__new__(module.ChallengeService)
+        challenge = SimpleNamespace(challenge_id=uuid4(), is_active=False)
+
+        async def fake_get(_c, _s):
+            return challenge
+
+        monkeypatch.setattr(service, "_get_challenge", fake_get)
+        session = FakeSession()
+
+        await service.cancel_challenge(challenge.challenge_id, postgres_session=session)
+        assert session.commit_count == 0

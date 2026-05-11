@@ -407,6 +407,105 @@ class GroupService:
         count = await self._member_count(group.group_id, postgres_session)
         return self.to_response(group, count)
 
+    @with_postgres_session
+    async def update_group(
+        self,
+        group_id: UUID,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        max_members: Optional[int] = None,
+        postgres_session: AsyncSession,
+    ) -> GroupResponse:
+        group = await self._get_group(group_id, postgres_session)
+        if not group or not group.is_active:
+            raise ValueError("Group not found or inactive")
+
+        if name is not None:
+            group.name = name
+        if description is not None:
+            group.description = description
+        if max_members is not None:
+            current_count = await self._member_count(group_id, postgres_session)
+            if max_members < current_count:
+                raise ValueError(
+                    f"max_members cannot be less than current member count ({current_count})"
+                )
+            group.max_members = max_members
+
+        await postgres_session.commit()
+        await postgres_session.refresh(group)
+        count = await self._member_count(group_id, postgres_session)
+        return self.to_response(group, count)
+
+    @with_postgres_session
+    async def delete_group(
+        self,
+        group_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Soft-delete a group: deactivate the group and all active memberships."""
+        group = await self._get_group(group_id, postgres_session)
+        if not group:
+            raise ValueError("Group not found")
+        if not group.is_active:
+            return
+
+        group.is_active = False
+
+        members_result = await postgres_session.execute(
+            select(GroupMember).where(
+                GroupMember.group_id == group_id,
+                GroupMember.is_active == True,
+            )
+        )
+        now = datetime.now().replace(tzinfo=None)
+        for member in members_result.scalars().all():
+            member.is_active = False
+            member.left_at = now
+
+        await postgres_session.commit()
+
+    @with_postgres_session
+    async def remove_member(
+        self,
+        group_id: UUID,
+        patient_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        result = await postgres_session.execute(
+            select(GroupMember).where(
+                GroupMember.group_id == group_id,
+                GroupMember.patient_id == patient_id,
+                GroupMember.is_active == True,
+            )
+        )
+        member = result.scalars().first()
+        if not member:
+            raise ValueError("Patient is not an active member of this group")
+
+        member.is_active = False
+        member.left_at = datetime.now().replace(tzinfo=None)
+        await postgres_session.commit()
+
+    @with_postgres_session
+    async def rotate_invite_code(
+        self,
+        group_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> str:
+        group = await self._get_group(group_id, postgres_session)
+        if not group or not group.is_active:
+            raise ValueError("Group not found or inactive")
+
+        group.invite_code = await self._generate_invite_code(postgres_session)
+        await postgres_session.commit()
+        await postgres_session.refresh(group)
+        return group.invite_code
+
     async def _get_group(
         self, group_id: UUID, session: AsyncSession
     ) -> Optional[Group]:

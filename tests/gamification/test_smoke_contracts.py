@@ -9,48 +9,66 @@ def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_canonical_router_exposes_planned_gamification_contract():
+def test_router_exposes_planned_gamification_contract():
     source = _read("rest_server/v1/gamification/router.py")
 
+    # Patient-scoped reads/writes
     expected_paths = [
-        "/patients/{patient_id}/gamification/profile",
-        "/patients/{patient_id}/gamification/streak/freeze",
-        "/patients/{patient_id}/gamification/daily",
-        "/patients/{patient_id}/gamification/tasks/{task_id}/complete",
-        "/patients/{patient_id}/gamification/quests/current",
-        "/patients/{patient_id}/gamification/achievements",
-        "/patients/{patient_id}/gamification/achievements/recent",
-        "/patients/{patient_id}/gamification/buddies",
-        "/patients/{patient_id}/gamification/buddies/request",
-        "/patients/{patient_id}/gamification/buddies/{buddy_id}/accept",
-        "/patients/{patient_id}/gamification/buddies/{buddy_id}",
-        "/patients/{patient_id}/gamification/buddies/{buddy_id}/progress",
-        "/patients/{patient_id}/gamification/groups",
-        "/patients/{patient_id}/gamification/groups/{group_id}",
-        "/patients/{patient_id}/gamification/groups/{group_id}/join",
-        "/patients/{patient_id}/gamification/groups/{group_id}/leave",
-        "/patients/{patient_id}/gamification/groups/{group_id}/members",
-        "/patients/{patient_id}/gamification/groups/{group_id}/leaderboard",
-        "/patients/{patient_id}/gamification/groups/{group_id}/feed",
-        "/patients/{patient_id}/gamification/challenges/available",
-        "/patients/{patient_id}/gamification/challenges/active",
-        "/patients/{patient_id}/gamification/challenges/{challenge_id}/join",
-        "/patients/{patient_id}/gamification/challenges/{challenge_id}/withdraw",
-        "/patients/{patient_id}/gamification/challenges/{challenge_id}",
-        "/gamification/challenges",
-        "/patients/{patient_id}/gamification/challenges/{challenge_id}/leaderboard",
-        "/patients/{patient_id}/gamification/leaderboards/{board_type}",
-        "/patients/{patient_id}/gamification/feed/{feed_event_id}/cheer",
-        "/patients/{patient_id}/gamification/feed/buddies",
-        "/care-providers/{cp_id}/gamification/overview",
-        "/care-providers/{cp_id}/gamification/at-risk",
-        "/care-providers/{cp_id}/gamification/challenges",
-        "/care-providers/{cp_id}/gamification/achievements/{achievement_id}/star",
-        "/care-providers/{cp_id}/gamification/groups",
+        "/patients/{patient_id}/profile",
+        "/patients/{patient_id}/streak/freeze",
+        "/patients/{patient_id}/daily",
+        "/patients/{patient_id}/daily/history",
+        "/patients/{patient_id}/tasks/{task_id}/complete",
+        "/patients/{patient_id}/quests/current",
+        "/patients/{patient_id}/achievements",
+        "/patients/{patient_id}/achievements/recent",
+        "/patients/{patient_id}/history",
+        "/patients/{patient_id}/buddies",
+        "/patients/{patient_id}/buddies/search",
+        "/patients/{patient_id}/buddies/request",
+        "/patients/{patient_id}/buddies/request-by-code",
+        "/patients/{patient_id}/buddies/{buddy_id}/accept",
+        "/patients/{patient_id}/buddies/{buddy_id}/reject",
+        "/patients/{patient_id}/buddies/{buddy_id}",
+        "/patients/{patient_id}/buddies/{buddy_id}/progress",
+        "/patients/{patient_id}/buddies/by-code/{buddy_code}",
+        "/patients/{patient_id}/groups",
+        "/patients/{patient_id}/challenges/available",
+        "/patients/{patient_id}/challenges/active",
+        "/patients/{patient_id}/feed",
+        "/patients/{patient_id}/leaderboards/{board_type}",
+        # Resource-addressed groups
+        "/groups",
+        "/groups/by-code/{invite_code}",
+        "/groups/{group_id}",
+        "/groups/{group_id}/invite-code/rotate",
+        "/groups/{group_id}/join",
+        "/groups/join-by-code",
+        "/groups/{group_id}/leave",
+        "/groups/{group_id}/members",
+        "/groups/{group_id}/members/{patient_id}",
+        "/groups/{group_id}/leaderboard",
+        "/groups/{group_id}/feed",
+        # Resource-addressed challenges
+        "/challenges",
+        "/challenges/{challenge_id}",
+        "/challenges/{challenge_id}/join",
+        "/challenges/{challenge_id}/withdraw",
+        "/challenges/{challenge_id}/leaderboard",
+        # Feed cheer
+        "/feed/{feed_event_id}/cheer",
+        # CP scope
+        "/care-providers/{cp_id}/overview",
+        "/care-providers/{cp_id}/at-risk",
+        "/care-providers/{cp_id}/groups",
+        "/care-providers/{cp_id}/challenges",
+        "/care-providers/{cp_id}/achievements/{achievement_id}/star",
+        # Catalog
+        "/catalog/achievements",
     ]
 
     for path in expected_paths:
-        assert path in source
+        assert path in source, f"missing path: {path}"
 
 
 def test_context_loader_uses_injected_gamification_service():

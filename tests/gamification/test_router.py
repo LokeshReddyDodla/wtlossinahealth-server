@@ -44,7 +44,7 @@ def _fastapi_stub_module():
 
 
 def _load_router(monkeypatch):
-    profile_type = SimpleNamespace(PATIENT="PATIENT", CARE_PROVIDER="CARE_PROVIDER")
+    profile_type = SimpleNamespace(PATIENT="PATIENT", CARE_PROVIDER="CARE_PROVIDER", ADMIN="ADMIN")
 
     class SuccessResponse:
         def __init__(self, **kw):
@@ -65,6 +65,11 @@ def _load_router(monkeypatch):
 
     extra_stubs = {
         "fastapi": _fastapi_stub_module(),
+        "pydantic": make_module(
+            "pydantic",
+            BaseModel=type("BaseModel", (), {"__init_subclass__": lambda cls, **kw: None}),
+            Field=lambda default=None, **kwargs: default,
+        ),
         "lib.core.constants": make_module(
             "lib.core.constants",
             ProfileTypeEnum=profile_type,
@@ -100,6 +105,10 @@ def _load_router(monkeypatch):
         "lib.services.care_provider_access_service": make_module(
             "lib.services.care_provider_access_service",
             CareProviderAccessService=type("CareProviderAccessService", (), {}),
+        ),
+        "lib.services.gamification.achievement_catalog": make_module(
+            "lib.services.gamification.achievement_catalog",
+            ACHIEVEMENT_CATALOG=[],
         ),
         "lib.services.gamification.buddy_service": make_module(
             "lib.services.gamification.buddy_service",
@@ -181,7 +190,7 @@ class TestGamificationRouter:
         assert "YYYY-MM-DD" in exc.value.detail
 
     @pytest.mark.asyncio
-    async def test_canonical_update_profile_forwards_visibility_and_title(self, monkeypatch):
+    async def test_update_profile_forwards_visibility_and_title(self, monkeypatch):
         module = _load_router(monkeypatch)
         service_calls = []
         patient_id = uuid4()
@@ -196,7 +205,7 @@ class TestGamificationRouter:
         )
         actor = SimpleNamespace(id=patient_id, role="PATIENT", model=SimpleNamespace(patient_id=patient_id))
 
-        response = await module.canonical_update_profile(
+        response = await module.update_profile(
             patient_id=uuid4(),
             body=body,
             service=FakeService(),
@@ -208,88 +217,79 @@ class TestGamificationRouter:
         assert service_calls == [((patient_id,), {"visibility": "public", "title_slug": "champion"})]
 
     @pytest.mark.asyncio
-    async def test_canonical_get_group_members_requires_membership(self, monkeypatch):
+    async def test_get_group_members_requires_membership(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        patient_actor_id = uuid4()
+        actor = SimpleNamespace(id=str(patient_actor_id), role=module.ProfileTypeEnum.PATIENT, model=SimpleNamespace(patient_id=patient_actor_id))
 
         class FakeGroupService:
             async def get_patient_groups(self, _patient_id):
                 return []
 
-        # Stub _resolve_patient — production resolves patient_id via cp_access
-        async def fake_resolve(_pid, _actor, _cp):
-            return actor.model.patient_id
-        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
-
         with pytest.raises(module.HTTPException) as exc:
-            await module.canonical_get_group_members(
-                patient_id=actor.model.patient_id,
+            await module.get_group_members(
                 group_id=uuid4(),
                 service=FakeGroupService(),
                 actor=actor,
-                cp_access=SimpleNamespace(),
             )
 
         assert exc.value.status_code == 403
         assert exc.value.detail == "Not a member of this group"
 
     @pytest.mark.asyncio
-    async def test_canonical_join_challenge_maps_value_error_to_bad_request(self, monkeypatch):
+    async def test_join_challenge_maps_value_error_to_bad_request(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        actor_id = uuid4()
+        actor = SimpleNamespace(id=str(actor_id), role=module.ProfileTypeEnum.PATIENT)
 
         class FakeChallengeService:
             async def join_challenge(self, _challenge_id, _patient_id):
                 raise ValueError("Challenge has ended")
 
-        async def fake_resolve(_pid, _actor, _cp):
-            return actor.model.patient_id
-        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
-
         with pytest.raises(module.HTTPException) as exc:
-            await module.canonical_join_challenge(
-                patient_id=actor.model.patient_id,
+            await module.join_challenge(
                 challenge_id=uuid4(),
                 service=FakeChallengeService(),
                 actor=actor,
-                cp_access=SimpleNamespace(),
             )
 
         assert exc.value.status_code == 400
         assert exc.value.detail == "Challenge has ended"
 
     @pytest.mark.asyncio
-    async def test_canonical_send_cheer_maps_value_error_to_bad_request(self, monkeypatch):
+    async def test_send_cheer_maps_value_error_to_bad_request(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(id=uuid4(), role="PATIENT", model=SimpleNamespace(patient_id=uuid4()))
+        actor_id = uuid4()
+        actor = SimpleNamespace(id=str(actor_id), role=module.ProfileTypeEnum.PATIENT)
 
         class FakeFeedService:
             async def send_cheer(self, _patient_id, _feed_event_id, _reaction):
-                # Production no longer raises this — kept for back-compat
-                # of the bad-request mapping behavior
                 raise ValueError("Cannot cheer your own event")
 
-        async def fake_resolve(_pid, _actor, _cp):
-            return actor.model.patient_id
-        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
-
         with pytest.raises(module.HTTPException) as exc:
-            await module.canonical_send_cheer(
-                patient_id=actor.model.patient_id,
+            await module.send_cheer(
                 feed_event_id=uuid4(),
                 body=SimpleNamespace(reaction=SimpleNamespace(value="fire")),
                 service=FakeFeedService(),
                 actor=actor,
-                cp_access=SimpleNamespace(),
             )
 
         assert exc.value.status_code == 400
         assert exc.value.detail == "Cannot cheer your own event"
 
     @pytest.mark.asyncio
-    async def test_canonical_create_group_uses_actor_identity(self, monkeypatch):
+    async def test_create_group_uses_actor_identity(self, monkeypatch):
         module = _load_router(monkeypatch)
-        actor = SimpleNamespace(id=uuid4(), role="PATIENT")
+        actor_id = uuid4()
+        actor = SimpleNamespace(id=str(actor_id), role=SimpleNamespace(value="patient"))
+        actor.role = module.ProfileTypeEnum.PATIENT
+        # ProfileTypeEnum stub uses string values; the handler reads actor.role.value
+        # so we shim role to expose both equality and .value
+        class RoleShim:
+            value = "patient"
+            def __eq__(self, other):
+                return other == module.ProfileTypeEnum.PATIENT
+        actor.role = RoleShim()
         create_calls = []
         get_calls = []
         group_id = uuid4()
@@ -303,14 +303,7 @@ class TestGamificationRouter:
                 get_calls.append(incoming_group_id)
                 return {"group_id": str(incoming_group_id)}
 
-        # canonical_create_group now thunks to the legacy create_group
-        # function which expects cp_access dependency.
-        async def fake_resolve(_pid, _actor, _cp):
-            return actor.id
-        monkeypatch.setattr(module, "_resolve_patient", fake_resolve)
-
-        response = await module.canonical_create_group(
-            patient_id=actor.id,
+        response = await module.create_group(
             body=SimpleNamespace(
                 name="Friends",
                 group_type=SimpleNamespace(value="patient_created"),
@@ -320,16 +313,15 @@ class TestGamificationRouter:
             ),
             service=FakeGroupService(),
             actor=actor,
-            cp_access=SimpleNamespace(),
         )
 
         assert response.message == "Group created"
-        assert create_calls[0]["created_by_id"] == actor.id
-        assert create_calls[0]["created_by_type"] == actor.role
+        assert str(create_calls[0]["created_by_id"]) == str(actor_id)
+        assert create_calls[0]["created_by_type"] == "patient"
         assert get_calls == [group_id]
 
     @pytest.mark.asyncio
-    async def test_canonical_get_profile_resolves_provider_access(self, monkeypatch):
+    async def test_get_profile_resolves_provider_access(self, monkeypatch):
         module = _load_router(monkeypatch)
         patient_id = uuid4()
         cp_id = uuid4()
@@ -349,7 +341,7 @@ class TestGamificationRouter:
             async def is_patient_assigned(self, care_provider_id, patient_id):
                 return care_provider_id == cp_id and patient_id == patient_id
 
-        response = await module.canonical_get_profile(
+        response = await module.get_profile(
             patient_id=patient_id,
             service=FakeService(),
             actor=actor,
@@ -360,29 +352,18 @@ class TestGamificationRouter:
         assert service_calls == [patient_id]
 
     @pytest.mark.asyncio
-    async def test_canonical_create_cp_challenge_rejects_mismatched_cp_id(self, monkeypatch):
+    async def test_get_cp_overview_rejects_mismatched_cp_id(self, monkeypatch):
         module = _load_router(monkeypatch)
         current_cp = SimpleNamespace(care_provider_id=uuid4())
 
+        class FakeService:
+            async def get_overview(self, _cp_id):
+                raise AssertionError("should not be reached")
+
         with pytest.raises(module.HTTPException) as exc:
-            await module.canonical_create_cp_challenge(
+            await module.get_cp_overview(
                 cp_id=uuid4(),
-                body=SimpleNamespace(
-                    title="April Sprint",
-                    challenge_type=SimpleNamespace(value="weekly"),
-                    scope=SimpleNamespace(value="individual"),
-                    metric_type=SimpleNamespace(value="steps"),
-                    target_value=10000,
-                    duration_days=7,
-                    xp_reward=100,
-                    description=None,
-                    bonus_xp_winner=0,
-                    facility_id=None,
-                    is_opt_in=False,
-                    patient_ids=None,
-                    group_ids=None,
-                ),
-                challenge_service=SimpleNamespace(),
+                service=FakeService(),
                 current_cp=current_cp,
             )
 
