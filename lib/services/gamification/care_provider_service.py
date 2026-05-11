@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import (
+    Challenge,
+    ChallengeParticipant,
     DailyTask,
     Group,
     GroupMember,
@@ -20,6 +22,7 @@ from lib.models.gamification import (
 from lib.models.patient import Patient
 from lib.models.associations import patient_care_provider_association
 from lib.schemas.gamification import (
+    ChallengeResponse,
     CPGamificationOverview,
     CreatorType,
     GroupResponse,
@@ -216,5 +219,40 @@ class CPGamificationService:
             )
             responses.append(
                 GroupService.to_response(group, count_result.scalar() or 0)
+            )
+        return responses
+
+    @with_postgres_session
+    async def get_challenges_created(
+        self,
+        care_provider_id: UUID,
+        *,
+        include_inactive: bool = False,
+        postgres_session: AsyncSession,
+    ) -> List[ChallengeResponse]:
+        """Challenges this care provider created."""
+        from lib.services.gamification.challenge_service import ChallengeService
+
+        stmt = select(Challenge).where(
+            Challenge.created_by_id == care_provider_id,
+            Challenge.created_by_type == CreatorType.CARE_PROVIDER.value,
+        )
+        if not include_inactive:
+            stmt = stmt.where(Challenge.is_active == True)
+        result = await postgres_session.execute(
+            stmt.order_by(Challenge.created_at.desc())
+        )
+        challenges = result.scalars().all()
+
+        responses: List[ChallengeResponse] = []
+        for challenge in challenges:
+            count_result = await postgres_session.execute(
+                select(func.count()).select_from(ChallengeParticipant).where(
+                    ChallengeParticipant.challenge_id == challenge.challenge_id,
+                    ChallengeParticipant.status.in_(["active", "completed"]),
+                )
+            )
+            responses.append(
+                ChallengeService._to_response(challenge, count_result.scalar() or 0)
             )
         return responses

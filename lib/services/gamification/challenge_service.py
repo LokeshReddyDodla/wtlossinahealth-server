@@ -677,6 +677,68 @@ class ChallengeService:
         )
         return detail.leaderboard
 
+    @with_postgres_session
+    async def update_challenge(
+        self,
+        challenge_id: UUID,
+        *,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        target_value: Optional[float] = None,
+        xp_reward: Optional[int] = None,
+        bonus_xp_winner: Optional[int] = None,
+        postgres_session: AsyncSession,
+    ) -> ChallengeResponse:
+        """Edit metadata on a challenge. Schedule/scope/type are immutable once created."""
+        challenge = await self._get_challenge(challenge_id, postgres_session)
+        if not challenge:
+            raise ValueError("Challenge not found")
+        if not challenge.is_active:
+            raise ValueError("Cannot edit an inactive challenge")
+
+        if title is not None:
+            challenge.title = title
+        if description is not None:
+            challenge.description = description
+        if target_value is not None:
+            challenge.target_value = target_value
+        if xp_reward is not None:
+            challenge.xp_reward = xp_reward
+        if bonus_xp_winner is not None:
+            challenge.bonus_xp_winner = bonus_xp_winner
+
+        await postgres_session.commit()
+        await postgres_session.refresh(challenge)
+        count = await self._participant_count(challenge_id, postgres_session)
+        return self._to_response(challenge, count)
+
+    @with_postgres_session
+    async def cancel_challenge(
+        self,
+        challenge_id: UUID,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Soft-cancel a challenge: mark inactive and withdraw all participants."""
+        challenge = await self._get_challenge(challenge_id, postgres_session)
+        if not challenge:
+            raise ValueError("Challenge not found")
+        if not challenge.is_active:
+            return
+
+        challenge.is_active = False
+
+        participants_result = await postgres_session.execute(
+            select(ChallengeParticipant).where(
+                ChallengeParticipant.challenge_id == challenge_id,
+                ChallengeParticipant.status == "active",
+            )
+        )
+        for participant in participants_result.scalars().all():
+            participant.status = "withdrawn"
+
+        await postgres_session.commit()
+
     async def _get_challenge(
         self, challenge_id: UUID, session: AsyncSession
     ) -> Optional[Challenge]:
@@ -792,8 +854,9 @@ class ChallengeService:
             xp += challenge.bonus_xp_winner
         return xp
 
+    @staticmethod
     def _to_response(
-        self, c: Challenge, participant_count: int
+        c: Challenge, participant_count: int
     ) -> ChallengeResponse:
         return ChallengeResponse(
             challenge_id=str(c.challenge_id),

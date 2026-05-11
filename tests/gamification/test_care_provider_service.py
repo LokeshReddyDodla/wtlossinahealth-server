@@ -129,3 +129,66 @@ class TestCPGamificationService:
         assert len(groups) == 1
         assert groups[0].name == "Dr. A Team"
         assert groups[0].member_count == 7
+
+    @pytest.mark.asyncio
+    async def test_get_challenges_created_returns_cp_owned_challenges(self, monkeypatch):
+        module = load_module(
+            monkeypatch,
+            "lib/services/gamification/care_provider_service.py",
+            "gamification_test_cp_service_challenges",
+        )
+        service = module.CPGamificationService(postgres_store=None)
+        cp_id = uuid4()
+        challenge_1 = SimpleNamespace(
+            challenge_id=uuid4(),
+            title="April Sprint",
+            description=None,
+            challenge_type="weekly",
+            scope="individual",
+            metric_type="steps",
+            target_value=10000.0,
+            duration_days=7,
+            start_date=date(2026, 4, 1),
+            end_date=date(2026, 4, 7),
+            xp_reward=100,
+            bonus_xp_winner=0,
+            created_by_id=cp_id,
+            created_by_type="care_provider",
+            is_opt_in=False,
+            is_active=True,
+            created_at=date(2026, 4, 1),
+        )
+        challenge_2 = SimpleNamespace(
+            challenge_id=uuid4(),
+            title="May Sprint",
+            description=None,
+            challenge_type="weekly",
+            scope="individual",
+            metric_type="steps",
+            target_value=15000.0,
+            duration_days=7,
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 7),
+            xp_reward=120,
+            bonus_xp_winner=10,
+            created_by_id=cp_id,
+            created_by_type="care_provider",
+            is_opt_in=False,
+            is_active=True,
+            created_at=date(2026, 5, 1),
+        )
+        session = FakeSession(
+            results=[
+                FakeScalarResult(values=[challenge_1, challenge_2]),
+                FakeScalarResult(scalar=5),
+                FakeScalarResult(scalar=3),
+            ]
+        )
+
+        challenges = await service.get_challenges_created(cp_id, postgres_session=session)
+
+        assert len(challenges) == 2
+        assert challenges[0].title == "April Sprint"
+        assert challenges[0].participant_count == 5
+        assert challenges[1].title == "May Sprint"
+        assert challenges[1].participant_count == 3
