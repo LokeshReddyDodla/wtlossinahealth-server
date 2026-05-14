@@ -25,13 +25,36 @@ class ChatMessagingService(BaseChatService):
                 message, message_data.sender_id
             )
 
-            notification_info = self._create_notification_info(message)
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": message_data.chat_id}
+            )
+            chat_kind = (chat or {}).get("kind", "direct")
+
+            notification_info = self._create_notification_info(
+                message, chat_kind=chat_kind
+            )
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
                 data=jsonable_encoder(saved_message),
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
+
+            if chat_kind == "support":
+                # Fan out to agents who aren't (yet) chat participants — the
+                # support queue. Import locally to avoid a circular import via
+                # SupportTicketService -> ChatMessagingService.
+                from lib.services.support.support_notification_service import (
+                    SupportNotificationService,
+                )
+
+                await SupportNotificationService().notify_queue(
+                    chat=chat,
+                    message=saved_message,
+                    sender_id=message_data.sender_id,
+                    notification_info=notification_info,
+                )
+
             print(
                 f"Message {message.id} broadcasted to chat {message_data.chat_id}."
             )
@@ -215,16 +238,17 @@ class ChatMessagingService(BaseChatService):
                     )
 
     def _create_notification_info(
-        self, message: ChatMessage
+        self, message: ChatMessage, chat_kind: str = "direct"
     ) -> FCMNotificationInfo:
         """Create notification info for a new message."""
+        is_support = chat_kind == "support"
         return FCMNotificationInfo(
-            title="New Message",
+            title="Support Update" if is_support else "New Message",
             body=self.notification_service._get_notification_body(
                 message.metadata.type, message.content
             ),
-            channel_key="chat_messages",
-            group_key="chat_group",
+            channel_key="support_messages" if is_support else "chat_messages",
+            group_key="support_group" if is_support else "chat_group",
             sender_id=message.sender_id,
         )
 

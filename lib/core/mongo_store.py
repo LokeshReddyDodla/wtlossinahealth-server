@@ -24,7 +24,33 @@ class MongoStore:
     # --- Index setup ---
     async def init_indexes(self):
         await self._init_ai_conversation_message_indexes()
+        await self._init_support_ticket_indexes()
         # In future: await self._init_patient_indexes(), etc.
+
+    async def _init_support_ticket_indexes(self):
+        collection = self.db["support_tickets"]
+        await collection.create_index(
+            [("chat_id", 1)],
+            name="support_chatId_unique_idx",
+            unique=True,
+        )
+        await collection.create_index(
+            [("requester_id", 1), ("status", 1), ("last_message_at", -1)],
+            name="support_requester_inbox_idx",
+        )
+        await collection.create_index(
+            [("scope", 1), ("status", 1), ("last_message_at", -1)],
+            name="support_scope_queue_idx",
+        )
+        await collection.create_index(
+            [
+                ("scope", 1),
+                ("health_facility_id", 1),
+                ("status", 1),
+                ("last_message_at", -1),
+            ],
+            name="support_facility_queue_idx",
+        )
 
     async def _init_ai_conversation_message_indexes(self):
         collection = self.db["ai_conversation_messages"]

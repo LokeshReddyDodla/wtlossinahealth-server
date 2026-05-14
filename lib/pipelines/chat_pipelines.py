@@ -48,6 +48,7 @@ def get_user_chat_pipeline(user_id: str):
             "$project": {
                 "_id": 1,
                 "is_group": 1,
+                "kind": 1,
                 "participants": 1,
                 "sender": 1,
                 "receivers": 1,

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from lib.core.types import ProfileTypeLiteral
+from lib.core.types import ChatKindLiteral, ProfileTypeLiteral
 from lib.schemas.chat_message import ChatMessage
 
 
@@ -42,6 +42,12 @@ class ChatSchemaBase(BaseModel):
     )
     is_group: Optional[bool] = Field(
         True, description="Indicates this is a group chat."
+    )
+    kind: ChatKindLiteral = Field(
+        "direct",
+        description="What this chat is. 'direct' or 'group' is regular "
+        "patient/provider messaging; 'support' is a support ticket "
+        "conversation managed by the support_tickets layer.",
     )
     alias_name: Optional[str] = Field(
         ...,
