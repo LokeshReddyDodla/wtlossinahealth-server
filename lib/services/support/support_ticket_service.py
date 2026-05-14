@@ -30,6 +30,9 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.chat.message_enricher import (
+    enrich_messages_with_sender_profiles,
+)
 
 
 def _preview(text: str, limit: int = 120) -> str:
@@ -245,6 +248,7 @@ class SupportTicketService:
             .sort("timestamp", 1)
             .to_list(length=None)
         )
+        messages = await enrich_messages_with_sender_profiles(messages)
         return {**ticket, "messages": messages}
 
     async def agent_reply(

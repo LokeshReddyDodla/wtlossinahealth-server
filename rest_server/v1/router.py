@@ -18,6 +18,7 @@ from .medications.router import router as medications_router
 from .exercises.router import router as exercises_router
 from .meals.router import router as meals_router
 from .support_tickets.router import router as support_tickets_router
+from .chats.router import router as v1_chats_router
 from .admin.support_tickets.router import (
     router as admin_support_tickets_router,
 )
@@ -44,4 +45,5 @@ router.include_router(medications_router)
 router.include_router(exercises_router)
 router.include_router(meals_router)
 router.include_router(support_tickets_router)
+router.include_router(v1_chats_router)
 router.include_router(admin_support_tickets_router)

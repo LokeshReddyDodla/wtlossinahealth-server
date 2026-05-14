@@ -3,22 +3,23 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, Query, Request, status
 
-from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.base import get_current_user
 from lib.dependencies.service_dependencies import (
     get_care_provider_profile_service,
     get_chat_management_service,
     get_patient_profile_service,
 )
-from lib.schemas.patient_connected_app import PatientSchema
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
 from lib.services.chat.chat_management_service import ChatManagementService
+from lib.services.chat.message_enricher import (
+    attach_participant_profiles,
+    enrich_messages_with_sender_profiles,
+)
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
-from lib.schemas.care_provider import CareProvider as CareProviderSchema
 
 from .router import router
 
@@ -40,67 +41,11 @@ async def get_user_chats(
     user_id, _ = current_user
     try:
         chats = await chat_management_service.fetch_user_chats(user_id)
-
-        # Collect participant IDs by type
-        patient_ids = {
-            p["id"]
-            for chat in chats
-            for p in chat["participants"]
-            if p["type"] == ProfileTypeEnum.PATIENT.value
-        }
-        care_provider_ids = {
-            p["id"]
-            for chat in chats
-            for p in chat["participants"]
-            if p["type"] == ProfileTypeEnum.CARE_PROVIDER.value
-        }
-
-        # Fetch profiles for patients from PostgreSQL
-        patient_profiles = (
-            await patient_profile_service.fetch_patient_profiles(
-                list(patient_ids)
-            )
+        await attach_participant_profiles(
+            chats,
+            patient_profile_service=patient_profile_service,
+            care_provider_profile_service=care_provider_profile_service,
         )
-
-        # Fetch profiles for care providers from PostgreSQL
-        care_provider_profiles = (
-            await care_provider_profile_service.fetch_care_provider_profiles(
-                list(care_provider_ids)
-            )
-        )
-
-        # Merge profiles into chat participants
-        for chat in chats:
-            sender = chat.get("sender")
-            if sender:
-                profile_data = None
-                if sender["type"] == ProfileTypeEnum.PATIENT.value:
-                    profile_data = patient_profiles.get(sender["id"])
-                    if profile_data:
-                        sender["profile"] = PatientSchema.from_orm(
-                            profile_data
-                        )
-                else:
-                    profile_data = care_provider_profiles.get(sender["id"])
-                    if profile_data:
-                        sender["profile"] = CareProviderSchema.from_orm(
-                            profile_data
-                        )
-
-            for receiver in chat.get("receivers", []):
-                profile_data = None
-                if receiver["type"] == ProfileTypeEnum.PATIENT.value:
-                    profile_data = patient_profiles.get(receiver["id"])
-                    if profile_data:
-                        receiver["profile"] = PatientSchema.from_orm(
-                            profile_data
-                        )
-                else:
-                    profile_data = care_provider_profiles.get(receiver["id"])
-                    if profile_data:
-                        receiver["profile"] = CareProviderSchema.from_orm(
-                            profile_data
-                        )
 
         return SuccessResponse(
             message="Chats fetched successfully",
@@ -168,6 +113,7 @@ async def get_chat_messages(
         messages = await chat_management_service.fetch_chat_messages(
             chat_id, user_id
         )
+        messages = await enrich_messages_with_sender_profiles(messages)
 
         return SuccessResponse(
             message="Chat messages fetched successfully.", data=messages

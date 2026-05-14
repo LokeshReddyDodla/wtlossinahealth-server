@@ -10,6 +10,7 @@ from lib.core.types import ChatKindLiteral, ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.pipelines.chat_pipelines import (
     get_chat_messages_pipeline,
+    get_single_chat_pipeline,
     get_user_chat_pipeline,
     get_user_messages_pipeline,
 )
@@ -133,6 +134,24 @@ class ChatManagementService(BaseChatService):
                 .to_list(length=None)
             )
 
+        except PyMongoError as e:
+            logger.info(f"MongoDB Error: {e}")
+            raise
+
+    async def fetch_single_chat(
+        self, chat_id: str, user_id: str
+    ) -> Optional[dict]:
+        """Single-chat read in the same shape as one element of
+        ``fetch_user_chats``. Returns None when the chat doesn't exist OR
+        the user isn't a participant — caller maps to 404."""
+        try:
+            pipeline = get_single_chat_pipeline(chat_id, user_id)
+            rows = (
+                await self.mongo_store.db["chats"]
+                .aggregate(pipeline)
+                .to_list(length=1)
+            )
+            return rows[0] if rows else None
         except PyMongoError as e:
             logger.info(f"MongoDB Error: {e}")
             raise

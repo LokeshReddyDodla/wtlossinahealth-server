@@ -67,6 +67,58 @@ async def test_is_user_in_chat_false_when_chat_missing():
     assert await svc.is_user_in_chat("does-not-exist", "user-a") is False
 
 
+# --- fetch_single_chat (item F backing method) --------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_single_chat_returns_none_for_non_participant():
+    """fetch_single_chat must conflate 'chat missing' and 'not a
+    participant' into the same empty result. Same principle as
+    is_user_in_chat — never leak existence to outsiders."""
+    svc = ChatManagementService()
+    fake_collection = MagicMock()
+
+    cursor = MagicMock()
+    cursor.to_list = AsyncMock(return_value=[])
+    fake_collection.aggregate = MagicMock(return_value=cursor)
+
+    fake_store = MagicMock()
+    fake_store.db = {"chats": fake_collection}
+    svc.mongo_store = fake_store
+
+    out = await svc.fetch_single_chat("chat-1", "intruder")
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_single_chat_returns_first_row_when_found():
+    svc = ChatManagementService()
+    chat = {"_id": "chat-1", "participants": [{"id": "user-a"}]}
+    fake_collection = MagicMock()
+    cursor = MagicMock()
+    cursor.to_list = AsyncMock(return_value=[chat])
+    fake_collection.aggregate = MagicMock(return_value=cursor)
+    fake_store = MagicMock()
+    fake_store.db = {"chats": fake_collection}
+    svc.mongo_store = fake_store
+
+    out = await svc.fetch_single_chat("chat-1", "user-a")
+    assert out == chat
+    fake_collection.aggregate.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_single_chat_pipeline_first_match_filters_both_id_and_user():
+    """Sanity check on the pipeline shape — we tighten the existing
+    user_chat_pipeline's first $match to also pin _id. Both filters
+    must be present, otherwise we'd leak existence."""
+    from lib.pipelines.chat_pipelines import get_single_chat_pipeline
+
+    pipeline = get_single_chat_pipeline("chat-1", "user-a")
+    first_match = pipeline[0]["$match"]
+    assert first_match == {"_id": "chat-1", "participants.id": "user-a"}
+
+
 # --- _authorize_chat_access (Socket.IO) ----------------------------------
 
 
