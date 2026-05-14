@@ -17,8 +17,17 @@ class ChatNotificationService(BaseChatService):
         chat_id: Optional[str] = None,
         user_id: Optional[str] = None,
         notification_info: Optional[FCMNotificationInfo] = None,
+        exclude_user_id: Optional[str] = None,
     ):
+        """Fan out a Socket.IO event (and optional FCM) to a chat's
+        participants.
 
+        ``exclude_user_id`` skips the socket emit to that user — use it for
+        events triggered by the user themselves (mark-as-read, etc.) so we
+        don't waste a round-trip echoing their own action back to them.
+        Matches the FCM path, which already filters the sender via
+        ``_filter_participants_for_fcm``.
+        """
         from lib.services.socketio_service import sio
 
         try:
@@ -32,6 +41,8 @@ class ChatNotificationService(BaseChatService):
             # Emit WebSocket message to participants
             for participant in participants:
                 participant_id = str(participant["id"])
+                if exclude_user_id and participant_id == str(exclude_user_id):
+                    continue
                 await sio.emit(message_key, data, room=participant_id)
                 print(f"Emitted {message_key} to participant {participant_id}")
 

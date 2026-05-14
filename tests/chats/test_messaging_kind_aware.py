@@ -189,3 +189,40 @@ async def test_add_message_for_legacy_chat_without_kind_defaults_direct(
 
     await svc.add_message(_build_message_create())
     assert fake_support_notification == []
+
+
+# --- read-receipt fan-out excludes the triggering user ------------------
+
+
+@pytest.mark.asyncio
+async def test_mark_message_as_read_excludes_self_from_socket_fanout(
+    messaging_svc,
+):
+    """The user who marks read shouldn't get their own ack echoed back."""
+    svc, _ = messaging_svc
+    # Stub the read-side helpers so we don't run real Mongo ops.
+    svc._update_message_read_status = AsyncMock()
+    svc._update_chat_unread_count = AsyncMock()
+
+    await svc.mark_message_as_read(
+        chat_id="chat-1", user_id="user-b", message_id="m-1"
+    )
+
+    svc.notification_service.notify_participants.assert_awaited_once()
+    kwargs = svc.notification_service.notify_participants.await_args.kwargs
+    assert kwargs["exclude_user_id"] == "user-b"
+
+
+@pytest.mark.asyncio
+async def test_mark_all_messages_as_read_excludes_self_from_socket_fanout(
+    messaging_svc,
+):
+    svc, _ = messaging_svc
+    svc._mark_all_messages_as_read_in_chat = AsyncMock()
+    svc._update_chat_unread_count = AsyncMock()
+
+    await svc.mark_all_messages_as_read(chat_id="chat-1", user_id="user-b")
+
+    svc.notification_service.notify_participants.assert_awaited_once()
+    kwargs = svc.notification_service.notify_participants.await_args.kwargs
+    assert kwargs["exclude_user_id"] == "user-b"

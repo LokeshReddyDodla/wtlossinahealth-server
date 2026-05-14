@@ -399,6 +399,88 @@ async def test_agent_reply_care_provider_joins_as_care_provider(
 
 
 @pytest.mark.asyncio
+async def test_agent_reply_reopen_emits_chat_list_updated(svc, fake_mongo):
+    """Implicit reopen must emit chat_list_updated so the requester's
+    inbox refreshes status without a refetch. Forward-compatible payload:
+    ``change=status`` + ``ticket_status=pending`` (additive fields the
+    current Flutter consumer ignores; the new one will branch on them)."""
+    from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
+
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "closed",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="follow up",
+        media=None,
+    )
+
+    # Expect exactly one chat_list_updated emit from the reopen path.
+    emit_calls = [
+        c
+        for c in svc.chat_notification_service.notify_participants.await_args_list
+        if c.kwargs.get("message_key")
+        == EmitMessageKeyEnum.CHAT_LIST_UPDATED.value
+    ]
+    assert len(emit_calls) == 1
+    payload = emit_calls[0].kwargs["data"]
+    assert payload == {
+        "chat_id": "chat-1",
+        "change": "status",
+        "ticket_status": "pending",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_open_ticket_does_not_emit_chat_list_updated(
+    svc, fake_mongo
+):
+    """Reply on an open ticket doesn't change status, so no
+    chat_list_updated — the existing new_message_received from add_message
+    is all the inbox needs."""
+    from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
+
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="hi",
+        media=None,
+    )
+
+    emit_calls = [
+        c
+        for c in svc.chat_notification_service.notify_participants.await_args_list
+        if c.kwargs.get("message_key")
+        == EmitMessageKeyEnum.CHAT_LIST_UPDATED.value
+    ]
+    assert emit_calls == []
+
+
+@pytest.mark.asyncio
 async def test_agent_reply_on_resolved_ticket_reopens_to_pending(
     svc, fake_mongo
 ):
