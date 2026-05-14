@@ -84,8 +84,15 @@ def messaging_svc(monkeypatch):
     chats_collection.update_one = AsyncMock()
     messages_collection = MagicMock()
     messages_collection.update_one = AsyncMock()
+    # support_tickets lookup happens in add_message for kind=support
+    # chats (spec item B — to embed ticket_id in the FCM data map).
+    tickets_collection = MagicMock()
+    tickets_collection.find_one = AsyncMock(
+        return_value={"_id": "ticket-1"}
+    )
     svc.mongo_store.db["chats"] = chats_collection
     svc.mongo_store.db["chat_messages"] = messages_collection
+    svc.mongo_store.db["support_tickets"] = tickets_collection
     svc.mongo_store.insert_document = AsyncMock()
 
     # Stub notification path so it doesn't reach FCM.
@@ -93,6 +100,15 @@ def messaging_svc(monkeypatch):
     svc.notification_service.notify_participants = AsyncMock()
     svc.notification_service._get_notification_body = MagicMock(
         return_value="hello"
+    )
+
+    # Stub sender_profile enrichment so add_message doesn't hit PG.
+    async def _passthrough_enrich(messages):
+        return list(messages)
+
+    monkeypatch.setattr(
+        "lib.services.chat.chat_messaging_service.enrich_messages_with_sender_profiles",
+        _passthrough_enrich,
     )
 
     return svc, chats_collection
@@ -181,6 +197,191 @@ async def test_add_message_for_direct_chat_does_not_fanout(
 
     # SupportNotificationService should never have been instantiated.
     assert fake_support_notification == []
+
+
+@pytest.mark.asyncio
+async def test_add_message_emits_chat_list_updated_new_message_alongside_received(
+    messaging_svc, fake_support_notification
+):
+    """Unified event contract (spec A): every message send produces a
+    ``chat_list_updated{change=new_message}`` row-patch event alongside
+    the conversation-view ``new_message_received``. Sender excluded —
+    they don't need their own row patch."""
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "direct",
+            "participants": [
+                {"id": "patient-1", "type": "patient"},
+                {"id": "cp-1", "type": "care_provider"},
+            ],
+        }
+    )
+
+    await svc.add_message(_build_message_create())
+
+    emits = svc.notification_service.notify_participants.await_args_list
+    keys = [c.kwargs["message_key"] for c in emits]
+    assert "new_message_received" in keys
+    assert "chat_list_updated" in keys
+
+    # Inspect the row-patch event specifically.
+    list_emit = next(
+        c
+        for c in emits
+        if c.kwargs["message_key"] == "chat_list_updated"
+    )
+    payload = list_emit.kwargs["data"]
+    assert payload["chat_id"] == "chat-1"
+    assert payload["change"] == "new_message"
+    assert payload["last_message_preview"] == "hello"
+    assert payload["last_message_sender_id"] == "patient-1"
+    assert "last_message_at" in payload
+    assert "last_message_id" in payload
+    # Sender exclusion: they sent it, they don't need to be told.
+    assert list_emit.kwargs["exclude_user_id"] == "patient-1"
+
+
+@pytest.mark.asyncio
+async def test_add_message_preview_is_sanitized(
+    messaging_svc, fake_support_notification
+):
+    """Markdown formatting characters and whitespace runs are stripped
+    server-side. Single source of truth — clients consume plain text."""
+    from datetime import datetime
+
+    from lib.schemas.chat_message import ChatMessageCreate, MetadataSchema
+
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "direct",
+            "participants": [
+                {"id": "patient-1", "type": "patient"},
+                {"id": "cp-1", "type": "care_provider"},
+            ],
+        }
+    )
+
+    msg = ChatMessageCreate(
+        chat_id="chat-1",
+        sender_id="patient-1",
+        content="*hello*   _world_\n\nfollowup",
+        timestamp=datetime.utcnow(),
+        metadata=MetadataSchema(type="text", status="sent"),
+        severity="low",
+        is_flagged=False,
+    )
+    await svc.add_message(msg)
+
+    list_emit = next(
+        c
+        for c in svc.notification_service.notify_participants.await_args_list
+        if c.kwargs["message_key"] == "chat_list_updated"
+    )
+    assert list_emit.kwargs["data"]["last_message_preview"] == (
+        "hello world followup"
+    )
+
+
+@pytest.mark.asyncio
+async def test_support_fcm_data_carries_chat_id_and_ticket_id(
+    messaging_svc, fake_support_notification
+):
+    """Spec item B — support FCM pushes must carry chat_id + ticket_id in
+    the data map so the Flutter notification controller can deep-link
+    from the lockscreen tap directly to the thread."""
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "support",
+            "participants": [{"id": "patient-1", "type": "patient"}],
+        }
+    )
+    # Override the default tickets stub to return a specific id.
+    svc.mongo_store.db["support_tickets"].find_one = AsyncMock(
+        return_value={"_id": "ticket-42"}
+    )
+
+    await svc.add_message(_build_message_create())
+
+    # Inspect the notification_info passed to the chat fan-out (the
+    # first notify_participants call — for new_message_received).
+    new_msg_emit = next(
+        c
+        for c in svc.notification_service.notify_participants.await_args_list
+        if c.kwargs["message_key"] == "new_message_received"
+    )
+    info = new_msg_emit.kwargs["notification_info"]
+    assert info.data == {
+        "chat_id": "chat-1",
+        "ticket_id": "ticket-42",
+    }
+    assert info.channel_key == "support_messages"
+
+
+@pytest.mark.asyncio
+async def test_non_support_fcm_data_is_empty(
+    messaging_svc, fake_support_notification
+):
+    """For a direct chat, the FCM data map stays empty — no support
+    routing info to embed."""
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "direct",
+            "participants": [
+                {"id": "patient-1", "type": "patient"},
+                {"id": "cp-1", "type": "care_provider"},
+            ],
+        }
+    )
+
+    await svc.add_message(_build_message_create())
+
+    new_msg_emit = next(
+        c
+        for c in svc.notification_service.notify_participants.await_args_list
+        if c.kwargs["message_key"] == "new_message_received"
+    )
+    info = new_msg_emit.kwargs["notification_info"]
+    assert info.data == {}
+    assert info.channel_key == "chat_messages"
+
+
+@pytest.mark.asyncio
+async def test_support_fcm_data_empty_when_ticket_missing(
+    messaging_svc, fake_support_notification
+):
+    """Defensive: if the support_tickets row can't be found for some
+    reason, the FCM still goes out (channel key is right) but the data
+    map is empty rather than embedding a nonsensical ticket_id."""
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "support",
+            "participants": [{"id": "patient-1", "type": "patient"}],
+        }
+    )
+    svc.mongo_store.db["support_tickets"].find_one = AsyncMock(
+        return_value=None
+    )
+
+    await svc.add_message(_build_message_create())
+
+    new_msg_emit = next(
+        c
+        for c in svc.notification_service.notify_participants.await_args_list
+        if c.kwargs["message_key"] == "new_message_received"
+    )
+    info = new_msg_emit.kwargs["notification_info"]
+    assert info.data == {}
+    assert info.channel_key == "support_messages"
 
 
 @pytest.mark.asyncio

@@ -1253,8 +1253,10 @@ async def test_agent_reply_sets_last_message_preview(svc, fake_mongo):
     preview = collection.update_one.await_args.args[1]["$set"][
         "last_message_preview"
     ]
-    assert preview.endswith("…")
-    assert len(preview) <= 120
+    # Updated for the unified preview sanitizer (spec item A): 200-char
+    # truncation, no ellipsis (clients handle overflow display).
+    assert len(preview) <= 200
+    assert not preview.endswith("…")
 
 
 # --- change_status additional edge cases ---------------------------------

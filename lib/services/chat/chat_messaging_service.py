@@ -9,6 +9,10 @@ from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.chat.message_enricher import (
+    enrich_messages_with_sender_profiles,
+)
+from lib.utils.preview import sanitize_preview
 
 
 class ChatMessagingService(BaseChatService):
@@ -30,14 +34,57 @@ class ChatMessagingService(BaseChatService):
             )
             chat_kind = (chat or {}).get("kind", "direct")
 
+            # Build the FCM data map. For support chats we embed
+            # chat_id + ticket_id so the Flutter notification controller
+            # can deep-link straight to the thread on tap (spec item B).
+            # Non-support pushes carry an empty data map.
+            fcm_data: dict[str, str] = {}
+            if chat_kind == "support":
+                ticket = await self.mongo_store.db[
+                    "support_tickets"
+                ].find_one(
+                    {"chat_id": message_data.chat_id}, {"_id": 1}
+                )
+                if ticket:
+                    fcm_data = {
+                        "chat_id": str(message_data.chat_id),
+                        "ticket_id": str(ticket["_id"]),
+                    }
+
             notification_info = self._create_notification_info(
-                message, chat_kind=chat_kind
+                message, chat_kind=chat_kind, data=fcm_data
             )
+            # Attach sender_profile inline before broadcasting — eliminates
+            # the race where the message arrives at the client before the
+            # chat roster update, leaving the sender unrenderable.
+            broadcast_message = (
+                await enrich_messages_with_sender_profiles(
+                    [jsonable_encoder(saved_message)]
+                )
+            )[0]
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
-                data=jsonable_encoder(saved_message),
+                data=broadcast_message,
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
+            )
+
+            # Pair every new_message_received with a chat_list_updated row
+            # patch so list views update without a separate refetch. Sender
+            # excluded — they already know they sent it. Two events on the
+            # wire, two different consumers (conversation view vs inbox row).
+            await self.notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                data={
+                    "chat_id": message_data.chat_id,
+                    "change": "new_message",
+                    "last_message_preview": sanitize_preview(message.content),
+                    "last_message_at": jsonable_encoder(message.timestamp),
+                    "last_message_id": message.id,
+                    "last_message_sender_id": message.sender_id,
+                },
+                chat_id=message_data.chat_id,
+                exclude_user_id=message_data.sender_id,
             )
 
             if chat_kind == "support":
@@ -251,9 +298,18 @@ class ChatMessagingService(BaseChatService):
                     )
 
     def _create_notification_info(
-        self, message: ChatMessage, chat_kind: str = "direct"
+        self,
+        message: ChatMessage,
+        chat_kind: str = "direct",
+        data: Optional[dict] = None,
     ) -> FCMNotificationInfo:
-        """Create notification info for a new message."""
+        """Create notification info for a new message.
+
+        ``data`` becomes the FCM ``data`` map (forwarded to Firebase by
+        FCMService._build_message). For support chats the caller passes
+        ``{chat_id, ticket_id}`` so the Flutter notification controller
+        can deep-link from the lockscreen tap directly to the thread.
+        """
         is_support = chat_kind == "support"
         return FCMNotificationInfo(
             title="Support Update" if is_support else "New Message",
@@ -263,6 +319,7 @@ class ChatMessagingService(BaseChatService):
             channel_key="support_messages" if is_support else "chat_messages",
             group_key="support_group" if is_support else "chat_group",
             sender_id=message.sender_id,
+            data=data or {},
         )
 
     async def _update_message_read_status(

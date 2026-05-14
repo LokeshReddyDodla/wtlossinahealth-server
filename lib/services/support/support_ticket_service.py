@@ -30,11 +30,18 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.chat.message_enricher import (
+    enrich_messages_with_sender_profiles,
+)
+from lib.utils.preview import sanitize_preview
 
 
-def _preview(text: str, limit: int = 120) -> str:
-    text = (text or "").strip()
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+def _preview(text: str, limit: int = 200) -> str:
+    """Thin wrapper over ``sanitize_preview`` used for the ticket's
+    persisted ``last_message_preview`` field. Aligned at 200 chars with
+    the socket-event preview so the stored value and the wire value
+    match exactly — no ellipsis, plain text only."""
+    return sanitize_preview(text, max_len=limit)
 
 
 def _normalize_uuid(value: Optional[str]) -> Optional[str]:
@@ -245,6 +252,7 @@ class SupportTicketService:
             .sort("timestamp", 1)
             .to_list(length=None)
         )
+        messages = await enrich_messages_with_sender_profiles(messages)
         return {**ticket, "messages": messages}
 
     async def agent_reply(
