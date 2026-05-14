@@ -287,6 +287,9 @@ class SupportTicketService:
         )
         await self.chat_messaging_service.add_message(message_data)
 
+        # Open tickets stay open; an agent reply on a closed/resolved
+        # ticket reopens it as 'pending' so the queue surfaces it again.
+        reopened = ticket["status"] in ("resolved", "closed")
         await self.mongo_store.db["support_tickets"].update_one(
             {"_id": ticket_id},
             {
@@ -294,17 +297,28 @@ class SupportTicketService:
                     "updated_at": now,
                     "last_message_at": now,
                     "last_message_preview": _preview(content),
-                    # Open tickets stay open; an agent reply on a closed/
-                    # resolved ticket reopens it as 'pending' so the queue
-                    # surfaces it again.
-                    **(
-                        {"status": "pending"}
-                        if ticket["status"] in ("resolved", "closed")
-                        else {}
-                    ),
+                    **({"status": "pending"} if reopened else {}),
                 }
             },
         )
+
+        if reopened:
+            # Implicit status flip needs its own chat_list_updated so the
+            # requester's inbox refreshes status without a refetch.
+            # new_message_received already fires via add_message above and
+            # acts as belt-and-braces. Payload uses the forward-compatible
+            # (change, ticket_status) shape — additional fields, no
+            # existing consumer change.
+            await self.chat_notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                data={
+                    "chat_id": ticket["chat_id"],
+                    "change": "status",
+                    "ticket_status": "pending",
+                },
+                chat_id=ticket["chat_id"],
+            )
+
         return await self.mongo_store.db["support_tickets"].find_one(
             {"_id": ticket_id}
         )

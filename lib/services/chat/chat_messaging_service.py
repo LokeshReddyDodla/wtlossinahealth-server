@@ -128,6 +128,7 @@ class ChatMessagingService(BaseChatService):
                     "user_id": user_id,
                 },
                 chat_id=chat_id,
+                exclude_user_id=user_id,
             )
         except Exception as e:
             print(f"Failed to mark message as read: {str(e)}")
@@ -142,6 +143,7 @@ class ChatMessagingService(BaseChatService):
                 message_key=EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
                 data={"chat_id": chat_id, "user_id": user_id},
                 chat_id=chat_id,
+                exclude_user_id=user_id,
             )
         except Exception as e:
             print(f"Failed to mark all messages as read: {str(e)}")
