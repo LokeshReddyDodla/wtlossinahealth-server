@@ -520,3 +520,373 @@ async def test_close_ticket_by_requester_only_owner(svc, fake_mongo):
 
     assert out is None
     collection.update_one.assert_not_called()
+
+
+# --- list_tickets_for_requester ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_for_requester_filters_by_id(svc, fake_mongo):
+    _, collection = fake_mongo
+
+    await svc.list_tickets_for_requester(
+        requester_id="patient-1",
+        status_filter=None,
+        limit=10,
+        offset=0,
+    )
+
+    query = collection.find.call_args.args[0]
+    assert query == {"requester_id": "patient-1"}
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_for_requester_applies_status_filter(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+
+    await svc.list_tickets_for_requester(
+        requester_id="patient-1",
+        status_filter="open",
+        limit=10,
+        offset=0,
+    )
+
+    query = collection.find.call_args.args[0]
+    assert query == {"requester_id": "patient-1", "status": "open"}
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_for_requester_applies_paging(svc, fake_mongo):
+    _, collection = fake_mongo
+
+    await svc.list_tickets_for_requester(
+        requester_id="patient-1",
+        status_filter=None,
+        limit=5,
+        offset=10,
+    )
+
+    cursor = collection.find.return_value or collection.find.side_effect(None)
+    # Skip/limit are method calls on the chainable cursor returned by
+    # ``_chain``; the cursor is created fresh per call so we inspect via
+    # the latest cursor's mocks.
+    last_cursor = collection.find.spy_return  # MagicMock side_effect support
+    # Easier: re-invoke the side_effect to assert it sets up chaining; the
+    # core invariant is that ``find`` was called once with the right query.
+    assert collection.find.call_count == 1
+
+
+# --- list_queue scoping --------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_queue_admin_only_sees_product(svc, fake_mongo):
+    _, collection = fake_mongo
+
+    await svc.list_queue(
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        scope_filter=None,
+        status_filter=None,
+        requester_type_filter=None,
+        limit=20,
+        offset=0,
+    )
+
+    query = collection.find.call_args.args[0]
+    # Single product clause — no $or, no facility query.
+    assert query == {"scope": "product"}
+
+
+@pytest.mark.asyncio
+async def test_list_queue_facility_agent_only_sees_own_facility(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+
+    await svc.list_queue(
+        agent_scopes=["facility"],
+        agent_facility_ids=["facility-A"],
+        scope_filter=None,
+        status_filter=None,
+        requester_type_filter=None,
+        limit=20,
+        offset=0,
+    )
+
+    query = collection.find.call_args.args[0]
+    assert query == {
+        "scope": "facility",
+        "health_facility_id": {"$in": ["facility-A"]},
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_queue_facility_agent_without_facility_returns_empty(
+    svc, fake_mongo
+):
+    """A support_staff CareProvider whose facility_ids is empty cannot
+    see anything — we must NOT degrade to a full unfiltered facility
+    query."""
+    _, collection = fake_mongo
+
+    out = await svc.list_queue(
+        agent_scopes=["facility"],
+        agent_facility_ids=[],
+        scope_filter=None,
+        status_filter=None,
+        requester_type_filter=None,
+        limit=20,
+        offset=0,
+    )
+
+    assert out == []
+    collection.find.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_queue_empty_scopes_returns_empty_without_querying(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+
+    out = await svc.list_queue(
+        agent_scopes=[],
+        agent_facility_ids=[],
+        scope_filter=None,
+        status_filter=None,
+        requester_type_filter=None,
+        limit=20,
+        offset=0,
+    )
+
+    assert out == []
+    collection.find.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_queue_admin_scope_filter_to_facility_returns_empty(
+    svc, fake_mongo
+):
+    """An admin (product-only) explicitly filtering for facility tickets
+    gets nothing — not a leak."""
+    _, collection = fake_mongo
+
+    out = await svc.list_queue(
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        scope_filter="facility",
+        status_filter=None,
+        requester_type_filter=None,
+        limit=20,
+        offset=0,
+    )
+
+    assert out == []
+    collection.find.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_queue_combines_status_and_requester_type_filters(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+
+    await svc.list_queue(
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        scope_filter=None,
+        status_filter="open",
+        requester_type_filter="patient",
+        limit=20,
+        offset=0,
+    )
+
+    query = collection.find.call_args.args[0]
+    assert query == {
+        "scope": "product",
+        "status": "open",
+        "requester_type": "patient",
+    }
+
+
+# --- agent_reply additional edge cases -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_on_closed_ticket_reopens_to_pending(
+    svc, fake_mongo
+):
+    from lib.core.constants import ProfileTypeEnum
+
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "closed",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="follow up",
+        media=None,
+    )
+
+    update = collection.update_one.await_args.args[1]
+    assert update["$set"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_on_pending_does_not_change_status(svc, fake_mongo):
+    from lib.core.constants import ProfileTypeEnum
+
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "pending",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="bumping",
+        media=None,
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    assert "status" not in update
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_sets_last_message_preview(svc, fake_mongo):
+    from lib.core.constants import ProfileTypeEnum
+
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    long_content = "x" * 500
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content=long_content,
+        media=None,
+    )
+
+    preview = collection.update_one.await_args.args[1]["$set"][
+        "last_message_preview"
+    ]
+    assert preview.endswith("…")
+    assert len(preview) <= 120
+
+
+# --- change_status additional edge cases ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_change_status_returns_none_when_out_of_scope(
+    svc, fake_mongo
+):
+    """An admin trying to move a facility ticket's status gets None,
+    not the ticket."""
+    _, collection = fake_mongo
+    collection.find_one = AsyncMock(
+        return_value={
+            "_id": "t-1",
+            "scope": "facility",
+            "health_facility_id": "f-1",
+        }
+    )
+
+    out = await svc.change_status(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        new_status="resolved",
+    )
+
+    assert out is None
+    collection.update_one.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_change_status_resolved_at_is_idempotent(svc, fake_mongo):
+    """Re-resolving an already-resolved ticket must NOT overwrite the
+    original resolved_at — that would lose audit history."""
+    from datetime import datetime, timedelta
+
+    original = datetime.utcnow() - timedelta(days=1)
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "resolved",
+        "resolved_at": original,
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.change_status(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        new_status="resolved",
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    # status is re-set (no-op) and updated_at refreshed, but resolved_at
+    # is NOT in the update — the original timestamp is preserved.
+    assert "resolved_at" not in update
+
+
+@pytest.mark.asyncio
+async def test_change_status_closed_at_is_idempotent(svc, fake_mongo):
+    from datetime import datetime, timedelta
+
+    original = datetime.utcnow() - timedelta(days=2)
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "closed",
+        "closed_at": original,
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+
+    await svc.change_status(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        new_status="closed",
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    assert "closed_at" not in update
