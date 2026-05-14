@@ -6,7 +6,7 @@ from pymongo.errors import PyMongoError
 
 from lib.core.constants import EmitMessageKeyEnum, ProfileTypeEnum
 from lib.core.mongo_store import get_mongo_store
-from lib.core.types import ProfileTypeLiteral
+from lib.core.types import ChatKindLiteral, ProfileTypeLiteral
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.pipelines.chat_pipelines import (
     get_chat_messages_pipeline,
@@ -42,9 +42,11 @@ class ChatManagementService(BaseChatService):
         is_muted: Optional[bool] = False,
         is_archived: Optional[bool] = False,
         is_pinned: Optional[bool] = False,
+        kind: ChatKindLiteral = "direct",
     ):
-        if not is_group:
-            # Check for an existing chat
+        if not is_group and kind != "support":
+            # Check for an existing chat. Support tickets always create a
+            # fresh chat — each ticket is its own thread.
             existing_chat_id = await self._find_existing_1on1_chat(
                 user_id_1=user_id, user_id_2=other_user_id
             )
@@ -67,6 +69,7 @@ class ChatManagementService(BaseChatService):
         unread_counts = {participant.id: 0}
         chat = ChatSchema(
             is_group=is_group,
+            kind=kind,
             participants=[participant],
             last_message=None,
             unread_counts=unread_counts,
@@ -145,6 +148,15 @@ class ChatManagementService(BaseChatService):
         except PyMongoError as e:
             logger.info(f"MongoDB Error: {e}")
             raise
+
+    async def is_user_in_chat(self, chat_id: str, user_id: str) -> bool:
+        """True if the chat exists AND user_id is a participant. Combines
+        existence + access check in a single query."""
+        chat = await self.mongo_store.db["chats"].find_one(
+            {"_id": chat_id, "participants.id": user_id},
+            {"_id": 1},
+        )
+        return chat is not None
 
     async def find_direct_chat(
         self, user_id_1: str, user_id_2: str

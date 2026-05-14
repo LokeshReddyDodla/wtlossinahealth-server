@@ -186,6 +186,12 @@ def get_chat_management_service() -> ChatManagementService:
     return cast(ChatManagementService, container.resolve(ChatManagementService))
 
 
+def get_support_ticket_service():
+    from lib.services.support.support_ticket_service import SupportTicketService
+
+    return cast(SupportTicketService, container.resolve(SupportTicketService))
+
+
 def get_direct_chat_resolver() -> DirectChatResolver:
     return cast(DirectChatResolver, container.resolve(DirectChatResolver))
 

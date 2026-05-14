@@ -3,7 +3,14 @@ from typing import Literal
 ProfileTypeLiteral = Literal[
     "patient",
     "care_provider",
+    "admin",
 ]
+
+ChatKindLiteral = Literal["direct", "group", "support"]
+
+SupportScopeLiteral = Literal["product", "facility"]
+
+SupportTicketStatusLiteral = Literal["open", "pending", "resolved", "closed"]
 
 FitnessReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 
@@ -13,6 +20,7 @@ SleepReportTypeLiteral = Literal["daily", "weekly", "monthly", "custom"]
 FCMNotificationChannelKeyLiteral = Literal[
     "fitness_sync",
     "chat_messages",
+    "support_messages",
     "reminders",
     "alerts",
     "health_insights",
@@ -23,6 +31,7 @@ FCMNotificationChannelKeyLiteral = Literal[
 FCMNotificationGroupKeyLiteral = Literal[
     "fitness_group",
     "chat_group",
+    "support_group",
     "reminder_group",
     "alert_group",
     "health_insights_group",

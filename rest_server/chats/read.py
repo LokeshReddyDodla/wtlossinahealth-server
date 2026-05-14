@@ -156,6 +156,15 @@ async def get_chat_messages(
 ):
     try:
         user_id, role = current_user
+
+        if not await chat_management_service.is_user_in_chat(
+            chat_id=chat_id, user_id=user_id
+        ):
+            raise_http_exception(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="You don't have access to this chat.",
+            )
+
         messages = await chat_management_service.fetch_chat_messages(
             chat_id, user_id
         )
