@@ -83,10 +83,42 @@ class ChatManagementService(BaseChatService):
         try:
             await self.mongo_store.insert_document("chats", chat_dict)
             logger.info(f"New chat created with ID: {chat.id}")
+            await self._emit_chat_created(
+                chat_id=chat.id,
+                chat_kind=kind,
+                recipient_ids=[user_id],
+            )
             return chat.id
         except PyMongoError as e:
             logger.info(f"Failed to create new chat: {e}")
             raise
+
+    async def _emit_chat_created(
+        self,
+        chat_id: str,
+        chat_kind: ChatKindLiteral,
+        recipient_ids: list[str],
+    ) -> None:
+        """Notify the chat's initial participants that they have a new
+        chat. The 1-on-1 reactivate branch in ``create_new_chat`` doesn't
+        call this — that's not a new chat, just a flag flip.
+
+        Idempotent at the client: even when the caller already has the
+        chat_id from the synchronous POST response (e.g. open_ticket),
+        a redundant socket event does no harm and keeps consumers simple.
+        """
+        from lib.services.socketio_service import sio
+
+        for uid in recipient_ids:
+            await sio.emit(
+                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                {
+                    "chat_id": chat_id,
+                    "change": "chat_created",
+                    "chat_kind": chat_kind,
+                },
+                room=str(uid),
+            )
 
     async def create_chat_relationships(
         self,
@@ -97,10 +129,16 @@ class ChatManagementService(BaseChatService):
             await self.create_direct_and_group_chats(
                 patient_id, care_provider_id
             )
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                user_id=patient_id,
-            )
+            # No standalone emit here — chat_list_updated events are now
+            # sourced from the actual mutations:
+            # - create_new_chat fires chat_created to the initial
+            #   participant (patient) for the direct chat
+            # - add_participant_in_chat fires chat_created to the new
+            #   joiner (care_provider) and participants_changed to the
+            #   existing participant (patient) for each chat the CP joins
+            # The previous notify_participants(user_id=patient_id) call
+            # fanned an empty-payload event across every chat the patient
+            # was in — superseded by the per-chat, payload-rich emits.
         except Exception as e:
             logger.error(f"Chat creation failed: {str(e)}")
             raise ChatCreationError(
