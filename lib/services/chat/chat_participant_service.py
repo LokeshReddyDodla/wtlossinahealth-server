@@ -48,9 +48,13 @@ class ChatParticipantService(BaseChatService):
                 # Capture existing participant ids BEFORE the write so the
                 # roster fan-out below targets the right rooms — once the
                 # write lands, the new user is also "existing".
-                existing_ids = await self._fetch_existing_participant_ids(
-                    chat_id
+                existing_chat = await self.mongo_store.db["chats"].find_one(
+                    {"_id": chat_id}, {"participants.id": 1}
                 )
+                existing_ids = [
+                    str(p["id"])
+                    for p in (existing_chat or {}).get("participants", [])
+                ]
                 await self._add_new_participant(
                     chat_id, user_id, participant_dict
                 )
@@ -126,14 +130,6 @@ class ChatParticipantService(BaseChatService):
             },
         )
         print(f"Added new participant {user_id} to chat {chat_id}.")
-
-    async def _fetch_existing_participant_ids(
-        self, chat_id: str
-    ) -> List[str]:
-        chat = await self.mongo_store.db["chats"].find_one(
-            {"_id": chat_id}, {"participants.id": 1}
-        )
-        return [str(p["id"]) for p in (chat or {}).get("participants", [])]
 
     async def _broadcast_participant_join(
         self,

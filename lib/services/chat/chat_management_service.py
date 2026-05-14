@@ -83,42 +83,26 @@ class ChatManagementService(BaseChatService):
         try:
             await self.mongo_store.insert_document("chats", chat_dict)
             logger.info(f"New chat created with ID: {chat.id}")
-            await self._emit_chat_created(
-                chat_id=chat.id,
-                chat_kind=kind,
-                recipient_ids=[user_id],
+            # Tell the creator their inbox has a new row. The 1-on-1
+            # reactivate branch above doesn't reach here — not a new
+            # chat, just a flag flip. Redundant on the open_ticket path
+            # (caller already has chat_id from the POST response) but
+            # idempotent at the client and keeps consumers uniform.
+            from lib.services.socketio_service import sio
+
+            await sio.emit(
+                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                {
+                    "chat_id": chat.id,
+                    "change": "chat_created",
+                    "chat_kind": kind,
+                },
+                room=str(user_id),
             )
             return chat.id
         except PyMongoError as e:
             logger.info(f"Failed to create new chat: {e}")
             raise
-
-    async def _emit_chat_created(
-        self,
-        chat_id: str,
-        chat_kind: ChatKindLiteral,
-        recipient_ids: list[str],
-    ) -> None:
-        """Notify the chat's initial participants that they have a new
-        chat. The 1-on-1 reactivate branch in ``create_new_chat`` doesn't
-        call this — that's not a new chat, just a flag flip.
-
-        Idempotent at the client: even when the caller already has the
-        chat_id from the synchronous POST response (e.g. open_ticket),
-        a redundant socket event does no harm and keeps consumers simple.
-        """
-        from lib.services.socketio_service import sio
-
-        for uid in recipient_ids:
-            await sio.emit(
-                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                {
-                    "chat_id": chat_id,
-                    "change": "chat_created",
-                    "chat_kind": chat_kind,
-                },
-                room=str(uid),
-            )
 
     async def create_chat_relationships(
         self,

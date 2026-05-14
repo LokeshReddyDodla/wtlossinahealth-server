@@ -10,7 +10,7 @@ from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.message_enricher import (
-    enrich_single_message_with_sender_profile,
+    enrich_messages_with_sender_profiles,
 )
 from lib.utils.preview import sanitize_preview
 
@@ -57,9 +57,11 @@ class ChatMessagingService(BaseChatService):
             # Attach sender_profile inline before broadcasting — eliminates
             # the race where the message arrives at the client before the
             # chat roster update, leaving the sender unrenderable.
-            broadcast_message = await enrich_single_message_with_sender_profile(
-                jsonable_encoder(saved_message)
-            )
+            broadcast_message = (
+                await enrich_messages_with_sender_profiles(
+                    [jsonable_encoder(saved_message)]
+                )
+            )[0]
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
                 data=broadcast_message,

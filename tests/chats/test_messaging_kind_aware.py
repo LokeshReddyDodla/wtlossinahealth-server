@@ -103,11 +103,11 @@ def messaging_svc(monkeypatch):
     )
 
     # Stub sender_profile enrichment so add_message doesn't hit PG.
-    async def _passthrough_enrich(message):
-        return message
+    async def _passthrough_enrich(messages):
+        return list(messages)
 
     monkeypatch.setattr(
-        "lib.services.chat.chat_messaging_service.enrich_single_message_with_sender_profile",
+        "lib.services.chat.chat_messaging_service.enrich_messages_with_sender_profiles",
         _passthrough_enrich,
     )
 

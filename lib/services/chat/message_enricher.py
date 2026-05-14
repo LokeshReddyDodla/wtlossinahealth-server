@@ -51,14 +51,6 @@ async def enrich_messages_with_sender_profiles(
     return materialized
 
 
-async def enrich_single_message_with_sender_profile(
-    message: dict,
-) -> dict:
-    """Convenience wrapper for single-message paths (the socket broadcast)."""
-    enriched = await enrich_messages_with_sender_profiles([message])
-    return enriched[0] if enriched else message
-
-
 _UNKNOWN_PARTICIPANT_PROFILE = {
     "first_name": "Unknown",
     "last_name": "User",
