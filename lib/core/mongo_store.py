@@ -25,7 +25,26 @@ class MongoStore:
     async def init_indexes(self):
         await self._init_ai_conversation_message_indexes()
         await self._init_support_ticket_indexes()
+        await self._init_chat_indexes()
         # In future: await self._init_patient_indexes(), etc.
+
+    async def _init_chat_indexes(self):
+        """Indexes on chats + chat_messages. Pre-existing collections —
+        adding these now because support tickets amplify the scan cost:
+        every ticket detail load fetches the full thread by chat_id, and
+        every chat list query filters by participants.id."""
+        chats = self.db["chats"]
+        await chats.create_index(
+            [("participants.id", 1), ("updated_at", -1)],
+            name="chat_participants_updatedAt_idx",
+        )
+        await chats.create_index([("kind", 1)], name="chat_kind_idx", sparse=True)
+
+        messages = self.db["chat_messages"]
+        await messages.create_index(
+            [("chat_id", 1), ("timestamp", 1)],
+            name="chatMessages_chatId_timestamp_idx",
+        )
 
     async def _init_support_ticket_indexes(self):
         collection = self.db["support_tickets"]

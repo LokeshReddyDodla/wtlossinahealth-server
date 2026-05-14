@@ -191,6 +191,101 @@ async def test_notify_queue_passes_facility_id_to_agent_lookup(
 
 
 @pytest.mark.asyncio
+async def test_emit_to_queue_agents_skips_existing_participants(monkeypatch):
+    """The whole point of this method: notify agents who AREN'T yet chat
+    participants. Existing participants already got the regular
+    notify_participants fan-out — re-emitting would be a wasted round-trip."""
+    from lib.services import socketio_service as sio_mod
+    from lib.services.support import (
+        support_notification_service as mod,
+    )
+
+    chats_col = MagicMock()
+    chats_col.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "participants": [{"id": "admin-A", "type": "admin"}],
+        }
+    )
+    store = MagicMock()
+    store.db = {"chats": chats_col}
+    monkeypatch.setattr(mod, "get_mongo_store", lambda: store)
+
+    fake_sio = MagicMock()
+    fake_sio.emit = AsyncMock()
+    monkeypatch.setattr(sio_mod, "sio", fake_sio)
+
+    svc = SupportNotificationService()
+    svc._fetch_queue_agents = AsyncMock(
+        return_value=[("admin-A", "admin"), ("admin-B", "admin")]
+    )
+
+    await svc.emit_to_queue_agents(
+        chat_id="chat-1",
+        ticket={"scope": "product", "health_facility_id": None},
+        event_key="chat_list_updated",
+        data={"chat_id": "chat-1", "change": "status"},
+    )
+
+    rooms = [c.kwargs.get("room") for c in fake_sio.emit.await_args_list]
+    assert rooms == ["admin-B"]
+    assert "admin-A" not in rooms
+
+
+@pytest.mark.asyncio
+async def test_fetch_queue_agents_facility_uses_case_insensitive_role():
+    """The auth dep accepts 'Support_Staff' (any casing). The queue SQL
+    must too, otherwise a mixed-case CP can answer tickets but never gets
+    pinged about new ones — silent inconsistency."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy import func
+
+    captured_wheres: list = []
+
+    class FakeResult:
+        def all(self):
+            return []
+
+    class FakeSession:
+        async def execute(self, stmt):
+            # Capture the SQL where-clause so we can introspect.
+            captured_wheres.append(stmt)
+            return FakeResult()
+
+    class FakeSessionCtx:
+        async def __aenter__(self):
+            return FakeSession()
+
+        async def __aexit__(self, *_):
+            return False
+
+    import lib.services.support.support_notification_service as mod
+
+    def fake_session_factory():
+        return FakeSessionCtx()
+
+    original = mod.get_async_postgres_session
+    mod.get_async_postgres_session = fake_session_factory
+    try:
+        svc = SupportNotificationService()
+        # Use a valid UUID — _fetch_queue_agents binds it as a UUID column,
+        # and we want the SQL compile to succeed so we can inspect the WHERE.
+        await svc._fetch_queue_agents(
+            scope="facility",
+            health_facility_id="00000000-0000-0000-0000-000000000001",
+        )
+    finally:
+        mod.get_async_postgres_session = original
+
+    assert len(captured_wheres) == 1
+    # Parameterized compile (no literal_binds) — we only care about the
+    # text shape, not the bound values.
+    compiled = str(captured_wheres[0].compile())
+    assert "lower(" in compiled.lower()
+
+
+@pytest.mark.asyncio
 async def test_notify_queue_forwards_notification_info_dict(
     fake_mongo, fake_enqueue
 ):

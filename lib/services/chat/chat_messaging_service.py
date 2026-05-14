@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
@@ -42,10 +42,13 @@ class ChatMessagingService(BaseChatService):
 
             if chat_kind == "support":
                 # Fan out to agents who aren't (yet) chat participants — the
-                # support queue. Import locally to avoid a circular import via
+                # support queue. Imports local to avoid a circular import via
                 # SupportTicketService -> ChatMessagingService.
                 from lib.services.support.support_notification_service import (
                     SupportNotificationService,
+                )
+                from lib.services.support.support_ticket_service import (
+                    SupportTicketService,
                 )
 
                 await SupportNotificationService().notify_queue(
@@ -53,6 +56,14 @@ class ChatMessagingService(BaseChatService):
                     message=saved_message,
                     sender_id=message_data.sender_id,
                     notification_info=notification_info,
+                )
+                # Requester replies reopen closed/resolved tickets and
+                # always bump last_message_at on the ticket so the queue
+                # sort surfaces the freshest activity.
+                await SupportTicketService().on_requester_message_in_support_chat(
+                    chat_id=message_data.chat_id,
+                    sender_id=message_data.sender_id,
+                    content=message_data.content,
                 )
 
             print(
@@ -80,7 +91,7 @@ class ChatMessagingService(BaseChatService):
 
             update_data = {
                 "content": new_content,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.utcnow(),
                 "is_edited": True,
             }
             if metadata:
@@ -222,7 +233,7 @@ class ChatMessagingService(BaseChatService):
             {
                 "$set": {
                     "last_message": message.id,
-                    "updated_at": datetime.now(),
+                    "updated_at": datetime.utcnow(),
                 },
                 "$inc": {f"unread_counts.{sender_id}": 0},
             },
@@ -258,16 +269,17 @@ class ChatMessagingService(BaseChatService):
         self, chat_id: str, message_id: str, user_id: str
     ):
         """Update a specific message's read receipts."""
+        now = datetime.utcnow()
         await self.mongo_store.db["chat_messages"].update_one(
             {"_id": message_id, "chat_id": chat_id},
             {
                 "$addToSet": {
                     "read_receipts": {
                         "reader_id": user_id,
-                        "read_at": datetime.now(),
+                        "read_at": now,
                     }
                 },
-                "$set": {"updated_at": datetime.now()},
+                "$set": {"updated_at": now},
             },
         )
 
@@ -289,7 +301,7 @@ class ChatMessagingService(BaseChatService):
                 {
                     "$set": {
                         f"unread_counts.{user_id}": 0,
-                        "updated_at": datetime.now(),
+                        "updated_at": datetime.utcnow(),
                     }
                 },
             )
@@ -298,16 +310,17 @@ class ChatMessagingService(BaseChatService):
         self, chat_id: str, user_id: str
     ):
         """Mark all messages in a chat as read."""
+        now = datetime.utcnow()
         await self.mongo_store.db["chat_messages"].update_many(
             {"chat_id": chat_id, "read_receipts.reader_id": {"$ne": user_id}},
             {
                 "$addToSet": {
                     "read_receipts": {
                         "reader_id": user_id,
-                        "read_at": datetime.now(),
+                        "read_at": now,
                     }
                 },
-                "$set": {"updated_at": datetime.now()},
+                "$set": {"updated_at": now},
             },
         )
 
@@ -320,7 +333,7 @@ class ChatMessagingService(BaseChatService):
         reaction: str,
     ):
         """Toggle a reaction on a message."""
-        current_time = datetime.now()
+        current_time = datetime.utcnow()
         user_reaction = next(
             (
                 r

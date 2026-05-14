@@ -71,6 +71,10 @@ class SupportTicketService:
             raise ValueError(
                 "health_facility_id is required when scope == 'facility'"
             )
+        # Drop facility_id on product-scope tickets so we don't store
+        # semantically inconsistent data ("product ticket at facility X").
+        if scope == "product":
+            health_facility_id = None
         try:
             health_facility_id = _normalize_uuid(health_facility_id)
         except ValueError as e:
@@ -265,11 +269,23 @@ class SupportTicketService:
             if agent_role == ProfileTypeEnum.ADMIN
             else "care_provider"
         )
-        await self.chat_participant_service.add_participant_in_chat(
-            chat_id=ticket["chat_id"],
-            user_id=agent_id,
-            type=agent_participant_type,
+        # Only join the chat on the agent's FIRST reply — add_participant_in_chat
+        # is idempotent at the DB level but the read+write costs add up on a
+        # busy thread. Skip when the agent is already a participant.
+        chat = await self.mongo_store.db["chats"].find_one(
+            {"_id": ticket["chat_id"]},
+            {"participants.id": 1},
         )
+        already_participant = any(
+            p.get("id") == agent_id
+            for p in (chat or {}).get("participants", [])
+        )
+        if not already_participant:
+            await self.chat_participant_service.add_participant_in_chat(
+                chat_id=ticket["chat_id"],
+                user_id=agent_id,
+                type=agent_participant_type,
+            )
 
         now = datetime.utcnow()
         message_data = ChatMessageCreate(
@@ -303,25 +319,61 @@ class SupportTicketService:
         )
 
         if reopened:
-            # Implicit status flip needs its own chat_list_updated so the
-            # requester's inbox refreshes status without a refetch.
-            # new_message_received already fires via add_message above and
-            # acts as belt-and-braces. Payload uses the forward-compatible
-            # (change, ticket_status) shape — additional fields, no
-            # existing consumer change.
-            await self.chat_notification_service.notify_participants(
-                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-                data={
-                    "chat_id": ticket["chat_id"],
-                    "change": "status",
-                    "ticket_status": "pending",
-                },
-                chat_id=ticket["chat_id"],
+            await self._emit_status_change(
+                ticket=ticket,
+                new_status="pending",
             )
 
         return await self.mongo_store.db["support_tickets"].find_one(
             {"_id": ticket_id}
         )
+
+    async def on_requester_message_in_support_chat(
+        self,
+        chat_id: str,
+        sender_id: str,
+        content: str,
+    ) -> None:
+        """Hook called from ChatMessagingService.add_message whenever a
+        message lands on a support chat.
+
+        Responsibilities:
+        - Keep the ticket's ``last_message_at`` / ``last_message_preview``
+          in sync with the chat so queue sort surfaces the freshest
+          activity — without this, a requester reply leaves the ticket
+          stale at the bottom of the agent queue.
+        - When the sender is the requester AND the ticket is in a terminal
+          state (resolved/closed), reopen it to ``open`` (needs agent
+          attention) and emit the status change.
+
+        Agent replies are handled by ``agent_reply`` directly and skipped
+        here so we never double-update.
+        """
+        ticket = await self.mongo_store.db["support_tickets"].find_one(
+            {"chat_id": chat_id}
+        )
+        if not ticket:
+            return
+        if str(sender_id) != str(ticket["requester_id"]):
+            # Agent reply — agent_reply owns the update path.
+            return
+
+        now = datetime.utcnow()
+        should_reopen = ticket["status"] in ("resolved", "closed")
+        update: dict = {
+            "updated_at": now,
+            "last_message_at": now,
+            "last_message_preview": _preview(content),
+        }
+        if should_reopen:
+            update["status"] = "open"
+
+        await self.mongo_store.db["support_tickets"].update_one(
+            {"_id": ticket["_id"]}, {"$set": update}
+        )
+
+        if should_reopen:
+            await self._emit_status_change(ticket=ticket, new_status="open")
 
     async def change_status(
         self,
@@ -369,13 +421,48 @@ class SupportTicketService:
             {"_id": ticket["_id"]}, {"$set": update}
         )
 
-        await self.chat_notification_service.notify_participants(
-            message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
-            data={"chat_id": ticket["chat_id"]},
-            chat_id=ticket["chat_id"],
-        )
+        await self._emit_status_change(ticket=ticket, new_status=new_status)
 
         refreshed = await self.mongo_store.db["support_tickets"].find_one(
             {"_id": ticket["_id"]}
         )
         return jsonable_encoder(refreshed)
+
+    async def _emit_status_change(
+        self,
+        ticket: dict,
+        new_status: SupportTicketStatusLiteral,
+    ) -> None:
+        """Broadcast a status change.
+
+        Two audiences need it and they barely overlap:
+        - chat participants (requester + already-engaged agents) get it via
+          the standard participant fan-out so their inbox refreshes
+        - queue-watching agents who haven't joined the chat yet get it via
+          SupportNotificationService.emit_to_queue_agents, otherwise the
+          only signal is polling
+
+        Payload uses the forward-compatible (change, ticket_status) shape
+        so the Flutter client can patch a single row instead of refetching
+        the list. Old clients ignore the extra fields.
+        """
+        from lib.services.support.support_notification_service import (
+            SupportNotificationService,
+        )
+
+        payload = {
+            "chat_id": ticket["chat_id"],
+            "change": "status",
+            "ticket_status": new_status,
+        }
+        await self.chat_notification_service.notify_participants(
+            message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+            data=payload,
+            chat_id=ticket["chat_id"],
+        )
+        await SupportNotificationService().emit_to_queue_agents(
+            chat_id=ticket["chat_id"],
+            ticket=ticket,
+            event_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+            data=payload,
+        )

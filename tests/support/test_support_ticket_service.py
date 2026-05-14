@@ -30,7 +30,9 @@ from lib.services.support.support_ticket_service import (  # noqa: E402
 def _make_fake_mongo():
     """Return a mongo_store stub whose ``db['support_tickets']`` supports
     ``find_one`` / ``update_one`` / ``insert_one`` and a chainable
-    ``find().sort().skip().limit().to_list()``."""
+    ``find().sort().skip().limit().to_list()``. Also stubs the ``chats``
+    collection used by agent_reply's idempotent participant check and by
+    SupportNotificationService.emit_to_queue_agents."""
     collection = MagicMock()
     collection.find_one = AsyncMock(return_value=None)
     collection.update_one = AsyncMock()
@@ -47,8 +49,15 @@ def _make_fake_mongo():
 
     collection.find = MagicMock(side_effect=_chain)
 
+    # Chats collection: defaults to an empty-participants chat doc so the
+    # idempotent-participant check in agent_reply runs.
+    chats_collection = MagicMock()
+    chats_collection.find_one = AsyncMock(
+        return_value={"_id": "chat-1", "participants": []}
+    )
+
     store = MagicMock()
-    store.db = {"support_tickets": collection}
+    store.db = {"support_tickets": collection, "chats": chats_collection}
     store.insert_document = AsyncMock()
     return store, collection
 
@@ -59,7 +68,7 @@ def fake_mongo():
 
 
 @pytest.fixture
-def svc(fake_mongo):
+def svc(fake_mongo, monkeypatch):
     store, _ = fake_mongo
     s = SupportTicketService()
     # Directly swap mongo + collaborators — patching get_mongo_store at the
@@ -75,6 +84,19 @@ def svc(fake_mongo):
     s.chat_participant_service.add_participant_in_chat = AsyncMock()
     s.chat_notification_service = MagicMock()
     s.chat_notification_service.notify_participants = AsyncMock()
+
+    # _emit_status_change creates a fresh SupportNotificationService and
+    # calls emit_to_queue_agents on it. Stub the class with a fake so we
+    # don't hit PG.
+    class _FakeNotifSvc:
+        emit_to_queue_agents = AsyncMock()
+        notify_queue = AsyncMock()
+
+    monkeypatch.setattr(
+        "lib.services.support.support_notification_service.SupportNotificationService",
+        _FakeNotifSvc,
+    )
+    s._fake_notif_svc_cls = _FakeNotifSvc  # exposed for assertions
     return s
 
 
@@ -144,6 +166,26 @@ async def test_open_ticket_normalizes_uuid_to_canonical_form(svc):
     # canonical form is lowercase 8-4-4-4-12
     assert ticket["health_facility_id"] == str(UUID(raw))
     assert ticket["health_facility_id"] == raw.lower()
+
+
+@pytest.mark.asyncio
+async def test_open_ticket_product_scope_drops_facility_id(svc):
+    """Schema lets you accidentally pass health_facility_id on a product
+    ticket — the service must drop it so we don't store semantically
+    inconsistent rows ('product ticket scoped to facility X')."""
+    from uuid import uuid4
+
+    leaked = str(uuid4())
+    ticket = await svc.open_ticket(
+        requester_id="patient-1",
+        requester_type="patient",
+        scope="product",
+        initial_message="hi",
+        media=None,
+        subject=None,
+        health_facility_id=leaked,
+    )
+    assert ticket["health_facility_id"] is None
 
 
 @pytest.mark.asyncio
@@ -653,6 +695,272 @@ async def test_change_status_emits_chat_list_updated(svc, fake_mongo):
 
 
 # --- close_ticket_by_requester -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_skips_participant_add_when_already_joined(
+    svc, fake_mongo
+):
+    """add_participant_in_chat is idempotent but costs a read+write per
+    call. agent_reply on subsequent replies must skip when the agent is
+    already a participant."""
+    from lib.core.constants import ProfileTypeEnum
+
+    store, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+    # Override chats find_one: agent IS already a participant
+    store.db["chats"].find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "participants": [{"id": "admin-1", "type": "admin"}],
+        }
+    )
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="follow-up",
+        media=None,
+    )
+
+    svc.chat_participant_service.add_participant_in_chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_agent_reply_adds_participant_when_not_yet_joined(
+    svc, fake_mongo
+):
+    """First reply: agent is not yet a participant, so add must fire once."""
+    from lib.core.constants import ProfileTypeEnum
+
+    store, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(side_effect=[ticket, ticket])
+    # Default chats find_one returns {"participants": []} — no agents yet.
+
+    await svc.agent_reply(
+        ticket_id="t-1",
+        agent_id="admin-1",
+        agent_role=ProfileTypeEnum.ADMIN,
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        content="hi",
+        media=None,
+    )
+
+    svc.chat_participant_service.add_participant_in_chat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_set_status_payload_includes_change_and_ticket_status(
+    svc, fake_mongo
+):
+    """All chat_list_updated emits must use the rich payload shape — both
+    the auto-reopen path AND the explicit PATCH /status path."""
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(
+        side_effect=[ticket, {**ticket, "status": "resolved"}]
+    )
+
+    await svc.change_status(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        new_status="resolved",
+    )
+
+    payload = (
+        svc.chat_notification_service.notify_participants.await_args.kwargs[
+            "data"
+        ]
+    )
+    assert payload == {
+        "chat_id": "chat-1",
+        "change": "status",
+        "ticket_status": "resolved",
+    }
+
+
+@pytest.mark.asyncio
+async def test_status_change_also_emits_to_queue_agents(svc, fake_mongo):
+    """The queue-agent socket fan-out is what closes the multi-agent
+    coordination gap: admins watching the queue (but not yet engaged on
+    this ticket) need to see status changes from each other."""
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(
+        side_effect=[ticket, {**ticket, "status": "resolved"}]
+    )
+
+    await svc.change_status(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+        new_status="resolved",
+    )
+
+    # Patched SupportNotificationService class — its emit_to_queue_agents
+    # is a class-level AsyncMock so we can assert across instances.
+    svc._fake_notif_svc_cls.emit_to_queue_agents.assert_awaited()
+    last_call = svc._fake_notif_svc_cls.emit_to_queue_agents.await_args
+    assert last_call.kwargs["chat_id"] == "chat-1"
+    assert last_call.kwargs["data"]["change"] == "status"
+    assert last_call.kwargs["data"]["ticket_status"] == "resolved"
+
+
+# --- requester reply hook -----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_on_closed_ticket_reopens_to_open(
+    svc, fake_mongo
+):
+    """The bug the user flagged: requester replying to a closed/resolved
+    ticket must reopen it. Symmetric with agent_reply (which reopens to
+    'pending'); requester reopens to 'open' because it needs an agent."""
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "requester_id": "patient-1",
+        "status": "closed",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(return_value=ticket)
+
+    await svc.on_requester_message_in_support_chat(
+        chat_id="chat-1",
+        sender_id="patient-1",
+        content="actually still broken",
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    assert update["status"] == "open"
+    assert "last_message_at" in update
+    assert update["last_message_preview"] == "actually still broken"
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_on_resolved_ticket_reopens_to_open(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "requester_id": "patient-1",
+        "status": "resolved",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(return_value=ticket)
+
+    await svc.on_requester_message_in_support_chat(
+        chat_id="chat-1",
+        sender_id="patient-1",
+        content="not fixed",
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    assert update["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_on_open_ticket_keeps_status_but_bumps_activity(
+    svc, fake_mongo
+):
+    """No status change on already-open tickets, but last_message_at /
+    last_message_preview MUST still update so the queue sort surfaces
+    the reply. Without this the ticket sinks under newer activity."""
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "requester_id": "patient-1",
+        "status": "open",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(return_value=ticket)
+
+    await svc.on_requester_message_in_support_chat(
+        chat_id="chat-1",
+        sender_id="patient-1",
+        content="follow up",
+    )
+
+    update = collection.update_one.await_args.args[1]["$set"]
+    assert "status" not in update  # no reopen
+    assert "last_message_at" in update  # but activity bumped
+    assert update["last_message_preview"] == "follow up"
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_hook_ignores_agent_messages(svc, fake_mongo):
+    """Agent replies are owned by agent_reply — the hook must skip them
+    to avoid double-updating the ticket."""
+    _, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "requester_id": "patient-1",
+        "status": "closed",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(return_value=ticket)
+
+    await svc.on_requester_message_in_support_chat(
+        chat_id="chat-1",
+        sender_id="admin-1",  # not the requester
+        content="resolved on our end",
+    )
+
+    collection.update_one.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_requester_reply_hook_noop_when_no_ticket(svc, fake_mongo):
+    _, collection = fake_mongo
+    collection.find_one = AsyncMock(return_value=None)
+
+    await svc.on_requester_message_in_support_chat(
+        chat_id="chat-other",
+        sender_id="patient-1",
+        content="hello",
+    )
+
+    collection.update_one.assert_not_called()
 
 
 @pytest.mark.asyncio

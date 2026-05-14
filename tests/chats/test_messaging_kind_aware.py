@@ -100,18 +100,27 @@ def messaging_svc(monkeypatch):
 
 @pytest.fixture
 def fake_support_notification(monkeypatch):
-    """Patch the SupportNotificationService import so we can assert it was
-    called (or not) without reaching PG."""
+    """Patch both SupportNotificationService and SupportTicketService at
+    their import sites so the add_message support branch doesn't reach
+    PG. The test only cares whether the support fan-out fires."""
     instances = []
 
-    class FakeSvc:
+    class FakeNotifSvc:
         def __init__(self):
             self.notify_queue = AsyncMock()
             instances.append(self)
 
+    class FakeTicketSvc:
+        def __init__(self):
+            self.on_requester_message_in_support_chat = AsyncMock()
+
     monkeypatch.setattr(
         "lib.services.support.support_notification_service.SupportNotificationService",
-        FakeSvc,
+        FakeNotifSvc,
+    )
+    monkeypatch.setattr(
+        "lib.services.support.support_ticket_service.SupportTicketService",
+        FakeTicketSvc,
     )
     return instances
 

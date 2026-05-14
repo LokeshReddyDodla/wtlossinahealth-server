@@ -34,6 +34,11 @@ async def open_support_ticket(
             if actor.role == ProfileTypeEnum.PATIENT
             else "care_provider"
         )
+        # Derive health_facility_id from the authenticated actor — NEVER
+        # trust the body. Otherwise a patient at facility A could scope a
+        # facility ticket to facility B, and B's support_staff would see it.
+        # Body's health_facility_id only gates the schema validator now.
+        actor_facility_id = getattr(actor.model, "health_facility_id", None)
         ticket = await support_ticket_service.open_ticket(
             requester_id=actor.id,
             requester_type=requester_type,
@@ -41,7 +46,9 @@ async def open_support_ticket(
             initial_message=body.initial_message,
             media=body.media,
             subject=body.subject,
-            health_facility_id=body.health_facility_id,
+            health_facility_id=(
+                str(actor_facility_id) if actor_facility_id else None
+            ),
         )
         return SuccessResponse(
             message="Support ticket opened.",

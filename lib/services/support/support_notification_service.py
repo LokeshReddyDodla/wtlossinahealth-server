@@ -15,6 +15,7 @@ Each agent's existing FCM token registry is reused via
 from typing import Optional
 
 from loguru import logger
+from sqlalchemy import func
 from sqlalchemy.future import select
 
 from lib.core.mongo_store import get_mongo_store
@@ -26,6 +27,39 @@ from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_sync
 
 
 class SupportNotificationService:
+    async def emit_to_queue_agents(
+        self,
+        chat_id: str,
+        ticket: dict,
+        event_key: str,
+        data: dict,
+    ) -> None:
+        """Emit a Socket.IO event to every agent in scope who is NOT yet
+        a chat participant. Pair with ``ChatNotificationService.notify_participants``
+        (which covers engaged agents) for full coverage of both ends of
+        the queue.
+
+        Without this, an admin/support_staff watching the queue but not
+        yet replying never sees status changes from another agent — only
+        polling rescues them.
+        """
+        from lib.services.socketio_service import sio
+
+        chat = await get_mongo_store().db["chats"].find_one({"_id": chat_id})
+        existing_participant_ids = {
+            str(p["id"]) for p in (chat or {}).get("participants", [])
+        }
+
+        agents = await self._fetch_queue_agents(
+            scope=ticket["scope"],
+            health_facility_id=ticket.get("health_facility_id"),
+        )
+
+        for agent_id, _agent_type in agents:
+            if str(agent_id) in existing_participant_ids:
+                continue
+            await sio.emit(event_key, data, room=str(agent_id))
+
     async def notify_queue(
         self,
         chat: dict,
@@ -79,10 +113,14 @@ class SupportNotificationService:
             if scope == "facility":
                 if not health_facility_id:
                     return []
+                # Case-insensitive to match the auth dep
+                # (lib/dependencies/auth/support_agent.py) which accepts
+                # any casing of "support_staff". Without this the queue
+                # fan-out skips CPs whose role is stored as "Support_Staff".
                 result = await session.execute(
                     select(CareProvider.care_provider_id).where(
                         CareProvider.health_facility_id == health_facility_id,
-                        CareProvider.role == "support_staff",
+                        func.lower(CareProvider.role) == "support_staff",
                     )
                 )
                 return [
