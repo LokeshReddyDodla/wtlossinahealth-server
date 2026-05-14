@@ -330,8 +330,18 @@ class ChatManagementService(BaseChatService):
             logger.info(
                 f"Participant {participant_id} in chat {chat_id} has been {'pinned' if new_is_pinned_status else 'unpinned'}."
             )
+            # Rich payload per the unified event contract — the pin
+            # toggle is user-private (only the actor's view changes), so
+            # this stays scoped to their own room.
             await sio.emit(
-                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value, room=participant_id
+                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                {
+                    "chat_id": chat_id,
+                    "change": "pinned",
+                    "is_pinned": new_is_pinned_status,
+                    "user_id": participant_id,
+                },
+                room=participant_id,
             )
 
         except Exception as e:

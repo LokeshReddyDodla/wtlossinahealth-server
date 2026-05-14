@@ -193,6 +193,93 @@ async def test_add_message_for_direct_chat_does_not_fanout(
 
 
 @pytest.mark.asyncio
+async def test_add_message_emits_chat_list_updated_new_message_alongside_received(
+    messaging_svc, fake_support_notification
+):
+    """Unified event contract (spec A): every message send produces a
+    ``chat_list_updated{change=new_message}`` row-patch event alongside
+    the conversation-view ``new_message_received``. Sender excluded —
+    they don't need their own row patch."""
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "direct",
+            "participants": [
+                {"id": "patient-1", "type": "patient"},
+                {"id": "cp-1", "type": "care_provider"},
+            ],
+        }
+    )
+
+    await svc.add_message(_build_message_create())
+
+    emits = svc.notification_service.notify_participants.await_args_list
+    keys = [c.kwargs["message_key"] for c in emits]
+    assert "new_message_received" in keys
+    assert "chat_list_updated" in keys
+
+    # Inspect the row-patch event specifically.
+    list_emit = next(
+        c
+        for c in emits
+        if c.kwargs["message_key"] == "chat_list_updated"
+    )
+    payload = list_emit.kwargs["data"]
+    assert payload["chat_id"] == "chat-1"
+    assert payload["change"] == "new_message"
+    assert payload["last_message_preview"] == "hello"
+    assert payload["last_message_sender_id"] == "patient-1"
+    assert "last_message_at" in payload
+    assert "last_message_id" in payload
+    # Sender exclusion: they sent it, they don't need to be told.
+    assert list_emit.kwargs["exclude_user_id"] == "patient-1"
+
+
+@pytest.mark.asyncio
+async def test_add_message_preview_is_sanitized(
+    messaging_svc, fake_support_notification
+):
+    """Markdown formatting characters and whitespace runs are stripped
+    server-side. Single source of truth — clients consume plain text."""
+    from datetime import datetime
+
+    from lib.schemas.chat_message import ChatMessageCreate, MetadataSchema
+
+    svc, chats_collection = messaging_svc
+    chats_collection.find_one = AsyncMock(
+        return_value={
+            "_id": "chat-1",
+            "kind": "direct",
+            "participants": [
+                {"id": "patient-1", "type": "patient"},
+                {"id": "cp-1", "type": "care_provider"},
+            ],
+        }
+    )
+
+    msg = ChatMessageCreate(
+        chat_id="chat-1",
+        sender_id="patient-1",
+        content="*hello*   _world_\n\nfollowup",
+        timestamp=datetime.utcnow(),
+        metadata=MetadataSchema(type="text", status="sent"),
+        severity="low",
+        is_flagged=False,
+    )
+    await svc.add_message(msg)
+
+    list_emit = next(
+        c
+        for c in svc.notification_service.notify_participants.await_args_list
+        if c.kwargs["message_key"] == "chat_list_updated"
+    )
+    assert list_emit.kwargs["data"]["last_message_preview"] == (
+        "hello world followup"
+    )
+
+
+@pytest.mark.asyncio
 async def test_add_message_for_legacy_chat_without_kind_defaults_direct(
     messaging_svc, fake_support_notification
 ):

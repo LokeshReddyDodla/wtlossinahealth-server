@@ -12,6 +12,7 @@ from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.message_enricher import (
     enrich_single_message_with_sender_profile,
 )
+from lib.utils.preview import sanitize_preview
 
 
 class ChatMessagingService(BaseChatService):
@@ -47,6 +48,24 @@ class ChatMessagingService(BaseChatService):
                 data=broadcast_message,
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
+            )
+
+            # Pair every new_message_received with a chat_list_updated row
+            # patch so list views update without a separate refetch. Sender
+            # excluded — they already know they sent it. Two events on the
+            # wire, two different consumers (conversation view vs inbox row).
+            await self.notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                data={
+                    "chat_id": message_data.chat_id,
+                    "change": "new_message",
+                    "last_message_preview": sanitize_preview(message.content),
+                    "last_message_at": jsonable_encoder(message.timestamp),
+                    "last_message_id": message.id,
+                    "last_message_sender_id": message.sender_id,
+                },
+                chat_id=message_data.chat_id,
+                exclude_user_id=message_data.sender_id,
             )
 
             if chat_kind == "support":
