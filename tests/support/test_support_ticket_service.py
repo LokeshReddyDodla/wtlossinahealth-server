@@ -249,6 +249,68 @@ async def test_support_staff_cannot_access_other_facility(svc, fake_mongo):
 
 
 @pytest.mark.asyncio
+async def test_get_with_messages_returns_thread_for_agent(svc, fake_mongo):
+    """Agents need to read the thread BEFORE replying (otherwise they
+    have nothing to reply to). At that point they aren't yet a chat
+    participant, so we can't go through the participant-gated path."""
+    store, collection = fake_mongo
+    ticket = {
+        "_id": "t-1",
+        "chat_id": "chat-1",
+        "scope": "product",
+        "health_facility_id": None,
+    }
+    collection.find_one = AsyncMock(return_value=ticket)
+
+    messages_collection = MagicMock()
+    cursor = MagicMock()
+    cursor.sort = MagicMock(return_value=cursor)
+    cursor.to_list = AsyncMock(
+        return_value=[
+            {"_id": "m-1", "chat_id": "chat-1", "content": "hi"},
+            {"_id": "m-2", "chat_id": "chat-1", "content": "still there?"},
+        ]
+    )
+    messages_collection.find = MagicMock(return_value=cursor)
+    store.db["chat_messages"] = messages_collection
+
+    out = await svc.get_ticket_with_messages_for_agent(
+        ticket_id="t-1",
+        agent_scopes=["product"],
+        agent_facility_ids=[],
+    )
+
+    assert out["_id"] == "t-1"
+    assert len(out["messages"]) == 2
+    assert out["messages"][0]["content"] == "hi"
+    # The message query is by chat_id and sorted ascending by timestamp.
+    messages_collection.find.assert_called_once_with({"chat_id": "chat-1"})
+    cursor.sort.assert_called_once_with("timestamp", 1)
+
+
+@pytest.mark.asyncio
+async def test_get_with_messages_returns_none_when_out_of_scope(
+    svc, fake_mongo
+):
+    _, collection = fake_mongo
+    collection.find_one = AsyncMock(
+        return_value={
+            "_id": "t-1",
+            "chat_id": "chat-1",
+            "scope": "facility",
+            "health_facility_id": "f-A",
+        }
+    )
+
+    out = await svc.get_ticket_with_messages_for_agent(
+        ticket_id="t-1",
+        agent_scopes=["product"],  # admin has no facility scope
+        agent_facility_ids=[],
+    )
+    assert out is None
+
+
+@pytest.mark.asyncio
 async def test_support_staff_can_access_own_facility(svc, fake_mongo):
     _, collection = fake_mongo
     collection.find_one = AsyncMock(

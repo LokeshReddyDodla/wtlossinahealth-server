@@ -221,6 +221,28 @@ class SupportTicketService:
             return None
         return ticket
 
+    async def get_ticket_with_messages_for_agent(
+        self,
+        ticket_id: str,
+        agent_scopes: list[SupportScopeLiteral],
+        agent_facility_ids: list[str],
+    ) -> Optional[dict]:
+        """Return ticket + the full message thread. Agents need this to read
+        a ticket BEFORE they reply — at which point they're not yet a chat
+        participant, so the participant-gated /chats/messages 403s them."""
+        ticket = await self.get_ticket_for_agent(
+            ticket_id, agent_scopes, agent_facility_ids
+        )
+        if not ticket:
+            return None
+        messages = (
+            await self.mongo_store.db["chat_messages"]
+            .find({"chat_id": ticket["chat_id"]})
+            .sort("timestamp", 1)
+            .to_list(length=None)
+        )
+        return {**ticket, "messages": messages}
+
     async def agent_reply(
         self,
         *,

@@ -60,8 +60,11 @@ async def get_ticket(
         get_support_ticket_service
     ),
 ):
+    """Returns the ticket plus its full message thread. Agents call this
+    BEFORE replying, so the message read here is scope-gated (not
+    participant-gated) — they're not yet a chat participant."""
     try:
-        ticket = await support_ticket_service.get_ticket_for_agent(
+        ticket = await support_ticket_service.get_ticket_with_messages_for_agent(
             ticket_id=ticket_id,
             agent_scopes=agent.allowed_scopes,
             agent_facility_ids=agent.facility_ids,
