@@ -127,6 +127,120 @@ async def test_attach_participant_profiles_skips_empty_input():
 
 
 @pytest.mark.asyncio
+async def test_attach_participant_profiles_synthesizes_unknown_patient():
+    """Spec item E — participant.profile is GUARANTEED non-null. When
+    the patient row can't be resolved (deleted account, stale chat doc,
+    race), insert a synthesized 'Unknown User' placeholder so clients
+    never need a fallback path."""
+    patient_svc = MagicMock()
+    patient_svc.fetch_patient_profiles = AsyncMock(return_value={})
+    cp_svc = MagicMock()
+    cp_svc.fetch_care_provider_profiles = AsyncMock(return_value={})
+
+    chat = {
+        "_id": "c-1",
+        "participants": [
+            {"id": "ghost-patient", "type": "patient"},
+        ],
+        "sender": {"id": "ghost-patient", "type": "patient"},
+        "receivers": [],
+    }
+    await mod.attach_participant_profiles(
+        [chat],
+        patient_profile_service=patient_svc,
+        care_provider_profile_service=cp_svc,
+    )
+
+    assert chat["sender"]["profile"] == {
+        "first_name": "Unknown",
+        "last_name": "User",
+        "profile_picture": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_attach_participant_profiles_synthesizes_unknown_care_provider():
+    patient_svc = MagicMock()
+    patient_svc.fetch_patient_profiles = AsyncMock(return_value={})
+    cp_svc = MagicMock()
+    cp_svc.fetch_care_provider_profiles = AsyncMock(return_value={})
+
+    chat = {
+        "_id": "c-1",
+        "participants": [
+            {"id": "ghost-cp", "type": "care_provider"},
+        ],
+        "sender": None,
+        "receivers": [{"id": "ghost-cp", "type": "care_provider"}],
+    }
+    await mod.attach_participant_profiles(
+        [chat],
+        patient_profile_service=patient_svc,
+        care_provider_profile_service=cp_svc,
+    )
+
+    assert chat["receivers"][0]["profile"] == {
+        "first_name": "Unknown",
+        "last_name": "User",
+        "profile_picture": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_attach_participant_profiles_admin_gets_support_team():
+    """Admin participants get a 'Support Team' placeholder — we don't
+    fetch Admin rows in this helper because the chat layer doesn't need
+    contact details. The placeholder shape matches what the Flutter
+    chat client expects for system participants."""
+    patient_svc = MagicMock()
+    patient_svc.fetch_patient_profiles = AsyncMock(return_value={})
+    cp_svc = MagicMock()
+    cp_svc.fetch_care_provider_profiles = AsyncMock(return_value={})
+
+    chat = {
+        "_id": "c-1",
+        "participants": [{"id": "admin-1", "type": "admin"}],
+        "sender": {"id": "admin-1", "type": "admin"},
+        "receivers": [],
+    }
+    await mod.attach_participant_profiles(
+        [chat],
+        patient_profile_service=patient_svc,
+        care_provider_profile_service=cp_svc,
+    )
+
+    assert chat["sender"]["profile"] == {
+        "first_name": "Support",
+        "last_name": "Team",
+        "profile_picture": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_attach_participant_profiles_unknown_type_falls_back_to_unknown_user():
+    """Defensive: future participant types (bots, integrations) still
+    get a non-null profile so the no-fallback contract holds."""
+    patient_svc = MagicMock()
+    patient_svc.fetch_patient_profiles = AsyncMock(return_value={})
+    cp_svc = MagicMock()
+    cp_svc.fetch_care_provider_profiles = AsyncMock(return_value={})
+
+    chat = {
+        "_id": "c-1",
+        "participants": [{"id": "bot-1", "type": "future_bot"}],
+        "sender": {"id": "bot-1", "type": "future_bot"},
+        "receivers": [],
+    }
+    await mod.attach_participant_profiles(
+        [chat],
+        patient_profile_service=patient_svc,
+        care_provider_profile_service=cp_svc,
+    )
+
+    assert chat["sender"]["profile"]["first_name"] == "Unknown"
+
+
+@pytest.mark.asyncio
 async def test_attach_participant_profiles_handles_chat_with_no_sender():
     """Edge: an aggregated chat doc where sender lookup returned None
     (the user isn't in the chat — shouldn't happen, but defensive)."""

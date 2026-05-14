@@ -38,6 +38,12 @@ async def get_user_chats(
         get_care_provider_profile_service
     ),
 ):
+    """List the authenticated user's chats.
+
+    **Profile contract (spec item E):** every participant (sender +
+    receivers) carries a non-null ``profile`` object. See
+    ``GET /v1/chats/{chat_id}`` for the full contract — same guarantee.
+    """
     user_id, _ = current_user
     try:
         chats = await chat_management_service.fetch_user_chats(user_id)

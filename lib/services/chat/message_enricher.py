@@ -59,18 +59,46 @@ async def enrich_single_message_with_sender_profile(
     return enriched[0] if enriched else message
 
 
+_UNKNOWN_PARTICIPANT_PROFILE = {
+    "first_name": "Unknown",
+    "last_name": "User",
+    "profile_picture": None,
+}
+_ADMIN_PARTICIPANT_PROFILE = {
+    "first_name": "Support",
+    "last_name": "Team",
+    "profile_picture": None,
+}
+
+
 async def attach_participant_profiles(
     chats: list[dict],
     patient_profile_service: PatientProfileService,
     care_provider_profile_service: CareProviderProfileService,
 ) -> None:
-    """Mutate ``chats`` in place, attaching ``profile`` to each
-    participant (sender + receivers).
+    """Mutate ``chats`` in place, attaching a non-null ``profile`` to
+    every participant (sender + receivers).
 
-    Extracts what was inline in ``rest_server/chats/read.py:get_user_chats``
-    so both the chat-list endpoint and the new single-chat endpoint emit
-    exactly the same shape. Two PG queries total (one per role) regardless
-    of how many chats are in the input.
+    **Contract (spec item E):** ``participant.profile`` is GUARANTEED
+    non-null on every chat response. Real PG rows are serialized via
+    the rich PatientSchema / CareProviderSchema. Participants whose
+    underlying user can't be resolved get a synthesized placeholder
+    so clients never need a fallback path. Three placeholder shapes:
+
+    - admin participants → ``{Support Team, null}`` (we don't fetch
+      Admin rows here — the chat layer doesn't need admin contact
+      details; the synthesized placeholder is what callers expect)
+    - unresolved patient/care_provider → ``{Unknown User, null}``
+      (deleted account, race, or stale chat doc)
+    - successfully resolved → full PatientSchema / CareProviderSchema
+
+    All three serialize to dicts with at least the keys
+    ``first_name``, ``last_name``, ``profile_picture`` — that's the
+    minimum the chat UI renders. Real rows additionally carry the
+    schema's other fields (gender, email, role, etc.).
+
+    Two PG queries total (one per role table) regardless of how many
+    chats are in the input.
     """
     if not chats:
         return
@@ -106,14 +134,25 @@ async def attach_participant_profiles(
     def _attach_to(slot: dict) -> None:
         if not slot:
             return
-        if slot.get("type") == ProfileTypeEnum.PATIENT.value:
+        slot_type = slot.get("type")
+        if slot_type == ProfileTypeEnum.PATIENT.value:
             row = patient_profiles.get(slot["id"])
-            if row:
-                slot["profile"] = PatientSchema.from_orm(row)
-        else:
+            slot["profile"] = (
+                PatientSchema.from_orm(row)
+                if row
+                else dict(_UNKNOWN_PARTICIPANT_PROFILE)
+            )
+        elif slot_type == ProfileTypeEnum.CARE_PROVIDER.value:
             row = care_provider_profiles.get(slot["id"])
-            if row:
-                slot["profile"] = CareProviderSchema.from_orm(row)
+            slot["profile"] = (
+                CareProviderSchema.from_orm(row)
+                if row
+                else dict(_UNKNOWN_PARTICIPANT_PROFILE)
+            )
+        elif slot_type == ProfileTypeEnum.ADMIN.value:
+            slot["profile"] = dict(_ADMIN_PARTICIPANT_PROFILE)
+        else:
+            slot["profile"] = dict(_UNKNOWN_PARTICIPANT_PROFILE)
 
     for chat in chats:
         _attach_to(chat.get("sender"))

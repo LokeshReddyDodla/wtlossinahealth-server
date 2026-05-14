@@ -39,6 +39,16 @@ async def get_single_chat(
     as 'chat doesn't exist' so we never leak existence). Used by the
     Flutter ``chat_list_updated{change=chat_created | participants_changed}``
     dispatch path to refetch one row instead of pulling the whole list.
+
+    **Profile contract (spec item E):** every participant in the response
+    (sender + receivers) is guaranteed to have a non-null ``profile``
+    object with at least ``{first_name, last_name, profile_picture}``.
+    For successfully resolved patient / care_provider rows the profile
+    additionally carries the full PatientSchema / CareProviderSchema
+    fields. For admins it's a synthesized ``Support Team`` placeholder.
+    For unresolved users (deleted, race, stale chat doc) it's a
+    synthesized ``Unknown User`` placeholder. Clients never need a
+    fallback path.
     """
     user_id, _ = current_user
     try:
