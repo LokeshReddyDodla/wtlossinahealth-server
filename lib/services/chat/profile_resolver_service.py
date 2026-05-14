@@ -1,9 +1,14 @@
 """Batch-resolve compact sender profiles for chat messages.
 
 One service, three PG tables (patients / care_providers / admins) queried
-in parallel via asyncio.gather. Returns a dict[user_id, SenderProfileSchema]
-with synthesized "Unknown User" entries for any id we can't resolve, so
-callers never get None.
+sequentially on a single async session. Returns
+dict[user_id, SenderProfileSchema] with synthesized "Unknown User"
+entries for any id we can't resolve, so callers never get None.
+
+Sequential — NOT asyncio.gather. Async SQLAlchemy sessions are
+single-stream; concurrent execute() calls trip
+IllegalStateChangeError. The latency cost of serializing three
+simple ``SELECT ... WHERE id IN (...)`` queries is negligible.
 
 This is the shared dependency behind item C (inline sender_profile on
 messages) and item F (single-chat fetch). Both flow through the same
@@ -11,7 +16,6 @@ batch path so a busy chat with 100 messages from 5 distinct senders is
 3 PG queries, not 100.
 """
 
-import asyncio
 from typing import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,11 +77,16 @@ class ProfileResolverService:
         if not unique_ids:
             return {}
 
-        patients, care_providers, admins = await asyncio.gather(
-            self._fetch_patients(unique_ids, postgres_session),
-            self._fetch_care_providers(unique_ids, postgres_session),
-            self._fetch_admins(unique_ids, postgres_session),
+        # Run the three role lookups sequentially, NOT via asyncio.gather.
+        # Async SQLAlchemy sessions are single-stream — concurrent
+        # execute() calls trip an IllegalStateChangeError. Each query is
+        # a plain SELECT ... WHERE id IN (...); the latency cost of
+        # serializing is negligible (~few ms).
+        patients = await self._fetch_patients(unique_ids, postgres_session)
+        care_providers = await self._fetch_care_providers(
+            unique_ids, postgres_session
         )
+        admins = await self._fetch_admins(unique_ids, postgres_session)
 
         resolved: dict[str, SenderProfileSchema] = {}
         for uid, patient in patients.items():
