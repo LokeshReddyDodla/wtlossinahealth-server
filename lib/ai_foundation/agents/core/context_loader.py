@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 
 from lib.ai_foundation.config import settings
+from lib.ai_foundation.agents.core.refs import Ref, ResolvedRef, resolve_refs
 from lib.services.gamification.time_utils import local_now
 
 if TYPE_CHECKING:
@@ -38,7 +39,10 @@ class AgentContext(BaseModel):
     thread_summary: str | None = None
     patient_names: dict[str, str] = Field(default_factory=dict)
     recent_insights: list[dict] = Field(default_factory=list)
+    pinned_refs: list[ResolvedRef] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
+
+    model_config = {"arbitrary_types_allowed": True}
     gamification: dict[str, Any] | None = None
     medications_text: str | None = None  # all medications (active + past) from Qdrant
     # Panel (multi-patient) mode — keyed by patient_id
@@ -195,6 +199,27 @@ def build_context_messages(
         tagged = {**msg, "_meta": {"type": "history"}}
         messages.append(tagged)
 
+    # Pinned refs — injected last so they're the freshest context before the question.
+    # One system message per ref so each is independently traceable / prunable.
+    for ref in context.pinned_refs:
+        lines = [
+            f"USER REFERENCED THIS {ref.type.value.upper()}:",
+            f"Title: {ref.title}",
+        ]
+        if ref.summary:
+            lines.append(ref.summary)
+        if ref.occurred_at:
+            lines.append(f"Occurred: {ref.occurred_at}")
+        lines.append(
+            "\nThe user's question is specifically about this entity. "
+            "Anchor your investigation to it."
+        )
+        messages.append({
+            "role": "system",
+            "content": "\n".join(lines),
+            "_meta": {"type": "pinned_ref", "ref_type": ref.type.value, "ref_id": ref.id},
+        })
+
     # User's question
     messages.append({"role": "user", "content": user_message, "_meta": {"type": "user_question"}})
 
@@ -228,6 +253,7 @@ class ContextLoader:
         patient_id: str | None = None,
         patient_ids: list[str] | None = None,
         thread_id: str | None = None,
+        refs: list[Ref] | None = None,
     ) -> AgentContext:
         """Load all context in parallel. Panel mode (>1 patient) loads per-patient facts/insights."""
         import asyncio
@@ -257,7 +283,7 @@ class ContextLoader:
             )
 
         # Single-patient mode: original behaviour
-        facts, history, summary, names, insights, gamification, local_time, medications_text = await asyncio.gather(
+        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs = await asyncio.gather(
             self._load_facts(patient_id),
             self._load_history(thread_id),
             self._load_summary(thread_id),
@@ -266,6 +292,7 @@ class ContextLoader:
             self._load_gamification(patient_id),
             self._load_local_time(patient_id),
             self._load_medications(patient_id),
+            self._load_pinned_refs(refs, patient_id),
         )
 
         return AgentContext(
@@ -277,6 +304,7 @@ class ContextLoader:
             gamification=gamification,
             local_time=local_time,
             medications_text=medications_text,
+            pinned_refs=pinned_refs,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -351,6 +379,29 @@ class ContextLoader:
             return await self._insight_tracker.get_history(patient_id, limit=5)
         except Exception as exc:
             logger.debug("Failed to load recent insights: %s", exc)
+            return []
+
+    async def _load_pinned_refs(
+        self, refs: list[Ref] | None, patient_id: str | None
+    ) -> list[ResolvedRef]:
+        if not refs or not patient_id:
+            return []
+        tz_name: str | None = None
+        if self._resolver:
+            try:
+                timezones = await self._resolver.resolve_timezones([patient_id])
+                tz_name = timezones.get(patient_id)
+            except Exception as exc:
+                logger.debug("Failed to resolve tz for pinned refs: %s", exc)
+        try:
+            return await resolve_refs(
+                patient_id=patient_id,
+                refs=refs,
+                tz=tz_name,
+                insight_tracker=self._insight_tracker,
+            )
+        except Exception as exc:
+            logger.debug("Failed to resolve pinned refs: %s", exc)
             return []
 
     async def _load_gamification(self, patient_id: str | None) -> dict[str, Any] | None:

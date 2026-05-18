@@ -48,6 +48,7 @@ def get_user_chat_pipeline(user_id: str):
             "$project": {
                 "_id": 1,
                 "is_group": 1,
+                "kind": 1,
                 "participants": 1,
                 "sender": 1,
                 "receivers": 1,
@@ -60,6 +61,17 @@ def get_user_chat_pipeline(user_id: str):
             }
         },
     ]
+
+
+def get_single_chat_pipeline(chat_id: str, user_id: str):
+    """Same shape as :func:`get_user_chat_pipeline`, restricted to a single
+    chat. Conflates "chat doesn't exist" and "user isn't a participant"
+    into one empty result so we don't leak existence."""
+    pipeline = get_user_chat_pipeline(user_id)
+    pipeline[0] = {
+        "$match": {"_id": chat_id, "participants.id": user_id}
+    }
+    return pipeline
 
 
 def get_user_messages_pipeline(

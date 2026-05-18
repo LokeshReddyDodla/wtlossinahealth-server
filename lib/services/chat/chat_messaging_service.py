@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
@@ -9,6 +9,10 @@ from lib.schemas.chat_message import ChatMessage, ChatMessageCreate
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_notification_service import ChatNotificationService
+from lib.services.chat.message_enricher import (
+    enrich_messages_with_sender_profiles,
+)
+from lib.utils.preview import sanitize_preview
 
 
 class ChatMessagingService(BaseChatService):
@@ -25,13 +29,90 @@ class ChatMessagingService(BaseChatService):
                 message, message_data.sender_id
             )
 
-            notification_info = self._create_notification_info(message)
+            chat = await self.mongo_store.db["chats"].find_one(
+                {"_id": message_data.chat_id}
+            )
+            chat_kind = (chat or {}).get("kind", "direct")
+
+            # Build the FCM data map. For support chats we embed
+            # chat_id + ticket_id so the Flutter notification controller
+            # can deep-link straight to the thread on tap (spec item B).
+            # Non-support pushes carry an empty data map.
+            fcm_data: dict[str, str] = {}
+            if chat_kind == "support":
+                ticket = await self.mongo_store.db[
+                    "support_tickets"
+                ].find_one(
+                    {"chat_id": message_data.chat_id}, {"_id": 1}
+                )
+                if ticket:
+                    fcm_data = {
+                        "chat_id": str(message_data.chat_id),
+                        "ticket_id": str(ticket["_id"]),
+                    }
+
+            notification_info = self._create_notification_info(
+                message, chat_kind=chat_kind, data=fcm_data
+            )
+            # Attach sender_profile inline before broadcasting — eliminates
+            # the race where the message arrives at the client before the
+            # chat roster update, leaving the sender unrenderable.
+            broadcast_message = (
+                await enrich_messages_with_sender_profiles(
+                    [jsonable_encoder(saved_message)]
+                )
+            )[0]
             await self.notification_service.notify_participants(
                 message_key=EmitMessageKeyEnum.NEW_MESSAGE_RECEIVED.value,
-                data=jsonable_encoder(saved_message),
+                data=broadcast_message,
                 chat_id=message_data.chat_id,
                 notification_info=notification_info,
             )
+
+            # Pair every new_message_received with a chat_list_updated row
+            # patch so list views update without a separate refetch. Sender
+            # excluded — they already know they sent it. Two events on the
+            # wire, two different consumers (conversation view vs inbox row).
+            await self.notification_service.notify_participants(
+                message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                data={
+                    "chat_id": message_data.chat_id,
+                    "change": "new_message",
+                    "last_message_preview": sanitize_preview(message.content),
+                    "last_message_at": jsonable_encoder(message.timestamp),
+                    "last_message_id": message.id,
+                    "last_message_sender_id": message.sender_id,
+                },
+                chat_id=message_data.chat_id,
+                exclude_user_id=message_data.sender_id,
+            )
+
+            if chat_kind == "support":
+                # Fan out to agents who aren't (yet) chat participants — the
+                # support queue. Imports local to avoid a circular import via
+                # SupportTicketService -> ChatMessagingService.
+                from lib.services.support.support_notification_service import (
+                    SupportNotificationService,
+                )
+                from lib.services.support.support_ticket_service import (
+                    SupportTicketService,
+                )
+
+                await SupportNotificationService().notify_queue(
+                    chat=chat,
+                    message=saved_message,
+                    sender_id=message_data.sender_id,
+                    notification_info=notification_info,
+                )
+                # Requester replies reopen closed/resolved tickets and
+                # always bump last_message_at on the ticket so the queue
+                # sort surfaces the freshest activity.
+                await SupportTicketService().on_requester_message_in_support_chat(
+                    chat_id=message_data.chat_id,
+                    sender_id=message_data.sender_id,
+                    content=message_data.content,
+                )
+
             print(
                 f"Message {message.id} broadcasted to chat {message_data.chat_id}."
             )
@@ -57,7 +138,7 @@ class ChatMessagingService(BaseChatService):
 
             update_data = {
                 "content": new_content,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.utcnow(),
                 "is_edited": True,
             }
             if metadata:
@@ -105,6 +186,7 @@ class ChatMessagingService(BaseChatService):
                     "user_id": user_id,
                 },
                 chat_id=chat_id,
+                exclude_user_id=user_id,
             )
         except Exception as e:
             print(f"Failed to mark message as read: {str(e)}")
@@ -119,6 +201,7 @@ class ChatMessagingService(BaseChatService):
                 message_key=EmitMessageKeyEnum.ALL_MESSAGES_MARKED_AS_READ.value,
                 data={"chat_id": chat_id, "user_id": user_id},
                 chat_id=chat_id,
+                exclude_user_id=user_id,
             )
         except Exception as e:
             print(f"Failed to mark all messages as read: {str(e)}")
@@ -197,7 +280,7 @@ class ChatMessagingService(BaseChatService):
             {
                 "$set": {
                     "last_message": message.id,
-                    "updated_at": datetime.now(),
+                    "updated_at": datetime.utcnow(),
                 },
                 "$inc": {f"unread_counts.{sender_id}": 0},
             },
@@ -215,33 +298,45 @@ class ChatMessagingService(BaseChatService):
                     )
 
     def _create_notification_info(
-        self, message: ChatMessage
+        self,
+        message: ChatMessage,
+        chat_kind: str = "direct",
+        data: Optional[dict] = None,
     ) -> FCMNotificationInfo:
-        """Create notification info for a new message."""
+        """Create notification info for a new message.
+
+        ``data`` becomes the FCM ``data`` map (forwarded to Firebase by
+        FCMService._build_message). For support chats the caller passes
+        ``{chat_id, ticket_id}`` so the Flutter notification controller
+        can deep-link from the lockscreen tap directly to the thread.
+        """
+        is_support = chat_kind == "support"
         return FCMNotificationInfo(
-            title="New Message",
+            title="Support Update" if is_support else "New Message",
             body=self.notification_service._get_notification_body(
                 message.metadata.type, message.content
             ),
-            channel_key="chat_messages",
-            group_key="chat_group",
+            channel_key="support_messages" if is_support else "chat_messages",
+            group_key="support_group" if is_support else "chat_group",
             sender_id=message.sender_id,
+            data=data or {},
         )
 
     async def _update_message_read_status(
         self, chat_id: str, message_id: str, user_id: str
     ):
         """Update a specific message's read receipts."""
+        now = datetime.utcnow()
         await self.mongo_store.db["chat_messages"].update_one(
             {"_id": message_id, "chat_id": chat_id},
             {
                 "$addToSet": {
                     "read_receipts": {
                         "reader_id": user_id,
-                        "read_at": datetime.now(),
+                        "read_at": now,
                     }
                 },
-                "$set": {"updated_at": datetime.now()},
+                "$set": {"updated_at": now},
             },
         )
 
@@ -263,7 +358,7 @@ class ChatMessagingService(BaseChatService):
                 {
                     "$set": {
                         f"unread_counts.{user_id}": 0,
-                        "updated_at": datetime.now(),
+                        "updated_at": datetime.utcnow(),
                     }
                 },
             )
@@ -272,16 +367,17 @@ class ChatMessagingService(BaseChatService):
         self, chat_id: str, user_id: str
     ):
         """Mark all messages in a chat as read."""
+        now = datetime.utcnow()
         await self.mongo_store.db["chat_messages"].update_many(
             {"chat_id": chat_id, "read_receipts.reader_id": {"$ne": user_id}},
             {
                 "$addToSet": {
                     "read_receipts": {
                         "reader_id": user_id,
-                        "read_at": datetime.now(),
+                        "read_at": now,
                     }
                 },
-                "$set": {"updated_at": datetime.now()},
+                "$set": {"updated_at": now},
             },
         )
 
@@ -294,7 +390,7 @@ class ChatMessagingService(BaseChatService):
         reaction: str,
     ):
         """Toggle a reaction on a message."""
-        current_time = datetime.now()
+        current_time = datetime.utcnow()
         user_reaction = next(
             (
                 r

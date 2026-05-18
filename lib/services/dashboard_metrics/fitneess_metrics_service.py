@@ -48,18 +48,18 @@ class FitnessMetricsService:
                 raise ValueError(f"Invalid operator: {steps_op}")
 
             query = {
-                "report_type": FitnessReportType.DAILY,
+                "metadata.report_type": FitnessReportType.DAILY,
                 "steps": {mongo_op: steps_value},
             }
 
             if start and end:
-                query["start_date"] = {"$gte": start}
-                query["end_date"] = {"$lte": end}
+                query["metadata.date_range.start"] = {"$gte": start.isoformat()}
+                query["metadata.date_range.end"] = {"$lte": end.isoformat()}
 
             # Get reports
             cursor = (
                 self.fitness_report_collection.find(query)
-                .sort("start_date", -1)
+                .sort("metadata.date_range.start", -1)
                 .skip(offset)
                 .limit(limit)
             )
@@ -81,14 +81,23 @@ class FitnessMetricsService:
                         "patient_id": report["patient_id"],
                         "steps": report.get("steps"),
                         "active_duration": report.get("active_duration"),
-                        "start_date": report.get("start_date"),
+                        "start_date": report.get("metadata", {})
+                        .get("date_range", {})
+                        .get("start"),
                         "patient": {
-                            "name": patient.first_name
-                            + " "
-                            + patient.last_name,
+                            "name": " ".join(
+                                filter(
+                                    None,
+                                    [patient.first_name, patient.last_name],
+                                )
+                            ),
                             "profile_picture": patient.profile_picture,
                             "gender": patient.gender,
-                            "age": calculate_age(patient.dob),
+                            "age": (
+                                calculate_age(patient.dob)
+                                if patient.dob
+                                else None
+                            ),
                             "diabetic_history": (
                                 PatientDiabeticHistory.from_orm(
                                     patient.diabetic_history

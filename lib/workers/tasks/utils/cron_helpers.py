@@ -93,6 +93,44 @@ def daily_cron(
     )
 
 
+def interval_cron(
+    *,
+    coroutine: Callable,
+    name: str,
+    minute_step: int,
+    timeout_s: float = 600,
+    max_tries: int = 1,
+    run_at_startup: bool = False,
+) -> CronJob:
+    """Helper to create a cron that fires every N minutes (e.g. 5 → :00,:05,…).
+
+    `minute_step` must divide 60 cleanly (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30).
+    """
+    if 60 % minute_step != 0:
+        raise ValueError(
+            f"minute_step={minute_step} must divide 60 evenly"
+        )
+    minutes = set(range(0, 60, minute_step))
+    return CronJob(
+        coroutine=coroutine,
+        name=name,
+        month=None,
+        day=None,
+        weekday=None,
+        hour=None,
+        minute=minutes,
+        second={0},
+        microsecond=0,
+        unique=True,
+        job_id=name,
+        timeout_s=timeout_s,
+        keep_result_s=0,
+        keep_result_forever=False,
+        max_tries=max_tries,
+        run_at_startup=run_at_startup,
+    )
+
+
 def monthly_cron(
     *,
     coroutine: Callable,

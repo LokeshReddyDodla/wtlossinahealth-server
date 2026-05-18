@@ -79,6 +79,49 @@ class CGMUploadService:
             )
 
     @with_postgres_session
+    async def write_readings(
+        self,
+        patient_id: str,
+        rows: List[dict],
+        source: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> int:
+        """Write already-normalized CGM rows to ClickHouse.
+
+        For live-streaming sources (e.g. LibreLinkUp follower API) that hand
+        over rolling-window data without a CSV. Bypasses CSV parsing and
+        sensor-lifecycle report generation (those belong to the full-history
+        CSV path). Updates `last_cgm_reading_at` only — callers that track
+        their own per-source sync timestamp should write it themselves.
+        """
+        if not rows:
+            return 0
+
+        self.clickhouse_store.write_data("aihealth.cgm_data", rows)
+
+        latest_reading_time = max(r["time"] for r in rows)
+        await self._update_last_sync(
+            postgres_session, patient_id, source, latest_reading_time
+        )
+
+        # Gamification hook (fire-and-forget)
+        try:
+            from uuid import UUID as _UUID
+            from lib.core.container import container
+            from lib.services.gamification.event_handler import GamificationEventHandler
+            handler = container.resolve(GamificationEventHandler)
+            await handler.on_glucose_synced(_UUID(patient_id))
+        except Exception:
+            pass
+
+        logger.info(
+            f"Wrote {len(rows)} {source} CGM rows for {patient_id} "
+            f"(latest: {latest_reading_time})"
+        )
+        return len(rows)
+
+    @with_postgres_session
     async def parse_and_upload_sinocare_excel_data(
         self,
         patient_id: str,
@@ -331,7 +374,11 @@ class CGMUploadService:
         latest_reading_time: datetime,
     ) -> None:
         """Update last_sync_timestamp and last_cgm_reading_at for the connected app."""
-        attr_map = {"libreview": "libreview", "sinocare": "sinocare"}
+        attr_map = {
+            "libreview": "libreview",
+            "librelinkup": "libreview",
+            "sinocare": "sinocare",
+        }
         attr_name = attr_map.get(source)
         if not attr_name:
             return
@@ -346,6 +393,12 @@ class CGMUploadService:
         if connected_app:
             source_app = getattr(connected_app, attr_name, None)
             if source_app:
-                source_app.last_sync_timestamp = datetime.now()
+                now = datetime.now()
                 source_app.last_cgm_reading_at = latest_reading_time
+                # LLU runs every 5 min; don't clobber the CSV-export
+                # `last_sync_timestamp` (used for the 3x/day cooldown).
+                if source == "librelinkup":
+                    source_app.llu_last_sync_timestamp = now
+                else:
+                    source_app.last_sync_timestamp = now
                 await session.commit()

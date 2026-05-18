@@ -408,6 +408,7 @@ class HealthQueryAgent(BaseAgent):
             patient_id=input.context.patient_id,
             patient_ids=input.context.patient_ids,
             thread_id=input.context.thread_id,
+            refs=input.context.refs,
         )
 
     async def _extract_intent(self, input: AgentInput, ctx: Any) -> tuple[QueryIntent, Any]:
@@ -427,6 +428,14 @@ class HealthQueryAgent(BaseAgent):
                 f"User's local time: {local_time}. "
                 f"Use THIS for resolving 'today', 'yesterday', 'this week', etc."
             )})
+
+        # Inject pinned refs so intent extraction knows what the user is asking about.
+        for ref in getattr(ctx, "pinned_refs", []) or []:
+            parts = [f"User is asking about {ref.type.value} \"{ref.title}\"."]
+            if ref.occurred_at:
+                parts.append(f"Occurred: {ref.occurred_at}.")
+            parts.append("Anchor intent extraction to this entity.")
+            messages.append({"role": "system", "content": " ".join(parts)})
 
         if ctx.thread_summary:
             messages.append({"role": "system", "content": f"Conversation summary:\n{ctx.thread_summary}"})

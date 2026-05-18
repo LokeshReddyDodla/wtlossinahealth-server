@@ -23,6 +23,7 @@ from .contracts import (
     ExtractedFoodItem,
     MacroSet,
     MealExtraction,
+    MicroSet,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,15 +138,7 @@ def _items_to_text(
 
 
 def _compose_from_items(items: list[ExtractedFoodItem]) -> MealExtraction:
-    total = MacroSet()
-    for it in items:
-        total.calories += it.macros.calories or 0
-        total.carbs += it.macros.carbs or 0
-        total.carbs_simple += it.macros.carbs_simple or 0
-        total.carbs_complex += it.macros.carbs_complex or 0
-        total.fiber += it.macros.fiber or 0
-        total.protein += it.macros.protein or 0
-        total.fat += it.macros.fat or 0
+    macros, micros = _sum_nutrition(items)
 
     name = ", ".join(it.name for it in items[:3])
     if len(items) > 3:
@@ -154,7 +147,8 @@ def _compose_from_items(items: list[ExtractedFoodItem]) -> MealExtraction:
     return MealExtraction(
         name=name or "Custom meal",
         items=items,
-        total_macros=total,
+        total_macros=macros,
+        total_micros=micros,
         tags=_dedup_tags([t for it in items for t in it.tags]),
         overall_confidence=_lowest_confidence(items),
     )
@@ -180,22 +174,38 @@ def _lowest_confidence(items: list[ExtractedFoodItem]) -> ConfidenceLevel:
 
 
 def _ensure_totals(extraction: MealExtraction) -> None:
-    """If LLM returned zero totals but per-item macros, sum them in."""
-    tm = extraction.total_macros
-    if (tm.calories or tm.carbs or tm.protein or tm.fat) > 0:
-        return
+    """Recompute totals deterministically from items. Items are the source of
+    truth; the LLM's totals are advisory and routinely wrong (mis-summed,
+    missing micros). Recomputing every time keeps totals consistent with what
+    we display per item.
+    """
     if not extraction.items:
         return
-    totals = MacroSet()
-    for it in extraction.items:
-        totals.calories += it.macros.calories or 0
-        totals.carbs += it.macros.carbs or 0
-        totals.carbs_simple += it.macros.carbs_simple or 0
-        totals.carbs_complex += it.macros.carbs_complex or 0
-        totals.fiber += it.macros.fiber or 0
-        totals.protein += it.macros.protein or 0
-        totals.fat += it.macros.fat or 0
-    extraction.total_macros = totals
+    macros, micros = _sum_nutrition(extraction.items)
+    extraction.total_macros = macros
+    extraction.total_micros = micros
+
+
+def _sum_nutrition(items: list[ExtractedFoodItem]) -> tuple[MacroSet, MicroSet]:
+    """Sum per-item macros and micros. Treats missing fields as 0."""
+    macros = MacroSet()
+    micros = MicroSet()
+    for it in items:
+        macros.calories += it.macros.calories or 0
+        macros.carbs += it.macros.carbs or 0
+        macros.carbs_simple += it.macros.carbs_simple or 0
+        macros.carbs_complex += it.macros.carbs_complex or 0
+        macros.fiber += it.macros.fiber or 0
+        macros.protein += it.macros.protein or 0
+        macros.fat += it.macros.fat or 0
+
+        micros.sodium_mg = (micros.sodium_mg or 0) + (it.micros.sodium_mg or 0)
+        micros.potassium_mg = (micros.potassium_mg or 0) + (it.micros.potassium_mg or 0)
+        micros.calcium_mg = (micros.calcium_mg or 0) + (it.micros.calcium_mg or 0)
+        micros.iron_mg = (micros.iron_mg or 0) + (it.micros.iron_mg or 0)
+        micros.magnesium_mg = (micros.magnesium_mg or 0) + (it.micros.magnesium_mg or 0)
+        micros.zinc_mg = (micros.zinc_mg or 0) + (it.micros.zinc_mg or 0)
+    return macros, micros
 
 
 def _build_messages(

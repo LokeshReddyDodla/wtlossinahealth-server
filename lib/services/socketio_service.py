@@ -5,6 +5,7 @@ from socketio import AsyncRedisManager, AsyncServer
 
 from lib.core.constants import EmitMessageKeyEnum
 from lib.schemas.chat_message import ChatMessageCreate
+from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.utils.jwt import decode_jwt_token, verify_jwt_token
@@ -16,6 +17,7 @@ REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}/0"
 
 chat_messaging_service = ChatMessagingService()
 chat_notification_service = ChatNotificationService()
+chat_management_service = ChatManagementService()
 
 sio = AsyncServer(
     async_mode="asgi",
@@ -23,6 +25,39 @@ sio = AsyncServer(
     cors_allowed_origins="*",  # "http://127.0.0.1:5500"
     logger=True,
 )
+
+
+async def _authorize_chat_access(sid, chat_id, claimed_user_id):
+    """Verify the socket's authenticated user matches the claimed id and is a
+    participant of the chat. Emits an `error` event and returns False on
+    failure; returns the authenticated user_id on success."""
+    session = await sio.get_session(sid)
+    auth_user_id = session.get("user_id") if session else None
+    if not auth_user_id:
+        await sio.emit(
+            "error",
+            {"status": "error", "message": "Unauthenticated socket session."},
+            room=sid,
+        )
+        return None
+    if claimed_user_id != auth_user_id:
+        await sio.emit(
+            "error",
+            {
+                "status": "error",
+                "message": "Payload user does not match authenticated user.",
+            },
+            room=sid,
+        )
+        return None
+    if not await chat_management_service.is_user_in_chat(chat_id, auth_user_id):
+        await sio.emit(
+            "error",
+            {"status": "error", "message": "Not a participant of this chat."},
+            room=sid,
+        )
+        return None
+    return auth_user_id
 
 
 @sio.event
@@ -54,6 +89,7 @@ async def connect(sid, environ):
 
     room_id = payload.get("sub")  # user_id
     await sio.enter_room(sid, room_id)
+    await sio.save_session(sid, {"user_id": room_id})
     print(f"Client {sid} connected to chat {room_id}")
 
 
@@ -77,6 +113,9 @@ async def sendMessage(sid, data):
     # Ensure that required fields are present
     if not all([chat_id, sender_id, content]):
         return {"status": "error", "message": "Missing required fields"}
+
+    if not await _authorize_chat_access(sid, chat_id, sender_id):
+        return {"status": "error", "message": "Unauthorized"}
 
     timestamp = datetime.datetime.now(datetime.timezone.utc)
 
@@ -114,6 +153,9 @@ async def editMessage(sid, data):
     if not all([chat_id, message_id, sender_id, new_content]):
         return {"status": "error", "message": "Missing required fields"}
 
+    if not await _authorize_chat_access(sid, chat_id, sender_id):
+        return {"status": "error", "message": "Unauthorized"}
+
     try:
         await chat_messaging_service.edit_message(
             chat_id=chat_id,
@@ -141,6 +183,9 @@ async def markAsRead(sid, data):
     # Ensure required fields are present
     if not all([chat_id, user_id]):
         return {"status": "error", "message": "Missing required fields"}
+
+    if not await _authorize_chat_access(sid, chat_id, user_id):
+        return {"status": "error", "message": "Unauthorized"}
 
     try:
         # Fetch all messages in the chat if no message_id is provided (mark all as read)
@@ -172,6 +217,9 @@ async def toggleReaction(sid, data):
     # Ensure required fields are present
     if not all([chat_id, message_id, user_id, reaction]):
         return {"status": "error", "message": "Missing required fields"}
+
+    if not await _authorize_chat_access(sid, chat_id, user_id):
+        return {"status": "error", "message": "Unauthorized"}
 
     try:
         # Call toggle reaction in ChatMessagingService

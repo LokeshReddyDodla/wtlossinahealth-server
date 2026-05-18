@@ -41,6 +41,7 @@ from lib.services.chat.chat_management_service import ChatManagementService
 from lib.services.chat.chat_messaging_service import ChatMessagingService
 from lib.services.chat.chat_notification_service import ChatNotificationService
 from lib.services.chat.chat_participant_service import ChatParticipantService
+from lib.services.support.support_ticket_service import SupportTicketService
 from lib.services.chat.direct_chat_resolver import DirectChatResolver
 from lib.services.dashboard_metrics.cgm_metrics_service import (
     CGMMetricsService,
@@ -476,6 +477,9 @@ container.register(ChatMessagingService, ChatMessagingService)
 container.register(ChatNotificationService, ChatNotificationService)
 container.register(ChatParticipantService, ChatParticipantService)
 container.register(ChatManagementService, ChatManagementService)
+
+# 🔹 Support Tickets
+container.register(SupportTicketService, SupportTicketService)
 container.register(
     DirectChatResolver,
     lambda: DirectChatResolver(

@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from pymongo.errors import PyMongoError
 
+from lib.core.constants import EmitMessageKeyEnum
 from lib.core.mongo_store import get_mongo_store
 from lib.core.types import ProfileTypeLiteral
 from lib.schemas.chat import ParticipantSchema
@@ -44,9 +45,23 @@ class ChatParticipantService(BaseChatService):
                     chat_id, user_id, participant_dict
                 )
             else:
-                # Add the participant if they don't exist
+                # Capture existing participant ids BEFORE the write so the
+                # roster fan-out below targets the right rooms — once the
+                # write lands, the new user is also "existing".
+                existing_chat = await self.mongo_store.db["chats"].find_one(
+                    {"_id": chat_id}, {"participants.id": 1}
+                )
+                existing_ids = [
+                    str(p["id"])
+                    for p in (existing_chat or {}).get("participants", [])
+                ]
                 await self._add_new_participant(
                     chat_id, user_id, participant_dict
+                )
+                await self._broadcast_participant_join(
+                    chat_id=chat_id,
+                    new_user_id=user_id,
+                    existing_participant_ids=existing_ids,
                 )
 
         except PyMongoError as e:
@@ -100,15 +115,68 @@ class ChatParticipantService(BaseChatService):
         self, chat_id: str, user_id: str, participant_dict: dict
     ):
         """Add a new participant to the chat."""
+        # Pre-existing bug fixed in passing: this used to have two ``$set``
+        # entries in a single dict literal — Python kept the last one and
+        # silently dropped ``updated_at``. Merging into one ``$set`` keeps
+        # both fields and aligns the timestamp to naive UTC.
         await self.mongo_store.db["chats"].update_one(
             {"_id": chat_id},
             {
-                "$set": {"updated_at": datetime.now()},
+                "$set": {
+                    "updated_at": datetime.utcnow(),
+                    f"unread_counts.{user_id}": 0,
+                },
                 "$push": {"participants": participant_dict},
-                "$set": {f"unread_counts.{user_id}": 0},
             },
         )
         print(f"Added new participant {user_id} to chat {chat_id}.")
+
+    async def _broadcast_participant_join(
+        self,
+        chat_id: str,
+        new_user_id: str,
+        existing_participant_ids: List[str],
+    ) -> None:
+        """Tell existing participants the roster changed (so they refetch
+        the chat to render the new receiver), and tell the new joiner
+        they have a chat they didn't have before (so their inbox patches
+        a new row).
+
+        Two distinct ``change`` values for two distinct client behaviors:
+        - ``participants_changed`` → re-fetch this one chat via
+          GET /v1/chats/{chat_id}, refresh receivers list
+        - ``chat_created`` → fetch the new chat and insert into local cache,
+          carries ``chat_kind`` so the client can route to the right
+          inbox section (direct / group / support)
+        """
+        from lib.services.socketio_service import sio
+
+        chat = await self.mongo_store.db["chats"].find_one(
+            {"_id": chat_id}, {"kind": 1}
+        )
+        chat_kind = (chat or {}).get("kind", "direct")
+
+        for pid in existing_participant_ids:
+            if pid == str(new_user_id):
+                continue
+            await sio.emit(
+                EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                {
+                    "chat_id": chat_id,
+                    "change": "participants_changed",
+                },
+                room=pid,
+            )
+
+        await sio.emit(
+            EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+            {
+                "chat_id": chat_id,
+                "change": "chat_created",
+                "chat_kind": chat_kind,
+            },
+            room=str(new_user_id),
+        )
 
     def _build_participant_pipeline(
         self, chat_id: Optional[str], user_id: Optional[str]

@@ -141,25 +141,21 @@ class MealVectorService(BaseVectorService):
         )
 
         # Add nutrition data
-        macros = meal.get("total_macro_nutritional_value", {})
-        micros = meal.get("total_micro_nutritional_value", {})
+        macros = meal.get("total_macro_nutritional_value") or {}
+        micros = meal.get("total_micro_nutritional_value") or {}
         payload["nutrition"] = {**macros, **micros}
 
         # Add food items
         items = []
-        for item in meal.get("items", []):
+        for item in meal.get("items") or []:
             items.append(
                 {
                     "item_name": item.get("name"),
                     "serving_quantity": item.get("serving_quantity"),
                     "serving_unit": item.get("serving_unit"),
                     "serving_size": item.get("serving_size"),
-                    "macro_nutritional_values": item.get(
-                        "macro_nutritional_values", {}
-                    ),
-                    "micro_nutritional_values": item.get(
-                        "micro_nutritional_values", {}
-                    ),
+                    "macro_nutritional_values": item.get("macro_nutritional_values") or {},
+                    "micro_nutritional_values": item.get("micro_nutritional_values") or {},
                 }
             )
         payload["items"] = items
