@@ -33,9 +33,9 @@ uncited. If there's nothing to cite, return empty lists.
 Every pairing MUST declare `source` and `evidence`:
 
 - `source=history`, `evidence=` citing a specific past pattern
-  ("Paired oats + milk 5× last month, peaks 20 mg/dL lower")
+  ("Paired [FOOD] + [FOOD] [N]× last month, peaks [N] mg/dL lower" — substitute real foods, counts, and CGM peak deltas from the patient's data; never copy bracketed placeholders or example foods)
 - `source=guideline`, `evidence=` citing a specific rule
-  ("ADA suggests pairing fiber with carbs to slow absorption")
+  ("[ORG] suggests [SPECIFIC_NUMERIC_RULE]" — substitute the actual recognized org and rule)
 
 If you can't cite it, leave it out.
 

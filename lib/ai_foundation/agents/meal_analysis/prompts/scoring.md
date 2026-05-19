@@ -20,8 +20,11 @@ not appear to the patient.
 3. **Non-moralizing tone.** No "bad", "unhealthy", "junk". State facts.
 4. **`evidence` is the specific fact.** Numbers, dates, plan targets,
    cited guideline names, specific past meal peaks — be concrete. Evidence
-   can be third-person/technical ("Profile allergies: egg") since it's the
-   citation label, not the user-facing line.
+   can be third-person/technical (e.g. "Profile allergies: [ALLERGEN]") since
+   it's the citation label, not the user-facing line. Every concrete value
+   in `evidence` MUST come from the inputs below — never invent a number,
+   date, allergen, medication, or condition that isn't in the data you were
+   given.
 5. Don't repeat the same fact twice in concerns and positives.
 6. If there's nothing to cite, return empty lists. An empty, silent
    response is better than a fabricated one.
@@ -39,12 +42,17 @@ not appear to the patient.
 
 ## Examples of well-cited insights (note the second-person voice in `text`)
 
-- `{"text":"Nearly 2× your plan's breakfast carb target","source":"plan","evidence":"Plan target: 60g carbs breakfast; this has 116g"}`
-- `{"text":"Your past 3 similar breakfasts peaked above 200 mg/dL","source":"history","evidence":"CGM peaks 207, 192, 189 on 2026-04-08/10/15"}`
-- `{"text":"Above the ADA carb recommendation for T2D","source":"guideline","evidence":"ADA: ≤45g carbs/meal for glycemic control; this has 116g"}`
-- `{"text":"Contains egg — you're listed as egg-allergic","source":"profile","evidence":"Profile allergies: egg"}`
-- `{"text":"Your Mounjaro should blunt the expected spike","source":"medication","evidence":"Active: Mounjaro (GLP-1); typical postprandial reduction ~30 mg/dL"}`
-- `{"text":"High glycemic load","source":"composition","evidence":"GL: 59 (≥20 is high)"}`
+These show the SHAPE only. Substitute the concrete values from the actual
+inputs below — never copy the bracketed placeholders verbatim, and never
+copy a value (allergen, medication, number, date) from these examples into
+your output if it isn't present in the inputs.
+
+- `{"text":"Nearly [N]× your plan's [SLOT] [MACRO] target","source":"plan","evidence":"Plan target: [N]g [MACRO] [SLOT]; this has [N]g"}`
+- `{"text":"Your past [N] similar [SLOT]s peaked above [N] mg/dL","source":"history","evidence":"CGM peaks [N], [N], [N] on [DATE]/[DATE]/[DATE]"}`
+- `{"text":"Above the [GUIDELINE] [MACRO] recommendation for [CONDITION]","source":"guideline","evidence":"[GUIDELINE]: ≤[N]g [MACRO]/meal for glycemic control; this has [N]g"}`
+- `{"text":"Contains [ALLERGEN] — you're listed as allergic","source":"profile","evidence":"Profile allergies: [ALLERGEN]"}`
+- `{"text":"Your [MEDICATION] should blunt the expected spike","source":"medication","evidence":"Active: [MEDICATION] ([CLASS]); typical postprandial reduction ~[N] mg/dL"}`
+- `{"text":"High glycemic load","source":"composition","evidence":"GL: [N] (≥20 is high)"}`
 
 ## Examples that MUST NOT appear
 
@@ -57,6 +65,13 @@ Uncited (server drops these):
 Third-person (wrong voice — must be rewritten):
 - `{"text":"Patient has exceeded plan target"}` → should be "You've exceeded your plan target"
 - `{"text":"This patient's past meals peaked..."}` → should be "Your past meals peaked..."
+
+Fabricated (must NOT appear under any circumstance):
+- Any allergen, medication, condition, food, or number that does not appear
+  in the inputs below. If the patient profile has no allergy listed, you
+  may not output an allergy insight. If no medication is active, you may
+  not output a medication insight. If there is no CGM history, you may not
+  output a history insight.
 
 ## Inputs
 
