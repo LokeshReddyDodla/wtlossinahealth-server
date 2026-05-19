@@ -10,11 +10,12 @@ from lib.models import Base
 
 class PatientFamilyDiabeticHistoryBase(BaseModel):
     family_member: str
+    type_of_diabetes: Optional[str] = None
     years_with_diabetes: Optional[float] = None
 
 
 class PatientFamilyDiabeticHistoryCreate(PatientFamilyDiabeticHistoryBase):
-    type_of_diabetes: Optional[str] = None
+    pass
 
 
 class PatientFamilyDiabeticHistory(PatientFamilyDiabeticHistoryBase):
