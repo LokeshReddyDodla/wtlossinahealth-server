@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import UUID, Boolean, Column, ForeignKey, Integer, String, Text
+from sqlalchemy import UUID, Boolean, Column, Date, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from lib.models import Base
@@ -14,6 +14,9 @@ class PatientMedicalHistory(Base):
     )
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
     condition = Column(String(100))
-    duration_years = Column(Integer)
+    condition_other = Column(String(200), nullable=True)
+    status = Column(String(20), nullable=True)
+    duration_years = Column(Float)
+    started_at = Column(Date, nullable=True)
     details = Column(Text, nullable=True)
     patient = relationship("Patient", back_populates="medical_histories")

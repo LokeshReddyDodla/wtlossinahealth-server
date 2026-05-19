@@ -37,6 +37,7 @@ from .patient_meal_timing import PatientMealTiming
 from .patient_medical_history import PatientMedicalHistory
 from .patient_permission import PatientPermission
 from .patient_prescription import PatientPrescription
+from .patient_reproductive_health import PatientReproductiveHealth
 from .patient_sleep_habit import PatientSleepHabit
 from .patient_smbg import PatientSMBG
 from .patient_smoking_habit import PatientSmokingHabit

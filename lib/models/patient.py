@@ -47,6 +47,10 @@ class Patient(Base):
     height = Column(Float)
     waist = Column(Float)
     weight = Column(Float)
+    height_cm = Column(Float, nullable=True)
+    weight_kg = Column(Float, nullable=True)
+    waist_cm = Column(Float, nullable=True)
+    hip_cm = Column(Float, nullable=True)
     email = Column(String, unique=True, index=True)
     phone_number = Column(String, unique=True, index=True)
     created_at = Column(
@@ -58,6 +62,8 @@ class Patient(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
     locale = Column(String(50), nullable=True, default="Asia/Kolkata")
+    timezone = Column(String(64), nullable=True)
+    occupation = Column(String(120), nullable=True)
     is_verified = Column(Boolean, default=False)
 
     profile_completion = Column(
@@ -112,6 +118,12 @@ class Patient(Base):
     )
     diabetic_history = relationship(
         "PatientDiabeticHistory",
+        uselist=False,
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    reproductive_health = relationship(
+        "PatientReproductiveHealth",
         uselist=False,
         back_populates="patient",
         cascade="all, delete-orphan",

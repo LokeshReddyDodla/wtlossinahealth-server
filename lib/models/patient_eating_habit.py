@@ -24,6 +24,8 @@ class PatientEatingHabit(Base):
     meals_per_day = Column(Integer, default=3, nullable=True)
 
     cuisine_preferences = Column(ARRAY(String), nullable=True)
+    dietary_preferences = Column(ARRAY(String), nullable=True)
+    diet_preferences_detail = Column(String(200), nullable=True)
 
     diet_preferences = relationship(
         "PatientDietPreference",
