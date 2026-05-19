@@ -13,7 +13,9 @@ class PatientFoodAllergyBase(BaseModel):
 
 
 class PatientFoodAllergyCreate(PatientFoodAllergyBase):
-    pass
+    name: Optional[str] = None
+    name_other: Optional[str] = None
+    severity: Optional[str] = None
 
 
 class PatientFoodAllergy(PatientFoodAllergyBase):

@@ -13,5 +13,6 @@ from .vitals import *
 from .checkins import *
 from .checkin_history import *
 from .notifications import *
+from .onboarding import *
 from .smbg import *
 from .workouts import *

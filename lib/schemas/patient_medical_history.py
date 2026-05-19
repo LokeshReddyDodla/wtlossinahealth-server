@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -10,12 +11,14 @@ from lib.models import Base
 
 class PatientMedicalHistoryBase(BaseModel):
     condition: str
-    duration_years: int
+    duration_years: float
     details: Optional[str] = None
 
 
 class PatientMedicalHistoryCreate(PatientMedicalHistoryBase):
-    pass
+    condition_other: Optional[str] = None
+    status: Optional[str] = None
+    started_at: Optional[date] = None
 
 
 class PatientMedicalHistory(PatientMedicalHistoryBase):

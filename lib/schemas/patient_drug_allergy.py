@@ -13,7 +13,9 @@ class PatientDrugAllergyBase(BaseModel):
 
 
 class PatientDrugAllergyCreate(PatientDrugAllergyBase):
-    pass
+    name: Optional[str] = None
+    name_other: Optional[str] = None
+    reaction: Optional[str] = None
 
 
 class PatientDrugAllergy(PatientDrugAllergyBase):
