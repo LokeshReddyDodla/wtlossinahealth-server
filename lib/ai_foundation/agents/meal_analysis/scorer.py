@@ -141,6 +141,12 @@ class MealScorer:
         cited_concerns = [_to_insight(i) for i in llm_out.concerns if _is_cited(i)]
         cited_positives = [_to_insight(i) for i in llm_out.positives if _is_cited(i)]
 
+        # Observability for the egg-allergy class of bug: log every
+        # source=profile insight alongside what the patient's profile and
+        # memories actually contain. Grep `meal_scorer.profile_insight` to
+        # spot phantom allergies / conditions in real traffic.
+        _log_profile_insights(cited_concerns, cited_positives, context)
+
         overall, breakdown = _compute_score(cited_concerns, cited_positives)
 
         return MealScore(
@@ -155,6 +161,29 @@ class MealScorer:
 # ---------------------------------------------------------------------------
 # Citation filtering + score computation
 # ---------------------------------------------------------------------------
+
+
+def _log_profile_insights(
+    concerns: list[Insight], positives: list[Insight], context: MealAnalysisContext,
+) -> None:
+    """Surface every source=profile insight in logs so we can audit whether
+    the LLM is fabricating profile/allergy/condition claims for real
+    patients. INFO level so it ships to production logs by default."""
+    profile_keys = list((context.profile or {}).keys())
+    memory_pairs = [
+        f"{getattr(m, 'key', '?')}={getattr(m, 'value', '?')}"
+        for m in (context.memories or [])
+    ]
+    for ins in (*concerns, *positives):
+        if ins.source == EvidenceSource.PROFILE:
+            logger.info(
+                "meal_scorer.profile_insight | patient=%s text=%r evidence=%r profile_keys=%s memories=%s",
+                (context.patient_id or "?")[:8],
+                ins.text,
+                ins.evidence,
+                profile_keys,
+                memory_pairs,
+            )
 
 
 def _is_cited(insight: _LLMInsight) -> bool:

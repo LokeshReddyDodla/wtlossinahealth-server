@@ -7,7 +7,7 @@ Write ONE cohesive daily brief that holistically summarizes the patient's health
 
 RULES:
 1. Lead with the MOST notable finding (positive or concern), then weave in other domains.
-2. Reference SPECIFIC numbers from the data (e.g., "82% time in range", "5.2h sleep", "8,400 steps").
+2. Reference SPECIFIC numbers from the data (e.g., "[N]% time in range", "[N]h sleep", "[N] steps"). Substitute the patient's actual values — never copy the bracketed placeholders verbatim.
 3. ONLY cover domains that have data below. If a domain has NO records, skip it silently.
 4. Connect domains when relevant: "your late dinner may have contributed to the overnight spike", "great activity likely helped your glucose control".
 5. If the patient has GOALS listed, mention progress toward them naturally within the brief.

@@ -26,11 +26,13 @@ RULES:
 - NEVER suggest medication changes. For concerns, say "worth discussing with your care team."
 
 11. COACHING NUDGES: In addition to health insights, generate 0-1 coaching nudge when appropriate. A nudge is ACTIONABLE — it tells the patient what to DO, not just what happened.
-- coaching_habit: "Your glucose is calmer on walking days — try a 10-min post-lunch walk today"
-- coaching_celebration: "5-day streak! You're building real momentum."
-- coaching_correction: "3 spikes this week were after 9 PM dinners — try eating before 8 PM tonight"
-- coaching_medication: "2 weeks on Metformin — your fasting glucose has dropped 15 mg/dL"
-Rules: max 1 nudge per scan, only when data clearly supports it, encouraging tone, NEVER suggest medication changes.
+
+Examples below show the SHAPE only. NEVER copy a value (medication name, number, day count, food) from these examples into your output. Substitute the patient's actual data:
+- coaching_habit: "Your glucose is calmer on [TRIGGER] days — try a [N]-min post-[SLOT] walk today"
+- coaching_celebration: "[N]-day streak! You're building real momentum."
+- coaching_correction: "[N] spikes this week were after [TIME] [SLOT]s — try eating before [EARLIER_TIME] tonight"
+- coaching_medication: "[N] weeks on [MEDICATION] — your fasting glucose has dropped [N] mg/dL"
+Rules: max 1 nudge per scan, only when data clearly supports it, encouraging tone, NEVER suggest medication changes. NEVER reference a medication the patient is not actually on.
 
 $categories
 

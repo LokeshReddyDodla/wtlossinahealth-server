@@ -142,7 +142,7 @@ Always provide 2-4 suggested follow-up actions as `SuggestedAction` objects with
 
 **CRITICAL for non-patient roles:** If the system context indicates the user is a care_provider or research analyst, suggestions MUST use the patient's name, NOT "my" or "your".
 
-- Care provider asking about Ahmed: `{"label": "Ahmed's glucose today", "description": "Show Ahmed's glucose data for today"}`
+- Care provider asking about [NAME]: `{"label": "[NAME]'s glucose today", "description": "Show [NAME]'s glucose data for today"}` — substitute the patient's actual name from the context
 - NOT: `{"label": "Show my glucose today", "description": "Show me my glucose data for today"}`
 
 Only use "my/your" when the user is a patient asking about their own data.

@@ -64,12 +64,16 @@ _EXTRACTION_PROMPT = (
     "facts — NOT data queries or conversational filler.\n\n"
     f"Use these exact keys: {_CANONICAL_KEYS_LIST}\n"
     "If a fact doesn't fit any key, use a descriptive snake_case key.\n\n"
-    "Examples:\n"
-    '- "I\'m vegetarian" → key: dietary_preference, value: vegetarian\n'
-    '- "My goal is to lose 5 kg" → key: weight_goal, value: lose 5 kg\n'
-    '- "I\'m allergic to peanuts" → key: food_allergy, value: peanuts\n'
-    '- "I have type 2 diabetes" → key: diabetes_type, value: type 2\n'
-    '- "I walk every morning" → key: activity_preference, value: morning walks\n'
+    "Only extract facts the user actually states. NEVER carry a value from "
+    "the examples below into your output — they show the input→output shape "
+    "only. If the user did not mention an allergy, do not extract an allergy. "
+    "If they did not mention a condition, do not extract a condition.\n\n"
+    "Examples (shape only — substitute the user's actual words):\n"
+    '- "I\'m [DIET_PREF]" → key: dietary_preference, value: [DIET_PREF]\n'
+    '- "My goal is to lose [N] kg" → key: weight_goal, value: lose [N] kg\n'
+    '- "I\'m allergic to [FOOD]" → key: food_allergy, value: [FOOD]\n'
+    '- "I have [CONDITION]" → key: diabetes_type OR medical_condition, value: [CONDITION]\n'
+    '- "I [ACTIVITY] every [TIME]" → key: activity_preference, value: [ACTIVITY]\n'
     '- "Show me my meals" → no memories (this is a data query)\n\n'
     "Set has_facts=true if ANY memories are found. "
     "Set has_facts=false if the message is just a data query with no personal facts."
@@ -159,6 +163,18 @@ class FactExtractor:
                 ))
 
             if facts:
+                # Observability for the "casual mention becomes permanent
+                # allergy/condition" class of bug. Logs every permanent
+                # fact with the originating user message so we can audit
+                # whether passing references ("my sister has diabetes",
+                # "I'm making eggs tomorrow") are being persisted as
+                # patient facts. Grep `fact_extractor.permanent_fact`.
+                for f in facts:
+                    if f.is_permanent:
+                        logger.info(
+                            "fact_extractor.permanent_fact | patient=%s key=%s value=%r source_msg=%r",
+                            patient_id[:8], f.key, f.value, (message or "")[:200],
+                        )
                 await self._memory.upsert_patient_facts(patient_id, facts)
                 logger.debug("Persisted %d memories for patient %s", len(facts), patient_id[:8])
 

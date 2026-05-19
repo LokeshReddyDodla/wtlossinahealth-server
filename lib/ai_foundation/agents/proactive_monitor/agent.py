@@ -233,6 +233,25 @@ class ProactiveMonitorAgent(BaseAgent):
             for insight in insights:
                 insight.data.setdefault("trace_id", trace_id)
 
+            # Observability for the "monitor publishes fabricated numbers"
+            # class of bug. Logs every insight about to ship to FCM with
+            # its title + body + the data corpus size the LLM was given.
+            # Grep `proactive_monitor.published_insight` to spot-check
+            # whether the LLM is citing numbers/facts not present in the
+            # underlying data.
+            for ins in insights:
+                logger.info(
+                    "proactive_monitor.published_insight | patient=%s cat=%s severity=%s title=%r body=%r data_len=%d facts_len=%d counts=%s",
+                    patient_id[:8],
+                    ins.category.value,
+                    ins.severity.value,
+                    ins.title,
+                    ins.body,
+                    len(data_text or ""),
+                    len(facts_text or ""),
+                    domain_counts or {},
+                )
+
             # 7. Publish insights via EventBus (concurrently)
             publish_results = await asyncio.gather(
                 *[self._publish_insight(insight) for insight in insights],
