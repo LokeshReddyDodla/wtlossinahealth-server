@@ -11,14 +11,15 @@ from lib.models import Base
 
 class PatientMedicalHistoryBase(BaseModel):
     condition: str
+    condition_other: Optional[str] = None
+    status: Optional[str] = None
     duration_years: float
+    started_at: Optional[date] = None
     details: Optional[str] = None
 
 
 class PatientMedicalHistoryCreate(PatientMedicalHistoryBase):
-    condition_other: Optional[str] = None
-    status: Optional[str] = None
-    started_at: Optional[date] = None
+    pass
 
 
 class PatientMedicalHistory(PatientMedicalHistoryBase):

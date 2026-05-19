@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -10,7 +11,8 @@ from lib.models import Base
 
 class PatientDiabeticHistoryBase(BaseModel):
     type_of_diabetes: Optional[str] = None
-    years_with_diabetes: Optional[int] = None
+    years_with_diabetes: Optional[float] = None
+    diagnosed_at: Optional[date] = None
     is_pregnant: Optional[bool] = None
     pregnancy_weeks: Optional[int] = None
 

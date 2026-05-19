@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -10,8 +10,10 @@ from lib.models import Base
 
 
 class PatientSmokingHabitBase(BaseModel):
-    smoke_status: bool
-    years_of_smoking: Optional[int] = None
+    smoke_status: Optional[bool] = None
+    status: Optional[str] = None
+    smoke_type: Optional[List[str]] = None
+    years_of_smoking: Optional[float] = None
     cigarettes_per_day: Optional[int] = None
     quit_years_ago: Optional[int] = None
 

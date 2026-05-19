@@ -14,6 +14,8 @@ from lib.schemas.patient_meal_timing import (PatientMealTiming,
 class PatientEatingHabitBase(BaseModel):
     snacks_count: Optional[int] = None
     meals_per_day: Optional[int] = None
+    dietary_preferences: Optional[List[str]] = None
+    diet_preferences_detail: Optional[str] = None
 
 
 class PatientEatingHabitCreate(PatientEatingHabitBase):

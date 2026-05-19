@@ -23,6 +23,7 @@ from lib.schemas.patient_package_assignment import (
     PatientPackageAssignmentWithDetail,
 )
 from lib.schemas.patient_permission import PatientPermission
+from lib.schemas.patient_reproductive_health import PatientReproductiveHealth
 from lib.schemas.patient_sleep_habit import PatientSleepHabit
 from lib.schemas.patient_smbg import PatientSMBG
 from lib.schemas.patient_smoking_habit import PatientSmokingHabit
@@ -39,10 +40,16 @@ class PatientBase(BaseModel):
     height: Optional[float]
     waist: Optional[float]
     weight: Optional[float]
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    waist_cm: Optional[float] = None
+    hip_cm: Optional[float] = None
     email: Optional[str]
     phone_number: str
     is_verified: Optional[bool] = False
     locale: Optional[str] = None
+    timezone: Optional[str] = None
+    occupation: Optional[str] = None
 
 
 class PatientCreate(PatientBase):
@@ -93,6 +100,7 @@ class CorePatientProfile(Patient):
     eating_habit: Optional[PatientEatingHabit] = None
     sleep_habit: Optional[PatientSleepHabit] = None
     diabetic_history: Optional[PatientDiabeticHistory] = None
+    reproductive_health: Optional[PatientReproductiveHealth] = None
     family_diabetic_histories: List[PatientFamilyDiabeticHistory] = []
     medical_histories: List[PatientMedicalHistory] = []
     diet_plans: List[PatientDietPlan] = []

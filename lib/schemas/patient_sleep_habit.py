@@ -15,8 +15,10 @@ class PatientSleepHabitBase(BaseModel):
     wake_up_fresh: Optional[bool] = None
     drowsy_day: Optional[bool] = None
     average_sleep_duration: Optional[str] = None
+    average_sleep_hours: Optional[float] = None
     wake_up_time: Optional[datetime_time] = None
     bed_time: Optional[datetime_time] = None
+    snores: Optional[bool] = None
 
 
 class PatientSleepHabitCreate(PatientSleepHabitBase):

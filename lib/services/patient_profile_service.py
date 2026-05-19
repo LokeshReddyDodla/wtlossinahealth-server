@@ -147,6 +147,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diet_plans),
                     selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
+                    selectinload(PatientModel.reproductive_health),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
                 )
@@ -298,6 +299,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diet_plans),
                     selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
+                    selectinload(PatientModel.reproductive_health),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
                 )

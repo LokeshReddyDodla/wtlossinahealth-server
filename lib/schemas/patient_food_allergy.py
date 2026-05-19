@@ -10,12 +10,13 @@ from lib.models import Base
 
 class PatientFoodAllergyBase(BaseModel):
     allergy_name: str
-
-
-class PatientFoodAllergyCreate(PatientFoodAllergyBase):
     name: Optional[str] = None
     name_other: Optional[str] = None
     severity: Optional[str] = None
+
+
+class PatientFoodAllergyCreate(PatientFoodAllergyBase):
+    pass
 
 
 class PatientFoodAllergy(PatientFoodAllergyBase):
