@@ -77,7 +77,10 @@ from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
-from lib.schemas.patient_onboarding import PatientOnboardingRequest
+from lib.schemas.patient_onboarding import (
+    PatientOnboardingRequest,
+    PatientProfileUpdate,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -675,6 +678,368 @@ class PatientProfileService:
                 message="Database Error",
                 detail=str(e),
             )
+
+    @with_postgres_session
+    async def update_patient_profile(
+        self,
+        patient_id: str,
+        data: PatientProfileUpdate,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientModel:
+        """Partial profile update — used by the chat-style onboarding flow.
+
+        Only fields the client explicitly sent are written. Top-level lists
+        (food_allergies, drug_allergies, family_diabetic_histories,
+        medical_histories) replace the whole list when present.
+
+        Recomputes profile_completion sections based on field presence —
+        no separate finalize call needed.
+        """
+        try:
+            patient = await self.fetch_patient_profile(
+                patient_id, detailed=True, postgres_session=postgres_session
+            )
+
+            sent = data.model_dump(exclude_unset=True)
+
+            # ── Identity & body scalars ─────────────────────────────────
+            for field in (
+                "first_name", "last_name", "email", "gender", "dob",
+                "profile_picture", "occupation",
+                "height_cm", "weight_kg", "waist_cm", "hip_cm",
+            ):
+                if field in sent:
+                    setattr(patient, field, sent[field])
+            if "timezone" in sent:
+                patient.timezone = sent["timezone"]
+                patient.locale = sent["timezone"]  # legacy dual-write
+            # Legacy body field dual-writes
+            if "height_cm" in sent:
+                patient.height = sent["height_cm"]
+            if "weight_kg" in sent:
+                patient.weight = sent["weight_kg"]
+            if "waist_cm" in sent:
+                patient.waist = sent["waist_cm"]
+
+            # ── Section partial-merges ──────────────────────────────────
+            if data.daily_activity is not None:
+                self._merge_daily_activity(
+                    patient, data.daily_activity, patient_id
+                )
+            if data.smoking_habit is not None:
+                self._merge_smoking_habit(
+                    patient, data.smoking_habit, patient_id
+                )
+            if data.alcohol_consumption is not None:
+                self._merge_alcohol_consumption(
+                    patient, data.alcohol_consumption, patient_id
+                )
+            if data.sleep_habit is not None:
+                self._merge_sleep_habit(
+                    patient, data.sleep_habit, patient_id
+                )
+            if data.eating_habit is not None:
+                await self._merge_eating_habit(
+                    patient,
+                    data.eating_habit,
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.diabetic_history is not None:
+                self._merge_diabetic_history(
+                    patient, data.diabetic_history, patient_id
+                )
+            if data.reproductive_health is not None:
+                self._merge_reproductive_health(
+                    patient, data.reproductive_health, patient_id
+                )
+
+            # ── Lists: replace whole when present ───────────────────────
+            if data.food_allergies is not None:
+                patient.food_allergies = await self._upsert_multiple_entities(
+                    patient.food_allergies,
+                    [
+                        PatientFoodAllergyCreate(
+                            allergy_name=fa.name_other or fa.name,
+                            name=fa.name,
+                            name_other=fa.name_other,
+                            severity=fa.severity,
+                        )
+                        for fa in data.food_allergies
+                    ],
+                    PatientFoodAllergyModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.drug_allergies is not None:
+                patient.drug_allergies = await self._upsert_multiple_entities(
+                    patient.drug_allergies,
+                    [
+                        PatientDrugAllergyCreate(
+                            allergy_name=da.name_other or da.name,
+                            name=da.name,
+                            name_other=da.name_other,
+                            reaction=da.reaction,
+                        )
+                        for da in data.drug_allergies
+                    ],
+                    PatientDrugAllergyModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.family_diabetic_histories is not None:
+                patient.family_diabetic_histories = (
+                    await self._upsert_multiple_entities(
+                        patient.family_diabetic_histories,
+                        [
+                            PatientFamilyDiabeticHistoryCreate(
+                                family_member=fdh.family_member,
+                                type_of_diabetes=fdh.type_of_diabetes,
+                                years_with_diabetes=fdh.years_with_diabetes,
+                            )
+                            for fdh in data.family_diabetic_histories
+                        ],
+                        PatientFamilyDiabeticHistoryModel,
+                        "patient_id",
+                        patient_id,
+                        postgres_session=postgres_session,
+                    )
+                )
+            if data.medical_histories is not None:
+                patient.medical_histories = await self._upsert_multiple_entities(
+                    patient.medical_histories,
+                    [
+                        PatientMedicalHistoryCreate(
+                            condition=mh.condition,
+                            condition_other=mh.condition_other,
+                            status=mh.status,
+                            duration_years=mh.duration_years,
+                            started_at=mh.started_at,
+                            details=mh.details,
+                        )
+                        for mh in data.medical_histories
+                    ],
+                    PatientMedicalHistoryModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+
+            self._recompute_profile_completion(patient)
+
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            await postgres_session.refresh(patient)
+
+            updated_patient = await self.fetch_patient_profile(
+                patient_id, detailed=True, postgres_session=postgres_session
+            )
+            profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
+                mode="json"
+            )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            return updated_patient
+
+        except IntegrityError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Integrity Error",
+                detail=str(e),
+            )
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    # ─── partial-merge helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _merge_daily_activity(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.daily_activity or PatientDailyActivityModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.daily_activity = entity
+
+    @staticmethod
+    def _merge_smoking_habit(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.smoking_habit or PatientSmokingHabitModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            if k == "smoke_type":
+                entity.smoke_type = list(v) if v else None
+            else:
+                setattr(entity, k, v)
+        if "status" in fields:
+            entity.smoke_status = fields["status"] == "CURRENT"  # legacy
+        patient.smoking_habit = entity
+
+    @staticmethod
+    def _merge_alcohol_consumption(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.alcohol_consumption or PatientAlcoholConsumptionModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            if k == "type_of_alcohol":
+                entity.type_of_alcohol = list(v) if v else None
+            else:
+                setattr(entity, k, v)
+        if "status" in fields:
+            entity.consume_alcohol = fields["status"] != "NEVER"  # legacy
+        if "drinks_per_session" in fields:
+            entity.quantity = (
+                str(fields["drinks_per_session"])
+                if fields["drinks_per_session"] is not None
+                else None
+            )  # legacy
+        patient.alcohol_consumption = entity
+
+    @staticmethod
+    def _merge_sleep_habit(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.sleep_habit or PatientSleepHabitModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        if "average_sleep_hours" in fields:
+            entity.average_sleep_duration = (
+                str(fields["average_sleep_hours"])
+                if fields["average_sleep_hours"] is not None
+                else None
+            )  # legacy
+        patient.sleep_habit = entity
+
+    @staticmethod
+    def _merge_diabetic_history(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.diabetic_history or PatientDiabeticHistoryModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.diabetic_history = entity
+
+    @staticmethod
+    def _merge_reproductive_health(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.reproductive_health or PatientReproductiveHealthModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.reproductive_health = entity
+        # Legacy dual-write: pregnancy fields still live on diabetic_history
+        diabetic = patient.diabetic_history or PatientDiabeticHistoryModel(
+            patient_id=patient_id
+        )
+        if "is_pregnant" in fields:
+            diabetic.is_pregnant = fields["is_pregnant"]
+        if "pregnancy_weeks" in fields:
+            diabetic.pregnancy_weeks = fields["pregnancy_weeks"]
+        patient.diabetic_history = diabetic
+
+    async def _merge_eating_habit(
+        self, patient, partial, patient_id: str, *, postgres_session
+    ) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        habit = patient.eating_habit or PatientEatingHabitModel(
+            patient_id=patient_id
+        )
+        for k in ("meals_per_day", "snacks_count", "diet_preferences_detail"):
+            if k in fields:
+                setattr(habit, k, fields[k])
+        if "cuisine_preferences" in fields:
+            habit.cuisine_preferences = list(fields["cuisine_preferences"]) or None
+        if "diet_preferences" in fields:
+            habit.dietary_preferences = list(fields["diet_preferences"]) or None
+        patient.eating_habit = habit
+        postgres_session.add(habit)
+        await postgres_session.flush()
+
+        # Lists within eating_habit — replace whole when present
+        if "meal_timings" in fields and partial.meal_timings is not None:
+            habit.meal_timings = await self._upsert_multiple_entities(
+                habit.meal_timings,
+                [
+                    PatientMealTimingCreate(
+                        meal_type=mt.meal_type,
+                        time=mt.time.strftime("%H:%M"),
+                    )
+                    for mt in partial.meal_timings
+                ],
+                PatientMealTimingModel,
+                "eating_habit_id",
+                habit.eating_habit_id,
+                postgres_session=postgres_session,
+            )
+
+        # Legacy dual-write: PatientDietPreference table holds one row.
+        if "diet_preferences" in fields and partial.diet_preferences:
+            pref = habit.diet_preferences or PatientDietPreferenceModel(
+                eating_habit_id=habit.eating_habit_id,
+            )
+            pref.preference = partial.diet_preferences[0]
+            if "diet_preferences_detail" in fields:
+                pref.detail = fields["diet_preferences_detail"]
+            habit.diet_preferences = pref
+
+    @staticmethod
+    def _recompute_profile_completion(patient) -> None:
+        pc = patient.profile_completion or {}
+        sections = {
+            "basic": bool(
+                patient.first_name
+                and patient.gender
+                and patient.dob
+                and (patient.height_cm or patient.height)
+                and (patient.weight_kg or patient.weight)
+            ),
+            "lifestyle": bool(
+                patient.daily_activity
+                and patient.alcohol_consumption
+                and patient.smoking_habit
+                and patient.sleep_habit
+                and patient.eating_habit
+            ),
+            "medical_history": bool(patient.diabetic_history),
+        }
+        changed = False
+        for section, is_complete in sections.items():
+            if section not in pc:
+                pc[section] = {"is_complete": False, "is_mandatory": True}
+            if pc[section].get("is_complete") != is_complete:
+                pc[section]["is_complete"] = is_complete
+                changed = True
+        if changed:
+            patient.profile_completion = pc
+            flag_modified(patient, "profile_completion")
 
     @with_postgres_session
     async def complete_onboarding(

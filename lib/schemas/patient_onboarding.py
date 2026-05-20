@@ -202,3 +202,95 @@ class PatientOnboardingRequest(BaseModel):
 
     # Reproductive (omit when gender != FEMALE)
     reproductive_health: Optional[ReproductiveHealthIn] = None
+
+
+# ─────────────── Partial section schemas (for PATCH /v1/patients/profile) ───
+
+class DailyActivityPartial(BaseModel):
+    activity_level: Optional[ActivityLevelEnum] = None
+
+
+class EatingHabitPartial(BaseModel):
+    meals_per_day: Optional[int] = Field(default=None, ge=0, le=10)
+    snacks_count: Optional[int] = Field(default=None, ge=0, le=10)
+    diet_preferences: Optional[List[DietPreferenceEnum]] = None
+    diet_preferences_detail: Optional[str] = None
+    cuisine_preferences: Optional[List[str]] = None
+    meal_timings: Optional[List[MealTimingIn]] = None
+
+
+class AlcoholConsumptionPartial(BaseModel):
+    status: Optional[AlcoholStatusEnum] = None
+    frequency: Optional[AlcoholFrequencyEnum] = None
+    drinks_per_session: Optional[int] = Field(default=None, ge=0)
+    type_of_alcohol: Optional[List[AlcoholTypeEnum]] = None
+    quit_years_ago: Optional[int] = Field(default=None, ge=0)
+
+
+class SmokingHabitPartial(BaseModel):
+    status: Optional[SmokingStatusEnum] = None
+    smoke_type: Optional[List[SmokeTypeEnum]] = None
+    cigarettes_per_day: Optional[int] = Field(default=None, ge=0)
+    years_of_smoking: Optional[float] = Field(default=None, ge=0)
+    quit_years_ago: Optional[int] = Field(default=None, ge=0)
+
+
+class SleepHabitPartial(BaseModel):
+    sleep_quality: Optional[SleepQualityEnum] = None
+    average_sleep_hours: Optional[float] = Field(default=None, ge=0, le=24)
+    bed_time: Optional[datetime_time] = None
+    wake_up_time: Optional[datetime_time] = None
+    wake_up_fresh: Optional[bool] = None
+    drowsy_day: Optional[bool] = None
+    snores: Optional[bool] = None
+
+
+class DiabeticHistoryPartial(BaseModel):
+    type_of_diabetes: Optional[DiabetesTypeEnum] = None
+    years_with_diabetes: Optional[float] = Field(default=None, ge=0)
+    diagnosed_at: Optional[date] = None
+
+
+class ReproductiveHealthPartial(BaseModel):
+    is_pregnant: Optional[bool] = None
+    pregnancy_weeks: Optional[int] = Field(default=None, ge=0, le=45)
+    menopause_status: Optional[MenopauseStatusEnum] = None
+    period_regularity: Optional[PeriodRegularityEnum] = None
+    uses_contraception: Optional[bool] = None
+
+
+class PatientProfileUpdate(BaseModel):
+    """Partial update — every field Optional. Sent fields overwrite,
+    absent fields preserve, top-level lists replace whole."""
+
+    # Identity
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    gender: Optional[GenderEnum] = None
+    dob: Optional[date] = None
+    profile_picture: Optional[str] = None
+    timezone: Optional[str] = None
+    occupation: Optional[str] = None
+
+    # Body
+    height_cm: Optional[float] = Field(default=None, ge=30, le=300)
+    weight_kg: Optional[float] = Field(default=None, ge=2, le=500)
+    waist_cm: Optional[float] = Field(default=None, ge=20, le=300)
+    hip_cm: Optional[float] = Field(default=None, ge=20, le=300)
+
+    # Sections (partial-merge by inner fields)
+    daily_activity: Optional[DailyActivityPartial] = None
+    eating_habit: Optional[EatingHabitPartial] = None
+    alcohol_consumption: Optional[AlcoholConsumptionPartial] = None
+    smoking_habit: Optional[SmokingHabitPartial] = None
+    sleep_habit: Optional[SleepHabitPartial] = None
+    diabetic_history: Optional[DiabeticHistoryPartial] = None
+    reproductive_health: Optional[ReproductiveHealthPartial] = None
+
+    # Lists (replace whole when present)
+    food_allergies: Optional[List[FoodAllergyIn]] = None
+    drug_allergies: Optional[List[DrugAllergyIn]] = None
+    family_diabetic_histories: Optional[List[FamilyDiabeticHistoryIn]] = None
+    medical_histories: Optional[List[MedicalHistoryIn]] = None
