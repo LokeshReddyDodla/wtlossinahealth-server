@@ -115,6 +115,7 @@ class CGMMetricsService:
                 f"{stats_key}.{events_key}": 1,
                 "metadata.date_range.start": 1,
                 "start_date": 1,
+                "cgm_readings": 1,
             }
 
             cursor = (
@@ -149,6 +150,7 @@ class CGMMetricsService:
                             >= min_duration_minutes
                         ],
                         "date": self._extract_report_start(report),
+                        "cgm_readings": report.get("cgm_readings") or [],
                         "patient": self._build_patient_payload(patient),
                     },
                 )
@@ -237,6 +239,7 @@ class CGMMetricsService:
                 "metadata.date_range.start": 1,
                 "start_date": 1,
                 "cgm_summary_stats.glucose_variability_percent": 1,
+                "cgm_readings": 1,
             }
 
             cursor = (
@@ -264,6 +267,7 @@ class CGMMetricsService:
                             "glucose_variability_percent"
                         ),
                         "date": self._extract_report_start(report),
+                        "cgm_readings": report.get("cgm_readings") or [],
                         "patient": self._build_patient_payload(patient),
                     },
                 )
