@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from fastapi import APIRouter, Depends
+
 from lib.dependencies.auth.patient_auth import get_current_patient
 from lib.dependencies.service_dependencies import get_profile_agent_service
 from lib.models.patient import Patient
@@ -15,7 +17,6 @@ from lib.schemas.profile_agent import (
     SessionSummaryResponse,
 )
 from lib.services.profile_agent import ProfileAgentService
-
 from rest_server.response_models import SuccessResponse
 
 router = APIRouter(

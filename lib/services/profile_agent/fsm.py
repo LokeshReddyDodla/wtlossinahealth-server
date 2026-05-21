@@ -20,6 +20,7 @@ SIG_CONTINUE = "continue"
 SIG_REVIEW = "review"
 SIG_CANCEL = "cancel"
 
+
 def reduce_draft(
     draft_changes: Dict[str, Any],
     actions: List[LLMAction],
