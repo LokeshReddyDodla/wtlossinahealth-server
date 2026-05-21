@@ -11,7 +11,7 @@ from lib.models import Base
 
 
 class PatientSleepHabitBase(BaseModel):
-    sleep_quality: str
+    sleep_quality: Optional[str] = None
     wake_up_fresh: Optional[bool] = None
     drowsy_day: Optional[bool] = None
     average_sleep_duration: Optional[str] = None
