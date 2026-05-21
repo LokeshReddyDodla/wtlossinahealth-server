@@ -1,3 +1,4 @@
+import uuid
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
@@ -980,8 +981,20 @@ class PatientProfileService:
         fields = partial.model_dump(exclude_unset=True)
         if not fields:
             return
-        habit = patient.eating_habit or PatientEatingHabitModel(
-            patient_id=patient_id
+
+        # Capture existing relations BEFORE any mutation so we don't lazy-load
+        # after a flush in async context (greenlet_spawn error).
+        existing_habit = patient.eating_habit
+        existing_meal_timings = (
+            list(existing_habit.meal_timings) if existing_habit else []
+        )
+        existing_pref = existing_habit.diet_preferences if existing_habit else None
+
+        # New habits get an explicit eating_habit_id so we never need to flush
+        # mid-method to populate the FK target for meal_timings / diet_preferences.
+        habit = existing_habit or PatientEatingHabitModel(
+            patient_id=patient_id,
+            eating_habit_id=uuid.uuid4(),
         )
         for k in ("meals_per_day", "snacks_count", "diet_preferences_detail"):
             if k in fields:
@@ -991,13 +1004,11 @@ class PatientProfileService:
         if "diet_preferences" in fields:
             habit.dietary_preferences = list(fields["diet_preferences"]) or None
         patient.eating_habit = habit
-        postgres_session.add(habit)
-        await postgres_session.flush()
 
         # Lists within eating_habit — replace whole when present
         if "meal_timings" in fields and partial.meal_timings is not None:
             habit.meal_timings = await self._upsert_multiple_entities(
-                habit.meal_timings,
+                existing_meal_timings,
                 [
                     PatientMealTimingCreate(
                         meal_type=mt.meal_type,
@@ -1013,7 +1024,7 @@ class PatientProfileService:
 
         # Legacy dual-write: PatientDietPreference table holds one row.
         if "diet_preferences" in fields and partial.diet_preferences:
-            pref = habit.diet_preferences or PatientDietPreferenceModel(
+            pref = existing_pref or PatientDietPreferenceModel(
                 eating_habit_id=habit.eating_habit_id,
             )
             pref.preference = partial.diet_preferences[0]
@@ -1327,8 +1338,19 @@ class PatientProfileService:
         *,
         postgres_session: AsyncSession,
     ) -> None:
-        habit = patient.eating_habit or PatientEatingHabitModel(
-            patient_id=patient_id
+        # Capture existing relations BEFORE any mutation so we don't lazy-load
+        # after a flush in async context (greenlet_spawn error).
+        existing_habit = patient.eating_habit
+        existing_meal_timings = (
+            list(existing_habit.meal_timings) if existing_habit else []
+        )
+        existing_pref = existing_habit.diet_preferences if existing_habit else None
+
+        # New habits get an explicit eating_habit_id so we never need to flush
+        # mid-method to populate the FK target for meal_timings / diet_preferences.
+        habit = existing_habit or PatientEatingHabitModel(
+            patient_id=patient_id,
+            eating_habit_id=uuid.uuid4(),
         )
         habit.meals_per_day = section.meals_per_day
         habit.snacks_count = section.snacks_count
@@ -1337,12 +1359,8 @@ class PatientProfileService:
         habit.diet_preferences_detail = section.diet_preferences_detail
         patient.eating_habit = habit
 
-        # Flush so habit.eating_habit_id is populated before nested writes
-        postgres_session.add(habit)
-        await postgres_session.flush()
-
         habit.meal_timings = await self._upsert_multiple_entities(
-            habit.meal_timings,
+            existing_meal_timings,
             [
                 # PatientMealTiming.time is a String column — format HH:MM
                 PatientMealTimingCreate(
@@ -1360,7 +1378,7 @@ class PatientProfileService:
         # Legacy dual-write: PatientDietPreference table holds one row.
         # Store the first item from the list + the detail string.
         if section.diet_preferences:
-            pref = habit.diet_preferences or PatientDietPreferenceModel(
+            pref = existing_pref or PatientDietPreferenceModel(
                 eating_habit_id=habit.eating_habit_id,
             )
             pref.preference = section.diet_preferences[0]
