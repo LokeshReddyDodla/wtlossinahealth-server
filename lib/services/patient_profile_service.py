@@ -750,10 +750,21 @@ class PatientProfileService:
                 self._merge_diabetic_history(
                     patient, data.diabetic_history, patient_id
                 )
-            if data.reproductive_health is not None:
-                self._merge_reproductive_health(
-                    patient, data.reproductive_health, patient_id
-                )
+            # reproductive_health supports explicit-null to clear the row
+            # (used when gender changes from FEMALE to non-FEMALE)
+            if "reproductive_health" in sent:
+                if data.reproductive_health is None:
+                    if patient.reproductive_health is not None:
+                        await postgres_session.delete(patient.reproductive_health)
+                        patient.reproductive_health = None
+                    # Also clear legacy pregnancy fields on diabetic_history
+                    if patient.diabetic_history is not None:
+                        patient.diabetic_history.is_pregnant = None
+                        patient.diabetic_history.pregnancy_weeks = None
+                else:
+                    self._merge_reproductive_health(
+                        patient, data.reproductive_health, patient_id
+                    )
 
             # ── Lists: replace whole when present ───────────────────────
             if data.food_allergies is not None:
