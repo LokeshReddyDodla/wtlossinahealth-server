@@ -8,7 +8,7 @@ Three layers:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -23,18 +23,36 @@ ConsultationStatus = Literal["draft"]
 
 
 class ExtractedConsultation(BaseModel):
-    """Structured insights extracted from a doctor-patient conversation."""
+    """Structured insights extracted from a doctor-patient conversation.
 
+    Fields are intentionally aligned with PatientPrescription + PatientMedication
+    so a consultation can later be promoted into those rows with no remapping.
+    """
+
+    # Provider & visit metadata
+    doctor_name: str | None = None
+    prescription_date: date | None = None
+
+    # Clinical narrative
     chief_complaint: str | None = None
     history_of_present_illness: str | None = None
     past_history_mentioned: str | None = None
     examination_findings: str | None = None
     assessment: str | None = None
     plan: str | None = None
+
+    # Prescription-flavored outputs
     medicines: list[ExtractedMedicine] = Field(default_factory=list)
     investigations_ordered: list[str] = Field(default_factory=list)
     lifestyle_advice: list[str] = Field(default_factory=list)
-    follow_up: str | None = None
+
+    # Follow-up (structured for direct PatientPrescription mapping)
+    follow_up_required: bool = False
+    follow_up_date: date | None = None
+    follow_up_instructions: str | None = None
+
+    # Misc
+    notes: str | None = None
     red_flags: list[str] = Field(default_factory=list)
     summary: str | None = None
 

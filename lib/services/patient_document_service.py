@@ -1,9 +1,7 @@
 import asyncio
 from datetime import datetime
 import hashlib
-import logging
 from typing import Any, List, Optional
-from bson import ObjectId
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 from lib.core.constants import ProfileTypeEnum
@@ -15,13 +13,11 @@ from lib.services.file_content_extractor import FileContentExtractorService
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.date_utils import extract_date_from_text
 from lib.utils.http_exceptions import raise_http_exception
-from lib.utils.s3_utils import s3_client, upload_file_to_s3
+from lib.utils.s3_utils import upload_file_to_s3
 
 from qdrant_client.http.models import PointStruct
 
 from lib.utils.vector_utils import embed_text
-
-logger = logging.getLogger(__name__)
 
 
 class PatientDocumentService:
@@ -141,14 +137,12 @@ class PatientDocumentService:
     ):
         try:
             # Upload file to S3
-            folder_path = f"patients/{patient_id}/documents/{document_type}"
-            storage_key = f"{folder_path}/{file_name}"
             file_url = upload_file_to_s3(
                 file_bytes=file_bytes,
                 bucket_name=self.s3_bucket_name,
                 file_name=file_name,
                 content_type=content_type,
-                folder_path=folder_path,
+                folder_path=f"patients/{patient_id}/documents/{document_type}",
             )
             if not file_url:
                 raise_http_exception(
@@ -188,13 +182,6 @@ class PatientDocumentService:
                 uploaded_by_type,
                 document_date,
             )
-            mongo_doc["storage_bucket"] = self.s3_bucket_name
-            mongo_doc["storage_key"] = storage_key
-            mongo_doc["parse_status"] = "pending"
-            mongo_doc["parse_error"] = None
-            mongo_doc["findings"] = []
-            mongo_doc["deleted_at"] = None
-
             inserted = await self.patient_document_collection.insert_one(mongo_doc)  # type: ignore
             document_id = str(inserted.inserted_id)
 
@@ -219,19 +206,6 @@ class PatientDocumentService:
             )
 
             await self._upsert_to_qdrant(payload, text_repr, document_id)
-
-            # Kick off structured findings extraction + cross-document overview
-            # rebuild. Both run on the REPORTS arq queue with dedup keys; failures
-            # are captured on the document row and do not break the upload.
-            try:
-                from lib.workers.tasks.medical_documents.enqueue import (
-                    enqueue_extract_findings,
-                )
-                await enqueue_extract_findings(document_id)
-            except Exception:
-                logger.exception(
-                    "Failed to enqueue findings extraction for %s", document_id
-                )
 
             return document_id
 
@@ -380,64 +354,6 @@ class PatientDocumentService:
                     PointStruct(id=point_id, vector=embedding, payload=payload)
                 ],
             )
-
-    async def delete_patient_document(
-        self, *, patient_id: str, document_id: str
-    ) -> bool:
-        """Soft-delete a document and remove its S3 object + Qdrant point.
-
-        Returns True if the row was found and marked deleted, False otherwise.
-        Triggers an overview rebuild for the patient on success.
-        """
-        try:
-            oid = ObjectId(document_id)
-        except Exception:
-            return False
-
-        doc = await self.patient_document_collection.find_one(  # type: ignore
-            {"_id": oid, "patient_id": patient_id, "deleted_at": {"$in": [None]}}
-        )
-        if not doc:
-            return False
-
-        bucket = doc.get("storage_bucket") or self.s3_bucket_name
-        key = doc.get("storage_key")
-        if key:
-            try:
-                s3_client.delete_object(Bucket=bucket, Key=key)
-            except Exception:
-                logger.exception(
-                    "S3 delete failed for %s/%s; continuing with soft delete",
-                    bucket,
-                    key,
-                )
-
-        try:
-            point_id = hashlib.md5(document_id.encode()).hexdigest()
-            async with self.qdrant_store.get_client() as client:
-                await client.delete(
-                    collection_name=self.qdrant_collection_name,
-                    points_selector=[point_id],
-                )
-        except Exception:
-            logger.exception("Qdrant delete failed for %s; continuing", document_id)
-
-        await self.patient_document_collection.update_one(  # type: ignore
-            {"_id": oid},
-            {"$set": {"deleted_at": datetime.now()}},
-        )
-
-        try:
-            from lib.workers.tasks.medical_documents.enqueue import (
-                enqueue_rebuild_overview,
-            )
-            await enqueue_rebuild_overview(patient_id)
-        except Exception:
-            logger.exception(
-                "Failed to enqueue overview rebuild for %s after delete", patient_id
-            )
-
-        return True
 
     async def _complete_text(self, prompt: str, model: str) -> str:
         response = await self.openai_client.chat.completions.create(

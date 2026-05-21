@@ -18,9 +18,6 @@ def get_all_tasks() -> List[Callable]:
     from lib.workers.tasks.librelink_up import get_tasks as get_librelink_up_tasks
     from lib.workers.tasks.libreview import get_tasks as get_libreview_tasks
     from lib.workers.tasks.meal import get_tasks as get_meal_tasks
-    from lib.workers.tasks.medical_documents import (
-        get_tasks as get_medical_documents_tasks,
-    )
     from lib.workers.tasks.package import get_tasks as get_package_tasks
     from lib.workers.tasks.patient_summary import get_tasks as get_patient_summary_tasks
     from lib.workers.tasks.patient_export import get_tasks as get_patient_export_tasks
@@ -49,7 +46,6 @@ def get_all_tasks() -> List[Callable]:
     tasks.extend(get_librelink_up_tasks())
     tasks.extend(get_libreview_tasks())
     tasks.extend(get_meal_tasks())
-    tasks.extend(get_medical_documents_tasks())
     tasks.extend(get_package_tasks())
     tasks.extend(get_patient_summary_tasks())
     tasks.extend(get_patient_export_tasks())

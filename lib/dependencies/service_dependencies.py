@@ -68,10 +68,7 @@ from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_document_research_service import (
     PatientDocumentResearchService,
 )
-from lib.services.patient_documents_overview import PatientDocumentsOverviewService
-from lib.services.profile_agent.documents.service import (
-    ProfileAgentDocumentsService,
-)
+
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -581,23 +578,6 @@ def get_sleep_report_collection():
 def get_patient_documents_collection():
     return container.resolve("patient_documents")
 
-
-def get_patient_documents_overview_collection():
-    return container.resolve("patient_documents_overview_collection")
-
-
-def get_patient_documents_overview_service() -> PatientDocumentsOverviewService:
-    return cast(
-        PatientDocumentsOverviewService,
-        container.resolve(PatientDocumentsOverviewService),
-    )
-
-
-def get_profile_agent_documents_service() -> ProfileAgentDocumentsService:
-    return cast(
-        ProfileAgentDocumentsService,
-        container.resolve(ProfileAgentDocumentsService),
-    )
 
 
 def get_inbody_reports_collection():
