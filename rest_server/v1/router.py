@@ -14,6 +14,7 @@ from .patient_exports.router import router as patient_exports_router
 from .gamification.router import router as gamification_router
 from .voice_agent.router import router as voice_agent_router
 from .prescriptions.router import router as prescriptions_router
+from .consultations.router import router as consultations_router
 from .medications.router import router as medications_router
 from .exercises.router import router as exercises_router
 from .meals.router import router as meals_router
@@ -42,6 +43,7 @@ router.include_router(patient_exports_router)
 router.include_router(gamification_router)
 router.include_router(voice_agent_router)
 router.include_router(prescriptions_router)
+router.include_router(consultations_router)
 router.include_router(medications_router)
 router.include_router(exercises_router)
 router.include_router(meals_router)

@@ -356,6 +356,16 @@ def get_prescription_extraction_service():
     return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
 
 
+def get_consultation_extraction_service():
+    from lib.services.consultation_extraction_service import ConsultationExtractionService  # avoid circular
+    return cast(ConsultationExtractionService, container.resolve(ConsultationExtractionService))
+
+
+def get_consultation_service():
+    from lib.services.consultation_service import ConsultationService  # avoid circular
+    return cast(ConsultationService, container.resolve(ConsultationService))
+
+
 def get_checkin_history_service():
     from lib.services.checkin_history_service import CheckinHistoryService  # avoid circular
     return cast(CheckinHistoryService, container.resolve(CheckinHistoryService))

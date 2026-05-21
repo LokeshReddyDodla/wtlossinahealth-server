@@ -26,7 +26,27 @@ class MongoStore:
         await self._init_ai_conversation_message_indexes()
         await self._init_support_ticket_indexes()
         await self._init_chat_indexes()
+        await self._init_consultation_indexes()
         # In future: await self._init_patient_indexes(), etc.
+
+    async def _init_consultation_indexes(self):
+        """Indexes on patient_consultations. Doctor-patient recordings:
+        list queries fetch by patient newest-first; status filters used
+        operationally to find stuck `processing` rows."""
+        collection = self.db["patient_consultations"]
+        await collection.create_index(
+            [("consultation_id", 1)],
+            name="consultation_id_unique_idx",
+            unique=True,
+        )
+        await collection.create_index(
+            [("patient_id", 1), ("recorded_at", -1)],
+            name="consultation_patient_recordedAt_idx",
+        )
+        await collection.create_index(
+            [("recorded_by_id", 1), ("recorded_at", -1)],
+            name="consultation_recordedBy_idx",
+        )
 
     async def _init_chat_indexes(self):
         """Indexes on chats + chat_messages. Pre-existing collections —
