@@ -474,14 +474,13 @@ def _profile_payload_to_dict(payload: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "age",
         "gender",
-        "height",
-        "weight",
+        "height_cm",
+        "weight_kg",
         "bmi",
-        "locale",
         "timezone",
         "type_of_diabetes",
         "years_with_diabetes",
-        "average_sleep_duration",
+        "average_sleep_hours",
     )
     return {k: payload[k] for k in keys if payload.get(k) is not None}
 

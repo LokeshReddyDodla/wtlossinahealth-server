@@ -1926,7 +1926,7 @@ class AgenticChatService:
         patient = await self.patient_profile_service.fetch_patient_profile(
             str(user_id)
         )
-        return patient.locale if patient and patient.locale else None
+        return patient.timezone if patient and patient.timezone else None
 
     def _resolve_timezone(
         self,
