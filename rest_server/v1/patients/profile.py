@@ -19,7 +19,7 @@ from lib.dependencies.service_dependencies import (
     get_user_device_service,
 )
 from lib.models.patient import Patient
-from lib.schemas.patient import CompletePatientProfile
+from lib.schemas.patient import CompletePatientProfile, CorePatientProfile
 from lib.schemas.patient_onboarding import PatientProfileUpdate
 from lib.services.patient_profile_service import PatientProfileService
 from lib.services.reports import CGMReportService
