@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -8,7 +9,7 @@ from lib.models import Base
 
 
 class PatientDailyActivityBase(BaseModel):
-    activity_level: str
+    activity_level: Optional[str] = None
 
 
 class PatientDailyActivityCreate(PatientDailyActivityBase):
