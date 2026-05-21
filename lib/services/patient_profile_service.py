@@ -10,6 +10,10 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
+from lib.core.onboarding_requirements import (
+    ONBOARDING_REQUIREMENTS,
+    compute_section_status,
+)
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
@@ -1041,41 +1045,34 @@ class PatientProfileService:
 
     @staticmethod
     def _recompute_profile_completion(patient) -> bool:
-        """Recompute profile_completion from field presence.
+        """Recompute profile_completion from the declarative requirements manifest.
 
-        Returns True if any section's is_complete value changed — callers use
-        this to gate expensive side-effects (vector re-embedding, notifications)
-        so they only fire on meaningful transitions, not on every PATCH.
+        Writes per-section {is_complete, is_mandatory, missing[]} to the JSON
+        column. The `missing[]` array refreshes on every call (frontend always
+        sees up-to-date gaps).
+
+        Returns True only if any section's `is_complete` flag flipped. Callers
+        use this to gate expensive side-effects (vector re-embed, chat
+        notifications) so they fire on milestone transitions only — not every
+        time the user shrinks the missing list by one field.
         """
-        pc = patient.profile_completion or {}
-        sections = {
-            "basic": bool(
-                patient.first_name
-                and patient.gender
-                and patient.dob
-                and (patient.height_cm or patient.height)
-                and (patient.weight_kg or patient.weight)
-            ),
-            "lifestyle": bool(
-                patient.daily_activity
-                and patient.alcohol_consumption
-                and patient.smoking_habit
-                and patient.sleep_habit
-                and patient.eating_habit
-            ),
-            "medical_history": bool(patient.diabetic_history),
-        }
-        changed = False
-        for section, is_complete in sections.items():
-            if section not in pc:
-                pc[section] = {"is_complete": False, "is_mandatory": True}
-            if pc[section].get("is_complete") != is_complete:
-                pc[section]["is_complete"] = is_complete
-                changed = True
-        if changed:
-            patient.profile_completion = pc
+        old_pc = patient.profile_completion or {}
+        new_pc: dict[str, dict] = {}
+        completion_flipped = False
+        for section, paths in ONBOARDING_REQUIREMENTS.items():
+            is_complete, missing = compute_section_status(patient, paths)
+            prev = old_pc.get(section, {})
+            if prev.get("is_complete") != is_complete:
+                completion_flipped = True
+            new_pc[section] = {
+                "is_complete": is_complete,
+                "is_mandatory": prev.get("is_mandatory", True),
+                "missing": missing,
+            }
+        if new_pc != old_pc:
+            patient.profile_completion = new_pc
             flag_modified(patient, "profile_completion")
-        return changed
+        return completion_flipped
 
     @with_postgres_session
     async def complete_onboarding(
