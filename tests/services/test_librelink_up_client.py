@@ -3,8 +3,8 @@
 Network-touching paths (login/connections/graph) are not exercised here —
 they're covered by an integration smoke run against a real account. These
 tests pin the parsing + normalization that the rest of the pipeline relies
-on (timestamp = naive UTC, dedup by time, source label, record_type
-mapping).
+on (timestamp = naive local wall-clock from the `Timestamp` field, dedup
+by time, source label, record_type mapping).
 """
 
 import datetime as dt
@@ -27,22 +27,22 @@ def _make_client():
     return client
 
 
-def test_parse_factory_ts_naive_utc_am_pm():
-    ts = LibreLinkUpClient._parse_factory_ts("5/1/2026 1:31:31 AM")
+def test_parse_local_ts_naive_am_pm():
+    ts = LibreLinkUpClient._parse_local_ts("5/1/2026 1:31:31 AM")
     assert ts == dt.datetime(2026, 5, 1, 1, 31, 31)
     # Must be naive (TIMESTAMP WITHOUT TIME ZONE).
     assert ts.tzinfo is None
 
 
-def test_parse_factory_ts_24h_fallback():
-    ts = LibreLinkUpClient._parse_factory_ts("12/31/2025 23:00:00")
+def test_parse_local_ts_24h_fallback():
+    ts = LibreLinkUpClient._parse_local_ts("12/31/2025 23:00:00")
     assert ts == dt.datetime(2025, 12, 31, 23, 0, 0)
     assert ts.tzinfo is None
 
 
-def test_parse_factory_ts_garbage_returns_none():
-    assert LibreLinkUpClient._parse_factory_ts("") is None
-    assert LibreLinkUpClient._parse_factory_ts("not a date") is None
+def test_parse_local_ts_garbage_returns_none():
+    assert LibreLinkUpClient._parse_local_ts("") is None
+    assert LibreLinkUpClient._parse_local_ts("not a date") is None
 
 
 def test_normalize_graph_dedups_latest_against_history_tail():
@@ -50,12 +50,12 @@ def test_normalize_graph_dedups_latest_against_history_tail():
     same_ts = "5/1/2026 1:31:31 AM"
     payload = {
         "graphData": [
-            {"FactoryTimestamp": "5/1/2026 1:16:31 AM", "ValueInMgPerDl": 90},
-            {"FactoryTimestamp": same_ts, "ValueInMgPerDl": 95},
+            {"Timestamp": "5/1/2026 1:16:31 AM", "ValueInMgPerDl": 90},
+            {"Timestamp": same_ts, "ValueInMgPerDl": 95},
         ],
         "connection": {
             "glucoseMeasurement": {
-                "FactoryTimestamp": same_ts,
+                "Timestamp": same_ts,
                 "ValueInMgPerDl": 95,
             }
         },
@@ -75,9 +75,9 @@ def test_normalize_graph_skips_invalid_entries():
     client = _make_client()
     payload = {
         "graphData": [
-            {"FactoryTimestamp": "", "ValueInMgPerDl": 90},  # bad ts
-            {"FactoryTimestamp": "5/1/2026 1:00:00 AM", "ValueInMgPerDl": None},  # no val
-            {"FactoryTimestamp": "5/1/2026 1:15:00 AM", "ValueInMgPerDl": 110},
+            {"Timestamp": "", "ValueInMgPerDl": 90},  # bad ts
+            {"Timestamp": "5/1/2026 1:00:00 AM", "ValueInMgPerDl": None},  # no val
+            {"Timestamp": "5/1/2026 1:15:00 AM", "ValueInMgPerDl": 110},
         ],
         "connection": {},
     }
@@ -95,7 +95,7 @@ def test_normalize_graph_rounds_float_values():
     client = _make_client()
     payload = {
         "graphData": [
-            {"FactoryTimestamp": "5/1/2026 1:00:00 AM", "ValueInMgPerDl": 95.6}
+            {"Timestamp": "5/1/2026 1:00:00 AM", "ValueInMgPerDl": 95.6}
         ],
         "connection": {},
     }
