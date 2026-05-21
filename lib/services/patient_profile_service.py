@@ -852,14 +852,18 @@ class PatientProfileService:
             # attributes + relationships we set in-memory remain valid here.
             # No re-fetch needed.
 
-            # Fire expensive side-effects only on meaningful transitions —
-            # a chat-style PATCH every 1.5s shouldn't re-embed the profile
-            # or spam chat notifications.
+            # Vector re-embed: enqueue on every PATCH so the health agent
+            # sees fresh data. The job_id is bucketed to the minute inside
+            # _enqueue_profile_vector, so rapid PATCHes collapse to one
+            # embed per patient per minute (arq drops duplicate job_ids).
+            profile_data = CorePatientProfile.from_orm(patient).model_dump(
+                mode="json"
+            )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+
+            # Chat-list notification stays gated to milestone events —
+            # we don't want to spam the chat tray on every keystroke.
             if completion_changed:
-                profile_data = CorePatientProfile.from_orm(patient).model_dump(
-                    mode="json"
-                )
-                enqueue_generate_profile_vector_sync(patient_id, profile_data)
                 await self.chat_notification_service.notify_participants(
                     message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
                     user_id=patient_id,
