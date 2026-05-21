@@ -73,7 +73,7 @@ async def get_patient_timezone(
     from lib.models.patient import Patient
 
     result = await session.execute(
-        select(Patient.locale).where(Patient.patient_id == patient_id)
+        select(Patient.timezone).where(Patient.patient_id == patient_id)
     )
     return result.scalar()
 
