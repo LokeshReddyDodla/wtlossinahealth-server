@@ -19,13 +19,7 @@ from lib.services.profile_agent.gate_eval import field_value_from_patient, gate_
 
 
 def recompute_profile_completion(patient) -> None:
-    """Mutates patient.profile_completion in place.
-
-    Schema-driven sections (basic / lifestyle / medical_history) are recomputed
-    from the ORM state. The `documents` section is user-controlled (set by
-    upload or skip in the medical-documents flow) so we leave its values alone
-    and only seed defaults if it's missing.
-    """
+    """Mutates patient.profile_completion in place."""
     pc: Dict[str, Any] = patient.profile_completion or {}
 
     for section in SECTIONS:
@@ -36,14 +30,6 @@ def recompute_profile_completion(patient) -> None:
         else:
             pc[skey]["is_complete"] = is_complete
             pc[skey].setdefault("is_mandatory", True)
-
-    # Documents section: user-controlled, preserved across recomputes.
-    if "documents" not in pc:
-        pc["documents"] = {
-            "is_complete": False,
-            "is_mandatory": False,
-            "skipped": False,
-        }
 
     patient.profile_completion = pc
     flag_modified(patient, "profile_completion")

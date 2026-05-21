@@ -22,7 +22,7 @@ def build_system_prompt(
     field_list = _field_list_for_prompt()
     next_hint = (
         f"\nThe next field to collect proactively is **{next_field.label}** "
-        f"(key: `{next_field.field}`, type: {next_field.type}, "
+        f"(key: `{next_field.field}`, type: {next_field.type}). "
         if next_field else ""
     )
     draft_hint = (
