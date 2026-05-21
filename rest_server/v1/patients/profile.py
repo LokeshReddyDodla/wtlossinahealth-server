@@ -1,6 +1,7 @@
 """V1 Patient profile — self-fetch + partial-update endpoints.
 
-GET   /v1/patients/profile   — fetch current patient's full profile
+GET   /v1/patients/profile   — fetch current patient's complete profile
+                                + CGM reports + last_active_at (one-stop)
 PATCH /v1/patients/profile   — partial update (chat-style onboarding flow)
 
 PATCH semantics: same nested shape as POST /v1/patients/onboarding but every
@@ -10,12 +11,19 @@ from field presence — no separate finalize call needed.
 """
 from fastapi import Depends, HTTPException, status
 
+from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.auth.patient_auth import get_current_patient
-from lib.dependencies.service_dependencies import get_patient_profile_service
+from lib.dependencies.service_dependencies import (
+    get_cgm_report_service,
+    get_patient_profile_service,
+    get_user_device_service,
+)
 from lib.models.patient import Patient
-from lib.schemas.patient import CorePatientProfile
+from lib.schemas.patient import CompletePatientProfile
 from lib.schemas.patient_onboarding import PatientProfileUpdate
 from lib.services.patient_profile_service import PatientProfileService
+from lib.services.reports import CGMReportService
+from lib.services.user_device_service import UserDeviceService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
@@ -28,16 +36,36 @@ from .router import router
 )
 async def get_patient_profile(
     service: PatientProfileService = Depends(get_patient_profile_service),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
+    cgm_report_service: CGMReportService = Depends(get_cgm_report_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
+    """One-stop profile fetch — replaces the legacy /v1/patients/{id}?detailed=true.
+
+    Returns CompletePatientProfile (identity + body + all lifestyle/medical
+    sections + care_providers + package_assignments + current_package +
+    reproductive_health + weight_loss_enrollment + permissions + connected_apps),
+    plus CGM reports and last_active_at side-data.
+    """
     try:
+        patient_id = str(current_patient.patient_id)
         patient = await service.fetch_patient_profile(
-            patient_id=str(current_patient.patient_id),
+            patient_id=patient_id,
             detailed=True,
+            other_related_data=True,
+        )
+        cgm_reports = await cgm_report_service.fetch_reports(patient_id)
+        last_active_at = await user_device_service.get_user_last_active_at(
+            user_id=patient_id,
+            profile_type=ProfileTypeEnum.PATIENT.value,
         )
         return SuccessResponse(
             message="Patient profile fetched.",
-            data=CorePatientProfile.from_orm(patient),
+            data={
+                **CompletePatientProfile.from_orm(patient).model_dump(mode="json"),
+                "reports": {"cgm": cgm_reports},
+                "last_active_at": last_active_at,
+            },
         )
     except HTTPException:
         raise

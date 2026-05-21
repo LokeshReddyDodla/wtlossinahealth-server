@@ -43,9 +43,15 @@ async def generate_profile_vector(
 async def _enqueue_profile_vector(
     patient_id: str, profile_data: Dict[str, Any]
 ) -> str | None:
-    """Internal: Enqueue profile vector generation."""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    job_id = f"profile:vector:{patient_id}:{timestamp}"
+    """Internal: Enqueue profile vector generation.
+
+    The job_id is bucketed to the nearest minute so multiple PATCHes within
+    that window collapse to a single embedding job (arq drops duplicates).
+    A debounced chat-onboarding flow firing PATCH every ~1.5s costs us ~1-2
+    embeddings per minute per patient instead of ~40.
+    """
+    minute_bucket = datetime.now().strftime("%Y%m%d%H%M")
+    job_id = f"profile:vector:{patient_id}:{minute_bucket}"
 
     job = await enqueue_job(
         "generate_profile_vector",
