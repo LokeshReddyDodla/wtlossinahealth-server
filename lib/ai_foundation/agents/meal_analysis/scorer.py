@@ -102,9 +102,10 @@ class MealScorer:
         extraction: MealExtraction,
         context: MealAnalysisContext,
         slot: str,
+        glycemic_load: float | None = None,
         trace_id: str | None = None,
     ) -> MealScore:
-        gl = estimate_glycemic_load(extraction)
+        gl = glycemic_load if glycemic_load is not None else estimate_glycemic_load(extraction)
 
         template = self._prompts.get(SCORING_PROMPT_NAME)
         prompt = template.render(

@@ -41,7 +41,7 @@ from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
 from .plan_checker import check_plan
 from .repeat_detector import detect_repeat
-from .scorer import MealScorer
+from .scorer import MealScorer, estimate_glycemic_load
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,13 @@ logger = logging.getLogger(__name__)
 async def _maybe_await(result: Any) -> None:
     if inspect.isawaitable(result):
         await result
+
+
+async def _timed(coro: Any) -> tuple[Any, int]:
+    """Await ``coro`` and return ``(result, elapsed_ms)``."""
+    t0 = time.perf_counter()
+    result = await coro
+    return result, int((time.perf_counter() - t0) * 1000)
 
 
 class MealAnalysisAgent(BaseAgent):
@@ -125,53 +132,67 @@ class MealAnalysisAgent(BaseAgent):
             )
         )
 
+        t_ctx_start = time.perf_counter()
         context = await self._ctx.load(
             patient_id=patient_id, local_now=local_now
         )
+        t_context_ms = int((time.perf_counter() - t_ctx_start) * 1000)
 
+        t_extract_start = time.perf_counter()
         extraction = await self._resolve_extraction(
             patient_id=patient_id,
             request=request,
             context=context,
             trace_id=trace_id,
         )
+        t_extract_ms = int((time.perf_counter() - t_extract_start) * 1000)
 
-        score = await self._scorer.score(
-            extraction=extraction,
-            context=context,
-            slot=request.slot.value,
-            trace_id=trace_id,
-        )
+        gl = estimate_glycemic_load(extraction)
 
-        (alts_pairs, glucose, plan, repeat) = await asyncio.gather(
-            self._alternatives.rank(
+        t_parallel_start = time.perf_counter()
+        (score_t, alts_t, glucose_t, plan_t, repeat_t) = await asyncio.gather(
+            _timed(self._scorer.score(
                 extraction=extraction,
                 context=context,
-                glycemic_load=score.glycemic_load,
                 slot=request.slot.value,
+                glycemic_load=gl,
                 trace_id=trace_id,
-            ),
-            self._glucose.predict(
+            )),
+            _timed(self._alternatives.rank(
                 extraction=extraction,
                 context=context,
-                glycemic_load=score.glycemic_load,
+                glycemic_load=gl,
                 slot=request.slot.value,
                 trace_id=trace_id,
-            ),
-            asyncio.to_thread(
+            )),
+            _timed(self._glucose.predict(
+                extraction=extraction,
+                context=context,
+                glycemic_load=gl,
+                slot=request.slot.value,
+                trace_id=trace_id,
+            )),
+            _timed(asyncio.to_thread(
                 check_plan,
                 extraction=extraction,
                 slot=request.slot,
                 active_plan=context.active_diet_plan,
-            ),
-            asyncio.to_thread(
+            )),
+            _timed(asyncio.to_thread(
                 detect_repeat,
                 extraction=extraction,
                 context=context,
                 slot=request.slot,
-            ),
+            )),
             return_exceptions=False,
         )
+        t_parallel_ms = int((time.perf_counter() - t_parallel_start) * 1000)
+
+        (score, t_score_ms) = score_t
+        (alts_pairs, t_alts_ms) = alts_t
+        (glucose, t_glucose_ms) = glucose_t
+        (plan, t_plan_ms) = plan_t
+        (repeat, t_repeat_ms) = repeat_t
         alternatives_list, pairings = alts_pairs
 
         result = MealAnalysisResult(
@@ -193,6 +214,14 @@ class MealAnalysisAgent(BaseAgent):
                 output_text=_summarize_result(result),
                 metadata={
                     "latency_ms": elapsed_ms,
+                    "context_ms": t_context_ms,
+                    "extract_ms": t_extract_ms,
+                    "parallel_ms": t_parallel_ms,
+                    "score_ms": t_score_ms,
+                    "alternatives_ms": t_alts_ms,
+                    "glucose_ms": t_glucose_ms,
+                    "plan_ms": t_plan_ms,
+                    "repeat_ms": t_repeat_ms,
                     "score": result.score.overall,
                     "glycemic_load": result.score.glycemic_load,
                     "alternatives_count": len(result.alternatives),
