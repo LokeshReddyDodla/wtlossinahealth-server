@@ -80,6 +80,8 @@ from lib.services.patient_facility_transfer_service import PatientFacilityTransf
 from lib.services.vector import MealVectorService
 from lib.services.vector.medication import MedicationVectorService
 from lib.services.prescription_extraction_service import PrescriptionExtractionService
+from lib.services.consultation_extraction_service import ConsultationExtractionService
+from lib.services.consultation_service import ConsultationService
 from lib.services.package_service import PackageService
 from lib.services.patient_connected_app_service import (
     PatientConnectedAppService,
@@ -285,6 +287,7 @@ container.register(
         "patient_documents"
     ),
 )
+
 container.register(
     "patient_document_summary_interactions_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
@@ -731,6 +734,27 @@ container.register(
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
         medication_vector_service=cast(
             MedicationVectorService, container.resolve(MedicationVectorService),
+        ),
+    ),
+)
+
+# 🔹 Consultation Extraction Service (transcript → structured insights)
+container.register(
+    ConsultationExtractionService,
+    lambda: ConsultationExtractionService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+)
+
+# 🔹 Consultation Service (audio → S3 → STT → extraction → Mongo)
+container.register(
+    ConsultationService,
+    lambda: ConsultationService(
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        extraction_service=cast(
+            ConsultationExtractionService,
+            container.resolve(ConsultationExtractionService),
         ),
     ),
 )
@@ -1494,6 +1518,7 @@ container.register(
         ),
     ),
 )
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AI Foundation Layer

@@ -68,6 +68,7 @@ from lib.services.patient_document_service import PatientDocumentService
 from lib.services.patient_document_research_service import (
     PatientDocumentResearchService,
 )
+
 from lib.services.patient_package_assignment_service import (
     PatientPackageAssignmentService,
 )
@@ -352,6 +353,16 @@ def get_prescription_extraction_service():
     return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
 
 
+def get_consultation_extraction_service():
+    from lib.services.consultation_extraction_service import ConsultationExtractionService  # avoid circular
+    return cast(ConsultationExtractionService, container.resolve(ConsultationExtractionService))
+
+
+def get_consultation_service():
+    from lib.services.consultation_service import ConsultationService  # avoid circular
+    return cast(ConsultationService, container.resolve(ConsultationService))
+
+
 def get_checkin_history_service():
     from lib.services.checkin_history_service import CheckinHistoryService  # avoid circular
     return cast(CheckinHistoryService, container.resolve(CheckinHistoryService))
@@ -566,6 +577,7 @@ def get_sleep_report_collection():
 
 def get_patient_documents_collection():
     return container.resolve("patient_documents")
+
 
 
 def get_inbody_reports_collection():

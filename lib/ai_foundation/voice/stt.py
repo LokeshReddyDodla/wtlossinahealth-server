@@ -37,6 +37,56 @@ class SpeechToText:
         self._client = AsyncOpenAI()
         self._settings = settings
 
+    async def transcribe_file(
+        self,
+        audio_bytes: bytes,
+        *,
+        filename: str,
+        language: str | None = None,
+    ) -> TranscriptionResult:
+        """Transcribe an already-encoded audio file (webm/m4a/mp3/wav/ogg).
+
+        Use this for browser-recorded uploads (MediaRecorder produces webm
+        on Chrome, m4a on Safari). Whisper auto-detects the container, so
+        we forward the bytes as-is — no WAV wrapping like the PCM path.
+        """
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = filename  # Whisper sniffs format from extension
+
+        kwargs: dict = {
+            "model": self._settings.STT_MODEL,
+            "file": audio_file,
+            "response_format": "verbose_json",
+        }
+        lang = language or self._settings.STT_LANGUAGE
+        if lang:
+            kwargs["language"] = lang
+
+        logger.debug(
+            "STT (file): transcribing %d bytes from %s (lang=%s)",
+            len(audio_bytes),
+            filename,
+            lang,
+        )
+
+        response = await self._client.audio.transcriptions.create(**kwargs)
+
+        result = TranscriptionResult(
+            text=response.text,
+            language=getattr(response, "language", lang),
+            duration_seconds=getattr(response, "duration", None),
+        )
+
+        logger.info(
+            "STT (file): transcribed %s (%d bytes) → %d chars (lang=%s, dur=%.1fs)",
+            filename,
+            len(audio_bytes),
+            len(result.text),
+            result.language,
+            result.duration_seconds or 0,
+        )
+        return result
+
     async def transcribe(
         self,
         audio_bytes: bytes,
