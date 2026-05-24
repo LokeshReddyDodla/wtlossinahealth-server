@@ -32,6 +32,7 @@ class MealSlot(str, Enum):
 class MealSource(str, Enum):
     PHOTO = "photo"
     TEXT = "text"
+    VOICE = "voice"
     REPEAT = "repeat"
     MANUAL = "manual"
 
@@ -333,6 +334,7 @@ class MealCreateRequest(BaseModel):
     consumed_at: datetime
     extraction: MealExtraction
     image_url: str | None = None
+    audio_url: str | None = None
     description: str | None = None
     note: str | None = Field(
         None,
@@ -355,6 +357,7 @@ class MealResponse(BaseModel):
     total_micros: MicroSet | None = None
     tags: list[str] = Field(default_factory=list)
     image_url: str | None = None
+    audio_url: str | None = None
     description: str | None = None
     note: str | None = None
     created_at: datetime

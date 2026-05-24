@@ -333,6 +333,12 @@ def get_meal_analysis_agent():
     return cast(MealAnalysisAgent, container.resolve(MealAnalysisAgent))
 
 
+def get_speech_to_text():
+    from lib.ai_foundation.voice.stt import SpeechToText
+
+    return cast(SpeechToText, container.resolve(SpeechToText))
+
+
 def get_medication_service():
     from lib.services.medication_service import MedicationService  # avoid circular
     return cast(MedicationService, container.resolve(MedicationService))

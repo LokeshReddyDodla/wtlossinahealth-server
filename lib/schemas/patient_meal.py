@@ -91,6 +91,7 @@ class PatientMeal(BaseModel):
         None
     )
     image_url: Optional[HttpUrl]
+    audio_url: Optional[HttpUrl] = None
     description: Optional[str]
     source: Optional[str]
     score: Optional[float]

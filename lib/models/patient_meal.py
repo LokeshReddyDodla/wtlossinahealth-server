@@ -137,6 +137,7 @@ class PatientMeal(Base):
         cascade="all, delete-orphan",
     )
     image_url = Column(Text, nullable=True)
+    audio_url = Column(Text, nullable=True)
     description = Column(String, nullable=True)
     source = Column(String, nullable=False)
     feedback = Column(String, nullable=True)
