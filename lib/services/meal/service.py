@@ -495,6 +495,7 @@ class MealService:
                 source=request.source.value,
                 description=request.description,
                 image_url=request.image_url,
+                audio_url=request.audio_url,
                 tags=ext.tags or [],
                 analyzed=True,
                 analyzed_at=datetime.now(),
@@ -593,6 +594,8 @@ class MealService:
             meal.description = request.description
             if request.image_url is not None:
                 meal.image_url = request.image_url
+            if request.audio_url is not None:
+                meal.audio_url = request.audio_url
             meal.tags = list(ext.tags or [])
             meal.analyzed = True
             meal.analyzed_at = datetime.now()
