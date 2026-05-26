@@ -1,15 +1,19 @@
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from lib.schemas.patient_daily_overview import (
     BloodPressure,
     FitnessMetrics,
     GlucoseMetrics,
+    GlucoseRange,
+    GlucoseReading,
+    HourlySteps,
     MacroNutrients,
     MealDailySummary,
     PatientDailyOverviewResponse,
     SleepMetrics,
+    VitalReading,
     VitalsMetrics,
     WorkoutMetrics,
 )
@@ -52,13 +56,23 @@ class PatientDailyOverviewService:
         postgres_session: AsyncSession,
     ) -> PatientDailyOverviewResponse:
 
-        meals, fitness, sleep, glucose, vitals, current_weight, workouts = await asyncio.gather(
+        (
+            meals,
+            fitness,
+            sleep,
+            glucose,
+            vitals,
+            current_weight,
+            weight_trend,
+            workouts,
+        ) = await asyncio.gather(
             self._get_meal_data(patient_id, selected_date),
             self._get_fitness_data(patient_id, selected_date),
             self._get_sleep_data(patient_id, selected_date),
             self._get_cgm_data(patient_id, selected_date),
             self._get_vitals_data(patient_id, selected_date),
             self._get_current_weight(patient_id, selected_date, postgres_session),
+            self._get_weight_trend(patient_id, selected_date),
             self._get_workout_data(patient_id, selected_date, postgres_session),
         )
 
@@ -72,6 +86,7 @@ class PatientDailyOverviewService:
             vitals=vitals,
             workouts=workouts,
             current_weight=current_weight,
+            weight_trend=weight_trend,
         )
 
     async def _get_workout_data(
@@ -143,10 +158,30 @@ class PatientDailyOverviewService:
 
             summary = report.get("cgm_summary_stats", {})
             range_stats = report.get("cgm_range_stats", {})
+            raw_readings = report.get("cgm_readings") or []
+
+            readings = [
+                GlucoseReading(
+                    timestamp=r["device_timestamp"],
+                    value=float(r["glucose_mgdl"]),
+                )
+                for r in raw_readings
+                if r.get("glucose_mgdl") is not None
+            ] or None
+
+            in_target = float(range_stats.get("in_target_70_180_percent", 0))
 
             return GlucoseMetrics(
                 average_glucose=float(summary.get("average_glucose_mgdl", 0)),
-                time_in_range=float(range_stats.get("in_target_70_180_percent", 0)),
+                time_in_range=in_target,
+                range=GlucoseRange(
+                    below_54=float(range_stats.get("below_54_percent", 0)),
+                    below_70=float(range_stats.get("below_70_above_54_percent", 0)),
+                    in_target=in_target,
+                    above_180=float(range_stats.get("above_180_below_250_percent", 0)),
+                    above_250=float(range_stats.get("above_250_percent", 0)),
+                ),
+                readings=readings,
             )
         except Exception as e:
             print(f"CGM data error: {e}")
@@ -164,10 +199,18 @@ class PatientDailyOverviewService:
             if not report:
                 return FitnessMetrics()
 
+            raw_hourly = report.get("hourly_stats") or []
+            hourly_steps = [
+                HourlySteps(hour=int(h["hour"]), steps=int(h.get("steps", 0)))
+                for h in raw_hourly
+                if h.get("hour") is not None
+            ] or None
+
             return FitnessMetrics(
                 steps=int(report.get("steps", 0)),
                 active_energy=float(report.get("active_energy", 0)),
                 active_duration=int(report.get("active_duration", 0)),
+                hourly_steps=hourly_steps,
             )
         except Exception as e:
             print(f"Fitness data error: {e}")
@@ -215,6 +258,13 @@ class PatientDailyOverviewService:
             systolic = lookup.get("systolic_bp")
             diastolic = lookup.get("diastolic_bp")
 
+            rhr_trend = self._fetch_vital_trend(
+                patient_id,
+                vital_type="resting_heart_rate",
+                end_date=selected_date,
+                days=7,
+            )
+
             return VitalsMetrics(
                 blood_pressure=BloodPressure(
                     systolic=round(systolic, 1) if systolic is not None else None,
@@ -225,10 +275,51 @@ class PatientDailyOverviewService:
                     if "resting_heart_rate" in lookup
                     else None
                 ),
+                resting_heart_rate_trend=rhr_trend,
             )
         except Exception as e:
             print(f"Vitals data error: {e}")
             return VitalsMetrics()
+
+    async def _get_weight_trend(
+        self, patient_id: str, selected_date: date
+    ) -> list[VitalReading] | None:
+        try:
+            return self._fetch_vital_trend(
+                patient_id,
+                vital_type="weight",
+                end_date=selected_date,
+                days=30,
+            )
+        except Exception as e:
+            print(f"Weight trend error: {e}")
+            return None
+
+    def _fetch_vital_trend(
+        self,
+        patient_id: str,
+        *,
+        vital_type: str,
+        end_date: date,
+        days: int,
+    ) -> list[VitalReading] | None:
+        start_date = end_date - timedelta(days=days - 1)
+        query = f"""
+        SELECT time, value
+        FROM aihealth.vitals_data
+        WHERE patient_id = '{patient_id}'
+            AND type = '{vital_type}'
+            AND toDate(time) >= '{start_date}'
+            AND toDate(time) <= '{end_date}'
+        ORDER BY time
+        """
+        rows = self.clickhouse_store.client.execute(query)
+        readings = [
+            VitalReading(timestamp=r[0], value=float(r[1]))
+            for r in rows
+            if r and r[1] is not None
+        ]
+        return readings or None
 
     async def _get_current_weight(
         self,
