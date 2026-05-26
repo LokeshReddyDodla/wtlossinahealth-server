@@ -91,14 +91,7 @@ class PatientSmbgService:
                 reading_data=reading_data,
             )
 
-            ai_response_generated = await self._generate_ai_response(
-                patient_id,
-                str(new_smbg.id),
-                new_smbg.glucose_level,
-                new_smbg.reading_time,
-            )
-
-            return new_smbg, ai_response_generated
+            return new_smbg
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -107,27 +100,6 @@ class PatientSmbgService:
                 message="Database Error",
                 detail=str(e),
             )
-
-    async def _generate_ai_response(
-        self, patient_id, conversation_id, glucose_level, reading_time
-    ):
-        try:
-            human_input = (
-                f"I just recorded my blood sugar level, which was {glucose_level} mg/dL. "
-                f"This reading was taken on {reading_time.strftime('%A, %B %d at %I:%M %p')}. "
-                f"Could you provide some feedback or insights on this result?"
-            )
-            await self.ai_conversation_service.generate_response(
-                patient_id=patient_id,
-                user_id=patient_id,
-                conversation_id=conversation_id,
-                human_input=human_input,
-                conversation_type="smbg",
-            )
-            return True
-        except Exception as e:
-            print(f"Failed to generate AI response: {str(e)}")
-            return False
 
     @with_postgres_session
     async def delete_smbg(
