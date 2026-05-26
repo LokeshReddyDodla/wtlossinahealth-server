@@ -80,9 +80,18 @@ class WorkoutMetrics(BaseModel):
     types: list[str] = []
 
 
+class PreviousDaySummary(BaseModel):
+    steps: int | None = None
+    sleep_duration: float | None = None
+    average_glucose: float | None = None
+    time_in_range: float | None = None
+
+
 class PatientDailyOverviewResponse(BaseModel):
     date: date
     patient_id: str
+
+    has_active_cgm: bool = False
 
     meals: MealDailySummary
     fitness: FitnessMetrics
@@ -92,3 +101,4 @@ class PatientDailyOverviewResponse(BaseModel):
     workouts: WorkoutMetrics = WorkoutMetrics()
     current_weight: Optional[float] = None
     weight_trend: list[VitalReading] | None = None
+    previous: PreviousDaySummary = PreviousDaySummary()
