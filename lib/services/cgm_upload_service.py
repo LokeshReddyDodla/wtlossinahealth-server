@@ -12,11 +12,15 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from xlrd.biffh import XLRDError
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_connected_app import PatientConnectedApp
+from lib.services.cgm_threshold_detector import detect_latest_crossing
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.libre_view_sensor_report_generator import SensorLifecycleReportGenerator
 from lib.utils.postgres_session_decorator import with_postgres_session
+from lib.workers.arq.config import Queues
+from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_sync
 
 
@@ -114,6 +118,31 @@ class CGMUploadService:
             await handler.on_glucose_synced(_UUID(patient_id))
         except Exception:
             pass
+
+        # Proactive threshold-crossed event (fire-and-forget). The detector
+        # emits facts; downstream LLM produces the patient-facing response.
+        try:
+            crossing = detect_latest_crossing(rows)
+            if crossing is not None:
+                ts_iso = crossing.time.isoformat()
+                await enqueue_job(
+                    "handle_proactive_event",
+                    patient_id,
+                    EventTrigger.CGM_THRESHOLD_CROSSED.value,
+                    {
+                        "kind": crossing.kind.value,
+                        "value": crossing.value,
+                        "unit": "mg/dL",
+                        "time": ts_iso,
+                    },
+                    _job_id=f"insight:{EventTrigger.CGM_THRESHOLD_CROSSED.value}:{patient_id}:{ts_iso}:{crossing.kind.value}",
+                    _defer_by=0,
+                    _queue_name=Queues.INSTANT,
+                )
+        except Exception as exc:
+            logger.warning(
+                f"Failed to enqueue CGM threshold event for {patient_id}: {exc}"
+            )
 
         logger.info(
             f"Wrote {len(rows)} {source} CGM rows for {patient_id} "

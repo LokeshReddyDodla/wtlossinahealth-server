@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.core.postgres_store import PostgresStore
 from lib.models.mood_entry import MoodEntry
 from lib.models.sleep_checkin import SleepCheckin
@@ -21,6 +22,8 @@ from lib.schemas.daily_checkin import MoodEntryInput, SleepCheckinInput, Symptom
 from lib.services.vector.checkin import CheckinVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+from lib.workers.arq.config import Queues
+from lib.workers.arq.redis import enqueue_job
 
 logger = logging.getLogger(__name__)
 
@@ -501,6 +504,22 @@ class DailyCheckinService:
                 )
             except Exception as e:
                 logger.error(f"Failed to vectorize symptoms for {patient_id}: {e}")
+
+            # Proactive event-driven insight (fire-and-forget).
+            try:
+                await enqueue_job(
+                    "handle_proactive_event",
+                    str(patient_id),
+                    EventTrigger.SYMPTOM_LOGGED.value,
+                    {"symptom_entry_id": str(record.id)},
+                    _job_id=f"insight:{EventTrigger.SYMPTOM_LOGGED.value}:{patient_id}:{record.id}",
+                    _defer_by=30,
+                    _queue_name=Queues.DEFAULT,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to enqueue proactive event for symptom {record.id} ({patient_id}): {exc}"
+                )
 
             return record
 

@@ -4,11 +4,13 @@ from lib.workers.tasks.proactive_monitor.scan import (
     run_proactive_scan,
     run_proactive_scan_single,
 )
+from lib.workers.tasks.proactive_monitor.event_scan import handle_proactive_event
 from lib.workers.tasks.proactive_monitor.cron import get_cron_jobs
 
 __all__ = [
     "run_proactive_scan",
     "run_proactive_scan_single",
+    "handle_proactive_event",
     "get_tasks",
     "get_cron_jobs",
 ]
@@ -16,4 +18,4 @@ __all__ = [
 
 def get_tasks():
     """Return all proactive monitor task functions for ARQ worker."""
-    return [run_proactive_scan, run_proactive_scan_single]
+    return [run_proactive_scan, run_proactive_scan_single, handle_proactive_event]
