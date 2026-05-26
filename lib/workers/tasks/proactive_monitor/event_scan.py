@@ -87,6 +87,7 @@ async def handle_proactive_event(
         if result.insights:
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
+                trigger=trigger,
             )
 
         return TaskResult(

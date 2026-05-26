@@ -797,7 +797,13 @@ class ProactiveMonitorAgent(BaseAgent):
 
         return filtered
 
-    async def record_insight(self, patient_id: str, insight: HealthInsight) -> None:
+    async def record_insight(
+        self,
+        patient_id: str,
+        insight: HealthInsight,
+        *,
+        trigger: str | None = None,
+    ) -> None:
         """Record that an insight was actually sent as a notification.
 
         For daily briefs, records each covered category so afternoon/evening
@@ -805,6 +811,8 @@ class ProactiveMonitorAgent(BaseAgent):
         """
         if not self._insight_tracker:
             return
+
+        trigger_val = trigger or "cron"
 
         if insight.category == InsightCategory.DAILY_BRIEF:
             # Record the brief itself (with insight_id) for history/feedback
@@ -817,6 +825,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 title=insight.title,
                 suggested_query=insight.suggested_query,
                 trace_id=insight.data.get("trace_id"),
+                trigger=trigger_val,
             )
             # Record dedup-only entries for each covered category (no insight_id)
             # so afternoon/evening scans correctly skip already-mentioned topics
@@ -839,6 +848,7 @@ class ProactiveMonitorAgent(BaseAgent):
             title=insight.title,
             suggested_query=insight.suggested_query,
             trace_id=insight.data.get("trace_id"),
+            trigger=trigger_val,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
