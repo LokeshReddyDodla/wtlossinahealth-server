@@ -409,8 +409,17 @@ class PatientDailyOverviewService:
 
         steps: int | None = None
         if fitness_report:
-            raw_steps = fitness_report.get("steps")
-            steps = int(raw_steps) if raw_steps is not None else None
+            hourly = fitness_report.get("hourly_stats") or []
+            if hourly:
+                current_hour = datetime.now().hour
+                steps = sum(
+                    int(h.get("steps", 0))
+                    for h in hourly
+                    if h.get("hour") is not None and int(h["hour"]) < current_hour
+                )
+            else:
+                raw_steps = fitness_report.get("steps")
+                steps = int(raw_steps) if raw_steps is not None else None
 
         sleep_duration: float | None = None
         if sleep_report:
