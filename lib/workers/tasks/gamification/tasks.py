@@ -9,7 +9,14 @@ from uuid import UUID
 from loguru import logger
 from sqlalchemy import select
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.services.gamification.time_utils import local_today, matches_local_hour
+from lib.services.medication_missed_detector import (
+    MEDICATION_SLOTS,
+    find_overdue_doses,
+)
+from lib.workers.arq.config import Queues
+from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import task_with_logging
 
 
@@ -331,29 +338,23 @@ async def _send_medication_notification(
         logger.warning("Failed medication notification for %s: %s", patient_id, exc)
 
 
-_MEDICATION_REMINDER_SLOTS = {
-    10: "TAKE_MEDICATION_MORNING",
-    15: "TAKE_MEDICATION_AFTERNOON",
-    21: "TAKE_MEDICATION_EVENING",
-    23: "TAKE_MEDICATION_NIGHT",
-}
-
-
 @task_with_logging
 async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
     """Medication reminder — nudge patients to take their meds.
-    Runs hourly; filters by patient-local time for each slot.
+
+    Runs hourly: each tick fires reminders for the slot whose hour matches
+    patient-local now, and enqueues MEDICATION_MISSED proactive events for
+    any earlier slot that's still PENDING past the grace window.
     """
     from lib.core.container import container
     from lib.core.postgres_store import PostgresStore
     from lib.models.gamification import DailyTask
+    from lib.models.patient_medication import PatientMedication
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
     from lib.schemas.gamification import TaskStatus
 
     store = container.resolve(PostgresStore)
     resolver = container.resolve(PatientNameResolver)
-
-    from lib.models.patient_medication import PatientMedication
 
     async with store.get_session() as session:
         result = await session.execute(
@@ -373,7 +374,8 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
         try:
             tz_name = tz_map.get(str(pid))
 
-            for hour, task_type in _MEDICATION_REMINDER_SLOTS.items():
+            # Reminder for the slot whose hour matches local now.
+            for hour, task_type in MEDICATION_SLOTS.items():
                 if not matches_local_hour(tz_name, hour):
                     continue
 
@@ -408,6 +410,20 @@ async def send_medication_reminders(ctx: Dict[str, Any]) -> None:
                         },
                     )
                     sent += 1
+
+            # MEDICATION_MISSED proactive events for any earlier-slot tasks
+            # still PENDING past the grace window. job_id is keyed on
+            # task_id so later hourly ticks don't refire for the same miss.
+            for missed in await find_overdue_doses(pid, tz_name, store):
+                await enqueue_job(
+                    "handle_proactive_event",
+                    str(pid),
+                    EventTrigger.MEDICATION_MISSED.value,
+                    missed.model_dump(),
+                    _job_id=f"insight:{EventTrigger.MEDICATION_MISSED.value}:{pid}:{missed.daily_task_id}",
+                    _defer_by=0,
+                    _queue_name=Queues.INSTANT,
+                )
         except Exception:
             logger.opt(exception=True).warning(f"Medication reminder failed for {pid}")
 
