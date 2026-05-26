@@ -36,6 +36,7 @@ from .contracts import (
     MealAnalysisResult,
     MealExtraction,
     MealPreviewRequest,
+    MealQuickResult,
 )
 from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
@@ -228,6 +229,77 @@ class MealAnalysisAgent(BaseAgent):
                     "has_prediction": result.predicted_glucose is not None,
                     "plan_compliant": result.plan.compliant,
                     "repeat_suggestion": result.repeat.suggestion.value,
+                },
+            )
+        )
+
+        return result
+
+    async def quick_analyze(
+        self,
+        *,
+        patient_id: str,
+        request: MealPreviewRequest,
+        trace_id: str | None = None,
+    ) -> MealQuickResult:
+        """Extract food items and nutrition only — no scoring or insights."""
+        trace_id = trace_id or str(uuid.uuid4())
+        local_now = request.consumed_at or datetime.now(timezone.utc)
+        started = time.perf_counter()
+
+        await _maybe_await(
+            self.gateway.set_langfuse_context(
+                session_id=f"meal_quick_{local_now.date().isoformat()}",
+                user_id=patient_id,
+            )
+        )
+        await _maybe_await(
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                name="meal_quick_preview",
+                input_text=_summarize_request(request),
+                metadata={
+                    "agent": self.name,
+                    "mode": "quick",
+                    "slot": request.slot.value,
+                    "source": request.source.value,
+                    "has_image": bool(request.image_url),
+                    "has_text": bool(request.text),
+                    "has_items": bool(request.items),
+                },
+            )
+        )
+
+        context = await self._ctx.load(
+            patient_id=patient_id, local_now=local_now
+        )
+
+        extraction = await self._resolve_extraction(
+            patient_id=patient_id,
+            request=request,
+            context=context,
+            trace_id=trace_id,
+        )
+
+        result = MealQuickResult(
+            extraction=extraction,
+            generated_at=datetime.now(timezone.utc),
+            model_trace_id=trace_id,
+        )
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        await _maybe_await(
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text=(
+                    f"{extraction.name} | {len(extraction.items)} items | "
+                    f"{extraction.total_macros.calories:.0f} kcal"
+                ),
+                metadata={
+                    "latency_ms": elapsed_ms,
+                    "mode": "quick",
+                    "items_count": len(extraction.items),
+                    "calories": extraction.total_macros.calories,
                 },
             )
         )
