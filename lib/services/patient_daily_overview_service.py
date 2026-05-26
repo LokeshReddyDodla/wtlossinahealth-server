@@ -12,10 +12,16 @@ from lib.schemas.patient_daily_overview import (
     MacroNutrients,
     MealDailySummary,
     PatientDailyOverviewResponse,
+    PreviousDaySummary,
     SleepMetrics,
     VitalReading,
     VitalsMetrics,
     WorkoutMetrics,
+)
+from lib.models.patient_connected_app import (
+    PatientConnectedApp,
+    PatientLibreView,
+    PatientSinocare,
 )
 from lib.models.patient_workout import PatientWorkout
 from uuid import UUID as _UUID
@@ -25,9 +31,12 @@ from lib.services.reports.fitness.service import FitnessReportService
 from lib.services.reports.sleep.service import SleepReportService
 from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
-from sqlalchemy import and_, cast, Date, select
+from sqlalchemy import and_, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from lib.utils.postgres_session_decorator import with_postgres_session
+
+
+CGM_ACTIVE_WINDOW_DAYS = 14
 
 
 class PatientDailyOverviewService:
@@ -65,6 +74,8 @@ class PatientDailyOverviewService:
             current_weight,
             weight_trend,
             workouts,
+            has_active_cgm,
+            previous,
         ) = await asyncio.gather(
             self._get_meal_data(patient_id, selected_date),
             self._get_fitness_data(patient_id, selected_date),
@@ -74,11 +85,14 @@ class PatientDailyOverviewService:
             self._get_current_weight(patient_id, selected_date, postgres_session),
             self._get_weight_trend(patient_id, selected_date),
             self._get_workout_data(patient_id, selected_date, postgres_session),
+            self._get_has_active_cgm(patient_id, postgres_session),
+            self._get_previous_day_summary(patient_id, selected_date),
         )
 
         return PatientDailyOverviewResponse(
             date=selected_date,
             patient_id=patient_id,
+            has_active_cgm=has_active_cgm,
             meals=meals,
             fitness=fitness,
             sleep=sleep,
@@ -87,6 +101,7 @@ class PatientDailyOverviewService:
             workouts=workouts,
             current_weight=current_weight,
             weight_trend=weight_trend,
+            previous=previous,
         )
 
     async def _get_workout_data(
@@ -337,3 +352,84 @@ class PatientDailyOverviewService:
         """
         rows = self.clickhouse_store.client.execute(query)
         return float(rows[0][0]) if rows else None
+
+    async def _get_has_active_cgm(
+        self,
+        patient_id: str,
+        session: AsyncSession,
+    ) -> bool:
+        try:
+            stmt = (
+                select(
+                    func.max(PatientLibreView.last_cgm_reading_at).label("libre_max"),
+                    func.max(PatientSinocare.last_cgm_reading_at).label("sino_max"),
+                )
+                .select_from(PatientConnectedApp)
+                .outerjoin(
+                    PatientLibreView,
+                    PatientLibreView.connected_app_id == PatientConnectedApp.id,
+                )
+                .outerjoin(
+                    PatientSinocare,
+                    PatientSinocare.connected_app_id == PatientConnectedApp.id,
+                )
+                .where(PatientConnectedApp.patient_id == _UUID(patient_id))
+            )
+            row = (await session.execute(stmt)).first()
+            if row is None:
+                return False
+
+            latest = max(
+                (d for d in (row.libre_max, row.sino_max) if d is not None),
+                default=None,
+            )
+            if latest is None:
+                return False
+
+            return (datetime.now() - latest) <= timedelta(days=CGM_ACTIVE_WINDOW_DAYS)
+        except Exception as e:
+            print(f"has_active_cgm error: {e}")
+            return False
+
+    async def _get_previous_day_summary(
+        self,
+        patient_id: str,
+        selected_date: date,
+    ) -> PreviousDaySummary:
+        yesterday = selected_date - timedelta(days=1)
+        try:
+            cgm_report, fitness_report, sleep_report = await asyncio.gather(
+                self.cgm_report_service.fetch_daily_report(patient_id, yesterday),
+                self.fitness_report_service.fetch_daily_report(patient_id, yesterday),
+                self.sleep_report_service.fetch_daily_report(patient_id, yesterday),
+            )
+        except Exception as e:
+            print(f"Previous day summary error: {e}")
+            return PreviousDaySummary()
+
+        steps: int | None = None
+        if fitness_report:
+            raw_steps = fitness_report.get("steps")
+            steps = int(raw_steps) if raw_steps is not None else None
+
+        sleep_duration: float | None = None
+        if sleep_report:
+            duration = sleep_report.get("duration_analysis", {}).get("total_duration")
+            sleep_duration = float(duration) if duration is not None else None
+
+        average_glucose: float | None = None
+        time_in_range: float | None = None
+        if cgm_report:
+            summary = cgm_report.get("cgm_summary_stats", {})
+            range_stats = cgm_report.get("cgm_range_stats", {})
+            avg = summary.get("average_glucose_mgdl")
+            tir = range_stats.get("in_target_70_180_percent")
+            average_glucose = float(avg) if avg is not None else None
+            time_in_range = float(tir) if tir is not None else None
+
+        return PreviousDaySummary(
+            steps=steps,
+            sleep_duration=sleep_duration,
+            average_glucose=average_glucose,
+            time_in_range=time_in_range,
+        )
