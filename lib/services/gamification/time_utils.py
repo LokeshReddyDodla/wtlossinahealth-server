@@ -6,7 +6,9 @@ import logging
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from lib.ai_foundation.agents.proactive_monitor.scheduling import DEFAULT_TIMEZONE
+from lib.ai_foundation.config import settings
+
+DEFAULT_TIMEZONE = settings.DEFAULT_PATIENT_TIMEZONE
 
 logger = logging.getLogger(__name__)
 
