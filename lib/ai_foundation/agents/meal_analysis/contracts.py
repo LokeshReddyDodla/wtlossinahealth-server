@@ -333,6 +333,17 @@ class MealQuickResult(BaseModel):
     )
 
 
+class MealInsightsRequest(BaseModel):
+    """Client → server. Run analysis on an already-extracted meal."""
+
+    extraction: MealExtraction
+    slot: MealSlot
+    source: MealSource
+    consumed_at: datetime | None = Field(
+        None, description="When the meal was eaten. Null = pre-emptive check."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Save path (post-confirm)
 # ---------------------------------------------------------------------------
