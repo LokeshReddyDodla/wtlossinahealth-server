@@ -6,6 +6,9 @@ from lib.schemas.patient_daily_overview import (
     BloodPressure,
     FitnessMetrics,
     GlucoseMetrics,
+    GlucoseRange,
+    GlucoseReading,
+    HourlySteps,
     MacroNutrients,
     MealDailySummary,
     PatientDailyOverviewResponse,
@@ -143,10 +146,30 @@ class PatientDailyOverviewService:
 
             summary = report.get("cgm_summary_stats", {})
             range_stats = report.get("cgm_range_stats", {})
+            raw_readings = report.get("cgm_readings") or []
+
+            readings = [
+                GlucoseReading(
+                    timestamp=r["device_timestamp"],
+                    value=float(r["glucose_mgdl"]),
+                )
+                for r in raw_readings
+                if r.get("glucose_mgdl") is not None
+            ] or None
+
+            in_target = float(range_stats.get("in_target_70_180_percent", 0))
 
             return GlucoseMetrics(
                 average_glucose=float(summary.get("average_glucose_mgdl", 0)),
-                time_in_range=float(range_stats.get("in_target_70_180_percent", 0)),
+                time_in_range=in_target,
+                range=GlucoseRange(
+                    below_54=float(range_stats.get("below_54_percent", 0)),
+                    below_70=float(range_stats.get("below_70_above_54_percent", 0)),
+                    in_target=in_target,
+                    above_180=float(range_stats.get("above_180_below_250_percent", 0)),
+                    above_250=float(range_stats.get("above_250_percent", 0)),
+                ),
+                readings=readings,
             )
         except Exception as e:
             print(f"CGM data error: {e}")
@@ -164,10 +187,18 @@ class PatientDailyOverviewService:
             if not report:
                 return FitnessMetrics()
 
+            raw_hourly = report.get("hourly_stats") or []
+            hourly_steps = [
+                HourlySteps(hour=int(h["hour"]), steps=int(h.get("steps", 0)))
+                for h in raw_hourly
+                if h.get("hour") is not None
+            ] or None
+
             return FitnessMetrics(
                 steps=int(report.get("steps", 0)),
                 active_energy=float(report.get("active_energy", 0)),
                 active_duration=int(report.get("active_duration", 0)),
+                hourly_steps=hourly_steps,
             )
         except Exception as e:
             print(f"Fitness data error: {e}")
