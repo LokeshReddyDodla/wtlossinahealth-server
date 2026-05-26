@@ -321,6 +321,18 @@ class MealAnalysisResult(BaseModel):
     )
 
 
+class MealQuickResult(BaseModel):
+    """Server → client. /v1/meals/quick-preview response — extraction only."""
+
+    model_config = {"protected_namespaces": ()}
+
+    extraction: MealExtraction
+    generated_at: datetime
+    model_trace_id: str | None = Field(
+        None, description="Langfuse trace id for this analysis"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Save path (post-confirm)
 # ---------------------------------------------------------------------------
