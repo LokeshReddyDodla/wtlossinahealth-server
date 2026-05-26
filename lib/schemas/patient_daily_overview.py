@@ -58,9 +58,15 @@ class BloodPressure(BaseModel):
     diastolic: Optional[float] = None
 
 
+class VitalReading(BaseModel):
+    timestamp: datetime
+    value: float
+
+
 class VitalsMetrics(BaseModel):
     blood_pressure: BloodPressure = BloodPressure()
     resting_heart_rate: Optional[float] = None
+    resting_heart_rate_trend: list[VitalReading] | None = None
 
 
 class WorkoutMetrics(BaseModel):
@@ -85,3 +91,4 @@ class PatientDailyOverviewResponse(BaseModel):
     vitals: VitalsMetrics = VitalsMetrics()
     workouts: WorkoutMetrics = WorkoutMetrics()
     current_weight: Optional[float] = None
+    weight_trend: list[VitalReading] | None = None
