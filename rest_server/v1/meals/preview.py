@@ -1,4 +1,4 @@
-"""Meal preview endpoints — full analysis and quick (nutrition-only)."""
+"""Meal preview endpoints — full analysis, quick (nutrition-only), and insights."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
     get_meal_analysis_agent,
 )
-from lib.schemas.meal import MealPreviewRequest
+from lib.schemas.meal import MealInsightsRequest, MealPreviewRequest
 from lib.services.care_provider_access_service import CareProviderAccessService
 from lib.utils.care_provider_permissions import (
     CareProviderFeature,
@@ -127,5 +127,47 @@ async def quick_preview_meal(
         raise_http_exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Failed to extract meal nutrition. Please try again.",
+            detail=str(exc),
+        )
+
+
+@router.post(
+    "/{patient_id}/insights",
+    response_model=SuccessResponse,
+)
+async def meal_insights(
+    patient_id: str,
+    body: MealInsightsRequest,
+    agent: MealAnalysisAgent = Depends(get_meal_analysis_agent),
+    current_actor: Actor = Depends(get_current_actor(**_PREVIEW_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    """Run scoring/alternatives/glucose/plan/repeat on an existing extraction."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+    pid = str(verified_pid)
+
+    try:
+        result = await agent.insights(patient_id=pid, request=body)
+        return SuccessResponse(
+            message="Meal insights generated",
+            data=result.model_dump(mode="json"),
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise_http_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=str(exc),
+        )
+    except Exception as exc:
+        raise_http_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to generate meal insights. Please try again.",
             detail=str(exc),
         )
