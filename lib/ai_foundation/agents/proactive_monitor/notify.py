@@ -29,12 +29,15 @@ async def send_top_insight_notification(
     top = max(insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
     is_urgent = top.severity.value in ("warning", "alert")
 
-    from lib.services.notification_budget import can_send, record_sent
+    is_event = trigger is not None
 
-    notif_type = "health_alert" if is_urgent else "health_insight"
-    if not can_send(target, notif_type):
-        logger.debug("Notification budget exceeded for %s, skipping %s", target, notif_type)
-        return
+    if not is_event:
+        from lib.services.notification_budget import can_send, record_sent
+
+        notif_type = "health_alert" if is_urgent else "health_insight"
+        if not can_send(target, notif_type):
+            logger.info("Notification budget exceeded for %s, skipping %s", target, notif_type)
+            return
 
     try:
         await fcm.send_fcm_notification_to_user_devices(
@@ -53,7 +56,8 @@ async def send_top_insight_notification(
                 "total_insights": str(len(insights)),
             },
         )
-        record_sent(target)
+        if not is_event:
+            record_sent(target)
         await monitor.record_insight(patient_id, top, trigger=trigger)
     except Exception as e:
         logger.warning("Failed to send notification for %s: %s", patient_id, e)
