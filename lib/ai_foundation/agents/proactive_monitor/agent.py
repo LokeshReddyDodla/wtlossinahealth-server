@@ -15,6 +15,7 @@ Pipeline:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import logging
 import time
@@ -32,6 +33,7 @@ from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
 from lib.ai_foundation.models.gateway import LLMResponse
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.retrieval.base import RetrievalRequest
+from lib.core.qdrant_store import QDRANT_COLLECTION, QdrantStore
 
 from .scheduling import DEFAULT_TIMEZONE
 from .contracts import (
@@ -42,9 +44,11 @@ from .contracts import (
     InsightCategory,
     InsightSeverity,
     LLM_INSIGHT_CATEGORIES_PROMPT,
+    MealLoggedAnchor,
     ScanInsights,
     ScanResult,
     SEVERITY_RANK,
+    SymptomLoggedAnchor,
     TRIGGER_DATA_TYPES,
     TRIGGER_LABELS,
     TriggerAnchor,
@@ -161,6 +165,73 @@ class ProactiveMonitorAgent(BaseAgent):
             cls._event_scan_prompt_template = cls._EVENT_SCAN_PROMPT_PATH.read_text()
         return cls._event_scan_prompt_template
 
+    # -- Trigger record fetch ------------------------------------------------
+
+    _TRIGGER_RECORD_KEYS: dict[type, tuple[str, str]] = {
+        MealLoggedAnchor: ("meal_id", "meal"),
+        SymptomLoggedAnchor: ("symptom_entry_id", "symptom_entry"),
+    }
+
+    async def _fetch_trigger_record(
+        self,
+        patient_id: str,
+        anchor: TriggerAnchor,
+    ) -> dict[str, Any] | None:
+        """Fetch the specific Qdrant record that fired this event.
+
+        Uses O(1) point-ID lookup (MD5 of entity ID) — same pattern as
+        refs.py._retrieve_simple. Returns the payload dict or None.
+        """
+        anchor_type = type(anchor)
+        mapping = self._TRIGGER_RECORD_KEYS.get(anchor_type)
+        if mapping is None:
+            return None
+
+        id_field, expected_data_type = mapping
+        entity_id = getattr(anchor, id_field)
+        point_id = hashlib.md5(entity_id.encode()).hexdigest()
+
+        try:
+            store = QdrantStore()
+            async with store.get_client() as client:
+                points = await client.retrieve(
+                    collection_name=QDRANT_COLLECTION,
+                    ids=[point_id],
+                    with_payload=True,
+                )
+        except Exception as exc:
+            logger.debug("Trigger record fetch failed for %s: %s", entity_id, exc)
+            return None
+
+        if not points:
+            return None
+        payload = points[0].payload or {}
+        if payload.get("patient_id") != patient_id:
+            return None
+        if payload.get("data_type") != expected_data_type:
+            return None
+        return dict(payload)
+
+    def _format_record(self, payload: dict[str, Any]) -> str:
+        """Format a single Qdrant payload into a readable text block."""
+        clean = {
+            k: v for k, v in payload.items()
+            if k not in _STRIP_KEYS and v is not None
+        }
+        parts: list[str] = []
+        for k, v in clean.items():
+            if isinstance(v, dict):
+                inner = ", ".join(
+                    f"{ik}: {iv}" for ik, iv in v.items() if iv is not None
+                )
+                if inner:
+                    parts.append(f"{k}: ({inner})")
+            elif isinstance(v, list) and v and isinstance(v[0], dict):
+                parts.append(f"{k}: {len(v)} items")
+            else:
+                parts.append(f"{k}: {v}")
+        return ", ".join(parts)
+
     # -- Public API ---------------------------------------------------------
 
     async def scan_patient(
@@ -197,7 +268,11 @@ class ProactiveMonitorAgent(BaseAgent):
             greeting = self._greeting_for(scan_period)
             display_name = patient_name or "this patient"
 
-            # 2. Narrow vs full fetch
+            # 2. Fetch trigger record (O(1) by ID) + context data
+            trigger_record: dict[str, Any] | None = None
+            if is_event and anchor is not None:
+                trigger_record = await self._fetch_trigger_record(patient_id, anchor)
+
             data_types = (
                 TRIGGER_DATA_TYPES[trigger] if is_event else _SCAN_DATA_TYPES
             )
@@ -207,6 +282,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 scan_date=scan_date,
                 data_types=data_types,
                 trigger=trigger,
+                exclude_record=trigger_record,
             )
 
             logger.info(
@@ -261,10 +337,11 @@ class ProactiveMonitorAgent(BaseAgent):
                 scan_period=scan_period,
                 greeting=greeting,
                 facts_text=facts_text,
-                has_data=bool(data_text),
+                has_data=bool(data_text or trigger_record),
                 domain_counts=domain_counts,
                 trigger=trigger,
                 anchor=anchor,
+                trigger_record=trigger_record,
             )
 
             # 6. Dedup + escalation
@@ -438,11 +515,16 @@ class ProactiveMonitorAgent(BaseAgent):
         scan_date: str,
         data_types: list[HealthDataType],
         trigger: EventTrigger | None = None,
+        exclude_record: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, int]]:
         """Fetch health data from Qdrant for the scan date.
 
         Returns (formatted_text, domain_counts) where domain_counts
         maps data_type → number of records found.
+
+        When ``exclude_record`` is set, any payload whose ``meal_id`` or
+        ``symptom_entry_id`` matches the excluded record is skipped — it
+        will be presented separately as the trigger event.
         """
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
@@ -455,6 +537,18 @@ class ProactiveMonitorAgent(BaseAgent):
 
         # Filter out profile records (Qdrant always includes them)
         results = [r for r in results if r.data_type != HealthDataType.PROFILE.value]
+
+        # Exclude the trigger record so it's not duplicated in context
+        if exclude_record is not None:
+            excl_meal = exclude_record.get("meal_id")
+            excl_symptom = exclude_record.get("symptom_entry_id")
+            results = [
+                r for r in results
+                if not (
+                    (excl_meal and r.payload.get("meal_id") == excl_meal)
+                    or (excl_symptom and r.payload.get("symptom_entry_id") == excl_symptom)
+                )
+            ]
 
         if not results:
             return "", {}
@@ -473,28 +567,12 @@ class ProactiveMonitorAgent(BaseAgent):
             label = dt.replace("_", " ").upper()
             lines: list[str] = [f"## {label} ({len(items)} records)"]
             for item in items:
-                clean = {
-                    k: v for k, v in item.items()
-                    if k not in _STRIP_KEYS and v is not None
-                }
-                parts: list[str] = []
-                for k, v in clean.items():
-                    if isinstance(v, dict):
-                        inner = ", ".join(
-                            f"{ik}: {iv}" for ik, iv in v.items() if iv is not None
-                        )
-                        if inner:
-                            parts.append(f"{k}: ({inner})")
-                    elif isinstance(v, list) and v and isinstance(v[0], dict):
-                        parts.append(f"{k}: {len(v)} items")
-                    else:
-                        parts.append(f"{k}: {v}")
-                lines.append("- " + ", ".join(parts))
+                lines.append("- " + self._format_record(item))
 
             sections.append("\n".join(lines))
 
         if trigger is not None:
-            header = f"# Health Data for {patient_name} on {scan_date} (trigger: {trigger.value})\n"
+            header = f"# Supporting Context\n"
         else:
             header = f"# Health Data for {patient_name} on {scan_date}\n"
         return header + "\n\n".join(sections), domain_counts
@@ -561,6 +639,7 @@ class ProactiveMonitorAgent(BaseAgent):
         domain_counts: dict[str, int] | None = None,
         trigger: EventTrigger | None = None,
         anchor: TriggerAnchor | None = None,
+        trigger_record: dict[str, Any] | None = None,
     ) -> tuple[list[HealthInsight], LLMResponse | None]:
         """Single entry-point analyzer. Routes to the correct prompt and
         response_model based on whether this is an event scan, a morning
@@ -582,12 +661,24 @@ class ProactiveMonitorAgent(BaseAgent):
 
         context_parts: list[str] = []
         if trigger is not None:
-            anchor_text = (
-                "\n".join(f"- {k}: {v}" for k, v in anchor.model_dump().items())
-                if anchor is not None
-                else "(none)"
-            )
-            context_parts.append(f"TRIGGER ANCHOR:\n{anchor_text}")
+            # Trigger event section — the specific record the LLM must react to.
+            # For triggers with a fetchable record (meal, symptom) we show the
+            # full Qdrant payload. For others (CGM threshold, medication missed)
+            # the anchor metadata is the event data itself.
+            if trigger_record is not None:
+                event_text = self._format_record(trigger_record)
+                context_parts.append(
+                    f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n- {event_text}"
+                )
+            else:
+                anchor_text = (
+                    "\n".join(f"- {k}: {v}" for k, v in anchor.model_dump().items())
+                    if anchor is not None
+                    else "(none)"
+                )
+                context_parts.append(
+                    f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n{anchor_text}"
+                )
         if data_text:
             context_parts.append(data_text)
         if facts_text:
