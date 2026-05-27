@@ -38,7 +38,6 @@ from lib.core.qdrant_store import QDRANT_COLLECTION, QdrantStore
 from .scheduling import DEFAULT_TIMEZONE
 from .contracts import (
     BatchScanResult,
-    CGMThresholdCrossedAnchor,
     DailyBrief,
     EventTrigger,
     HealthInsight,
@@ -46,7 +45,6 @@ from .contracts import (
     InsightSeverity,
     LLM_INSIGHT_CATEGORIES_PROMPT,
     MealLoggedAnchor,
-    MedicationMissedAnchor,
     ScanInsights,
     ScanResult,
     SEVERITY_RANK,
@@ -573,7 +571,10 @@ class ProactiveMonitorAgent(BaseAgent):
 
             sections.append("\n".join(lines))
 
-        header = f"# Supporting Context for {patient_name} on {scan_date}\n"
+        if trigger is not None:
+            header = f"# Supporting Context\n"
+        else:
+            header = f"# Health Data for {patient_name} on {scan_date}\n"
         return header + "\n\n".join(sections), domain_counts
 
     _GOAL_KEYS = frozenset({
