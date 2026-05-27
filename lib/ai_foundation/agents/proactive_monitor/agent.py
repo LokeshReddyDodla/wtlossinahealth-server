@@ -318,7 +318,9 @@ class ProactiveMonitorAgent(BaseAgent):
             await _maybe_await(self.gateway.langfuse_trace_input(
                 trace_id=trace_id,
                 name="proactive_monitor_event" if is_event else "proactive_monitor",
-                input_text=data_text[:500] if data_text else "(no data)",
+                input_text=(data_text[:500] if data_text
+                            else trigger_record.get("text_repr", "(trigger record only)")[:500] if trigger_record
+                            else "(no data)"),
                 metadata={
                     "agent": self.agent_id,
                     "scan_date": scan_date,
@@ -407,7 +409,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 scan_date=scan_date,
                 insights=insights,
                 scan_duration_ms=elapsed_ms,
-                data_available=bool(data_text),
+                data_available=bool(data_text or trigger_record),
             )
 
         except Exception as exc:
@@ -672,9 +674,9 @@ class ProactiveMonitorAgent(BaseAgent):
             # full Qdrant payload. For others (CGM threshold, medication missed)
             # the anchor metadata is the event data itself.
             if trigger_record is not None:
-                event_text = self._format_record(trigger_record)
+                event_text = trigger_record.get("text_repr") or self._format_record(trigger_record)
                 context_parts.append(
-                    f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n- {event_text}"
+                    f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n{event_text}"
                 )
             else:
                 anchor_text = (
@@ -910,6 +912,7 @@ class ProactiveMonitorAgent(BaseAgent):
             return
 
         trigger_val = trigger or "cron"
+        is_event = trigger_val != "cron"
 
         if insight.category == InsightCategory.DAILY_BRIEF:
             # Record the brief itself (with insight_id) for history/feedback
@@ -946,6 +949,7 @@ class ProactiveMonitorAgent(BaseAgent):
             suggested_query=insight.suggested_query,
             trace_id=insight.data.get("trace_id"),
             trigger=trigger_val,
+            consecutive_days=1 if is_event else None,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
