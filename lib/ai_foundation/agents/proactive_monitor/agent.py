@@ -910,6 +910,7 @@ class ProactiveMonitorAgent(BaseAgent):
             return
 
         trigger_val = trigger or "cron"
+        is_event = trigger_val != "cron"
 
         if insight.category == InsightCategory.DAILY_BRIEF:
             # Record the brief itself (with insight_id) for history/feedback
@@ -946,6 +947,7 @@ class ProactiveMonitorAgent(BaseAgent):
             suggested_query=insight.suggested_query,
             trace_id=insight.data.get("trace_id"),
             trigger=trigger_val,
+            consecutive_days=1 if is_event else None,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:
