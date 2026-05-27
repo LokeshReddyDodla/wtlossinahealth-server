@@ -131,6 +131,7 @@ class EventTrigger(str, Enum):
     """
 
     MEAL_LOGGED = "meal_logged"
+    SMBG_LOGGED = "smbg_logged"
     CGM_SYNCED = "cgm_synced"
     CGM_THRESHOLD_CROSSED = "cgm_threshold_crossed"
     SYMPTOM_LOGGED = "symptom_logged"
@@ -150,6 +151,13 @@ TRIGGER_DATA_TYPES: dict[EventTrigger, list[HealthDataType]] = {
         HealthDataType.FITNESS_OVERVIEW,
         HealthDataType.SLEEP,
         HealthDataType.MEDICATION,
+    ],
+    EventTrigger.SMBG_LOGGED: [
+        HealthDataType.SMBG,
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.MEAL,
+        HealthDataType.MEDICATION,
+        HealthDataType.SYMPTOM_ENTRY,
     ],
     EventTrigger.CGM_SYNCED: [
         HealthDataType.CGM_SUMMARY,
@@ -190,6 +198,7 @@ TRIGGER_DATA_TYPES: dict[EventTrigger, list[HealthDataType]] = {
 # Short label shown to the LLM as the trigger context header.
 TRIGGER_LABELS: dict[EventTrigger, str] = {
     EventTrigger.MEAL_LOGGED: "The patient just logged a meal.",
+    EventTrigger.SMBG_LOGGED: "The patient just logged a finger-prick blood glucose reading.",
     EventTrigger.CGM_SYNCED: "Fresh CGM readings just synced.",
     EventTrigger.CGM_THRESHOLD_CROSSED: "A clinically significant glucose threshold was crossed — this is safety-relevant.",
     EventTrigger.SYMPTOM_LOGGED: "The patient just logged a symptom.",
@@ -204,6 +213,10 @@ TRIGGER_LABELS: dict[EventTrigger, str] = {
 
 class MealLoggedAnchor(BaseModel):
     meal_id: str
+
+
+class SMBGLoggedAnchor(BaseModel):
+    reading_id: str
 
 
 class CGMSyncedAnchor(BaseModel):
@@ -232,6 +245,7 @@ class MedicationMissedAnchor(BaseModel):
 
 TriggerAnchor = (
     MealLoggedAnchor
+    | SMBGLoggedAnchor
     | CGMSyncedAnchor
     | CGMThresholdCrossedAnchor
     | SymptomLoggedAnchor
@@ -241,6 +255,7 @@ TriggerAnchor = (
 
 _ANCHOR_MODELS: dict[EventTrigger, type[BaseModel]] = {
     EventTrigger.MEAL_LOGGED: MealLoggedAnchor,
+    EventTrigger.SMBG_LOGGED: SMBGLoggedAnchor,
     EventTrigger.CGM_SYNCED: CGMSyncedAnchor,
     EventTrigger.CGM_THRESHOLD_CROSSED: CGMThresholdCrossedAnchor,
     EventTrigger.SYMPTOM_LOGGED: SymptomLoggedAnchor,
