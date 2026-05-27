@@ -85,6 +85,8 @@ async def handle_proactive_event(
             )
 
         if result.insights:
+            for ins in result.insights:
+                ins.title = f"[Beta] {ins.title}"
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
                 trigger=trigger,
