@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 S3_BUCKET = "user-assets.aihealth.clinic"
 
+_MEAL_STT_PROMPT = (
+    "A person describing what they ate or are about to eat — "
+    "food items, portion sizes, and meal context."
+)
+
 _FORMAT_BY_MIME: dict[str, AudioFormat] = {
     "audio/mp4": "m4a",
     "audio/aac": "m4a",
@@ -88,7 +93,7 @@ async def process_audio(
         content_type=audio.content_type or f"audio/{audio_format}",
         folder_path=f"patients/{patient_id}/meals/audio",
     )
-    stt_task = stt.transcribe(audio_bytes, audio_format=audio_format)
+    stt_task = stt.transcribe(audio_bytes, audio_format=audio_format, prompt=_MEAL_STT_PROMPT)
 
     audio_url, transcript = await asyncio.gather(s3_task, stt_task, return_exceptions=True)
 

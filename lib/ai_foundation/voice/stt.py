@@ -101,6 +101,7 @@ class SpeechToText:
         *,
         audio_format: AudioFormat = "pcm",
         language: str | None = None,
+        prompt: str | None = None,
     ) -> TranscriptionResult:
         """Transcribe audio bytes using Whisper.
 
@@ -137,6 +138,8 @@ class SpeechToText:
         lang = language or self._settings.STT_LANGUAGE
         if lang:
             kwargs["language"] = lang
+        if prompt:
+            kwargs["prompt"] = prompt
 
         logger.debug(
             "STT: transcribing %d bytes (in=%s → upload=%s, %d bytes, lang=%s)",
