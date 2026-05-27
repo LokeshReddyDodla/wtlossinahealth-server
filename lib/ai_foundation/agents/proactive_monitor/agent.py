@@ -344,8 +344,10 @@ class ProactiveMonitorAgent(BaseAgent):
                 trigger_record=trigger_record,
             )
 
-            # 6. Dedup + escalation
-            insights = await self._filter_insights(patient_id, insights)
+            # 6. Dedup + escalation (skip for event-driven — each event is unique;
+            #    notification_budget + arq job_id prevent spam).
+            if not is_event:
+                insights = await self._filter_insights(patient_id, insights)
             for insight in insights:
                 insight.data.setdefault("trace_id", trace_id)
                 if is_event:
