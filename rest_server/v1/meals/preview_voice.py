@@ -94,6 +94,7 @@ async def preview_meal_voice(
             data={
                 **result.model_dump(mode="json"),
                 "audio_url": audio_url,
+                "transcript": combined_text,
             },
         )
     except HTTPException:
@@ -159,6 +160,7 @@ async def quick_preview_meal_voice(
             data={
                 **result.model_dump(mode="json"),
                 "audio_url": audio_url,
+                "transcript": combined_text,
             },
         )
     except HTTPException:
