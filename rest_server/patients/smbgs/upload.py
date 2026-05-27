@@ -16,16 +16,12 @@ from .router import router
 async def upload_smbg(
     request: Request,
     smbg_data: PatientSMBGCreate,
-    patient_smbg_service: PatientSmbgService = Depends(
-        get_patient_smbg_service
-    ),
+    patient_smbg_service: PatientSmbgService = Depends(get_patient_smbg_service),
     current_patient: Patient = Depends(get_current_patient),
 ):
     try:
-        new_smbg, ai_response_generated = (
-            await patient_smbg_service.upload_patient_smbg(
-                str(current_patient.patient_id), smbg_data
-            )
+        new_smbg = await patient_smbg_service.upload_patient_smbg(
+            str(current_patient.patient_id), smbg_data
         )
 
         smbg = PatientSMBGSchema.model_validate(new_smbg)
@@ -34,7 +30,6 @@ async def upload_smbg(
             message="SMBG data uploaded successfully.",
             data={
                 "smbg_data": smbg,
-                "ai_response_generated": ai_response_generated,
             },
         )
     except Exception as e:
