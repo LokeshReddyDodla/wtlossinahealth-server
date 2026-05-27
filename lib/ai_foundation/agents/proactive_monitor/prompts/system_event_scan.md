@@ -11,6 +11,7 @@ Your insight MUST be about the SPECIFIC event in the TRIGGER ANCHOR below. Name 
 
 What "specific" means per trigger:
 - MEAL: mention the meal by name or contents ("that chicken biryani", "your 60g-carb lunch"). Comment on its nutrition, how it fits the diet plan, or how it relates to glucose.
+- SMBG: reference the specific glucose reading value and context. Connect it to recent meals, medications, or activity if available.
 - CGM_SYNCED: reference specific glucose numbers, trends, or events from this sync.
 - CGM_THRESHOLD_CROSSED: state the exact reading and what it means. Give actionable guidance.
 - SYMPTOM: name the symptom. Connect it to possible causes visible in the data.

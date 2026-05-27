@@ -45,6 +45,7 @@ from .contracts import (
     InsightSeverity,
     LLM_INSIGHT_CATEGORIES_PROMPT,
     MealLoggedAnchor,
+    SMBGLoggedAnchor,
     ScanInsights,
     ScanResult,
     SEVERITY_RANK,
@@ -169,6 +170,7 @@ class ProactiveMonitorAgent(BaseAgent):
 
     _TRIGGER_RECORD_KEYS: dict[type, tuple[str, str]] = {
         MealLoggedAnchor: ("meal_id", "meal"),
+        SMBGLoggedAnchor: ("reading_id", "smbg"),
         SymptomLoggedAnchor: ("symptom_entry_id", "symptom_entry"),
     }
 
@@ -543,11 +545,13 @@ class ProactiveMonitorAgent(BaseAgent):
         # Exclude the trigger record so it's not duplicated in context
         if exclude_record is not None:
             excl_meal = exclude_record.get("meal_id")
+            excl_reading = exclude_record.get("reading_id")
             excl_symptom = exclude_record.get("symptom_entry_id")
             results = [
                 r for r in results
                 if not (
                     (excl_meal and r.payload.get("meal_id") == excl_meal)
+                    or (excl_reading and r.payload.get("reading_id") == excl_reading)
                     or (excl_symptom and r.payload.get("symptom_entry_id") == excl_symptom)
                 )
             ]
