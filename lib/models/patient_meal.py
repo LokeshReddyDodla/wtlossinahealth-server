@@ -148,6 +148,7 @@ class PatientMeal(Base):
     extraction_confidence = Column(String, nullable=True)
     preview_trace_id = Column(String, nullable=True)
     note = Column(Text, nullable=True)
+    ai_insight = Column(Text, nullable=True)
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

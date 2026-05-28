@@ -11,11 +11,15 @@ from typing import Any
 
 from loguru import logger
 from pydantic import ValidationError
+from sqlalchemy import update
 
 from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
     EventTrigger,
+    MealLoggedAnchor,
+    SEVERITY_RANK,
+    SMBGLoggedAnchor,
     TRIGGER_DATA_TYPES,
     parse_anchor,
 )
@@ -87,6 +91,8 @@ async def handle_proactive_event(
         if result.insights:
             for ins in result.insights:
                 ins.title = f"[Beta] {ins.title}"
+            top = max(result.insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
+            await _save_insight_to_record(typed_anchor, top.body)
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
                 trigger=trigger,
@@ -116,3 +122,32 @@ async def handle_proactive_event(
             error=str(exc),
             data={"patient_id": patient_id, "trigger": trigger},
         )
+
+
+async def _save_insight_to_record(anchor: Any, body: str) -> None:
+    """Write the AI insight body back to the source meal/SMBG row."""
+    from lib.dependencies.database import postgres_store
+    from lib.models.patient_meal import PatientMeal
+    from lib.models.patient_smbg import PatientSMBG
+
+    if isinstance(anchor, MealLoggedAnchor):
+        stmt = (
+            update(PatientMeal)
+            .where(PatientMeal.id == anchor.meal_id)
+            .values(ai_insight=body)
+        )
+    elif isinstance(anchor, SMBGLoggedAnchor):
+        stmt = (
+            update(PatientSMBG)
+            .where(PatientSMBG.id == anchor.reading_id)
+            .values(ai_insight=body)
+        )
+    else:
+        return
+
+    try:
+        async with postgres_store.get_session() as session:
+            await session.execute(stmt)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("Failed to save ai_insight to record: %s", exc)

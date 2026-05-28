@@ -21,6 +21,7 @@ class PatientSMBG(Base):
     source_platform = Column(String, nullable=False)
     type = Column(String, nullable=False)  # pre_meal, post_meal, etc.
     notes = Column(String, nullable=True)
+    ai_insight = Column(String, nullable=True)
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now().replace(tzinfo=None)
     )

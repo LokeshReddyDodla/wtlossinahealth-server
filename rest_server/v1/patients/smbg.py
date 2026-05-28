@@ -91,6 +91,7 @@ async def get_patient_smbg(
                 "source_name": r.source_name,
                 "source_platform": r.source_platform,
                 "notes": r.notes,
+                "ai_insight": r.ai_insight,
             }
             for r in records
         ]
