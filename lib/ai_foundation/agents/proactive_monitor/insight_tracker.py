@@ -152,8 +152,7 @@ class InsightTracker:
             doc["suggested_query"] = suggested_query
         if trace_id:
             doc["trace_id"] = trace_id
-        if trigger:
-            doc["trigger"] = trigger
+        doc["trigger"] = trigger or "cron"
 
         await self._collection.insert_one(doc)
 
