@@ -1,9 +1,10 @@
 """Broadcast FCM notification to all patients with active devices."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
+from firebase_admin import messaging
 from loguru import logger
-from sqlalchemy import distinct, select
+from sqlalchemy import select
 
 from lib.core.postgres_store import PostgresStore
 from lib.core.types import (
@@ -11,11 +12,13 @@ from lib.core.types import (
     FCMNotificationGroupKeyLiteral,
 )
 from lib.models.user_device import UserDevice
+from lib.utils.json_utils import ensure_string_values
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
 
-BATCH_SIZE = 200
+# Firebase multicast limit is 500 tokens per call
+FCM_MULTICAST_LIMIT = 500
 
 
 @task_with_logging
@@ -23,48 +26,90 @@ async def process_broadcast_notification(
     ctx: Dict[str, Any],
     notification_info: Dict[str, Any],
 ) -> TaskResult:
-    """Query all patients with FCM tokens and send notification in batches."""
-    from lib.workers.tasks.fcm.notification import _enqueue_fcm_notification
+    """Bulk-query all patient FCM tokens and send via multicast directly.
 
+    Skips per-user permission checks and device lookups — this is an
+    admin-initiated broadcast, so we send to everyone with a token.
+    """
     try:
         store = PostgresStore()
         try:
             async with store.get_session() as session:
                 result = await session.execute(
-                    select(distinct(UserDevice.user_id)).where(
+                    select(UserDevice.fcm_token).where(
                         UserDevice.fcm_token.isnot(None),
                         UserDevice.is_active.is_(True),
                         UserDevice.profile_type == "patient",
                     )
                 )
-                user_ids = [str(uid) for uid in result.scalars().all()]
+                tokens = [row[0] for row in result.all()]
         finally:
             await store.close()
 
-        if not user_ids:
-            logger.warning("No patients with active FCM tokens found")
+        if not tokens:
+            logger.warning("No FCM tokens found for broadcast")
             return TaskResult(
                 success=True,
-                data={"total_patients": 0, "batches_enqueued": 0},
+                data={"total_tokens": 0, "sent": 0, "failed": 0},
             )
 
-        batches_enqueued = 0
-        for i in range(0, len(user_ids), BATCH_SIZE):
-            batch = user_ids[i : i + BATCH_SIZE]
-            participants = [{"id": uid} for uid in batch]
-            await _enqueue_fcm_notification(participants, notification_info)
-            batches_enqueued += 1
+        title = notification_info["title"]
+        body = notification_info["body"]
+        channel_key = notification_info.get("channel_key", "other")
+        group_key = notification_info.get("group_key", "other_group")
+        data = ensure_string_values(
+            {
+                **(notification_info.get("data") or {}),
+                "groupKey": group_key,
+                "channelKey": channel_key,
+            }
+        )
+
+        total_success = 0
+        total_failure = 0
+
+        for i in range(0, len(tokens), FCM_MULTICAST_LIMIT):
+            batch = tokens[i : i + FCM_MULTICAST_LIMIT]
+            multicast = messaging.MulticastMessage(
+                tokens=batch,
+                notification=messaging.Notification(title=title, body=body),
+                android=messaging.AndroidConfig(
+                    notification=messaging.AndroidNotification(
+                        channel_id=channel_key
+                    )
+                ),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(sound="default"),
+                        mutable_content=True,
+                    )
+                ),
+                data=data,
+            )
+
+            response = messaging.send_each_for_multicast(multicast)
+            total_success += response.success_count
+            total_failure += response.failure_count
+
+            if response.failure_count:
+                for idx, resp in enumerate(response.responses):
+                    if not resp.success:
+                        logger.warning(
+                            f"Broadcast FCM fail token {batch[idx][:20]}...: "
+                            f"{resp.exception}"
+                        )
 
         logger.info(
-            f"Broadcast: enqueued {batches_enqueued} batches "
-            f"for {len(user_ids)} patients"
+            f"Broadcast complete: {total_success} sent, "
+            f"{total_failure} failed out of {len(tokens)} tokens"
         )
 
         return TaskResult(
             success=True,
             data={
-                "total_patients": len(user_ids),
-                "batches_enqueued": batches_enqueued,
+                "total_tokens": len(tokens),
+                "sent": total_success,
+                "failed": total_failure,
             },
         )
 
