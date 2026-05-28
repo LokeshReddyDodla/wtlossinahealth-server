@@ -19,7 +19,6 @@ from lib.ai_foundation.agents.proactive_monitor.contracts import (
     EventTrigger,
     MealLoggedAnchor,
     SEVERITY_RANK,
-    SMBGLoggedAnchor,
     TRIGGER_DATA_TYPES,
     parse_anchor,
 )
@@ -125,21 +124,14 @@ async def handle_proactive_event(
 
 
 async def _save_insight_to_record(anchor: Any, body: str) -> None:
-    """Write the AI insight body back to the source meal/SMBG row."""
+    """Write the AI insight body back to the source meal row."""
     from lib.dependencies.database import postgres_store
     from lib.models.patient_meal import PatientMeal
-    from lib.models.patient_smbg import PatientSMBG
 
     if isinstance(anchor, MealLoggedAnchor):
         stmt = (
             update(PatientMeal)
             .where(PatientMeal.id == anchor.meal_id)
-            .values(ai_insight=body)
-        )
-    elif isinstance(anchor, SMBGLoggedAnchor):
-        stmt = (
-            update(PatientSMBG)
-            .where(PatientSMBG.id == anchor.reading_id)
             .values(ai_insight=body)
         )
     else:
