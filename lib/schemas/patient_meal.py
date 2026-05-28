@@ -101,6 +101,7 @@ class PatientMeal(BaseModel):
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
     patient_id: UUID
+    ai_insight: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -25,6 +25,7 @@ class PatientSMBGUpdate(PatientSMBGBase):
 class PatientSMBG(PatientSMBGBase):
     id: UUID
     uploaded_at: datetime
+    ai_insight: Optional[str] = None
 
     class Config:
         from_attributes = True
