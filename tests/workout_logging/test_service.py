@@ -220,7 +220,7 @@ def _fake_workout_row(workout_id, patient_id, *, exercises=None):
     )
 
 
-def _fake_exercise_row(exercise_id="Bench_Press", name="Bench Press"):
+def _fake_exercise_row(exercise_id="Bench_Press", name="Bench Press", set_details=None):
     return SimpleNamespace(
         id=uuid4(),
         exercise_id=exercise_id,
@@ -232,6 +232,7 @@ def _fake_exercise_row(exercise_id="Bench_Press", name="Bench Press"):
         duration_seconds=None,
         distance_m=None,
         notes=None,
+        set_details=set_details or [],
     )
 
 
