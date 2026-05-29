@@ -156,17 +156,40 @@ class WorkoutVoiceService:
     ) -> WorkoutVoiceResponse:
         extraction, _meta = await self._extract(transcript, session)
 
+        logger.info(
+            "[WorkoutVoice] LLM extraction | action=%s | exercise=%r | sets=%d | interpretation=%r",
+            extraction.action,
+            extraction.exercise_name,
+            len(extraction.sets),
+            extraction.interpretation,
+        )
+
         match: Optional[ExerciseMatch] = None
         candidates: list[ExerciseMatch] = []
 
         if extraction.exercise_name and extraction.action not in ("finish", "unclear"):
             match, candidates = await self._match_exercise(extraction.exercise_name)
+            logger.info(
+                "[WorkoutVoice] DB match | query=%r | best=%s(%.2f) | candidates=%d",
+                extraction.exercise_name,
+                match.exercise_name if match else "None",
+                match.confidence if match else 0,
+                len(candidates),
+            )
 
         updated_session, update = self._apply_extraction(
             session=session,
             extraction=extraction,
             match=match,
             candidates=candidates,
+        )
+
+        logger.info(
+            "[WorkoutVoice] applied | action=%s → final_action=%s | session_before=%d → session_after=%d",
+            extraction.action,
+            update.action,
+            len(session.exercises),
+            len(updated_session.exercises),
         )
 
         return WorkoutVoiceResponse(
