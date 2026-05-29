@@ -1859,6 +1859,35 @@ container.register(
     scope=Scope.singleton,
 )
 
+async def _upload_voice_audio(patient_id: str, audio_bytes: bytes) -> str | None:
+    """Upload voice audio to S3 — wired into VoiceOrchestrator via DI.
+
+    Audio arrives as raw PCM 16-bit 16kHz mono from the WebSocket session.
+    We wrap it in a WAV container so the stored file is playable.
+    """
+    import asyncio
+    import io
+    import wave
+    from uuid import uuid4
+    from lib.utils.s3_utils import upload_file_to_s3
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(_voice_settings.INPUT_SAMPLE_RATE)
+        wf.writeframes(audio_bytes)
+    wav_bytes = buf.getvalue()
+
+    return await asyncio.to_thread(
+        upload_file_to_s3,
+        file_bytes=wav_bytes,
+        bucket_name="user-assets.aihealth.clinic",
+        file_name=f"{uuid4()}.wav",
+        content_type="audio/wav",
+        folder_path=f"patients/{patient_id}/voice/audio",
+    )
+
 container.register(
     VoiceOrchestrator,
     lambda: VoiceOrchestrator(
@@ -1867,6 +1896,7 @@ container.register(
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
+        upload_audio=_upload_voice_audio,
     ),
     scope=Scope.singleton,
 )
