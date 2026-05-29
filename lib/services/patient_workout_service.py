@@ -243,7 +243,7 @@ class PatientWorkoutService:
         postgres_session: AsyncSession,
     ) -> PatientWorkoutListResponse:
         if not end_date:
-            end_date = date_type.today()
+            end_date = date_type.today() + timedelta(days=1)
         if not start_date:
             start_date = end_date - timedelta(days=30)
 
