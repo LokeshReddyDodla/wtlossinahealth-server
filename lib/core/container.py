@@ -1920,6 +1920,19 @@ container.register(
     scope=Scope.singleton,
 )
 
+# 🔹 Workout Voice Service
+from lib.services.workout_voice_service import WorkoutVoiceService
+
+container.register(
+    WorkoutVoiceService,
+    lambda: WorkoutVoiceService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 🎮 Gamification Services
 # ═══════════════════════════════════════════════════════════════════════════
