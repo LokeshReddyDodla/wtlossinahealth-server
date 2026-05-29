@@ -135,6 +135,16 @@ async def workout_voice_input(
             message="Invalid session_state JSON.",
         )
 
+    logger.info(
+        "[WorkoutVoice] ← INCOMING voice | patient=%s | audio=%s %dB | text=%r | session_exercises=%d [%s]",
+        pid,
+        audio_format,
+        len(audio_bytes),
+        text,
+        len(session.exercises),
+        ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in session.exercises),
+    )
+
     s3_task = asyncio.to_thread(
         upload_file_to_s3,
         file_bytes=audio_bytes,
@@ -173,6 +183,22 @@ async def workout_voice_input(
         audio_url = None
 
     result.audio_url = audio_url
+
+    actions_summary = " | ".join(
+        f"{u.action}:{u.exercise_match.exercise_name if u.exercise_match else u.spoken_exercise_name or '?'}"
+        for u in result.updates
+    )
+    logger.info(
+        "[WorkoutVoice] → RESPONSE voice | patient=%s | transcript=%r | updates=%d [%s] "
+        "| response_exercises=%d [%s]",
+        pid,
+        result.transcript,
+        len(result.updates),
+        actions_summary,
+        len(result.session.exercises),
+        ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in result.session.exercises),
+    )
+
     return SuccessResponse(
         message="Voice input processed",
         data=result.model_dump(mode="json"),
@@ -217,6 +243,14 @@ async def workout_text_input(
             message="Invalid session_state JSON.",
         )
 
+    logger.info(
+        "[WorkoutVoice] ← INCOMING text | patient=%s | transcript=%r | session_exercises=%d [%s]",
+        str(verified_pid),
+        transcript,
+        len(session.exercises),
+        ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in session.exercises),
+    )
+
     try:
         result = await service.process_text_input(
             transcript=transcript,
@@ -229,6 +263,20 @@ async def workout_text_input(
             message="Failed to process text input.",
             detail=str(exc),
         )
+
+    actions_summary = " | ".join(
+        f"{u.action}:{u.exercise_match.exercise_name if u.exercise_match else u.spoken_exercise_name or '?'}"
+        for u in result.updates
+    )
+    logger.info(
+        "[WorkoutVoice] → RESPONSE text | patient=%s | updates=%d [%s] "
+        "| response_exercises=%d [%s]",
+        str(verified_pid),
+        len(result.updates),
+        actions_summary,
+        len(result.session.exercises),
+        ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in result.session.exercises),
+    )
 
     return SuccessResponse(
         message="Text input processed",

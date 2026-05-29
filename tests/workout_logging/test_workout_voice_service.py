@@ -1,7 +1,7 @@
 """Unit tests for WorkoutVoiceService.
 
 Covers the interpretation pipeline, exercise matching, session state
-application, and edge cases like empty transcripts and low-confidence matches.
+application, multi-exercise extraction, and edge cases.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import pytest
 
 from lib.schemas.exercise import ExerciseResponse
 from lib.schemas.workout_voice import (
+    ExerciseActionItem,
     ExerciseMatch,
     ParsedSet,
     SessionExercise,
@@ -38,16 +39,30 @@ def _make_service(*, fake_postgres_store=None):
     return WorkoutVoiceService(gateway=gateway, stt=stt, postgres_store=store)
 
 
-def _make_extraction(
+def _make_item(
     action="new_exercise",
     exercise_name="Barbell Bench Press",
     sets=None,
-    interpretation="Got it",
 ):
-    return VoiceWorkoutExtraction(
+    return ExerciseActionItem(
         action=action,
         exercise_name=exercise_name,
         sets=sets or [],
+    )
+
+
+def _make_extraction(
+    items=None,
+    interpretation="Got it",
+    *,
+    action="new_exercise",
+    exercise_name="Barbell Bench Press",
+    sets=None,
+):
+    if items is not None:
+        return VoiceWorkoutExtraction(items=items, interpretation=interpretation)
+    return VoiceWorkoutExtraction(
+        items=[_make_item(action=action, exercise_name=exercise_name, sets=sets or [])],
         interpretation=interpretation,
     )
 
@@ -110,43 +125,43 @@ class TestConstructor:
 
 class TestNeedsConfirmation:
     def test_finish_never_needs_confirmation(self):
-        ext = _make_extraction(action="finish")
-        assert WorkoutVoiceService._needs_confirmation(ext, _make_match()) is False
+        item = _make_item(action="finish")
+        assert WorkoutVoiceService._needs_confirmation(item, _make_match()) is False
 
     def test_unclear_never_needs_confirmation(self):
-        ext = _make_extraction(action="unclear")
-        assert WorkoutVoiceService._needs_confirmation(ext, _make_match()) is False
+        item = _make_item(action="unclear")
+        assert WorkoutVoiceService._needs_confirmation(item, _make_match()) is False
 
     def test_remove_exercise_never_needs_confirmation(self):
-        ext = _make_extraction(action="remove_exercise")
-        assert WorkoutVoiceService._needs_confirmation(ext, _make_match()) is False
+        item = _make_item(action="remove_exercise")
+        assert WorkoutVoiceService._needs_confirmation(item, _make_match()) is False
 
     def test_add_set_never_needs_confirmation(self):
-        ext = _make_extraction(action="add_set")
-        assert WorkoutVoiceService._needs_confirmation(ext, _make_match()) is False
+        item = _make_item(action="add_set")
+        assert WorkoutVoiceService._needs_confirmation(item, _make_match()) is False
 
     def test_update_last_set_never_needs_confirmation(self):
-        ext = _make_extraction(action="update_last_set")
-        assert WorkoutVoiceService._needs_confirmation(ext, _make_match()) is False
+        item = _make_item(action="update_last_set")
+        assert WorkoutVoiceService._needs_confirmation(item, _make_match()) is False
 
     def test_no_match_needs_confirmation(self):
-        ext = _make_extraction(action="new_exercise")
-        assert WorkoutVoiceService._needs_confirmation(ext, None) is True
+        item = _make_item(action="new_exercise")
+        assert WorkoutVoiceService._needs_confirmation(item, None) is True
 
     def test_low_confidence_needs_confirmation(self):
-        ext = _make_extraction(action="new_exercise")
+        item = _make_item(action="new_exercise")
         match = _make_match(confidence=0.6)
-        assert WorkoutVoiceService._needs_confirmation(ext, match) is True
+        assert WorkoutVoiceService._needs_confirmation(item, match) is True
 
     def test_high_confidence_does_not_need_confirmation(self):
-        ext = _make_extraction(action="new_exercise")
+        item = _make_item(action="new_exercise")
         match = _make_match(confidence=0.9)
-        assert WorkoutVoiceService._needs_confirmation(ext, match) is False
+        assert WorkoutVoiceService._needs_confirmation(item, match) is False
 
     def test_exact_threshold_does_not_need_confirmation(self):
-        ext = _make_extraction(action="new_exercise")
+        item = _make_item(action="new_exercise")
         match = _make_match(confidence=_MATCH_CONFIDENCE_THRESHOLD)
-        assert WorkoutVoiceService._needs_confirmation(ext, match) is False
+        assert WorkoutVoiceService._needs_confirmation(item, match) is False
 
 
 # ── _find_exercise_index ─────────────────────────────────────────────────────
@@ -201,29 +216,30 @@ class TestFindExerciseIndex:
         assert idx == 0
 
 
-# ── _apply_extraction ────────────────────────────────────────────────────────
+# ── _apply_item ──────────────────────────────────────────────────────────────
 
 
-class TestApplyExtraction:
-    def _apply(self, session, extraction, match=None, candidates=None):
+class TestApplyItem:
+    def _apply(self, session, item, match=None, candidates=None, interpretation="Got it"):
         svc = _make_service()
-        return svc._apply_extraction(
+        return svc._apply_item(
             session=session,
-            extraction=extraction,
+            item=item,
             match=match,
             candidates=candidates or [],
+            interpretation=interpretation,
         )
 
     def test_new_exercise_adds_to_session(self):
         session = _make_session()
-        ext = _make_extraction(
+        item = _make_item(
             action="new_exercise",
             exercise_name="Bench Press",
             sets=[ParsedSet(weight_kg=80, reps=10)],
         )
         match = _make_match(confidence=1.0)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert len(updated.exercises) == 1
         assert updated.exercises[0].exercise_name == "Barbell Bench Press"
@@ -239,14 +255,14 @@ class TestApplyExtraction:
             sets=[SetEntry(weight_kg=80, reps=10)],
         )
         session = _make_session(existing)
-        ext = _make_extraction(
+        item = _make_item(
             action="add_set",
             exercise_name="Barbell Bench Press",
             sets=[ParsedSet(weight_kg=80, reps=8)],
         )
         match = _make_match(confidence=1.0)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert len(updated.exercises) == 1
         assert len(updated.exercises[0].sets) == 2
@@ -257,14 +273,14 @@ class TestApplyExtraction:
         ex1 = _make_session_exercise("Deadlift", [SetEntry(weight_kg=100, reps=5)])
         ex2 = _make_session_exercise("Squat", [SetEntry(weight_kg=80, reps=8)])
         session = _make_session(ex1, ex2)
-        ext = _make_extraction(
+        item = _make_item(
             action="add_set",
             exercise_name="Unknown Thing",
             sets=[ParsedSet(weight_kg=80, reps=6)],
         )
         match = _make_match(exercise_name="Unknown Thing", confidence=0.9)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert len(updated.exercises[1].sets) == 2
         assert update.exercise_index == 1
@@ -272,7 +288,7 @@ class TestApplyExtraction:
     def test_add_multiple_sets(self):
         existing = _make_session_exercise("Barbell Bench Press")
         session = _make_session(existing)
-        ext = _make_extraction(
+        item = _make_item(
             action="add_set",
             exercise_name="Barbell Bench Press",
             sets=[
@@ -283,7 +299,7 @@ class TestApplyExtraction:
         )
         match = _make_match(confidence=1.0)
 
-        updated, _ = self._apply(session, ext, match)
+        updated, _ = self._apply(session, item, match)
 
         assert len(updated.exercises[0].sets) == 3
 
@@ -293,14 +309,14 @@ class TestApplyExtraction:
             sets=[SetEntry(weight_kg=80, reps=10), SetEntry(weight_kg=80, reps=8)],
         )
         session = _make_session(existing)
-        ext = _make_extraction(
+        item = _make_item(
             action="update_last_set",
             exercise_name="Barbell Bench Press",
             sets=[ParsedSet(reps=12)],
         )
         match = _make_match(confidence=1.0)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert updated.exercises[0].sets[-1].reps == 12
         assert updated.exercises[0].sets[-1].weight_kg == 80
@@ -312,14 +328,14 @@ class TestApplyExtraction:
             sets=[SetEntry(duration_seconds=1800, distance_m=5000)],
         )
         session = _make_session(existing)
-        ext = _make_extraction(
+        item = _make_item(
             action="update_last_set",
             exercise_name="Running",
             sets=[ParsedSet(distance_m=5500)],
         )
         match = _make_match(exercise_name="Running", confidence=1.0)
 
-        updated, _ = self._apply(session, ext, match)
+        updated, _ = self._apply(session, item, match)
 
         assert updated.exercises[0].sets[0].distance_m == 5500
         assert updated.exercises[0].sets[0].duration_seconds == 1800
@@ -328,10 +344,10 @@ class TestApplyExtraction:
         ex1 = _make_session_exercise("Bench Press")
         ex2 = _make_session_exercise("Squat")
         session = _make_session(ex1, ex2)
-        ext = _make_extraction(action="remove_exercise", exercise_name="Bench Press")
+        item = _make_item(action="remove_exercise", exercise_name="Bench Press")
         match = _make_match(exercise_name="Bench Press", confidence=1.0)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert len(updated.exercises) == 1
         assert updated.exercises[0].exercise_name == "Squat"
@@ -340,10 +356,10 @@ class TestApplyExtraction:
     def test_remove_nonexistent_exercise_is_noop(self):
         ex = _make_session_exercise("Squat")
         session = _make_session(ex)
-        ext = _make_extraction(action="remove_exercise", exercise_name="Curls")
+        item = _make_item(action="remove_exercise", exercise_name="Curls")
         match = _make_match(exercise_name="Curls", confidence=1.0)
 
-        updated, update = self._apply(session, ext, match)
+        updated, update = self._apply(session, item, match)
 
         assert len(updated.exercises) == 1
         assert update.action == "remove_exercise"
@@ -351,9 +367,9 @@ class TestApplyExtraction:
     def test_finish_action(self):
         ex = _make_session_exercise("Bench Press")
         session = _make_session(ex)
-        ext = _make_extraction(action="finish", exercise_name=None)
+        item = _make_item(action="finish", exercise_name=None)
 
-        updated, update = self._apply(session, ext)
+        updated, update = self._apply(session, item)
 
         assert len(updated.exercises) == 1
         assert update.action == "finish"
@@ -361,22 +377,22 @@ class TestApplyExtraction:
 
     def test_unclear_action(self):
         session = _make_session()
-        ext = _make_extraction(action="unclear", exercise_name=None)
+        item = _make_item(action="unclear", exercise_name=None)
 
-        updated, update = self._apply(session, ext)
+        updated, update = self._apply(session, item)
 
         assert len(updated.exercises) == 0
         assert update.action == "unclear"
 
     def test_needs_confirmation_when_no_match(self):
         session = _make_session()
-        ext = _make_extraction(
+        item = _make_item(
             action="new_exercise",
             exercise_name="Skull Crushers",
             sets=[ParsedSet(weight_kg=30, reps=12)],
         )
 
-        updated, update = self._apply(session, ext, match=None)
+        updated, update = self._apply(session, item, match=None)
 
         assert update.action == "needs_confirmation"
         assert update.spoken_exercise_name == "Skull Crushers"
@@ -385,7 +401,7 @@ class TestApplyExtraction:
 
     def test_needs_confirmation_with_low_confidence(self):
         session = _make_session()
-        ext = _make_extraction(
+        item = _make_item(
             action="new_exercise",
             exercise_name="skulls",
             sets=[ParsedSet(weight_kg=30, reps=12)],
@@ -395,7 +411,7 @@ class TestApplyExtraction:
         )
         alt = _make_match(exercise_name="Skull Crusher", confidence=0.5)
 
-        updated, update = self._apply(session, ext, low_match, candidates=[alt])
+        updated, update = self._apply(session, item, low_match, candidates=[alt])
 
         assert update.action == "needs_confirmation"
         assert len(update.candidates) == 2
@@ -406,17 +422,111 @@ class TestApplyExtraction:
         original_set = SetEntry(weight_kg=80, reps=10)
         ex = SessionExercise(exercise_name="Bench Press", sets=[original_set])
         session = _make_session(ex)
-        ext = _make_extraction(
+        item = _make_item(
             action="add_set",
             exercise_name="Bench Press",
             sets=[ParsedSet(weight_kg=80, reps=8)],
         )
         match = _make_match(exercise_name="Bench Press", confidence=1.0)
 
-        updated, _ = self._apply(session, ext, match)
+        updated, _ = self._apply(session, item, match)
 
         assert len(session.exercises[0].sets) == 1
         assert len(updated.exercises[0].sets) == 2
+
+
+# ── Multi-exercise extraction ────────────────────────────────────────────────
+
+
+class TestMultiExercise:
+    def test_three_exercises_all_matched(self):
+        svc = _make_service()
+        session = _make_session()
+
+        items = [
+            _make_item("new_exercise", "Incline Dumbbell Press", [ParsedSet(weight_kg=45, reps=10)] * 3),
+            _make_item("new_exercise", "Incline Bench Press", [ParsedSet(weight_kg=60, reps=10)] * 3),
+            _make_item("new_exercise", "Cable Fly", [ParsedSet(reps=12)] * 3),
+        ]
+
+        matches = [
+            _make_match("Incline_Dumbbell_Press", "Incline Dumbbell Press", 1.0),
+            _make_match("Incline_Bench_Press", "Incline Bench Press", 1.0),
+            _make_match("Cable_Fly", "Cable Fly", 1.0),
+        ]
+
+        current = session
+        updates = []
+        for item, match in zip(items, matches):
+            current, update = svc._apply_item(
+                session=current, item=item, match=match,
+                candidates=[], interpretation="Got it",
+            )
+            updates.append(update)
+
+        assert len(current.exercises) == 3
+        assert current.exercises[0].exercise_name == "Incline Dumbbell Press"
+        assert current.exercises[1].exercise_name == "Incline Bench Press"
+        assert current.exercises[2].exercise_name == "Cable Fly"
+        assert all(len(e.sets) == 3 for e in current.exercises)
+        assert all(u.action == "new_exercise" for u in updates)
+
+    def test_two_matched_one_needs_confirmation(self):
+        svc = _make_service()
+        session = _make_session()
+
+        items = [
+            _make_item("new_exercise", "Bench Press", [ParsedSet(weight_kg=80, reps=10)]),
+            _make_item("new_exercise", "Some Weird Exercise", [ParsedSet(reps=12)]),
+            _make_item("new_exercise", "Squat", [ParsedSet(weight_kg=100, reps=5)]),
+        ]
+
+        current = session
+        updates = []
+
+        current, u1 = svc._apply_item(
+            session=current,
+            item=items[0],
+            match=_make_match("bench_press", "Bench Press", 1.0),
+            candidates=[], interpretation="Got it",
+        )
+        updates.append(u1)
+
+        current, u2 = svc._apply_item(
+            session=current,
+            item=items[1],
+            match=None,
+            candidates=[], interpretation="Got it",
+        )
+        updates.append(u2)
+
+        current, u3 = svc._apply_item(
+            session=current,
+            item=items[2],
+            match=_make_match("squat", "Squat", 1.0),
+            candidates=[], interpretation="Got it",
+        )
+        updates.append(u3)
+
+        assert len(current.exercises) == 2
+        assert current.exercises[0].exercise_name == "Bench Press"
+        assert current.exercises[1].exercise_name == "Squat"
+        assert updates[0].action == "new_exercise"
+        assert updates[1].action == "needs_confirmation"
+        assert updates[1].spoken_exercise_name == "Some Weird Exercise"
+        assert updates[2].action == "new_exercise"
+
+    def test_extraction_items_schema(self):
+        ext = VoiceWorkoutExtraction(
+            items=[
+                ExerciseActionItem(action="new_exercise", exercise_name="Bench Press", sets=[ParsedSet(reps=10)]),
+                ExerciseActionItem(action="new_exercise", exercise_name="Squat", sets=[ParsedSet(reps=5)]),
+            ],
+            interpretation="Bench and Squat",
+        )
+        assert len(ext.items) == 2
+        assert ext.items[0].exercise_name == "Bench Press"
+        assert ext.items[1].exercise_name == "Squat"
 
 
 # ── _match_exercise (DB integration) ────────────────────────────────────────
@@ -523,6 +633,7 @@ class TestProcessTextInput:
 
         assert result.transcript == "bench press 80kg 10 reps"
         assert result.update.action == "new_exercise"
+        assert len(result.updates) == 1
         assert len(result.session.exercises) == 1
         assert result.session.exercises[0].exercise_name == "Bench Press"
 
@@ -542,6 +653,57 @@ class TestProcessTextInput:
 
         assert result.update.action == "finish"
         assert len(result.session.exercises) == 1
+
+    @pytest.mark.asyncio
+    async def test_end_to_end_multi_exercise(self):
+        svc = _make_service()
+        extraction = VoiceWorkoutExtraction(
+            items=[
+                ExerciseActionItem(
+                    action="new_exercise",
+                    exercise_name="Bench Press",
+                    sets=[ParsedSet(weight_kg=80, reps=10)],
+                ),
+                ExerciseActionItem(
+                    action="new_exercise",
+                    exercise_name="Squat",
+                    sets=[ParsedSet(weight_kg=100, reps=5)],
+                ),
+            ],
+            interpretation="Bench Press and Squat logged",
+        )
+        svc._gateway.extract = AsyncMock(return_value=(extraction, {}))
+
+        bench_row = _fake_exercise_row("bench_press", "Bench Press")
+        squat_row = _fake_exercise_row("squat", "Squat")
+        call_count = 0
+
+        async def _fake_match(name, *, postgres_session=None):
+            nonlocal call_count
+            call_count += 1
+            if "bench" in name.lower():
+                row = bench_row
+            else:
+                row = squat_row
+            fake_db = FakeSession(results=[FakeResult(rows=[row])])
+            return await WorkoutVoiceService._match_exercise(
+                svc, name, postgres_session=fake_db
+            )
+
+        svc._match_exercise = _fake_match
+
+        session = _make_session()
+        result = await svc.process_text_input(
+            transcript="bench press 80kg 10 reps then squats 100kg 5 reps",
+            session=session,
+        )
+
+        assert len(result.updates) == 2
+        assert result.update.action == "new_exercise"
+        assert len(result.session.exercises) == 2
+        assert result.session.exercises[0].exercise_name == "Bench Press"
+        assert result.session.exercises[1].exercise_name == "Squat"
+        assert call_count == 2
 
 
 # ── process_voice_input ─────────────────────────────────────────────────────

@@ -59,16 +59,26 @@ class ParsedSet(BaseModel):
     distance_m: Optional[float] = None
 
 
-class VoiceWorkoutExtraction(BaseModel):
-    """Structured output the LLM returns for each voice utterance."""
+class ExerciseActionItem(BaseModel):
+    """One exercise/action extracted from the utterance."""
 
     action: LLMAction
     exercise_name: Optional[str] = Field(
-        None, description="Canonical exercise name as spoken. None for finish/unclear."
+        None, description="Canonical exercise name. None for finish/unclear."
     )
     sets: list[ParsedSet] = Field(
         default_factory=list,
-        description="One or more sets extracted. E.g. '3 sets of 10 at 80kg' → 3 entries.",
+        description="One or more sets. E.g. '3 sets of 10 at 80kg' → 3 entries.",
+    )
+
+
+class VoiceWorkoutExtraction(BaseModel):
+    """Structured output the LLM returns for each voice utterance."""
+
+    items: list[ExerciseActionItem] = Field(
+        ...,
+        description="One entry per exercise/action in the utterance. "
+        "A single-exercise utterance has 1 item; multi-exercise speech has several.",
     )
     workout_type: Optional[str] = Field(
         None, description="Inferred workout type: strength, cardio, hiit, mobility, mixed, other.",
@@ -124,4 +134,5 @@ class WorkoutVoiceResponse(BaseModel):
     transcript: str
     audio_url: Optional[str] = None
     update: WorkoutVoiceUpdate
+    updates: list[WorkoutVoiceUpdate] = Field(default_factory=list)
     session: WorkoutVoiceSessionState
