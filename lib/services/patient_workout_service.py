@@ -188,7 +188,13 @@ class PatientWorkoutService:
                 workout.exercises.append(exercise_row)
             postgres_session.add(workout)
             await postgres_session.commit()
-            await postgres_session.refresh(workout, ["exercises"])
+            workout = (
+                await postgres_session.execute(
+                    select(PatientWorkout)
+                    .where(PatientWorkout.id == workout.id)
+                    .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                )
+            ).scalar_one()
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -237,7 +243,7 @@ class PatientWorkoutService:
         postgres_session: AsyncSession,
     ) -> PatientWorkoutListResponse:
         if not end_date:
-            end_date = date_type.today()
+            end_date = date_type.today() + timedelta(days=1)
         if not start_date:
             start_date = end_date - timedelta(days=30)
 
@@ -325,7 +331,13 @@ class PatientWorkoutService:
                 row.exercises.append(exercise_row)
 
         await postgres_session.commit()
-        await postgres_session.refresh(row, ["exercises"])
+        row = (
+            await postgres_session.execute(
+                select(PatientWorkout)
+                .where(PatientWorkout.id == row.id)
+                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+            )
+        ).scalar_one()
 
         response = self._to_response(row)
         self._fire_vector(patient_id, response)
