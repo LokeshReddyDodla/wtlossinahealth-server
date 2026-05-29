@@ -117,7 +117,7 @@ class WorkoutVoiceService:
     ) -> None:
         self._gateway = gateway
         self._stt = stt
-        self._postgres_store = postgres_store
+        self.postgres_store = postgres_store
 
     async def process_voice_input(
         self,
