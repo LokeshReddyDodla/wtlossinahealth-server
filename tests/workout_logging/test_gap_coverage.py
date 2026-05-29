@@ -80,7 +80,10 @@ class TestExerciseOrder:
     ):
         service = _make_service(monkeypatch)
         session = FakeSession(
-            results=[FakeResult(rows=[_catalog_row("A", "A name"), _catalog_row("B", "B name")])]
+            results=[
+                FakeResult(rows=[_catalog_row("A", "A name"), _catalog_row("B", "B name")]),
+                lambda _q: FakeResult(scalar_one=session.added[0]),
+            ]
         )
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20),
@@ -131,9 +134,11 @@ class TestUpdateEdgeCases:
             duration_seconds=None, distance_m=None, notes=None,
         )
         existing = _fake_row_with_exercises(patient_id, workout_id, [old_ex])
-        # Queries: fetch workout, validate (empty list → no query actually fires)
-        # But _validate_catalog_ids returns early on empty input, so only 1 query.
-        session = FakeSession(results=[FakeResult(scalar_one_or_none=existing)])
+        # Queries: fetch workout, validate (empty list → no query), re-query after commit
+        session = FakeSession(results=[
+            FakeResult(scalar_one_or_none=existing),
+            FakeResult(scalar_one=existing),
+        ])
 
         response = await service.update(
             patient_id, workout_id,
@@ -150,7 +155,10 @@ class TestUpdateEdgeCases:
     ):
         service = _make_service(monkeypatch)
         existing = _fake_row_with_exercises(patient_id, workout_id, [])
-        session = FakeSession(results=[FakeResult(scalar_one_or_none=existing)])
+        session = FakeSession(results=[
+            FakeResult(scalar_one_or_none=existing),
+            FakeResult(scalar_one=existing),
+        ])
 
         await service.update(
             patient_id, workout_id,
