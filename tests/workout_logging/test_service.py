@@ -63,6 +63,7 @@ class TestCreate:
                     catalog_row_factory,
                     [("Bench_Press", "Barbell Bench Press"), ("Squat", "Back Squat")],
                 ),
+                lambda _q: FakeResult(scalar_one=session.added[0]),
             ]
         )
         data = PatientWorkoutCreate(
@@ -95,7 +96,7 @@ class TestCreate:
         # Session behaviour
         assert session.commit_count == 1
         assert len(session.added) == 1
-        assert len(session.refresh_calls) == 1
+        assert len(session.refresh_calls) == 0
         # Side effects fired
         assert len(trackers.vector_calls) == 1
         assert trackers.gamification_calls == [patient_id]
@@ -136,7 +137,9 @@ class TestCreate:
     ):
         """A 30-min run with no per-exercise detail is valid: just date+type+duration."""
         service, trackers = _make_service(monkeypatch)
-        session = FakeSession(results=[])  # no catalog validation needed
+        session = FakeSession(
+            results=[lambda _q: FakeResult(scalar_one=session.added[0])]
+        )
 
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20),
@@ -160,9 +163,12 @@ class TestCreate:
         """Two sets of bench press should only trigger one catalog lookup for that id."""
         service, _ = _make_service(monkeypatch)
 
-        # Only ONE result queued — proves _validate_catalog_ids dedupes ids
+        # Only ONE catalog result queued — proves _validate_catalog_ids dedupes ids
         session = FakeSession(
-            results=[_catalog_result(catalog_row_factory, [("Bench_Press", "Bench Press")])]
+            results=[
+                _catalog_result(catalog_row_factory, [("Bench_Press", "Bench Press")]),
+                lambda _q: FakeResult(scalar_one=session.added[0]),
+            ]
         )
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20),
@@ -182,7 +188,9 @@ class TestCreate:
         self, monkeypatch, patient_id
     ):
         service, _ = _make_service(monkeypatch)
-        session = FakeSession(results=[])
+        session = FakeSession(
+            results=[lambda _q: FakeResult(scalar_one=session.added[0])]
+        )
         plan_sess = uuid4()
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20),
@@ -352,7 +360,10 @@ class TestUpdate:
         existing = _fake_workout_row(
             workout_id, patient_id, exercises=[_fake_exercise_row()]
         )
-        session = FakeSession(results=[FakeResult(scalar_one_or_none=existing)])
+        session = FakeSession(results=[
+            FakeResult(scalar_one_or_none=existing),
+            FakeResult(scalar_one=existing),
+        ])
 
         response = await service.update(
             patient_id,
@@ -377,11 +388,12 @@ class TestUpdate:
         service, _ = _make_service(monkeypatch)
         old_ex = _fake_exercise_row()
         existing = _fake_workout_row(workout_id, patient_id, exercises=[old_ex])
-        # Queries in order: fetch workout, validate catalog ids
+        # Queries in order: fetch workout, validate catalog ids, re-query after commit
         session = FakeSession(
             results=[
                 FakeResult(scalar_one_or_none=existing),
                 _catalog_result(catalog_row_factory, [("Deadlift", "Deadlift")]),
+                FakeResult(scalar_one=existing),
             ]
         )
 
@@ -541,7 +553,9 @@ class TestSideEffectsDoNotBreakCommit:
             return None
 
         monkeypatch.setattr(service, "_fire_gamification", _ok_game)
-        session = FakeSession(results=[])
+        session = FakeSession(
+            results=[lambda _q: FakeResult(scalar_one=session.added[0])]
+        )
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20), type="cardio", duration_minutes=30
         )
@@ -580,7 +594,9 @@ class TestSideEffectsDoNotBreakCommit:
 
         monkeypatch.setattr(container_mod.container, "resolve", _fake_resolve)
 
-        session = FakeSession(results=[])
+        session = FakeSession(
+            results=[lambda _q: FakeResult(scalar_one=session.added[0])]
+        )
         data = PatientWorkoutCreate(
             date=date(2026, 4, 20), type="cardio", duration_minutes=30
         )
