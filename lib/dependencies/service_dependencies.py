@@ -352,6 +352,11 @@ def get_patient_workout_service():
     return cast(PatientWorkoutService, container.resolve(PatientWorkoutService))
 
 
+def get_workout_voice_service():
+    from lib.services.workout_voice_service import WorkoutVoiceService  # avoid circular
+    return cast(WorkoutVoiceService, container.resolve(WorkoutVoiceService))
+
+
 def get_prescription_extraction_service():
     from lib.services.prescription_extraction_service import PrescriptionExtractionService  # avoid circular
     return cast(PrescriptionExtractionService, container.resolve(PrescriptionExtractionService))
