@@ -664,7 +664,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 title="📋 No health data recorded",
                 body=f"{greeting} {patient_name}! No data was logged {scan_label}. Keep logging to help us track your health!",
                 patient_id=patient_id,
-                suggested_query="Why is it important to log my health data regularly?",
+                suggested_query="How am I doing overall?",
             )], None
 
         context_parts: list[str] = []

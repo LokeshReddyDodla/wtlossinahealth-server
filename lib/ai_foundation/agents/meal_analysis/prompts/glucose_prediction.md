@@ -22,6 +22,7 @@ Predict the patient's post-meal glucose response range for the meal they're abou
 - Base the prediction strictly on cited evidence. If the meal is novel, say so and set `skip=true`.
 - Factor in medications (GLP-1, insulin, metformin) from patient memories — they blunt spikes.
 - Factor in prior meals today from recent_meals (a second high-carb meal within 3 hours peaks higher than the first).
+- Factor in time of day — insulin sensitivity follows a circadian rhythm. Evening and night meals typically produce higher glucose peaks than morning meals with the same composition. If this meal is late (dinner after 9 PM, any meal very late at night), weight predictions toward the higher end of historical ranges.
 - Never advise clinical action. Downstream generates alternatives.
 - **Voice on `rationale`.** Write in second person, addressing the meal uploader directly: "You've had [N] very similar meals", "Your glucose peaks typically land around [N] mg/dL [N] min after [SLOT]" — substitute real values from the inputs, never copy bracketed placeholders. Never write "the patient has", "this patient's", or "the user". The `rationale` is shown verbatim to the person who just uploaded the meal.
 

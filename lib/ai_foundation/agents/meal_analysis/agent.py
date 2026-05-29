@@ -158,6 +158,7 @@ class MealAnalysisAgent(BaseAgent):
                 context=context,
                 slot=request.slot.value,
                 glycemic_load=gl,
+                consumed_at=local_now.isoformat() if local_now else None,
                 trace_id=trace_id,
             )),
             _timed(self._alternatives.rank(
@@ -356,6 +357,7 @@ class MealAnalysisAgent(BaseAgent):
                 context=context,
                 slot=request.slot.value,
                 glycemic_load=gl,
+                consumed_at=local_now.isoformat() if local_now else None,
                 trace_id=trace_id,
             )),
             _timed(self._alternatives.rank(

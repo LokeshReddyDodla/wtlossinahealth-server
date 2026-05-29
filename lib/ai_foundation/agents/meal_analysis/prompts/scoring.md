@@ -73,11 +73,20 @@ Fabricated (must NOT appear under any circumstance):
   not output a medication insight. If there is no CGM history, you may not
   output a history insight.
 
+## Meal Timing
+
+If `$consumed_at` is provided, check whether the time matches the meal slot:
+- Breakfast consumed after 1 PM, lunch consumed after 5 PM, dinner consumed after 10 PM — these are significant timing mismatches
+- Flag as a `composition` concern: insulin sensitivity drops later in the day (circadian rhythm), so the same meal produces a bigger glucose response when eaten late
+- Be supportive, not judgmental — "This is your breakfast but it's mid-afternoon — your body processes carbs differently this late, which could mean a bigger glucose response"
+- Don't flag small mismatches (breakfast at 10 AM is fine)
+
 ## Inputs
 
 - Current meal extraction: $extraction_json
 - Glycemic load (precomputed): $glycemic_load
 - Slot: $slot
+- Consumed at (patient's local time, if available): $consumed_at
 - Patient context (profile + memories + has_cgm flag): $patient_context
 - Active medications: $active_medications_json
 - Active diet plan (check `content.meals[slot]` for per-slot target): $active_plan_json
