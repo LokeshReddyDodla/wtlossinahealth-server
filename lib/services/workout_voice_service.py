@@ -22,6 +22,7 @@ from lib.ai_foundation.voice.stt import AudioFormat, SpeechToText
 from lib.core.postgres_store import PostgresStore
 from lib.models.exercise import Exercise
 from lib.schemas.workout_voice import (
+    ExerciseActionItem,
     ExerciseMatch,
     SessionExercise,
     SetEntry,
@@ -49,18 +50,20 @@ Your job: interpret each voice input and extract structured data.
 
 ## Rules
 
-1. **Context matters.** The user's current session (exercises logged so far) is provided. Use it to resolve ambiguity:
+1. **Multiple exercises in one utterance.** The user may describe several exercises at once. Return one item per exercise in the `items` list. E.g. "I did bench 3×10 at 80, then squats 5×5 at 100, then curls" → 3 items. Never merge distinct exercises into one item.
+
+2. **Context matters.** The user's current session (exercises logged so far) is provided. Use it to resolve ambiguity:
    - "Same weight, 8 reps" → same exercise as last, same weight_kg, reps=8
    - "Dropped to 70" → same exercise, weight_kg=70
    - "One more set" or "Same again" → repeat the last set of the current exercise
    - "Moving to squats" or "Now squats" → new exercise
    - "3 sets of 10 at 80" or "3 by 10 at 80" → 3 separate set entries
 
-2. **Exercise names:** Output the common/canonical exercise name. E.g. "bench" → "Barbell Bench Press", "skulls" → "Lying Triceps Press", "lat pulldown" → "Lat Pulldown".
+3. **Exercise names:** Output the common/canonical exercise name. E.g. "bench" → "Barbell Bench Press", "skulls" → "Lying Triceps Press", "lat pulldown" → "Lat Pulldown".
 
-3. **Units:** Default to kg for weight. If the user says "lbs" or "pounds", convert to kg (divide by 2.205).
+4. **Units:** Default to kg for weight. If the user says "lbs" or "pounds", convert to kg (divide by 2.205).
 
-4. **Actions:**
+5. **Actions (per item):**
    - `new_exercise` — user mentions an exercise not in the current session
    - `add_set` — user adds a set to an exercise already in the session (or the most recent one)
    - `update_last_set` — user corrects the last set ("actually that was 12 reps not 10")
@@ -68,9 +71,9 @@ Your job: interpret each voice input and extract structured data.
    - `finish` — user says they're done ("that's it", "finish workout", "done")
    - `unclear` — can't determine what the user means
 
-5. **workout_type:** Infer from the exercises if possible (strength, cardio, hiit, mobility, mixed, other). Only set this when confident.
+6. **workout_type:** Infer from the exercises if possible (strength, cardio, hiit, mobility, mixed, other). Only set this when confident.
 
-6. **interpretation:** Write a short, friendly confirmation. E.g. "Got it — Bench Press set 3: 80kg × 8 reps"
+7. **interpretation:** Write a short, friendly confirmation covering ALL exercises mentioned. E.g. "Got it — Incline Dumbbell Press 3×10 at 45kg, Incline Bench Press 3×10, and Cable Fly 3 sets"
 """
 
 
@@ -157,45 +160,58 @@ class WorkoutVoiceService:
         extraction, _meta = await self._extract(transcript, session)
 
         logger.info(
-            "[WorkoutVoice] LLM extraction | action=%s | exercise=%r | sets=%d | interpretation=%r",
-            extraction.action,
-            extraction.exercise_name,
-            len(extraction.sets),
+            "[WorkoutVoice] LLM extraction | items=%d | interpretation=%r",
+            len(extraction.items),
             extraction.interpretation,
         )
 
-        match: Optional[ExerciseMatch] = None
-        candidates: list[ExerciseMatch] = []
+        current_session = session
+        all_updates: list[WorkoutVoiceUpdate] = []
 
-        if extraction.exercise_name and extraction.action not in ("finish", "unclear"):
-            match, candidates = await self._match_exercise(extraction.exercise_name)
+        for i, item in enumerate(extraction.items):
+            match: Optional[ExerciseMatch] = None
+            candidates: list[ExerciseMatch] = []
+
+            if item.exercise_name and item.action not in ("finish", "unclear"):
+                match, candidates = await self._match_exercise(item.exercise_name)
+                logger.info(
+                    "[WorkoutVoice] DB match [%d] | query=%r | best=%s(%.2f) | candidates=%d",
+                    i,
+                    item.exercise_name,
+                    match.exercise_name if match else "None",
+                    match.confidence if match else 0,
+                    len(candidates),
+                )
+
+            current_session, update = self._apply_item(
+                session=current_session,
+                item=item,
+                match=match,
+                candidates=candidates,
+                interpretation=extraction.interpretation,
+            )
+            all_updates.append(update)
+
             logger.info(
-                "[WorkoutVoice] DB match | query=%r | best=%s(%.2f) | candidates=%d",
-                extraction.exercise_name,
-                match.exercise_name if match else "None",
-                match.confidence if match else 0,
-                len(candidates),
+                "[WorkoutVoice] applied [%d] | action=%s → %s | session_exercises=%d",
+                i,
+                item.action,
+                update.action,
+                len(current_session.exercises),
             )
 
-        updated_session, update = self._apply_extraction(
-            session=session,
-            extraction=extraction,
-            match=match,
-            candidates=candidates,
-        )
-
         logger.info(
-            "[WorkoutVoice] applied | action=%s → final_action=%s | session_before=%d → session_after=%d",
-            extraction.action,
-            update.action,
+            "[WorkoutVoice] pipeline done | session_before=%d → session_after=%d | updates=%d",
             len(session.exercises),
-            len(updated_session.exercises),
+            len(current_session.exercises),
+            len(all_updates),
         )
 
         return WorkoutVoiceResponse(
             transcript=transcript,
-            update=update,
-            session=updated_session,
+            update=all_updates[0],
+            updates=all_updates,
+            session=current_session,
         )
 
     # ── LLM extraction ──────────────────────────────────────────────────
@@ -272,32 +288,33 @@ class WorkoutVoiceService:
 
     @staticmethod
     def _needs_confirmation(
-        extraction: VoiceWorkoutExtraction,
+        item: ExerciseActionItem,
         match: Optional[ExerciseMatch],
     ) -> bool:
-        if extraction.action in ("finish", "unclear", "remove_exercise"):
+        if item.action in ("finish", "unclear", "remove_exercise"):
             return False
-        if extraction.action in ("add_set", "update_last_set"):
+        if item.action in ("add_set", "update_last_set"):
             return False
         if match is None:
             return True
         return match.confidence < _MATCH_CONFIDENCE_THRESHOLD
 
-    def _apply_extraction(
+    def _apply_item(
         self,
         *,
         session: WorkoutVoiceSessionState,
-        extraction: VoiceWorkoutExtraction,
+        item: ExerciseActionItem,
         match: Optional[ExerciseMatch],
         candidates: list[ExerciseMatch],
+        interpretation: str,
     ) -> tuple[WorkoutVoiceSessionState, WorkoutVoiceUpdate]:
         exercises = [ex.model_copy(deep=True) for ex in session.exercises]
-        new_sets = [SetEntry(**s.model_dump()) for s in extraction.sets]
+        new_sets = [SetEntry(**s.model_dump()) for s in item.sets]
 
-        exercise_name = match.exercise_name if match else (extraction.exercise_name or "Unknown")
+        exercise_name = match.exercise_name if match else (item.exercise_name or "Unknown")
         exercise_id = match.exercise_id if match else None
 
-        if self._needs_confirmation(extraction, match):
+        if self._needs_confirmation(item, match):
             all_candidates = []
             if match:
                 all_candidates.append(match)
@@ -308,12 +325,12 @@ class WorkoutVoiceService:
                     action="needs_confirmation",
                     candidates=all_candidates,
                     pending_sets=new_sets,
-                    spoken_exercise_name=extraction.exercise_name,
+                    spoken_exercise_name=item.exercise_name,
                     interpretation="Not sure which exercise — did you mean one of these?",
                 ),
             )
 
-        if extraction.action == "new_exercise":
+        if item.action == "new_exercise":
             exercises.append(
                 SessionExercise(
                     exercise_name=exercise_name,
@@ -323,9 +340,9 @@ class WorkoutVoiceService:
             )
             exercise_index = len(exercises) - 1
 
-        elif extraction.action == "add_set":
+        elif item.action == "add_set":
             exercise_index = self._find_exercise_index(
-                exercises, exercise_name, extraction.exercise_name, fallback_to_last=True,
+                exercises, exercise_name, item.exercise_name, fallback_to_last=True,
             )
             if exercise_index is not None:
                 exercises[exercise_index].sets.extend(new_sets)
@@ -351,14 +368,14 @@ class WorkoutVoiceService:
                         action="needs_confirmation",
                         candidates=all_candidates,
                         pending_sets=new_sets,
-                        spoken_exercise_name=extraction.exercise_name,
+                        spoken_exercise_name=item.exercise_name,
                         interpretation="Not sure which exercise — did you mean one of these?",
                     ),
                 )
 
-        elif extraction.action == "update_last_set":
+        elif item.action == "update_last_set":
             exercise_index = self._find_exercise_index(
-                exercises, exercise_name, extraction.exercise_name, fallback_to_last=True,
+                exercises, exercise_name, item.exercise_name, fallback_to_last=True,
             )
             if exercise_index is not None and exercises[exercise_index].sets:
                 last_set = exercises[exercise_index].sets[-1]
@@ -374,24 +391,24 @@ class WorkoutVoiceService:
             else:
                 exercise_index = None
 
-        elif extraction.action == "remove_exercise":
-            exercise_index = self._find_exercise_index(exercises, exercise_name, extraction.exercise_name)
+        elif item.action == "remove_exercise":
+            exercise_index = self._find_exercise_index(exercises, exercise_name, item.exercise_name)
             if exercise_index is not None:
                 exercises.pop(exercise_index)
 
-        elif extraction.action == "finish":
+        elif item.action == "finish":
             exercise_index = None
 
         else:
             exercise_index = None
 
         update = WorkoutVoiceUpdate(
-            action=extraction.action,
+            action=item.action,
             exercise_index=exercise_index,
             exercise_match=match,
             candidates=candidates,
             sets_added=new_sets,
-            interpretation=extraction.interpretation,
+            interpretation=interpretation,
         )
         updated_session = WorkoutVoiceSessionState(exercises=exercises)
         return updated_session, update

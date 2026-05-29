@@ -184,18 +184,17 @@ async def workout_voice_input(
 
     result.audio_url = audio_url
 
+    actions_summary = " | ".join(
+        f"{u.action}:{u.exercise_match.exercise_name if u.exercise_match else u.spoken_exercise_name or '?'}"
+        for u in result.updates
+    )
     logger.info(
-        "[WorkoutVoice] → RESPONSE voice | patient=%s | transcript=%r | action=%s | exercise_index=%s "
-        "| match=%s(%.2f) | sets_added=%d | pending_sets=%d | candidates=%d | response_exercises=%d [%s]",
+        "[WorkoutVoice] → RESPONSE voice | patient=%s | transcript=%r | updates=%d [%s] "
+        "| response_exercises=%d [%s]",
         pid,
         result.transcript,
-        result.update.action,
-        result.update.exercise_index,
-        result.update.exercise_match.exercise_name if result.update.exercise_match else "None",
-        result.update.exercise_match.confidence if result.update.exercise_match else 0,
-        len(result.update.sets_added),
-        len(result.update.pending_sets),
-        len(result.update.candidates),
+        len(result.updates),
+        actions_summary,
         len(result.session.exercises),
         ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in result.session.exercises),
     )
@@ -265,17 +264,16 @@ async def workout_text_input(
             detail=str(exc),
         )
 
+    actions_summary = " | ".join(
+        f"{u.action}:{u.exercise_match.exercise_name if u.exercise_match else u.spoken_exercise_name or '?'}"
+        for u in result.updates
+    )
     logger.info(
-        "[WorkoutVoice] → RESPONSE text | patient=%s | action=%s | exercise_index=%s "
-        "| match=%s(%.2f) | sets_added=%d | pending_sets=%d | candidates=%d | response_exercises=%d [%s]",
+        "[WorkoutVoice] → RESPONSE text | patient=%s | updates=%d [%s] "
+        "| response_exercises=%d [%s]",
         str(verified_pid),
-        result.update.action,
-        result.update.exercise_index,
-        result.update.exercise_match.exercise_name if result.update.exercise_match else "None",
-        result.update.exercise_match.confidence if result.update.exercise_match else 0,
-        len(result.update.sets_added),
-        len(result.update.pending_sets),
-        len(result.update.candidates),
+        len(result.updates),
+        actions_summary,
         len(result.session.exercises),
         ", ".join(f"{e.exercise_name}({len(e.sets)}s)" for e in result.session.exercises),
     )
