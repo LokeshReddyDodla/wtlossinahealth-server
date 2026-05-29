@@ -101,8 +101,37 @@ class PatientWorkoutExercise(Base):
     notes = Column(Text, nullable=True)
 
     workout = relationship("PatientWorkout", back_populates="exercises")
+    set_details = relationship(
+        "PatientWorkoutSet",
+        back_populates="exercise",
+        cascade="all, delete-orphan",
+        order_by="PatientWorkoutSet.set_number",
+    )
 
     __table_args__ = (
         Index("ix_workout_exercises_workout", "workout_id"),
         Index("ix_workout_exercises_exercise_id", "exercise_id"),
+    )
+
+
+class PatientWorkoutSet(Base):
+    __tablename__ = "patient_workout_sets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workout_exercise_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("patient_workout_exercises.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    set_number = Column(Integer, nullable=False)
+
+    reps = Column(Integer, nullable=True)
+    weight_kg = Column(Float, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+    distance_m = Column(Float, nullable=True)
+
+    exercise = relationship("PatientWorkoutExercise", back_populates="set_details")
+
+    __table_args__ = (
+        Index("ix_workout_sets_exercise", "workout_exercise_id"),
     )

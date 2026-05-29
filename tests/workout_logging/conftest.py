@@ -98,14 +98,14 @@ class FakeSession:
 
     def add(self, obj):
         self.added.append(obj)
-        # Assign id if not set (mirrors real SQLAlchemy Column(default=uuid4)).
-        # Also cascades into `exercises` relationship so nested rows get ids,
-        # which is what SQLAlchemy does on flush.
         if getattr(obj, "id", None) is None:
             obj.id = uuid4()
         for child in getattr(obj, "exercises", []) or []:
             if getattr(child, "id", None) is None:
                 child.id = uuid4()
+            for grandchild in getattr(child, "set_details", []) or []:
+                if getattr(grandchild, "id", None) is None:
+                    grandchild.id = uuid4()
 
     async def delete(self, obj):
         self.deleted.append(obj)
@@ -140,6 +140,9 @@ class FakeSession:
             for child in getattr(parent, "exercises", []) or []:
                 if getattr(child, "id", None) is None:
                     child.id = uuid4()
+                for grandchild in getattr(child, "set_details", []) or []:
+                    if getattr(grandchild, "id", None) is None:
+                        grandchild.id = uuid4()
 
     async def rollback(self):
         return None
