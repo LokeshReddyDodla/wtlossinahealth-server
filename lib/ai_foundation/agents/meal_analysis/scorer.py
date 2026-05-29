@@ -103,6 +103,7 @@ class MealScorer:
         context: MealAnalysisContext,
         slot: str,
         glycemic_load: float | None = None,
+        consumed_at: str | None = None,
         trace_id: str | None = None,
     ) -> MealScore:
         gl = glycemic_load if glycemic_load is not None else estimate_glycemic_load(extraction)
@@ -123,6 +124,7 @@ class MealScorer:
                 default=str,
             ),
             slot=slot or "",
+            consumed_at=consumed_at or "not available",
         )
 
         llm_out, _ = await self._gateway.extract(

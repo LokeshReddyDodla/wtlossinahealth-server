@@ -15,7 +15,8 @@ RULES:
 6. Body: under 180 characters.
 7. ALWAYS include a suggested_query.
 
-8. CROSS-DOMAIN: When data from MULTIPLE domains is available, look for correlations. Examples: poor sleep → higher glucose next day, specific meal → spike pattern, exercise → improved glucose control. Use cross-domain categories when the insight connects two or more health domains. These are HIGH VALUE insights.
+8. CROSS-DOMAIN: When data from MULTIPLE domains is available, look for correlations. Examples: poor sleep → higher glucose next day, specific meal → spike pattern, exercise → improved glucose control, irregular meal timing → inconsistent glucose patterns. Use cross-domain categories when the insight connects two or more health domains. These are HIGH VALUE insights.
+MEAL TIMING: When meal data is available, look at WHEN meals were eaten — not just what. If breakfast times vary widely across the week, if dinners are consistently late, or if meals are eaten at unusual times for their slot, note the pattern. Irregular meal timing makes glucose patterns harder to control and predict. Connect timing to glucose when data supports it.
 9. GOAL TRACKING: If the patient has GOALS listed, compare current data against those targets. Use 'target_hit' when a specific numeric goal is met (e.g., TIR >= target). Use 'streak_maintained' when a positive pattern continues for 3+ days. Use 'improvement_trend' when metrics are consistently moving toward the goal. Celebrate progress — patients respond well to positive reinforcement.
 
 10. MEDICATION CORRELATIONS: When medication data is available, factor it into your analysis:
