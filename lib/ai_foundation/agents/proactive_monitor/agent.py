@@ -532,11 +532,19 @@ class ProactiveMonitorAgent(BaseAgent):
         ``symptom_entry_id`` matches the excluded record is skipped — it
         will be presented separately as the trigger event.
         """
+        if trigger is not None:
+            prev_date = (
+                datetime.strptime(scan_date, "%Y-%m-%d") - timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+            fetch_start = prev_date
+        else:
+            fetch_start = scan_date
+
         results = await self._qdrant.retrieve_filtered(RetrievalRequest(
             query="",
             patient_ids=[patient_id],
             data_types=[dt.value for dt in data_types],
-            date_start=scan_date,
+            date_start=fetch_start,
             date_end=scan_date,
             limit=50 if trigger is None else 30,
         ))
