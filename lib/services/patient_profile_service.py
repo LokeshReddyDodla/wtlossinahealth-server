@@ -1007,10 +1007,16 @@ class PatientProfileService:
 
         # New habits get an explicit eating_habit_id so we never need to flush
         # mid-method to populate the FK target for meal_timings / diet_preferences.
-        habit = existing_habit or PatientEatingHabitModel(
-            patient_id=patient_id,
-            eating_habit_id=uuid.uuid4(),
-        )
+        if existing_habit:
+            habit = existing_habit
+        else:
+            habit = PatientEatingHabitModel(
+                patient_id=patient_id,
+                eating_habit_id=uuid.uuid4(),
+            )
+            # Materialize collection relationships so post-commit from_orm
+            # doesn't trigger async lazy-load (MissingGreenlet).
+            habit.meal_timings = []
         for k in ("meals_per_day", "snacks_count", "diet_preferences_detail"):
             if k in fields:
                 setattr(habit, k, fields[k])
