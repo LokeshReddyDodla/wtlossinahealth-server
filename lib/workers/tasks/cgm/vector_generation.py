@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
@@ -158,29 +157,6 @@ async def generate_cgm_vectors(
         logger.info(
             f"Generated vectors for {len(reports)} daily CGM reports for {patient_id}"
         )
-
-        # Event-driven proactive insight — deferred 30s for Qdrant indexing.
-        # Fires once per successful run regardless of how many reports
-        # were upserted; coalesces via job_id keyed on the end date.
-        try:
-            end_iso = end_date.isoformat()
-            await enqueue_job(
-                "handle_proactive_event",
-                patient_id,
-                EventTrigger.CGM_SYNCED.value,
-                {
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_iso,
-                    "report_count": len(reports),
-                },
-                _job_id=f"insight:{EventTrigger.CGM_SYNCED.value}:{patient_id}:{end_date.date().isoformat()}",
-                _defer_by=30,
-                _queue_name=Queues.DEFAULT,
-            )
-        except Exception as exc:
-            logger.warning(
-                f"Failed to enqueue proactive event for CGM sync ({patient_id}): {exc}"
-            )
 
         return TaskResult(
             success=True,
