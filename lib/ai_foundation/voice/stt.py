@@ -246,7 +246,10 @@ def build_stt(settings: VoiceSettings) -> BaseSpeechToText:
 
     provider = AudioProvider(settings.STT_PROVIDER)
     if provider == AudioProvider.SARVAM:
-        return SarvamSpeechToText(settings)
+        try:
+            return SarvamSpeechToText(settings)
+        except ImportError:
+            logger.warning("STT provider set to sarvam but sarvamai not installed, falling back to openai")
     return OpenAISpeechToText(settings)
 
 
