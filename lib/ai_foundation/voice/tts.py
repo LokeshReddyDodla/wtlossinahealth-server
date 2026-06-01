@@ -179,7 +179,10 @@ def build_tts(settings: VoiceSettings) -> BaseTextToSpeech:
 
     provider = AudioProvider(settings.TTS_PROVIDER)
     if provider == AudioProvider.SARVAM:
-        return SarvamTextToSpeech(settings)
+        try:
+            return SarvamTextToSpeech(settings)
+        except ImportError:
+            logger.warning("TTS provider set to sarvam but sarvamai not installed, falling back to openai")
     return OpenAITextToSpeech(settings)
 
 
