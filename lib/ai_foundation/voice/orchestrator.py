@@ -30,9 +30,9 @@ from lib.ai_foundation.voice.protocol import (
     VoiceErrorMsg,
 )
 from lib.ai_foundation.voice.session import VoiceSession, VoiceSessionState
-from lib.ai_foundation.voice.stt import SpeechToText
+from lib.ai_foundation.voice.stt import BaseSpeechToText
 from lib.ai_foundation.voice.sse_utils import parse_sse_event
-from lib.ai_foundation.voice.tts import TextToSpeech
+from lib.ai_foundation.voice.tts import BaseTextToSpeech
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ class VoiceOrchestrator:
     def __init__(
         self,
         *,
-        stt: SpeechToText,
-        tts: TextToSpeech,
+        stt: BaseSpeechToText,
+        tts: BaseTextToSpeech,
         agent: HealthQueryAgent,
         patient_resolver: PatientNameResolver,
         settings: VoiceSettings,

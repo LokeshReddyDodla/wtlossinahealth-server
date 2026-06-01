@@ -334,9 +334,9 @@ def get_meal_analysis_agent():
 
 
 def get_speech_to_text():
-    from lib.ai_foundation.voice.stt import SpeechToText
+    from lib.ai_foundation.voice.stt import BaseSpeechToText
 
-    return cast(SpeechToText, container.resolve(SpeechToText))
+    return cast(BaseSpeechToText, container.resolve(BaseSpeechToText))
 
 
 def get_medication_service():

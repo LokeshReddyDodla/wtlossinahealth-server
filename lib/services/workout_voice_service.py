@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
-from lib.ai_foundation.voice.stt import AudioFormat, SpeechToText
+from lib.ai_foundation.voice.stt import AudioFormat, BaseSpeechToText
 from lib.core.postgres_store import PostgresStore
 from lib.models.exercise import Exercise
 from lib.schemas.workout_voice import (
@@ -115,7 +115,7 @@ class WorkoutVoiceService:
         self,
         *,
         gateway: ModelGateway,
-        stt: SpeechToText,
+        stt: BaseSpeechToText,
         postgres_store: PostgresStore,
     ) -> None:
         self._gateway = gateway

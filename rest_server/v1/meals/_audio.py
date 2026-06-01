@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import UploadFile, status
 
 from lib.ai_foundation.voice.config import voice_settings
-from lib.ai_foundation.voice.stt import AudioFormat, SpeechToText
+from lib.ai_foundation.voice.stt import AudioFormat, BaseSpeechToText
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.s3_utils import upload_file_to_s3
 
@@ -58,7 +58,7 @@ def sniff_audio_format(upload: UploadFile) -> AudioFormat | None:
 async def process_audio(
     *,
     audio: UploadFile,
-    stt: SpeechToText,
+    stt: BaseSpeechToText,
     patient_id: str,
     text: str | None = None,
 ) -> tuple[str | None, str]:
