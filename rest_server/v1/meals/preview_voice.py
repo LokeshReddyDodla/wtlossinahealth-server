@@ -14,7 +14,7 @@ from fastapi import Depends, File, Form, UploadFile, status
 from fastapi.exceptions import HTTPException
 
 from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
-from lib.ai_foundation.voice.stt import SpeechToText
+from lib.ai_foundation.voice.stt import BaseSpeechToText
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
@@ -60,7 +60,7 @@ async def preview_meal_voice(
     text: str | None = Form(None),
     portion_note: str | None = Form(None),
     agent: MealAnalysisAgent = Depends(get_meal_analysis_agent),
-    stt: SpeechToText = Depends(get_speech_to_text),
+    stt: BaseSpeechToText = Depends(get_speech_to_text),
     current_actor: Actor = Depends(get_current_actor(**_PREVIEW_DEPS)),
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
@@ -126,7 +126,7 @@ async def quick_preview_meal_voice(
     text: str | None = Form(None),
     portion_note: str | None = Form(None),
     agent: MealAnalysisAgent = Depends(get_meal_analysis_agent),
-    stt: SpeechToText = Depends(get_speech_to_text),
+    stt: BaseSpeechToText = Depends(get_speech_to_text),
     current_actor: Actor = Depends(get_current_actor(**_PREVIEW_DEPS)),
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service

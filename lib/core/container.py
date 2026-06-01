@@ -203,8 +203,8 @@ from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
-from lib.ai_foundation.voice.stt import SpeechToText
-from lib.ai_foundation.voice.tts import TextToSpeech
+from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
+from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 
 # Initialize Container
@@ -1848,14 +1848,14 @@ container.register(
 # ═══════════════════════════════════════════════════════════════════════════
 
 container.register(
-    SpeechToText,
-    lambda: SpeechToText(settings=_voice_settings),
+    BaseSpeechToText,
+    lambda: build_stt(settings=_voice_settings),
     scope=Scope.singleton,
 )
 
 container.register(
-    TextToSpeech,
-    lambda: TextToSpeech(settings=_voice_settings),
+    BaseTextToSpeech,
+    lambda: build_tts(settings=_voice_settings),
     scope=Scope.singleton,
 )
 
@@ -1891,8 +1891,8 @@ async def _upload_voice_audio(patient_id: str, audio_bytes: bytes) -> str | None
 container.register(
     VoiceOrchestrator,
     lambda: VoiceOrchestrator(
-        stt=cast(SpeechToText, container.resolve(SpeechToText)),
-        tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
+        tts=cast(BaseTextToSpeech, container.resolve(BaseTextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
@@ -1908,7 +1908,7 @@ container.register(
     WorkoutVoiceService,
     lambda: WorkoutVoiceService(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
-        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
     scope=Scope.singleton,
