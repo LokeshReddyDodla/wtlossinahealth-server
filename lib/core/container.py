@@ -751,7 +751,7 @@ container.register(
     ConsultationService,
     lambda: ConsultationService(
         mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
         extraction_service=cast(
             ConsultationExtractionService,
             container.resolve(ConsultationExtractionService),

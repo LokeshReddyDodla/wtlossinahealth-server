@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from lib.ai_foundation.voice.stt import SpeechToText
+from lib.ai_foundation.voice.stt import BaseSpeechToText
 from lib.core.mongo_store import MongoStore
 from lib.schemas.consultation import (
     ConsultationListItem,
@@ -52,7 +52,7 @@ class ConsultationService:
     def __init__(
         self,
         mongo_store: MongoStore,
-        stt: SpeechToText,
+        stt: BaseSpeechToText,
         extraction_service: ConsultationExtractionService,
     ):
         self.mongo_store = mongo_store
