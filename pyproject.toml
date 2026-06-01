@@ -62,6 +62,7 @@ arq = "^0.27.0"
 rich = "^14.3.2"
 2captcha-python = "^2.0.2"
 pydantic-settings = "^2.13.1"
+sarvamai = "^0.1.28"
 
 
 [tool.poetry.group.dev.dependencies]
