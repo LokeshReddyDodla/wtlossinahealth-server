@@ -113,9 +113,17 @@ def _build_glucose_pillar(overview) -> Optional[SharePillar]:
     if g.time_in_range == 0 and g.average_glucose == 0:
         return None
     delta = _safe_pct_delta(g.time_in_range, overview.previous.time_in_range)
+    below = round(g.range.below_54 + g.range.below_70)
+    above = round(g.range.above_180 + g.range.above_250)
+    in_range = round(g.range.in_target)
     return SharePillar(
         key=SharePillarKey.GLUCOSE,
         primary=ShareMetric(label="Time in range", value=round(g.time_in_range), unit="%"),
+        secondary=[
+            ShareMetric(label="Below range", value=below, unit="%"),
+            ShareMetric(label="In range", value=in_range, unit="%"),
+            ShareMetric(label="Above range", value=above, unit="%"),
+        ],
         delta_percent=delta,
     )
 

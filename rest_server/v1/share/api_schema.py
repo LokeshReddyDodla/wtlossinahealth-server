@@ -32,4 +32,5 @@ class SharePillar(BaseModel):
 
 class ShareDailyResponse(BaseModel):
     date: str
+    headline: Optional[str] = None
     pillars: list[SharePillar]
