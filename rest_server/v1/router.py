@@ -21,6 +21,7 @@ from .meals.router import router as meals_router
 from .support_tickets.router import router as support_tickets_router
 from .chats.router import router as v1_chats_router
 from .documents.router import router as documents_router
+from .share.router import router as share_router
 from .admin.support_tickets.router import (
     router as admin_support_tickets_router,
 )
@@ -53,3 +54,4 @@ router.include_router(v1_chats_router)
 router.include_router(documents_router)
 router.include_router(admin_support_tickets_router)
 router.include_router(admin_notifications_router)
+router.include_router(share_router)
