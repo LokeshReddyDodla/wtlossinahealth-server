@@ -2109,9 +2109,9 @@ container.register(
 )
 
 container.register(
-    "product_bot_analytics_collection",
+    "product_bot_conversations_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
-        "product_bot_analytics"
+        "product_bot_conversations"
     ),
     scope=Scope.singleton,
 )
@@ -2132,7 +2132,7 @@ container.register(
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         cache_store=container.resolve("product_bot_cache"),
-        analytics_collection=container.resolve("product_bot_analytics_collection"),
+        analytics_collection=container.resolve("product_bot_conversations_collection"),
     ),
     scope=Scope.singleton,
 )

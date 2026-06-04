@@ -82,10 +82,10 @@ async def on_startup() -> None:
         import logging
         logging.getLogger(__name__).warning(f"Failed to seed achievements: {e}")
 
-    # Product Bot — ensure analytics indexes
+    # Product Bot — ensure conversation indexes
     try:
         from lib.core.container import container
-        analytics_col = container.resolve("product_bot_analytics_collection")
+        analytics_col = container.resolve("product_bot_conversations_collection")
         await analytics_col.create_index([("session_id", 1), ("created_at", -1)], name="session_time_idx")
         await analytics_col.create_index([("created_at", -1)], name="created_idx")
         await analytics_col.create_index("created_at", name="analytics_ttl_idx", expireAfterSeconds=90 * 24 * 3600)
