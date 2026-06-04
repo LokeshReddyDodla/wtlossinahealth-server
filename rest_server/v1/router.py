@@ -7,6 +7,7 @@ from .health_facilities.router import router as health_facilities_router
 from .token_usage.router import router as token_usage_router
 from .reports.router import router as reports_router
 from .health_query_agent.router import router as health_query_agent_router
+from .research_agent.router import router as research_agent_router
 from .uploads.router import router as uploads_router
 from .diet_plans.router import router as diet_plans_router
 from .fitness_plans.router import router as fitness_plans_router
@@ -39,6 +40,7 @@ router.include_router(health_facilities_router)
 router.include_router(token_usage_router)
 router.include_router(reports_router)
 router.include_router(health_query_agent_router)
+router.include_router(research_agent_router)
 router.include_router(uploads_router)
 router.include_router(diet_plans_router)
 router.include_router(fitness_plans_router)

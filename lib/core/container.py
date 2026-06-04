@@ -191,6 +191,7 @@ from lib.ai_foundation.agents.health_query.reasoning_engine import ReasoningEngi
 from lib.ai_foundation.agents.health_query.specialists import Specialist, GLUCOSE_SPEC, NUTRITION_SPEC, FITNESS_SPEC, VITALS_SPEC, SLEEP_SPEC, DOCUMENTS_SPEC
 from lib.ai_foundation.agents.health_query.coordinator import Coordinator
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
+from lib.ai_foundation.agents.research_agent import ResearchAgent
 from lib.ai_foundation.agents.meal_analysis.agent import MealAnalysisAgent
 from lib.ai_foundation.agents.meal_analysis.alternatives import (
     AlternativesEngine,
@@ -1797,6 +1798,22 @@ container.register(
         coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
+    ),
+    scope=Scope.singleton,
+)
+
+# Research Agent v1 — cohort-scale provider analytics
+container.register(
+    ResearchAgent,
+    lambda: ResearchAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        mongo_store=cast(MongoStore, container.resolve(MongoStore)),
+        qdrant_store=cast(QdrantStore, container.resolve(QdrantStore)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+        embed_fn=_get_embed_fn(),
+        patient_name_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
     ),
     scope=Scope.singleton,
 )
