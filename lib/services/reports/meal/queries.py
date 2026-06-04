@@ -169,7 +169,7 @@ def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
             "feedback",
             meal.feedback,
             "image_url",
-            meal.image_url,
+            func.coalesce(meal.image_urls[1], meal.image_url),
             "image_urls",
             meal.image_urls,
             "audio_url",
