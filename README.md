@@ -51,4 +51,4 @@ Backend server for [AiHealth](https://aihealth.clinic/)
 - Hit `F5` to start the server (VS Code will automatically start the debugger)
 - Visit [http://127.0.0.1:9009/docs](http://localhost:8000/docs) to view the API docs
 - Setup tables and sample data using scripts in [`/db_scripts`](/db_scripts)
-- 
+  
