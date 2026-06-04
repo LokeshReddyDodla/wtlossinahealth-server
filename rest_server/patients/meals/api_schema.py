@@ -13,6 +13,7 @@ class PatientMealUploadRequest(BaseModel):
     source: Optional[str] = "app"
     description: Optional[str] = None
     image_url: Optional[HttpUrl] = None
+    image_urls: Optional[list[HttpUrl]] = None
 
 
 class PatientMealUpdateRequest(BaseModel):
@@ -21,6 +22,7 @@ class PatientMealUpdateRequest(BaseModel):
     source: Optional[str] = "app"
     description: Optional[str] = None
     image_url: Optional[HttpUrl] = None
+    image_urls: Optional[list[HttpUrl]] = None
 
 
 class PatientMealAnalysis(BaseModel):

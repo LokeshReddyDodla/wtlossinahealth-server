@@ -122,7 +122,8 @@ class MealAnalysisAgent(BaseAgent):
                     "agent": self.name,
                     "slot": request.slot.value,
                     "source": request.source.value,
-                    "has_image": bool(request.image_url),
+                    "has_image": bool(request.image_url or request.image_urls),
+                    "image_count": len(_collect_image_urls(request)),
                     "has_text": bool(request.text),
                     "has_items": bool(request.items),
                     "repeat_of_meal_id": (
@@ -265,7 +266,8 @@ class MealAnalysisAgent(BaseAgent):
                     "mode": "quick",
                     "slot": request.slot.value,
                     "source": request.source.value,
-                    "has_image": bool(request.image_url),
+                    "has_image": bool(request.image_url or request.image_urls),
+                    "image_count": len(_collect_image_urls(request)),
                     "has_text": bool(request.text),
                     "has_items": bool(request.items),
                 },
@@ -501,10 +503,11 @@ class MealAnalysisAgent(BaseAgent):
                 patient_id,
             )
 
+        all_images = _collect_image_urls(request)
         return await self._extractor.extract(
             context=context,
             slot=request.slot.value,
-            image_url=request.image_url,
+            image_urls=all_images or None,
             text=request.text,
             items=request.items,
             portion_note=request.portion_note,
@@ -517,9 +520,20 @@ class MealAnalysisAgent(BaseAgent):
 # ---------------------------------------------------------------------------
 
 
+def _collect_image_urls(request: MealPreviewRequest) -> list[str]:
+    """Merge image_url + image_urls into one deduplicated list."""
+    urls = list(request.image_urls or [])
+    if request.image_url and request.image_url not in urls:
+        urls.insert(0, request.image_url)
+    return urls
+
+
 def _summarize_request(request: MealPreviewRequest) -> str:
     parts: list[str] = [f"slot={request.slot.value}", f"source={request.source.value}"]
-    if request.image_url:
+    img_count = len(_collect_image_urls(request))
+    if img_count > 1:
+        parts.append(f"images={img_count}")
+    elif img_count == 1:
         parts.append("image")
     if request.text:
         parts.append(f"text={request.text[:120]}")
