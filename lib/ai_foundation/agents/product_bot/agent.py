@@ -40,40 +40,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SESSION_TTL = 1800  # 30 minutes
+_SESSION_TTL = 1800
 _MAX_TURNS = 10
 _MAX_TOKENS = 800
 _TEMPERATURE = 0.4
-_STREAM_TIMEOUT = 30  # seconds
+_STREAM_TIMEOUT = 30
 _HISTORY_KEY_PREFIX = "session"
 
 _DEFAULT_SUGGESTIONS = [
-    {"label": "What does AI Health do?", "value": "What does AI Health do?"},
-    {"label": "How does CGM tracking work?", "value": "How does CGM tracking work?"},
-    {"label": "What can providers see?", "value": "What can providers see?"},
+    {"label": "What makes this different?", "value": "What makes AI Health different from other health apps?"},
+    {"label": "How does it help patients?", "value": "How does AI Health help someone managing diabetes day to day?"},
+    {"label": "Show me the provider side", "value": "What does the provider dashboard look like?"},
 ]
 
 
 async def _maybe_await(result: Any) -> Any:
-    """Await if the result is a coroutine, else return as-is.
-
-    Same pattern used by HealthQueryAgent, ProactiveMonitorAgent, and
-    MealAnalysisAgent to safely call gateway methods that may or may not
-    be async.
-    """
     if asyncio.iscoroutine(result):
         return await result
     return result
 
 
 class ProductBotAgent(BaseAgent):
-    """Public-facing product knowledge chatbot.
-
-    Extends BaseAgent to stay consistent with the ai_foundation pattern.
-    Uses ModelGateway for LLM calls and CacheStore (Redis) for ephemeral
-    session history.
-    """
-
     agent_id = "product_bot"
 
     def __init__(
@@ -95,12 +82,15 @@ class ProductBotAgent(BaseAgent):
         self._cache = cache_store
         self._analytics = analytics_collection
 
-    # -- Langfuse tracing -----------------------------------------------------
+    # -- Tracing + history (single Redis read) --------------------------------
 
-    async def _init_trace(self, input: AgentInput) -> tuple[str, str]:
-        """Set up Langfuse tracing — same pattern as every other agent."""
+    async def _init_pipeline(
+        self, input: AgentInput
+    ) -> tuple[str, str, list[dict[str, str]]]:
+        """Set up Langfuse tracing and load history in one pass."""
         session_id = input.context.thread_id or str(uuid4())
         trace_id = f"trc_{uuid4().hex[:16]}"
+        history = self._load_history(session_id)
 
         await _maybe_await(self.gateway.set_langfuse_context(
             session_id=session_id,
@@ -112,19 +102,17 @@ class ProductBotAgent(BaseAgent):
             input_text=input.message,
             metadata={
                 "session_id": session_id,
-                "turn": len(self._load_history(session_id)) // 2 + 1,
+                "turn": len(history) // 2 + 1,
             },
         ))
-        return session_id, trace_id
+        return session_id, trace_id, history
 
     # -- Public API -----------------------------------------------------------
 
     async def run(self, input: AgentInput) -> AgentOutput:
-        """Non-streaming execution (for testing / fallback)."""
         start = time.perf_counter()
-        session_id, trace_id = await self._init_trace(input)
+        session_id, trace_id, history = await self._init_pipeline(input)
 
-        history = self._load_history(session_id)
         if len(history) // 2 >= _MAX_TURNS:
             return AgentOutput(
                 message="This session has reached its limit. Please refresh the page to start a new conversation.",
@@ -175,11 +163,18 @@ class ProductBotAgent(BaseAgent):
         )
 
     async def run_stream(self, input: AgentInput) -> AsyncIterator[str]:
-        """True SSE streaming — yields events as tokens arrive."""
         start = time.perf_counter()
-        session_id, trace_id = await self._init_trace(input)
 
-        history = self._load_history(session_id)
+        try:
+            session_id, trace_id, history = await self._init_pipeline(input)
+        except Exception as exc:
+            logger.exception("ProductBot init failed: %s", exc)
+            yield sse_error(
+                message="Something went wrong. Please try again.",
+                code="init_error",
+            )
+            return
+
         if len(history) // 2 >= _MAX_TURNS:
             yield sse_token(
                 "This session has reached its limit. "
@@ -189,7 +184,6 @@ class ProductBotAgent(BaseAgent):
             return
 
         messages = self._build_messages(input.message, history)
-
         yield sse_status("generating_response")
 
         try:
@@ -207,18 +201,19 @@ class ProductBotAgent(BaseAgent):
                     if chunk.delta:
                         yield sse_token(chunk.delta)
                         full_response.append(chunk.delta)
-                    if chunk.finished and chunk.usage:
-                        cost_usd = getattr(chunk.usage, "total_cost", None)
+                    if chunk.finished and chunk.usage and chunk.usage.cost:
+                        cost_usd = chunk.usage.cost.total_cost
 
             response_text = "".join(full_response)
             self._append_history(session_id, input.message, response_text)
 
             latency_ms = int((time.perf_counter() - start) * 1000)
+            primary_model = self.gateway.registry.route(ModelTask.PRODUCT_BOT).model_id
 
             await _maybe_await(self.gateway.langfuse_trace_output(
                 trace_id=trace_id,
                 output_text=response_text,
-                metadata={"latency_ms": latency_ms, "cost_usd": cost_usd},
+                metadata={"model_id": primary_model, "latency_ms": latency_ms, "cost_usd": cost_usd},
             ))
 
             asyncio.ensure_future(self._save_exchange(
@@ -226,6 +221,7 @@ class ProductBotAgent(BaseAgent):
                 user_message=input.message,
                 bot_response=response_text,
                 trace_id=trace_id,
+                model_id=primary_model,
                 latency_ms=latency_ms,
                 cost_usd=cost_usd,
                 turn=len(history) // 2 + 1,
@@ -236,6 +232,7 @@ class ProductBotAgent(BaseAgent):
                 trace_id=trace_id,
                 latency_ms=latency_ms,
                 cost_usd=cost_usd,
+                model_id=primary_model,
                 suggestions=_DEFAULT_SUGGESTIONS,
             ))
 
@@ -256,7 +253,6 @@ class ProductBotAgent(BaseAgent):
     # -- Internals ------------------------------------------------------------
 
     def _get_system_prompt(self) -> str:
-        """Load system prompt from PromptRegistry (Langfuse-first, local fallback)."""
         if self.prompts:
             try:
                 template = self.prompts.get("product_bot_system")
@@ -275,7 +271,6 @@ class ProductBotAgent(BaseAgent):
         ]
 
     def _load_history(self, session_id: str) -> list[dict[str, str]]:
-        """Load conversation history from Redis."""
         key = f"{_HISTORY_KEY_PREFIX}:{session_id}"
         try:
             raw = self._cache.get_key(key)
@@ -298,7 +293,6 @@ class ProductBotAgent(BaseAgent):
         turn: int = 1,
         ip: str | None = None,
     ) -> None:
-        """Persist the exchange to MongoDB for analytics (non-blocking)."""
         if not self._analytics:
             return
         try:
@@ -322,7 +316,6 @@ class ProductBotAgent(BaseAgent):
     def _append_history(
         self, session_id: str, user_msg: str, assistant_msg: str
     ) -> None:
-        """Append an exchange to Redis history and refresh TTL."""
         key = f"{_HISTORY_KEY_PREFIX}:{session_id}"
         history = self._load_history(session_id)
         history.append({"role": "user", "content": user_msg})
