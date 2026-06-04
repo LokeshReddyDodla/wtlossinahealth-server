@@ -26,6 +26,7 @@ from .admin.support_tickets.router import (
     router as admin_support_tickets_router,
 )
 from .admin.notifications.router import router as admin_notifications_router
+from .product_bot.router import router as product_bot_router
 
 
 router = APIRouter(prefix="/v1", tags=["V1"])
@@ -55,3 +56,4 @@ router.include_router(documents_router)
 router.include_router(admin_support_tickets_router)
 router.include_router(admin_notifications_router)
 router.include_router(share_router)
+router.include_router(product_bot_router)

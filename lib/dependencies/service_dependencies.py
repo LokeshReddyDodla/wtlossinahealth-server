@@ -755,3 +755,9 @@ def get_task_generator_service() -> TaskGeneratorService:
 
 def get_streak_service() -> StreakService:
     return cast(StreakService, container.resolve(StreakService))
+
+
+def get_product_bot_agent():
+    from lib.ai_foundation.agents.product_bot import ProductBotAgent
+
+    return cast(ProductBotAgent, container.resolve(ProductBotAgent))

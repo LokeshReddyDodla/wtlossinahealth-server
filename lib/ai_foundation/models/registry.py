@@ -49,6 +49,7 @@ class ModelTask(str, Enum):
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
     QUALITY_JUDGE = "quality_judge"
+    PRODUCT_BOT = "product_bot"
 
 
 class ModelProvider(str, Enum):
@@ -470,6 +471,11 @@ def build_default_registry(
         ModelTask.QUALITY_JUDGE,
         primary=adv_thinker,
         fallbacks=[thinker],
+    )
+    registry.set_task_route(
+        ModelTask.PRODUCT_BOT,
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
     )
 
     return registry
