@@ -205,6 +205,8 @@ from lib.ai_foundation.agents.meal_analysis.glucose_predictor import (
 from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+from lib.ai_foundation.agents.product_bot import ProductBotAgent
+from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
 from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
@@ -2094,3 +2096,43 @@ def _subscribe_event_handlers() -> None:
 
 
 _subscribe_event_handlers()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🤖 Product Bot Agent — public-facing website chatbot
+# ═══════════════════════════════════════════════════════════════════════════
+
+container.register(
+    "product_bot_cache",
+    lambda: CacheStore(namespace="product_bot"),
+    scope=Scope.singleton,
+)
+
+container.register(
+    "product_bot_analytics_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "product_bot_analytics"
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    PublicRateLimiter,
+    lambda: PublicRateLimiter(
+        cache_store=container.resolve("product_bot_cache"),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    ProductBotAgent,
+    lambda: ProductBotAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+        cache_store=container.resolve("product_bot_cache"),
+        analytics_collection=container.resolve("product_bot_analytics_collection"),
+    ),
+    scope=Scope.singleton,
+)
