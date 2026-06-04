@@ -431,7 +431,7 @@ class MealService:
             patient_id,
             patient_profile_json,
             meal.time,
-            meal.image_url,
+            meal.image_urls[0] if meal.image_urls else meal.image_url,
             meal.type,
             meal.description,
         )

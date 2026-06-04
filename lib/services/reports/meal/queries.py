@@ -170,6 +170,8 @@ def build_meal_json(meal, food_item_alias, macro_alias, micro_alias):
             meal.feedback,
             "image_url",
             meal.image_url,
+            "image_urls",
+            meal.image_urls,
             "audio_url",
             meal.audio_url,
             "note",
