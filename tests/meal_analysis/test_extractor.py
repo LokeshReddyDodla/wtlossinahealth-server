@@ -101,13 +101,13 @@ class TestLowestConfidence:
 
 class TestBuildMessages:
     def test_system_and_user(self):
-        msgs = _build_messages(prompt_text="SYS", image_url=None, text="hello")
+        msgs = _build_messages(prompt_text="SYS", image_urls=None, text="hello")
         assert msgs[0]["role"] == "system"
         assert msgs[1]["role"] == "user"
         assert any(p.get("type") == "text" for p in msgs[1]["content"])
 
     def test_image_included(self):
-        msgs = _build_messages(prompt_text="SYS", image_url="http://x/y.jpg", text=None)
+        msgs = _build_messages(prompt_text="SYS", image_urls=["http://x/y.jpg"], text=None)
         assert any(p.get("type") == "image_url" for p in msgs[1]["content"])
 
 
@@ -156,7 +156,7 @@ class TestExtract:
         out = await extractor.extract(
             context=_ctx(),
             slot="breakfast",
-            image_url="http://x/y.jpg",
+            image_urls=["http://x/y.jpg"],
         )
         assert out.name == "paratha"
         gw.extract.assert_awaited_once()

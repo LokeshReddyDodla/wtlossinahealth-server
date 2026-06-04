@@ -51,6 +51,19 @@ from .helpers import (
 )
 
 
+def _normalize_to_image_urls(
+    image_url: object | None,
+    image_urls: list | None,
+) -> list[str] | None:
+    """Merge legacy image_url + image_urls into a single list (source of truth)."""
+    urls = [str(u) for u in (image_urls or [])]
+    if image_url:
+        s = str(image_url)
+        if s not in urls:
+            urls.insert(0, s)
+    return urls or None
+
+
 class MealService:
     """Main meal service that orchestrates meal operations."""
 
@@ -231,13 +244,14 @@ class MealService:
         postgres_session: AsyncSession,
     ) -> PatientMealModel:
         try:
+            _img_urls = _normalize_to_image_urls(meal_data.image_url, meal_data.image_urls)
             meal = PatientMealModel(
                 type=meal_data.type,
                 time=meal_data.datetime.time(),
                 date=meal_data.datetime.date(),
                 source=meal_data.source,
                 description=meal_data.description,
-                image_url=(str(meal_data.image_url) if meal_data.image_url else None),
+                image_urls=_img_urls,
                 patient_id=patient_id,
             )
 
@@ -285,9 +299,9 @@ class MealService:
             meal.source = update_data.source
             if update_data.description is not None:
                 meal.description = update_data.description
-            if update_data.image_url is not None:
-                meal.image_url = (
-                    str(update_data.image_url) if update_data.image_url else None
+            if update_data.image_url is not None or update_data.image_urls is not None:
+                meal.image_urls = _normalize_to_image_urls(
+                    update_data.image_url, update_data.image_urls,
                 )
 
             meal.analyzed = False
@@ -417,7 +431,7 @@ class MealService:
             patient_id,
             patient_profile_json,
             meal.time,
-            meal.image_url,
+            meal.image_urls[0] if meal.image_urls else meal.image_url,
             meal.type,
             meal.description,
         )
@@ -494,7 +508,7 @@ class MealService:
                 time=request.consumed_at.time(),
                 source=request.source.value,
                 description=request.description,
-                image_url=request.image_url,
+                image_urls=_normalize_to_image_urls(request.image_url, request.image_urls),
                 audio_url=request.audio_url,
                 tags=ext.tags or [],
                 analyzed=True,
@@ -592,8 +606,10 @@ class MealService:
             meal.time = request.consumed_at.time()
             meal.source = request.source.value
             meal.description = request.description
-            if request.image_url is not None:
-                meal.image_url = request.image_url
+            if request.image_url is not None or request.image_urls is not None:
+                meal.image_urls = _normalize_to_image_urls(
+                    request.image_url, request.image_urls,
+                )
             if request.audio_url is not None:
                 meal.audio_url = request.audio_url
             meal.tags = list(ext.tags or [])

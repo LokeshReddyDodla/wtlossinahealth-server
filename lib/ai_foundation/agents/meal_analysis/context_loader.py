@@ -429,6 +429,7 @@ def _meal_payload_to_dict(r: RetrievalResult) -> dict[str, Any]:
         "tags": p.get("tags") or [],
         "description": p.get("description"),
         "image_url": p.get("image_url"),
+        "image_urls": p.get("image_urls"),
         "macros": {
             "calories": nutrition.get("calories"),
             "proteins": nutrition.get("proteins"),

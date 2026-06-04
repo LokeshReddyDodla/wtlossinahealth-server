@@ -70,10 +70,10 @@ def generate_conversation_flow(
             conversation_id=meal_id,
             conversation_type="meal",
             role="human",
-            message_type="image" if meal_orm.image_url else "text",
+            message_type="image" if (meal_orm.image_urls or meal_orm.image_url) else "text",
             content=(
-                str(meal_orm.image_url)
-                if meal_orm.image_url
+                str(meal_orm.image_urls[0] if meal_orm.image_urls else meal_orm.image_url)
+                if (meal_orm.image_urls or meal_orm.image_url)
                 else meal_orm.description or ""
             ),
         ),

@@ -38,10 +38,10 @@ _PREVIEW_DEPS = dict(
 
 
 def _validate_input(body: MealPreviewRequest) -> None:
-    if not (body.image_url or body.text or body.items or body.repeat_of_meal_id):
+    if not (body.image_url or body.image_urls or body.text or body.items or body.repeat_of_meal_id):
         raise_http_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            message="At least one of image_url, text, items, or repeat_of_meal_id is required.",
+            message="At least one of image_url(s), text, items, or repeat_of_meal_id is required.",
         )
 
 

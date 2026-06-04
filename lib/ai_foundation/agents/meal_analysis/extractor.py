@@ -51,7 +51,7 @@ class MealExtractor:
         *,
         context: MealAnalysisContext,
         slot: str,
-        image_url: str | None = None,
+        image_urls: list[str] | None = None,
         text: str | None = None,
         items: list[ExtractedFoodItem] | None = None,
         portion_note: str | None = None,
@@ -66,24 +66,24 @@ class MealExtractor:
         """
         if items is not None and len(items) > 0:
             text_description = _items_to_text(items, portion_note=portion_note)
-            image_url = None
+            image_urls = None
             text = text_description
             portion_note = None
 
-        if not image_url and not text:
+        if not image_urls and not text:
             raise ValueError(
-                "MealExtractor requires image_url, text, or items"
+                "MealExtractor requires image_url(s), text, or items"
             )
 
         user_messages = _build_messages(
             prompt_text=self._render_prompt(
                 context=context,
                 slot=slot,
-                image_url=image_url,
+                image_urls=image_urls,
                 text=text,
                 portion_note=portion_note,
             ),
-            image_url=image_url,
+            image_urls=image_urls,
             text=text,
         )
 
@@ -104,15 +104,16 @@ class MealExtractor:
         *,
         context: MealAnalysisContext,
         slot: str,
-        image_url: str | None,
+        image_urls: list[str] | None,
         text: str | None,
         portion_note: str | None,
     ) -> str:
         template = self._prompts.get(EXTRACTION_PROMPT_NAME)
+        image_desc = f"{len(image_urls)} image(s) provided" if image_urls else "(none)"
         return template.render(
             patient_context=_patient_context_string(context),
             slot=slot or "",
-            image_url=image_url or "(none)",
+            image_url=image_desc,
             text=text or "(none)",
             portion_note=portion_note or "(none)",
         )
@@ -211,16 +212,16 @@ def _sum_nutrition(items: list[ExtractedFoodItem]) -> tuple[MacroSet, MicroSet]:
 def _build_messages(
     *,
     prompt_text: str,
-    image_url: str | None,
+    image_urls: list[str] | None,
     text: str | None,
 ) -> list[dict[str, Any]]:
     """Build a vision-capable multimodal message array."""
     user_content: list[dict[str, Any]] = []
     if text:
         user_content.append({"type": "text", "text": text})
-    if image_url:
+    for url in (image_urls or []):
         user_content.append(
-            {"type": "image_url", "image_url": {"url": image_url}}
+            {"type": "image_url", "image_url": {"url": url}}
         )
     if not user_content:
         user_content.append({"type": "text", "text": "No input provided."})
