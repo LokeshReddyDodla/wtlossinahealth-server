@@ -293,7 +293,7 @@ class ProductBotAgent(BaseAgent):
         turn: int = 1,
         ip: str | None = None,
     ) -> None:
-        if not self._analytics:
+        if self._analytics is None:
             return
         try:
             doc: dict[str, Any] = {

@@ -10,6 +10,7 @@ ALLOWED_ORIGINS = [
     "https://aihealth.clinic",
     "https://www.aihealth.clinic",
     "http://localhost:4321",
+    "https://aihealth-website.sana-ab7.workers.dev/"
 ]
 
 def setup_middlewares(app):
