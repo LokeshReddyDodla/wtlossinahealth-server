@@ -474,8 +474,8 @@ def build_default_registry(
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
-        primary="gemini-2.5-flash",
-        fallbacks=["gpt-4.1-mini", "claude-haiku-4-5-20251001"],
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
     )
 
     return registry
