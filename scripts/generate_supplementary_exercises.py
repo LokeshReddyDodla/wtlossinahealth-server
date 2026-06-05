@@ -78,6 +78,8 @@ MISSING_EXERCISES = [
     "Ab Wheel Rollout",
     "Hollow Hold",
     "L-Sit",
+    "V-Up",
+    "Dragon Flag",
     # Olympic
     "Push Jerk",
     # Gymnastics / rings
@@ -145,15 +147,9 @@ async def _generate_batch(names: list[str]) -> list[dict]:
     raw = response.choices[0].message.content
     parsed = json.loads(raw)
 
-    if isinstance(parsed, dict):
-        if "exercises" in parsed:
-            parsed = parsed["exercises"]
-        else:
-            parsed = list(parsed.values())
-            if len(parsed) == 1 and isinstance(parsed[0], list):
-                parsed = parsed[0]
+    exercises = _extract_exercises(parsed)
 
-    for ex in parsed:
+    for ex in exercises:
         if "id" not in ex or not ex["id"]:
             ex["id"] = _slugify(ex.get("name", "unknown"))
         if "images" not in ex:
@@ -161,7 +157,32 @@ async def _generate_batch(names: list[str]) -> list[dict]:
         if "aliases" not in ex:
             ex["aliases"] = []
 
-    return parsed
+    return exercises
+
+
+def _extract_exercises(data) -> list[dict]:
+    """Recursively find exercise objects regardless of LLM response shape."""
+    if isinstance(data, list):
+        result = []
+        for item in data:
+            if isinstance(item, dict) and "name" in item:
+                result.append(item)
+            elif isinstance(item, (dict, list)):
+                result.extend(_extract_exercises(item))
+        return result
+
+    if isinstance(data, dict):
+        if "name" in data and "primaryMuscles" in data:
+            return [data]
+        result = []
+        for value in data.values():
+            if isinstance(value, dict) and "name" in value:
+                result.append(value)
+            elif isinstance(value, (dict, list)):
+                result.extend(_extract_exercises(value))
+        return result
+
+    return []
 
 
 async def run(*, dry_run: bool = False, output: str = "data/supplementary_exercises.json", batch_size: int = 15) -> None:
