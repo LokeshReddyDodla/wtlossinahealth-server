@@ -243,18 +243,33 @@ class WorkoutVoiceService:
     ) -> tuple[Optional[ExerciseMatch], list[ExerciseMatch]]:
         ts_query = func.plainto_tsquery("english", exercise_name)
         escaped = exercise_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+        # Phase 1: tsvector + ILIKE on name + exact alias match
         stmt = (
             select(Exercise)
             .where(
                 or_(
                     Exercise.search_tsv.op("@@")(ts_query),
                     Exercise.name.ilike(f"%{escaped}%", escape="\\"),
+                    Exercise.aliases.any(exercise_name),
                 )
             )
             .order_by(Exercise.name.asc())
             .limit(5)
         )
         rows = (await postgres_session.execute(stmt)).scalars().all()
+
+        # Phase 2: trigram similarity fallback when phase 1 finds nothing
+        if not rows:
+            trgm_stmt = (
+                select(Exercise)
+                .where(
+                    func.similarity(Exercise.name, exercise_name) > 0.15
+                )
+                .order_by(func.similarity(Exercise.name, exercise_name).desc())
+                .limit(5)
+            )
+            rows = (await postgres_session.execute(trgm_stmt)).scalars().all()
 
         if not rows:
             return None, []
@@ -263,9 +278,12 @@ class WorkoutVoiceService:
         name_lower = exercise_name.lower()
         for row in rows:
             row_name_lower = row.name.lower()
-            if row_name_lower == name_lower:
+            aliases_lower = [a.lower() for a in (row.aliases or [])]
+            if row_name_lower == name_lower or name_lower in aliases_lower:
                 confidence = 1.0
             elif name_lower in row_name_lower or row_name_lower in name_lower:
+                confidence = 0.85
+            elif any(name_lower in a or a in name_lower for a in aliases_lower):
                 confidence = 0.85
             else:
                 confidence = 0.6
