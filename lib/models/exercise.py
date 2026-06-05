@@ -22,7 +22,7 @@ class Exercise(Base):
 
     primary_muscles = Column(ARRAY(String), nullable=False, default=list)
     secondary_muscles = Column(ARRAY(String), nullable=False, default=list)
-    aliases = Column(ARRAY(String), nullable=False, default=list)
+    aliases = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
 
     instructions = Column(ARRAY(Text), nullable=False, default=list)
     image_urls = Column(ARRAY(String), nullable=False, default=list)
