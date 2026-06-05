@@ -223,20 +223,17 @@ class CPGamificationService:
         return responses
 
     @with_postgres_session
-    async def get_challenges_created(
+    async def get_facility_challenges(
         self,
-        care_provider_id: UUID,
+        facility_id: UUID,
         *,
         include_inactive: bool = False,
         postgres_session: AsyncSession,
     ) -> List[ChallengeResponse]:
-        """Challenges this care provider created."""
+        """All challenges in a health facility (created by any CP or admin)."""
         from lib.services.gamification.challenge_service import ChallengeService
 
-        stmt = select(Challenge).where(
-            Challenge.created_by_id == care_provider_id,
-            Challenge.created_by_type == CreatorType.CARE_PROVIDER.value,
-        )
+        stmt = select(Challenge).where(Challenge.facility_id == facility_id)
         if not include_inactive:
             stmt = stmt.where(Challenge.is_active == True)
         result = await postgres_session.execute(
