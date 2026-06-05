@@ -565,7 +565,8 @@ class TestMatchExercise:
     @pytest.mark.asyncio
     async def test_no_match_returns_none(self):
         svc = _make_service()
-        session = FakeSession(results=[FakeResult(rows=[])])
+        # Two empty results: primary query + trigram fallback
+        session = FakeSession(results=[FakeResult(rows=[]), FakeResult(rows=[])])
 
         best, candidates = await svc._match_exercise(
             "Xyzzy Exercise", postgres_session=session
