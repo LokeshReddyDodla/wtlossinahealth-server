@@ -466,7 +466,7 @@ async def test_cp_routes_smoke(app, client):
     })
     cp_svc.get_at_risk_patients = AsyncMock(return_value=[])
     cp_svc.get_groups = AsyncMock(return_value=[])
-    cp_svc.get_challenges_created = AsyncMock(return_value=[])
+    cp_svc.get_facility_challenges = AsyncMock(return_value=[])
     cp_svc.star_achievement = AsyncMock()
     app.dependency_overrides[get_cp_gamification_service] = lambda: cp_svc
 
