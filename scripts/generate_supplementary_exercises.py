@@ -78,6 +78,8 @@ MISSING_EXERCISES = [
     "Ab Wheel Rollout",
     "Hollow Hold",
     "L-Sit",
+    "V-Up",
+    "Dragon Flag",
     # Olympic
     "Push Jerk",
     # Gymnastics / rings
