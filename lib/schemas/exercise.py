@@ -14,6 +14,7 @@ class ExerciseCreate(BaseModel):
     equipment: str | None = None
     primary_muscles: list[str] = []
     secondary_muscles: list[str] = []
+    aliases: list[str] = []
     instructions: list[str] = []
     image_urls: list[str] = []
 
@@ -27,6 +28,7 @@ class ExerciseUpdate(BaseModel):
     equipment: str | None = None
     primary_muscles: list[str] | None = None
     secondary_muscles: list[str] | None = None
+    aliases: list[str] | None = None
     instructions: list[str] | None = None
     image_urls: list[str] | None = None
 
@@ -41,6 +43,7 @@ class ExerciseResponse(BaseModel):
     category: str
     primary_muscles: list[str]
     secondary_muscles: list[str]
+    aliases: list[str] = []
     instructions: list[str]
     image_urls: list[str]
 

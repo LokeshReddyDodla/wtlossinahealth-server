@@ -90,7 +90,7 @@ def _make_session_exercise(name, sets=None):
     )
 
 
-def _fake_exercise_row(id_="barbell_bench_press", name="Barbell Bench Press"):
+def _fake_exercise_row(id_="barbell_bench_press", name="Barbell Bench Press", aliases=None):
     return SimpleNamespace(
         id=id_,
         name=name,
@@ -101,6 +101,7 @@ def _fake_exercise_row(id_="barbell_bench_press", name="Barbell Bench Press"):
         category="strength",
         primary_muscles=["chest"],
         secondary_muscles=["triceps"],
+        aliases=aliases or [],
         instructions=["Lie on bench"],
         image_urls=[],
         search_tsv=None,
@@ -601,6 +602,39 @@ class TestMatchExercise:
 
         assert best is not None
         assert best.confidence == 0.6
+
+    @pytest.mark.asyncio
+    async def test_alias_exact_match_confidence_1(self):
+        svc = _make_service()
+        row = _fake_exercise_row(
+            "Lying_Triceps_Press", "Lying Triceps Press",
+            aliases=["skull crushers", "skulls", "lying tricep extension"],
+        )
+        session = FakeSession(results=[FakeResult(rows=[row])])
+
+        best, _ = await svc._match_exercise(
+            "skull crushers", postgres_session=session
+        )
+
+        assert best is not None
+        assert best.confidence == 1.0
+        assert best.exercise_name == "Lying Triceps Press"
+
+    @pytest.mark.asyncio
+    async def test_alias_partial_match_confidence_085(self):
+        svc = _make_service()
+        row = _fake_exercise_row(
+            "Barbell_Bench_Press", "Barbell Bench Press",
+            aliases=["bench press", "bench", "flat bench", "bb bench"],
+        )
+        session = FakeSession(results=[FakeResult(rows=[row])])
+
+        best, _ = await svc._match_exercise(
+            "flat", postgres_session=session
+        )
+
+        assert best is not None
+        assert best.confidence == 0.85
 
 
 # ── process_text_input (end-to-end through _interpret) ───────────────────────

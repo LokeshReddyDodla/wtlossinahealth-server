@@ -22,6 +22,7 @@ class Exercise(Base):
 
     primary_muscles = Column(ARRAY(String), nullable=False, default=list)
     secondary_muscles = Column(ARRAY(String), nullable=False, default=list)
+    aliases = Column(ARRAY(String), nullable=False, default=list)
 
     instructions = Column(ARRAY(Text), nullable=False, default=list)
     image_urls = Column(ARRAY(String), nullable=False, default=list)
@@ -42,5 +43,6 @@ class Exercise(Base):
         Index("ix_exercises_level", "level"),
         Index("ix_exercises_equipment", "equipment"),
         Index("ix_exercises_primary_muscles", "primary_muscles", postgresql_using="gin"),
+        Index("ix_exercises_aliases", "aliases", postgresql_using="gin"),
         Index("ix_exercises_search_tsv", "search_tsv", postgresql_using="gin"),
     )

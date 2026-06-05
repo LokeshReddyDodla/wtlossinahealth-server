@@ -39,6 +39,7 @@ class ExerciseService:
             category=row.category,
             primary_muscles=list(row.primary_muscles or []),
             secondary_muscles=list(row.secondary_muscles or []),
+            aliases=list(row.aliases or []),
             instructions=list(row.instructions or []),
             image_urls=list(row.image_urls or []),
         )
@@ -61,10 +62,10 @@ class ExerciseService:
 
         if q:
             ts_query = func.plainto_tsquery("english", q)
-            # Try tsvector first, fall back to ILIKE for rows with empty search_tsv
             text_filter = or_(
                 Exercise.search_tsv.op("@@")(ts_query),
                 Exercise.name.ilike(f"%{q}%"),
+                Exercise.aliases.any(q),
             )
             stmt = stmt.where(text_filter)
             count_stmt = count_stmt.where(text_filter)
@@ -150,6 +151,7 @@ class ExerciseService:
     @staticmethod
     def _build_tsv_text(values: dict) -> str:
         parts = [values["name"]]
+        parts.extend(values.get("aliases") or [])
         parts.extend(values.get("primary_muscles") or [])
         parts.extend(values.get("secondary_muscles") or [])
         if values.get("equipment"):
@@ -209,6 +211,7 @@ class ExerciseService:
 
         tsv_values = {
             "name": row.name,
+            "aliases": row.aliases,
             "primary_muscles": row.primary_muscles,
             "secondary_muscles": row.secondary_muscles,
             "equipment": row.equipment,
