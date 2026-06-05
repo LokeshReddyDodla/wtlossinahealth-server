@@ -225,6 +225,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "metric_type",
             "title",
             "scope",
+            "facility_id",
             "created_by_id",
             "created_by_type",
             "created_at",
