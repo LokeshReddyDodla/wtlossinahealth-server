@@ -51,6 +51,7 @@ pytesseract = "^0.3.13"
 pdf2image = "^1.17.0"
 instructor = "^1.11.3"
 litellm = "^1.0.0"
+openai-agents = {version = "^0.3.0", extras = ["litellm"]}
 langfuse = "^2.0.0"
 eval-type-backport = "^0.2.2"
 xlrd = "^2.0.2"
