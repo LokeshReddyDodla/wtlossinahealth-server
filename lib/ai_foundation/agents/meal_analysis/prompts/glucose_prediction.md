@@ -22,17 +22,26 @@ Predict the patient's post-meal glucose response range for the meal they're abou
 - Base the prediction strictly on cited evidence. If the meal is novel, say so and set `skip=true`.
 - Factor in medications (GLP-1, insulin, metformin) from patient memories — they blunt spikes.
 - Factor in prior meals today from recent_meals (a second high-carb meal within 3 hours peaks higher than the first).
+- Factor in time of day — insulin sensitivity follows a circadian rhythm. Evening and night meals typically produce higher glucose peaks than morning meals with the same composition. If this meal is late (dinner after 9 PM, any meal very late at night), weight predictions toward the higher end of historical ranges.
 - Never advise clinical action. Downstream generates alternatives.
-- **Voice on `rationale`.** Write in second person, addressing the meal uploader directly: "You've had 4 very similar meals", "Your glucose peaks typically land around 190 mg/dL 50 min after breakfast". Never write "the patient has", "this patient's", or "the user". The `rationale` is shown verbatim to the person who just uploaded the meal.
+- **Voice on `rationale`.** Write in second person, addressing the meal uploader directly: "You've had [N] very similar meals", "Your glucose peaks typically land around [N] mg/dL [N] min after [SLOT]" — substitute real values from the inputs, never copy bracketed placeholders. Never write "the patient has", "this patient's", or "the user". The `rationale` is shown verbatim to the person who just uploaded the meal.
 
 ## Rationale examples
 
-Good (second-person, cites evidence):
-- "You've had 4 similar breakfasts in the last 2 weeks. Peaks ranged 186–207 mg/dL, usually around 50 min after. Your Mounjaro is active, so the spike should stay on the lower end of that range."
+These show the SHAPE only. Every concrete number, medication, and food in
+your rationale MUST come from the inputs below. Never copy values from
+these examples verbatim.
+
+Good (second-person, cites evidence — bracketed values are placeholders):
+- "You've had [N] similar [SLOT]s in the last [N] weeks. Peaks ranged [N]–[N] mg/dL, usually around [N] min after. Your [MEDICATION] is active, so the spike should stay on the lower end of that range."
 
 Bad (third-person, must not appear):
-- "Patient has 4 very similar breakfast meals combining oats and egg whites..."
+- "Patient has [N] very similar [SLOT] meals combining [FOOD] and [FOOD]..."
 - "The user's past responses suggest..."
+
+Fabricated (must NOT appear): any medication, food, or peak value that is
+not in the inputs. If no medication is listed, do not name one. If
+`recent_meals_json` is empty, set `skip=true`.
 
 ## Inputs
 

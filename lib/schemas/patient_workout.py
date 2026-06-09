@@ -12,6 +12,14 @@ WorkoutType = Literal["strength", "cardio", "hiit", "mobility", "mixed", "other"
 WorkoutIntensity = Literal["light", "moderate", "vigorous"]
 
 
+class WorkoutSetInput(BaseModel):
+    set_number: int = Field(ge=1)
+    reps: Optional[int] = Field(None, ge=1)
+    weight_kg: Optional[float] = Field(None, ge=0)
+    duration_seconds: Optional[int] = Field(None, ge=0)
+    distance_m: Optional[float] = Field(None, ge=0)
+
+
 class PatientWorkoutExerciseInput(BaseModel):
     exercise_id: str
     order_index: int = 0
@@ -21,6 +29,7 @@ class PatientWorkoutExerciseInput(BaseModel):
     duration_seconds: Optional[int] = Field(None, ge=0)
     distance_m: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
+    set_details: Optional[list[WorkoutSetInput]] = None
 
 
 class PatientWorkoutCreate(BaseModel):
@@ -51,6 +60,15 @@ class PatientWorkoutUpdate(BaseModel):
     exercises: Optional[list[PatientWorkoutExerciseInput]] = None
 
 
+class WorkoutSetResponse(BaseModel):
+    id: UUID
+    set_number: int
+    reps: Optional[int] = None
+    weight_kg: Optional[float] = None
+    duration_seconds: Optional[int] = None
+    distance_m: Optional[float] = None
+
+
 class PatientWorkoutExerciseResponse(BaseModel):
     id: UUID
     exercise_id: str
@@ -62,6 +80,7 @@ class PatientWorkoutExerciseResponse(BaseModel):
     duration_seconds: Optional[int] = None
     distance_m: Optional[float] = None
     notes: Optional[str] = None
+    set_details: list[WorkoutSetResponse] = Field(default_factory=list)
 
 
 class PatientWorkoutResponse(BaseModel):

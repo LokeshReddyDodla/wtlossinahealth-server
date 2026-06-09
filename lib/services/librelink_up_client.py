@@ -372,8 +372,9 @@ class LibreLinkUpClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_factory_ts(ts: str) -> Optional[dt.datetime]:
-        """FactoryTimestamp is the only UTC field. Return naive UTC datetime."""
+    def _parse_local_ts(ts: str) -> Optional[dt.datetime]:
+        """`Timestamp` is the patient-local wall-clock field. Stored as-is
+        (naive) to match the LibreView CSV path — no tz conversion."""
         if not ts:
             return None
         for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
@@ -389,7 +390,7 @@ class LibreLinkUpClient:
         patient_id: str,
         record_type: str,
     ) -> Optional[dict]:
-        ts = self._parse_factory_ts(measurement.get("FactoryTimestamp", ""))
+        ts = self._parse_local_ts(measurement.get("Timestamp", ""))
         value = measurement.get("ValueInMgPerDl")
         if ts is None or value is None:
             return None

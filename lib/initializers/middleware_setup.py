@@ -7,6 +7,10 @@ from app.middlewares import create_context
 ALLOWED_ORIGINS = [
     "https://api.aihealth.clinic",
     "http://localhost:3000",
+    "https://aihealth.clinic",
+    "https://www.aihealth.clinic",
+    "http://localhost:4321",
+    "https://aihealth-website.sana-ab7.workers.dev"
 ]
 
 def setup_middlewares(app):

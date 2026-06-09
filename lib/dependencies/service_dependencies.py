@@ -334,6 +334,12 @@ def get_meal_analysis_agent():
     return cast(MealAnalysisAgent, container.resolve(MealAnalysisAgent))
 
 
+def get_speech_to_text():
+    from lib.ai_foundation.voice.stt import BaseSpeechToText
+
+    return cast(BaseSpeechToText, container.resolve(BaseSpeechToText))
+
+
 def get_medication_service():
     from lib.services.medication_service import MedicationService  # avoid circular
     return cast(MedicationService, container.resolve(MedicationService))
@@ -347,6 +353,11 @@ def get_exercise_service():
 def get_patient_workout_service():
     from lib.services.patient_workout_service import PatientWorkoutService  # avoid circular
     return cast(PatientWorkoutService, container.resolve(PatientWorkoutService))
+
+
+def get_workout_voice_service():
+    from lib.services.workout_voice_service import WorkoutVoiceService  # avoid circular
+    return cast(WorkoutVoiceService, container.resolve(WorkoutVoiceService))
 
 
 def get_prescription_extraction_service():
@@ -752,3 +763,9 @@ def get_task_generator_service() -> TaskGeneratorService:
 
 def get_streak_service() -> StreakService:
     return cast(StreakService, container.resolve(StreakService))
+
+
+def get_product_bot_agent():
+    from lib.ai_foundation.agents.product_bot import ProductBotAgent
+
+    return cast(ProductBotAgent, container.resolve(ProductBotAgent))

@@ -61,12 +61,13 @@ async def import_exercises(json_path: Path, base_url: str) -> None:
                 "category": ex["category"],
                 "primary_muscles": ex.get("primaryMuscles", []) or [],
                 "secondary_muscles": ex.get("secondaryMuscles", []) or [],
+                "aliases": ex.get("aliases", []) or [],
                 "instructions": ex.get("instructions", []) or [],
                 "image_urls": _rewrite_image_urls(ex.get("images", []) or [], base_url),
             }
 
-            # Build tsvector from name + muscles + equipment for full-text search
             tsv_parts = [values["name"]]
+            tsv_parts.extend(values["aliases"])
             tsv_parts.extend(values["primary_muscles"])
             tsv_parts.extend(values["secondary_muscles"])
             if values.get("equipment"):

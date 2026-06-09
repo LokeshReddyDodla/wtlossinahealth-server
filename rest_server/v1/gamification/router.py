@@ -1388,10 +1388,12 @@ async def get_cp_challenges(
     current_cp: CareProvider = Depends(_cp_read()),
 ):
     _check_cp(cp_id, current_cp)
-    challenges = await service.get_challenges_created(
-        current_cp.care_provider_id, include_inactive=include_inactive
+    if not current_cp.health_facility_id:
+        return SuccessResponse(message="Facility challenges", data=[])
+    challenges = await service.get_facility_challenges(
+        current_cp.health_facility_id, include_inactive=include_inactive
     )
-    return SuccessResponse(message="Care provider challenges", data=challenges)
+    return SuccessResponse(message="Facility challenges", data=challenges)
 
 
 @router.post(

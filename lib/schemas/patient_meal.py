@@ -90,7 +90,9 @@ class PatientMeal(BaseModel):
     total_micro_nutritional_value: Optional[PatientMicroNutritionalValue] = (
         None
     )
-    image_url: Optional[HttpUrl]
+    image_url: Optional[HttpUrl] = None
+    image_urls: Optional[List[HttpUrl]] = None
+    audio_url: Optional[HttpUrl] = None
     description: Optional[str]
     source: Optional[str]
     score: Optional[float]
@@ -100,6 +102,7 @@ class PatientMeal(BaseModel):
     analyzed_at: Optional[datetime]
     uploaded_at: datetime
     patient_id: UUID
+    ai_insight: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -113,5 +116,12 @@ class PatientMeal(BaseModel):
             for name in cls.model_fields
             if name in state.dict or name not in state.unloaded
         }
+
+        # image_urls is the source of truth; derive both directions for compat
+        urls = kwargs.get("image_urls")
+        if urls:
+            kwargs["image_url"] = urls[0]
+        elif kwargs.get("image_url"):
+            kwargs["image_urls"] = [kwargs["image_url"]]
 
         return cls(**kwargs)

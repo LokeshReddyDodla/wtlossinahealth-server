@@ -35,13 +35,15 @@ from .contracts import (
     MacroSet,
     MealAnalysisResult,
     MealExtraction,
+    MealInsightsRequest,
     MealPreviewRequest,
+    MealQuickResult,
 )
 from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
 from .plan_checker import check_plan
 from .repeat_detector import detect_repeat
-from .scorer import MealScorer
+from .scorer import MealScorer, estimate_glycemic_load
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,13 @@ logger = logging.getLogger(__name__)
 async def _maybe_await(result: Any) -> None:
     if inspect.isawaitable(result):
         await result
+
+
+async def _timed(coro: Any) -> tuple[Any, int]:
+    """Await ``coro`` and return ``(result, elapsed_ms)``."""
+    t0 = time.perf_counter()
+    result = await coro
+    return result, int((time.perf_counter() - t0) * 1000)
 
 
 class MealAnalysisAgent(BaseAgent):
@@ -113,7 +122,8 @@ class MealAnalysisAgent(BaseAgent):
                     "agent": self.name,
                     "slot": request.slot.value,
                     "source": request.source.value,
-                    "has_image": bool(request.image_url),
+                    "has_image": bool(request.image_url or request.image_urls),
+                    "image_count": len(_collect_image_urls(request)),
                     "has_text": bool(request.text),
                     "has_items": bool(request.items),
                     "repeat_of_meal_id": (
@@ -125,53 +135,68 @@ class MealAnalysisAgent(BaseAgent):
             )
         )
 
+        t_ctx_start = time.perf_counter()
         context = await self._ctx.load(
             patient_id=patient_id, local_now=local_now
         )
+        t_context_ms = int((time.perf_counter() - t_ctx_start) * 1000)
 
+        t_extract_start = time.perf_counter()
         extraction = await self._resolve_extraction(
             patient_id=patient_id,
             request=request,
             context=context,
             trace_id=trace_id,
         )
+        t_extract_ms = int((time.perf_counter() - t_extract_start) * 1000)
 
-        score = await self._scorer.score(
-            extraction=extraction,
-            context=context,
-            slot=request.slot.value,
-            trace_id=trace_id,
-        )
+        gl = estimate_glycemic_load(extraction)
 
-        (alts_pairs, glucose, plan, repeat) = await asyncio.gather(
-            self._alternatives.rank(
+        t_parallel_start = time.perf_counter()
+        (score_t, alts_t, glucose_t, plan_t, repeat_t) = await asyncio.gather(
+            _timed(self._scorer.score(
                 extraction=extraction,
                 context=context,
-                glycemic_load=score.glycemic_load,
                 slot=request.slot.value,
+                glycemic_load=gl,
+                consumed_at=local_now.isoformat() if local_now else None,
                 trace_id=trace_id,
-            ),
-            self._glucose.predict(
+            )),
+            _timed(self._alternatives.rank(
                 extraction=extraction,
                 context=context,
-                glycemic_load=score.glycemic_load,
+                glycemic_load=gl,
                 slot=request.slot.value,
                 trace_id=trace_id,
-            ),
-            asyncio.to_thread(
+            )),
+            _timed(self._glucose.predict(
+                extraction=extraction,
+                context=context,
+                glycemic_load=gl,
+                slot=request.slot.value,
+                trace_id=trace_id,
+            )),
+            _timed(asyncio.to_thread(
                 check_plan,
                 extraction=extraction,
                 slot=request.slot,
                 active_plan=context.active_diet_plan,
-            ),
-            asyncio.to_thread(
+            )),
+            _timed(asyncio.to_thread(
                 detect_repeat,
                 extraction=extraction,
                 context=context,
                 slot=request.slot,
-            ),
+            )),
             return_exceptions=False,
         )
+        t_parallel_ms = int((time.perf_counter() - t_parallel_start) * 1000)
+
+        (score, t_score_ms) = score_t
+        (alts_pairs, t_alts_ms) = alts_t
+        (glucose, t_glucose_ms) = glucose_t
+        (plan, t_plan_ms) = plan_t
+        (repeat, t_repeat_ms) = repeat_t
         alternatives_list, pairings = alts_pairs
 
         result = MealAnalysisResult(
@@ -193,6 +218,214 @@ class MealAnalysisAgent(BaseAgent):
                 output_text=_summarize_result(result),
                 metadata={
                     "latency_ms": elapsed_ms,
+                    "context_ms": t_context_ms,
+                    "extract_ms": t_extract_ms,
+                    "parallel_ms": t_parallel_ms,
+                    "score_ms": t_score_ms,
+                    "alternatives_ms": t_alts_ms,
+                    "glucose_ms": t_glucose_ms,
+                    "plan_ms": t_plan_ms,
+                    "repeat_ms": t_repeat_ms,
+                    "score": result.score.overall,
+                    "glycemic_load": result.score.glycemic_load,
+                    "alternatives_count": len(result.alternatives),
+                    "has_prediction": result.predicted_glucose is not None,
+                    "plan_compliant": result.plan.compliant,
+                    "repeat_suggestion": result.repeat.suggestion.value,
+                },
+            )
+        )
+
+        return result
+
+    async def quick_analyze(
+        self,
+        *,
+        patient_id: str,
+        request: MealPreviewRequest,
+        trace_id: str | None = None,
+    ) -> MealQuickResult:
+        """Extract food items and nutrition only — no scoring or insights."""
+        trace_id = trace_id or str(uuid.uuid4())
+        local_now = request.consumed_at or datetime.now(timezone.utc)
+        started = time.perf_counter()
+
+        await _maybe_await(
+            self.gateway.set_langfuse_context(
+                session_id=f"meal_quick_{local_now.date().isoformat()}",
+                user_id=patient_id,
+            )
+        )
+        await _maybe_await(
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                name="meal_quick_preview",
+                input_text=_summarize_request(request),
+                metadata={
+                    "agent": self.name,
+                    "mode": "quick",
+                    "slot": request.slot.value,
+                    "source": request.source.value,
+                    "has_image": bool(request.image_url or request.image_urls),
+                    "image_count": len(_collect_image_urls(request)),
+                    "has_text": bool(request.text),
+                    "has_items": bool(request.items),
+                },
+            )
+        )
+
+        context = await self._ctx.load(
+            patient_id=patient_id, local_now=local_now
+        )
+
+        extraction = await self._resolve_extraction(
+            patient_id=patient_id,
+            request=request,
+            context=context,
+            trace_id=trace_id,
+        )
+
+        result = MealQuickResult(
+            extraction=extraction,
+            generated_at=datetime.now(timezone.utc),
+            model_trace_id=trace_id,
+        )
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        await _maybe_await(
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text=(
+                    f"{extraction.name} | {len(extraction.items)} items | "
+                    f"{extraction.total_macros.calories:.0f} kcal"
+                ),
+                metadata={
+                    "latency_ms": elapsed_ms,
+                    "mode": "quick",
+                    "items_count": len(extraction.items),
+                    "calories": extraction.total_macros.calories,
+                },
+            )
+        )
+
+        return result
+
+    async def insights(
+        self,
+        *,
+        patient_id: str,
+        request: MealInsightsRequest,
+        trace_id: str | None = None,
+    ) -> MealAnalysisResult:
+        """Score/alternatives/glucose/plan/repeat on an existing extraction."""
+        trace_id = trace_id or str(uuid.uuid4())
+        local_now = request.consumed_at or datetime.now(timezone.utc)
+        started = time.perf_counter()
+
+        await _maybe_await(
+            self.gateway.set_langfuse_context(
+                session_id=f"meal_insights_{local_now.date().isoformat()}",
+                user_id=patient_id,
+            )
+        )
+        await _maybe_await(
+            self.gateway.langfuse_trace_input(
+                trace_id=trace_id,
+                name="meal_insights",
+                input_text=f"{request.extraction.name} | slot={request.slot.value}",
+                metadata={
+                    "agent": self.name,
+                    "mode": "insights",
+                    "slot": request.slot.value,
+                    "source": request.source.value,
+                    "items_count": len(request.extraction.items),
+                },
+            )
+        )
+
+        t_ctx_start = time.perf_counter()
+        context = await self._ctx.load(
+            patient_id=patient_id, local_now=local_now
+        )
+        t_context_ms = int((time.perf_counter() - t_ctx_start) * 1000)
+
+        extraction = request.extraction
+        gl = estimate_glycemic_load(extraction)
+
+        t_parallel_start = time.perf_counter()
+        (score_t, alts_t, glucose_t, plan_t, repeat_t) = await asyncio.gather(
+            _timed(self._scorer.score(
+                extraction=extraction,
+                context=context,
+                slot=request.slot.value,
+                glycemic_load=gl,
+                consumed_at=local_now.isoformat() if local_now else None,
+                trace_id=trace_id,
+            )),
+            _timed(self._alternatives.rank(
+                extraction=extraction,
+                context=context,
+                glycemic_load=gl,
+                slot=request.slot.value,
+                trace_id=trace_id,
+            )),
+            _timed(self._glucose.predict(
+                extraction=extraction,
+                context=context,
+                glycemic_load=gl,
+                slot=request.slot.value,
+                trace_id=trace_id,
+            )),
+            _timed(asyncio.to_thread(
+                check_plan,
+                extraction=extraction,
+                slot=request.slot,
+                active_plan=context.active_diet_plan,
+            )),
+            _timed(asyncio.to_thread(
+                detect_repeat,
+                extraction=extraction,
+                context=context,
+                slot=request.slot,
+            )),
+            return_exceptions=False,
+        )
+        t_parallel_ms = int((time.perf_counter() - t_parallel_start) * 1000)
+
+        (score, t_score_ms) = score_t
+        (alts_pairs, t_alts_ms) = alts_t
+        (glucose, t_glucose_ms) = glucose_t
+        (plan, t_plan_ms) = plan_t
+        (repeat, t_repeat_ms) = repeat_t
+        alternatives_list, pairings = alts_pairs
+
+        result = MealAnalysisResult(
+            extraction=extraction,
+            score=score,
+            alternatives=alternatives_list,
+            pairings=pairings,
+            predicted_glucose=glucose,
+            plan=plan,
+            repeat=repeat,
+            generated_at=datetime.now(timezone.utc),
+            model_trace_id=trace_id,
+        )
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        await _maybe_await(
+            self.gateway.langfuse_trace_output(
+                trace_id=trace_id,
+                output_text=_summarize_result(result),
+                metadata={
+                    "latency_ms": elapsed_ms,
+                    "mode": "insights",
+                    "context_ms": t_context_ms,
+                    "parallel_ms": t_parallel_ms,
+                    "score_ms": t_score_ms,
+                    "alternatives_ms": t_alts_ms,
+                    "glucose_ms": t_glucose_ms,
+                    "plan_ms": t_plan_ms,
+                    "repeat_ms": t_repeat_ms,
                     "score": result.score.overall,
                     "glycemic_load": result.score.glycemic_load,
                     "alternatives_count": len(result.alternatives),
@@ -270,10 +503,11 @@ class MealAnalysisAgent(BaseAgent):
                 patient_id,
             )
 
+        all_images = _collect_image_urls(request)
         return await self._extractor.extract(
             context=context,
             slot=request.slot.value,
-            image_url=request.image_url,
+            image_urls=all_images or None,
             text=request.text,
             items=request.items,
             portion_note=request.portion_note,
@@ -286,9 +520,20 @@ class MealAnalysisAgent(BaseAgent):
 # ---------------------------------------------------------------------------
 
 
+def _collect_image_urls(request: MealPreviewRequest) -> list[str]:
+    """Merge image_url + image_urls into one deduplicated list."""
+    urls = list(request.image_urls or [])
+    if request.image_url and request.image_url not in urls:
+        urls.insert(0, request.image_url)
+    return urls
+
+
 def _summarize_request(request: MealPreviewRequest) -> str:
     parts: list[str] = [f"slot={request.slot.value}", f"source={request.source.value}"]
-    if request.image_url:
+    img_count = len(_collect_image_urls(request))
+    if img_count > 1:
+        parts.append(f"images={img_count}")
+    elif img_count == 1:
         parts.append("image")
     if request.text:
         parts.append(f"text={request.text[:120]}")

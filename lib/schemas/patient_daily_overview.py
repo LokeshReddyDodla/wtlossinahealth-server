@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -16,15 +16,36 @@ class MealDailySummary(BaseModel):
     diet_recommendations: Optional[dict] = None
 
 
+class GlucoseReading(BaseModel):
+    timestamp: datetime
+    value: float
+
+
+class GlucoseRange(BaseModel):
+    below_54: float = 0.0
+    below_70: float = 0.0
+    in_target: float = 0.0
+    above_180: float = 0.0
+    above_250: float = 0.0
+
+
 class GlucoseMetrics(BaseModel):
     average_glucose: float = 0.0
     time_in_range: float = 0.0
+    range: GlucoseRange = GlucoseRange()
+    readings: list[GlucoseReading] | None = None
+
+
+class HourlySteps(BaseModel):
+    hour: int
+    steps: int
 
 
 class FitnessMetrics(BaseModel):
     steps: int = 0
     active_energy: float = 0.0
     active_duration: int = 0
+    hourly_steps: list[HourlySteps] | None = None
 
 
 class SleepMetrics(BaseModel):
@@ -37,9 +58,15 @@ class BloodPressure(BaseModel):
     diastolic: Optional[float] = None
 
 
+class VitalReading(BaseModel):
+    timestamp: datetime
+    value: float
+
+
 class VitalsMetrics(BaseModel):
     blood_pressure: BloodPressure = BloodPressure()
     resting_heart_rate: Optional[float] = None
+    resting_heart_rate_trend: list[VitalReading] | None = None
 
 
 class WorkoutMetrics(BaseModel):
@@ -53,9 +80,18 @@ class WorkoutMetrics(BaseModel):
     types: list[str] = []
 
 
+class PreviousDaySummary(BaseModel):
+    steps: int | None = None
+    sleep_duration: float | None = None
+    average_glucose: float | None = None
+    time_in_range: float | None = None
+
+
 class PatientDailyOverviewResponse(BaseModel):
     date: date
     patient_id: str
+
+    has_active_cgm: bool = False
 
     meals: MealDailySummary
     fitness: FitnessMetrics
@@ -64,3 +100,5 @@ class PatientDailyOverviewResponse(BaseModel):
     vitals: VitalsMetrics = VitalsMetrics()
     workouts: WorkoutMetrics = WorkoutMetrics()
     current_weight: Optional[float] = None
+    weight_trend: list[VitalReading] | None = None
+    previous: PreviousDaySummary = PreviousDaySummary()

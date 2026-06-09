@@ -225,6 +225,7 @@ def base_stubs() -> dict[str, types.ModuleType]:
             "metric_type",
             "title",
             "scope",
+            "facility_id",
             "created_by_id",
             "created_by_type",
             "created_at",
@@ -658,7 +659,14 @@ def base_stubs() -> dict[str, types.ModuleType]:
         "lib.models.gamification": gamification_models,
         "lib.models.patient": make_module(
             "lib.models.patient",
-            Patient=model_class("Patient", "patient_id", "locale", "first_name", "health_facility_id"),
+            Patient=model_class(
+                "Patient",
+                "patient_id",
+                "locale",
+                "timezone",
+                "first_name",
+                "health_facility_id",
+            ),
         ),
         "lib.models.patient_diabetic_history": make_module(
             "lib.models.patient_diabetic_history",

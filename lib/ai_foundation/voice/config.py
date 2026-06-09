@@ -3,13 +3,13 @@ Voice Agent Configuration — all tunables for the voice pipeline.
 
 Usage:
     from lib.ai_foundation.voice.config import voice_settings
-    voice_settings.STT_MODEL        # → "whisper-1"
-    voice_settings.TTS_VOICE        # → "nova"
+    voice_settings.STT_PROVIDER     # → "openai"
+    voice_settings.TTS_PROVIDER     # → "openai"
 
-To override: set environment variables with AI_VOICE_ prefix:
-    AI_VOICE_TTS_MODEL=tts-1-hd
-    AI_VOICE_TTS_VOICE=alloy
-    AI_VOICE_SESSION_TIMEOUT_SECONDS=600
+Switch providers via environment variables:
+    AI_VOICE_STT_PROVIDER=sarvam
+    AI_VOICE_TTS_PROVIDER=sarvam
+    AI_VOICE_SARVAM_API_KEY=your-key
 """
 
 from __future__ import annotations
@@ -23,13 +23,18 @@ class VoiceSettings(BaseSettings):
 
     model_config = {"env_prefix": "AI_VOICE_", "case_sensitive": False}
 
-    # ── Speech-to-Text ───────────────────────────────────────────────────
+    # ── Provider Selection ───────────────────────────────────────────────
+
+    STT_PROVIDER: str = Field(default="openai", description="STT provider: openai or sarvam")
+    TTS_PROVIDER: str = Field(default="openai", description="TTS provider: openai or sarvam")
+
+    # ── OpenAI Speech-to-Text ────────────────────────────────────────────
 
     STT_MODEL: str = Field(default="whisper-1", description="OpenAI Whisper model")
     STT_LANGUAGE: str = Field(default="", description="Default STT language (ISO 639-1). Empty = auto-detect.")
     STT_MAX_AUDIO_SECONDS: int = Field(default=30, description="Max audio duration per utterance")
 
-    # ── Text-to-Speech ───────────────────────────────────────────────────
+    # ── OpenAI Text-to-Speech ────────────────────────────────────────────
 
     TTS_MODEL: str = Field(default="tts-1-hd", description="OpenAI TTS model (tts-1 for speed, tts-1-hd for quality)")
     TTS_VOICE: str = Field(default="nova", description="TTS voice: alloy, echo, fable, onyx, nova, shimmer")
@@ -37,6 +42,14 @@ class VoiceSettings(BaseSettings):
     TTS_RESPONSE_FORMAT: str = Field(default="opus", description="TTS audio format: opus, mp3, aac, flac, wav, pcm")
     TTS_STREAM_CHUNK_SIZE: int = Field(default=4096, description="Chunk size for streaming TTS audio (bytes)")
     TTS_FILLER_CACHE_MAX_SIZE: int = Field(default=256, description="Max cached filler phrases (LRU eviction)")
+
+    # ── Sarvam AI ────────────────────────────────────────────────────────
+
+    SARVAM_API_KEY: str = Field(default="", description="Sarvam AI API subscription key")
+    SARVAM_STT_MODEL: str = Field(default="saaras:v3", description="Sarvam STT model: saarika:v2.5, saaras:v3")
+    SARVAM_TTS_MODEL: str = Field(default="bulbul:v3", description="Sarvam TTS model: bulbul:v2, bulbul:v3")
+    SARVAM_TTS_SPEAKER: str = Field(default="shubh", description="Sarvam TTS voice (43 available)")
+    SARVAM_TTS_LANGUAGE: str = Field(default="en-IN", description="Sarvam TTS target language code (e.g. hi-IN, en-IN)")
 
     # ── Session ──────────────────────────────────────────────────────────
 

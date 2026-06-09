@@ -206,9 +206,11 @@ from lib.ai_foundation.agents.meal_analysis.glucose_predictor import (
 from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+from lib.ai_foundation.agents.product_bot import ProductBotAgent
+from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
-from lib.ai_foundation.voice.stt import SpeechToText
-from lib.ai_foundation.voice.tts import TextToSpeech
+from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
+from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
 
 # Initialize Container
@@ -752,7 +754,7 @@ container.register(
     ConsultationService,
     lambda: ConsultationService(
         mongo_store=cast(MongoStore, container.resolve(MongoStore)),
-        stt=cast(SpeechToText, container.resolve(SpeechToText)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
         extraction_service=cast(
             ConsultationExtractionService,
             container.resolve(ConsultationExtractionService),
@@ -1914,25 +1916,68 @@ container.register(
 # ═══════════════════════════════════════════════════════════════════════════
 
 container.register(
-    SpeechToText,
-    lambda: SpeechToText(settings=_voice_settings),
+    BaseSpeechToText,
+    lambda: build_stt(settings=_voice_settings),
     scope=Scope.singleton,
 )
 
 container.register(
-    TextToSpeech,
-    lambda: TextToSpeech(settings=_voice_settings),
+    BaseTextToSpeech,
+    lambda: build_tts(settings=_voice_settings),
     scope=Scope.singleton,
 )
+
+async def _upload_voice_audio(patient_id: str, audio_bytes: bytes) -> str | None:
+    """Upload voice audio to S3 — wired into VoiceOrchestrator via DI.
+
+    Audio arrives as raw PCM 16-bit 16kHz mono from the WebSocket session.
+    We wrap it in a WAV container so the stored file is playable.
+    """
+    import asyncio
+    import io
+    import wave
+    from uuid import uuid4
+    from lib.utils.s3_utils import upload_file_to_s3
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(_voice_settings.INPUT_SAMPLE_RATE)
+        wf.writeframes(audio_bytes)
+    wav_bytes = buf.getvalue()
+
+    return await asyncio.to_thread(
+        upload_file_to_s3,
+        file_bytes=wav_bytes,
+        bucket_name="user-assets.aihealth.clinic",
+        file_name=f"{uuid4()}.wav",
+        content_type="audio/wav",
+        folder_path=f"patients/{patient_id}/voice/audio",
+    )
 
 container.register(
     VoiceOrchestrator,
     lambda: VoiceOrchestrator(
-        stt=cast(SpeechToText, container.resolve(SpeechToText)),
-        tts=cast(TextToSpeech, container.resolve(TextToSpeech)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
+        tts=cast(BaseTextToSpeech, container.resolve(BaseTextToSpeech)),
         agent=cast(HealthQueryAgent, container.resolve(HealthQueryAgent)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
+        upload_audio=_upload_voice_audio,
+    ),
+    scope=Scope.singleton,
+)
+
+# 🔹 Workout Voice Service
+from lib.services.workout_voice_service import WorkoutVoiceService
+
+container.register(
+    WorkoutVoiceService,
+    lambda: WorkoutVoiceService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        stt=cast(BaseSpeechToText, container.resolve(BaseSpeechToText)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
     scope=Scope.singleton,
 )
@@ -2068,3 +2113,43 @@ def _subscribe_event_handlers() -> None:
 
 
 _subscribe_event_handlers()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🤖 Product Bot Agent — public-facing website chatbot
+# ═══════════════════════════════════════════════════════════════════════════
+
+container.register(
+    "product_bot_cache",
+    lambda: CacheStore(namespace="product_bot"),
+    scope=Scope.singleton,
+)
+
+container.register(
+    "product_bot_conversations_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "product_bot_conversations"
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    PublicRateLimiter,
+    lambda: PublicRateLimiter(
+        cache_store=container.resolve("product_bot_cache"),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    ProductBotAgent,
+    lambda: ProductBotAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
+        prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        event_bus=cast(EventBus, container.resolve(EventBus)),
+        cache_store=container.resolve("product_bot_cache"),
+        analytics_collection=container.resolve("product_bot_conversations_collection"),
+    ),
+    scope=Scope.singleton,
+)

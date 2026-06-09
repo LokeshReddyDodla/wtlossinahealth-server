@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import UUID, Boolean, Column, ForeignKey, Integer, String
+from sqlalchemy import UUID, Boolean, Column, Date, Float, ForeignKey, Integer, String
 from lib.models import Base
 from sqlalchemy.orm import relationship
 
@@ -11,7 +11,8 @@ class PatientDiabeticHistory(Base):
         UUID(as_uuid=True), ForeignKey("patients.patient_id"), primary_key=True
     )
     type_of_diabetes = Column(String(50), nullable=True)
-    years_with_diabetes = Column(Integer, nullable=True)
+    years_with_diabetes = Column(Float, nullable=True)
     is_pregnant = Column(Boolean, nullable=True)
     pregnancy_weeks = Column(Integer, nullable=True)
+    diagnosed_at = Column(Date, nullable=True)
     patient = relationship("Patient", back_populates="diabetic_history")

@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from loguru import logger
 
+from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
 from lib.workers.tasks.base import TaskResult, task_with_logging
@@ -45,6 +46,21 @@ async def generate_smbg_vector(
         )
 
         logger.info(f"Generated SMBG vector for {patient_id} (reading: {reading_id})")
+
+        try:
+            await enqueue_job(
+                "handle_proactive_event",
+                patient_id,
+                EventTrigger.SMBG_LOGGED.value,
+                {"reading_id": reading_id},
+                _job_id=f"insight:{EventTrigger.SMBG_LOGGED.value}:{patient_id}:{reading_id}",
+                _defer_by=30,
+                _queue_name=Queues.DEFAULT,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Failed to enqueue proactive event for SMBG {reading_id} ({patient_id}): {exc}"
+            )
 
         return TaskResult(
             success=True,

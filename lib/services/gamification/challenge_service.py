@@ -657,7 +657,7 @@ class ChallengeService:
                 continue
 
             tz_result = await postgres_session.execute(
-                select(Patient.locale).where(Patient.patient_id.in_(participant_ids))
+                select(Patient.timezone).where(Patient.patient_id.in_(participant_ids))
             )
             if all(local_today(tz_name) > challenge.end_date for tz_name in tz_result.scalars().all()):
                 finalizable.append(challenge.challenge_id)
@@ -801,7 +801,7 @@ class ChallengeService:
         session: AsyncSession,
     ) -> date:
         result = await session.execute(
-            select(Patient.locale).where(Patient.patient_id == patient_id)
+            select(Patient.timezone).where(Patient.patient_id == patient_id)
         )
         return local_today(result.scalar())
 

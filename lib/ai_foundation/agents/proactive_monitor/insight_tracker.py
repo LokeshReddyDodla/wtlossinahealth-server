@@ -104,6 +104,7 @@ class InsightTracker:
         title: str | None = None,
         suggested_query: str | None = None,
         trace_id: str | None = None,
+        trigger: str | None = None,
         consecutive_days: int | None = None,
     ) -> None:
         """Record that an insight was sent.
@@ -151,6 +152,7 @@ class InsightTracker:
             doc["suggested_query"] = suggested_query
         if trace_id:
             doc["trace_id"] = trace_id
+        doc["trigger"] = trigger or "cron"
 
         await self._collection.insert_one(doc)
 

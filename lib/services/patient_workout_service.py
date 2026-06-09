@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.exercise import Exercise
-from lib.models.patient_workout import PatientWorkout, PatientWorkoutExercise
+from lib.models.patient_workout import PatientWorkout, PatientWorkoutExercise, PatientWorkoutSet
 from lib.schemas.patient_workout import (
     PatientWorkoutCreate,
     PatientWorkoutExerciseInput,
@@ -31,6 +31,7 @@ from lib.schemas.patient_workout import (
     PatientWorkoutListResponse,
     PatientWorkoutResponse,
     PatientWorkoutUpdate,
+    WorkoutSetResponse,
 )
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
@@ -45,6 +46,17 @@ class PatientWorkoutService:
     # ── Response builders ────────────────────────────────────────────────
 
     @staticmethod
+    def _set_to_response(row: PatientWorkoutSet) -> WorkoutSetResponse:
+        return WorkoutSetResponse(
+            id=row.id,
+            set_number=row.set_number,
+            reps=row.reps,
+            weight_kg=row.weight_kg,
+            duration_seconds=row.duration_seconds,
+            distance_m=row.distance_m,
+        )
+
+    @staticmethod
     def _exercise_to_response(row: PatientWorkoutExercise) -> PatientWorkoutExerciseResponse:
         return PatientWorkoutExerciseResponse(
             id=row.id,
@@ -57,7 +69,37 @@ class PatientWorkoutService:
             duration_seconds=row.duration_seconds,
             distance_m=row.distance_m,
             notes=row.notes,
+            set_details=[
+                PatientWorkoutService._set_to_response(s)
+                for s in (row.set_details or [])
+            ],
         )
+
+    @staticmethod
+    def _build_set_rows(ex: PatientWorkoutExerciseInput) -> list[PatientWorkoutSet]:
+        if ex.set_details:
+            return [
+                PatientWorkoutSet(
+                    set_number=s.set_number,
+                    reps=s.reps,
+                    weight_kg=s.weight_kg,
+                    duration_seconds=s.duration_seconds,
+                    distance_m=s.distance_m,
+                )
+                for s in ex.set_details
+            ]
+        if ex.sets and ex.sets > 0:
+            return [
+                PatientWorkoutSet(
+                    set_number=i + 1,
+                    reps=ex.reps,
+                    weight_kg=ex.weight_kg,
+                    duration_seconds=ex.duration_seconds,
+                    distance_m=ex.distance_m,
+                )
+                for i in range(ex.sets)
+            ]
+        return []
 
     @classmethod
     def _to_response(cls, row: PatientWorkout) -> PatientWorkoutResponse:
@@ -131,22 +173,28 @@ class PatientWorkoutService:
                 fitness_plan_session_id=data.fitness_plan_session_id,
             )
             for ex in data.exercises:
-                workout.exercises.append(
-                    PatientWorkoutExercise(
-                        exercise_id=ex.exercise_id,
-                        exercise_name=catalog_names[ex.exercise_id],
-                        order_index=ex.order_index,
-                        sets=ex.sets,
-                        reps=ex.reps,
-                        weight_kg=ex.weight_kg,
-                        duration_seconds=ex.duration_seconds,
-                        distance_m=ex.distance_m,
-                        notes=ex.notes,
-                    )
+                exercise_row = PatientWorkoutExercise(
+                    exercise_id=ex.exercise_id,
+                    exercise_name=catalog_names[ex.exercise_id],
+                    order_index=ex.order_index,
+                    sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
+                    reps=ex.reps,
+                    weight_kg=ex.weight_kg,
+                    duration_seconds=ex.duration_seconds,
+                    distance_m=ex.distance_m,
+                    notes=ex.notes,
                 )
+                exercise_row.set_details = self._build_set_rows(ex)
+                workout.exercises.append(exercise_row)
             postgres_session.add(workout)
             await postgres_session.commit()
-            await postgres_session.refresh(workout, ["exercises"])
+            workout = (
+                await postgres_session.execute(
+                    select(PatientWorkout)
+                    .where(PatientWorkout.id == workout.id)
+                    .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                )
+            ).scalar_one()
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(
@@ -178,7 +226,7 @@ class PatientWorkoutService:
                     PatientWorkout.id == UUID(workout_id),
                     PatientWorkout.patient_id == UUID(patient_id),
                 )
-                .options(selectinload(PatientWorkout.exercises))
+                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
             )
         ).scalar_one_or_none()
         return self._to_response(row) if row else None
@@ -195,7 +243,7 @@ class PatientWorkoutService:
         postgres_session: AsyncSession,
     ) -> PatientWorkoutListResponse:
         if not end_date:
-            end_date = date_type.today()
+            end_date = date_type.today() + timedelta(days=1)
         if not start_date:
             start_date = end_date - timedelta(days=30)
 
@@ -214,7 +262,7 @@ class PatientWorkoutService:
 
         rows = (
             await postgres_session.execute(
-                base.options(selectinload(PatientWorkout.exercises))
+                base.options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
                 .order_by(PatientWorkout.date.desc(), PatientWorkout.time.desc().nulls_last())
                 .limit(limit)
                 .offset(offset)
@@ -246,7 +294,7 @@ class PatientWorkoutService:
                     PatientWorkout.id == UUID(workout_id),
                     PatientWorkout.patient_id == UUID(patient_id),
                 )
-                .options(selectinload(PatientWorkout.exercises))
+                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
             )
         ).scalar_one_or_none()
         if not row:
@@ -268,22 +316,28 @@ class PatientWorkoutService:
                 await postgres_session.delete(existing)
             await postgres_session.flush()
             for ex in data.exercises:
-                row.exercises.append(
-                    PatientWorkoutExercise(
-                        exercise_id=ex.exercise_id,
-                        exercise_name=catalog_names[ex.exercise_id],
-                        order_index=ex.order_index,
-                        sets=ex.sets,
-                        reps=ex.reps,
-                        weight_kg=ex.weight_kg,
-                        duration_seconds=ex.duration_seconds,
-                        distance_m=ex.distance_m,
-                        notes=ex.notes,
-                    )
+                exercise_row = PatientWorkoutExercise(
+                    exercise_id=ex.exercise_id,
+                    exercise_name=catalog_names[ex.exercise_id],
+                    order_index=ex.order_index,
+                    sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
+                    reps=ex.reps,
+                    weight_kg=ex.weight_kg,
+                    duration_seconds=ex.duration_seconds,
+                    distance_m=ex.distance_m,
+                    notes=ex.notes,
                 )
+                exercise_row.set_details = self._build_set_rows(ex)
+                row.exercises.append(exercise_row)
 
         await postgres_session.commit()
-        await postgres_session.refresh(row, ["exercises"])
+        row = (
+            await postgres_session.execute(
+                select(PatientWorkout)
+                .where(PatientWorkout.id == row.id)
+                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+            )
+        ).scalar_one()
 
         response = self._to_response(row)
         self._fire_vector(patient_id, response)

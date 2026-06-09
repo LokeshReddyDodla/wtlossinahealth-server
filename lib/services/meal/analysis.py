@@ -180,7 +180,8 @@ class MealAnalysisService:
             )
         ]
 
-        image_url = (update_fields or {}).get("image_url") or meal_json.get("image_url")
+        image_urls = (update_fields or {}).get("image_urls") or meal_json.get("image_urls")
+        image_url = image_urls[0] if image_urls else (update_fields or {}).get("image_url") or meal_json.get("image_url")
         if image_url:
             human_messages.append(
                 HumanMessage(

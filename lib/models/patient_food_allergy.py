@@ -14,4 +14,7 @@ class PatientFoodAllergy(Base):
     )
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
     allergy_name = Column(String(100))
+    name = Column(String(50), nullable=True)
+    name_other = Column(String(100), nullable=True)
+    severity = Column(String(20), nullable=True)
     patient = relationship("Patient", back_populates="food_allergies")

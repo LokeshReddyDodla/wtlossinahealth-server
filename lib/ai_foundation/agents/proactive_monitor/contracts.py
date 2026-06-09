@@ -12,6 +12,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.agents.health_query.contracts import HealthDataType
+
 
 class InsightSeverity(str, Enum):
     """How urgent the insight is."""
@@ -118,6 +120,141 @@ LLM_INSIGHT_CATEGORIES_PROMPT = (
     f"Coaching nudges: {', '.join(c.value for c in _COACHING_CATEGORIES)}\n"
     "Neutral: general"
 )
+
+
+class EventTrigger(str, Enum):
+    """What user/system action fired an event-driven scan.
+
+    The trigger narrows which Qdrant data types are fetched and which
+    anchor shape is expected. The LLM is always the brain — there is no
+    payload-driven static-template path.
+    """
+
+    MEAL_LOGGED = "meal_logged"
+    SMBG_LOGGED = "smbg_logged"
+    CGM_THRESHOLD_CROSSED = "cgm_threshold_crossed"
+    SYMPTOM_LOGGED = "symptom_logged"
+    MEDICATION_MISSED = "medication_missed"
+
+
+# Trigger → data_types fetched for the LLM context. Every trigger fetches
+# enough context that the LLM can produce a personalized response — no
+# payload-driven branch. Uses the canonical HealthDataType enum so any
+# rename in the data layer is caught at import time, not at runtime.
+TRIGGER_DATA_TYPES: dict[EventTrigger, list[HealthDataType]] = {
+    EventTrigger.MEAL_LOGGED: [
+        HealthDataType.MEAL,
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.CGM_RANGE,
+        HealthDataType.SMBG,
+        HealthDataType.DIET_PLAN,
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.PATIENT_WORKOUT,
+        HealthDataType.SLEEP,
+        HealthDataType.SYMPTOM_ENTRY,
+    ],
+    EventTrigger.SMBG_LOGGED: [
+        HealthDataType.SMBG,
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.MEAL,
+        HealthDataType.SYMPTOM_ENTRY,
+        HealthDataType.SLEEP,
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.PATIENT_WORKOUT,
+    ],
+    EventTrigger.CGM_THRESHOLD_CROSSED: [
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.MEAL,
+        HealthDataType.SMBG,
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.PATIENT_WORKOUT,
+        HealthDataType.SLEEP,
+        HealthDataType.SYMPTOM_ENTRY,
+    ],
+    EventTrigger.SYMPTOM_LOGGED: [
+        HealthDataType.SYMPTOM_ENTRY,
+        HealthDataType.MEAL,
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.SMBG,
+        HealthDataType.SLEEP,
+        HealthDataType.FITNESS_OVERVIEW,
+        HealthDataType.PATIENT_WORKOUT,
+        HealthDataType.MOOD_ENTRY,
+    ],
+    EventTrigger.MEDICATION_MISSED: [
+        HealthDataType.CGM_SUMMARY,
+        HealthDataType.SMBG,
+        HealthDataType.MEAL,
+        HealthDataType.SYMPTOM_ENTRY,
+        HealthDataType.SLEEP,
+        HealthDataType.MOOD_ENTRY,
+    ],
+}
+
+
+# Short label shown to the LLM as the trigger context header.
+TRIGGER_LABELS: dict[EventTrigger, str] = {
+    EventTrigger.MEAL_LOGGED: "The patient just logged a meal.",
+    EventTrigger.SMBG_LOGGED: "The patient just logged a finger-prick blood glucose reading.",
+    EventTrigger.CGM_THRESHOLD_CROSSED: "A clinically significant glucose threshold was crossed — this is safety-relevant.",
+    EventTrigger.SYMPTOM_LOGGED: "The patient just logged a symptom.",
+    EventTrigger.MEDICATION_MISSED: "A scheduled medication dose appears to have been missed.",
+}
+
+
+# ── Typed anchors ───────────────────────────────────────────────────────
+# Each trigger carries a different payload. Arq serializes anchors as JSON
+# at the queue boundary; handlers parse the dict back into the right model
+# via ``parse_anchor`` so downstream code is fully typed.
+
+class MealLoggedAnchor(BaseModel):
+    meal_id: str
+
+
+class SMBGLoggedAnchor(BaseModel):
+    reading_id: str
+
+
+class CGMThresholdCrossedAnchor(BaseModel):
+    kind: str  # CGMCrossingKind value (kept as str to avoid cross-module import in the contract)
+    value: int
+    unit: str = "mg/dL"
+    time: str  # ISO timestamp
+
+
+class SymptomLoggedAnchor(BaseModel):
+    symptom_entry_id: str
+
+
+class MedicationMissedAnchor(BaseModel):
+    daily_task_id: str
+    slot: str
+    medication_name: str
+    task_date: str
+
+
+TriggerAnchor = (
+    MealLoggedAnchor
+    | SMBGLoggedAnchor
+    | CGMThresholdCrossedAnchor
+    | SymptomLoggedAnchor
+    | MedicationMissedAnchor
+)
+
+
+_ANCHOR_MODELS: dict[EventTrigger, type[BaseModel]] = {
+    EventTrigger.MEAL_LOGGED: MealLoggedAnchor,
+    EventTrigger.SMBG_LOGGED: SMBGLoggedAnchor,
+    EventTrigger.CGM_THRESHOLD_CROSSED: CGMThresholdCrossedAnchor,
+    EventTrigger.SYMPTOM_LOGGED: SymptomLoggedAnchor,
+    EventTrigger.MEDICATION_MISSED: MedicationMissedAnchor,
+}
+
+
+def parse_anchor(trigger: EventTrigger, raw: dict[str, Any] | None) -> TriggerAnchor:
+    """Validate a raw arq-delivered anchor dict against the trigger's model."""
+    model = _ANCHOR_MODELS[trigger]
+    return model.model_validate(raw or {})
 
 
 class HealthInsight(BaseModel):

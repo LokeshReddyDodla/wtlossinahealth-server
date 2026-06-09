@@ -22,9 +22,9 @@ class MealTextReprBuilder:
         items = meal.get("items", []) or []
 
         # 1️⃣ — Base info
-        meal_name = meal.get("name", "").strip()
-        meal_type = (meal.get("type", "") or "Meal").lower()
-        meal_description = meal.get("description", "").strip()
+        meal_name = (meal.get("name") or "").strip()
+        meal_type = (meal.get("type") or "Meal").lower()
+        meal_description = (meal.get("description") or "").strip()
         meal_tags = ", ".join(meal.get("tags", [])) if meal.get("tags") else ""
         meal_time = meal.get("time", "")
         meal_date = meal.get("date", "")
@@ -55,7 +55,7 @@ class MealTextReprBuilder:
 
         # 3️⃣ — Individual food items (concise facts)
         for item in items:
-            name = item.get("item_name", "").strip()
+            name = (item.get("item_name") or "").strip()
             quantity = item.get("serving_quantity", "")
             unit = item.get("serving_unit", "")
             size = item.get("serving_size", "")

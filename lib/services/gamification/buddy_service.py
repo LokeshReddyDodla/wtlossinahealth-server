@@ -274,13 +274,13 @@ class BuddyService:
         tz_map: dict = {}
         if other_ids:
             names_result = await postgres_session.execute(
-                select(Patient.patient_id, Patient.first_name, Patient.locale).where(
+                select(Patient.patient_id, Patient.first_name, Patient.timezone).where(
                     Patient.patient_id.in_(other_ids)
                 )
             )
             for r in names_result.all():
                 names_map[r.patient_id] = r.first_name
-                tz_map[r.patient_id] = r.locale
+                tz_map[r.patient_id] = r.timezone
 
         # Batch-load today's task progress for all buddies
         task_progress: dict = {}  # other_id -> (completed, total)
@@ -365,7 +365,7 @@ class BuddyService:
 
         # Get today's task stats in the buddy's local timezone
         tz_result = await postgres_session.execute(
-            select(Patient.locale).where(Patient.patient_id == other_id)
+            select(Patient.timezone).where(Patient.patient_id == other_id)
         )
         today = local_today(tz_result.scalar())
         task_result = await postgres_session.execute(
@@ -461,13 +461,13 @@ class BuddyService:
         if buddy and buddy.status == "pending":
             direction = "outgoing" if buddy.requester_id == patient_id else "incoming"
 
-        # Buddy's profile (name, picture, locale)
+        # Buddy's profile (name, picture, timezone)
         patient_result = await postgres_session.execute(
             select(
                 Patient.first_name,
                 Patient.last_name,
                 Patient.profile_picture,
-                Patient.locale,
+                Patient.timezone,
             ).where(Patient.patient_id == other_id)
         )
         patient_row = patient_result.first()
@@ -479,7 +479,7 @@ class BuddyService:
         profile = profile_result.scalars().first()
 
         # Today's tasks in buddy's timezone
-        today = local_today(patient_row.locale if patient_row else None)
+        today = local_today(patient_row.timezone if patient_row else None)
         task_result = await postgres_session.execute(
             select(DailyTask).where(
                 DailyTask.patient_id == other_id,

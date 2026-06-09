@@ -1,3 +1,4 @@
+import uuid
 from typing import Dict, List, Optional
 
 from fastapi import HTTPException, status
@@ -9,6 +10,10 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from lib.core.constants import EmitMessageKeyEnum
+from lib.core.onboarding_requirements import (
+    ONBOARDING_REQUIREMENTS,
+    compute_section_status,
+)
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_provider import CareProvider as CareProviderModel
 from lib.models.patient import Patient as PatientModel
@@ -43,6 +48,9 @@ from lib.models.patient_meal_timing import (
 from lib.models.patient_medical_history import (
     PatientMedicalHistory as PatientMedicalHistoryModel,
 )
+from lib.models.patient_reproductive_health import (
+    PatientReproductiveHealth as PatientReproductiveHealthModel,
+)
 from lib.models.patient_diet_plan import PatientDietPlan as PatientDietPlanModel
 from lib.models.patient_fitness_plan import PatientFitnessPlan as PatientFitnessPlanModel
 from lib.models.patient_sleep_habit import (
@@ -70,9 +78,14 @@ from lib.schemas.patient_family_diabetic_history import (
     PatientFamilyDiabeticHistoryCreate,
 )
 from lib.schemas.patient_food_allergy import PatientFoodAllergyCreate
+from lib.schemas.patient_meal_timing import PatientMealTimingCreate
 from lib.schemas.patient_medical_history import PatientMedicalHistoryCreate
 from lib.schemas.patient_sleep_habit import PatientSleepHabitCreate
 from lib.schemas.patient_smoking_habit import PatientSmokingHabitCreate
+from lib.schemas.patient_onboarding import (
+    PatientOnboardingRequest,
+    PatientProfileUpdate,
+)
 from lib.services.care_provider_profile_service import (
     CareProviderProfileService,
 )
@@ -142,6 +155,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diet_plans),
                     selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
+                    selectinload(PatientModel.reproductive_health),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
                 )
@@ -293,6 +307,7 @@ class PatientProfileService:
                     selectinload(PatientModel.diet_plans),
                     selectinload(PatientModel.fitness_plans),
                     selectinload(PatientModel.diabetic_history),
+                    selectinload(PatientModel.reproductive_health),
                     selectinload(PatientModel.family_diabetic_histories),
                     selectinload(PatientModel.medical_histories),
                 )
@@ -668,6 +683,427 @@ class PatientProfileService:
                 message="Database Error",
                 detail=str(e),
             )
+
+    @with_postgres_session
+    async def update_patient_profile(
+        self,
+        patient_id: str,
+        data: PatientProfileUpdate,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientModel:
+        """Partial profile update — used by the chat-style onboarding flow.
+
+        Only fields the client explicitly sent are written. Top-level lists
+        (food_allergies, drug_allergies, family_diabetic_histories,
+        medical_histories) replace the whole list when present.
+
+        Recomputes profile_completion sections based on field presence —
+        no separate finalize call needed.
+        """
+        try:
+            patient = await self.fetch_patient_profile(
+                patient_id, detailed=True, postgres_session=postgres_session
+            )
+
+            sent = data.model_dump(exclude_unset=True)
+
+            # ── Identity & body scalars ─────────────────────────────────
+            for field in (
+                "first_name", "last_name", "email", "gender", "dob",
+                "profile_picture", "occupation",
+                "height_cm", "weight_kg", "waist_cm", "hip_cm",
+            ):
+                if field in sent:
+                    setattr(patient, field, sent[field])
+            if "timezone" in sent:
+                patient.timezone = sent["timezone"]
+                patient.locale = sent["timezone"]  # legacy dual-write
+            # Legacy body field dual-writes
+            if "height_cm" in sent:
+                patient.height = sent["height_cm"]
+            if "weight_kg" in sent:
+                patient.weight = sent["weight_kg"]
+            if "waist_cm" in sent:
+                patient.waist = sent["waist_cm"]
+
+            # ── Section partial-merges ──────────────────────────────────
+            if data.daily_activity is not None:
+                self._merge_daily_activity(
+                    patient, data.daily_activity, patient_id
+                )
+            if data.smoking_habit is not None:
+                self._merge_smoking_habit(
+                    patient, data.smoking_habit, patient_id
+                )
+            if data.alcohol_consumption is not None:
+                self._merge_alcohol_consumption(
+                    patient, data.alcohol_consumption, patient_id
+                )
+            if data.sleep_habit is not None:
+                self._merge_sleep_habit(
+                    patient, data.sleep_habit, patient_id
+                )
+            if data.eating_habit is not None:
+                await self._merge_eating_habit(
+                    patient,
+                    data.eating_habit,
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.diabetic_history is not None:
+                self._merge_diabetic_history(
+                    patient, data.diabetic_history, patient_id
+                )
+            # reproductive_health supports explicit-null to clear the row
+            # (used when gender changes from FEMALE to non-FEMALE)
+            if "reproductive_health" in sent:
+                if data.reproductive_health is None:
+                    if patient.reproductive_health is not None:
+                        await postgres_session.delete(patient.reproductive_health)
+                        patient.reproductive_health = None
+                    # Also clear legacy pregnancy fields on diabetic_history
+                    if patient.diabetic_history is not None:
+                        patient.diabetic_history.is_pregnant = None
+                        patient.diabetic_history.pregnancy_weeks = None
+                else:
+                    self._merge_reproductive_health(
+                        patient, data.reproductive_health, patient_id
+                    )
+
+            # ── Lists: replace whole when present ───────────────────────
+            if data.food_allergies is not None:
+                patient.food_allergies = await self._upsert_multiple_entities(
+                    patient.food_allergies,
+                    [
+                        PatientFoodAllergyCreate(
+                            allergy_name=fa.name_other or fa.name,
+                            name=fa.name,
+                            name_other=fa.name_other,
+                            severity=fa.severity,
+                        )
+                        for fa in data.food_allergies
+                    ],
+                    PatientFoodAllergyModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.drug_allergies is not None:
+                patient.drug_allergies = await self._upsert_multiple_entities(
+                    patient.drug_allergies,
+                    [
+                        PatientDrugAllergyCreate(
+                            allergy_name=da.name_other or da.name,
+                            name=da.name,
+                            name_other=da.name_other,
+                            reaction=da.reaction,
+                        )
+                        for da in data.drug_allergies
+                    ],
+                    PatientDrugAllergyModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+            if data.family_diabetic_histories is not None:
+                patient.family_diabetic_histories = (
+                    await self._upsert_multiple_entities(
+                        patient.family_diabetic_histories,
+                        [
+                            PatientFamilyDiabeticHistoryCreate(
+                                family_member=fdh.family_member,
+                                type_of_diabetes=fdh.type_of_diabetes,
+                                years_with_diabetes=fdh.years_with_diabetes,
+                            )
+                            for fdh in data.family_diabetic_histories
+                        ],
+                        PatientFamilyDiabeticHistoryModel,
+                        "patient_id",
+                        patient_id,
+                        postgres_session=postgres_session,
+                    )
+                )
+            if data.medical_histories is not None:
+                patient.medical_histories = await self._upsert_multiple_entities(
+                    patient.medical_histories,
+                    [
+                        PatientMedicalHistoryCreate(
+                            condition=mh.condition,
+                            condition_other=mh.condition_other,
+                            status=mh.status,
+                            duration_years=mh.duration_years,
+                            started_at=mh.started_at,
+                            details=mh.details,
+                        )
+                        for mh in data.medical_histories
+                    ],
+                    PatientMedicalHistoryModel,
+                    "patient_id",
+                    patient_id,
+                    postgres_session=postgres_session,
+                )
+
+            completion_changed = self._recompute_profile_completion(patient)
+
+            postgres_session.add(patient)
+            await postgres_session.commit()
+            # Session is configured with expire_on_commit=False, so loaded
+            # attributes + relationships we set in-memory remain valid here.
+            # No re-fetch needed.
+
+            # Vector re-embed: enqueue on every PATCH so the health agent
+            # sees fresh data. The job_id is bucketed to the minute inside
+            # _enqueue_profile_vector, so rapid PATCHes collapse to one
+            # embed per patient per minute (arq drops duplicate job_ids).
+            profile_data = CorePatientProfile.from_orm(patient).model_dump(
+                mode="json"
+            )
+            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+
+            # Chat-list notification stays gated to milestone events —
+            # we don't want to spam the chat tray on every keystroke.
+            if completion_changed:
+                await self.chat_notification_service.notify_participants(
+                    message_key=EmitMessageKeyEnum.CHAT_LIST_UPDATED.value,
+                    user_id=patient_id,
+                )
+            return patient
+
+        except IntegrityError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Integrity Error",
+                detail=str(e),
+            )
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    # ─── partial-merge helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _merge_daily_activity(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.daily_activity or PatientDailyActivityModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.daily_activity = entity
+
+    @staticmethod
+    def _merge_smoking_habit(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.smoking_habit or PatientSmokingHabitModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            if k == "smoke_type":
+                entity.smoke_type = list(v) if v else None
+            else:
+                setattr(entity, k, v)
+        if "status" in fields:
+            entity.smoke_status = fields["status"] == "CURRENT"  # legacy
+        patient.smoking_habit = entity
+
+    @staticmethod
+    def _merge_alcohol_consumption(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.alcohol_consumption or PatientAlcoholConsumptionModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            if k == "type_of_alcohol":
+                entity.type_of_alcohol = list(v) if v else None
+            else:
+                setattr(entity, k, v)
+        if "status" in fields:
+            entity.consume_alcohol = fields["status"] != "NEVER"  # legacy
+        if "drinks_per_session" in fields:
+            entity.quantity = (
+                str(fields["drinks_per_session"])
+                if fields["drinks_per_session"] is not None
+                else None
+            )  # legacy
+        patient.alcohol_consumption = entity
+
+    @staticmethod
+    def _merge_sleep_habit(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.sleep_habit or PatientSleepHabitModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        if "average_sleep_hours" in fields:
+            entity.average_sleep_duration = (
+                str(fields["average_sleep_hours"])
+                if fields["average_sleep_hours"] is not None
+                else None
+            )  # legacy
+        patient.sleep_habit = entity
+
+    @staticmethod
+    def _merge_diabetic_history(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.diabetic_history or PatientDiabeticHistoryModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.diabetic_history = entity
+
+    @staticmethod
+    def _merge_reproductive_health(patient, partial, patient_id: str) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+        entity = patient.reproductive_health or PatientReproductiveHealthModel(
+            patient_id=patient_id
+        )
+        for k, v in fields.items():
+            setattr(entity, k, v)
+        patient.reproductive_health = entity
+        # Legacy dual-write: pregnancy fields still live on diabetic_history
+        diabetic = patient.diabetic_history or PatientDiabeticHistoryModel(
+            patient_id=patient_id
+        )
+        if "is_pregnant" in fields:
+            diabetic.is_pregnant = fields["is_pregnant"]
+        if "pregnancy_weeks" in fields:
+            diabetic.pregnancy_weeks = fields["pregnancy_weeks"]
+        patient.diabetic_history = diabetic
+
+    async def _merge_eating_habit(
+        self, patient, partial, patient_id: str, *, postgres_session
+    ) -> None:
+        fields = partial.model_dump(exclude_unset=True)
+        if not fields:
+            return
+
+        # Capture existing relations BEFORE any mutation so we don't lazy-load
+        # after a flush in async context (greenlet_spawn error).
+        existing_habit = patient.eating_habit
+        existing_meal_timings = (
+            list(existing_habit.meal_timings) if existing_habit else []
+        )
+        existing_pref = existing_habit.diet_preferences if existing_habit else None
+
+        # New habits get an explicit eating_habit_id so we never need to flush
+        # mid-method to populate the FK target for meal_timings / diet_preferences.
+        if existing_habit:
+            habit = existing_habit
+        else:
+            habit = PatientEatingHabitModel(
+                patient_id=patient_id,
+                eating_habit_id=uuid.uuid4(),
+            )
+            # Materialize collection relationships so post-commit from_orm
+            # doesn't trigger async lazy-load (MissingGreenlet).
+            habit.meal_timings = []
+        for k in ("meals_per_day", "snacks_count", "diet_preferences_detail"):
+            if k in fields:
+                setattr(habit, k, fields[k])
+        if "cuisine_preferences" in fields:
+            habit.cuisine_preferences = list(fields["cuisine_preferences"]) or None
+        if "diet_preferences" in fields:
+            habit.dietary_preferences = list(fields["diet_preferences"]) or None
+        patient.eating_habit = habit
+
+        # Lists within eating_habit — replace whole when present
+        if "meal_timings" in fields and partial.meal_timings is not None:
+            habit.meal_timings = await self._upsert_multiple_entities(
+                existing_meal_timings,
+                [
+                    PatientMealTimingCreate(
+                        meal_type=mt.meal_type,
+                        time=mt.time.strftime("%H:%M"),
+                    )
+                    for mt in partial.meal_timings
+                ],
+                PatientMealTimingModel,
+                "eating_habit_id",
+                habit.eating_habit_id,
+                postgres_session=postgres_session,
+            )
+
+        # Legacy dual-write: PatientDietPreference table holds one row.
+        if "diet_preferences" in fields and partial.diet_preferences:
+            pref = existing_pref or PatientDietPreferenceModel(
+                eating_habit_id=habit.eating_habit_id,
+            )
+            pref.preference = partial.diet_preferences[0]
+            if "diet_preferences_detail" in fields:
+                pref.detail = fields["diet_preferences_detail"]
+            habit.diet_preferences = pref
+
+    @staticmethod
+    def _recompute_profile_completion(patient) -> bool:
+        """Recompute profile_completion from the declarative requirements manifest.
+
+        Writes per-section {is_complete, is_mandatory, missing[]} to the JSON
+        column. The `missing[]` array refreshes on every call (frontend always
+        sees up-to-date gaps).
+
+        Returns True only if any section's `is_complete` flag flipped. Callers
+        use this to gate expensive side-effects (vector re-embed, chat
+        notifications) so they fire on milestone transitions only — not every
+        time the user shrinks the missing list by one field.
+        """
+        old_pc = patient.profile_completion or {}
+        new_pc: dict[str, dict] = {}
+        completion_flipped = False
+        for section, paths in ONBOARDING_REQUIREMENTS.items():
+            is_complete, missing = compute_section_status(patient, paths)
+            prev = old_pc.get(section, {})
+            if prev.get("is_complete") != is_complete:
+                completion_flipped = True
+            new_pc[section] = {
+                "is_complete": is_complete,
+                "is_mandatory": prev.get("is_mandatory", True),
+                "missing": missing,
+            }
+        if new_pc != old_pc:
+            patient.profile_completion = new_pc
+            flag_modified(patient, "profile_completion")
+        return completion_flipped
+
+    @with_postgres_session
+    async def complete_onboarding(
+        self,
+        patient_id: str,
+        data: PatientOnboardingRequest,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientModel:
+        """All-at-once onboarding — thin wrapper over update_patient_profile.
+
+        PatientOnboardingRequest enforces every required field at the schema
+        layer (Pydantic 422 if missing). The mutation logic itself is identical
+        to a partial update with every field present.
+        """
+        update_data = PatientProfileUpdate(**data.model_dump(exclude_unset=True))
+        return await self.update_patient_profile(
+            patient_id=patient_id,
+            data=update_data,
+            postgres_session=postgres_session,
+        )
 
     @with_postgres_session
     async def delete_patient_profile(

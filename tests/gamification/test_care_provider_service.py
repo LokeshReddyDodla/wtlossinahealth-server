@@ -131,7 +131,7 @@ class TestCPGamificationService:
         assert groups[0].member_count == 7
 
     @pytest.mark.asyncio
-    async def test_get_challenges_created_returns_cp_owned_challenges(self, monkeypatch):
+    async def test_get_facility_challenges_returns_facility_challenges(self, monkeypatch):
         module = load_module(
             monkeypatch,
             "lib/services/gamification/care_provider_service.py",
@@ -185,7 +185,8 @@ class TestCPGamificationService:
             ]
         )
 
-        challenges = await service.get_challenges_created(cp_id, postgres_session=session)
+        facility_id = uuid4()
+        challenges = await service.get_facility_challenges(facility_id, postgres_session=session)
 
         assert len(challenges) == 2
         assert challenges[0].title == "April Sprint"

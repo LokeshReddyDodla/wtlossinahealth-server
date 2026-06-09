@@ -32,7 +32,7 @@ class PatientProfile(BaseModel):
     patient_id: str
     name: str
     profile_picture: str | None = None
-    locale: str | None = None
+    timezone: str | None = None
 
 
 class PatientNameResolver:
@@ -86,12 +86,12 @@ class PatientNameResolver:
     # -- Timezones (for proactive monitor) ---------------------------------
 
     async def resolve_timezones(self, patient_ids: list[str]) -> dict[str, str]:
-        """Resolve patient UUIDs to IANA timezone strings (from locale field)."""
+        """Resolve patient UUIDs to IANA timezone strings."""
         stale = self._collect_stale(patient_ids)
         if stale:
             await self._fetch(stale)
         return {
-            pid: self._profile_cache[pid].locale or settings.DEFAULT_PATIENT_TIMEZONE
+            pid: self._profile_cache[pid].timezone or settings.DEFAULT_PATIENT_TIMEZONE
             for pid in patient_ids
             if pid in self._profile_cache
         }
@@ -148,7 +148,7 @@ class PatientNameResolver:
                         Patient.first_name,
                         Patient.last_name,
                         Patient.profile_picture,
-                        Patient.locale,
+                        Patient.timezone,
                     )
                     .where(Patient.patient_id.in_(patient_ids))
                 )
@@ -166,7 +166,7 @@ class PatientNameResolver:
                         patient_id=pid,
                         name=name,
                         profile_picture=row.profile_picture,
-                        locale=row.locale,
+                        timezone=row.timezone,
                     )
                     self._timestamps[pid] = fetched_at
 
