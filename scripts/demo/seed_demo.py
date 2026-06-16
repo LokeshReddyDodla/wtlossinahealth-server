@@ -200,7 +200,7 @@ async def cmd_setup(args):
                     VALUES
                         (:id, :code, :first, :last, :phone, :email, :role,
                          :pwd, :mcn, 'ACTIVE', true, :fid, NOW(), NOW(),
-                         :perms::jsonb)
+                         CAST(:perms AS jsonb))
                 """),
                 {
                     "id": provider_id,
@@ -252,7 +252,7 @@ async def cmd_setup(args):
                     VALUES
                         (:id, :first, :last, :email, :phone,
                          :dob, :gender, :height, :weight, :tz,
-                         true, :fid, NOW(), NOW(), :pc::jsonb)
+                         true, :fid, NOW(), NOW(), CAST(:pc AS jsonb))
                 """),
                 {
                     "id": patient_id,
