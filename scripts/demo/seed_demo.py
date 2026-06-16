@@ -1557,6 +1557,125 @@ async def cmd_list_rich(args):
 
 
 # ---------------------------------------------------------------------------
+# RESET command
+# ---------------------------------------------------------------------------
+
+async def cmd_reset(args):
+    state = load_state()
+    demo_pid = state.get("patient_id")
+    if not demo_pid:
+        print("ERROR: No demo patient found. Run 'setup' first.")
+        sys.exit(1)
+
+    print(f"\nResetting all data for demo patient {demo_pid}\n")
+
+    engine = pg_engine()
+
+    # -- PostgreSQL tables (CASCADE handles child rows like food_items, sets, etc.)
+    pg_tables = [
+        ("patient_meals", "patient_id"),
+        ("patient_workouts", "patient_id"),
+        ("patient_smbgs", "patient_id"),
+        ("sleep_checkins", "patient_id"),
+        ("mood_entries", "patient_id"),
+        ("symptom_entries", "patient_id"),
+        ("patient_prescriptions", "patient_id"),
+        ("patient_medications", "patient_id"),
+        ("patient_diet_plans", "patient_id"),
+        ("patient_fitness_plans", "patient_id"),
+        ("patient_notifications", "patient_id"),
+        # Gamification
+        ("xp_ledger", "player_id"),
+        ("daily_tasks", "patient_id"),
+        ("patient_achievements", "patient_id"),
+        ("weekly_quests", "patient_id"),
+        ("player_profiles", "patient_id"),
+    ]
+
+    async with engine.begin() as conn:
+        for table, col in pg_tables:
+            try:
+                result = await conn.execute(
+                    text(f"DELETE FROM {table} WHERE {col} = :pid"),
+                    {"pid": demo_pid},
+                )
+                if result.rowcount > 0:
+                    print(f"  Deleted {result.rowcount} rows from {table}")
+            except Exception as e:
+                print(f"  Skipped {table}: {e}")
+
+    await engine.dispose()
+
+    # -- ClickHouse tables
+    try:
+        ch = ch_client()
+        ch_tables = [
+            "aihealth.cgm_data",
+            "aihealth.fitness_data",
+            "aihealth.vitals_data",
+            "aihealth.sleep_data",
+        ]
+        for table in ch_tables:
+            try:
+                ch.execute(
+                    f"ALTER TABLE {table} DELETE WHERE patient_id = %(pid)s",
+                    {"pid": demo_pid},
+                    settings={"mutations_sync": 1},
+                )
+                print(f"  Cleared {table}")
+            except Exception as e:
+                print(f"  Skipped {table}: {e}")
+    except Exception as e:
+        print(f"  ClickHouse unavailable: {e}")
+
+    # -- MongoDB collections
+    if MONGO_URI:
+        try:
+            mc = mongo_client()
+            db = mc[MONGO_DB]
+            mongo_collections = [
+                "ai_patient_memory",
+                "ai_conversation_turns",
+                "ai_thread_summaries",
+            ]
+            for col_name in mongo_collections:
+                result = await db[col_name].delete_many({"patient_id": demo_pid})
+                if result.deleted_count > 0:
+                    print(f"  Deleted {result.deleted_count} docs from {col_name}")
+            mc.close()
+        except Exception as e:
+            print(f"  MongoDB unavailable: {e}")
+
+    # -- Qdrant vectors
+    try:
+        from qdrant_client import QdrantClient
+        from decouple import config as decouple_config
+
+        qdrant_url = decouple_config("QDRANT_URL", default="")
+        qdrant_api_key = decouple_config("QDRANT_API_KEY", default="")
+        if qdrant_url:
+            qc = QdrantClient(url=qdrant_url, api_key=qdrant_api_key or None, timeout=30)
+            collections = qc.get_collections().collections
+            for col in collections:
+                try:
+                    from qdrant_client.models import Filter, FieldCondition, MatchValue
+                    qc.delete(
+                        collection_name=col.name,
+                        points_selector=Filter(
+                            must=[FieldCondition(key="patient_id", match=MatchValue(value=demo_pid))]
+                        ),
+                    )
+                    print(f"  Cleared Qdrant collection: {col.name}")
+                except Exception:
+                    pass
+            qc.close()
+    except Exception as e:
+        print(f"  Qdrant unavailable: {e}")
+
+    print("\n✓ Reset complete! You can now run 'replay' again.")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1592,6 +1711,9 @@ def main():
     # list-rich-patients
     sub.add_parser("list-rich-patients", help="List patients with the most data")
 
+    # reset
+    sub.add_parser("reset", help="Wipe all demo patient data so replay can run cleanly")
+
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -1600,6 +1722,8 @@ def main():
         asyncio.run(cmd_replay(args))
     elif args.command == "list-rich-patients":
         asyncio.run(cmd_list_rich(args))
+    elif args.command == "reset":
+        asyncio.run(cmd_reset(args))
     else:
         parser.print_help()
 
