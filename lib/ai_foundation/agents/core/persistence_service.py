@@ -80,13 +80,21 @@ class PersistenceService:
                     existing.patient_ids = patient_ids
                     await self._memory.save_thread_summary(thread_id, existing)
 
+            meta = intent_metadata or {}
+            user_meta = {}
+            if meta.get("channel"):
+                user_meta["channel"] = meta["channel"]
+            if meta.get("input_mode"):
+                user_meta["input_mode"] = meta["input_mode"]
+
             user_turn = ConversationTurn(
                 role="user", content=user_message,
-                agent_id=agent_id, timestamp=user_ts,
+                agent_id=agent_id, metadata=user_meta,
+                timestamp=user_ts,
             )
             assistant_turn = ConversationTurn(
                 role="assistant", content=assistant_message,
-                agent_id=agent_id, metadata=intent_metadata or {},
+                agent_id=agent_id, metadata=meta,
                 timestamp=assistant_ts,
             )
 
