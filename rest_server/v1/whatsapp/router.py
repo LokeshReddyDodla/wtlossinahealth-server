@@ -1,9 +1,10 @@
 """
-WhatsApp Cloud API webhook — connects patients to the health agent via WhatsApp.
+WhatsApp webhook endpoints — connects patients to the health agent via WhatsApp.
 
 Endpoints:
-    GET  /whatsapp/webhook — Meta verification handshake
-    POST /whatsapp/webhook — Receive incoming messages, route to HealthQueryAgent
+    GET  /whatsapp/webhook         — Meta verification handshake
+    POST /whatsapp/webhook         — Meta Cloud API incoming messages
+    POST /whatsapp/twilio/webhook  — Twilio sandbox incoming messages
 """
 
 from __future__ import annotations
@@ -15,9 +16,10 @@ from datetime import datetime
 
 import httpx
 from decouple import config
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Form, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from twilio.rest import Client as TwilioClient
 
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
@@ -33,6 +35,10 @@ WHATSAPP_VERIFY_TOKEN = config("WHATSAPP_VERIFY_TOKEN", default="")
 WHATSAPP_ACCESS_TOKEN = config("WHATSAPP_ACCESS_TOKEN", default="")
 WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_APP_SECRET = config("WHATSAPP_APP_SECRET", default="")
+
+TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_FROM = config("TWILIO_WHATSAPP_FROM", default="")
 
 GRAPH_API_URL = "https://graph.facebook.com/v22.0"
 
@@ -193,3 +199,84 @@ async def _process_patient_message(phone: str, message: str) -> None:
         )
 
     await _send_whatsapp_message(phone, response_text)
+
+
+# -- Twilio Sandbox -----------------------------------------------------------
+
+
+def _normalize_twilio_phone(wa_id: str) -> str:
+    """Convert 'whatsapp:+919876543210' → '919876543210' for patient lookup."""
+    return wa_id.replace("whatsapp:", "").replace("+", "")
+
+
+async def _send_twilio_message(to: str, text: str) -> None:
+    """Send a WhatsApp message via Twilio."""
+    try:
+        client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        client.messages.create(
+            from_=TWILIO_WHATSAPP_FROM,
+            to=to,
+            body=text,
+        )
+    except Exception:
+        logger.exception("Twilio WhatsApp send failed to %s", to)
+
+
+@router.post("/twilio/webhook")
+async def twilio_receive_message(
+    Body: str = Form(""),
+    From: str = Form(""),
+    To: str = Form(""),
+) -> Response:
+    """Handle incoming WhatsApp messages from Twilio sandbox."""
+    if not Body or not From:
+        return Response(content="<Response></Response>", media_type="application/xml")
+
+    phone = _normalize_twilio_phone(From)
+    logger.info("Twilio WhatsApp message from %s: %s", phone, Body[:100])
+
+    patient = await _lookup_patient_by_phone(phone)
+
+    if not patient:
+        await _send_twilio_message(
+            From,
+            "Welcome! It looks like you're not registered with AiHealth yet. "
+            "Please download the AiHealth app and sign up to get started.",
+        )
+        return Response(content="<Response></Response>", media_type="application/xml")
+
+    patient_id = str(patient.patient_id)
+    thread_id = f"bot:patient:{patient_id}"
+
+    metadata: dict = {"channel": "whatsapp"}
+    if patient.timezone:
+        metadata["local_time"] = datetime.now().isoformat()
+
+    agent_input = AgentInput(
+        message=Body,
+        context=AgentContext(
+            patient_id=patient_id,
+            user_id=patient_id,
+            user_role="patient",
+            thread_id=thread_id,
+            patient_ids=[patient_id],
+            priority=RequestPriority.NORMAL,
+            timezone=patient.timezone,
+            metadata=metadata,
+        ),
+        stream=False,
+    )
+
+    try:
+        agent = _get_agent()
+        output = await agent.run(agent_input)
+        response_text = output.message
+    except Exception:
+        logger.exception("Health agent error for WhatsApp patient %s", patient_id)
+        response_text = (
+            "I'm having trouble processing your request right now. "
+            "Please try again in a moment."
+        )
+
+    await _send_twilio_message(From, response_text)
+    return Response(content="<Response></Response>", media_type="application/xml")
