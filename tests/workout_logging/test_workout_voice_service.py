@@ -17,7 +17,6 @@ from lib.schemas.workout_voice import (
     ExerciseMatch,
     ParsedSet,
     SessionExercise,
-    SessionSegment,
     SetEntry,
     VoiceWorkoutExtraction,
     WorkoutVoiceSessionState,
@@ -80,10 +79,11 @@ def _make_match(
     )
 
 
-def _make_session(*exercises):
-    if exercises:
-        return WorkoutVoiceSessionState(segments=[SessionSegment(exercises=list(exercises))])
-    return WorkoutVoiceSessionState()
+def _make_session(*exercises, segment_type=None):
+    return WorkoutVoiceSessionState(
+        segment_type=segment_type,
+        exercises=list(exercises),
+    )
 
 
 def _make_session_exercise(name, sets=None):
@@ -168,56 +168,56 @@ class TestNeedsConfirmation:
         assert WorkoutVoiceService._needs_confirmation(item, match) is False
 
 
-# ── _find_exercise_in_segments ──────────────────────────────────────────────
+# ── _find_exercise_index ─────────────────────────────────────────────────────
 
 
-class TestFindExerciseInSegments:
-    def test_empty_segments_returns_none_none(self):
-        assert WorkoutVoiceService._find_exercise_in_segments([], "Bench", "bench") == (None, None)
+class TestFindExerciseIndex:
+    def test_empty_list_returns_none(self):
+        assert WorkoutVoiceService._find_exercise_index([], "Bench", "bench") is None
 
     def test_exact_match_by_matched_name(self):
-        segments = [SessionSegment(exercises=[
+        exercises = [
             _make_session_exercise("Back Squat"),
             _make_session_exercise("Barbell Bench Press"),
-        ])]
-        seg_idx, local_idx = WorkoutVoiceService._find_exercise_in_segments(
-            segments, "Barbell Bench Press", "bench"
+        ]
+        idx = WorkoutVoiceService._find_exercise_index(
+            exercises, "Barbell Bench Press", "bench"
         )
-        assert (seg_idx, local_idx) == (0, 1)
+        assert idx == 1
 
     def test_exact_match_by_raw_name(self):
-        segments = [SessionSegment(exercises=[
+        exercises = [
             _make_session_exercise("bench"),
             _make_session_exercise("squat"),
-        ])]
-        seg_idx, local_idx = WorkoutVoiceService._find_exercise_in_segments(
-            segments, "Barbell Bench Press", "bench"
+        ]
+        idx = WorkoutVoiceService._find_exercise_index(
+            exercises, "Barbell Bench Press", "bench"
         )
-        assert (seg_idx, local_idx) == (0, 0)
+        assert idx == 0
 
-    def test_no_match_without_fallback_returns_none_none(self):
-        segments = [SessionSegment(exercises=[_make_session_exercise("Deadlift")])]
-        seg_idx, local_idx = WorkoutVoiceService._find_exercise_in_segments(
-            segments, "Bench Press", "bench", fallback_to_last=False
+    def test_no_match_without_fallback_returns_none(self):
+        exercises = [_make_session_exercise("Deadlift")]
+        idx = WorkoutVoiceService._find_exercise_index(
+            exercises, "Bench Press", "bench", fallback_to_last=False
         )
-        assert (seg_idx, local_idx) == (None, None)
+        assert idx is None
 
     def test_no_match_with_fallback_returns_last(self):
-        segments = [SessionSegment(exercises=[
+        exercises = [
             _make_session_exercise("Deadlift"),
             _make_session_exercise("Squat"),
-        ])]
-        seg_idx, local_idx = WorkoutVoiceService._find_exercise_in_segments(
-            segments, "Bench Press", "bench", fallback_to_last=True
+        ]
+        idx = WorkoutVoiceService._find_exercise_index(
+            exercises, "Bench Press", "bench", fallback_to_last=True
         )
-        assert (seg_idx, local_idx) == (0, 1)
+        assert idx == 1
 
     def test_case_insensitive(self):
-        segments = [SessionSegment(exercises=[_make_session_exercise("BARBELL BENCH PRESS")])]
-        seg_idx, local_idx = WorkoutVoiceService._find_exercise_in_segments(
-            segments, "barbell bench press", None
+        exercises = [_make_session_exercise("BARBELL BENCH PRESS")]
+        idx = WorkoutVoiceService._find_exercise_index(
+            exercises, "barbell bench press", None
         )
-        assert (seg_idx, local_idx) == (0, 0)
+        assert idx == 0
 
 
 # ── _apply_item ──────────────────────────────────────────────────────────────
@@ -245,12 +245,11 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert len(updated.segments) == 1
-        assert len(updated.segments[0].exercises) == 1
-        assert updated.segments[0].exercises[0].exercise_name == "Barbell Bench Press"
-        assert updated.segments[0].exercises[0].exercise_id == "barbell_bench_press"
-        assert len(updated.segments[0].exercises[0].sets) == 1
-        assert updated.segments[0].exercises[0].sets[0].weight_kg == 80
+        assert len(updated.exercises) == 1
+        assert updated.exercises[0].exercise_name == "Barbell Bench Press"
+        assert updated.exercises[0].exercise_id == "barbell_bench_press"
+        assert len(updated.exercises[0].sets) == 1
+        assert updated.exercises[0].sets[0].weight_kg == 80
         assert update.action == "new_exercise"
         assert update.exercise_index == 0
 
@@ -269,9 +268,9 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert len(updated.segments[0].exercises) == 1
-        assert len(updated.segments[0].exercises[0].sets) == 2
-        assert updated.segments[0].exercises[0].sets[1].reps == 8
+        assert len(updated.exercises) == 1
+        assert len(updated.exercises[0].sets) == 2
+        assert updated.exercises[0].sets[1].reps == 8
         assert update.action == "add_set"
 
     def test_add_set_fallback_to_last_exercise(self):
@@ -287,7 +286,7 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert len(updated.segments[0].exercises[1].sets) == 2
+        assert len(updated.exercises[1].sets) == 2
         assert update.exercise_index == 1
 
     def test_add_multiple_sets(self):
@@ -306,7 +305,7 @@ class TestApplyItem:
 
         updated, _ = self._apply(session, item, match)
 
-        assert len(updated.segments[0].exercises[0].sets) == 3
+        assert len(updated.exercises[0].sets) == 3
 
     def test_update_last_set(self):
         existing = _make_session_exercise(
@@ -323,8 +322,8 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert updated.segments[0].exercises[0].sets[-1].reps == 12
-        assert updated.segments[0].exercises[0].sets[-1].weight_kg == 80
+        assert updated.exercises[0].sets[-1].reps == 12
+        assert updated.exercises[0].sets[-1].weight_kg == 80
         assert update.action == "update_last_set"
 
     def test_update_last_set_preserves_unmentioned_fields(self):
@@ -342,8 +341,8 @@ class TestApplyItem:
 
         updated, _ = self._apply(session, item, match)
 
-        assert updated.segments[0].exercises[0].sets[0].distance_m == 5500
-        assert updated.segments[0].exercises[0].sets[0].duration_seconds == 1800
+        assert updated.exercises[0].sets[0].distance_m == 5500
+        assert updated.exercises[0].sets[0].duration_seconds == 1800
 
     def test_remove_exercise(self):
         ex1 = _make_session_exercise("Bench Press")
@@ -354,8 +353,8 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert len(updated.segments[0].exercises) == 1
-        assert updated.segments[0].exercises[0].exercise_name == "Squat"
+        assert len(updated.exercises) == 1
+        assert updated.exercises[0].exercise_name == "Squat"
         assert update.action == "remove_exercise"
 
     def test_remove_nonexistent_exercise_is_noop(self):
@@ -366,7 +365,7 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item, match)
 
-        assert len(updated.segments[0].exercises) == 1
+        assert len(updated.exercises) == 1
         assert update.action == "remove_exercise"
 
     def test_finish_action(self):
@@ -376,7 +375,7 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item)
 
-        assert len(updated.segments[0].exercises) == 1
+        assert len(updated.exercises) == 1
         assert update.action == "finish"
         assert update.exercise_index is None
 
@@ -386,7 +385,7 @@ class TestApplyItem:
 
         updated, update = self._apply(session, item)
 
-        assert len(updated.segments) == 0
+        assert len(updated.exercises) == 0
         assert update.action == "unclear"
 
     def test_needs_confirmation_when_no_match(self):
@@ -436,8 +435,21 @@ class TestApplyItem:
 
         updated, _ = self._apply(session, item, match)
 
-        assert len(session.segments[0].exercises[0].sets) == 1
-        assert len(updated.segments[0].exercises[0].sets) == 2
+        assert len(session.exercises[0].sets) == 1
+        assert len(updated.exercises[0].sets) == 2
+
+    def test_segment_type_preserved_across_updates(self):
+        session = _make_session(segment_type="strength")
+        item = _make_item(
+            action="new_exercise",
+            exercise_name="Bench Press",
+            sets=[ParsedSet(weight_kg=80, reps=10)],
+        )
+        match = _make_match(confidence=1.0)
+
+        updated, _ = self._apply(session, item, match)
+
+        assert updated.segment_type == "strength"
 
 
 # ── Multi-exercise extraction ────────────────────────────────────────────────
@@ -469,12 +481,11 @@ class TestMultiExercise:
             )
             updates.append(update)
 
-        exercises = current.segments[0].exercises
-        assert len(exercises) == 3
-        assert exercises[0].exercise_name == "Incline Dumbbell Press"
-        assert exercises[1].exercise_name == "Incline Bench Press"
-        assert exercises[2].exercise_name == "Cable Fly"
-        assert all(len(e.sets) == 3 for e in exercises)
+        assert len(current.exercises) == 3
+        assert current.exercises[0].exercise_name == "Incline Dumbbell Press"
+        assert current.exercises[1].exercise_name == "Incline Bench Press"
+        assert current.exercises[2].exercise_name == "Cable Fly"
+        assert all(len(e.sets) == 3 for e in current.exercises)
         assert all(u.action == "new_exercise" for u in updates)
 
     def test_two_matched_one_needs_confirmation(self):
@@ -514,10 +525,9 @@ class TestMultiExercise:
         )
         updates.append(u3)
 
-        exercises = current.segments[0].exercises
-        assert len(exercises) == 2
-        assert exercises[0].exercise_name == "Bench Press"
-        assert exercises[1].exercise_name == "Squat"
+        assert len(current.exercises) == 2
+        assert current.exercises[0].exercise_name == "Bench Press"
+        assert current.exercises[1].exercise_name == "Squat"
         assert updates[0].action == "new_exercise"
         assert updates[1].action == "needs_confirmation"
         assert updates[1].spoken_exercise_name == "Some Weird Exercise"
@@ -571,7 +581,6 @@ class TestMatchExercise:
     @pytest.mark.asyncio
     async def test_no_match_returns_none(self):
         svc = _make_service()
-        # Two empty results: primary query + trigram fallback
         session = FakeSession(results=[FakeResult(rows=[]), FakeResult(rows=[])])
 
         best, candidates = await svc._match_exercise(
@@ -675,8 +684,8 @@ class TestProcessTextInput:
         assert result.transcript == "bench press 80kg 10 reps"
         assert result.update.action == "new_exercise"
         assert len(result.updates) == 1
-        assert len(result.session.segments[0].exercises) == 1
-        assert result.session.segments[0].exercises[0].exercise_name == "Bench Press"
+        assert len(result.session.exercises) == 1
+        assert result.session.exercises[0].exercise_name == "Bench Press"
 
     @pytest.mark.asyncio
     async def test_end_to_end_finish(self):
@@ -693,7 +702,7 @@ class TestProcessTextInput:
         result = await svc.process_text_input(transcript="done", session=session)
 
         assert result.update.action == "finish"
-        assert len(result.session.segments[0].exercises) == 1
+        assert len(result.session.exercises) == 1
 
     @pytest.mark.asyncio
     async def test_end_to_end_multi_exercise(self):
@@ -741,10 +750,9 @@ class TestProcessTextInput:
 
         assert len(result.updates) == 2
         assert result.update.action == "new_exercise"
-        exercises = result.session.segments[0].exercises
-        assert len(exercises) == 2
-        assert exercises[0].exercise_name == "Bench Press"
-        assert exercises[1].exercise_name == "Squat"
+        assert len(result.session.exercises) == 2
+        assert result.session.exercises[0].exercise_name == "Bench Press"
+        assert result.session.exercises[1].exercise_name == "Squat"
         assert call_count == 2
 
 
@@ -853,3 +861,10 @@ class TestBuildUserMessage:
         msg = _build_user_message("done", session)
         assert "1800s" in msg
         assert "5000" in msg and "m" in msg
+
+    def test_segment_type_included(self):
+        from lib.services.workout_voice_service import _build_user_message
+
+        session = _make_session(segment_type="strength")
+        msg = _build_user_message("bench press", session)
+        assert "Segment type: strength" in msg
