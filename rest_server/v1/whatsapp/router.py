@@ -155,12 +155,19 @@ async def receive_message(request: Request) -> dict:
             messages = value.get("messages", [])
 
             for msg in messages:
+                sender_phone = msg["from"]
+                message_id = msg["id"]
+
                 if msg.get("type") != "text":
+                    await _mark_as_read(message_id)
+                    await _send_whatsapp_message(
+                        sender_phone,
+                        "I can only read text messages for now. "
+                        "Please type your question and I'll be happy to help!",
+                    )
                     continue
 
-                sender_phone = msg["from"]
                 message_text = msg["text"]["body"]
-                message_id = msg["id"]
 
                 await _mark_as_read(message_id)
                 await _react_to_message(sender_phone, message_id, "⏳")
@@ -267,9 +274,21 @@ async def twilio_receive_message(
     Body: str = Form(""),
     From: str = Form(""),
     To: str = Form(""),
+    NumMedia: int = Form(0),
 ) -> Response:
     """Handle incoming WhatsApp messages from Twilio sandbox."""
-    if not Body or not From:
+    if not From:
+        return Response(content="<Response></Response>", media_type="application/xml")
+
+    if NumMedia > 0 and not Body:
+        await _send_twilio_message(
+            From,
+            "I can only read text messages for now. "
+            "Please type your question and I'll be happy to help!",
+        )
+        return Response(content="<Response></Response>", media_type="application/xml")
+
+    if not Body:
         return Response(content="<Response></Response>", media_type="application/xml")
 
     phone = _normalize_twilio_phone(From)
