@@ -231,15 +231,33 @@ def _normalize_twilio_phone(wa_id: str) -> str:
     return wa_id.replace("whatsapp:", "").replace("+", "")
 
 
+def _split_message(text: str, limit: int = 1500) -> list[str]:
+    """Split text into chunks at paragraph boundaries, staying under limit."""
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    current = ""
+    for paragraph in text.split("\n\n"):
+        if current and len(current) + len(paragraph) + 2 > limit:
+            chunks.append(current.strip())
+            current = paragraph
+        else:
+            current = f"{current}\n\n{paragraph}" if current else paragraph
+    if current.strip():
+        chunks.append(current.strip())
+    return chunks or [text[:limit]]
+
+
 async def _send_twilio_message(to: str, text: str) -> None:
-    """Send a WhatsApp message via Twilio."""
+    """Send a WhatsApp message via Twilio, splitting if over 1600 chars."""
     try:
         client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        client.messages.create(
-            from_=TWILIO_WHATSAPP_FROM,
-            to=to,
-            body=text,
-        )
+        for chunk in _split_message(text):
+            client.messages.create(
+                from_=TWILIO_WHATSAPP_FROM,
+                to=to,
+                body=chunk,
+            )
     except Exception:
         logger.exception("Twilio WhatsApp send failed to %s", to)
 
