@@ -29,10 +29,15 @@ def _make_service():
     )
 
 
+def _segment(*, type_, duration=None):
+    return SimpleNamespace(type=type_, duration_minutes=duration)
+
+
 def _row(*, type_, duration=None, calories=None):
+    """Fake workout row. The service reads types and durations from segments,
+    calories from the workout-level field."""
     return SimpleNamespace(
-        type=type_,
-        duration_minutes=duration,
+        segments=[_segment(type_=type_, duration=duration)],
         calories_burned=calories,
     )
 

@@ -1,11 +1,12 @@
 """Patient workout service — CRUD over manually-logged workout sessions.
 
 Session flow (create):
-  1. Validate every exercise_id exists in the catalog.
-  2. Denormalize exercise_name from catalog into each line item.
-  3. Insert PatientWorkout + children in one transaction.
-  4. Fire-and-forget: enqueue Qdrant vector generation.
-  5. Fire-and-forget: gamification hook (on_fitness_synced workout_completed=True).
+  1. Normalize input to segments (backward compat: flat type+exercises → single segment).
+  2. Validate every exercise_id exists in the catalog.
+  3. Denormalize exercise_name from catalog into each line item.
+  4. Insert PatientWorkout + segments + exercises + sets in one transaction.
+  5. Fire-and-forget: enqueue Qdrant vector generation.
+  6. Fire-and-forget: gamification hook (on_fitness_synced workout_completed=True).
 """
 
 from __future__ import annotations
@@ -23,13 +24,19 @@ from sqlalchemy.orm import selectinload
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.exercise import Exercise
-from lib.models.patient_workout import PatientWorkout, PatientWorkoutExercise, PatientWorkoutSet
+from lib.models.patient_workout import (
+    PatientWorkout,
+    PatientWorkoutExercise,
+    PatientWorkoutSegment,
+    PatientWorkoutSet,
+)
 from lib.schemas.patient_workout import (
     PatientWorkoutCreate,
     PatientWorkoutExerciseInput,
     PatientWorkoutExerciseResponse,
     PatientWorkoutListResponse,
     PatientWorkoutResponse,
+    PatientWorkoutSegmentResponse,
     PatientWorkoutUpdate,
     WorkoutSetResponse,
 )
@@ -37,6 +44,12 @@ from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 logger = logging.getLogger(__name__)
+
+_EAGER_LOAD = (
+    selectinload(PatientWorkout.segments)
+    .selectinload(PatientWorkoutSegment.exercises)
+    .selectinload(PatientWorkoutExercise.set_details)
+)
 
 
 class PatientWorkoutService:
@@ -76,6 +89,19 @@ class PatientWorkoutService:
         )
 
     @staticmethod
+    def _segment_to_response(row: PatientWorkoutSegment) -> PatientWorkoutSegmentResponse:
+        return PatientWorkoutSegmentResponse(
+            id=row.id,
+            type=row.type,
+            duration_minutes=row.duration_minutes,
+            order_index=row.order_index,
+            exercises=[
+                PatientWorkoutService._exercise_to_response(ex)
+                for ex in (row.exercises or [])
+            ],
+        )
+
+    @staticmethod
     def _build_set_rows(ex: PatientWorkoutExerciseInput) -> list[PatientWorkoutSet]:
         if ex.set_details:
             return [
@@ -103,13 +129,25 @@ class PatientWorkoutService:
 
     @classmethod
     def _to_response(cls, row: PatientWorkout) -> PatientWorkoutResponse:
+        segments = [cls._segment_to_response(seg) for seg in (row.segments or [])]
+
+        all_exercises: list[PatientWorkoutExerciseResponse] = []
+        for seg in segments:
+            all_exercises.extend(seg.exercises)
+
+        seg_types = list({seg.type for seg in segments})
+        derived_type = seg_types[0] if len(seg_types) == 1 else ("mixed" if seg_types else "other")
+
+        durations = [seg.duration_minutes for seg in segments if seg.duration_minutes is not None]
+        derived_duration = sum(durations) if durations else None
+
         return PatientWorkoutResponse(
             id=row.id,
             patient_id=row.patient_id,
             date=row.date,
             time=row.time,
-            type=row.type,
-            duration_minutes=row.duration_minutes,
+            type=derived_type,
+            duration_minutes=derived_duration,
             intensity=row.intensity,
             calories_burned=row.calories_burned,
             notes=row.notes,
@@ -117,7 +155,8 @@ class PatientWorkoutService:
             source=row.source,
             fitness_plan_session_id=row.fitness_plan_session_id,
             uploaded_at=row.uploaded_at or datetime.now().replace(tzinfo=None),
-            exercises=[cls._exercise_to_response(ex) for ex in row.exercises],
+            segments=segments,
+            exercises=all_exercises,
         )
 
     # ── Catalog validation ───────────────────────────────────────────────
@@ -155,16 +194,14 @@ class PatientWorkoutService:
         *,
         postgres_session: AsyncSession,
     ) -> PatientWorkoutResponse:
-        catalog_names = await self._validate_catalog_ids(
-            data.exercises, postgres_session
-        )
+        all_exercises = [ex for seg in data.segments for ex in seg.exercises]
+        catalog_names = await self._validate_catalog_ids(all_exercises, postgres_session)
+
         try:
             workout = PatientWorkout(
                 patient_id=patient_id,
                 date=data.date,
                 time=data.time,
-                type=data.type,
-                duration_minutes=data.duration_minutes,
                 intensity=data.intensity,
                 calories_burned=data.calories_burned,
                 notes=data.notes,
@@ -172,27 +209,35 @@ class PatientWorkoutService:
                 source=data.source,
                 fitness_plan_session_id=data.fitness_plan_session_id,
             )
-            for ex in data.exercises:
-                exercise_row = PatientWorkoutExercise(
-                    exercise_id=ex.exercise_id,
-                    exercise_name=catalog_names[ex.exercise_id],
-                    order_index=ex.order_index,
-                    sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
-                    reps=ex.reps,
-                    weight_kg=ex.weight_kg,
-                    duration_seconds=ex.duration_seconds,
-                    distance_m=ex.distance_m,
-                    notes=ex.notes,
+            for seg_input in data.segments:
+                segment = PatientWorkoutSegment(
+                    type=seg_input.type,
+                    duration_minutes=seg_input.duration_minutes,
+                    order_index=seg_input.order_index,
                 )
-                exercise_row.set_details = self._build_set_rows(ex)
-                workout.exercises.append(exercise_row)
+                for ex in seg_input.exercises:
+                    exercise_row = PatientWorkoutExercise(
+                        exercise_id=ex.exercise_id,
+                        exercise_name=catalog_names[ex.exercise_id],
+                        order_index=ex.order_index,
+                        sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
+                        reps=ex.reps,
+                        weight_kg=ex.weight_kg,
+                        duration_seconds=ex.duration_seconds,
+                        distance_m=ex.distance_m,
+                        notes=ex.notes,
+                    )
+                    exercise_row.set_details = self._build_set_rows(ex)
+                    segment.exercises.append(exercise_row)
+                workout.segments.append(segment)
+
             postgres_session.add(workout)
             await postgres_session.commit()
             workout = (
                 await postgres_session.execute(
                     select(PatientWorkout)
                     .where(PatientWorkout.id == workout.id)
-                    .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                    .options(_EAGER_LOAD)
                 )
             ).scalar_one()
         except SQLAlchemyError as e:
@@ -226,7 +271,7 @@ class PatientWorkoutService:
                     PatientWorkout.id == UUID(workout_id),
                     PatientWorkout.patient_id == UUID(patient_id),
                 )
-                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                .options(_EAGER_LOAD)
             )
         ).scalar_one_or_none()
         return self._to_response(row) if row else None
@@ -262,7 +307,7 @@ class PatientWorkoutService:
 
         rows = (
             await postgres_session.execute(
-                base.options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                base.options(_EAGER_LOAD)
                 .order_by(PatientWorkout.date.desc(), PatientWorkout.time.desc().nulls_last())
                 .limit(limit)
                 .offset(offset)
@@ -294,48 +339,57 @@ class PatientWorkoutService:
                     PatientWorkout.id == UUID(workout_id),
                     PatientWorkout.patient_id == UUID(patient_id),
                 )
-                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                .options(_EAGER_LOAD)
             )
         ).scalar_one_or_none()
         if not row:
             return None
 
         for field in (
-            "date", "time", "type", "duration_minutes", "intensity",
+            "date", "time", "intensity",
             "calories_burned", "notes", "image_url", "fitness_plan_session_id",
         ):
             value = getattr(data, field)
             if value is not None:
                 setattr(row, field, value)
 
-        if data.exercises is not None:
+        if data.segments is not None:
+            all_exercises = [ex for seg in data.segments for ex in seg.exercises]
             catalog_names = await self._validate_catalog_ids(
-                data.exercises, postgres_session
+                all_exercises, postgres_session
             )
-            for existing in list(row.exercises):
-                await postgres_session.delete(existing)
+            for existing_seg in list(row.segments):
+                await postgres_session.delete(existing_seg)
             await postgres_session.flush()
-            for ex in data.exercises:
-                exercise_row = PatientWorkoutExercise(
-                    exercise_id=ex.exercise_id,
-                    exercise_name=catalog_names[ex.exercise_id],
-                    order_index=ex.order_index,
-                    sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
-                    reps=ex.reps,
-                    weight_kg=ex.weight_kg,
-                    duration_seconds=ex.duration_seconds,
-                    distance_m=ex.distance_m,
-                    notes=ex.notes,
+
+            for seg_input in data.segments:
+                segment = PatientWorkoutSegment(
+                    type=seg_input.type,
+                    duration_minutes=seg_input.duration_minutes,
+                    order_index=seg_input.order_index,
                 )
-                exercise_row.set_details = self._build_set_rows(ex)
-                row.exercises.append(exercise_row)
+                for ex in seg_input.exercises:
+                    exercise_row = PatientWorkoutExercise(
+                        exercise_id=ex.exercise_id,
+                        exercise_name=catalog_names[ex.exercise_id],
+                        order_index=ex.order_index,
+                        sets=ex.sets if ex.sets else (len(ex.set_details) if ex.set_details else None),
+                        reps=ex.reps,
+                        weight_kg=ex.weight_kg,
+                        duration_seconds=ex.duration_seconds,
+                        distance_m=ex.distance_m,
+                        notes=ex.notes,
+                    )
+                    exercise_row.set_details = self._build_set_rows(ex)
+                    segment.exercises.append(exercise_row)
+                row.segments.append(segment)
 
         await postgres_session.commit()
         row = (
             await postgres_session.execute(
                 select(PatientWorkout)
                 .where(PatientWorkout.id == row.id)
-                .options(selectinload(PatientWorkout.exercises).selectinload(PatientWorkoutExercise.set_details))
+                .options(_EAGER_LOAD)
             )
         ).scalar_one()
 
@@ -366,7 +420,6 @@ class PatientWorkoutService:
         await postgres_session.delete(row)
         await postgres_session.commit()
 
-        # Fire-and-forget vector cleanup
         try:
             from lib.core.container import container
             from lib.services.vector import WorkoutVectorService

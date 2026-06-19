@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from lib.schemas.exercise import ExerciseResponse
 
@@ -28,6 +28,11 @@ class SessionExercise(BaseModel):
     exercise_name: str
     exercise_id: Optional[str] = None
     sets: list[SetEntry] = Field(default_factory=list)
+
+
+class SessionSegment(BaseModel):
+    type: Optional[str] = None
+    exercises: list[SessionExercise] = Field(default_factory=list)
 
 
 # ── LLM extraction (internal) ───────────────────────────────────────────
@@ -70,6 +75,11 @@ class ExerciseActionItem(BaseModel):
         default_factory=list,
         description="One or more sets. E.g. '3 sets of 10 at 80kg' → 3 entries.",
     )
+    segment_type: Optional[str] = Field(
+        None,
+        description="Set when user indicates a phase change (e.g. 'now cardio'). "
+        "Values: strength, cardio, hiit, mobility, mixed, other.",
+    )
 
 
 class VoiceWorkoutExtraction(BaseModel):
@@ -94,7 +104,15 @@ class VoiceWorkoutExtraction(BaseModel):
 # ── API request / response ──────────────────────────────────────────────
 
 class WorkoutVoiceSessionState(BaseModel):
+    segments: list[SessionSegment] = Field(default_factory=list)
+    # Legacy field — if old client sends flat exercises, auto-wrap into single segment
     exercises: list[SessionExercise] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _normalize_segments(self) -> "WorkoutVoiceSessionState":
+        if not self.segments and self.exercises:
+            self.segments = [SessionSegment(exercises=self.exercises)]
+        return self
 
 
 class ExerciseMatch(BaseModel):

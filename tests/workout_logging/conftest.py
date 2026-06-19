@@ -100,22 +100,33 @@ class FakeSession:
         self.added.append(obj)
         if getattr(obj, "id", None) is None:
             obj.id = uuid4()
-        for child in getattr(obj, "exercises", []) or []:
-            if getattr(child, "id", None) is None:
-                child.id = uuid4()
-            for grandchild in getattr(child, "set_details", []) or []:
-                if getattr(grandchild, "id", None) is None:
-                    grandchild.id = uuid4()
+        # Traverse 4-level hierarchy: workout → segments → exercises → set_details
+        for segment in getattr(obj, "segments", []) or []:
+            if getattr(segment, "id", None) is None:
+                segment.id = uuid4()
+            for child in getattr(segment, "exercises", []) or []:
+                if getattr(child, "id", None) is None:
+                    child.id = uuid4()
+                for grandchild in getattr(child, "set_details", []) or []:
+                    if getattr(grandchild, "id", None) is None:
+                        grandchild.id = uuid4()
 
     async def delete(self, obj):
         self.deleted.append(obj)
-        # Emulate cascade-removal: when an exercise is deleted, it should
-        # disappear from its parent workout's `exercises` collection the
-        # same way SQLAlchemy does on flush.
+        # Emulate cascade-removal the same way SQLAlchemy does on flush.
+        # A deleted segment should disappear from its parent workout's
+        # `segments` collection, and a deleted exercise from its parent
+        # segment's `exercises` collection.
         for parent in (*self.added, *self._known_parents):
-            children = getattr(parent, "exercises", None)
-            if isinstance(children, list) and obj in children:
-                children.remove(obj)
+            # Check segments collection (workout → segments)
+            segments = getattr(parent, "segments", None)
+            if isinstance(segments, list) and obj in segments:
+                segments.remove(obj)
+            # Check exercises collection within each segment (segment → exercises)
+            for segment in (segments or []):
+                children = getattr(segment, "exercises", None)
+                if isinstance(children, list) and obj in children:
+                    children.remove(obj)
 
     async def commit(self):
         self.commit_count += 1
@@ -133,16 +144,19 @@ class FakeSession:
 
     def _assign_missing_ids(self):
         """Emulate SQLAlchemy's Column(default=uuid4) assigning ids to any
-        parent or child object that's still missing one."""
+        object in the 4-level hierarchy that's still missing one."""
         for parent in (*self.added, *self._known_parents):
             if getattr(parent, "id", None) is None:
                 parent.id = uuid4()
-            for child in getattr(parent, "exercises", []) or []:
-                if getattr(child, "id", None) is None:
-                    child.id = uuid4()
-                for grandchild in getattr(child, "set_details", []) or []:
-                    if getattr(grandchild, "id", None) is None:
-                        grandchild.id = uuid4()
+            for segment in getattr(parent, "segments", []) or []:
+                if getattr(segment, "id", None) is None:
+                    segment.id = uuid4()
+                for child in getattr(segment, "exercises", []) or []:
+                    if getattr(child, "id", None) is None:
+                        child.id = uuid4()
+                    for grandchild in getattr(child, "set_details", []) or []:
+                        if getattr(grandchild, "id", None) is None:
+                            grandchild.id = uuid4()
 
     async def rollback(self):
         return None
