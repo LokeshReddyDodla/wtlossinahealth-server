@@ -96,6 +96,22 @@ async def _mark_as_read(message_id: str) -> None:
         )
 
 
+async def _react_to_message(to: str, message_id: str, emoji: str) -> None:
+    """React to a message with an emoji. Pass empty string to remove reaction."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        await client.post(
+            f"{GRAPH_API_URL}/{WHATSAPP_PHONE_NUMBER_ID}/messages",
+            headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "reaction",
+                "reaction": {"message_id": message_id, "emoji": emoji},
+            },
+        )
+
+
 def _get_agent() -> HealthQueryAgent:
     return container.resolve(HealthQueryAgent)
 
@@ -147,16 +163,21 @@ async def receive_message(request: Request) -> dict:
                 message_id = msg["id"]
 
                 await _mark_as_read(message_id)
-                await _process_patient_message(sender_phone, message_text)
+                await _react_to_message(sender_phone, message_id, "⏳")
+                await _process_patient_message(sender_phone, message_text, message_id)
 
     return {"status": "ok"}
 
 
-async def _process_patient_message(phone: str, message: str) -> None:
+async def _process_patient_message(
+    phone: str, message: str, message_id: str | None = None
+) -> None:
     """Look up patient by phone, run health agent, reply."""
     patient = await _lookup_patient_by_phone(phone)
 
     if not patient:
+        if message_id:
+            await _react_to_message(phone, message_id, "")
         await _send_whatsapp_message(
             phone,
             "Welcome! It looks like you're not registered with AiHealth yet. "
@@ -167,10 +188,9 @@ async def _process_patient_message(phone: str, message: str) -> None:
     patient_id = str(patient.patient_id)
     thread_id = f"bot:patient:{patient_id}"
 
-    metadata: dict = {}
+    metadata: dict = {"channel": "whatsapp", "tier": "basic"}
     if patient.timezone:
         metadata["local_time"] = datetime.now().isoformat()
-    metadata["channel"] = "whatsapp"
 
     agent_input = AgentInput(
         message=message,
@@ -198,6 +218,8 @@ async def _process_patient_message(phone: str, message: str) -> None:
             "Please try again in a moment."
         )
 
+    if message_id:
+        await _react_to_message(phone, message_id, "")
     await _send_whatsapp_message(phone, response_text)
 
 
@@ -248,7 +270,9 @@ async def twilio_receive_message(
     patient_id = str(patient.patient_id)
     thread_id = f"bot:patient:{patient_id}"
 
-    metadata: dict = {"channel": "whatsapp"}
+    await _send_twilio_message(From, "⏳")
+
+    metadata: dict = {"channel": "whatsapp", "tier": "basic"}
     if patient.timezone:
         metadata["local_time"] = datetime.now().isoformat()
 
