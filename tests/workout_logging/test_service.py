@@ -207,16 +207,31 @@ class TestCreate:
 # ── get ───────────────────────────────────────────────────────────────────────
 
 
-def _fake_workout_row(workout_id, patient_id, *, exercises=None):
+def _fake_segment(*, type_="strength", duration_minutes=55, exercises=None, order_index=0):
+    """A stand-in for a PatientWorkoutSegment ORM row."""
+    return SimpleNamespace(
+        id=uuid4(),
+        type=type_,
+        duration_minutes=duration_minutes,
+        order_index=order_index,
+        exercises=exercises or [],
+    )
+
+
+def _fake_workout_row(workout_id, patient_id, *, exercises=None, segments=None):
     """A stand-in ORM row — uses SimpleNamespace so we don't hit the real
-    relationship attrs (which need a session)."""
+    relationship attrs (which need a session).
+
+    If `exercises` is given without `segments`, auto-wraps them into a single
+    default segment (mirrors the schema validator behaviour).
+    """
+    if segments is None:
+        segments = [_fake_segment(exercises=exercises or [])]
     return SimpleNamespace(
         id=UUID(workout_id),
         patient_id=UUID(patient_id),
         date=date(2026, 4, 20),
         time=time(18, 30),
-        type="strength",
-        duration_minutes=55,
         intensity="vigorous",
         calories_burned=420.0,
         notes="felt good",
@@ -224,7 +239,7 @@ def _fake_workout_row(workout_id, patient_id, *, exercises=None):
         source="app",
         fitness_plan_session_id=None,
         uploaded_at=None,
-        exercises=exercises or [],
+        segments=segments,
     )
 
 
@@ -358,7 +373,8 @@ class TestUpdate:
     ):
         service, trackers = _make_service(monkeypatch)
         existing = _fake_workout_row(
-            workout_id, patient_id, exercises=[_fake_exercise_row()]
+            workout_id, patient_id,
+            segments=[_fake_segment(exercises=[_fake_exercise_row()])],
         )
         session = FakeSession(results=[
             FakeResult(scalar_one_or_none=existing),
@@ -387,7 +403,8 @@ class TestUpdate:
     ):
         service, _ = _make_service(monkeypatch)
         old_ex = _fake_exercise_row()
-        existing = _fake_workout_row(workout_id, patient_id, exercises=[old_ex])
+        old_seg = _fake_segment(exercises=[old_ex])
+        existing = _fake_workout_row(workout_id, patient_id, segments=[old_seg])
         # Queries in order: fetch workout, validate catalog ids, re-query after commit
         session = FakeSession(
             results=[
@@ -411,10 +428,13 @@ class TestUpdate:
         )
 
         assert response is not None
-        # Old exercise deleted
-        assert old_ex in session.deleted
-        # New exercise present
-        new_names = [ex.exercise_name for ex in existing.exercises]
+        # Old segment deleted (service deletes segments, which cascades)
+        assert old_seg in session.deleted
+        # New exercise present in the new segment
+        all_exercises = [
+            ex for seg in existing.segments for ex in seg.exercises
+        ]
+        new_names = [ex.exercise_name for ex in all_exercises]
         assert "Deadlift" in new_names
         assert session.commit_count == 1
 
@@ -425,7 +445,7 @@ class TestUpdate:
         from fastapi import HTTPException
 
         service, _ = _make_service(monkeypatch)
-        existing = _fake_workout_row(workout_id, patient_id, exercises=[])
+        existing = _fake_workout_row(workout_id, patient_id, segments=[_fake_segment(exercises=[])])
         session = FakeSession(
             results=[
                 FakeResult(scalar_one_or_none=existing),

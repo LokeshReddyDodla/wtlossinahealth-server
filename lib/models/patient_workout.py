@@ -35,8 +35,11 @@ class PatientWorkout(Base):
     date = Column(Date, nullable=False)
     time = Column(Time, nullable=True)
 
-    type = Column(String, nullable=False)             # strength, cardio, hiit, mobility, mixed, other
+    # Legacy columns — kept for backward compat, will be dropped in future cleanup.
+    # New code reads/writes through segments instead.
+    type = Column(String, nullable=True)
     duration_minutes = Column(Integer, nullable=True)
+
     intensity = Column(String, nullable=True)         # light, moderate, vigorous
     calories_burned = Column(Float, nullable=True)
 
@@ -44,7 +47,6 @@ class PatientWorkout(Base):
     image_url = Column(Text, nullable=True)
     source = Column(String, nullable=False, default="app")
 
-    # Optional link to a planned fitness-plan session
     fitness_plan_session_id = Column(UUID(as_uuid=True), nullable=True)
 
     uploaded_at = Column(
@@ -59,11 +61,20 @@ class PatientWorkout(Base):
         onupdate=lambda: datetime.now().replace(tzinfo=None),
     )
 
+    segments = relationship(
+        "PatientWorkoutSegment",
+        back_populates="workout",
+        cascade="all, delete-orphan",
+        order_by="PatientWorkoutSegment.order_index",
+    )
+
+    # Legacy relationship — kept for backward compat, will be removed in future cleanup.
     exercises = relationship(
         "PatientWorkoutExercise",
         back_populates="workout",
         cascade="all, delete-orphan",
         order_by="PatientWorkoutExercise.order_index",
+        viewonly=True,
     )
 
     __table_args__ = (
@@ -76,8 +87,8 @@ class PatientWorkout(Base):
     )
 
 
-class PatientWorkoutExercise(Base):
-    __tablename__ = "patient_workout_exercises"
+class PatientWorkoutSegment(Base):
+    __tablename__ = "patient_workout_segments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workout_id = Column(
@@ -85,6 +96,50 @@ class PatientWorkoutExercise(Base):
         ForeignKey("patient_workouts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    type = Column(String, nullable=False)
+    duration_minutes = Column(Integer, nullable=True)
+    order_index = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(
+        DateTime, default=lambda: datetime.now().replace(tzinfo=None)
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now().replace(tzinfo=None),
+        onupdate=lambda: datetime.now().replace(tzinfo=None),
+    )
+
+    workout = relationship("PatientWorkout", back_populates="segments")
+    exercises = relationship(
+        "PatientWorkoutExercise",
+        back_populates="segment",
+        cascade="all, delete-orphan",
+        order_by="PatientWorkoutExercise.order_index",
+    )
+
+    __table_args__ = (
+        Index("ix_workout_segments_workout", "workout_id"),
+    )
+
+
+class PatientWorkoutExercise(Base):
+    __tablename__ = "patient_workout_exercises"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Legacy column — kept for backward compat, will be dropped in future cleanup.
+    workout_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("patient_workouts.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    segment_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("patient_workout_segments.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
     exercise_id = Column(
         String,
         ForeignKey("exercises.id", ondelete="RESTRICT"),
@@ -101,6 +156,7 @@ class PatientWorkoutExercise(Base):
     notes = Column(Text, nullable=True)
 
     workout = relationship("PatientWorkout", back_populates="exercises")
+    segment = relationship("PatientWorkoutSegment", back_populates="exercises")
     set_details = relationship(
         "PatientWorkoutSet",
         back_populates="exercise",
@@ -110,6 +166,7 @@ class PatientWorkoutExercise(Base):
 
     __table_args__ = (
         Index("ix_workout_exercises_workout", "workout_id"),
+        Index("ix_workout_exercises_segment", "segment_id"),
         Index("ix_workout_exercises_exercise_id", "exercise_id"),
     )
 

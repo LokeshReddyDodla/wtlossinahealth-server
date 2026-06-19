@@ -54,7 +54,7 @@ from .sleep_checkin import SleepCheckin
 from .mood_entry import MoodEntry
 from .symptom_entry import SymptomEntry, SymptomEntryItem
 from .exercise import Exercise
-from .patient_workout import PatientWorkout, PatientWorkoutExercise, PatientWorkoutSet
+from .patient_workout import PatientWorkout, PatientWorkoutSegment, PatientWorkoutExercise, PatientWorkoutSet
 from .gamification import (
     Achievement,
     ActivityFeedEvent,

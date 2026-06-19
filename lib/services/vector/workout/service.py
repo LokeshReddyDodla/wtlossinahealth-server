@@ -75,13 +75,19 @@ class WorkoutVectorService(BaseVectorService):
         except Exception:
             dt = datetime.fromisoformat(date_str)
 
+        segments = workout.get("segments") or []
         exercises = workout.get("exercises") or []
+        if not exercises and segments:
+            exercises = [ex for seg in segments for ex in (seg.get("exercises") or [])]
+
         exercise_ids = [ex.get("exercise_id") for ex in exercises if ex.get("exercise_id")]
         exercise_names = [ex.get("exercise_name") for ex in exercises if ex.get("exercise_name")]
         total_volume_kg = sum(
             (ex.get("sets") or 0) * (ex.get("reps") or 0) * (ex.get("weight_kg") or 0)
             for ex in exercises
         )
+
+        segment_types = sorted({seg.get("type") for seg in segments if seg.get("type")})
 
         text_repr = WorkoutTextReprBuilder.build(workout)
 
@@ -107,6 +113,8 @@ class WorkoutVectorService(BaseVectorService):
                 "total_volume_kg": total_volume_kg if total_volume_kg > 0 else None,
                 "fitness_plan_session_id": workout.get("fitness_plan_session_id"),
                 "source": workout.get("source", "app"),
+                "segment_count": len(segments),
+                "segment_types": segment_types,
             },
         )
 
