@@ -135,8 +135,8 @@ class PatientWorkoutService:
         for seg in segments:
             all_exercises.extend(seg.exercises)
 
-        seg_types = list({seg.type for seg in segments})
-        derived_type = seg_types[0] if len(seg_types) == 1 else ("mixed" if seg_types else "other")
+        seg_types = sorted({seg.type for seg in segments})
+        derived_type = seg_types[0] if len(seg_types) == 1 else (" + ".join(seg_types) if seg_types else "other")
 
         durations = [seg.duration_minutes for seg in segments if seg.duration_minutes is not None]
         derived_duration = sum(durations) if durations else None
