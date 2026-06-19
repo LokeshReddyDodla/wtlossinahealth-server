@@ -1,11 +1,11 @@
 """Voice workout logging service.
 
-Each call receives an audio clip + the current session state (exercises
-logged so far). The service:
+Voice operates on a single segment at a time. Each call receives an audio
+clip + the current segment state (exercises logged so far). The service:
   1. Transcribes the audio via Whisper.
   2. Sends the transcript + session context to the LLM for structured extraction.
   3. Fuzzy-matches the exercise name against the catalog.
-  4. Returns the updated session state + what changed.
+  4. Returns the updated segment state + what changed.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from lib.schemas.workout_voice import (
     ExerciseActionItem,
     ExerciseMatch,
     SessionExercise,
-    SessionSegment,
     SetEntry,
     VoiceWorkoutExtraction,
     WorkoutVoiceResponse,
@@ -74,9 +73,7 @@ Your job: interpret each voice input and extract structured data.
 
 6. **workout_type:** Infer from the exercises if possible (strength, cardio, hiit, mobility, mixed, other). Only set this when confident.
 
-7. **Segment transitions:** If the user switches workout type (e.g. "now cardio", "moving to mobility", "strength done, starting hiit"), set `segment_type` on that item to the new type. This tells the system to start a new segment.
-
-8. **interpretation:** Write a short, friendly confirmation covering ALL exercises mentioned. E.g. "Got it — Incline Dumbbell Press 3×10 at 45kg, Incline Bench Press 3×10, and Cable Fly 3 sets"
+7. **interpretation:** Write a short, friendly confirmation covering ALL exercises mentioned. E.g. "Got it — Incline Dumbbell Press 3×10 at 45kg, Incline Bench Press 3×10, and Cable Fly 3 sets"
 """
 
 
@@ -90,35 +87,29 @@ def _build_user_message(
 ) -> str:
     parts = [f'Voice input: "{transcript}"']
 
-    if not session.segments:
+    if session.segment_type:
+        parts.append(f"\nSegment type: {session.segment_type}")
+
+    if not session.exercises:
         parts.append("\nCurrent session: empty (this is the first exercise)")
         return "\n".join(parts)
 
     parts.append("\nCurrent session:")
-    exercise_num = 0
-    for seg_idx, seg in enumerate(session.segments):
-        if len(session.segments) > 1 or seg.type:
-            seg_label = (seg.type or "segment").capitalize()
-            parts.append(f"\n[Segment {seg_idx + 1}: {seg_label}]")
-        for ex in seg.exercises:
-            exercise_num += 1
-            sets_desc = []
-            for j, s in enumerate(ex.sets):
-                pieces = []
-                if s.weight_kg is not None:
-                    pieces.append(f"{s.weight_kg}kg")
-                if s.reps is not None:
-                    pieces.append(f"{s.reps} reps")
-                if s.duration_seconds is not None:
-                    pieces.append(f"{s.duration_seconds}s")
-                if s.distance_m is not None:
-                    pieces.append(f"{s.distance_m}m")
-                sets_desc.append(f"  Set {j + 1}: {' × '.join(pieces) or 'empty'}")
-            sets_text = "\n".join(sets_desc) if sets_desc else "  (no sets yet)"
-            parts.append(f"{exercise_num}. {ex.exercise_name}\n{sets_text}")
-
-    if exercise_num == 0:
-        parts.append("\nCurrent session: empty (this is the first exercise)")
+    for i, ex in enumerate(session.exercises):
+        sets_desc = []
+        for j, s in enumerate(ex.sets):
+            pieces = []
+            if s.weight_kg is not None:
+                pieces.append(f"{s.weight_kg}kg")
+            if s.reps is not None:
+                pieces.append(f"{s.reps} reps")
+            if s.duration_seconds is not None:
+                pieces.append(f"{s.duration_seconds}s")
+            if s.distance_m is not None:
+                pieces.append(f"{s.distance_m}m")
+            sets_desc.append(f"  Set {j + 1}: {' × '.join(pieces) or 'empty'}")
+        sets_text = "\n".join(sets_desc) if sets_desc else "  (no sets yet)"
+        parts.append(f"{i + 1}. {ex.exercise_name}\n{sets_text}")
 
     return "\n".join(parts)
 
@@ -205,22 +196,18 @@ class WorkoutVoiceService:
             )
             all_updates.append(update)
 
-            total_exercises = sum(len(seg.exercises) for seg in current_session.segments)
             logger.info(
-                "[WorkoutVoice] applied [%d] | action=%s → %s | segments=%d exercises=%d",
+                "[WorkoutVoice] applied [%d] | action=%s → %s | exercises=%d",
                 i,
                 item.action,
                 update.action,
-                len(current_session.segments),
-                total_exercises,
+                len(current_session.exercises),
             )
 
-        before_count = sum(len(seg.exercises) for seg in session.segments)
-        after_count = sum(len(seg.exercises) for seg in current_session.segments)
         logger.info(
             "[WorkoutVoice] pipeline done | exercises_before=%d → exercises_after=%d | updates=%d",
-            before_count,
-            after_count,
+            len(session.exercises),
+            len(current_session.exercises),
             len(all_updates),
         )
 
@@ -261,7 +248,6 @@ class WorkoutVoiceService:
         ts_query = func.plainto_tsquery("english", exercise_name)
         escaped = exercise_name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-        # Phase 1: tsvector + ILIKE on name + exact alias match
         stmt = (
             select(Exercise)
             .where(
@@ -276,7 +262,6 @@ class WorkoutVoiceService:
         )
         rows = (await postgres_session.execute(stmt)).scalars().all()
 
-        # Phase 2: trigram similarity fallback when phase 1 finds nothing
         if not rows:
             trgm_stmt = (
                 select(Exercise)
@@ -343,7 +328,7 @@ class WorkoutVoiceService:
         candidates: list[ExerciseMatch],
         interpretation: str,
     ) -> tuple[WorkoutVoiceSessionState, WorkoutVoiceUpdate]:
-        segments = [seg.model_copy(deep=True) for seg in session.segments]
+        exercises = [ex.model_copy(deep=True) for ex in session.exercises]
         new_sets = [SetEntry(**s.model_dump()) for s in item.sets]
 
         exercise_name = match.exercise_name if match else (item.exercise_name or "Unknown")
@@ -355,7 +340,10 @@ class WorkoutVoiceService:
                 all_candidates.append(match)
             all_candidates.extend(candidates)
             return (
-                WorkoutVoiceSessionState(segments=segments),
+                WorkoutVoiceSessionState(
+                    segment_type=session.segment_type,
+                    exercises=exercises,
+                ),
                 WorkoutVoiceUpdate(
                     action="needs_confirmation",
                     candidates=all_candidates,
@@ -365,52 +353,46 @@ class WorkoutVoiceService:
                 ),
             )
 
-        # If the LLM indicates a segment type change, start a new segment
-        if item.segment_type:
-            if not segments or segments[-1].type != item.segment_type:
-                segments.append(SessionSegment(type=item.segment_type))
-
-        def _current_seg() -> SessionSegment:
-            if not segments:
-                segments.append(SessionSegment())
-            return segments[-1]
+        exercise_index: Optional[int] = None
 
         if item.action == "new_exercise":
-            _current_seg().exercises.append(
+            exercises.append(
                 SessionExercise(
                     exercise_name=exercise_name,
                     exercise_id=exercise_id,
                     sets=new_sets,
                 )
             )
-            exercise_index = self._flat_exercise_count(segments) - 1
+            exercise_index = len(exercises) - 1
 
         elif item.action == "add_set":
-            seg_idx, local_idx = self._find_exercise_in_segments(
-                segments, exercise_name, item.exercise_name, fallback_to_last=True,
+            idx = self._find_exercise_index(
+                exercises, exercise_name, item.exercise_name, fallback_to_last=True,
             )
-            if seg_idx is not None and local_idx is not None:
-                target_seg = segments[seg_idx]
-                target_seg.exercises[local_idx].sets.extend(new_sets)
-                if exercise_id and not target_seg.exercises[local_idx].exercise_id:
-                    target_seg.exercises[local_idx].exercise_id = exercise_id
-                exercise_index = self._global_index(segments, seg_idx, local_idx)
+            if idx is not None:
+                exercises[idx].sets.extend(new_sets)
+                if exercise_id and not exercises[idx].exercise_id:
+                    exercises[idx].exercise_id = exercise_id
+                exercise_index = idx
             elif exercise_id:
-                _current_seg().exercises.append(
+                exercises.append(
                     SessionExercise(
                         exercise_name=exercise_name,
                         exercise_id=exercise_id,
                         sets=new_sets,
                     )
                 )
-                exercise_index = self._flat_exercise_count(segments) - 1
+                exercise_index = len(exercises) - 1
             else:
                 all_candidates = []
                 if match:
                     all_candidates.append(match)
                 all_candidates.extend(candidates)
                 return (
-                    WorkoutVoiceSessionState(segments=segments),
+                    WorkoutVoiceSessionState(
+                        segment_type=session.segment_type,
+                        exercises=exercises,
+                    ),
                     WorkoutVoiceUpdate(
                         action="needs_confirmation",
                         candidates=all_candidates,
@@ -421,11 +403,11 @@ class WorkoutVoiceService:
                 )
 
         elif item.action == "update_last_set":
-            seg_idx, local_idx = self._find_exercise_in_segments(
-                segments, exercise_name, item.exercise_name, fallback_to_last=True,
+            idx = self._find_exercise_index(
+                exercises, exercise_name, item.exercise_name, fallback_to_last=True,
             )
-            if seg_idx is not None and local_idx is not None and segments[seg_idx].exercises[local_idx].sets:
-                last_set = segments[seg_idx].exercises[local_idx].sets[-1]
+            if idx is not None and exercises[idx].sets:
+                last_set = exercises[idx].sets[-1]
                 for s in new_sets[:1]:
                     if s.weight_kg is not None:
                         last_set.weight_kg = s.weight_kg
@@ -435,25 +417,15 @@ class WorkoutVoiceService:
                         last_set.duration_seconds = s.duration_seconds
                     if s.distance_m is not None:
                         last_set.distance_m = s.distance_m
-                exercise_index = self._global_index(segments, seg_idx, local_idx)
-            else:
-                exercise_index = None
+                exercise_index = idx
 
         elif item.action == "remove_exercise":
-            seg_idx, local_idx = self._find_exercise_in_segments(
-                segments, exercise_name, item.exercise_name,
+            idx = self._find_exercise_index(
+                exercises, exercise_name, item.exercise_name,
             )
-            if seg_idx is not None and local_idx is not None:
-                exercise_index = self._global_index(segments, seg_idx, local_idx)
-                segments[seg_idx].exercises.pop(local_idx)
-            else:
-                exercise_index = None
-
-        elif item.action == "finish":
-            exercise_index = None
-
-        else:
-            exercise_index = None
+            if idx is not None:
+                exercise_index = idx
+                exercises.pop(idx)
 
         update = WorkoutVoiceUpdate(
             action=item.action,
@@ -463,44 +435,34 @@ class WorkoutVoiceService:
             sets_added=new_sets,
             interpretation=interpretation,
         )
-        updated_session = WorkoutVoiceSessionState(segments=segments)
+        updated_session = WorkoutVoiceSessionState(
+            segment_type=session.segment_type,
+            exercises=exercises,
+        )
         return updated_session, update
 
     @staticmethod
-    def _flat_exercise_count(segments: list[SessionSegment]) -> int:
-        return sum(len(seg.exercises) for seg in segments)
-
-    @staticmethod
-    def _global_index(segments: list[SessionSegment], seg_idx: int, local_idx: int) -> int:
-        offset = sum(len(segments[i].exercises) for i in range(seg_idx))
-        return offset + local_idx
-
-    @staticmethod
-    def _find_exercise_in_segments(
-        segments: list[SessionSegment],
+    def _find_exercise_index(
+        exercises: list[SessionExercise],
         matched_name: str,
         raw_name: Optional[str],
         *,
         fallback_to_last: bool = False,
-    ) -> tuple[Optional[int], Optional[int]]:
-        """Search all segments for a matching exercise. Returns (segment_index, local_exercise_index)."""
-        if not segments:
-            return None, None
+    ) -> Optional[int]:
+        if not exercises:
+            return None
 
         matched_lower = matched_name.lower()
         raw_lower = raw_name.lower() if raw_name else ""
 
-        for seg_idx, seg in enumerate(segments):
-            for ex_idx, ex in enumerate(seg.exercises):
-                ex_lower = ex.exercise_name.lower()
-                if ex_lower == matched_lower or ex_lower == raw_lower:
-                    return seg_idx, ex_idx
-                if ex.exercise_id and ex.exercise_id == matched_lower.replace(" ", "_"):
-                    return seg_idx, ex_idx
+        for i, ex in enumerate(exercises):
+            ex_lower = ex.exercise_name.lower()
+            if ex_lower == matched_lower or ex_lower == raw_lower:
+                return i
+            if ex.exercise_id and ex.exercise_id == matched_lower.replace(" ", "_"):
+                return i
 
         if fallback_to_last:
-            for seg_idx in range(len(segments) - 1, -1, -1):
-                if segments[seg_idx].exercises:
-                    return seg_idx, len(segments[seg_idx].exercises) - 1
+            return len(exercises) - 1
 
-        return None, None
+        return None
