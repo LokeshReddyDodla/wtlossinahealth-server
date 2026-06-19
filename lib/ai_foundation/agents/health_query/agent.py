@@ -500,6 +500,7 @@ class HealthQueryAgent(BaseAgent):
                 "latency_ms": output.latency_ms,
                 "model_id": output.model_id,
                 "input_mode": input.context.metadata.get("output_mode", "text"),
+                "channel": input.context.metadata.get("channel", "app"),
                 "audio_url": input.context.metadata.get("audio_url"),
             },
         )
