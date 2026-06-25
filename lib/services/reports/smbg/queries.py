@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.models.patient_smbg import PatientSMBG
+from .constants import VALID_SMBG_TYPES
 
 
 class SMBGQueries:
@@ -19,12 +20,13 @@ class SMBGQueries:
         start_date: datetime,
         end_date: datetime,
     ) -> List[PatientSMBG]:
-        """Fetch SMBG readings within a date range."""
+        """Fetch SMBG readings within a date range, filtered to valid types only."""
         result = await postgres_session.execute(
             select(PatientSMBG)
             .where(PatientSMBG.patient_id == patient_id)
             .where(PatientSMBG.reading_time >= start_date)
             .where(PatientSMBG.reading_time <= end_date)
+            .where(PatientSMBG.type.in_(VALID_SMBG_TYPES))
         )
         return list(result.scalars().all())
 
