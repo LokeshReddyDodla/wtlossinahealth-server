@@ -6,13 +6,13 @@ hardcodes. Values load from environment variables with sensible defaults.
 
 Usage:
     from lib.ai_foundation.config import settings
-    settings.MAX_RECORDS_PER_TYPE  # → 10
+    settings.MAX_RECORDS_PER_TYPE  # → 50
     settings.PATIENT_CACHE_TTL     # → 300
 
 To override: set environment variables with AI_ prefix:
-    AI_MAX_RECORDS_PER_TYPE=20
+    AI_MAX_RECORDS_PER_TYPE=100
     AI_PATIENT_CACHE_TTL=600
-    AI_QDRANT_RESULT_LIMIT=50
+    AI_QDRANT_RESULT_LIMIT=200
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ class AIFoundationSettings(BaseSettings):
 
     # ── Retrieval ─────────────────────────────────────────────────────────
 
-    QDRANT_RESULT_LIMIT: int = Field(default=30, description="Max results per Qdrant query")
-    MAX_RECORDS_PER_TYPE: int = Field(default=10, description="Max records per data_type in LLM context")
+    QDRANT_RESULT_LIMIT: int = Field(default=500, description="Safety cap per Qdrant query — retriever paginates up to this limit")
+    MAX_RECORDS_PER_TYPE: int = Field(default=200, description="Max records per data_type in LLM context")
     MAX_ANALYSIS_CHARS: int = Field(default=80_000, description="Hard cap on analysis text sent to LLM")
 
     # ── Cache ─────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ class AIFoundationSettings(BaseSettings):
     REASONING_THINKER_MODEL: str = Field(default="claude-haiku-4-5-20251001", description="Model for reasoning/tool decisions")
     REASONING_RESPONDER_MODEL: str = Field(default="claude-sonnet-4-6", description="Model for final response generation")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
-    REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=2000, description="Max chars per tool result")
+    REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
 
     # ── Planning ──────────────────────────────────────────────────────────
@@ -76,18 +76,18 @@ class AIFoundationSettings(BaseSettings):
 
     STEP_LOG_TRUNCATION_CHARS: int = Field(default=500, description="Max chars per tool result in reasoning step logs")
     SUMMARY_TRUNCATION_CHARS: int = Field(default=200, description="Max chars for display summaries in SSE events")
-    LOOKUP_DEFAULT_LIMIT: int = Field(default=15, description="Default record limit for look_up tool")
-    BASELINE_DISPLAY_LIMIT: int = Field(default=20, description="Max individual records shown in compare_baseline")
+    LOOKUP_DEFAULT_LIMIT: int = Field(default=200, description="Default record limit for look_up tool")
+    BASELINE_DISPLAY_LIMIT: int = Field(default=200, description="Max individual records shown in compare_baseline")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
     MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
     # ── Panel (Multi-Patient) Queries ─────────────────────────────────────
 
-    PANEL_LOOKUP_LIMIT: int = Field(default=5, description="Default look_up records per patient in panel queries")
-    PANEL_RECORDS_PER_PATIENT: int = Field(default=4, description="Records per patient per data_type in panel queries")
-    PANEL_MAX_RECORDS_PER_TYPE: int = Field(default=30, description="Absolute max records per data_type in panel queries")
-    PANEL_MAX_TOOL_RESULT_CHARS: int = Field(default=10_000, description="Max chars per tool result for panel (multi-patient) queries")
+    PANEL_LOOKUP_LIMIT: int = Field(default=10, description="Default look_up records per patient in panel queries")
+    PANEL_RECORDS_PER_PATIENT: int = Field(default=8, description="Records per patient per data_type in panel queries")
+    PANEL_MAX_RECORDS_PER_TYPE: int = Field(default=50, description="Absolute max records per data_type in panel queries")
+    PANEL_MAX_TOOL_RESULT_CHARS: int = Field(default=32_000, description="Max chars per tool result for panel (multi-patient) queries")
 
     # ── Cross-Domain Synthesis ─────────────────────────────────────────────
 

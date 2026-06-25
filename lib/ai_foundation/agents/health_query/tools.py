@@ -149,7 +149,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                     "date_start": {"type": "string", "description": "Start date (ISO format). e.g. '2026-03-18'"},
                     "date_end": {"type": "string", "description": "End date (ISO format). e.g. '2026-03-25'"},
-                    "limit": {"type": "integer", "description": "Max records to return. Default 15."},
+                    "limit": {"type": "integer", "description": "Max records to return. Default 200."},
                 },
                 "required": ["data_types"],
             },
