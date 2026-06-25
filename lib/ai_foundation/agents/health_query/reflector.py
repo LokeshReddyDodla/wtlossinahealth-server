@@ -147,14 +147,15 @@ class ReflectionEngine:
 
             if role == "tool" and content:
                 # Tool result messages (reasoning engine path)
-                if len(content) > settings.STEP_LOG_TRUNCATION_CHARS:
-                    content = content[:settings.STEP_LOG_TRUNCATION_CHARS] + "..."
+                # Reflector must see full data to verify accuracy — no truncation
+                if len(content) > settings.REASONING_MAX_TOOL_RESULT_CHARS:
+                    content = content[:settings.REASONING_MAX_TOOL_RESULT_CHARS] + "..."
                 parts.append(content)
             elif meta_type == "gathered_data" and content:
                 # Coordinator path: combined specialist findings
-                parts.append(content[:2000])
+                parts.append(content[:settings.REASONING_MAX_TOOL_RESULT_CHARS])
             elif role == "system" and content.startswith("Investigation findings:"):
                 # Coordinator path: explicit findings block
-                parts.append(content[:2000])
+                parts.append(content[:settings.REASONING_MAX_TOOL_RESULT_CHARS])
 
         return "\n\n---\n\n".join(parts) if parts else ""

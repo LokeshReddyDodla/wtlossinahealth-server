@@ -75,7 +75,7 @@ def _build_xy(chart: dict) -> str | None:
         all_values.extend(v for v in s.get("data", []) if isinstance(v, (int, float)))
 
     y_max = _auto_max(all_values)
-    x_formatted = ", ".join(f'"{_clean(str(l))}"' for l in x_labels[:10])
+    x_formatted = ", ".join(f'"{_clean(str(l))}"' for l in x_labels[:30])
 
     lines = [
         "xychart-beta",
@@ -86,7 +86,7 @@ def _build_xy(chart: dict) -> str | None:
 
     for s in series_list:
         s_type = s.get("type", chart["type"])  # inherit from chart if not specified
-        data = s.get("data", [])[:10]
+        data = s.get("data", [])[:30]
         data_str = ", ".join(str(v) for v in data)
         keyword = "line" if s_type == "line" else "bar"
         lines.append(f"    {keyword} [{data_str}]")
@@ -103,7 +103,7 @@ def _build_pie(chart: dict) -> str | None:
         return None
 
     lines = [f"pie title {title}" if title else "pie"]
-    for seg in segments[:10]:
+    for seg in segments[:30]:
         label = _clean(str(seg.get("label", "")))
         value = seg.get("value", 0)
         lines.append(f'    "{label}" : {value}')
@@ -126,10 +126,10 @@ def _build_gantt(chart: dict) -> str | None:
         "    axisFormat %H:%M",
     ]
 
-    for section in sections[:10]:
+    for section in sections[:30]:
         name = _clean(str(section.get("name", "")))
         lines.append(f"    section {name}")
-        for event in section.get("events", [])[:20]:
+        for event in section.get("events", [])[:30]:
             label = _clean(str(event.get("label", "")))
             start = event.get("start", "00:00")
             end = event.get("end", "00:00")

@@ -174,10 +174,10 @@ def build_context_messages(
             if not insights:
                 continue
             name = pnames.get(pid, f"Patient {pid[:8]}")
-            for ins in insights[:3]:
+            for ins in insights[:5]:
                 lines.append(
                     f"  [{name}] [{ins.get('severity', '')}] "
-                    f"{ins.get('title', '')}: {ins.get('message', '')[:120]}"
+                    f"{ins.get('title', '')}: {ins.get('message', '')}"
                 )
         messages.append({
             "role": "system",
@@ -186,7 +186,7 @@ def build_context_messages(
         })
     elif context.recent_insights:
         lines = ["Recent health insights (notifications sent to this patient):"]
-        for ins in context.recent_insights[:5]:
+        for ins in context.recent_insights[:8]:
             lines.append(f"- [{ins.get('severity', '')}] {ins.get('title', '')}: {ins.get('message', '')}")
         messages.append({
             "role": "system",

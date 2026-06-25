@@ -36,7 +36,7 @@ class RetrievalRequest(BaseModel):
         description="Inclusive (full day) end date (ISO 8601).",
     )
     limit: int = Field(
-        default=24,
+        default=200,
         gt=0,
         description="Maximum number of results to return.",
     )
