@@ -7,6 +7,8 @@ from .constants import (
     MEAL_WINDOWS,
     PRE_MEAL_TYPES,
     POST_MEAL_TYPES,
+    FASTING_TYPE,
+    RANDOM_TYPE,
     BUCKET_NAMES,
 )
 
@@ -22,6 +24,14 @@ class MealWindowBucketer:
         }
 
         for record in records:
+            if record.type == FASTING_TYPE:
+                buckets["fasting"].append(record)
+                continue
+
+            if record.type == RANDOM_TYPE:
+                buckets["random"].append(record)
+                continue
+
             hour = record.reading_time.hour
             assigned = False
 
@@ -35,7 +45,7 @@ class MealWindowBucketer:
                     break
 
             if not assigned:
-                buckets["other"].append(record)
+                buckets["random"].append(record)
 
         return buckets
 
