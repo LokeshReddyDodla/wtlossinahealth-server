@@ -98,6 +98,7 @@ from lib.services.patient_data_availability_service import (
     PatientDataAvailabilityService,
 )
 from lib.services.patient_daily_overview_service import PatientDailyOverviewService
+from lib.services.patient_timeline_service import PatientTimelineService
 from lib.services.patient_data_export_service import PatientDataExportService
 
 from lib.services.reports import (
@@ -221,6 +222,10 @@ def get_patient_daily_overview_service() -> PatientDailyOverviewService:
     return cast(
         PatientDailyOverviewService, container.resolve(PatientDailyOverviewService)
     )
+
+
+def get_patient_timeline_service() -> PatientTimelineService:
+    return cast(PatientTimelineService, container.resolve(PatientTimelineService))
 
 
 def get_patient_data_export_service() -> PatientDataExportService:
