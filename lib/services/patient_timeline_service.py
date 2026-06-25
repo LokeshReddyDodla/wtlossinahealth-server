@@ -72,13 +72,15 @@ class PatientTimelineService:
             self._get_report_enrichments(patient_id, selected_date),
         )
 
-        events = pg_events + vital_events + insight_events + cgm_events
+        data_events = pg_events + vital_events + cgm_events
 
         meal_glucose, sleep_quality, inactive_periods = report_enrichments
-        self._enrich_meals(events, meal_glucose)
-        self._enrich_sleep(events, sleep_quality)
-        events.extend(inactive_periods)
+        self._enrich_meals(data_events, meal_glucose)
+        self._enrich_sleep(data_events, sleep_quality)
+        data_events.extend(inactive_periods)
 
+        self._anchor_insights(insight_events, data_events)
+        events = data_events + insight_events
         events.sort(key=lambda e: e.timestamp)
         return TimelineResponse(
             date=selected_date,
@@ -711,6 +713,8 @@ class PatientTimelineService:
 
         events: list[TimelineEvent] = []
         for doc in docs:
+            if doc.get("category") == "engagement_drop":
+                continue
             created = doc.get("created_at")
             if not created:
                 continue
@@ -730,11 +734,38 @@ class PatientTimelineService:
                 timestamp=created,
                 type=TimelineEventType.AI_INSIGHT,
                 title=doc.get("title") or doc.get("category", "Insight"),
-                subtitle=doc.get("message", "")[:150] or None,
+                subtitle=doc.get("message") or None,
                 data=data,
                 entity_id=doc.get("insight_id"),
             ))
         return events
+
+    # ── Insight anchoring ─────────────────────────────────────────────────
+
+    _TRIGGER_TO_EVENT_TYPE = {
+        "meal_logged": TimelineEventType.MEAL,
+        "smbg_logged": TimelineEventType.SMBG,
+        "symptom_logged": TimelineEventType.SYMPTOM,
+        "medication_missed": TimelineEventType.MEDICATION_MISSED,
+    }
+
+    @staticmethod
+    def _anchor_insights(
+        insights: list[TimelineEvent], data_events: list[TimelineEvent],
+    ) -> None:
+        for insight in insights:
+            trigger = insight.data.get("trigger")
+            target_type = PatientTimelineService._TRIGGER_TO_EVENT_TYPE.get(trigger)
+            if not target_type:
+                continue
+            candidates = [e for e in data_events if e.type == target_type]
+            if not candidates:
+                continue
+            closest = min(
+                candidates,
+                key=lambda e: abs((e.timestamp - insight.timestamp).total_seconds()),
+            )
+            insight.timestamp = closest.timestamp + timedelta(seconds=1)
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
