@@ -41,15 +41,15 @@ class TestBarChart:
         assert "(" not in result
         assert "–" not in result
 
-    def test_bar_limits_to_10_values(self):
+    def test_bar_limits_to_30_values(self):
         result = build_mermaid({
             "type": "bar",
-            "x": [f"D{i}" for i in range(15)],
+            "x": [f"D{i}" for i in range(35)],
             "y_label": "v",
-            "series": [{"data": list(range(15))}],
+            "series": [{"data": list(range(35))}],
         })
-        # x-axis should have at most 10 labels
-        assert result.count('"D') <= 10
+        # x-axis should have at most 30 labels
+        assert result.count('"D') <= 30
 
 
 # ---------------------------------------------------------------------------
