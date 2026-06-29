@@ -1755,6 +1755,7 @@ container.register(
         qdrant=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
     ),
     scope=Scope.singleton,
 )
@@ -1862,6 +1863,7 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
     ),
     scope=Scope.singleton,
 )
