@@ -213,6 +213,7 @@ from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
 from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 
 # Initialize Container
 container = Container()
@@ -1691,6 +1692,16 @@ container.register(
     RateLimiter,
     lambda: RateLimiter(
         cache_store=container.resolve("ai_foundation_cache"),
+    ),
+    scope=Scope.singleton,
+)
+
+# Metabolic Service — clinical metabolic engine (glucose prediction, attribution, BMIQ)
+container.register(
+    MetabolicService,
+    lambda: MetabolicService(
+        retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
     ),
     scope=Scope.singleton,
 )
