@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "date": "2026-06-17",
+    "engine": "BMIQ",
+    "description": "BMIQ Evidence Library — Layer 1 Source of Truth. Mirrors mmiq_evidence_library.json. Holds the dimension targets, risk-possibility rules, and published effect-size anchors that the BMIQ v2 engine scores against. The auto-research loop proposes deltas to THIS file; the engine reads it. Never override these values with LLM output — changes flow only through the lens-eval gate (see RESEARCH_LOOP.md).",
+    "totalRules": 5,
+    "totalDimensionTargets": 4,
+    "source_engine_file": "../engine/bmiq_v2_engine.py"
+  },
+
+  "dimensionTargets": [
+    { "dimId": "D1_adiposity",  "weight": 0.30, "inputs": ["BMI (Asian cutoffs)", "sex-specific body-fat%"], "note": "Treat raw PBF as soft signal; BIA under-reads fat ~3-4% in obese (Sun AJCN 2005). Prefer FMI." },
+    { "dimId": "D2_visceral",   "weight": 0.30, "inputs": ["InBody visceral level", "waist-hip ratio"] },
+    { "dimId": "D3_sarcopenia", "weight": 0.25, "inputs": ["SMM-index deficit (sex-specific)"], "note": "Raised 0.20->0.25 in v2; SMI is the single strongest discriminator of the high-risk phenotype (r=-0.50)." },
+    { "dimId": "D4_fluid",      "weight": 0.15, "inputs": ["ECW/TBW ratio", "ICW trend"], "note": "Falling ICW + rising ECW/TBW = poor-quality, muscle-losing weight loss (early-warning)." }
+  ],
+
+  "riskRules": [
+    {
+      "ruleId": "SARCOPENIC_OBESITY",
+      "name": "Sarcopenic Obesity",
+      "severity": "critical",
+      "dimensions": ["D3_sarcopenia", "D1_adiposity"],
+      "condition": "low SMI (sex-specific) AND high fat-mass index",
+      "conditionReadable": "Low skeletal-muscle index combined with high fat-mass index",
+      "clinicalMeaning": "Low muscle on a high-fat frame. Highest-risk BMIQ phenotype (n=118 in cohort, 82% women, older). Muscle — not fat or BMI — is the strongest risk discriminator.",
+      "effectSize": "All-cause mortality HR 1.51 (1.14-2.02)",
+      "citation": "Liu C et al. Obes Rev 2022;24(2):e13534. doi:10.1111/obr.13534 (meta, n=167,151)",
+      "recommendedAction": "Protein to 1.2-1.6 g/kg + resistance/arm loading; re-scan SMM in 90 days."
+    },
+    {
+      "ruleId": "HIGH_VISCERAL",
+      "name": "High Visceral Adiposity",
+      "severity": "high",
+      "dimensions": ["D2_visceral"],
+      "condition": "InBody visceral fat level >= 15",
+      "conditionReadable": "Visceral fat level at or above 15",
+      "clinicalMeaning": "Central adiposity driving cardiometabolic and renal risk independent of BMI.",
+      "effectSize": "CKD OR 3.94 (2.44-6.39), BMI-adjusted",
+      "citation": "Yu P et al. Front Endocrinol 2022;13:1052736. doi:10.3389/fendo.2022.1052736",
+      "recommendedAction": "Prioritise visceral-fat reduction; screen renal function."
+    },
+    {
+      "ruleId": "FLUID_OVERLOAD",
+      "name": "Fluid Overload / Inflammatory-Obese",
+      "severity": "high",
+      "dimensions": ["D4_fluid"],
+      "condition": "ECW/TBW > 0.39",
+      "conditionReadable": "Extracellular-to-total body water ratio above 0.39",
+      "clinicalMeaning": "Relative overhydration / inflammation; co-travels with lower muscle and higher visceral. Frail-obese signal.",
+      "effectSize": "+24.5% mortality per +0.1 E:I ratio",
+      "citation": "Ng JK et al. PLoS One 2018;13(8):e0202203. doi:10.1371/journal.pone.0202203",
+      "recommendedAction": "Confirm with LookinBody export (OCR-noise caveat); track ICW trend."
+    },
+    {
+      "ruleId": "GLP1_LEAN_LOSS",
+      "name": "Rapid Lean Loss on Incretin Therapy",
+      "severity": "high",
+      "dimensions": ["D3_sarcopenia", "X_drug_tech"],
+      "condition": "on GLP-1/GIP AND >2% SMM loss between serial scans",
+      "conditionReadable": "Skeletal-muscle loss >2% across serial scans while on incretin therapy",
+      "clinicalMeaning": "Incretin weight loss carries lean mass with it; cohort lost ~15% of weight as muscle (favourable end of literature, but still sub-optimal quality).",
+      "effectSize": "GLP-1 lean loss ~25% of weight lost (RCT meta)",
+      "citation": "Karakasis P et al. Metabolism 2024;164:156113. doi:10.1016/j.metabol.2024.156113",
+      "recommendedAction": "Resistance training during therapy preserves lean mass (Locatelli, Diabetes Care 2024). Enforce protein floor."
+    },
+    {
+      "ruleId": "MUSCLE_LOSS_PREDOMINANT",
+      "name": "Muscle-Loss-Predominant (hidden)",
+      "severity": "high",
+      "dimensions": ["D3_sarcopenia"],
+      "condition": "SMM down >2% AND fat flat/up AND weight ~stable",
+      "conditionReadable": "Losing skeletal muscle while fat is preserved or rising at near-stable weight",
+      "clinicalMeaning": "Adverse recomposition invisible to scale-weight monitoring (~6% of serial-BCA cohort). Only serial BCA catches it.",
+      "effectSize": "internal_finding (n=7/127); pending external anchor",
+      "citation": "BMIQ eating_report/MuscleLoss_Phenotype_findings.md (2026-06-17)",
+      "recommendedAction": "Flag for clinical review; this rule is a candidate for the loop to strengthen with external evidence."
+    }
+  ]
+}

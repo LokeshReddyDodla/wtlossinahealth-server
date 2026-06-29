@@ -213,6 +213,7 @@ from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
 from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 
 # Initialize Container
 container = Container()
@@ -1695,6 +1696,16 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Metabolic Service — clinical metabolic engine (glucose prediction, attribution, BMIQ)
+container.register(
+    MetabolicService,
+    lambda: MetabolicService(
+        retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Patient Name Resolver — resolves UUIDs to display names for natural responses
 container.register(
     PatientNameResolver,
@@ -1919,6 +1930,7 @@ container.register(
         glucose_predictor=cast(
             GlucosePredictor, container.resolve(GlucosePredictor)
         ),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
