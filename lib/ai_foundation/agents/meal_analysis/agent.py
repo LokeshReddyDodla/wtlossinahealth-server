@@ -180,6 +180,7 @@ class MealAnalysisAgent(BaseAgent):
                 glycemic_load=gl,
                 slot=request.slot.value,
                 trace_id=trace_id,
+                meal_hour=local_now.hour if local_now else None,
             )),
             _timed(asyncio.to_thread(
                 check_plan,
@@ -252,6 +253,7 @@ class MealAnalysisAgent(BaseAgent):
         glycemic_load: float,
         slot: str,
         trace_id: str,
+        meal_hour: int | None = None,
     ) -> GlucosePrediction | None:
         # ponytail: engine first, LLM fallback. No retry logic — if engine says None, LLM gets a shot.
         if self._metabolic:
@@ -259,7 +261,7 @@ class MealAnalysisAgent(BaseAgent):
                 m = extraction.total_macros
                 meal = self._metabolic.build_meal_dict(
                     {"carb": m.carbs, "protein": m.protein, "fiber": m.fiber, "cal": m.calories},
-                    hour=extraction.consumed_at.hour if extraction.consumed_at else None,
+                    hour=meal_hour,
                 )
                 contract = await self._metabolic.assess(patient_id, meal)
                 raw = self._metabolic.to_glucose_prediction(contract)
@@ -423,6 +425,7 @@ class MealAnalysisAgent(BaseAgent):
                 glycemic_load=gl,
                 slot=request.slot.value,
                 trace_id=trace_id,
+                meal_hour=local_now.hour if local_now else None,
             )),
             _timed(asyncio.to_thread(
                 check_plan,
