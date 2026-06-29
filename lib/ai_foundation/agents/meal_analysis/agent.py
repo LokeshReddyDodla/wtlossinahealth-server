@@ -32,6 +32,7 @@ from .context_loader import MealContextLoader
 from .contracts import (
     ConfidenceLevel,
     ExtractedFoodItem,
+    GlucosePrediction,
     MacroSet,
     MealAnalysisResult,
     MealExtraction,
@@ -42,6 +43,7 @@ from .contracts import (
 from .extractor import MealExtractor
 from .glucose_predictor import GlucosePredictor
 from .plan_checker import check_plan
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 from .repeat_detector import detect_repeat
 from .scorer import MealScorer, estimate_glycemic_load
 
@@ -79,6 +81,7 @@ class MealAnalysisAgent(BaseAgent):
         scorer: MealScorer,
         alternatives: AlternativesEngine,
         glucose_predictor: GlucosePredictor,
+        metabolic_service: MetabolicService | None = None,
         memory: MemoryStore | None = None,
         prompts: PromptRegistry | None = None,
         event_bus: EventBus | None = None,
@@ -95,6 +98,7 @@ class MealAnalysisAgent(BaseAgent):
         self._scorer = scorer
         self._alternatives = alternatives
         self._glucose = glucose_predictor
+        self._metabolic = metabolic_service
 
     async def analyze(
         self,
@@ -169,7 +173,8 @@ class MealAnalysisAgent(BaseAgent):
                 slot=request.slot.value,
                 trace_id=trace_id,
             )),
-            _timed(self._glucose.predict(
+            _timed(self._predict_glucose(
+                patient_id=patient_id,
                 extraction=extraction,
                 context=context,
                 glycemic_load=gl,
@@ -237,6 +242,48 @@ class MealAnalysisAgent(BaseAgent):
         )
 
         return result
+
+    async def _predict_glucose(
+        self,
+        *,
+        patient_id: str,
+        extraction: MealExtraction,
+        context: Any,
+        glycemic_load: float,
+        slot: str,
+        trace_id: str,
+    ) -> GlucosePrediction | None:
+        # ponytail: engine first, LLM fallback. No retry logic — if engine says None, LLM gets a shot.
+        if self._metabolic:
+            try:
+                m = extraction.total_macros
+                meal = self._metabolic.build_meal_dict(
+                    {"carb": m.carbs, "protein": m.protein, "fiber": m.fiber, "cal": m.calories},
+                    hour=extraction.consumed_at.hour if extraction.consumed_at else None,
+                )
+                contract = await self._metabolic.assess(patient_id, meal)
+                raw = self._metabolic.to_glucose_prediction(contract)
+                if raw:
+                    conf_map = {"high": ConfidenceLevel.HIGH, "medium": ConfidenceLevel.MEDIUM, "low": ConfidenceLevel.LOW}
+                    return GlucosePrediction(
+                        range_mg_dl_low=raw["range_mg_dl_low"],
+                        range_mg_dl_high=raw["range_mg_dl_high"],
+                        peak_minutes_after=raw["peak_minutes_after"],
+                        confidence=conf_map.get(raw["confidence"], ConfidenceLevel.MEDIUM),
+                        n_similar_meals=raw["n_similar_meals"],
+                        evidence=raw.get("evidence", []),
+                        rationale=raw["rationale"],
+                    )
+            except Exception:
+                logger.exception("metabolic engine failed for %s, falling back to LLM", patient_id)
+
+        return await self._glucose.predict(
+            extraction=extraction,
+            context=context,
+            glycemic_load=glycemic_load,
+            slot=slot,
+            trace_id=trace_id,
+        )
 
     async def quick_analyze(
         self,
@@ -369,7 +416,8 @@ class MealAnalysisAgent(BaseAgent):
                 slot=request.slot.value,
                 trace_id=trace_id,
             )),
-            _timed(self._glucose.predict(
+            _timed(self._predict_glucose(
+                patient_id=patient_id,
                 extraction=extraction,
                 context=context,
                 glycemic_load=gl,

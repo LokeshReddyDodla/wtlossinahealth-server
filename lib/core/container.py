@@ -1930,6 +1930,7 @@ container.register(
         glucose_predictor=cast(
             GlucosePredictor, container.resolve(GlucosePredictor)
         ),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
