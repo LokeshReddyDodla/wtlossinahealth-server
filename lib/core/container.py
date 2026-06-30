@@ -207,6 +207,7 @@ from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.ai_foundation.agents.product_bot import ProductBotAgent
+from lib.ai_foundation.agents.dashboard_help import DashboardHelpAgent
 from lib.ai_foundation.rate_limit.public_limiter import PublicRateLimiter
 from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
@@ -2150,6 +2151,14 @@ container.register(
         event_bus=cast(EventBus, container.resolve(EventBus)),
         cache_store=container.resolve("product_bot_cache"),
         analytics_collection=container.resolve("product_bot_conversations_collection"),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    DashboardHelpAgent,
+    lambda: DashboardHelpAgent(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
     ),
     scope=Scope.singleton,
 )
