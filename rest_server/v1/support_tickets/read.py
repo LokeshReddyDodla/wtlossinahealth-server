@@ -37,13 +37,16 @@ async def list_my_tickets(
     ),
 ):
     try:
-        tickets = await support_ticket_service.list_tickets_for_requester(
+        tickets, total = await support_ticket_service.list_tickets_for_requester(
             requester_id=actor.id,
             status_filter=status_filter,
             limit=limit,
             offset=offset,
         )
-        return SuccessResponse(data=jsonable_encoder(tickets))
+        return SuccessResponse(data=jsonable_encoder({
+            "tickets": tickets,
+            "total": total,
+        }))
     except HTTPException as e:
         raise e
     except Exception as e:

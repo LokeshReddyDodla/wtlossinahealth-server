@@ -32,7 +32,8 @@ async def list_queue(
     ),
 ):
     try:
-        tickets = await support_ticket_service.list_queue(
+        tickets, total = await support_ticket_service.list_queue(
+            agent_id=agent.id,
             agent_scopes=agent.allowed_scopes,
             agent_facility_ids=agent.facility_ids,
             scope_filter=scope,
@@ -41,7 +42,10 @@ async def list_queue(
             limit=limit,
             offset=offset,
         )
-        return SuccessResponse(data=jsonable_encoder(tickets))
+        return SuccessResponse(data=jsonable_encoder({
+            "tickets": tickets,
+            "total": total,
+        }))
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -66,6 +70,7 @@ async def get_ticket(
     try:
         ticket = await support_ticket_service.get_ticket_with_messages_for_agent(
             ticket_id=ticket_id,
+            agent_id=agent.id,
             agent_scopes=agent.allowed_scopes,
             agent_facility_ids=agent.facility_ids,
         )
