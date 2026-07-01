@@ -178,6 +178,7 @@ class SupportTicketService:
         scope_filter: Optional[SupportScopeLiteral],
         status_filter: Optional[SupportTicketStatusLiteral],
         requester_type_filter: Optional[RequesterTypeLiteral],
+        search: Optional[str] = None,
         limit: int,
         offset: int,
     ) -> tuple[list[dict], int]:
@@ -211,6 +212,32 @@ class SupportTicketService:
             query["requester_type"] = requester_type_filter
 
         col = self.mongo_store.db["support_tickets"]
+
+        if search:
+            import re
+            pattern = re.escape(search)
+            regex = {"$regex": pattern, "$options": "i"}
+            # fetch all scope-matched tickets, enrich, then filter by name/subject/preview
+            all_cursor = col.find(query).sort("last_message_at", -1)
+            all_tickets = await all_cursor.to_list(length=None)
+            all_tickets = await self._enrich_with_requester_profiles(all_tickets)
+
+            filtered = []
+            for t in all_tickets:
+                haystack = " ".join(filter(None, [
+                    t.get("subject"),
+                    t.get("last_message_preview"),
+                    t.get("requester_profile", {}).get("first_name"),
+                    t.get("requester_profile", {}).get("last_name"),
+                ]))
+                if re.search(pattern, haystack, re.IGNORECASE):
+                    filtered.append(t)
+
+            total = len(filtered)
+            page = filtered[offset : offset + limit]
+            page = await self._attach_unread_flags(page, agent_id)
+            return page, total
+
         total = await col.count_documents(query)
         cursor = (
             col.find(query)
@@ -269,7 +296,8 @@ class SupportTicketService:
             .to_list(length=None)
         )
         messages = await enrich_messages_with_sender_profiles(messages)
-        return {**ticket, "messages": messages}
+        enriched = await self._enrich_with_requester_profiles([ticket])
+        return {**enriched[0], "messages": messages}
 
     async def agent_reply(
         self,
