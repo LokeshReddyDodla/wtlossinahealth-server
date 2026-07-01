@@ -33,6 +33,7 @@ from lib.services.chat.chat_participant_service import ChatParticipantService
 from lib.services.chat.message_enricher import (
     enrich_messages_with_sender_profiles,
 )
+from lib.services.chat.profile_resolver_service import ProfileResolverService
 from lib.utils.preview import sanitize_preview
 
 
@@ -136,18 +137,20 @@ class SupportTicketService:
         status_filter: Optional[SupportTicketStatusLiteral],
         limit: int,
         offset: int,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         query: dict = {"requester_id": requester_id}
         if status_filter:
             query["status"] = status_filter
+        col = self.mongo_store.db["support_tickets"]
+        total = await col.count_documents(query)
         cursor = (
-            self.mongo_store.db["support_tickets"]
-            .find(query)
+            col.find(query)
             .sort("last_message_at", -1)
             .skip(offset)
             .limit(limit)
         )
-        return await cursor.to_list(length=limit)
+        tickets = await cursor.to_list(length=limit)
+        return tickets, total
 
     async def get_ticket_for_requester(
         self, ticket_id: str, requester_id: str
@@ -169,6 +172,7 @@ class SupportTicketService:
     async def list_queue(
         self,
         *,
+        agent_id: str,
         agent_scopes: list[SupportScopeLiteral],
         agent_facility_ids: list[str],
         scope_filter: Optional[SupportScopeLiteral],
@@ -176,7 +180,7 @@ class SupportTicketService:
         requester_type_filter: Optional[RequesterTypeLiteral],
         limit: int,
         offset: int,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], int]:
         scope_clauses: list[dict] = []
         if "product" in agent_scopes and (
             scope_filter is None or scope_filter == "product"
@@ -194,7 +198,7 @@ class SupportTicketService:
                 )
 
         if not scope_clauses:
-            return []
+            return [], 0
 
         query: dict = (
             scope_clauses[0]
@@ -206,14 +210,20 @@ class SupportTicketService:
         if requester_type_filter:
             query["requester_type"] = requester_type_filter
 
+        col = self.mongo_store.db["support_tickets"]
+        total = await col.count_documents(query)
         cursor = (
-            self.mongo_store.db["support_tickets"]
-            .find(query)
+            col.find(query)
             .sort("last_message_at", -1)
             .skip(offset)
             .limit(limit)
         )
-        return await cursor.to_list(length=limit)
+        tickets = await cursor.to_list(length=limit)
+
+        tickets = await self._enrich_with_requester_profiles(tickets)
+        tickets = await self._attach_unread_flags(tickets, agent_id)
+
+        return tickets, total
 
     async def get_ticket_for_agent(
         self,
@@ -235,17 +245,23 @@ class SupportTicketService:
     async def get_ticket_with_messages_for_agent(
         self,
         ticket_id: str,
+        agent_id: str,
         agent_scopes: list[SupportScopeLiteral],
         agent_facility_ids: list[str],
     ) -> Optional[dict]:
         """Return ticket + the full message thread. Agents need this to read
         a ticket BEFORE they reply — at which point they're not yet a chat
-        participant, so the participant-gated /chats/messages 403s them."""
+        participant, so the participant-gated /chats/messages 403s them.
+
+        Also marks the ticket as read for this agent."""
         ticket = await self.get_ticket_for_agent(
             ticket_id, agent_scopes, agent_facility_ids
         )
         if not ticket:
             return None
+
+        await self._mark_read(ticket_id, agent_id)
+
         messages = (
             await self.mongo_store.db["chat_messages"]
             .find({"chat_id": ticket["chat_id"]})
@@ -414,6 +430,50 @@ class SupportTicketService:
                 and ticket.get("health_facility_id") in agent_facility_ids
             )
         return False
+
+    async def _enrich_with_requester_profiles(
+        self, tickets: list[dict]
+    ) -> list[dict]:
+        if not tickets:
+            return tickets
+        requester_ids = {t["requester_id"] for t in tickets}
+        profiles = await ProfileResolverService().resolve(requester_ids)
+        for t in tickets:
+            profile = profiles.get(t["requester_id"])
+            if profile is not None:
+                t["requester_profile"] = jsonable_encoder(profile)
+        return tickets
+
+    async def _mark_read(self, ticket_id: str, agent_id: str) -> None:
+        await self.mongo_store.db["support_ticket_reads"].update_one(
+            {"_id": f"{agent_id}:{ticket_id}"},
+            {"$set": {
+                "agent_id": agent_id,
+                "ticket_id": ticket_id,
+                "read_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+
+    async def _attach_unread_flags(
+        self, tickets: list[dict], agent_id: str
+    ) -> list[dict]:
+        if not tickets:
+            return tickets
+        ticket_ids = [t["_id"] for t in tickets]
+        reads = (
+            await self.mongo_store.db["support_ticket_reads"]
+            .find({
+                "agent_id": agent_id,
+                "ticket_id": {"$in": ticket_ids},
+            })
+            .to_list(length=len(ticket_ids))
+        )
+        read_map = {r["ticket_id"]: r["read_at"] for r in reads}
+        for t in tickets:
+            read_at = read_map.get(t["_id"])
+            t["has_unread"] = read_at is None or t["last_message_at"] > read_at
+        return tickets
 
     async def _set_status(
         self, ticket: dict, new_status: SupportTicketStatusLiteral
