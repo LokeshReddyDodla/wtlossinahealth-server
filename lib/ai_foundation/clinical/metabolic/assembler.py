@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+import time as _time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lib.ai_foundation.retrieval.base import RetrievalRequest
@@ -24,6 +25,7 @@ _CGM_RANGE_TYPE = "cgm_range_stats"
 _MEAL_TYPE = "meal"
 _PROFILE_TYPE = "profile"
 _MEDICATION_TYPE = "medication"
+_CACHE_TTL = 30  # seconds — covers double-fetch within a single request
 
 
 class DataAssembler:
@@ -37,12 +39,19 @@ class DataAssembler:
     ) -> None:
         self._qdrant = retriever
         self._postgres = postgres_store
+        self._state_cache: dict[str, tuple[float, dict]] = {}
 
     async def build_patient_state(
         self,
         patient_id: str,
         history_days: int = 90,
     ) -> dict[str, Any]:
+        now = _time.monotonic()
+        cache_key = f"{patient_id}:{history_days}"
+        cached = self._state_cache.get(cache_key)
+        if cached and (now - cached[0]) < _CACHE_TTL:
+            return cached[1]
+
         profile, meals, cgm_summary, medications = await asyncio.gather(
             self._load_profile(patient_id),
             self._load_meal_history(patient_id, history_days),
@@ -61,12 +70,14 @@ class DataAssembler:
 
         history = _meals_to_engine_history(meals)
 
-        return {
+        state = {
             "history": history,
             "cgm_summary": cgm_summary or None,
             "profile": profile,
             "base": _extract_base(cgm_summary),
         }
+        self._state_cache[cache_key] = (now, state)
+        return state
 
     async def build_signals(self, patient_id: str, patient_state: dict | None = None) -> dict[str, Any]:
         state = patient_state or await self.build_patient_state(patient_id)
@@ -118,8 +129,8 @@ class DataAssembler:
 
     async def _load_meal_history(self, patient_id: str, days: int) -> list[dict[str, Any]]:
         try:
-            start = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
-            end = datetime.utcnow().date().isoformat()
+            start = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+            end = datetime.now(timezone.utc).date().isoformat()
             results = await self._qdrant.retrieve_filtered(
                 RetrievalRequest(
                     query="",
