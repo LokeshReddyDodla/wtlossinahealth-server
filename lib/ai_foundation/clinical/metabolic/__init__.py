@@ -6,6 +6,7 @@ Agents use MetabolicService (service.py), never the raw engine.
 """
 
 from .engine import MetabolicEngine
+from .enrichment import enrich
 from .data_sufficiency import assess_readiness
 from .nudge import build_nudges
 from .render import build_prompt
@@ -13,6 +14,7 @@ from .render import build_prompt
 __all__ = [
     "MetabolicEngine",
     "MetabolicService",
+    "enrich",
     "assess_readiness",
     "build_nudges",
     "build_prompt",
