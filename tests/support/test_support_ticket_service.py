@@ -321,6 +321,8 @@ async def test_get_with_messages_returns_thread_for_agent(svc, fake_mongo):
         "chat_id": "chat-1",
         "scope": "product",
         "health_facility_id": None,
+        "requester_id": "user-1",
+        "requester_type": "patient",
     }
     collection.find_one = AsyncMock(return_value=ticket)
 
