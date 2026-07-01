@@ -119,8 +119,8 @@ class MetabolicEngine:
 
     # ---- personal carb slope, shrunk to the population prior on thin history ----
     def personal_slope(self, history):
-        xs = [h["carb"] for h in history if h.get("carb") and h.get("peak") is not None]
-        ys = [h["peak"] for h in history if h.get("carb") and h.get("peak") is not None]
+        xs = [h["carb"] for h in history if h.get("carb") is not None and h.get("peak") is not None]
+        ys = [h["peak"] for h in history if h.get("carb") is not None and h.get("peak") is not None]
         n = len(xs)
         if n < 5:
             return self.prior_slope, n
