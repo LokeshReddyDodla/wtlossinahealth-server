@@ -24,6 +24,7 @@ async def list_queue(
         None, alias="status"
     ),
     requester_type: Optional[RequesterTypeLiteral] = Query(None),
+    q: Optional[str] = Query(None, max_length=100),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     agent: SupportAgent = Depends(get_support_agent_actor),
@@ -39,6 +40,7 @@ async def list_queue(
             scope_filter=scope,
             status_filter=status_filter,
             requester_type_filter=requester_type,
+            search=q,
             limit=limit,
             offset=offset,
         )
