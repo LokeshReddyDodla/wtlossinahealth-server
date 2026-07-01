@@ -19,6 +19,7 @@ from lib.core.postgres_store import PostgresStore
 from .assembler import DataAssembler
 from .data_sufficiency import assess_readiness
 from .engine import MetabolicEngine
+from .enrichment import enrich
 from .nudge import build_nudges
 from .render import build_prompt
 
@@ -42,6 +43,7 @@ class MetabolicService:
         patient_id: str,
         meal: dict[str, Any],
         patient_state: dict[str, Any] | None = None,
+        live_pre: float | None = None,
     ) -> dict[str, Any]:
         """Full metabolic assessment: prediction + attribution + lever + safety + BMIQ.
 
@@ -52,6 +54,7 @@ class MetabolicService:
             patient_state = await self._assembler.build_patient_state(patient_id)
 
         contract = self._engine.assess(patient_state, meal)
+        contract = enrich(contract, patient_state, meal, live_pre=live_pre)
         return contract
 
     async def readiness(self, patient_id: str) -> dict[str, Any]:
@@ -133,16 +136,23 @@ class MetabolicService:
         if lever.get("say") and lever.get("cite"):
             rationale += " One move: %s [%s]." % (lever["say"], lever["cite"])
 
+        v31 = contract.get("v31") or {}
+
         return {
             "range_mg_dl_low": int(round(max(0.0, rise - band_mgdl))),
             "range_mg_dl_high": int(round(rise + band_mgdl)),
-            "peak_minutes_after": 60,
+            "peak_minutes_after": v31.get("peak_minutes", 60),
             "confidence": conf,
             "n_similar_meals": pr.get("n_meals_learned", 0),
             "evidence": [],
+            "_evidence_meals": v31.get("evidence_meals") or [],
             "rationale": rationale.strip(),
             "_source": "metabolic_engine",
             "_kind": kind,
             "_output_mode": contract.get("output_mode"),
             "_attribution": (contract.get("attribution") or {}).get("label"),
+            "_safety_unchecked": v31.get("safety_unchecked"),
+            "_show_number": v31.get("show_number_to_patient", True),
+            "_confidence_tier": v31.get("confidence_tier"),
+            "_peak_basis": v31.get("peak_minutes_basis"),
         }
