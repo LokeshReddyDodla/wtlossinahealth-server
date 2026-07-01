@@ -127,8 +127,8 @@ def twin_pre_prior(patient_state, meal):
     return None
 
 
-def confidence_tier(patient_state, live_pre):
-    n = _get(patient_state, "n_meals_learned", default=None)
+def confidence_tier(patient_state, live_pre, n_meals=None):
+    n = n_meals if n_meals is not None else _get(patient_state, "n_meals_learned", default=None)
     cgm = has_cgm(patient_state)
     if not cgm:
         return "low_no_cgm"
@@ -162,7 +162,8 @@ def enrich(engine_out, patient_state, meal, live_pre=None):
     up["evidence_meals"] = evidence_meals(patient_state, meal)
     # Gap 6
     up["has_cgm"] = has_cgm(patient_state)
-    up["confidence_tier"] = confidence_tier(patient_state, live_pre)
+    n_meals = (engine_out.get("prediction") or {}).get("n_meals_learned")
+    up["confidence_tier"] = confidence_tier(patient_state, live_pre, n_meals=n_meals)
     up["show_number_to_patient"] = bool(up["has_cgm"])  # app hides the number for non-CGM patients
     out["v31"] = up
     return out

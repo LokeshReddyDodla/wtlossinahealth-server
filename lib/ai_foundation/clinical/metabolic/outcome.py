@@ -41,7 +41,15 @@ def record_followup(ledger_path, event_id, complied, observed_delta=None, eviden
 
 def _read(p):
     if not os.path.exists(p): return []
-    return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+    rows = []
+    for l in open(p, encoding="utf-8"):
+        if not l.strip():
+            continue
+        try:
+            rows.append(json.loads(l))
+        except json.JSONDecodeError:
+            pass
+    return rows
 
 def _write(p, rows):
     with open(p, "w", encoding="utf-8") as f:

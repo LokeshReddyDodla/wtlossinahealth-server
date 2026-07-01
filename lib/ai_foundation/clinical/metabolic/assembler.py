@@ -152,14 +152,25 @@ class DataAssembler:
                 RetrievalRequest(
                     query="",
                     patient_ids=[patient_id],
-                    data_types=[_CGM_SUMMARY_TYPE],
-                    limit=5,
+                    data_types=[_CGM_SUMMARY_TYPE, _CGM_RANGE_TYPE],
+                    limit=10,
                 )
             )
-            # ponytail: take the most recent summary
-            for r in sorted(results, key=lambda r: r.payload.get("start_time", 0), reverse=True):
-                if (r.data_type or r.payload.get("data_type")) == _CGM_SUMMARY_TYPE:
-                    return _cgm_payload_to_engine(r.payload)
+            summary_payload = None
+            range_payload = None
+            best_summary_t = 0
+            best_range_t = 0
+            for r in results:
+                dt = r.data_type or r.payload.get("data_type")
+                t = r.payload.get("start_time", 0)
+                if dt == _CGM_SUMMARY_TYPE and t > best_summary_t:
+                    summary_payload = r.payload
+                    best_summary_t = t
+                elif dt == _CGM_RANGE_TYPE and t > best_range_t:
+                    range_payload = r.payload
+                    best_range_t = t
+            if summary_payload or range_payload:
+                return _cgm_payload_to_engine(summary_payload, range_payload)
             return {}
         except Exception as exc:
             logger.warning("assembler: load_cgm_summary failed for %s: %s", patient_id, exc)
@@ -175,11 +186,19 @@ class DataAssembler:
                     limit=10,
                 )
             )
-            return [
-                {"name": r.payload.get("medication_name") or r.payload.get("name", "")}
-                for r in results
-                if (r.data_type or r.payload.get("data_type")) == _MEDICATION_TYPE
-            ]
+            meds = []
+            for r in results:
+                if (r.data_type or r.payload.get("data_type")) != _MEDICATION_TYPE:
+                    continue
+                # medication vector stores all meds in one point as medication_names list
+                names = r.payload.get("medication_names") or []
+                if isinstance(names, list) and names:
+                    meds.extend({"name": n} for n in names if n)
+                else:
+                    name = r.payload.get("medication_name") or r.payload.get("name", "")
+                    if name:
+                        meds.append({"name": name})
+            return meds
         except Exception as exc:
             logger.debug("assembler: load_medications failed for %s: %s", patient_id, exc)
             return []
@@ -236,15 +255,41 @@ def _meals_to_engine_history(meals: list[dict[str, Any]]) -> list[dict[str, Any]
     return history
 
 
-def _cgm_payload_to_engine(payload: dict[str, Any]) -> dict[str, Any]:
-    """Map Qdrant CGM summary payload to engine cgm_summary format."""
+def _cgm_payload_to_engine(
+    summary_payload: dict[str, Any] | None,
+    range_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Map Qdrant CGM summary + range payloads to engine cgm_summary format.
+
+    The CGM vector service nests stats under a 'data' key in the payload and uses
+    field names like 'average_glucose_mgdl' / 'coefficient_of_variation_percent'.
+    TIR lives in cgm_range_stats ('in_target_70_180_percent'), not cgm_summary_stats.
+    """
+    s = (summary_payload or {}).get("data") or summary_payload or {}
+    r = (range_payload or {}).get("data") or range_payload or {}
+
+    cv = _num(s.get("coefficient_of_variation_percent") or s.get("cv")
+              or s.get("coefficient_of_variation"))
+    mean = _num(s.get("average_glucose_mgdl") or s.get("mean_glucose")
+                or s.get("mean") or s.get("average_glucose"))
+    tir = _num(r.get("in_target_70_180_percent") or r.get("time_in_range")
+               or r.get("tir"))
+
+    # days_of_data: derive from start/end timestamps if not explicit
+    days = _num(s.get("days_of_data") or s.get("total_days"))
+    if days is None and summary_payload:
+        st = summary_payload.get("start_time")
+        et = summary_payload.get("end_time")
+        if st and et:
+            days = max(1.0, (et - st) / (86400 * 1000))
+
     return {
-        "tir": _num(payload.get("time_in_range") or payload.get("tir")),
-        "cv": _num(payload.get("cv") or payload.get("coefficient_of_variation")),
-        "mean": _num(payload.get("mean_glucose") or payload.get("mean") or payload.get("average_glucose")),
-        "postprandial_share": _num(payload.get("postprandial_share")),
-        "nocturnal_share": _num(payload.get("nocturnal_share")),
-        "days_of_data": _num(payload.get("days_of_data") or payload.get("total_days")),
+        "tir": tir,
+        "cv": cv,
+        "mean": mean,
+        "postprandial_share": _num(s.get("postprandial_share")),
+        "nocturnal_share": _num(s.get("nocturnal_share")),
+        "days_of_data": days,
     }
 
 
