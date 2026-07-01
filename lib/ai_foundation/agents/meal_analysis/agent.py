@@ -281,7 +281,6 @@ class MealAnalysisAgent(BaseAgent):
         trace_id: str,
         meal_hour: int | None = None,
     ) -> GlucosePrediction | None:
-        # ponytail: engine first, LLM fallback. No retry logic — if engine says None, LLM gets a shot.
         if self._metabolic:
             try:
                 m = extraction.total_macros
@@ -294,6 +293,8 @@ class MealAnalysisAgent(BaseAgent):
                 raw = self._metabolic.to_glucose_prediction(contract)
                 if raw and raw.get("_show_number", True):
                     conf_map = {"high": ConfidenceLevel.HIGH, "medium": ConfidenceLevel.MEDIUM, "low": ConfidenceLevel.LOW}
+                    logger.info("metabolic engine predicted for %s: rise=%s-%s, confidence=%s, source=%s",
+                                patient_id, raw["range_mg_dl_low"], raw["range_mg_dl_high"], raw["confidence"], raw.get("_source"))
                     return GlucosePrediction(
                         range_mg_dl_low=raw["range_mg_dl_low"],
                         range_mg_dl_high=raw["range_mg_dl_high"],
@@ -303,8 +304,12 @@ class MealAnalysisAgent(BaseAgent):
                         evidence=raw.get("evidence", []),
                         rationale=raw["rationale"],
                     )
+                logger.info("metabolic engine returned no prediction for %s (raw=%s, show_number=%s), falling back to LLM",
+                            patient_id, raw is not None, raw.get("_show_number") if raw else None)
             except Exception:
                 logger.exception("metabolic engine failed for %s, falling back to LLM", patient_id)
+        else:
+            logger.info("metabolic service not injected, using LLM for glucose prediction")
 
         return await self._glucose.predict(
             extraction=extraction,
