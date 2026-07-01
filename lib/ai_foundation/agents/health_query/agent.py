@@ -500,6 +500,7 @@ class HealthQueryAgent(BaseAgent):
                 "latency_ms": output.latency_ms,
                 "model_id": output.model_id,
                 "input_mode": input.context.metadata.get("output_mode", "text"),
+                "channel": input.context.metadata.get("channel", "app"),
                 "audio_url": input.context.metadata.get("audio_url"),
             },
         )
@@ -648,12 +649,22 @@ class HealthQueryAgent(BaseAgent):
         sound natural when spoken aloud, and a brief response with no markdown.
         """
         self._ensure_prompts()
-        is_voice = (
-            input is not None
-            and input.context.metadata.get("output_mode") == "voice"
+        output_mode = (
+            input.context.metadata.get("output_mode") if input else None
         )
-        reasoning = self._render("hq_reasoning_voice" if is_voice else "hq_reasoning")
-        response = self._render("hq_final_response_voice" if is_voice else "hq_final_response")
+        channel = (
+            input.context.metadata.get("channel") if input else None
+        )
+
+        if output_mode == "voice":
+            reasoning = self._render("hq_reasoning_voice")
+            response = self._render("hq_final_response_voice")
+        elif channel == "whatsapp":
+            reasoning = self._render("hq_reasoning")
+            response = self._render("hq_final_response_whatsapp")
+        else:
+            reasoning = self._render("hq_reasoning")
+            response = self._render("hq_final_response")
         return reasoning, response
 
     def _log_quality_scores(self, trace_id: str, result: Any) -> None:

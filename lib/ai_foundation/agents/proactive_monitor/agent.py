@@ -140,10 +140,12 @@ class ProactiveMonitorAgent(BaseAgent):
         prompts: Any | None = None,
         memory: Any | None = None,
         insight_tracker: Any | None = None,
+        metabolic_service: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
         self._insight_tracker = insight_tracker
+        self._metabolic = metabolic_service
 
     @classmethod
     def _get_scan_prompt_template(cls) -> str:
@@ -295,7 +297,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 ", ".join(f"{k}={v}" for k, v in domain_counts.items()) or "no data",
             )
 
-            # 3. Facts + medications
+            # 3. Facts + medications + metabolic profile
             facts_text = await self._load_facts(patient_id)
             med_text = await self._load_medications(patient_id)
             if med_text:
@@ -303,6 +305,13 @@ class ProactiveMonitorAgent(BaseAgent):
                     f"{facts_text}\n\nPatient Medications:\n{med_text}"
                     if facts_text
                     else f"Patient Medications:\n{med_text}"
+                )
+            metabolic_text = await self._load_metabolic_profile(patient_id)
+            if metabolic_text:
+                facts_text = (
+                    f"{facts_text}\n\n{metabolic_text}"
+                    if facts_text
+                    else metabolic_text
                 )
 
             # 4. Langfuse input trace
@@ -639,6 +648,31 @@ class ProactiveMonitorAgent(BaseAgent):
                         return text
         except Exception:
             pass
+        return ""
+
+    async def _load_metabolic_profile(self, patient_id: str) -> str:
+        if not self._metabolic:
+            return ""
+        try:
+            profile = await self._metabolic.risk_profile(patient_id)
+            parts = []
+            if profile.get("mmiq_tier"):
+                parts.append(f"Metabolic phenotype: {profile['mmiq_tier']}")
+            if profile.get("mmiq_driver"):
+                parts.append(f"Primary CGM driver: {profile['mmiq_driver']}")
+            bmiq = profile.get("bmiq")
+            if bmiq:
+                parts.append(f"Body composition (BMIQ): {bmiq}")
+            wt = profile.get("weight_trend")
+            if wt:
+                parts.append(f"Weight trend: {wt}")
+            flags = profile.get("safety_flags")
+            if flags:
+                parts.append(f"Safety flags: {flags}")
+            if parts:
+                return "Metabolic Engine Profile:\n" + "\n".join(f"- {p}" for p in parts)
+        except Exception:
+            logger.debug("metabolic profile unavailable for %s", patient_id, exc_info=True)
         return ""
 
     async def _analyze(

@@ -79,8 +79,11 @@ def _make_match(
     )
 
 
-def _make_session(*exercises):
-    return WorkoutVoiceSessionState(exercises=list(exercises))
+def _make_session(*exercises, segment_type=None):
+    return WorkoutVoiceSessionState(
+        segment_type=segment_type,
+        exercises=list(exercises),
+    )
 
 
 def _make_session_exercise(name, sets=None):
@@ -169,7 +172,7 @@ class TestNeedsConfirmation:
 
 
 class TestFindExerciseIndex:
-    def test_empty_exercises_returns_none(self):
+    def test_empty_list_returns_none(self):
         assert WorkoutVoiceService._find_exercise_index([], "Bench", "bench") is None
 
     def test_exact_match_by_matched_name(self):
@@ -435,6 +438,19 @@ class TestApplyItem:
         assert len(session.exercises[0].sets) == 1
         assert len(updated.exercises[0].sets) == 2
 
+    def test_segment_type_preserved_across_updates(self):
+        session = _make_session(segment_type="strength")
+        item = _make_item(
+            action="new_exercise",
+            exercise_name="Bench Press",
+            sets=[ParsedSet(weight_kg=80, reps=10)],
+        )
+        match = _make_match(confidence=1.0)
+
+        updated, _ = self._apply(session, item, match)
+
+        assert updated.segment_type == "strength"
+
 
 # ── Multi-exercise extraction ────────────────────────────────────────────────
 
@@ -565,7 +581,6 @@ class TestMatchExercise:
     @pytest.mark.asyncio
     async def test_no_match_returns_none(self):
         svc = _make_service()
-        # Two empty results: primary query + trigram fallback
         session = FakeSession(results=[FakeResult(rows=[]), FakeResult(rows=[])])
 
         best, candidates = await svc._match_exercise(
@@ -846,3 +861,10 @@ class TestBuildUserMessage:
         msg = _build_user_message("done", session)
         assert "1800s" in msg
         assert "5000" in msg and "m" in msg
+
+    def test_segment_type_included(self):
+        from lib.services.workout_voice_service import _build_user_message
+
+        session = _make_session(segment_type="strength")
+        msg = _build_user_message("bench press", session)
+        assert "Segment type: strength" in msg

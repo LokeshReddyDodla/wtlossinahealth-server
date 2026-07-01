@@ -30,6 +30,7 @@ from .admin.support_tickets.router import (
 from .admin.notifications.router import router as admin_notifications_router
 from .product_bot.router import router as product_bot_router
 from .dashboard_help_agent.router import router as dashboard_help_router
+from .whatsapp.router import router as whatsapp_router
 
 
 router = APIRouter(prefix="/v1", tags=["V1"])
@@ -63,3 +64,4 @@ router.include_router(admin_notifications_router)
 router.include_router(share_router)
 router.include_router(product_bot_router)
 router.include_router(dashboard_help_router)
+router.include_router(whatsapp_router)

@@ -121,54 +121,61 @@ class QdrantRetriever:
 
     # ── Mode 1: Filtered Scroll (deterministic) ──────────────────────────
 
-    async def retrieve_filtered(self, request: RetrievalRequest) -> list[RetrievalResult]:
-        """Filtered scroll — no embedding, no vector similarity.
+    _SCROLL_BATCH = 100
 
-        Uses indexed filters for fast exact retrieval. This is the primary
-        mode for 90% of health queries.
+    async def retrieve_filtered(self, request: RetrievalRequest) -> list[RetrievalResult]:
+        """Filtered scroll with pagination — no embedding, no vector similarity.
+
+        Paginates through ALL matching records up to request.limit.
+        Medical-grade: never silently drops records that match the filter.
         """
         scroll_filter = self._build_full_filter(request)
         if not scroll_filter:
             return []
 
+        data_types = request.data_types or []
+        has_non_filterable = not data_types or any(dt in _NON_FILTERABLE_TYPES for dt in data_types)
+        use_order = not has_non_filterable
+
+        all_records: list = []
+
         async with self._store.get_client() as client:
             scroll_kwargs: dict[str, Any] = {
                 "collection_name": self._collection,
                 "scroll_filter": scroll_filter,
-                "limit": request.limit,
                 "with_payload": True,
                 "with_vectors": False,
             }
-
-            # Order by start_time DESC so the limit keeps the most recent records.
-            # SKIP ordering when query includes non-filterable types (documents, profile)
-            # which may lack start_time — Qdrant excludes records missing the order field.
-            # Also skip when data_types is empty (all types including documents).
-            data_types = request.data_types or []
-            has_non_filterable = not data_types or any(dt in _NON_FILTERABLE_TYPES for dt in data_types)
-            use_order = not has_non_filterable
 
             if use_order:
                 try:
                     from qdrant_client.models import OrderBy
                     scroll_kwargs["order_by"] = OrderBy(key="start_time", direction="desc")
-                    records, _ = await client.scroll(**scroll_kwargs)
-                except (ImportError, TypeError) as exc:
-                    logger.debug("OrderBy not supported, falling back to unordered scroll: %s", exc)
-                    scroll_kwargs.pop("order_by", None)
-                    records, _ = await client.scroll(**scroll_kwargs)
+                except (ImportError, TypeError):
+                    pass
+
+            while len(all_records) < request.limit:
+                remaining = request.limit - len(all_records)
+                scroll_kwargs["limit"] = min(remaining, self._SCROLL_BATCH)
+
+                try:
+                    records, next_offset = await client.scroll(**scroll_kwargs)
                 except Exception as exc:
                     if "order_by" in scroll_kwargs:
                         logger.debug("Scroll with OrderBy failed (%s), retrying without", exc)
                         scroll_kwargs.pop("order_by", None)
-                        records, _ = await client.scroll(**scroll_kwargs)
+                        records, next_offset = await client.scroll(**scroll_kwargs)
                     else:
                         raise
-            else:
-                records, _ = await client.scroll(**scroll_kwargs)
+
+                all_records.extend(records)
+
+                if next_offset is None or not records:
+                    break
+                scroll_kwargs["offset"] = next_offset
 
         results: list[RetrievalResult] = []
-        for record in records:
+        for record in all_records:
             payload = record.payload or {}
             results.append(RetrievalResult(
                 payload=payload,
@@ -177,7 +184,7 @@ class QdrantRetriever:
                 data_type=payload.get("data_type"),
             ))
 
-        logger.debug("Qdrant filtered scroll: %d results", len(results))
+        logger.debug("Qdrant filtered scroll: %d results (paginated)", len(results))
         return results
 
     # ── Mode 2: Semantic Search (cross-domain) ───────────────────────────

@@ -18,7 +18,7 @@ from lib.schemas.patient_daily_overview import (
     VitalsMetrics,
     WorkoutMetrics,
 )
-from lib.models.patient_workout import PatientWorkout
+from lib.models.patient_workout import PatientWorkout, PatientWorkoutSegment
 from uuid import UUID as _UUID
 from lib.services.reports.meal.service import MealReportService
 from lib.services.reports.cgm.service import CGMReportService
@@ -28,6 +28,7 @@ from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from sqlalchemy import and_, cast, Date, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from lib.utils.postgres_session_decorator import with_postgres_session
 
 
@@ -102,25 +103,32 @@ class PatientDailyOverviewService:
     ) -> WorkoutMetrics:
         rows = (
             await session.execute(
-                select(PatientWorkout).where(
+                select(PatientWorkout)
+                .where(
                     PatientWorkout.patient_id == _UUID(patient_id),
                     PatientWorkout.date == selected_date,
                 )
+                .options(selectinload(PatientWorkout.segments))
             )
         ).scalars().all()
 
         if not rows:
             return WorkoutMetrics()
 
-        total_duration = sum(r.duration_minutes or 0 for r in rows)
+        total_duration = 0
+        types: set[str] = set()
+        for workout in rows:
+            for seg in (workout.segments or []):
+                total_duration += seg.duration_minutes or 0
+                if seg.type:
+                    types.add(seg.type)
         total_calories = sum(r.calories_burned or 0.0 for r in rows)
-        types = sorted({r.type for r in rows if r.type})
 
         return WorkoutMetrics(
             session_count=len(rows),
             total_duration_minutes=total_duration,
             total_calories=total_calories,
-            types=types,
+            types=sorted(types),
         )
 
     async def _get_meal_data(

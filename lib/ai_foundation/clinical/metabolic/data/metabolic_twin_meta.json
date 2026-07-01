@@ -1,0 +1,62 @@
+{
+  "version": "3.0.0",
+  "kind": "metabolic_twin_guarded",
+  "trained_events": 6789,
+  "feature_order": [
+    "carb",
+    "protein",
+    "fat",
+    "fiber",
+    "calories",
+    "hour",
+    "meal_type",
+    "pre_glucose",
+    "pre_slope",
+    "baseline",
+    "overnight_mean",
+    "time_since_prev",
+    "prev_carb",
+    "glucose_between",
+    "own_memory",
+    "memory_n"
+  ],
+  "monotonic_cst": [
+    1,
+    -1,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0
+  ],
+  "tier": "enrichment (needs sklearn at serve)",
+  "interventions": {
+    "halve_carbs": {
+      "feature": "carb",
+      "op": "*0.5"
+    },
+    "add_protein_20g": {
+      "feature": "protein",
+      "op": "+20"
+    },
+    "add_fiber_15g": {
+      "feature": "fiber",
+      "op": "+15"
+    }
+  },
+  "validation": {
+    "natexp_r": 0.728,
+    "sign_agreement": 0.762,
+    "violation_rate_after_guard": 0.0,
+    "guard_cost_mae_mgdl": 1.28
+  }
+}

@@ -30,6 +30,8 @@ from lib.utils.postgres_session_decorator import with_postgres_session
 from .constants import (
     PRE_MEAL_TYPES,
     POST_MEAL_TYPES,
+    FASTING_TYPE,
+    RANDOM_TYPE,
 )
 from .meal_window_bucketer import MealWindowBucketer
 from .queries import SMBGQueries
@@ -292,6 +294,10 @@ class SMBGStatsProcessor:
                 end_date=month_end,
             )
 
+            empty_range_stats = MealRangeStats(
+                count=0, within_range_count=0, within_range_percentage=0.0,
+            )
+
             if not month_records:
                 monthly_summaries.append(
                     MonthlySummary(
@@ -304,19 +310,15 @@ class SMBGStatsProcessor:
                         ),
                         glucose=MonthlyGlucoseStats(
                             total_readings=0,
-                            pre_meal=MealRangeStats(
-                                count=0,
-                                within_range_count=0,
-                                within_range_percentage=0.0,
-                            ),
-                            post_meal=MealRangeStats(
-                                count=0,
-                                within_range_count=0,
-                                within_range_percentage=0.0,
-                            ),
+                            fasting=empty_range_stats,
+                            pre_meal=empty_range_stats,
+                            post_meal=empty_range_stats,
+                            random=empty_range_stats,
                             overall_score=OverallScore(
+                                fasting=0.0,
                                 pre_meal=0.0,
                                 post_meal=0.0,
+                                random=0.0,
                                 overall=0.0,
                             ),
                             weekly_trends={},
@@ -325,12 +327,24 @@ class SMBGStatsProcessor:
                     )
                 )
             else:
+                fasting = SMBGQueries.filter_by_type(month_records, (FASTING_TYPE,))
                 pre_meal = SMBGQueries.filter_by_type(month_records, PRE_MEAL_TYPES)
                 post_meal = SMBGQueries.filter_by_type(month_records, POST_MEAL_TYPES)
-                summary_stats = SMBGStatistics.calculate_summary_stats(pre_meal, post_meal)
+                random_readings = SMBGQueries.filter_by_type(month_records, (RANDOM_TYPE,))
+                summary_stats = SMBGStatistics.calculate_summary_stats(
+                    fasting, pre_meal, post_meal, random_readings
+                )
                 weekly_trends = self._calculate_weekly_trends(
                     month_records, month_start, month_end
                 )
+
+                def _range_stats(key: str) -> MealRangeStats:
+                    group = summary_stats.get(key, {})
+                    return MealRangeStats(
+                        count=group.get("count", 0),
+                        within_range_count=group.get("within_range", 0),
+                        within_range_percentage=group.get("within_range_pct", 0.0),
+                    )
 
                 monthly_summaries.append(
                     MonthlySummary(
@@ -343,27 +357,15 @@ class SMBGStatsProcessor:
                         ),
                         glucose=MonthlyGlucoseStats(
                             total_readings=len(month_records),
-                            pre_meal=MealRangeStats(
-                                count=summary_stats.get("pre_meal", {}).get("count", 0),
-                                within_range_count=summary_stats.get("pre_meal", {}).get(
-                                    "within_range", 0
-                                ),
-                                within_range_percentage=summary_stats.get("pre_meal", {}).get(
-                                    "within_range_pct", 0.0
-                                ),
-                            ),
-                            post_meal=MealRangeStats(
-                                count=summary_stats.get("post_meal", {}).get("count", 0),
-                                within_range_count=summary_stats.get("post_meal", {}).get(
-                                    "within_range", 0
-                                ),
-                                within_range_percentage=summary_stats.get("post_meal", {}).get(
-                                    "within_range_pct", 0.0
-                                ),
-                            ),
+                            fasting=_range_stats("fasting"),
+                            pre_meal=_range_stats("pre_meal"),
+                            post_meal=_range_stats("post_meal"),
+                            random=_range_stats("random"),
                             overall_score=OverallScore(
+                                fasting=summary_stats.get("score", {}).get("fasting", 0.0),
                                 pre_meal=summary_stats.get("score", {}).get("pre_meal", 0.0),
                                 post_meal=summary_stats.get("score", {}).get("post_meal", 0.0),
+                                random=summary_stats.get("score", {}).get("random", 0.0),
                                 overall=summary_stats.get("score", {}).get("overall", 0.0),
                             ),
                             weekly_trends=weekly_trends,
@@ -398,14 +400,9 @@ class SMBGStatsProcessor:
             week_records = SMBGQueries.filter_by_date_range(
                 records, week_start, week_end
             )
-            pre_week = [
-                r.glucose_level
-                for r in SMBGQueries.filter_by_type(week_records, PRE_MEAL_TYPES)
-            ]
-            post_week = [
-                r.glucose_level
-                for r in SMBGQueries.filter_by_type(week_records, POST_MEAL_TYPES)
-            ]
+
+            def _medians(types):
+                return [r.glucose_level for r in SMBGQueries.filter_by_type(week_records, types)]
 
             trend[f"week_{week_no}"] = WeeklyTrend(
                 period=WeeklyTrendPeriod(
@@ -415,8 +412,10 @@ class SMBGStatsProcessor:
                     iso_week_number=iso_week_no,
                 ),
                 glucose_medians=WeeklyTrendGlucose(
-                    pre_meal=SMBGStatistics.calculate_median(pre_week),
-                    post_meal=SMBGStatistics.calculate_median(post_week),
+                    fasting=SMBGStatistics.calculate_median(_medians((FASTING_TYPE,))),
+                    pre_meal=SMBGStatistics.calculate_median(_medians(PRE_MEAL_TYPES)),
+                    post_meal=SMBGStatistics.calculate_median(_medians(POST_MEAL_TYPES)),
+                    random=SMBGStatistics.calculate_median(_medians((RANDOM_TYPE,))),
                 ),
             )
 
@@ -439,9 +438,13 @@ class SMBGStatsProcessor:
         if not records:
             return {}
 
+        fasting = SMBGQueries.filter_by_type(records, (FASTING_TYPE,))
         pre_meal = SMBGQueries.filter_by_type(records, PRE_MEAL_TYPES)
         post_meal = SMBGQueries.filter_by_type(records, POST_MEAL_TYPES)
-        summary_stats = SMBGStatistics.calculate_summary_stats(pre_meal, post_meal)
+        random_readings = SMBGQueries.filter_by_type(records, (RANDOM_TYPE,))
+        summary_stats = SMBGStatistics.calculate_summary_stats(
+            fasting, pre_meal, post_meal, random_readings
+        )
         trend = self._calculate_weekly_trends(records, start_date, end_date)
 
         return {

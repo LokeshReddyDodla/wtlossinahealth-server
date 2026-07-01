@@ -103,14 +103,22 @@ class TestExerciseOrder:
 # ── Update edge cases ────────────────────────────────────────────────────────
 
 
+def _fake_segment(*, type_="strength", duration_minutes=55, exercises=None, order_index=0):
+    return SimpleNamespace(
+        id=uuid4(),
+        type=type_,
+        duration_minutes=duration_minutes,
+        order_index=order_index,
+        exercises=exercises or [],
+    )
+
+
 def _fake_row_with_exercises(patient_id, workout_id, exercises):
     return SimpleNamespace(
         id=UUID(workout_id),
         patient_id=UUID(patient_id),
         date=date(2026, 4, 20),
         time=time(18, 30),
-        type="strength",
-        duration_minutes=55,
         intensity="vigorous",
         calories_burned=None,
         notes="original",
@@ -118,7 +126,7 @@ def _fake_row_with_exercises(patient_id, workout_id, exercises):
         source="app",
         fitness_plan_session_id=None,
         uploaded_at=None,
-        exercises=list(exercises),
+        segments=[_fake_segment(exercises=list(exercises))],
     )
 
 
@@ -132,8 +140,11 @@ class TestUpdateEdgeCases:
             id=uuid4(), exercise_id="X", exercise_name="X",
             order_index=0, sets=1, reps=1, weight_kg=1.0,
             duration_seconds=None, distance_m=None, notes=None,
+            set_details=[],
         )
-        existing = _fake_row_with_exercises(patient_id, workout_id, [old_ex])
+        old_seg = _fake_segment(exercises=[old_ex])
+        existing = _fake_row_with_exercises(patient_id, workout_id, [])
+        existing.segments = [old_seg]
         # Queries: fetch workout, validate (empty list → no query), re-query after commit
         session = FakeSession(results=[
             FakeResult(scalar_one_or_none=existing),
@@ -147,7 +158,8 @@ class TestUpdateEdgeCases:
         )
         assert response is not None
         assert response.exercises == []
-        assert old_ex in session.deleted
+        # Old segment was deleted (cascades to its exercises)
+        assert old_seg in session.deleted
 
     @pytest.mark.asyncio
     async def test_partial_update_leaves_other_fields_alone(
@@ -160,16 +172,17 @@ class TestUpdateEdgeCases:
             FakeResult(scalar_one=existing),
         ])
 
-        await service.update(
+        response = await service.update(
             patient_id, workout_id,
             PatientWorkoutUpdate(notes="updated notes"),
             postgres_session=session,
         )
         # Only `notes` changed; everything else untouched
         assert existing.notes == "updated notes"
-        assert existing.type == "strength"
-        assert existing.duration_minutes == 55
         assert existing.intensity == "vigorous"
+        # type and duration are now derived from segments in the response
+        assert response.type == "strength"
+        assert response.duration_minutes == 55
 
 
 # ── Error paths ──────────────────────────────────────────────────────────────

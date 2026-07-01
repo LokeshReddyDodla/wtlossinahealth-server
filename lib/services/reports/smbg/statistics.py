@@ -61,10 +61,12 @@ class SMBGStatistics:
 
     @staticmethod
     def calculate_summary_stats(
+        fasting_readings: List[PatientSMBG],
         pre_meal_readings: List[PatientSMBG],
         post_meal_readings: List[PatientSMBG],
+        random_readings: List[PatientSMBG],
     ) -> dict:
-        """Calculate summary statistics for pre and post meal readings."""
+        """Calculate summary statistics for all reading types."""
         def summarize(readings: List[PatientSMBG]) -> dict:
             if not readings:
                 return {
@@ -86,18 +88,25 @@ class SMBGStatistics:
                 "within_range_pct": round(within_range * 100 / count, 1),
             }
 
+        fasting_stats = summarize(fasting_readings)
         pre_stats = summarize(pre_meal_readings)
         post_stats = summarize(post_meal_readings)
+        random_stats = summarize(random_readings)
 
-        total_count = pre_stats["count"] + post_stats["count"]
-        total_within_range = pre_stats["within_range"] + post_stats["within_range"]
+        all_groups = [fasting_stats, pre_stats, post_stats, random_stats]
+        total_count = sum(g["count"] for g in all_groups)
+        total_within_range = sum(g["within_range"] for g in all_groups)
 
         return {
+            "fasting": fasting_stats,
             "pre_meal": pre_stats,
             "post_meal": post_stats,
+            "random": random_stats,
             "score": {
+                "fasting": fasting_stats["within_range_pct"],
                 "pre_meal": pre_stats["within_range_pct"],
                 "post_meal": post_stats["within_range_pct"],
+                "random": random_stats["within_range_pct"],
                 "overall": round(
                     total_within_range * 100 / max(1, total_count), 1
                 ),

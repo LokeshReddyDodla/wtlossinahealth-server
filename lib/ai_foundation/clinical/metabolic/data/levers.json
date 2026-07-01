@@ -1,0 +1,14 @@
+{
+  "_source": "MMIQ v3.1 validated cohort — 2,674 patients, 38,325 meals, 5.12M CGM readings (mmiq project/research/findings_data.json) + REST_HEPATIC_DAWN_FINDINGS.md",
+  "circadian_breakfast_mgdl": 12.35,
+  "circadian_cite": "q2 time-of-day: same meal spikes +12.35 mg/dL at breakfast vs dinner (n=38,325, p=5e-4)",
+  "levers": {
+    "protein_first":  {"effect_mgdl": -7.5, "cite": "q1 meal sequencing (n=28,082, p=1e-4)",  "say": "start with the vegetables/dal, carbs last"},
+    "fiber":          {"effect_mgdl": -6.0, "cite": "q3 fibre (n=38,305, p=1e-4)",            "say": "add a fibre source (dal, salad, sabzi)"},
+    "protein_pair":   {"effect_mgdl": -8.2, "cite": "q4 pairing (n=45,906, p=1e-4)",          "say": "pair with protein"},
+    "earlier_dinner": {"effect_mgdl": -9.1, "cite": "q7 late dinner / overnight (n=2,539, p=4e-4)", "say": "bring dinner before 8:30 pm"}
+  },
+  "restraint_cite": "q5 within-patient same-meal variance (n=1,161) — single-meal response is noisy; suggest only on a confident, repeated signal",
+  "dawn_guardrail": "dawn is a MINORITY phenotype (26% of non-hypo nights; cohort net -15 mg/dL) — a hypothesis, never assumed. Somogyi rebound +19.4 mg/dL in 85.8% of 704 patients is the robust one. Never claim CGM-derived cortisol.",
+  "_thresholds_placeholder": "slot carb targets, the balanced-plate rule, and the MEAL/PHYSIOLOGY residual cut-offs are heuristic and MUST be pinned to ADA / diabetes-India MNT values before patient-facing use (see 02_WHAT_GOES_INTO_REBUILD.md §8)."
+}

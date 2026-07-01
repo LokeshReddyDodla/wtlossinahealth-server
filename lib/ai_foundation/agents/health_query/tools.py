@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                     "date_start": {"type": "string", "description": "Start date (ISO format). e.g. '2026-03-18'"},
                     "date_end": {"type": "string", "description": "End date (ISO format). e.g. '2026-03-25'"},
-                    "limit": {"type": "integer", "description": "Max records to return. Default 15."},
+                    "limit": {"type": "integer", "description": "Max records to return. Default 200."},
                 },
                 "required": ["data_types"],
             },
@@ -248,6 +249,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "metabolic_profile",
+            "description": (
+                "Get the patient's metabolic risk profile from the clinical engine. "
+                "Returns: metabolic phenotype tier (insulin-sensitive/resistant/mixed), "
+                "BMIQ body composition score, weight trend, CGM driver, and safety flags. "
+                "Use when the patient asks about their metabolic health, diabetes risk, "
+                "body composition, weight trajectory, or overall clinical picture."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -262,10 +281,12 @@ class ToolExecutor:
         qdrant: QdrantRetriever | None = None,
         insight_tracker: InsightTracker | None = None,
         patient_resolver: PatientNameResolver | None = None,
+        metabolic_service: MetabolicService | None = None,
     ) -> None:
         self._qdrant = qdrant
         self._insight_tracker = insight_tracker
         self._patient_resolver = patient_resolver
+        self._metabolic = metabolic_service
 
     async def execute(
         self,
@@ -275,9 +296,10 @@ class ToolExecutor:
         patient_names: dict[str, str] | None = None,
     ) -> str:
         """Execute a tool and return formatted text result."""
-        # Insight tool doesn't need Qdrant — handle first
         if tool_name == "get_recent_insights":
             return await self._get_recent_insights(arguments, patient_ids)
+        if tool_name == "metabolic_profile":
+            return await self._metabolic_profile(patient_ids)
 
         if not self._qdrant:
             return "No data source available."
@@ -655,6 +677,40 @@ class ToolExecutor:
                 f"{ins.get('message', '')}{ts}"
             )
         return "\n".join(lines)
+
+    async def _metabolic_profile(self, patient_ids: list[str]) -> str:
+        if not self._metabolic:
+            return f"{NO_DATA_PREFIX}Metabolic engine not available."
+        if not patient_ids:
+            return f"{NO_DATA_PREFIX}No patient ID provided."
+
+        results: list[str] = []
+        for pid in patient_ids[:5]:
+            try:
+                profile = await self._metabolic.risk_profile(pid)
+                parts = []
+                if profile.get("mmiq_tier"):
+                    parts.append(f"Metabolic phenotype: {profile['mmiq_tier']}")
+                if profile.get("mmiq_driver"):
+                    parts.append(f"CGM driver: {profile['mmiq_driver']}")
+                bmiq = profile.get("bmiq")
+                if bmiq:
+                    parts.append(f"BMIQ body comp: {bmiq}")
+                wt = profile.get("weight_trend")
+                if wt:
+                    parts.append(f"Weight trend: {wt}")
+                flags = profile.get("safety_flags")
+                if flags:
+                    parts.append(f"Safety flags: {flags}")
+                pf = profile.get("patient_flags")
+                if pf:
+                    parts.append(f"Patient flags: {pf}")
+                results.append(f"Patient {pid}: " + "; ".join(parts) if parts else f"Patient {pid}: insufficient data for metabolic profile")
+            except Exception as exc:
+                logger.warning("metabolic_profile failed for %s: %s", pid, exc)
+                results.append(f"Patient {pid}: metabolic data unavailable")
+
+        return "Metabolic Profile:\n" + "\n".join(results)
 
     # ── Formatting helpers ────────────────────────────────────────────────
 

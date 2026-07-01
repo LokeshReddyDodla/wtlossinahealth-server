@@ -1,9 +1,9 @@
 """Schemas for voice-based workout logging.
 
-The frontend maintains a running workout session. On each voice input,
-it sends the current state alongside the audio. The server transcribes,
-interprets with LLM context, fuzzy-matches exercises from the catalog,
-and returns the updated session state.
+Voice operates on a single segment at a time. The frontend sends the
+current segment's state (type + exercises logged so far) alongside the
+audio. The server transcribes, interprets with LLM context, fuzzy-matches
+exercises from the catalog, and returns the updated segment state.
 """
 
 from __future__ import annotations
@@ -94,6 +94,9 @@ class VoiceWorkoutExtraction(BaseModel):
 # ── API request / response ──────────────────────────────────────────────
 
 class WorkoutVoiceSessionState(BaseModel):
+    segment_type: Optional[str] = Field(
+        None, description="Type of the segment being edited (strength, cardio, etc.).",
+    )
     exercises: list[SessionExercise] = Field(default_factory=list)
 
 

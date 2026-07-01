@@ -111,6 +111,7 @@ from lib.services.patient_data_availability_service import (
     PatientDataAvailabilityService,
 )
 from lib.services.patient_daily_overview_service import PatientDailyOverviewService
+from lib.services.patient_timeline_service import PatientTimelineService
 from lib.services.patient_data_export_service import PatientDataExportService
 from lib.services.care_provider_query_service import CareProviderQueryService
 from lib.services.package_query_service import PackageQueryService
@@ -213,6 +214,7 @@ from lib.ai_foundation.voice.config import voice_settings as _voice_settings
 from lib.ai_foundation.voice.stt import BaseSpeechToText, build_stt
 from lib.ai_foundation.voice.tts import BaseTextToSpeech, build_tts
 from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
+from lib.ai_foundation.clinical.metabolic.service import MetabolicService
 
 # Initialize Container
 container = Container()
@@ -535,6 +537,20 @@ container.register(
         sleep_report_service=cast(
             SleepReportService, container.resolve(SleepReportService)
         ),
+    ),
+)
+
+# 🔹 Patient Timeline Service
+container.register(
+    PatientTimelineService,
+    lambda: PatientTimelineService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+        insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+        cgm_report_service=cast(CGMReportService, container.resolve(CGMReportService)),
+        meal_report_service=cast(MealReportService, container.resolve(MealReportService)),
+        fitness_report_service=cast(FitnessReportService, container.resolve(FitnessReportService)),
+        sleep_report_service=cast(SleepReportService, container.resolve(SleepReportService)),
     ),
 )
 
@@ -1681,6 +1697,16 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Metabolic Service — clinical metabolic engine (glucose prediction, attribution, BMIQ)
+container.register(
+    MetabolicService,
+    lambda: MetabolicService(
+        retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Patient Name Resolver — resolves UUIDs to display names for natural responses
 container.register(
     PatientNameResolver,
@@ -1730,6 +1756,7 @@ container.register(
         qdrant=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
     ),
     scope=Scope.singleton,
 )
@@ -1837,6 +1864,7 @@ container.register(
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         event_bus=cast(EventBus, container.resolve(EventBus)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
     ),
     scope=Scope.singleton,
 )
@@ -1905,6 +1933,7 @@ container.register(
         glucose_predictor=cast(
             GlucosePredictor, container.resolve(GlucosePredictor)
         ),
+        metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
         memory=cast(MongoMemoryStore, container.resolve(MongoMemoryStore)),
         prompts=cast(PromptRegistry, container.resolve(PromptRegistry)),
         event_bus=cast(EventBus, container.resolve(EventBus)),

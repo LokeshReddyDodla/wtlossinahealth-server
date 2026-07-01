@@ -1,0 +1,37 @@
+{
+  "well_controlled": {
+    "display": "Well controlled",
+    "criteria": "TIR70-180 >= 70 AND CV < 36",
+    "clinical_note": "Continue current regimen, reinforce adherence, reassess CGM in 3 months.",
+    "agent_tone": "encouraging, maintenance-focused",
+    "escalation_threshold": "TIR drops below 65 OR new TBR>4 events"
+  },
+  "variable_controlled": {
+    "display": "Variable controlled",
+    "criteria": "TIR70-180 >= 70 AND CV >= 36",
+    "clinical_note": "Good average control but high swings. Address meal pacing, post-meal walks, possibly drug timing.",
+    "agent_tone": "constructive, action-oriented",
+    "escalation_threshold": "Hypo events or symptomatic swings"
+  },
+  "consistent_elevated": {
+    "display": "Consistently elevated",
+    "criteria": "TIR70-180 < 70 AND CV < 36",
+    "clinical_note": "Stable but high. Likely needs intensification \u2014 basal/dose adjustment or adherence review.",
+    "agent_tone": "direct, escalation-aware",
+    "escalation_threshold": "GMI > 8.0 OR mean > 220"
+  },
+  "high_risk_glucose": {
+    "display": "High-risk glucose",
+    "criteria": "TIR70-180 < 70 AND CV >= 36",
+    "clinical_note": "Worst combination \u2014 high average and high variability. Urgent regimen review.",
+    "agent_tone": "concerned, doctor-loop-required",
+    "escalation_threshold": "Always loop in clinician for new actions"
+  },
+  "moderate_mixed": {
+    "display": "Moderate mixed",
+    "criteria": "Boundary case \u2014 within 1% of two thresholds",
+    "clinical_note": "Boundary phenotype. Use driver decomposition to pick action.",
+    "agent_tone": "data-gathering",
+    "escalation_threshold": "Re-evaluate weekly"
+  }
+}

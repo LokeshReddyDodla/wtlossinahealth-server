@@ -61,8 +61,10 @@ class MealRangeStats(BaseModel):
 class OverallScore(BaseModel):
     """Overall score for glucose control."""
 
+    fasting: float = Field(..., description="Fasting score percentage")
     pre_meal: float = Field(..., description="Pre-meal score percentage")
     post_meal: float = Field(..., description="Post-meal score percentage")
+    random: float = Field(..., description="Random score percentage")
     overall: float = Field(..., description="Overall score percentage")
 
 
@@ -78,8 +80,10 @@ class WeeklyTrendPeriod(BaseModel):
 class WeeklyTrendGlucose(BaseModel):
     """Glucose medians for a week."""
 
+    fasting: Optional[float] = Field(None, description="Fasting median glucose in mg/dL")
     pre_meal: Optional[float] = Field(None, description="Pre-meal median glucose in mg/dL")
     post_meal: Optional[float] = Field(None, description="Post-meal median glucose in mg/dL")
+    random: Optional[float] = Field(None, description="Random median glucose in mg/dL")
 
 
 class WeeklyTrend(BaseModel):
@@ -93,8 +97,10 @@ class MonthlyGlucoseStats(BaseModel):
     """Glucose statistics for a month."""
 
     total_readings: int = Field(..., description="Total number of readings in the month")
+    fasting: MealRangeStats = Field(..., description="Fasting statistics")
     pre_meal: MealRangeStats = Field(..., description="Pre-meal statistics")
     post_meal: MealRangeStats = Field(..., description="Post-meal statistics")
+    random: MealRangeStats = Field(..., description="Random statistics")
     overall_score: OverallScore = Field(..., description="Overall glucose control score")
     weekly_trends: Dict[str, WeeklyTrend] = Field(
         ..., description="Weekly trends within the month"

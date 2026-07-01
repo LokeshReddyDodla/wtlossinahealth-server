@@ -817,6 +817,7 @@ class ReasoningEngine:
         """
         # Extract system messages (with _meta), user message, and all tool results
         system_msgs: list[dict[str, Any]] = []
+        history_msgs: list[dict[str, Any]] = []
         user_msg = ""
         gathered_data: list[str] = []
 
@@ -829,16 +830,18 @@ class ReasoningEngine:
                 _exclude = {"instruction", "plan", "reflection", "system_hint", "tool_summary", "tool_result", "assistant_tool_calls"}
                 msg_type = meta.get("type", "")
                 if msg_type == "tool_result":
-                    # Capture tool results in gathered_data (not as separate system messages)
                     gathered_data.append(content)
                 elif msg_type not in _exclude:
                     system_msgs.append({"role": "system", "content": content, "_meta": meta} if meta else {"role": "system", "content": content})
+            elif role == "user" and meta.get("type") == "history":
+                history_msgs.append({"role": "user", "content": content, "_meta": meta})
+            elif role == "assistant" and meta.get("type") == "history":
+                history_msgs.append({"role": "assistant", "content": content, "_meta": meta})
             elif role == "user":
                 user_msg = content
             elif role == "tool":
                 gathered_data.append(content)
-            elif role == "assistant" and content and not msg.get("tool_calls") and meta.get("type") != "history":
-                # Thinker's analysis notes (when it stopped calling tools)
+            elif role == "assistant" and content and not msg.get("tool_calls"):
                 gathered_data.append(f"Analysis notes: {content}")
 
         # Build responder messages — propagate _meta for pruning
@@ -880,6 +883,7 @@ class ReasoningEngine:
                     "_meta": {"type": "evidence_summary"},
                 })
 
+        messages.extend(history_msgs)
         messages.append({"role": "user", "content": user_msg, "_meta": {"type": "user_question"}})
         return messages
 
