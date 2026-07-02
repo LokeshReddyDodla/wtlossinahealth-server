@@ -56,7 +56,7 @@ class Phenotype(BaseModel):
     tier: str | None = None
     agent_tone: str | None = None
     clinical_note: str | None = None
-    escalation_threshold: float | None = None
+    escalation_threshold: str | float | None = None
 
 
 class V31Enrichment(BaseModel):

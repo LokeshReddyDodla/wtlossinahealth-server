@@ -20,12 +20,11 @@ from sqlalchemy import select, func, case, and_
 from lib.core.postgres_store import PostgresStore
 from lib.models.clinical_outcome import AdviceEvent, AdviceFollowup, ClinicalDecisionAudit
 
+from lib.ai_foundation.config import settings
+
 from .exceptions import OutcomeError
 
 logger = logging.getLogger(__name__)
-
-FOLLOWUP_WINDOW_HOURS = 2   # wait at least 2h after meal for CGM data
-FOLLOWUP_MAX_AGE_DAYS = 7   # don't follow up on advice older than a week
 
 
 class OutcomeRepository:
@@ -61,10 +60,14 @@ class OutcomeRepository:
     async def get_pending_followups(
         self,
         patient_id: str | UUID,
-        min_age_hours: float = FOLLOWUP_WINDOW_HOURS,
-        max_age_days: int = FOLLOWUP_MAX_AGE_DAYS,
+        min_age_hours: float | None = None,
+        max_age_days: int | None = None,
     ) -> list[AdviceEvent]:
         """Find advice events ready for follow-up: old enough for CGM, not yet followed up."""
+        if min_age_hours is None:
+            min_age_hours = settings.METABOLIC_FOLLOWUP_WINDOW_HOURS
+        if max_age_days is None:
+            max_age_days = settings.METABOLIC_FOLLOWUP_MAX_AGE_DAYS
         now = datetime.now(timezone.utc)
         cutoff_min = now - timedelta(hours=min_age_hours)
         cutoff_max = now - timedelta(days=max_age_days)

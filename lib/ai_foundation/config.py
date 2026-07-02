@@ -127,6 +127,14 @@ class AIFoundationSettings(BaseSettings):
     MEAL_PROMPT_RECENT_MEALS_LIMIT: int = Field(default=15, description="Max recent meals sent into meal analysis prompts")
     MEAL_PROMPT_CGM_EVENTS_LIMIT: int = Field(default=15, description="Max CGM events sent into meal analysis prompts")
 
+    # ── Metabolic Engine (operational tunables, NOT model calibration) ──
+
+    METABOLIC_ASSEMBLER_CACHE_TTL: int = Field(default=30, description="Assembler patient-state cache TTL in seconds")
+    METABOLIC_FOLLOWUP_WINDOW_HOURS: int = Field(default=2, description="Min hours after meal before CGM follow-up")
+    METABOLIC_FOLLOWUP_MAX_AGE_DAYS: int = Field(default=7, description="Max days to look back for unfollowed advice")
+    METABOLIC_CGM_STALE_DAYS: int = Field(default=2, description="Days after which CGM data triggers a freshness nudge")
+    METABOLIC_MAX_NUDGES: int = Field(default=2, description="Max nudges per assessment turn (safety always survives cap)")
+
     # ── Context Window Management ────────────────────────────────────────
 
     CONTEXT_BUDGET_RATIO: float = Field(default=0.75, description="Fraction of context window to use as input budget")
