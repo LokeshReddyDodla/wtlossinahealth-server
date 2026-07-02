@@ -18,7 +18,7 @@ from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-from .utils import parse_patient_uuid
+from .utils import enforce_rate_limit, parse_patient_uuid
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,7 @@ async def add_memory(
     ),
 ):
     """Manually add a memory for a patient."""
+    enforce_rate_limit(current_actor)
     verified_pid = await resolve_patient_access(
         actor=current_actor,
         patient_id=parse_patient_uuid(payload.patient_id),
@@ -165,6 +166,7 @@ async def delete_memory(
     ),
 ):
     """Delete a specific memory by key."""
+    enforce_rate_limit(current_actor)
     verified_pid = await resolve_patient_access(
         actor=current_actor,
         patient_id=parse_patient_uuid(patient_id),

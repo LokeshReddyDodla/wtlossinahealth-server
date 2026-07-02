@@ -17,6 +17,7 @@ from lib.core.constants import ProfileTypeEnum
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+from .utils import enforce_rate_limit
 
 
 class FeedbackRequest(BaseModel):
@@ -46,6 +47,7 @@ async def submit_feedback(
 
     The feedback is logged to Langfuse as a score against the trace.
     """
+    enforce_rate_limit(current_actor)
     score = 1.0 if payload.thumbs_up else 0.0
 
     # Log score to Langfuse

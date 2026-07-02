@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import AsyncIterator
@@ -171,14 +172,31 @@ def build_tts(settings: VoiceSettings) -> BaseTextToSpeech:
 # ── Utilities ───────────────────────────────────────────────────────────────
 
 
+# Whitespace after sentence-ending punctuation, incl. Devanagari danda (।)
+# and question/exclamation marks. Abbreviations ("Dr. Smith") still split —
+# worst case is a brief TTS pause, acceptable for the simplicity.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.?!।])\s+")
+
+
 def _split_text(text: str, max_chars: int = 2400) -> list[str]:
-    """Split text into segments at sentence boundaries, respecting max_chars."""
+    """Split text into segments at sentence boundaries, respecting max_chars.
+
+    A single sentence longer than max_chars is hard-chunked so no segment
+    ever exceeds the provider's limit.
+    """
     if len(text) <= max_chars:
         return [text]
 
     segments: list[str] = []
     current = ""
-    for sentence in text.replace(". ", ".|").replace("? ", "?|").replace("! ", "!|").split("|"):
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        # Hard-chunk pathological sentences that alone exceed the limit
+        while len(sentence) > max_chars:
+            if current:
+                segments.append(current.strip())
+                current = ""
+            segments.append(sentence[:max_chars])
+            sentence = sentence[max_chars:]
         if len(current) + len(sentence) + 1 > max_chars and current:
             segments.append(current.strip())
             current = sentence

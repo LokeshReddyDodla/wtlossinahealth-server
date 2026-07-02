@@ -21,7 +21,7 @@ from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-from .utils import parse_patient_uuid
+from .utils import enforce_rate_limit, parse_patient_uuid
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,7 @@ async def submit_insight_feedback(
 
     Logs to Langfuse as a score for quality tracking.
     """
+    enforce_rate_limit(current_actor)
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.models.gateway import ModelGateway
 
