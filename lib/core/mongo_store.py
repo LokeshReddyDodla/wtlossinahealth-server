@@ -27,7 +27,7 @@ class MongoStore:
         await self._init_support_ticket_indexes()
         await self._init_chat_indexes()
         await self._init_consultation_indexes()
-        # In future: await self._init_patient_indexes(), etc.
+        await self._init_task_run_indexes()
 
     async def _init_consultation_indexes(self):
         """Indexes on patient_consultations. Doctor-patient recordings:
@@ -123,6 +123,18 @@ class MongoStore:
         )
         await collection.create_index(
             [("created_at", -1)], name="createdAt_desc_idx"
+        )
+
+    async def _init_task_run_indexes(self):
+        col = self.db["task_runs"]
+        await col.create_index(
+            "created_at",
+            name="task_runs_ttl_7d",
+            expireAfterSeconds=7 * 86400,
+        )
+        await col.create_index(
+            [("task_name", 1), ("created_at", -1)],
+            name="task_runs_name_time_idx",
         )
 
     # --- CRUD methods below ---
