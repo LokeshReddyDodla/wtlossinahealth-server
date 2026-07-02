@@ -65,14 +65,6 @@ async def _maybe_await(result: Any) -> None:
         await result
 
 
-def _sse_event_name(event: str) -> str:
-    """Extract SSE event name from a formatted event payload."""
-    first_line = event.split("\n", 1)[0].strip()
-    if not first_line.startswith("event:"):
-        return ""
-    return first_line.split(":", 1)[1].strip()
-
-
 class HealthQueryAgent(BaseAgent):
     """Foundation-native health query agent — thin orchestrator with agentic reasoning."""
 
@@ -100,7 +92,10 @@ class HealthQueryAgent(BaseAgent):
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
     async def run(self, input: AgentInput) -> AgentOutput:
+        # Fallbacks in case _init_pipeline fails before assigning the real ones
+        # (the exception handlers below reference both).
         trace_id = f"trc_{uuid4().hex[:16]}"
+        pipeline_start = time.perf_counter()
 
         try:
             pc = await self._init_pipeline(input)
@@ -214,7 +209,10 @@ class HealthQueryAgent(BaseAgent):
     # ── Public: SSE Streaming ─────────────────────────────────────────────
 
     async def run_stream(self, input: AgentInput) -> AsyncIterator[str]:
+        # Fallbacks in case _init_pipeline fails before assigning the real ones
+        # (the exception handlers below reference both).
         trace_id = f"trc_{uuid4().hex[:16]}"
+        pipeline_start = time.perf_counter()
 
         try:
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
@@ -287,25 +285,14 @@ class HealthQueryAgent(BaseAgent):
 
             async with asyncio.timeout(settings.STREAMING_PIPELINE_TIMEOUT_SECONDS):
                 async for event in event_source:
-                    event_name = _sse_event_name(event)
-
-                    # Intercept done event to save turn and inject suggestions
-                    if event_name == "done":
-                        # Extract full_response + metadata from the done payload
-                        full_text = ""
-                        done_data: dict = {}
-                        try:
-                            import json as _json
-                            data_line = event.split("data: ", 1)[1].split("\n")[0]
-                            done_data = _json.loads(data_line)
-                            full_text = done_data.get("data", {}).get("full_response", "")
-                        except (IndexError, ValueError, KeyError):
-                            pass
-
-                        engine_data = done_data.get("data", {})
+                    # The engine yields a structured terminal payload — intercept
+                    # it to save the turn and inject suggestions, then emit our
+                    # own done event.
+                    if isinstance(event, SSEDonePayload):
+                        engine_data = event.data or {}
+                        full_text = engine_data.get("full_response", "")
                         intent_cost = safe_cost(meta)
-                        engine_cost = done_data.get("cost_usd")
-                        total_cost = (engine_cost or 0.0) + intent_cost
+                        total_cost = (event.cost_usd or 0.0) + intent_cost
                         elapsed = int((time.perf_counter() - pipeline_start) * 1000)
 
                         output = AgentOutput(
@@ -313,7 +300,7 @@ class HealthQueryAgent(BaseAgent):
                             trace_id=trace_id,
                             cost_usd=total_cost,
                             latency_ms=elapsed,
-                            model_id=done_data.get("model_id"),
+                            model_id=event.model_id,
                             data={
                                 "data_types": [dt.value for dt in intent.data_types],
                                 "intent_confidence": intent.confidence,
@@ -333,7 +320,7 @@ class HealthQueryAgent(BaseAgent):
                                 metadata={
                                     "cost_usd": total_cost,
                                     "latency_ms": elapsed,
-                                    "model_id": done_data.get("model_id"),
+                                    "model_id": event.model_id,
                                     "rounds_used": engine_data.get("rounds_used"),
                                     "tools_called": engine_data.get("tools_called"),
                                 },
@@ -348,7 +335,7 @@ class HealthQueryAgent(BaseAgent):
                             trace_id=trace_id,
                             cost_usd=total_cost,
                             latency_ms=elapsed,
-                            model_id=done_data.get("model_id"),
+                            model_id=event.model_id,
                             data=engine_data,
                         ))
                         continue

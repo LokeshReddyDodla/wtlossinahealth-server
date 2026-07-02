@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -227,7 +228,8 @@ class MetabolicService:
                 before_minutes=15,
                 after_minutes=120,
             )
-            results = self._clickhouse.client.execute(query)
+            # clickhouse-driver is sync — run off the event loop
+            results = await asyncio.to_thread(self._clickhouse.client.execute, query)
             if not results:
                 return
 

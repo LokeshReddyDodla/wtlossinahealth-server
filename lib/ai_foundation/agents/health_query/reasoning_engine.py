@@ -32,7 +32,6 @@ from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
-    sse_done,
     sse_plan,
     sse_reasoning,
     sse_reflection,
@@ -246,8 +245,12 @@ class ReasoningEngine:
         intent_data_types: list[str] | None = None,
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
-    ) -> AsyncIterator[str]:
-        """Run the reasoning loop, yielding SSE events as the doctor thinks."""
+    ) -> AsyncIterator[str | SSEDonePayload]:
+        """Run the reasoning loop, yielding SSE events as the doctor thinks.
+
+        Yields formatted SSE strings, then a terminal SSEDonePayload carrying
+        the structured result (full response, cost, evidence metrics).
+        """
         async for item in self._reason_core(
             user_message=user_message,
             system_prompt=system_prompt,
@@ -261,7 +264,7 @@ class ReasoningEngine:
             user_role=user_role,
             emit_events=True,
         ):
-            if isinstance(item, str):
+            if isinstance(item, (str, SSEDonePayload)):
                 yield item
 
     # ── Core loop (shared implementation) ─────────────────────────────
@@ -576,14 +579,16 @@ class ReasoningEngine:
         )
 
         if emit_events:
-            yield sse_done(SSEDonePayload(
+            # Yield the structured payload — the agent builds the final done
+            # event itself (no serialize → string-parse → re-serialize round-trip).
+            yield SSEDonePayload(
                 cost_usd=total_cost,
                 data={
                     **evidence,
                     "tier": tier.value,
                     "full_response": process_charts("".join(full_response_parts)),
                 },
-            ))
+            )
         else:
             yield ReasoningResult(
                 response=process_charts(final_response.content or ""),
@@ -755,12 +760,19 @@ class ReasoningEngine:
 
                 if response.has_tool_calls:
                     tool_round = await self._tools.execute_tool_round(response, patient_ids, seen_calls, patient_names=patient_names)
-                    messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": 0}})
+                    # Continue the main loop's round numbering — round 0 would
+                    # fall through the pruner (neither summarized nor protected
+                    # as recent).
+                    followup_round = 1 + max(
+                        (m.get("_meta", {}).get("round", 0) for m in messages),
+                        default=0,
+                    )
+                    messages.append({**tool_round.assistant_message, "_meta": {"type": "assistant_tool_calls", "round": followup_round}})
                     tc_by_id = {tc.id: tc for tc in response.tool_calls}
                     for msg in tool_round.tool_messages:
                         tc = tc_by_id.get(msg.get("tool_call_id", ""))
                         tool_name = tc.function_name if tc else "unknown"
-                        messages.append({**msg, "_meta": {"type": "tool_result", "round": 0, "tool": tool_name}})
+                        messages.append({**msg, "_meta": {"type": "tool_result", "round": followup_round, "tool": tool_name}})
                     total_tools += tool_round.executed_count
                     if evidence_ledger is not None:
                         evidence_ledger.extend(extract_evidence_from_tool_round(response, tool_round.tool_messages))
