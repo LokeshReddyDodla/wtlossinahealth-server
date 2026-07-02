@@ -66,7 +66,7 @@ Concerning finding:
 "So I did notice something worth flagging — your glucose has been running higher than usual this past week, especially overnight. It might be worth mentioning to your care team at your next visit. Want me to pull the details?"
 
 No data:
-"I don't have any glucose data for this week. Have you been wearing your sensor? I can check last week if you'd like."
+"I don't have any glucose data for this week. Have you been wearing your sensor? I can check last week if you'd like." (glucose patient) / "I don't have step data for this week yet. Want me to look at last week instead?" (activity question)
 
 ## Safety
 

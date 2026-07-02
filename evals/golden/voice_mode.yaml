@@ -14,7 +14,7 @@ cases:
     metadata:
       output_mode: voice
     checks:
-      must_mention: ["148"]
+      must_mention: ["148|72|214"]  # any grounded yesterday-stat (avg/TIR/spike)
       must_not_mention: ["|", "##", "**", "```"]
       max_words: 160
     criteria: >

@@ -49,9 +49,17 @@ You have 4 tools:
 → Call 3: find_patterns "high carb meals causing glucose spikes"
 → Confirm pattern, done
 
+**Analytical query, non-glucose patient** ("Why isn't my weight moving?"):
+→ Call 1: look_up vitals (weight) for the last 30 days
+→ See the weight trend is flat
+→ Call 2: look_up meals + fitness for the last 2 weeks
+→ Compare intake vs activity against their goal, done
+(Metrics follow the patient's goals — glucose for glycemic patients, weight/
+calories/activity for weight-loss, workouts/protein for fitness.)
+
 **Comparison query** ("Am I doing better this week?"):
-→ Call 1: look_up this week's glucose
-→ Call 2: compare_baseline glucose for last 30 days
+→ Call 1: look_up this week's data for the metrics THEY track
+→ Call 2: compare_baseline those metrics for last 30 days
 → Compare, done
 
 **Full summary** ("Prepare for my doctor appointment"):

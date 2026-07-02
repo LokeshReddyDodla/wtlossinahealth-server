@@ -25,27 +25,54 @@ _MEAL_PROMPTS_DIR = (
 )
 
 
+PERSONAS = {
+    # T2D, vegetarian, CGM user — glycemic context, GL leads the score
+    "t2d": dict(
+        profile={
+            "name": "Asha",
+            "age": 42,
+            "gender": "female",
+            "condition": "type 2 diabetes (2022)",
+            "dietary_preference": "vegetarian",
+        },
+        has_cgm=True,
+        medications=[{"name": "Metformin", "dose": "500mg", "frequency": "twice daily"}],
+        judge_facts=["type 2 diabetes", "vegetarian", "Metformin 500mg twice daily", "has CGM"],
+    ),
+    # Weight loss, NO diabetes, NO CGM — calories/protein lead the score
+    "weight_loss": dict(
+        profile={
+            "name": "Rohan",
+            "age": 35,
+            "gender": "male",
+            "health_goal": "lose 8 kg",
+            "conditions": "none",
+        },
+        has_cgm=False,
+        medications=[],
+        judge_facts=["no chronic conditions", "goal: lose 8 kg", "no medications", "no CGM"],
+    ),
+}
+
+
 class FakeMealContextLoader:
-    """Deterministic patient context: T2D, vegetarian-leaning, CGM user."""
+    """Deterministic patient context, selected by persona."""
+
+    def __init__(self, persona: str = "t2d") -> None:
+        self._p = PERSONAS[persona]
 
     async def load(self, *, patient_id: str, local_now: datetime) -> MealAnalysisContext:
         return MealAnalysisContext(
             patient_id=patient_id,
             local_now=local_now,
-            profile={
-                "name": "Asha",
-                "age": 42,
-                "gender": "female",
-                "condition": "type 2 diabetes (2022)",
-                "dietary_preference": "vegetarian",
-            },
+            profile=self._p["profile"],
             recent_meals=[],
-            has_cgm=True,
-            medications=[{"name": "Metformin", "dose": "500mg", "frequency": "twice daily"}],
+            has_cgm=self._p["has_cgm"],
+            medications=self._p["medications"],
         )
 
 
-def build_meal_agent() -> MealAnalysisAgent:
+def build_meal_agent(persona: str = "t2d") -> MealAnalysisAgent:
     gateway = shared_gateway()
     prompts = PromptRegistry()
     prompts.register_directory(_MEAL_PROMPTS_DIR, namespace="meal_analysis")
@@ -53,7 +80,7 @@ def build_meal_agent() -> MealAnalysisAgent:
     return MealAnalysisAgent(
         gateway=gateway,
         qdrant_retriever=FixtureRetriever([]),  # no similar-meal history
-        context_loader=FakeMealContextLoader(),
+        context_loader=FakeMealContextLoader(persona),
         extractor=MealExtractor(gateway=gateway, prompt_registry=prompts),
         scorer=MealScorer(gateway=gateway, prompt_registry=prompts),
         alternatives=AlternativesEngine(gateway=gateway, prompt_registry=prompts),

@@ -12,6 +12,8 @@ cases:
     category: extraction
     query: "2 rotis with a bowl of dal and cucumber salad"
     slot: lunch
+    # Deterministic bounds gate this case; judge margin-nitpicks are noise.
+    relaxed_judge: true
     checks:
       must_mention: ["roti", "dal"]
       carbs_between: [30, 100]
@@ -74,3 +76,19 @@ cases:
       not the absence of numbers. The failure mode this case catches is a
       specific invented menu (e.g. "2 samosas, 5 pakoras, 2 gulab jamuns")
       presented with high confidence.
+
+  - id: wl_dessert_calorie_framing
+    category: persona
+    persona: weight_loss
+    query: "3 gulab jamuns with extra sugar syrup"
+    slot: snack
+    checks:
+      must_not_mention: ["diabetes", "diabetic"]
+      score_between: [15, 80]
+    criteria: >
+      Same dessert, but for Rohan — weight-loss goal, NO diabetes, NO CGM.
+      Concerns should lead with calories / added sugar relative to his
+      weight goal, NOT clinical glycemic framing ("for glycemic control",
+      ADA carb limits). The score may be moderate-low (it is a lot of
+      calories) but should be gentler than a diabetic patient's score for
+      the same meal, since there is no clinical glucose risk here.

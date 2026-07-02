@@ -166,9 +166,58 @@ def scenario_spike_after_meal(tz_name: str) -> list[dict[str, Any]]:
     ]
 
 
+def scenario_weight_loss_no_cgm(tz_name: str) -> list[dict[str, Any]]:
+    """Weight-loss patient, NO glucose data at all — insights must stay
+    in the domains that exist (meals, fitness, weight)."""
+    d = _today(tz_name, 6)
+    now = datetime.now(ZoneInfo(tz_name))
+    return [
+        {
+            "data_type": "profile",
+            "start_time": _ms(now - timedelta(days=365)),
+            "end_time": _ms(now),
+            "text_repr": (
+                "Patient profile: Rohan, 35-year-old male, no chronic "
+                "conditions, goal: lose 8 kg, no medications."
+            ),
+            "name": "Rohan", "age": 35, "gender": "male",
+            "condition": "none", "health_goal": "lose 8 kg",
+        },
+        {
+            "data_type": "meal",
+            "start_time": _ms(_today(tz_name, 8)),
+            "end_time": _ms(_today(tz_name, 8)),
+            "text_repr": (
+                f"Meal on {d.date().isoformat()} 8:00 AM (breakfast): oats with "
+                f"whey protein and banana — approx 420 kcal, 52g carbs, 34g protein."
+            ),
+            "meal_type": "breakfast", "description": "oats with whey protein and banana",
+            "calories": 420, "carbs_g": 52, "protein_g": 34, "meal_time": "8:00 AM",
+        },
+        {
+            "data_type": "fitness_overview",
+            "start_time": _ms(d),
+            "end_time": _ms(d),
+            "text_repr": (
+                f"Fitness overview for {d.date().isoformat()}: 9,400 steps so far, "
+                f"42 active minutes, one 25-minute strength session."
+            ),
+            "steps": 9400, "active_minutes": 42, "workouts": "25-min strength session",
+        },
+        {
+            "data_type": "vital",
+            "start_time": _ms(d),
+            "end_time": _ms(d),
+            "text_repr": f"Vitals on {d.date().isoformat()}: weight 82.9 kg (down 1.3 kg over 3 weeks).",
+            "weight_kg": 82.9, "weight_trend": "down 1.3 kg over 3 weeks",
+        },
+    ]
+
+
 SCENARIOS = {
     "normal_day": scenario_normal_day,
     "hypo_today": scenario_hypo_today,
     "spike_after_meal": scenario_spike_after_meal,
+    "weight_loss_no_cgm": scenario_weight_loss_no_cgm,
     "empty": lambda tz: [],
 }

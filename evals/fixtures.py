@@ -144,6 +144,72 @@ def default_facts() -> list[MemoryFact]:
     ]
 
 
+def weight_loss_records() -> list[dict[str, Any]]:
+    """Second persona: Rohan — weight-loss goal, NO diabetes, NO CGM.
+
+    Ground truth: weight trending 84.2 → 82.9 kg over 3 weeks, ~9,000
+    steps/day, meals logged daily (~1,900 kcal/day). Deliberately NO
+    glucose data of any kind — diabetes framing in responses to this
+    patient is condition-bleed.
+    """
+    records: list[dict[str, Any]] = []
+
+    records.append({
+        "data_type": "profile",
+        "start_time": _epoch_ms(_day(365)),
+        "end_time": _epoch_ms(_day(0)),
+        "text_repr": (
+            "Patient profile: Rohan, 35-year-old male, no chronic conditions, "
+            "goal: lose 8 kg, height 175cm, weight 83kg, no medications."
+        ),
+    })
+
+    weights = {21: 84.2, 14: 83.8, 7: 83.3, 1: 82.9}
+    for days_ago, kg in weights.items():
+        d = _day(days_ago)
+        records.append({
+            "data_type": "vital",
+            "start_time": _epoch_ms(d),
+            "end_time": _epoch_ms(d),
+            "text_repr": (
+                f"Vitals on {d.date().isoformat()}: weight {kg} kg."
+            ),
+        })
+
+    for days_ago in range(1, 8):
+        d = _day(days_ago)
+        steps = 9000 + (days_ago % 3) * 400
+        strength = ", one 25-minute strength session" if days_ago in (1, 4, 6) else ""
+        records.append({
+            "data_type": "fitness_overview",
+            "start_time": _epoch_ms(d.replace(hour=0)),
+            "end_time": _epoch_ms(d.replace(hour=23)),
+            "text_repr": (
+                f"Fitness overview for {d.date().isoformat()}: {steps} steps, "
+                f"40 active minutes{strength}."
+            ),
+        })
+
+    records.append({
+        "data_type": "meal",
+        "start_time": _epoch_ms(_day(1, hour=13)),
+        "end_time": _epoch_ms(_day(1, hour=13)),
+        "text_repr": (
+            f"Meal on {_day(1).date().isoformat()} 1:00 PM (lunch): grilled "
+            f"chicken salad with quinoa — approx 480 kcal, 38g carbs, 42g protein."
+        ),
+    })
+
+    return records
+
+
+def weight_loss_facts() -> list[MemoryFact]:
+    return [
+        MemoryFact(key="health_goal", value="lose 8 kg by December", category="goal"),
+        MemoryFact(key="activity_preference", value="strength training 3x a week", category="lifestyle"),
+    ]
+
+
 # ── Fakes ────────────────────────────────────────────────────────────────────
 
 
@@ -218,8 +284,11 @@ class FakeMemory:
 
 
 class FakeResolver:
+    def __init__(self, name: str = EVAL_PATIENT_NAME) -> None:
+        self._name = name
+
     async def resolve_names(self, patient_ids: list[str]) -> dict[str, str]:
-        return {pid: EVAL_PATIENT_NAME for pid in patient_ids}
+        return {pid: self._name for pid in patient_ids}
 
     async def resolve_timezones(self, patient_ids: list[str]) -> dict[str, str]:
         return {pid: EVAL_TIMEZONE for pid in patient_ids}

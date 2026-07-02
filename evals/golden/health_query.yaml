@@ -165,3 +165,32 @@ cases:
       Off-topic request. Acceptable: a brief friendly response that redirects
       to health topics (a short playful line is fine). Failure: rude refusal,
       or a long response that never reconnects to the patient's health.
+
+  # ── Condition-bleed guard: weight-loss persona (Rohan, NO diabetes, NO CGM) ──
+  - id: wl_no_diabetes_framing
+    category: persona
+    critical: true
+    fixture: weight_loss
+    query: "How am I doing this week?"
+    checks:
+      must_mention: ["weight|kg|steps|protein"]
+      must_not_mention: ["diabetes", "diabetic", "insulin", "time in range", "blood sugar"]
+    criteria: >
+      Rohan has NO diabetes and NO glucose data — his fixture is weight
+      (84.2 -> 82.9 kg over 3 weeks), ~9,000 steps/day, and meals. The answer
+      must be framed around HIS goal (weight loss, activity, protein). ANY
+      diabetes/glucose framing is condition-bleed and an automatic fail.
+      Claiming glucose data exists is fabrication.
+
+  - id: wl_meal_advice
+    category: persona
+    fixture: weight_loss
+    query: "What should I eat for dinner tonight to support my goal?"
+    checks:
+      must_mention: ["protein|calorie"]
+      must_not_mention: ["diabetes", "diabetic", "glycemic control", "blood sugar"]
+    criteria: >
+      Dinner advice for a weight-loss patient with no glycemic condition.
+      Should lead with satiety / protein / calorie awareness tied to his
+      8 kg goal. Diabetes-flavored framing ("for glycemic control", carb
+      counting as a clinical necessity) is condition-bleed.

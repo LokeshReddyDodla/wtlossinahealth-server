@@ -47,12 +47,19 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
         EVAL_TIMEZONE,
         default_facts,
         default_records,
+        weight_loss_facts,
+        weight_loss_records,
     )
     from .judge import judge_case
 
-    records = default_records() if case.get("fixture", "default") == "default" else []
-    facts = default_facts() if case.get("fixture", "default") == "default" else []
-    agent = build_eval_agent(records, facts)
+    fixture = case.get("fixture", "default")
+    if fixture == "weight_loss":
+        records, facts, name = weight_loss_records(), weight_loss_facts(), "Rohan"
+    elif fixture == "default":
+        records, facts, name = default_records(), default_facts(), None
+    else:  # "empty"
+        records, facts, name = [], [], None
+    agent = build_eval_agent(records, facts, patient_name=name)
 
     local_time = datetime.now(ZoneInfo(EVAL_TIMEZONE)).strftime("%Y-%m-%d %H:%M (%A)")
     agent_input = AgentInput(
@@ -89,7 +96,8 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
                 question=case["query"],
                 response=response,
                 fixture_texts=[r["text_repr"] for r in records],
-                facts=[f"{f.key}: {f.value}" for f in facts],
+                facts=[f"{f.key}: {f.value}" for f in facts]
+                + [f"patient's current local time (known to the assistant): {local_time}"],
                 criteria=case.get("criteria", ""),
             )
         except Exception as exc:
@@ -150,9 +158,10 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
         insight_tracker=None,  # no dedup — every scenario judged fresh
     )
 
+    patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
     start = time.perf_counter()
     try:
-        result = await agent.scan_patient(EVAL_PATIENT_ID, EVAL_PATIENT_NAME, tz)
+        result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz)
         insights = result.insights
         error = None
     except Exception as exc:
@@ -235,9 +244,10 @@ async def _run_meal_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, A
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_TIMEZONE
     from .judge import judge_case
-    from .meal_fixtures import build_meal_agent
+    from .meal_fixtures import PERSONAS, build_meal_agent
 
-    agent = build_meal_agent()
+    persona = case.get("persona", "t2d")
+    agent = build_meal_agent(persona)
     slot = MealSlot(case.get("slot", "lunch"))
     # consumed_at aligned with the slot — otherwise every case triggers a
     # "lunch in the evening?" timing concern from the scorer.
@@ -312,7 +322,7 @@ async def _run_meal_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, A
                 question=f"Meal analysis for the description: {case['query']!r}",
                 response=response,
                 fixture_texts=[f"Patient's meal description: {case['query']}"],
-                facts=["type 2 diabetes", "vegetarian", "Metformin 500mg twice daily"],
+                facts=PERSONAS[persona]["judge_facts"],
                 criteria=case.get("criteria", ""),
                 mode="estimation",
             )

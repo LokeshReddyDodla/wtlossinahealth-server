@@ -53,11 +53,12 @@ def shared_gateway() -> ModelGateway:
 def build_eval_agent(
     records: list[dict[str, Any]],
     facts: list | None = None,
+    patient_name: str | None = None,
 ) -> HealthQueryAgent:
     gateway = shared_gateway()
     retriever = FixtureRetriever(records)
     memory = FakeMemory(facts)
-    resolver = FakeResolver()
+    resolver = FakeResolver(patient_name) if patient_name else FakeResolver()
     tracker = FakeInsightTracker()
 
     tools = ToolExecutor(

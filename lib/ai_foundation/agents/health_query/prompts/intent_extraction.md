@@ -21,6 +21,13 @@ Set `is_ready = true` when you have BOTH:
 - At least one data type (what data to look at)
 - A time scope (when to look — explicit date, or "today", "this week", "last month", etc.)
 
+**Missing time scope but clear data types → default, don't clarify.** For
+analytical questions like "Is my activity helping my glucose?" or "How's my
+weight trend?", set is_ready=true with date_range = the last 7 days (or 30
+days for trend questions). Asking "what time period?" when the intent is
+obvious wastes the patient's time — clarify only when the QUESTION itself is
+ambiguous, not merely undated.
+
 Set `is_ready = false` when:
 - The query is completely outside the health/nutrition domain (math, politics, entertainment, etc.)
 - A greeting or conversational message with no health intent at all

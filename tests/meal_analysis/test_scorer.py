@@ -185,11 +185,49 @@ async def test_score_end_to_end_filters_uncited():
         _GL_DEDUCTION_MAX,
         _GL_DEDUCTION_PER_POINT,
         _GL_DEDUCTION_START,
+        _GL_NON_GLYCEMIC_FACTOR,
     )
     gl_ded = min(
         _GL_DEDUCTION_MAX,
         max(0, int((score.glycemic_load - _GL_DEDUCTION_START) * _GL_DEDUCTION_PER_POINT)),
     )
+    # Bare context (no condition, no CGM) → non-glycemic → reduced GL weight
+    gl_ded = int(gl_ded * _GL_NON_GLYCEMIC_FACTOR)
     assert score.overall == 100 - 10 - gl_ded  # composition weight + GL magnitude
     assert score.glycemic_load > 0
     assert len(score.breakdown) == 2  # concern + GL magnitude entry
+
+
+def test_gl_deduction_reduced_without_glycemic_context():
+    """Clinically-accurate scoring: full GL weight only for glycemic
+    conditions/CGM users; ~40% weight otherwise (satiety relevance)."""
+    from lib.ai_foundation.agents.meal_analysis.scorer import (
+        _GL_NON_GLYCEMIC_FACTOR,
+    )
+    concern = _to_insight(_LLMInsight(
+        text="High glycemic load", source=EvidenceSource.COMPOSITION,
+        evidence="GL: 75 (>=20 is high)",
+    ))
+    glycemic_score, _ = _compute_score([concern], [], 75.0, glycemic_context=True)
+    non_glycemic_score, _ = _compute_score([concern], [], 75.0, glycemic_context=False)
+    assert non_glycemic_score > glycemic_score  # gentler without the condition
+    # deduction scales by the factor
+    full_ded = 100 - 10 - glycemic_score
+    reduced_ded = 100 - 10 - non_glycemic_score
+    assert reduced_ded == int(full_ded * _GL_NON_GLYCEMIC_FACTOR)
+
+
+def test_has_glycemic_context_detection():
+    from datetime import datetime
+    from lib.ai_foundation.agents.meal_analysis.scorer import _has_glycemic_context
+
+    def ctx(profile=None, has_cgm=False):
+        return MealAnalysisContext(
+            patient_id="p", local_now=datetime.utcnow(),
+            profile=profile or {}, has_cgm=has_cgm,
+        )
+
+    assert _has_glycemic_context(ctx(profile={"condition": "type 2 diabetes"}))
+    assert _has_glycemic_context(ctx(profile={"condition": "prediabetes"}))
+    assert _has_glycemic_context(ctx(has_cgm=True))
+    assert not _has_glycemic_context(ctx(profile={"health_goal": "lose 8 kg"}))
