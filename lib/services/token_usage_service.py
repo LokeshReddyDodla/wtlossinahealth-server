@@ -1,4 +1,3 @@
-import asyncio
 from datetime import date, datetime
 from typing import Optional, Union
 from uuid import UUID
@@ -254,10 +253,8 @@ class TokenUsageService:
             .order_by(func.sum(TokenUsageLog.cost).desc())
         )
 
-        daily_result, model_result = await asyncio.gather(
-            postgres_session.execute(daily_query),
-            postgres_session.execute(model_query),
-        )
+        daily_result = await postgres_session.execute(daily_query)
+        model_result = await postgres_session.execute(model_query)
 
         daily_rows = daily_result.all()
         model_rows = model_result.all()
