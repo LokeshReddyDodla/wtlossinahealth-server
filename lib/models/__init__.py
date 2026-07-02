@@ -55,6 +55,7 @@ from .mood_entry import MoodEntry
 from .symptom_entry import SymptomEntry, SymptomEntryItem
 from .exercise import Exercise
 from .patient_workout import PatientWorkout, PatientWorkoutSegment, PatientWorkoutExercise, PatientWorkoutSet
+from .clinical_outcome import AdviceEvent, AdviceFollowup, ClinicalDecisionAudit
 from .gamification import (
     Achievement,
     ActivityFeedEvent,

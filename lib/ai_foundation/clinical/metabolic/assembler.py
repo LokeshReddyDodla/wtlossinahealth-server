@@ -25,7 +25,9 @@ _CGM_RANGE_TYPE = "cgm_range_stats"
 _MEAL_TYPE = "meal"
 _PROFILE_TYPE = "profile"
 _MEDICATION_TYPE = "medication"
-_CACHE_TTL = 30  # seconds — covers double-fetch within a single request
+from lib.ai_foundation.config import settings
+
+_CACHE_TTL = settings.METABOLIC_ASSEMBLER_CACHE_TTL
 
 
 class DataAssembler:

@@ -1,74 +1,244 @@
 """
-Outcome loop — append-only advice ledger that tracks whether nudges actually work.
+Outcome loop — Postgres-backed advice ledger that tracks whether nudges work.
 
-ADVISE -> LOG (write the event BEFORE delivery; this is what makes it testable)
-       -> FOLLOW-UP (next same-trigger instance: did the patient COMPLY, did the outcome move as predicted)
+ADVISE -> LOG (write the event BEFORE delivery)
+       -> FOLLOW-UP (fetch CGM around the advised meal, compute observed delta)
        -> ROLL UP (per trigger: compliance rate, predicted vs observed delta, efficacy).
 
-Track-agnostic: works for "glucose" (outcome = spike change, mg/dL) and "obesity" (outcome = weight/
-body-composition change, %). Pure stdlib, append-only JSONL ledger. No live data needed to run the mechanism;
-wire FOLLOW-UP to live CGM / InBody once the read-only service token is provisioned.
+Track-agnostic: works for "glucose" (outcome = spike change, mg/dL) and "obesity"
+(outcome = weight/body-composition change, %).
 """
-import json, os, time, uuid, tempfile
+from __future__ import annotations
 
-# ---------------------------------------------------------------- ledger I/O
-def log_advice(ledger_path, event):
-    """Write an advice event BEFORE delivery. Returns the event_id."""
-    event = dict(event)
-    event.setdefault("event_id", uuid.uuid4().hex[:12])
-    event.setdefault("logged_ts", time.time())
-    # follow-up fields start empty — filled at the next same-trigger instance
-    for k in ("complied", "compliance_evidence", "compliance_ts", "observed_delta", "outcome_vs_predicted"):
-        event.setdefault(k, None)
-    with open(ledger_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
-    return event["event_id"]
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from uuid import UUID
 
-def record_followup(ledger_path, event_id, complied, observed_delta=None, evidence=None):
-    """Fill the follow-up on a logged event (rewrites the ledger; fine at advice-ledger scale)."""
-    rows = _read(ledger_path)
-    for r in rows:
-        if r.get("event_id") == event_id:
-            r["complied"] = bool(complied)
-            r["compliance_evidence"] = evidence
-            r["compliance_ts"] = time.time()
-            r["observed_delta"] = observed_delta
-            pd = r.get("predicted_delta")
-            if complied and observed_delta is not None and pd is not None:
-                # did it move in the predicted direction? (predicted_delta < 0 means "should drop")
-                r["outcome_vs_predicted"] = "as_predicted" if (observed_delta <= 0) == (pd <= 0) else "opposite"
-    _write(ledger_path, rows)
+from sqlalchemy import select, func, case, and_
 
-def _read(p):
-    if not os.path.exists(p): return []
-    rows = []
-    for l in open(p, encoding="utf-8"):
-        if not l.strip():
-            continue
-        try:
-            rows.append(json.loads(l))
-        except json.JSONDecodeError:
-            pass
-    return rows
+from lib.core.postgres_store import PostgresStore
+from lib.models.clinical_outcome import AdviceEvent, AdviceFollowup, ClinicalDecisionAudit
 
-def _write(p, rows):
-    with open(p, "w", encoding="utf-8") as f:
-        for r in rows: f.write(json.dumps(r) + "\n")
+from lib.ai_foundation.config import settings
 
-# ---------------------------------------------------------------- engine -> event
-def advice_event_from_contract(contract, patient_token, track, trigger, ts=None):
-    """Map an EngineV2 contract into a ledger advice event. Returns None for non-actionable contracts:
-    ONLY a cited SUGGEST is logged as efficacy-predicting advice (Forge P1). REINFORCE / STATE_FACTS /
-    FLAG / SAFETY are never logged here. Token-keyed, never a name or id."""
+from .exceptions import OutcomeError
+
+logger = logging.getLogger(__name__)
+
+
+class OutcomeRepository:
+    """Postgres-backed outcome tracking. Injected into MetabolicService."""
+
+    def __init__(self, postgres_store: PostgresStore) -> None:
+        self._pg = postgres_store
+
+    async def log_advice(self, event: dict[str, Any]) -> UUID:
+        """Insert an advice event BEFORE delivery. Returns the event ID."""
+        async with self._pg.get_session() as session:
+            row = AdviceEvent(
+                patient_id=event["patient_id"],
+                track=event.get("track", "glucose"),
+                trigger=event.get("trigger", "meal"),
+                meal_slot=event.get("meal_slot"),
+                output_mode=event.get("output_mode", "SUGGEST"),
+                lever_name=event.get("lever_name"),
+                lever_say=event.get("move"),
+                predicted_delta=event.get("predicted_delta"),
+                cite=event.get("cite"),
+                confidence=event.get("confidence"),
+                meal_macros=event.get("meal_macros"),
+                meal_time=event.get("meal_time"),
+                contract_snapshot=event.get("contract_snapshot"),
+            )
+            session.add(row)
+            await session.commit()
+            logger.info("advice logged: patient=%s lever=%s delta=%s",
+                        event["patient_id"], event.get("lever_name"), event.get("predicted_delta"))
+            return row.id
+
+    async def get_pending_followups(
+        self,
+        patient_id: str | UUID,
+        min_age_hours: float | None = None,
+        max_age_days: int | None = None,
+    ) -> list[AdviceEvent]:
+        """Find advice events ready for follow-up: old enough for CGM, not yet followed up."""
+        if min_age_hours is None:
+            min_age_hours = settings.METABOLIC_FOLLOWUP_WINDOW_HOURS
+        if max_age_days is None:
+            max_age_days = settings.METABOLIC_FOLLOWUP_MAX_AGE_DAYS
+        now = datetime.now(timezone.utc)
+        cutoff_min = now - timedelta(hours=min_age_hours)
+        cutoff_max = now - timedelta(days=max_age_days)
+        async with self._pg.get_session() as session:
+            result = await session.execute(
+                select(AdviceEvent)
+                .where(
+                    AdviceEvent.patient_id == str(patient_id),
+                    AdviceEvent.followed_up == False,  # noqa: E712
+                    AdviceEvent.meal_time.isnot(None),
+                    AdviceEvent.meal_time <= cutoff_min,
+                    AdviceEvent.meal_time >= cutoff_max,
+                )
+                .order_by(AdviceEvent.logged_at.desc())
+                .limit(10)
+            )
+            return list(result.scalars().all())
+
+    async def record_followup(
+        self,
+        event_id: UUID,
+        *,
+        complied: bool | None = None,
+        observed_delta: float | None = None,
+        evidence: str | None = None,
+        followup_meal_macros: dict | None = None,
+        cgm_pre: float | None = None,
+        cgm_peak: float | None = None,
+    ) -> None:
+        """Record the follow-up for an advice event."""
+        outcome = "unknown"
+        if complied and observed_delta is not None:
+            # predicted_delta < 0 means "should drop"
+            async with self._pg.get_session() as session:
+                event = await session.get(AdviceEvent, event_id)
+                if event and event.predicted_delta is not None:
+                    same_dir = (observed_delta <= 0) == (event.predicted_delta <= 0)
+                    outcome = "as_predicted" if same_dir else "opposite"
+
+        async with self._pg.get_session() as session:
+            followup = AdviceFollowup(
+                event_id=event_id,
+                complied=complied,
+                compliance_evidence=evidence,
+                observed_delta=observed_delta,
+                outcome_vs_predicted=outcome if complied else None,
+                followup_meal_macros=followup_meal_macros,
+                cgm_pre=cgm_pre,
+                cgm_peak=cgm_peak,
+            )
+            session.add(followup)
+            # mark the event as followed up
+            event = await session.get(AdviceEvent, event_id)
+            if event:
+                event.followed_up = True
+            await session.commit()
+            logger.info("followup recorded: event=%s complied=%s delta=%s outcome=%s",
+                        event_id, complied, observed_delta, outcome)
+
+    async def rollup(self, valid_floor: int = 10) -> list[dict[str, Any]]:
+        """Aggregate efficacy stats per (track, trigger)."""
+        async with self._pg.get_session() as session:
+            # join events with followups
+            q = (
+                select(
+                    AdviceEvent.track,
+                    AdviceEvent.trigger,
+                    func.count(AdviceEvent.id).label("advices"),
+                    func.count(AdviceFollowup.id).label("followed"),
+                    func.sum(case((AdviceFollowup.complied == True, 1), else_=0)).label("complied"),  # noqa: E712
+                    func.sum(case(
+                        (and_(AdviceFollowup.complied == True,  # noqa: E712
+                              AdviceFollowup.observed_delta.isnot(None)), 1),
+                        else_=0,
+                    )).label("with_outcome"),
+                    func.avg(case(
+                        (AdviceFollowup.complied == True, AdviceFollowup.observed_delta),  # noqa: E712
+                        else_=None,
+                    )).label("mean_obs"),
+                    func.avg(case(
+                        (AdviceFollowup.complied == True, AdviceEvent.predicted_delta),  # noqa: E712
+                        else_=None,
+                    )).label("mean_pred"),
+                    func.sum(case(
+                        (AdviceFollowup.outcome_vs_predicted == "as_predicted", 1),
+                        else_=0,
+                    )).label("as_pred"),
+                )
+                .outerjoin(AdviceFollowup, AdviceFollowup.event_id == AdviceEvent.id)
+                .group_by(AdviceEvent.track, AdviceEvent.trigger)
+                .order_by(AdviceEvent.track, AdviceEvent.trigger)
+            )
+            result = await session.execute(q)
+            rows = result.all()
+
+        out = []
+        for row in rows:
+            n_outcome = int(row.with_outcome or 0)
+            n_followed = int(row.followed or 0)
+            n_complied = int(row.complied or 0)
+            out.append({
+                "track": row.track,
+                "trigger": row.trigger,
+                "advices": int(row.advices),
+                "compliance_rate": round(n_complied / n_followed, 2) if n_followed else None,
+                "n_with_outcome": n_outcome,
+                "mean_predicted_delta": round(float(row.mean_pred), 1) if row.mean_pred else None,
+                "mean_observed_delta": round(float(row.mean_obs), 1) if row.mean_obs else None,
+                "moved_as_predicted_pct": round(100 * int(row.as_pred) / n_outcome) if n_outcome else None,
+                "valid": n_outcome >= valid_floor,
+            })
+        return out
+
+    async def log_decision(self, patient_id: str | UUID, contract: dict, trace_id: str | None = None) -> None:
+        """Append an immutable clinical decision audit record."""
+        pr = contract.get("prediction") or {}
+        attr = contract.get("attribution") or {}
+        v31 = contract.get("v31") or {}
+        async with self._pg.get_session() as session:
+            session.add(ClinicalDecisionAudit(
+                patient_id=str(patient_id),
+                trace_id=trace_id,
+                output_mode=contract.get("output_mode", ""),
+                safety_flags=contract.get("safety_flags"),
+                attribution_label=attr.get("label"),
+                confidence=pr.get("confidence"),
+                rise_mgdl=pr.get("rise_mgdl"),
+                has_cgm=v31.get("has_cgm"),
+                lever_name=(contract.get("lever") or {}).get("name"),
+                contract_snapshot=contract,
+            ))
+            await session.commit()
+
+
+# -- Pure function: maps engine contract to advice event dict (no DB) --
+
+def advice_event_from_contract(
+    contract: dict,
+    patient_id: str,
+    track: str,
+    trigger: str,
+    meal_slot: str | None = None,
+    meal_macros: dict | None = None,
+    meal_time: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Map an engine contract to an advice event dict. Returns None for non-SUGGEST.
+
+    Only a cited SUGGEST is logged (Forge P1).
+    """
     if track == "glucose":
         if contract.get("output_mode") != "SUGGEST":
             return None
         lever = contract.get("lever") or {}
         cite = lever.get("cite")
-        if not cite:                                          # a SUGGEST without a citation is not advice
+        if not cite:
             return None
-        predicted_delta = lever.get("effect_mgdl")           # expected mg/dL change (negative = drop)
-        move = lever.get("say")
+        return {
+            "patient_id": patient_id,
+            "track": track,
+            "trigger": trigger,
+            "meal_slot": meal_slot,
+            "output_mode": "SUGGEST",
+            "lever_name": lever.get("name"),
+            "move": lever.get("say"),
+            "predicted_delta": lever.get("effect_mgdl"),
+            "cite": cite,
+            "confidence": (contract.get("prediction") or {}).get("confidence"),
+            "meal_macros": meal_macros,
+            "meal_time": meal_time,
+            "contract_snapshot": contract,
+        }
     else:  # obesity
         b = contract.get("bmiq") or {}
         if b.get("output_mode") != "SUGGEST":
@@ -77,92 +247,15 @@ def advice_event_from_contract(contract, patient_token, track, trigger, ts=None)
         cite = lv.get("cite")
         if not cite:
             return None
-        predicted_delta = lv.get("effect_pct")               # may be absent -> marked unknown below
-        move = lv.get("name") or lv.get("priority")
-    return {
-        "patient_token": patient_token, "track": track, "trigger": trigger,
-        "ts": ts or time.time(),
-        "output_mode": "SUGGEST",
-        "move": move,
-        "predicted_delta": predicted_delta,
-        "predicted_delta_known": predicted_delta is not None,   # explicit unknown marker (BMIQ levers carry no effect)
-        "cite": cite,
-        "confidence": (contract.get("prediction") or {}).get("confidence"),
-    }
-
-# ---------------------------------------------------------------- rollup
-def rollup(ledger_path, valid_floor=10):
-    rows = _read(ledger_path)
-    groups = {}
-    for r in rows:
-        key = (r.get("track"), r.get("trigger"))
-        groups.setdefault(key, []).append(r)
-    out = []
-    for (track, trig), evs in sorted(groups.items()):
-        n = len(evs)
-        followed = [e for e in evs if e.get("complied") is not None]
-        complied = [e for e in followed if e.get("complied")]
-        with_outcome = [e for e in complied if e.get("observed_delta") is not None and e.get("predicted_delta") is not None]
-        comp_rate = (len(complied) / len(followed)) if followed else None
-        mean_pred = (sum(e["predicted_delta"] for e in with_outcome) / len(with_outcome)) if with_outcome else None
-        mean_obs = (sum(e["observed_delta"] for e in with_outcome) / len(with_outcome)) if with_outcome else None
-        as_pred = sum(1 for e in with_outcome if e.get("outcome_vs_predicted") == "as_predicted")
-        out.append({
-            "track": track, "trigger": trig, "advices": n,
-            "compliance_rate": (round(comp_rate, 2) if comp_rate is not None else None),
-            "n_with_outcome": len(with_outcome),
-            "mean_predicted_delta": (round(mean_pred, 1) if mean_pred is not None else None),
-            "mean_observed_delta": (round(mean_obs, 1) if mean_obs is not None else None),
-            "moved_as_predicted_pct": (round(100 * as_pred / len(with_outcome)) if with_outcome else None),
-            "valid": len(with_outcome) >= valid_floor,   # single events are noise; only call efficacy above a floor
-        })
-    return out
-
-# ---------------------------------------------------------------- self-test (mechanism, synthetic)
-def demo():
-    led = os.path.join(tempfile.gettempdir(), "advice_ledger_demo.jsonl")
-    if os.path.exists(led): os.remove(led)
-    # contract-mapper guard (Forge P1): only a cited SUGGEST is logged; everything else is not advice.
-    assert advice_event_from_contract({"output_mode": "REINFORCE"}, "tok", "glucose", "t") is None
-    assert advice_event_from_contract({"output_mode": "STATE_FACTS"}, "tok", "glucose", "t") is None
-    assert advice_event_from_contract({"output_mode": "SUGGEST", "lever": {"say": "x", "effect_mgdl": -7.5}}, "tok", "glucose", "t") is None
-    _ev = advice_event_from_contract({"output_mode": "SUGGEST", "lever": {"say": "x", "effect_mgdl": -7.5, "cite": "q1"}, "prediction": {"confidence": "moderate"}}, "tok", "glucose", "t")
-    assert _ev and _ev["patient_token"] == "tok" and _ev["cite"] == "q1" and _ev["predicted_delta_known"], _ev
-    assert advice_event_from_contract({"bmiq": {"output_mode": "REINFORCE"}}, "tok", "obesity", "t") is None
-    # GLUCOSE: advise protein-first on high-carb breakfasts; predicted -7.5 mg/dL (q1)
-    ids = []
-    for i in range(12):
-        ev = {"patient_id": "p%02d" % i, "track": "glucose", "trigger": "high_carb_breakfast",
-              "output_mode": "SUGGEST", "move": "veg/protein first, carbs last",
-              "predicted_delta": -7.5, "confidence": "moderate"}
-        ids.append(log_advice(led, ev))
-    # follow-up: 9 complied; of those, 7 spikes dropped (~ -8), 2 went up (+3); 3 did not comply
-    import random; random.seed(1)
-    for k, eid in enumerate(ids):
-        if k < 9:
-            obs = -8.0 if k < 7 else 3.0
-            record_followup(led, eid, True, observed_delta=obs, evidence="next breakfast carb cut >10g")
-        else:
-            record_followup(led, eid, False, evidence="no carb change")
-    # OBESITY: advise protein+resistance on rapid-lean-loss GLP-1 users; predicted -X% lean loss
-    for i in range(11):
-        eid = log_advice(led, {"patient_id": "o%02d" % i, "track": "obesity", "trigger": "glp1_rapid_lean_loss",
-                               "output_mode": "FLAG", "move": "protein 1.2-1.6 g/kg + 2x/wk resistance",
-                               "predicted_delta": -2.0, "confidence": "moderate"})
-        record_followup(led, eid, i % 4 != 0, observed_delta=(-1.5 if i % 4 != 0 else 0.5),
-                        evidence="InBody SMM delta next scan")
-    rep = rollup(led, valid_floor=8)
-    print("=== ADVICE-LEDGER ROLLUP (synthetic mechanism check) ===")
-    for r in rep:
-        print(" ", json.dumps(r))
-    # assertions on the mechanism
-    g = next(r for r in rep if r["trigger"] == "high_carb_breakfast")
-    assert g["advices"] == 12 and g["compliance_rate"] == 0.75, g
-    assert g["n_with_outcome"] == 9 and g["moved_as_predicted_pct"] == 78, g  # 7/9
-    assert g["valid"] is True, g
-    o = next(r for r in rep if r["trigger"] == "glp1_rapid_lean_loss")
-    assert o["advices"] == 11 and o["valid"] is True, o
-    print("\nDEMO OK — log -> follow-up -> rollup works for both tracks. Wire FOLLOW-UP to live CGM/InBody when the token lands.")
-
-if __name__ == "__main__":
-    demo()
+        return {
+            "patient_id": patient_id,
+            "track": track,
+            "trigger": trigger,
+            "output_mode": "SUGGEST",
+            "lever_name": lv.get("name") or lv.get("priority"),
+            "move": lv.get("name") or lv.get("priority"),
+            "predicted_delta": lv.get("effect_pct"),
+            "cite": cite,
+            "confidence": (contract.get("prediction") or {}).get("confidence"),
+            "contract_snapshot": contract,
+        }

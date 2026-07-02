@@ -16,8 +16,10 @@ P_TWIN = 60
 P_COLD_START = 40
 P_REINFORCE = 30
 
-CGM_STALE_DAYS = 2
-MAX_NUDGES = 2
+from lib.ai_foundation.config import settings
+
+CGM_STALE_DAYS = settings.METABOLIC_CGM_STALE_DAYS
+MAX_NUDGES = settings.METABOLIC_MAX_NUDGES
 
 
 def _n(trigger, priority, text, cite=None, channel="whatsapp", urgent=False):
