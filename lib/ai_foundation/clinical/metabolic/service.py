@@ -20,6 +20,7 @@ from .assembler import DataAssembler
 from .data_sufficiency import assess_readiness
 from .engine import MetabolicEngine
 from .enrichment import enrich
+from .lenses import apply_lenses
 from .nudge import build_nudges
 from .render import build_prompt
 
@@ -55,6 +56,7 @@ class MetabolicService:
 
         contract = self._engine.assess(patient_state, meal)
         contract = enrich(contract, patient_state, meal, live_pre=live_pre)
+        contract["lenses"] = apply_lenses(patient_state)
         return contract
 
     async def readiness(self, patient_id: str) -> dict[str, Any]:
@@ -79,6 +81,7 @@ class MetabolicService:
             "weight_trend": contract.get("weight_trend"),
             "patient_flags": contract.get("patient_flags"),
             "safety_flags": contract.get("safety_flags"),
+            "lenses": apply_lenses(patient_state),
         }
 
     async def assess_with_context(
@@ -101,6 +104,8 @@ class MetabolicService:
             }
 
         contract = self._engine.assess(patient_state, meal)
+        contract = enrich(contract, patient_state, meal)
+        contract["lenses"] = apply_lenses(patient_state)
         nudges = build_nudges(contract=contract, signals={"cold_start": readiness["meal_model"]["tier"] == "cold_start"})
         prompt = build_prompt(contract)
 
