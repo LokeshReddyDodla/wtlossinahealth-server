@@ -18,8 +18,12 @@ from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
     EventTrigger,
     MealLoggedAnchor,
+    SMBGLoggedAnchor,
+    SymptomLoggedAnchor,
+    MedicationMissedAnchor,
     SEVERITY_RANK,
     TRIGGER_DATA_TYPES,
+    TriggerAnchor,
     parse_anchor,
 )
 from lib.ai_foundation.agents.proactive_monitor.notify import (
@@ -28,6 +32,19 @@ from lib.ai_foundation.agents.proactive_monitor.notify import (
 from lib.core.container import container
 from lib.services.fcm_service import FCMService
 from lib.workers.tasks.base import TaskResult, task_with_logging
+
+
+def _extract_entity(anchor: TriggerAnchor) -> tuple[str | None, str | None]:
+    """Extract (entity_type, entity_id) from a typed anchor."""
+    if isinstance(anchor, MealLoggedAnchor):
+        return "meal", anchor.meal_id
+    if isinstance(anchor, SMBGLoggedAnchor):
+        return "smbg", anchor.reading_id
+    if isinstance(anchor, SymptomLoggedAnchor):
+        return "symptom", anchor.symptom_entry_id
+    if isinstance(anchor, MedicationMissedAnchor):
+        return "medication_task", anchor.daily_task_id
+    return None, None
 
 
 @task_with_logging
@@ -92,9 +109,12 @@ async def handle_proactive_event(
                 ins.title = f"[Beta] {ins.title}"
             top = max(result.insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
             await _save_insight_to_record(typed_anchor, top.body)
+            entity_type, entity_id = _extract_entity(typed_anchor)
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
                 trigger=trigger,
+                entity_type=entity_type,
+                entity_id=entity_id,
             )
 
         return TaskResult(

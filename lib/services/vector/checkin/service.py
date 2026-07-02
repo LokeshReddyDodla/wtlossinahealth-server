@@ -253,3 +253,14 @@ class CheckinVectorService(BaseVectorService):
         point_id = self._generate_simple_point_id(symptom_entry_id)
 
         return {"id": point_id, "text": text_repr, "payload": payload}
+
+    async def delete_symptom_vector(self, symptom_entry_id: str) -> None:
+        try:
+            point_id = self._generate_simple_point_id(symptom_entry_id)
+            await self.delete_points_by_ids([point_id])
+        except Exception as e:
+            logger.error(f"Failed to delete symptom vector {symptom_entry_id}: {e}")
+            raise VectorServiceError(
+                f"Failed to delete symptom vector: {e}",
+                service_name=self.__class__.__name__,
+            ) from e

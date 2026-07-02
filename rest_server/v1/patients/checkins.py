@@ -378,3 +378,21 @@ async def get_symptom_trends(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.delete("/{patient_id}/checkins/symptoms/{entry_id}", response_model=SuccessResponse)
+async def delete_symptom_entry(
+    patient_id: str,
+    entry_id: str,
+    service: DailyCheckinService = Depends(get_daily_checkin_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(get_care_provider_access_service),
+):
+    """Delete a symptom entry."""
+    from uuid import UUID
+    verified_pid = await resolve_patient_access(
+        actor=current_actor, patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+    await service.delete_symptom_entry(entry_id, str(verified_pid))
+    return SuccessResponse(message="Symptom entry deleted")

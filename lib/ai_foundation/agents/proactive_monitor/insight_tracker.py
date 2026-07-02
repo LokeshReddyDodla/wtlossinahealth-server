@@ -106,6 +106,8 @@ class InsightTracker:
         trace_id: str | None = None,
         trigger: str | None = None,
         consecutive_days: int | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
     ) -> None:
         """Record that an insight was sent.
 
@@ -153,6 +155,10 @@ class InsightTracker:
         if trace_id:
             doc["trace_id"] = trace_id
         doc["trigger"] = trigger or "cron"
+        if entity_type:
+            doc["entity_type"] = entity_type
+        if entity_id:
+            doc["entity_id"] = entity_id
 
         await self._collection.insert_one(doc)
 
@@ -242,6 +248,17 @@ class InsightTracker:
 
         return by_patient
 
+    async def delete_by_entity(self, entity_type: str, entity_id: str) -> int:
+        """Delete all insights linked to a source entity (meal, reading, etc.).
+
+        Returns the number of deleted documents.
+        """
+        await self._maybe_ensure_indexes()
+        result = await self._collection.delete_many(
+            {"entity_type": entity_type, "entity_id": entity_id},
+        )
+        return result.deleted_count
+
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""
         await self._collection.create_index(
@@ -256,6 +273,11 @@ class InsightTracker:
         await self._collection.create_index(
             "insight_id",
             name="insight_id_idx",
+        )
+        await self._collection.create_index(
+            [("entity_type", 1), ("entity_id", 1)],
+            name="insight_entity_idx",
+            sparse=True,
         )
         self._indexes_ensured = True
 
