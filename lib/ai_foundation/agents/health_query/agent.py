@@ -596,7 +596,9 @@ class HealthQueryAgent(BaseAgent):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _ensure_prompts(self) -> None:
-        if self._prompts_registered or not self.prompts:
+        # `is None`, not truthiness — an EMPTY PromptRegistry is falsy
+        # (__len__ == 0) and would skip registration forever.
+        if self._prompts_registered or self.prompts is None:
             return
         if "hq_system_patient" not in self.prompts:
             self.prompts.register_directory(_PROMPTS_DIR, namespace="health_query")

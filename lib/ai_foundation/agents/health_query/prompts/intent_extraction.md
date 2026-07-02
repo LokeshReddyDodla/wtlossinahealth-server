@@ -27,6 +27,7 @@ Set `is_ready = false` when:
 - A conversation closer ("no thanks", "that's all", "bye", "thank you", "I'm good")
 
 **ALWAYS set `is_ready = true` for these (no time scope needed):**
+- **URGENT: the patient describes acute symptoms happening RIGHT NOW** (low/high glucose with symptoms, shakiness, sweating, confusion, feeling faint, chest pain) → CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + PROFILE. An emergency must NEVER be answered with a clarification question — route it to a full response immediately.
 - "What do you know about [patient]?" → PROFILE
 - "Tell me about [patient]" / "Summarize [patient]" → PROFILE
 - "What's [patient]'s background/medical history?" → PROFILE

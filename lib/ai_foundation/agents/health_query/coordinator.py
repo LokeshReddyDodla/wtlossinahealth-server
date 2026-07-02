@@ -358,7 +358,7 @@ class Coordinator:
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
-                    timeout=60.0,
+                    timeout=settings.RESPONDER_TIMEOUT_SECONDS,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -394,11 +394,15 @@ class Coordinator:
                 },
             )
         else:
-            # Non-streaming: single responder call
+            # Non-streaming: single responder call. Explicit timeout — the
+            # spec default (15s) is too tight for long multi-domain answers,
+            # and explicit model_id disables fallback, so a timeout here
+            # fails the whole query.
             final_response = await self._gateway.complete(
                 messages=responder_messages,
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=tier_cfg.responder_model,
+                timeout=settings.RESPONDER_TIMEOUT_SECONDS,
             )
             total_cost += safe_cost(final_response)
 

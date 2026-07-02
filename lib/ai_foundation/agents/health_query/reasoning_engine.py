@@ -530,7 +530,7 @@ class ReasoningEngine:
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
-                    timeout=60.0,
+                    timeout=settings.RESPONDER_TIMEOUT_SECONDS,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -924,6 +924,10 @@ class ReasoningEngine:
             messages=responder_messages,
             task=ModelTask.RESPONSE_GENERATION,
             model_id=model_id,
+            # Long final answers exceed the model spec's default timeout;
+            # explicit model_id also disables fallback, so a timeout here
+            # would fail the whole query.
+            timeout=settings.RESPONDER_TIMEOUT_SECONDS,
         )
 
     @staticmethod
