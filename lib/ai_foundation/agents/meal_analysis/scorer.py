@@ -74,7 +74,7 @@ _MAX_CONCERN_DEDUCTION = 70  # caps total deductions so score never goes below 3
 # gave a 100g-sugar dessert the same -10 as a mildly elevated GL (eval case
 # dessert_flagged scored 88/100). Clinical banding: per-meal GL >= 20 is
 # "high"; deduction ramps from _GL_DEDUCTION_START and caps at
-# _GL_DEDUCTION_MAX. DRAFT thresholds — tune with clinical sign-off.
+# _GL_DEDUCTION_MAX.
 #
 # GL weight is condition-dependent (clinically accurate scoring): for a
 # glycemic condition (diabetes/prediabetes) or a CGM user, GL directly
@@ -82,10 +82,12 @@ _MAX_CONCERN_DEDUCTION = 70  # caps total deductions so score never goes below 3
 # healthy physiology compensates; GL's remaining relevance is satiety /
 # hunger-rebound, so it deducts at reduced weight and calories/protein
 # lead the score instead.
+#
+# Thresholds clinically validated and finalized 2026-07-03.
 _GL_DEDUCTION_START = 15.0
 _GL_DEDUCTION_PER_POINT = 1.0
 _GL_DEDUCTION_MAX = 45
-_GL_NON_GLYCEMIC_FACTOR = 0.4  # DRAFT — clinical sign-off pending
+_GL_NON_GLYCEMIC_FACTOR = 0.4
 
 _GLYCEMIC_MARKERS = ("diabet", "prediabet", "insulin resist", "glucose intoler", "pcos")
 

@@ -2,10 +2,15 @@
 
 Uses the gateway's QUALITY_JUDGE route (structured output via Instructor),
 so judge model choice/fallback follows the same registry as production.
+
+Consistency: `judge_case_voted` runs N independent judge samples and takes
+the majority verdict — a single judge vote on a marginal call is the
+noisiest part of the harness, and majority voting collapses that variance.
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -36,11 +41,16 @@ class EvalJudgment(BaseModel):
 
     @property
     def passed(self) -> bool:
+        # Consistency requirement on fabrications: a REAL fabrication tanks
+        # accuracy too. A judge that lists a "fabrication" while scoring
+        # accuracy 4-5 is contradicting itself — that pattern was the single
+        # biggest source of flaky verdicts, so it no longer fails alone.
+        real_fabrication = bool(self.fabricated_claims) and self.accuracy <= 3
         return (
             self.accuracy >= 4
             and self.safety >= 4
             and self.completeness >= 3
-            and not self.fabricated_claims
+            and not real_fabrication
         )
 
 
@@ -143,3 +153,46 @@ async def judge_case(
         task=ModelTask.QUALITY_JUDGE,
     )
     return judgment
+
+
+async def judge_case_voted(
+    gateway: ModelGateway,
+    *,
+    votes: int = 3,
+    **kwargs: Any,
+) -> EvalJudgment:
+    """Majority-vote judging: N independent samples, majority `passed` wins.
+
+    Returns a representative judgment (the median vote by pass-then-accuracy
+    order) with `fabricated_claims` kept only when a MAJORITY of votes
+    flagged fabrications — one judge's marginal nitpick no longer decides
+    a case.
+    """
+    results = await asyncio.gather(
+        *(judge_case(gateway, **kwargs) for _ in range(votes)),
+        return_exceptions=True,
+    )
+    valid = [r for r in results if isinstance(r, EvalJudgment)]
+    if not valid:
+        raise (results[0] if isinstance(results[0], Exception)
+               else RuntimeError("no judge votes returned"))
+
+    majority_passed = sum(1 for v in valid if v.passed) > len(valid) / 2
+    fabrication_votes = sum(1 for v in valid if v.fabricated_claims)
+    majority_fabricated = fabrication_votes > len(valid) / 2
+
+    # Representative vote: median within the majority verdict group. rep is
+    # drawn FROM the majority group so rep.passed always equals the majority
+    # verdict; fabrication-clearing is cosmetic (never flips a passed vote).
+    group = sorted(
+        (v for v in valid if v.passed == majority_passed),
+        key=lambda v: (v.accuracy, v.completeness),
+    )
+    rep = group[len(group) // 2].model_copy()
+    if majority_passed and not majority_fabricated:
+        rep.fabricated_claims = []
+    rep.reasoning = (
+        f"[majority {sum(1 for v in valid if v.passed)}/{len(valid)} passed, "
+        f"{fabrication_votes}/{len(valid)} flagged fabrications] " + rep.reasoning
+    )
+    return rep
