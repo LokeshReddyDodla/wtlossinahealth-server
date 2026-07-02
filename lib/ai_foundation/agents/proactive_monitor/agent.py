@@ -944,6 +944,8 @@ class ProactiveMonitorAgent(BaseAgent):
         insight: HealthInsight,
         *,
         trigger: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
     ) -> None:
         """Record that an insight was actually sent as a notification.
 
@@ -968,6 +970,8 @@ class ProactiveMonitorAgent(BaseAgent):
                 suggested_query=insight.suggested_query,
                 trace_id=insight.data.get("trace_id"),
                 trigger=trigger_val,
+                entity_type=entity_type,
+                entity_id=entity_id,
             )
             # Record dedup-only entries for each covered category (no insight_id)
             # so afternoon/evening scans correctly skip already-mentioned topics
@@ -992,6 +996,8 @@ class ProactiveMonitorAgent(BaseAgent):
             trace_id=insight.data.get("trace_id"),
             trigger=trigger_val,
             consecutive_days=1 if is_event else None,
+            entity_type=entity_type,
+            entity_id=entity_id,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:

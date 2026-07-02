@@ -309,6 +309,7 @@ class MealService:
             meal.score = None
             meal.feedback = None
             meal.tags = None
+            meal.ai_insight = None
 
             for item in meal.items:
                 await postgres_session.delete(item)
@@ -761,6 +762,15 @@ class MealService:
 
             enqueue_daily_meal_report_sync(str(patient_id), meal_date)
             await self.meal_vector_service.delete_meal_vector(str(meal_id))
+
+            # Clean up linked proactive insights
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+                tracker = container.resolve(InsightTracker)
+                await tracker.delete_by_entity("meal", str(meal_id))
+            except Exception:
+                pass
 
             # Refresh macro task progress (totals decreased)
             try:

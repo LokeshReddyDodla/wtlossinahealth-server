@@ -14,13 +14,25 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
+    get_patient_smbg_service,
 )
 from lib.models.patient_smbg import PatientSMBG as PatientSMBGModel
+from lib.schemas.patient_smbg import PatientSMBGCreate
 from lib.services.care_provider_access_service import CareProviderAccessService
+from lib.services.patient_smbg_service import PatientSmbgService
 from lib.utils.http_exceptions import raise_http_exception
 from rest_server.response_models import SuccessResponse
 
 from .router import router
+
+_ACTOR_DEPS = dict(
+    allowed_roles=[
+        ProfileTypeEnum.PATIENT,
+        ProfileTypeEnum.CARE_PROVIDER,
+        ProfileTypeEnum.ADMIN,
+    ],
+    check_permissions=False,
+)
 
 
 @router.get("/{patient_id}/smbg", response_model=SuccessResponse)
@@ -35,16 +47,7 @@ async def get_patient_smbg(
         None, description="Filter: reading_time <= (ISO 8601)"
     ),
     session: AsyncSession = Depends(get_postgres_session),
-    current_actor: Actor = Depends(
-        get_current_actor(
-            allowed_roles=[
-                ProfileTypeEnum.PATIENT,
-                ProfileTypeEnum.CARE_PROVIDER,
-                ProfileTypeEnum.ADMIN,
-            ],
-            check_permissions=False,
-        )
-    ),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
@@ -110,3 +113,56 @@ async def get_patient_smbg(
             message="Internal Server Error",
             detail=str(e),
         )
+
+
+@router.put("/{patient_id}/smbg/{smbg_id}", response_model=SuccessResponse)
+async def update_smbg(
+    patient_id: str,
+    smbg_id: str,
+    body: PatientSMBGCreate,
+    service: PatientSmbgService = Depends(get_patient_smbg_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    """Update an SMBG reading."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+    record = await service.update_smbg(smbg_id, str(verified_pid), body)
+    return SuccessResponse(
+        message="SMBG reading updated",
+        data={
+            "id": str(record.id),
+            "patient_id": str(record.patient_id),
+            "glucose_level": record.glucose_level,
+            "reading_time": record.reading_time,
+            "type": record.type,
+            "source_name": record.source_name,
+            "source_platform": record.source_platform,
+            "notes": record.notes,
+        },
+    )
+
+
+@router.delete("/{patient_id}/smbg/{smbg_id}", response_model=SuccessResponse)
+async def delete_smbg(
+    patient_id: str,
+    smbg_id: str,
+    service: PatientSmbgService = Depends(get_patient_smbg_service),
+    current_actor: Actor = Depends(get_current_actor(**_ACTOR_DEPS)),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    """Delete an SMBG reading."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=UUID(patient_id),
+        care_provider_access_service=care_provider_access_service,
+    )
+    await service.delete_smbg(smbg_id, str(verified_pid))
+    return SuccessResponse(message="SMBG reading deleted")

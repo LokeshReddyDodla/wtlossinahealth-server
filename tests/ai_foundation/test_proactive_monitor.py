@@ -575,7 +575,7 @@ class TestInsightTracker:
         store, collection = _make_mock_mongo_store()
         tracker = InsightTracker(store)
         await tracker.ensure_indexes()
-        assert collection.create_index.call_count == 3
+        assert collection.create_index.call_count == 4
 
     @pytest.mark.asyncio
     async def test_collection_name(self):

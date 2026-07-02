@@ -531,6 +531,52 @@ class DailyCheckinService:
             )
 
     @with_postgres_session
+    async def delete_symptom_entry(
+        self,
+        symptom_entry_id: str,
+        patient_id: str,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        try:
+            result = await postgres_session.execute(
+                select(SymptomEntry).where(
+                    SymptomEntry.id == symptom_entry_id,
+                    SymptomEntry.patient_id == patient_id,
+                )
+            )
+            record = result.scalars().first()
+            if not record:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="Symptom entry not found",
+                )
+
+            await postgres_session.delete(record)
+            await postgres_session.commit()
+
+            try:
+                await self.checkin_vector_service.delete_symptom_vector(symptom_entry_id)
+            except Exception:
+                pass
+
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+                tracker = container.resolve(InsightTracker)
+                await tracker.delete_by_entity("symptom", symptom_entry_id)
+            except Exception:
+                pass
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
     async def get_symptom_history(
         self,
         patient_id: str,
