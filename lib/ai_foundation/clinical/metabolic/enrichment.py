@@ -19,6 +19,8 @@ Pure stdlib. Defensive: reads attribute-or-dict with several name fallbacks, nev
 """
 from statistics import median
 
+from .util import meal_slot
+
 P1_SLOT_BASE = {"breakfast": 50, "lunch": 55, "dinner": 60, "snack": 45}  # heuristic peak-min base
 
 
@@ -40,7 +42,7 @@ def _slot(meal, hour=None):
         h = int(h)
     except Exception:
         h = 12
-    return "breakfast" if h < 11 else "lunch" if h < 16 else "dinner" if h < 21 else "snack"
+    return meal_slot(h)
 
 
 def _recent_meals(patient_state):

@@ -67,7 +67,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
 logger = logging.getLogger(__name__)
 
 from lib.ai_foundation.agents.core.chart_processor import process_charts
-from lib.ai_foundation.agents.core.context_pruner import ContextPruner, CRITICAL_TYPES as _CRITICAL_TYPES, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
+from lib.ai_foundation.agents.core.context_pruner import ContextPruner
 
 
 @contextmanager

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -240,10 +240,6 @@ class QueryIntent(BaseModel):
     )
     confidence: float | None = Field(
         None, description="Confidence score 0.0-1.0.",
-    )
-    extracted_facts: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Deprecated — facts are now extracted via a separate LLM call.",
     )
     # Memory management — detected from user messages like "remember X", "forget X"
     memory_action: Literal["add", "delete", "list"] | None = Field(

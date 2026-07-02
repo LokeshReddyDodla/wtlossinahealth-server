@@ -14,10 +14,11 @@ Two call modes:
   - assess(state, meal) with meal['observed_peak'] present  -> post-hoc / follow-up: full attribution.
   - assess(state, meal) without observed_peak               -> live (meal just logged): predicted rise.
 """
-import os, json, math
+import os, json
 from datetime import date, datetime
 
 from .bmiq import BmiqScorer
+from .util import num as _num, slot_index as slot
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 def _load(name, default):
@@ -89,14 +90,6 @@ PRIOR_SLOPE = 0.40                               # population carb slope (mg/dL 
 SHRINK_K = 10.0                                  # cold-start shrinkage strength
 IN_RANGE_RISE = 40.0                             # below this = no problem rise
 CIRCADIAN_BF = LEVERS_DATA.get("circadian_breakfast_mgdl", 12.35)  # q2
-
-def slot(h): return 0 if 5 <= h < 11 else 1 if 11 <= h < 16 else 2 if 16 <= h < 22 else 3
-
-def _num(x):
-    try:
-        v = float(x)
-        return v if math.isfinite(v) else None
-    except Exception: return None
 
 _GLP1 = ("glp", "semaglutide", "liraglutide", "dulaglutide", "tirzepatide", "exenatide",
          "ozempic", "rybelsus", "mounjaro", "wegovy", "trulicity", "victoza", "saxenda")

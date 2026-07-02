@@ -22,8 +22,6 @@ from lib.models.clinical_outcome import AdviceEvent, AdviceFollowup, ClinicalDec
 
 from lib.ai_foundation.config import settings
 
-from .exceptions import OutcomeError
-
 logger = logging.getLogger(__name__)
 
 

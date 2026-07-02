@@ -146,7 +146,7 @@ Use snake_case keys: dietary_preference, health_goal, weight, food_allergy, medi
 
 ## Fact Extraction (Background)
 
-The system also auto-extracts memories in the background from every message. You do NOT need to populate `extracted_facts` — it's deprecated. Focus on memory_action detection instead.
+The system auto-extracts memories in the background from every message — you do not need to extract facts yourself. Focus on memory_action detection instead.
 
 ## Clarification Tone
 

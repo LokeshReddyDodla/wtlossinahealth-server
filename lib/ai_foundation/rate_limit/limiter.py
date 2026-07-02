@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT_PREFIX = "rl"
 
 
+def incr_fixed_window(store: CacheStore, key: str, window_seconds: int) -> int:
+    """Atomically increment a fixed-window counter, returning the new count.
+
+    SET NX creates the key with a TTL; INCR bumps it. If INCR recreated an
+    expired key (race between SET NX and INCR), the new key has no TTL — so
+    re-apply the TTL when the count is 1. Never overwrites the value.
+    """
+    store.set_key(key, "0", expire=window_seconds, nx=True)
+    current = store.incr_key(key)
+    if current == 1:
+        store.expire_key(key, window_seconds)
+    return current
+
+
 class RateLimitConfig(BaseModel):
     """Rate limit configuration for a priority level."""
 
@@ -61,11 +75,8 @@ class RateLimiter:
 
         limiter = RateLimiter(cache_store)
 
-        result = limiter.check("facility_123", RequestPriority.NORMAL)
-        if result.allowed:
-            limiter.record("facility_123", RequestPriority.NORMAL)
-            # proceed with request
-        else:
+        result = limiter.check_and_record("facility_123", RequestPriority.NORMAL)
+        if not result.allowed:
             # return 429 Too Many Requests
     """
 
@@ -102,14 +113,7 @@ class RateLimiter:
         key = self._build_key(tenant_id, priority)
 
         try:
-            # Ensure key exists with TTL (no-op if already exists)
-            self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
-            # Atomic increment — returns the new count
-            current = self._store.incr_key(key)
-            # If INCR recreated an expired key (race between SET NX and INCR),
-            # the new key has no TTL. Set TTL only — don't overwrite the value.
-            if current == 1:
-                self._store.expire_key(key, config.window_seconds)
+            current = incr_fixed_window(self._store, key, config.window_seconds)
         except Exception as exc:
             logger.warning("Rate limiter failed for %s: %s", tenant_id, exc)
             # Fail open — allow the request on Redis errors
@@ -127,50 +131,6 @@ class RateLimiter:
             limit=config.max_requests,
             reset_at=time.time() + config.window_seconds,
         )
-
-    # Keep check() and record() as thin wrappers for backwards compatibility
-    def check(
-        self,
-        tenant_id: str,
-        priority: RequestPriority = RequestPriority.NORMAL,
-    ) -> RateLimitResult:
-        """Read-only check (no increment). Use check_and_record() for atomic ops."""
-        config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
-        if not self._enabled:
-            return RateLimitResult(
-                allowed=True, remaining=config.max_requests,
-                limit=config.max_requests, reset_at=time.time() + config.window_seconds,
-            )
-        key = self._build_key(tenant_id, priority)
-        try:
-            raw = self._store.get_key(key)
-            current = int(raw) if raw else 0
-        except Exception:
-            current = 0
-        return RateLimitResult(
-            allowed=current < config.max_requests,
-            remaining=max(0, config.max_requests - current),
-            limit=config.max_requests,
-            reset_at=time.time() + config.window_seconds,
-        )
-
-    def record(
-        self,
-        tenant_id: str,
-        priority: RequestPriority = RequestPriority.NORMAL,
-    ) -> None:
-        """Increment counter. Prefer check_and_record() for atomic check+increment."""
-        if not self._enabled:
-            return
-        config = self._limits.get(priority, DEFAULT_LIMITS[RequestPriority.NORMAL])
-        key = self._build_key(tenant_id, priority)
-        try:
-            self._store.set_key(key, "0", expire=config.window_seconds, nx=True)
-            current = self._store.incr_key(key)
-            if current == 1:
-                self._store.expire_key(key, config.window_seconds)
-        except Exception as exc:
-            logger.warning("Rate limiter record failed for %s: %s", tenant_id, exc)
 
     @property
     def enabled(self) -> bool:

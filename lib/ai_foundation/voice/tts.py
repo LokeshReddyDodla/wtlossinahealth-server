@@ -18,18 +18,49 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 
 from lib.ai_foundation.voice.config import VoiceSettings
+from lib.ai_foundation.voice.providers import (
+    AudioProvider,
+    SARVAM_OUTPUT_CODECS,
+    SARVAM_TTS_LANGUAGE_MAP,
+)
 
 logger = logging.getLogger(__name__)
 
+# Short phrases (fillers like "Let me check that...") are cached to skip the API.
+_FILLER_MAX_CHARS = 80
+
 
 class BaseTextToSpeech(ABC):
-    """Provider-agnostic TTS interface."""
+    """Provider-agnostic TTS interface with a shared filler-phrase cache."""
+
+    def __init__(self, settings: VoiceSettings) -> None:
+        self._settings = settings
+        self._filler_cache: OrderedDict[str, bytes] = OrderedDict()
 
     @abstractmethod
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]: ...
 
     @abstractmethod
-    async def synthesize(self, text: str) -> bytes: ...
+    async def _synthesize_full(self, text: str) -> bytes:
+        """One-shot synthesis of the full text — provider-specific."""
+
+    async def synthesize(self, text: str) -> bytes:
+        if not text.strip():
+            return b""
+
+        cached = self._filler_cache.get(text)
+        if cached is not None:
+            return cached
+
+        logger.debug("TTS [%s]: synthesizing %d chars", type(self).__name__, len(text))
+        audio = await self._synthesize_full(text)
+
+        if len(text) <= _FILLER_MAX_CHARS:
+            self._filler_cache[text] = audio
+            while len(self._filler_cache) > self._settings.TTS_FILLER_CACHE_MAX_SIZE:
+                self._filler_cache.popitem(last=False)
+
+        return audio
 
     async def precache_phrases(self, phrases: list[str]) -> None:
         for phrase in phrases:
@@ -47,9 +78,8 @@ class OpenAITextToSpeech(BaseTextToSpeech):
 
     def __init__(self, settings: VoiceSettings) -> None:
         from openai import AsyncOpenAI
+        super().__init__(settings)
         self._client = AsyncOpenAI()
-        self._settings = settings
-        self._filler_cache: OrderedDict[str, bytes] = OrderedDict()
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
         if not text.strip():
@@ -67,16 +97,7 @@ class OpenAITextToSpeech(BaseTextToSpeech):
             async for chunk in response.iter_bytes(chunk_size=self._settings.TTS_STREAM_CHUNK_SIZE):
                 yield chunk
 
-    async def synthesize(self, text: str) -> bytes:
-        if not text.strip():
-            return b""
-
-        cached = self._filler_cache.get(text)
-        if cached is not None:
-            return cached
-
-        logger.debug("TTS [openai]: synthesizing %d chars", len(text))
-
+    async def _synthesize_full(self, text: str) -> bytes:
         response = await self._client.audio.speech.create(
             model=self._settings.TTS_MODEL,
             voice=self._settings.TTS_VOICE,
@@ -84,28 +105,10 @@ class OpenAITextToSpeech(BaseTextToSpeech):
             speed=self._settings.TTS_SPEED,
             response_format=self._settings.TTS_RESPONSE_FORMAT,
         )
-        audio = response.content
-
-        if len(text) <= 80:
-            self._filler_cache[text] = audio
-            while len(self._filler_cache) > self._settings.TTS_FILLER_CACHE_MAX_SIZE:
-                self._filler_cache.popitem(last=False)
-
-        return audio
+        return response.content
 
 
 # ── Sarvam AI TTS ───────────────────────────────────────────────────────────
-
-_SARVAM_TTS_LANGUAGE_MAP: dict[str, str] = {
-    "hi": "hi-IN", "bn": "bn-IN", "kn": "kn-IN", "ml": "ml-IN",
-    "mr": "mr-IN", "od": "od-IN", "pa": "pa-IN", "ta": "ta-IN",
-    "te": "te-IN", "en": "en-IN", "gu": "gu-IN",
-}
-
-_FORMAT_TO_SARVAM_CODEC: dict[str, str] = {
-    "opus": "opus", "mp3": "mp3", "aac": "aac", "flac": "flac",
-    "wav": "wav", "pcm": "linear16",
-}
 
 
 class SarvamTextToSpeech(BaseTextToSpeech):
@@ -113,18 +116,17 @@ class SarvamTextToSpeech(BaseTextToSpeech):
 
     def __init__(self, settings: VoiceSettings) -> None:
         from sarvamai import AsyncSarvamAI
+        super().__init__(settings)
         self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
-        self._settings = settings
-        self._filler_cache: OrderedDict[str, bytes] = OrderedDict()
 
     def _resolve_language(self) -> str:
         lang = self._settings.SARVAM_TTS_LANGUAGE
-        if lang and lang in _SARVAM_TTS_LANGUAGE_MAP.values():
+        if lang and lang in SARVAM_TTS_LANGUAGE_MAP.values():
             return lang
-        return _SARVAM_TTS_LANGUAGE_MAP.get(lang or "en", "en-IN")
+        return SARVAM_TTS_LANGUAGE_MAP.get(lang or "en", "en-IN")
 
     def _resolve_codec(self) -> str:
-        return _FORMAT_TO_SARVAM_CODEC.get(self._settings.TTS_RESPONSE_FORMAT, "mp3")
+        return SARVAM_OUTPUT_CODECS.get(self._settings.TTS_RESPONSE_FORMAT, "mp3")
 
     async def _synthesize_full(self, text: str) -> bytes:
         """Call Sarvam TTS REST API and return decoded audio bytes."""
@@ -151,32 +153,12 @@ class SarvamTextToSpeech(BaseTextToSpeech):
             for i in range(0, len(audio), chunk_size):
                 yield audio[i:i + chunk_size]
 
-    async def synthesize(self, text: str) -> bytes:
-        if not text.strip():
-            return b""
-
-        cached = self._filler_cache.get(text)
-        if cached is not None:
-            return cached
-
-        logger.debug("TTS [sarvam]: synthesizing %d chars", len(text))
-        audio = await self._synthesize_full(text)
-
-        if len(text) <= 80:
-            self._filler_cache[text] = audio
-            while len(self._filler_cache) > self._settings.TTS_FILLER_CACHE_MAX_SIZE:
-                self._filler_cache.popitem(last=False)
-
-        return audio
-
 
 # ── Factory ─────────────────────────────────────────────────────────────────
 
 
 def build_tts(settings: VoiceSettings) -> BaseTextToSpeech:
     """Build the TTS client based on the configured provider."""
-    from lib.ai_foundation.voice.providers import AudioProvider
-
     provider = AudioProvider(settings.TTS_PROVIDER)
     if provider == AudioProvider.SARVAM:
         try:
