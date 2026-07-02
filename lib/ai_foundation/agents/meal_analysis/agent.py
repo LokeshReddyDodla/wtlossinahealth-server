@@ -304,14 +304,15 @@ class MealAnalysisAgent(BaseAgent):
                         evidence=raw.get("evidence", []),
                         rationale=raw["rationale"],
                     )
-                v31 = (contract.get("v31") or {}) if raw else {}
+                c = contract.model_dump() if hasattr(contract, "model_dump") else contract
+                v31 = (c.get("v31") or {}) if raw else {}
                 logger.info("metabolic engine suppressed for %s: raw=%s, show_number=%s, has_cgm=%s, "
                             "confidence_tier=%s, rise=%s-%s, mode=%s — falling back to LLM",
                             patient_id, raw is not None, raw.get("_show_number") if raw else None,
                             v31.get("has_cgm"), v31.get("confidence_tier"),
                             raw.get("range_mg_dl_low") if raw else None,
                             raw.get("range_mg_dl_high") if raw else None,
-                            contract.get("output_mode") if raw else None)
+                            c.get("output_mode") if raw else None)
             except Exception:
                 logger.exception("metabolic engine failed for %s, falling back to LLM", patient_id)
         else:

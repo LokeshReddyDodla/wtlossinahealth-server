@@ -1703,6 +1703,7 @@ container.register(
     lambda: MetabolicService(
         retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=container.resolve(ClickHouseStore),
     ),
     scope=Scope.singleton,
 )
