@@ -1325,9 +1325,9 @@ async def test_change_status_returns_none_when_out_of_scope(
 async def test_change_status_resolved_at_is_idempotent(svc, fake_mongo):
     """Re-resolving an already-resolved ticket must NOT overwrite the
     original resolved_at — that would lose audit history."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    original = datetime.utcnow() - timedelta(days=1)
+    original = datetime.now(tz=timezone.utc) - timedelta(days=1)
     _, collection = fake_mongo
     ticket = {
         "_id": "t-1",
@@ -1354,9 +1354,9 @@ async def test_change_status_resolved_at_is_idempotent(svc, fake_mongo):
 
 @pytest.mark.asyncio
 async def test_change_status_closed_at_is_idempotent(svc, fake_mongo):
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    original = datetime.utcnow() - timedelta(days=2)
+    original = datetime.now(tz=timezone.utc) - timedelta(days=2)
     _, collection = fake_mongo
     ticket = {
         "_id": "t-1",
