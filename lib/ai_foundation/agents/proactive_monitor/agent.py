@@ -637,6 +637,7 @@ class ProactiveMonitorAgent(BaseAgent):
         try:
             results = await self._qdrant.retrieve_filtered(
                 RetrievalRequest(
+                    query="",  # required field — omitting it made this a silent no-op
                     patient_ids=[patient_id],
                     data_types=[HealthDataType.MEDICATION.value],
                     limit=5,

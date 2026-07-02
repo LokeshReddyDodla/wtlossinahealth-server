@@ -181,6 +181,15 @@ async def test_score_end_to_end_filters_uncited():
     score = await scorer.score(extraction=extraction, context=ctx, slot="breakfast")
     assert len(score.concerns) == 1
     assert score.concerns[0].text == "High GL"
-    assert score.overall == 100 - 10  # composition weight
+    from lib.ai_foundation.agents.meal_analysis.scorer import (
+        _GL_DEDUCTION_MAX,
+        _GL_DEDUCTION_PER_POINT,
+        _GL_DEDUCTION_START,
+    )
+    gl_ded = min(
+        _GL_DEDUCTION_MAX,
+        max(0, int((score.glycemic_load - _GL_DEDUCTION_START) * _GL_DEDUCTION_PER_POINT)),
+    )
+    assert score.overall == 100 - 10 - gl_ded  # composition weight + GL magnitude
     assert score.glycemic_load > 0
-    assert len(score.breakdown) == 1
+    assert len(score.breakdown) == 2  # concern + GL magnitude entry

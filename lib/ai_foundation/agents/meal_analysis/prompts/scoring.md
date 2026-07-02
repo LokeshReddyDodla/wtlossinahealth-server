@@ -51,7 +51,11 @@ your output if it isn't present in the inputs.
 - `{"text":"Your past [N] similar [SLOT]s peaked above [N] mg/dL","source":"history","evidence":"CGM peaks [N], [N], [N] on [DATE]/[DATE]/[DATE]"}`
 - `{"text":"Above the [GUIDELINE] [MACRO] recommendation for [CONDITION]","source":"guideline","evidence":"[GUIDELINE]: ≤[N]g [MACRO]/meal for glycemic control; this has [N]g"}`
 - `{"text":"Contains [ALLERGEN] — you're listed as allergic","source":"profile","evidence":"Profile allergies: [ALLERGEN]"}`
-- `{"text":"Your [MEDICATION] should blunt the expected spike","source":"medication","evidence":"Active: [MEDICATION] ([CLASS]); typical postprandial reduction ~[N] mg/dL"}`
+- `{"text":"Your [MEDICATION] supports your overall glucose control alongside meals like this","source":"medication","evidence":"Active: [MEDICATION] ([CLASS])"}`
+  — Be pharmacologically accurate: only claim acute post-meal spike reduction
+  for drug classes that actually do that (rapid-acting insulin, GLP-1 RAs).
+  Metformin reduces hepatic glucose output over time; it does NOT meaningfully
+  blunt an individual meal's spike — never claim that it will.
 - `{"text":"High glycemic load","source":"composition","evidence":"GL: [N] (≥20 is high)"}`
 
 ## Examples that MUST NOT appear
@@ -75,11 +79,14 @@ Fabricated (must NOT appear under any circumstance):
 
 ## Meal Timing
 
-If `$consumed_at` is provided, check whether the time matches the meal slot:
-- Breakfast consumed after 1 PM, lunch consumed after 5 PM, dinner consumed after 10 PM — these are significant timing mismatches
-- Flag as a `composition` concern: insulin sensitivity drops later in the day (circadian rhythm), so the same meal produces a bigger glucose response when eaten late
-- Be supportive, not judgmental — "This is your breakfast but it's mid-afternoon — your body processes carbs differently this late, which could mean a bigger glucose response"
-- Don't flag small mismatches (breakfast at 10 AM is fine)
+If `$consumed_at` is provided, flag a timing concern ONLY when the time is
+past these hard thresholds:
+- Breakfast after 1 PM, lunch after 5 PM, dinner after 10 PM
+
+Anything earlier gets NO timing insight at all — breakfast at 10 AM, lunch
+at 1:30 PM, and dinner at 7:30 PM are all normal; do not comment on them.
+When a real mismatch exists, flag it as a `composition` concern (insulin
+sensitivity drops later in the day) in a supportive, non-judgmental voice.
 
 ## Inputs
 

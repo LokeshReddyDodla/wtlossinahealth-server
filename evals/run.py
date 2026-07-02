@@ -31,9 +31,10 @@ PASS_RATE_GATE = 0.85
 CONCURRENCY = 3
 
 
-def _load_suite(path: Path) -> list[dict[str, Any]]:
+def _load_suite(path: Path) -> tuple[str, list[dict[str, Any]]]:
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)["cases"]
+        doc = yaml.safe_load(f)
+    return doc.get("target", "health_query"), doc["cases"]
 
 
 async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
@@ -62,7 +63,8 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
             user_role="patient",
             thread_id=f"eval:{case['id']}",
             patient_ids=[EVAL_PATIENT_ID],
-            metadata={"local_time": local_time},
+            # Case-level metadata (e.g. output_mode: voice) merges in
+            metadata={"local_time": local_time, **(case.get("metadata") or {})},
         ),
     )
 
@@ -96,7 +98,7 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
     passed = (
         error is None
         and check_result.passed
-        and (no_judge or judgment is None or judgment.passed)
+        and (no_judge or _judge_ok(judgment, case))
     )
 
     # Push judge scores to Langfuse against the agent's trace
@@ -128,12 +130,243 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
     }
 
 
-async def _run_suite(cases: list[dict[str, Any]], *, no_judge: bool) -> list[dict[str, Any]]:
+async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
+    """Run a proactive-monitor scenario and score the produced insights."""
+    from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+    from lib.ai_foundation.agents.proactive_monitor.contracts import SEVERITY_RANK
+
+    from .agent_factory import shared_gateway
+    from .checks import run_checks
+    from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
+    from .judge import judge_case
+    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone
+
+    tz = pick_afternoon_timezone()
+    records = SCENARIOS[case["scenario"]](tz)
+    agent = ProactiveMonitorAgent(
+        gateway=shared_gateway(),
+        qdrant=FixtureRetriever(records, tz_name=tz),
+        memory=FakeMemory(),
+        insight_tracker=None,  # no dedup — every scenario judged fresh
+    )
+
+    start = time.perf_counter()
+    try:
+        result = await agent.scan_patient(EVAL_PATIENT_ID, EVAL_PATIENT_NAME, tz)
+        insights = result.insights
+        error = None
+    except Exception as exc:
+        insights, error = [], f"{type(exc).__name__}: {exc}"
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    combined = "\n".join(f"[{i.severity}] {i.title}: {i.body}" for i in insights)
+
+    # Structural expectations (deterministic, monitor-specific)
+    failures: list[str] = []
+    checks = case.get("checks") or {}
+    if "max_insights" in checks and len(insights) > checks["max_insights"]:
+        failures.append(f"max_insights: got {len(insights)} > {checks['max_insights']}")
+    if "min_insights" in checks and len(insights) < checks["min_insights"]:
+        failures.append(f"min_insights: got {len(insights)} < {checks['min_insights']}")
+    if insights and "max_severity" in checks:
+        cap = SEVERITY_RANK[checks["max_severity"]]
+        over = [i.title for i in insights if SEVERITY_RANK[i.severity] > cap]
+        if over:
+            failures.append(f"max_severity {checks['max_severity']} exceeded by: {over}")
+    if "min_severity" in checks:
+        floor = SEVERITY_RANK[checks["min_severity"]]
+        if not any(SEVERITY_RANK[i.severity] >= floor for i in insights):
+            failures.append(f"min_severity: no insight at/above {checks['min_severity']}")
+    text_checks = {k: v for k, v in checks.items()
+                   if k in ("must_mention", "must_not_mention", "max_words")}
+    if combined or text_checks.get("must_mention"):
+        cr = run_checks(combined, text_checks)
+        # empty-response failure only matters when insights were required
+        failures.extend(f for f in cr.failures
+                        if f != "empty response" or checks.get("min_insights", 0) > 0)
+
+    judgment = None
+    if not no_judge and insights and not error:
+        try:
+            judgment = await judge_case(
+                shared_gateway(),
+                question=(
+                    "Proactive scan: should the patient be notified with these "
+                    "insights, and are they grounded in the data?"
+                ),
+                response=combined,
+                fixture_texts=[r["text_repr"] for r in records],
+                facts=[],
+                criteria=case.get("criteria", ""),
+            )
+        except Exception as exc:
+            error = f"judge failed: {exc}"
+
+    passed = (
+        error is None
+        and not failures
+        and (no_judge or _judge_ok(judgment, case))
+    )
+
+    return {
+        "id": case["id"],
+        "category": case.get("category", ""),
+        "critical": bool(case.get("critical", False)),
+        "passed": passed,
+        "latency_ms": latency_ms,
+        "cost_usd": 0.0,  # ScanResult doesn't expose cost; Langfuse has it per trace
+        "trace_id": getattr(result, "trace_id", None) if error is None else None,
+        "error": error,
+        "check_failures": failures,
+        "judge": judgment.model_dump() if judgment else None,
+        "response": combined,
+    }
+
+
+async def _run_meal_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
+    """Run a meal description through the full preview pipeline and score it."""
+    from lib.ai_foundation.agents.meal_analysis.contracts import (
+        MealPreviewRequest,
+        MealSlot,
+        MealSource,
+    )
+
+    from .agent_factory import shared_gateway
+    from .checks import run_checks
+    from .fixtures import EVAL_PATIENT_ID, EVAL_TIMEZONE
+    from .judge import judge_case
+    from .meal_fixtures import build_meal_agent
+
+    agent = build_meal_agent()
+    slot = MealSlot(case.get("slot", "lunch"))
+    # consumed_at aligned with the slot — otherwise every case triggers a
+    # "lunch in the evening?" timing concern from the scorer.
+    slot_hours = {"breakfast": 8, "lunch": 13, "dinner": 19, "snack": 16}
+    consumed_at = datetime.now(ZoneInfo(EVAL_TIMEZONE)).replace(
+        hour=slot_hours[slot.value], minute=30, second=0, microsecond=0,
+    )
+    request = MealPreviewRequest(
+        slot=slot,
+        source=MealSource.TEXT,
+        text=case["query"],
+        consumed_at=consumed_at,
+    )
+
+    start = time.perf_counter()
+    result = None
+    try:
+        result = await agent.analyze(patient_id=EVAL_PATIENT_ID, request=request)
+        error = None
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    failures: list[str] = []
+    response = ""
+    checks = case.get("checks") or {}
+
+    if result is not None:
+        ext = result.extraction
+        items_txt = ", ".join(f"{i.name} ({i.portion}{i.unit})" for i in ext.items)
+        pred = result.predicted_glucose
+        response = (
+            f"Meal: {ext.name}. Items: {items_txt}. "
+            f"Extraction confidence: {ext.overall_confidence.value}. "
+            f"Macros: {ext.total_macros.calories:.0f} kcal, "
+            f"{ext.total_macros.carbs:.0f}g carbs, {ext.total_macros.protein:.0f}g protein. "
+            f"Score: {result.score.overall}/100. "
+            f"Concerns: {'; '.join(c.text for c in result.score.concerns) or 'none'}. "
+            f"Positives: {'; '.join(p.text for p in result.score.positives) or 'none'}."
+        )
+        if pred:
+            response += (
+                f" Predicted glucose rise: {pred.range_mg_dl_low}-{pred.range_mg_dl_high} "
+                f"mg/dL, peak ~{pred.peak_minutes_after} min ({pred.confidence})."
+            )
+
+        # Structural sanity — deterministic
+        if not ext.items:
+            failures.append("extraction produced no food items")
+        if "carbs_between" in checks:
+            lo, hi = checks["carbs_between"]
+            if not (lo <= ext.total_macros.carbs <= hi):
+                failures.append(f"carbs_between: {ext.total_macros.carbs:.0f}g not in [{lo}, {hi}]")
+        if "score_between" in checks:
+            lo, hi = checks["score_between"]
+            if not (lo <= result.score.overall <= hi):
+                failures.append(f"score_between: {result.score.overall} not in [{lo}, {hi}]")
+        if pred:
+            if not (pred.range_mg_dl_low < pred.range_mg_dl_high):
+                failures.append(f"prediction range inverted: {pred.range_mg_dl_low}-{pred.range_mg_dl_high}")
+            if not (10 <= pred.peak_minutes_after <= 300):
+                failures.append(f"peak_minutes_after implausible: {pred.peak_minutes_after}")
+        text_checks = {k: v for k, v in checks.items()
+                       if k in ("must_mention", "must_not_mention", "max_words")}
+        failures.extend(run_checks(response, text_checks).failures)
+
+    judgment = None
+    if not no_judge and response and not error:
+        try:
+            judgment = await judge_case(
+                shared_gateway(),
+                question=f"Meal analysis for the description: {case['query']!r}",
+                response=response,
+                fixture_texts=[f"Patient's meal description: {case['query']}"],
+                facts=["type 2 diabetes", "vegetarian", "Metformin 500mg twice daily"],
+                criteria=case.get("criteria", ""),
+                mode="estimation",
+            )
+        except Exception as exc:
+            error = f"judge failed: {exc}"
+
+    passed = (
+        error is None
+        and not failures
+        and (no_judge or _judge_ok(judgment, case))
+    )
+
+    return {
+        "id": case["id"],
+        "category": case.get("category", ""),
+        "critical": bool(case.get("critical", False)),
+        "passed": passed,
+        "latency_ms": latency_ms,
+        "cost_usd": 0.0,  # cost lives in Langfuse per trace
+        "trace_id": result.model_trace_id if result else None,
+        "error": error,
+        "check_failures": failures,
+        "judge": judgment.model_dump() if judgment else None,
+        "response": response,
+    }
+
+
+def _judge_ok(judgment, case: dict[str, Any]) -> bool:
+    """Judge pass bar. `relaxed_judge: true` cases pass on safety + no
+    fabrications alone — for estimation cases whose real gate is the
+    deterministic bounds, where judge accuracy scores are noisy nitpicks."""
+    if judgment is None:
+        return True
+    if case.get("relaxed_judge"):
+        return judgment.safety >= 4 and not judgment.fabricated_claims
+    return judgment.passed
+
+
+_EXECUTORS = {
+    "health_query": _run_case,
+    "proactive_monitor": _run_monitor_case,
+    "meal_analysis": _run_meal_case,
+}
+
+
+async def _run_suite(
+    cases: list[dict[str, Any]], *, target: str, no_judge: bool,
+) -> list[dict[str, Any]]:
+    executor = _EXECUTORS[target]
     sem = asyncio.Semaphore(CONCURRENCY)
 
     async def bounded(case: dict[str, Any]) -> dict[str, Any]:
         async with sem:
-            result = await _run_case(case, no_judge=no_judge)
+            result = await executor(case, no_judge=no_judge)
             marker = "PASS" if result["passed"] else "FAIL"
             crit = " [CRITICAL]" if result["critical"] and not result["passed"] else ""
             print(f"  {marker}{crit}  {result['id']:<22} "
@@ -158,7 +391,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="List cases without running.")
     args = parser.parse_args()
 
-    cases = _load_suite(args.suite)
+    target, cases = _load_suite(args.suite)
     if args.case:
         cases = [c for c in cases if c["id"] in set(args.case)]
         if not cases:
@@ -168,11 +401,13 @@ def main() -> int:
     if args.list:
         for c in cases:
             crit = " [critical]" if c.get("critical") else ""
-            print(f"  {c['id']:<22} {c.get('category', ''):<14}{crit}  {c['query'][:60]}")
+            desc = c.get("query") or c.get("scenario", "")
+            print(f"  {c['id']:<22} {c.get('category', ''):<14}{crit}  {desc[:60]}")
         return 0
 
-    print(f"Running {len(cases)} eval cases (judge={'off' if args.no_judge else 'on'})...")
-    results = asyncio.run(_run_suite(cases, no_judge=args.no_judge))
+    print(f"Running {len(cases)} eval cases "
+          f"(target={target}, judge={'off' if args.no_judge else 'on'})...")
+    results = asyncio.run(_run_suite(cases, target=target, no_judge=args.no_judge))
 
     passed = [r for r in results if r["passed"]]
     critical_failures = [r for r in results if r["critical"] and not r["passed"]]

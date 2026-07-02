@@ -22,13 +22,19 @@ def run_checks(response: str, checks: dict[str, Any]) -> CheckResult:
     failures: list[str] = []
     lowered = response.lower()
 
+    def _alternatives(entry: Any) -> list[str]:
+        # "a|b" = any-of; an entry that is ONLY pipes (e.g. a literal "|"
+        # markdown-table check) falls back to the raw string.
+        alts = [a.strip().lower() for a in str(entry).split("|") if a.strip()]
+        return alts or [str(entry)]
+
     for entry in checks.get("must_mention", []):
-        alternatives = [a.strip().lower() for a in str(entry).split("|")]
+        alternatives = _alternatives(entry)
         if not any(a in lowered for a in alternatives):
             failures.append(f"must_mention failed: none of {alternatives!r} in response")
 
     for entry in checks.get("must_not_mention", []):
-        alternatives = [a.strip().lower() for a in str(entry).split("|")]
+        alternatives = _alternatives(entry)
         hits = [a for a in alternatives if a in lowered]
         if hits:
             failures.append(f"must_not_mention failed: found {hits!r}")

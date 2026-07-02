@@ -1,0 +1,154 @@
+name: AI Evals
+
+# Runs the golden eval suites (real LLM calls, ~$1/run) when anything that
+# changes AI behavior lands, plus nightly to catch provider drift.
+#
+# Requires repo secrets: EVAL_ANTHROPIC_API_KEY, EVAL_OPENAI_API_KEY,
+# EVAL_GOOGLE_API_KEY (and optionally LANGFUSE_* for score logging).
+# Without them the job skips gracefully instead of failing.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "lib/ai_foundation/**/prompts/**"
+      - "lib/ai_foundation/models/registry.py"
+      - "lib/ai_foundation/config.py"
+      - "lib/ai_foundation/agents/**"
+      - "evals/**"
+  schedule:
+    # Nightly at 22:00 UTC (03:30 IST) — catches provider-side model drift
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # Real keys — the whole point is live model behavior
+      ANTHROPIC_API_KEY: ${{ secrets.EVAL_ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.EVAL_OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.EVAL_GOOGLE_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.EVAL_LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.EVAL_LANGFUSE_SECRET_KEY }}
+      LANGFUSE_HOST: ${{ secrets.EVAL_LANGFUSE_HOST }}
+      # Placeholder env — evals fake the data layer, but modules read these
+      # at import time (same rationale as test.yml)
+      POSTGRES_ASYNCPG_URL: "postgresql+asyncpg://test:test@localhost:5432/test"
+      MONGO_URL: "mongodb://localhost:27017"
+      MONGO_DB_NAME: "test"
+      REDIS_HOST: "localhost"
+      REDIS_PASSWORD: ""
+      ARQ_REDIS_HOST: "localhost"
+      ARQ_REDIS_PORT: "6379"
+      ARQ_REDIS_PASSWORD: ""
+      ARQ_REDIS_DB: "0"
+      AWS_REGION: "us-east-1"
+      AWS_S3_ACCESS_KEY: "test"
+      AWS_S3_SECRET_KEY: "test"
+      AWS_SQS_ACCESS_KEY_ID: "test"
+      AWS_SQS_SECRET_ACCESS_KEY: "test"
+      PATIENT_EXPORTS_BUCKET: "test-bucket"
+      PERPLEXITY_API_KEY: "test"
+      QDRANT_HOST: "localhost"
+      QDRANT_PORT: "6333"
+      QDRANT_COLLECTION: "test"
+      JWT_SECRET: "test-secret-not-real"
+      JWT_ALGORITHM: "HS256"
+      JWT_AUDIENCE: "test"
+      FCM_JSON_KEY_PATH: "/tmp/fake-fcm.json"
+      TWILIO_ACCOUNT_SID: "test"
+      TWILIO_AUTH_TOKEN: "test"
+      TWILIO_SMS_FROM: "+10000000000"
+      TWILIO_WHATSAPP_FROM: "+10000000000"
+      TWILIO_CONTENT_SID: "test"
+      MSG91_AUTH_KEY: "test"
+      MSG91_TEMPLATE_ID: "test"
+      CLICKHOUSE_HOST: "localhost"
+      CLICKHOUSE_PORT: "9000"
+      CLICKHOUSE_USER: "default"
+      CLICKHOUSE_PASSWORD: ""
+      LIBREVIEW_API_BASE_URL: "https://api.libreview.test"
+      LIBREVIEW_EMAIL: "test@test.com"
+      LIBREVIEW_PASSWORD: "test"
+      LIBREVIEW_ACCOUNT_ID: "test"
+      LIBREVIEW_SITE_KEY: "test"
+      LIBREVIEW_TRUSTED_DEVICE_TOKEN: "test"
+      LIBREVIEW_SYNC_QUEUE_URL: "https://sqs.test"
+      ENV: "test"
+      TWOCAPTCHA_API_KEY: "test"
+
+    steps:
+      - name: Check eval secrets are configured
+        id: secrets_check
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$OPENAI_API_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::EVAL_* API key secrets not configured — skipping eval run."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout code
+        if: steps.secrets_check.outputs.configured == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.secrets_check.outputs.configured == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: pipx install poetry==2.2.1
+
+      - name: Cache Poetry virtualenv
+        if: steps.secrets_check.outputs.configured == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-py3.12-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-py3.12-
+
+      - name: Configure Poetry to create .venv in project
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry config virtualenvs.in-project true
+
+      - name: Install dependencies
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Health query suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/health_query.yaml
+
+      - name: Proactive monitor suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/proactive_monitor.yaml
+
+      - name: Voice mode suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/voice_mode.yaml
+
+      - name: Meal analysis suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/meal_analysis.yaml
+
+      - name: Upload eval reports
+        if: always() && steps.secrets_check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports-${{ github.run_id }}
+          path: evals/reports/*.json
+          retention-days: 30

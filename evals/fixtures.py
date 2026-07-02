@@ -152,8 +152,9 @@ class FixtureRetriever:
 
     name = "fixture"
 
-    def __init__(self, records: list[dict[str, Any]]) -> None:
+    def __init__(self, records: list[dict[str, Any]], tz_name: str = EVAL_TIMEZONE) -> None:
         self._records = records
+        self._tz = ZoneInfo(tz_name)
 
     def _matches(self, rec: dict[str, Any], request: RetrievalRequest) -> bool:
         types = _expand_data_types(request.data_types) if request.data_types else []
@@ -166,7 +167,7 @@ class FixtureRetriever:
         # means the local calendar day.
         if rec["data_type"] not in ("profile", "medication"):
             rec_date = datetime.fromtimestamp(
-                rec["start_time"] / 1000, ZoneInfo(EVAL_TIMEZONE),
+                rec["start_time"] / 1000, self._tz,
             ).date()
             if request.date_start and rec_date < datetime.fromisoformat(request.date_start[:10]).date():
                 return False

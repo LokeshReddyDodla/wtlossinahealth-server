@@ -1,7 +1,7 @@
 # AI Foundation Evals
 
-Golden-query regression suite for the Health Query Agent. Runs the **real
-agent** (real LLMs, real prompts, real reasoning loop) against **fixture
+Golden-query regression suites for every AI surface. Each suite runs the
+**real agent** (real LLMs, real prompts, real pipeline) against **fixture
 data** (deterministic, timezone-correct, regenerated relative to "today"),
 then scores every response two ways:
 
@@ -13,14 +13,31 @@ then scores every response two ways:
    medical knowledge and fixture-derived arithmetic are explicitly not
    fabrication.
 
+## Suites
+
+| Suite | Target | Cases | What it protects |
+|---|---|---|---|
+| `golden/health_query.yaml` | chat agent | 15 | grounding, fabrication traps, med/emergency safety, memory, tone |
+| `golden/proactive_monitor.yaml` | monitor | 4 | no false alarms (notification fatigue), hypo detection, severity |
+| `golden/voice_mode.yaml` | chat agent (voice) | 3 | no markdown in spoken output, speakable length, voice safety |
+| `golden/meal_analysis.yaml` | meal pipeline | 4 | extraction accuracy, scoring calibration, vague-input hedging |
+
 ## Running
 
 ```bash
-.venv/bin/python -m evals.run                 # full suite (~$0.7, ~2 min)
-.venv/bin/python -m evals.run --case med_stop # one case
-.venv/bin/python -m evals.run --no-judge      # deterministic checks only
-.venv/bin/python -m evals.run --list          # list cases
+.venv/bin/python -m evals.run                                        # health query (~$0.7)
+.venv/bin/python -m evals.run --suite evals/golden/proactive_monitor.yaml
+.venv/bin/python -m evals.run --case med_stop                        # one case
+.venv/bin/python -m evals.run --no-judge                             # deterministic only
+.venv/bin/python -m evals.run --list                                 # list cases
+.venv/bin/python -m evals.mine_feedback --days 30                    # thumbs-down → draft cases
 ```
+
+CI: `.github/workflows/evals.yml` runs all four suites on PRs touching
+prompts / model routing / agents / evals, plus nightly at 03:30 IST to
+catch provider-side model drift. Needs `EVAL_ANTHROPIC_API_KEY`,
+`EVAL_OPENAI_API_KEY`, `EVAL_GOOGLE_API_KEY` repo secrets (skips with a
+warning if unset).
 
 Exit code 0 = gate passed. Gate fails when any `critical: true` case fails
 or the overall pass rate drops below 85%. Reports land in `evals/reports/`
@@ -42,11 +59,15 @@ trace as `eval_accuracy` / `eval_safety` / `eval_completeness` / `eval_tone`.
 
 ## Adding a case
 
-Append to `golden/health_query.yaml`. Ground every expected number in
-`fixtures.py::default_records()` — the judge receives the complete fixture
-as ground truth, so anything the response claims about the patient that
-isn't there counts as fabrication. Mark safety/honesty cases
-`critical: true` so one failure fails the run.
+Append to the right `golden/*.yaml`. Ground every expected number in the
+suite's fixture module — the judge receives the complete fixture as ground
+truth. Mark safety/honesty cases `critical: true` so one failure fails the
+run. `relaxed_judge: true` limits the judge gate to safety + fabrications
+for estimation cases whose real gate is the deterministic bounds.
+
+**Growth rule**: a new case must come from (1) a real user failure (run
+`mine_feedback`), (2) a new feature, or (3) an unprobed failure CLASS —
+never "more cases" for its own sake.
 
 ## What it has already caught
 
