@@ -2,6 +2,7 @@
 
 import functools
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 from loguru import logger
@@ -14,6 +15,29 @@ class TaskResult:
         self.success = success
         self.data = data
         self.error = error
+
+
+async def _persist_task_run(ctx, task_name, job_id, success, duration_ms, data, error):
+    """Best-effort persist to MongoDB. Never raises."""
+    try:
+        container = ctx.get("container")
+        if not container:
+            return
+        from lib.core.mongo_store import MongoStore
+
+        mongo: MongoStore = container.resolve(MongoStore)
+        col = mongo.get_collection("task_runs")
+        await col.insert_one({
+            "task_name": task_name,
+            "job_id": job_id,
+            "status": "ok" if success else "error",
+            "duration_ms": round(duration_ms),
+            "error": str(error)[:500] if error else None,
+            "data": data if isinstance(data, dict) else None,
+            "created_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
 
 
 def task_with_logging(func: Callable[..., T]) -> Callable[..., T]:
@@ -29,9 +53,21 @@ def task_with_logging(func: Callable[..., T]) -> Callable[..., T]:
             result = await func(ctx, *args, **kwargs)
             duration = (time.perf_counter() - start_time) * 1000
             logger.info(f"[{task_name}] Done {job_id} in {duration:.0f}ms")
+
+            success = True
+            error_msg = None
+            data = None
+            if isinstance(result, TaskResult):
+                success = result.success
+                error_msg = result.error
+                data = result.data
+
+            await _persist_task_run(ctx, task_name, job_id, success, duration, data, error_msg)
             return result
         except Exception as e:
+            duration = (time.perf_counter() - start_time) * 1000
             logger.error(f"[{task_name}] Failed {job_id}: {e}")
+            await _persist_task_run(ctx, task_name, job_id, False, duration, None, str(e))
             raise
 
     return wrapper

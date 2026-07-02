@@ -28,6 +28,7 @@ from .admin.support_tickets.router import (
     router as admin_support_tickets_router,
 )
 from .admin.notifications.router import router as admin_notifications_router
+from .admin.system.router import router as admin_system_router
 from .product_bot.router import router as product_bot_router
 from .dashboard_help_agent.router import router as dashboard_help_router
 from .whatsapp.router import router as whatsapp_router
@@ -61,6 +62,7 @@ router.include_router(v1_chats_router)
 router.include_router(documents_router)
 router.include_router(admin_support_tickets_router)
 router.include_router(admin_notifications_router)
+router.include_router(admin_system_router)
 router.include_router(share_router)
 router.include_router(product_bot_router)
 router.include_router(dashboard_help_router)
