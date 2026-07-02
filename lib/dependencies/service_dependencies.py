@@ -774,3 +774,44 @@ def get_product_bot_agent():
     from lib.ai_foundation.agents.product_bot import ProductBotAgent
 
     return cast(ProductBotAgent, container.resolve(ProductBotAgent))
+
+
+# ── ai_foundation infrastructure providers ──────────────────────────────────
+# One DI style for the API layer: route handlers take these via Depends()
+# instead of calling container.resolve() in the function body.
+
+
+def get_memory_store():
+    from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+
+    return cast(MongoMemoryStore, container.resolve(MongoMemoryStore))
+
+
+def get_model_gateway():
+    from lib.ai_foundation.models.gateway import ModelGateway
+
+    return cast(ModelGateway, container.resolve(ModelGateway))
+
+
+def get_model_registry():
+    from lib.ai_foundation.models.registry import ModelRegistry
+
+    return cast(ModelRegistry, container.resolve(ModelRegistry))
+
+
+def get_insight_tracker():
+    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+
+    return cast(InsightTracker, container.resolve(InsightTracker))
+
+
+def get_patient_name_resolver():
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+
+    return cast(PatientNameResolver, container.resolve(PatientNameResolver))
+
+
+def get_proactive_monitor_agent():
+    from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
+
+    return cast(ProactiveMonitorAgent, container.resolve(ProactiveMonitorAgent))

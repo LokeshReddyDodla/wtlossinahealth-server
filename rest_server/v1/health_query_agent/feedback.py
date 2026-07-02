@@ -10,9 +10,9 @@ from typing import Optional
 from fastapi import Depends
 from pydantic import BaseModel, Field
 
-from lib.core.container import container
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.service_dependencies import get_model_gateway
 from lib.core.constants import ProfileTypeEnum
 from rest_server.response_models import SuccessResponse
 
@@ -42,6 +42,7 @@ async def submit_feedback(
             check_permissions=False,
         )
     ),
+    gateway: ModelGateway = Depends(get_model_gateway),
 ):
     """Submit thumbs up/down feedback on an agent response.
 
@@ -53,7 +54,6 @@ async def submit_feedback(
     # Log score to Langfuse
     recorded = False
     try:
-        gateway: ModelGateway = container.resolve(ModelGateway)
         gateway.log_score(
             trace_id=payload.trace_id,
             name="user_feedback",

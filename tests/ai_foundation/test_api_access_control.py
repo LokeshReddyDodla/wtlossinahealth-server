@@ -30,6 +30,7 @@ from lib.dependencies.database import get_postgres_session
 from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
     get_health_query_agent,
+    get_memory_store,
 )
 
 PATIENT_ID = uuid4()
@@ -56,7 +57,15 @@ def _mock_session_for(role: ProfileTypeEnum):
     return session
 
 
-def _build_app(*, role: ProfileTypeEnum, actor_id, agent=None, access_service=None):
+def _mock_memory():
+    memory = AsyncMock()
+    memory.get_patient_facts = AsyncMock(return_value=[])
+    memory.upsert_patient_facts = AsyncMock()
+    memory.delete_patient_fact = AsyncMock(return_value=True)
+    return memory
+
+
+def _build_app(*, role: ProfileTypeEnum, actor_id, agent=None, access_service=None, memory=None):
     from rest_server.v1.health_query_agent.router import router
 
     app = FastAPI()
@@ -64,10 +73,12 @@ def _build_app(*, role: ProfileTypeEnum, actor_id, agent=None, access_service=No
 
     session = _mock_session_for(role)
     access_service = access_service or AsyncMock()
+    memory = memory if memory is not None else _mock_memory()
 
     app.dependency_overrides[get_current_user] = lambda: (actor_id, role.value)
     app.dependency_overrides[get_postgres_session] = lambda: session
     app.dependency_overrides[get_care_provider_access_service] = lambda: access_service
+    app.dependency_overrides[get_memory_store] = lambda: memory
     if agent is not None:
         app.dependency_overrides[get_health_query_agent] = lambda: agent
     return app
@@ -75,28 +86,21 @@ def _build_app(*, role: ProfileTypeEnum, actor_id, agent=None, access_service=No
 
 @pytest_asyncio.fixture
 async def _no_op_limiter():
-    """Patch container.resolve so limiter allows and memory store is mocked."""
+    """Patch container.resolve so the rate limiter allows; expose a shared mock memory."""
     from lib.ai_foundation.rate_limit.limiter import RateLimiter, RateLimitResult
-    from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 
     limiter = MagicMock(spec=RateLimiter)
     limiter.check_and_record.return_value = RateLimitResult(
         allowed=True, remaining=100, limit=1000, reset_at=time.time() + 3600,
     )
-    memory = AsyncMock()
-    memory.get_patient_facts = AsyncMock(return_value=[])
-    memory.upsert_patient_facts = AsyncMock()
-    memory.delete_patient_fact = AsyncMock(return_value=True)
 
     def fake_resolve(cls):
         if cls is RateLimiter:
             return limiter
-        if cls is MongoMemoryStore:
-            return memory
         return MagicMock()
 
     with patch("lib.core.container.container.resolve", side_effect=fake_resolve):
-        yield SimpleNamespace(limiter=limiter, memory=memory)
+        yield SimpleNamespace(limiter=limiter, memory=_mock_memory())
 
 
 async def _client(app):
@@ -115,7 +119,9 @@ class TestPatientSelfScoping:
     @pytest.mark.asyncio
     async def test_memory_write_forced_to_own_id(self, _no_op_limiter):
         """A patient adding a memory for ANOTHER patient writes to their own store."""
-        app = _build_app(role=ProfileTypeEnum.PATIENT, actor_id=PATIENT_ID)
+        app = _build_app(
+            role=ProfileTypeEnum.PATIENT, actor_id=PATIENT_ID, memory=_no_op_limiter.memory,
+        )
         async with await _client(app) as client:
             resp = await client.post(
                 "/health-query-agent/memories",
@@ -191,7 +197,9 @@ class TestRateLimit429:
         _no_op_limiter.limiter.check_and_record.return_value = RateLimitResult(
             allowed=False, remaining=0, limit=1000, reset_at=time.time() + 60,
         )
-        app = _build_app(role=ProfileTypeEnum.PATIENT, actor_id=PATIENT_ID)
+        app = _build_app(
+            role=ProfileTypeEnum.PATIENT, actor_id=PATIENT_ID, memory=_no_op_limiter.memory,
+        )
         async with await _client(app) as client:
             resp = await client.post(
                 "/health-query-agent/memories",

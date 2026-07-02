@@ -17,9 +17,12 @@ from fastapi import Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.ai_foundation.agents.core.patient_resolver import fallback_name
+from lib.dependencies.service_dependencies import (
+    get_memory_store,
+    get_patient_name_resolver,
+)
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver, fallback_name
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.agents.thread_utils import resolve_thread_id, thread_prefix_for_user
 from rest_server.response_models import SuccessResponse
@@ -89,6 +92,7 @@ async def get_conversation_history_v3(
             check_permissions=False,
         )
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Retrieve conversation turns for a thread.
 
@@ -120,7 +124,6 @@ async def get_conversation_history_v3(
         if not resolved_thread_id.startswith(expected_prefix):
             raise HTTPException(status_code=403, detail="Access denied to this thread")
 
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     turns = await memory.get_thread_turns(resolved_thread_id, limit=limit)
 
     # Fetch title from thread summary
@@ -157,12 +160,13 @@ async def list_conversation_threads(
             check_permissions=False,
         )
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
+    resolver: PatientNameResolver = Depends(get_patient_name_resolver),
 ):
     """List all conversation threads for the current user.
 
     No params needed — threads are scoped to the authenticated user automatically.
     """
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     collection = memory.get_collection("ai_conversation_turns")
 
     prefix = thread_prefix_for_user(role=current_actor.role.value, actor_id=current_actor.id)
@@ -213,8 +217,6 @@ async def list_conversation_threads(
     patient_profiles: dict[str, PatientInfo] = {}
     if all_patient_ids:
         try:
-            from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
-            resolver: PatientNameResolver = container.resolve(PatientNameResolver)
             profiles = await resolver.resolve_profiles(list(all_patient_ids))
             for p in profiles:
                 patient_profiles[p.patient_id] = PatientInfo(

@@ -9,11 +9,14 @@ DELETE /health-query-agent/memories/{key}?patient_id=... — delete a memory
 from fastapi import Depends, Path, Query
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
-from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_memory_store,
+)
 from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
@@ -69,6 +72,7 @@ async def list_memories(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """List all memories for a patient."""
     verified_pid = await resolve_patient_access(
@@ -77,8 +81,6 @@ async def list_memories(
         care_provider_access_service=care_provider_access_service,
     )
 
-    from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     facts = await memory.get_patient_facts(str(verified_pid))
 
     items = [
@@ -111,6 +113,7 @@ async def add_memory(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Manually add a memory for a patient."""
     enforce_rate_limit(current_actor)
@@ -121,7 +124,6 @@ async def add_memory(
     )
 
     from lib.ai_foundation.memory.base import MemoryFact, MemorySource
-    from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
     from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS
 
     key = payload.key.strip().lower().replace(" ", "_")
@@ -136,7 +138,6 @@ async def add_memory(
         is_permanent=meta["permanent"],
     )
 
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     await memory.upsert_patient_facts(str(verified_pid), [fact])
 
     return SuccessResponse(
@@ -164,6 +165,7 @@ async def delete_memory(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Delete a specific memory by key."""
     enforce_rate_limit(current_actor)
@@ -173,8 +175,6 @@ async def delete_memory(
         care_provider_access_service=care_provider_access_service,
     )
 
-    from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
-    memory: MongoMemoryStore = container.resolve(MongoMemoryStore)
     deleted = await memory.delete_patient_fact(str(verified_pid), key)
 
     return SuccessResponse(

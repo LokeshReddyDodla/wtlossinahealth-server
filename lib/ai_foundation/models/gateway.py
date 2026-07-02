@@ -795,7 +795,7 @@ class ModelGateway:
                 input_tokens=final_usage.input_tokens,
                 output_tokens=final_usage.output_tokens,
                 cached_tokens=final_usage.cached_tokens,
-                cost=PricingCalculator.calculate(spec, final_usage),
+                cost=self._stream_cost(spec, final_usage),
             )
 
         self._circuit_breaker.record_success(_circuit_key(spec))
@@ -806,6 +806,27 @@ class ModelGateway:
             full_content=combined,
             usage=llm_usage,
         )
+
+    @staticmethod
+    def _stream_cost(spec: ModelSpec, usage: TokenUsage) -> CostBreakdown:
+        """Cost for streamed calls (LiteLLM's response_cost is unavailable
+        on streams). Uses LiteLLM's pricing DB — the same source as the
+        non-stream path — with the registry's per-1k rates as fallback,
+        so the two paths can't silently diverge.
+        """
+        try:
+            in_cost, out_cost = litellm.cost_per_token(
+                model=_litellm_model_id(spec),
+                prompt_tokens=usage.input_tokens,
+                completion_tokens=usage.output_tokens,
+            )
+            return CostBreakdown(
+                input_cost=round(in_cost, 8),
+                output_cost=round(out_cost, 8),
+                total_cost=round(in_cost + out_cost, 8),
+            )
+        except Exception:
+            return PricingCalculator.calculate(spec, usage)
 
     # -- Internal: usage extraction -----------------------------------------
 

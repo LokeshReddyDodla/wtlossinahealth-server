@@ -14,8 +14,8 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.service_dependencies import get_model_registry
 from lib.ai_foundation.models.registry import ModelRegistry, ModelSpec, ModelTask, ModelProvider, TaskRoute
 from rest_server.response_models import SuccessResponse
 
@@ -55,10 +55,9 @@ async def get_model_config(
             check_permissions=False,
         )
     ),
+    registry: ModelRegistry = Depends(get_model_registry),
 ):
     """View all registered models and task routes. Admin only."""
-    registry: ModelRegistry = container.resolve(ModelRegistry)
-
     models = [
         {
             "model_id": m.model_id,
@@ -96,14 +95,13 @@ async def update_task_route(
             check_permissions=False,
         )
     ),
+    registry: ModelRegistry = Depends(get_model_registry),
 ):
     """Update which model handles a task. Takes effect immediately. Admin only.
 
     Example: switch response generation from gpt-5.1 to gemini-2.5-pro:
     {"task": "response_generation", "primary": "gemini-2.5-pro", "fallbacks": ["gpt-5.1"]}
     """
-    registry: ModelRegistry = container.resolve(ModelRegistry)
-
     try:
         task = ModelTask(payload.task)
     except ValueError:
@@ -132,14 +130,13 @@ async def register_model(
             check_permissions=False,
         )
     ),
+    registry: ModelRegistry = Depends(get_model_registry),
 ):
     """Register a new model or update an existing one. Admin only.
 
     Example: add a fine-tuned model:
     {"model": {"model_id": "ft:gpt-4.1-mini:health-v1", "provider": "openai", "temperature": 0.0}}
     """
-    registry: ModelRegistry = container.resolve(ModelRegistry)
-
     try:
         data = payload.model_config_data
         if "provider" in data:
