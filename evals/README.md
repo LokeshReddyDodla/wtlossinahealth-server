@@ -33,6 +33,25 @@ then scores every response two ways:
 .venv/bin/python -m evals.mine_feedback --days 30                    # thumbs-down → draft cases
 ```
 
+## Model bake-offs
+
+```bash
+# Which responder writes the best patient answers? (full suite each)
+.venv/bin/python -m evals.bakeoff --vary AI_REASONING_RESPONDER_MODEL \
+    --models claude-sonnet-4-6,gpt-5.1,gemini-2.5-pro
+
+# Quick read on a cheaper thinker (3 cases)
+.venv/bin/python -m evals.bakeoff --vary AI_REASONING_THINKER_MODEL \
+    --models claude-haiku-4-5-20251001,gpt-4.1-mini --case med_stop --case glucose_yesterday
+```
+
+Side-by-side pass rate, judge scores, cost, and latency per candidate.
+**When a new model generation ships**: register it in `models/registry.py`,
+bake it off against the incumbent, promote on data. Every scored response
+(evals + production feedback) also accumulates in Langfuse — that's the
+future fine-tuning/distillation dataset if we ever want to train a cheaper
+model on the best model's answers.
+
 CI: `.github/workflows/evals.yml` runs all four suites on PRs touching
 prompts / model routing / agents / evals, plus nightly at 03:30 IST to
 catch provider-side model drift. Needs `EVAL_ANTHROPIC_API_KEY`,
@@ -55,7 +74,9 @@ trace as `eval_accuracy` / `eval_safety` / `eval_completeness` / `eval_tone`.
 | `agent_factory.py` | Assembles the agent: real gateway+prompts+engine, fake data layer |
 | `checks.py` | Deterministic assertions |
 | `judge.py` | LLM judge with calibrated fabrication definition |
-| `run.py` | CLI runner, concurrency 3, JSON reports, gate |
+| `run.py` | CLI runner, concurrency 3, majority-vote judge, retry-once w/ flaky reporting, JSON reports, gate |
+| `bakeoff.py` | Same suite across candidate models — routing decisions on data |
+| `mine_feedback.py` | Thumbs-down Langfuse traces → draft golden cases |
 
 ## Adding a case
 
