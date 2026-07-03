@@ -144,8 +144,32 @@ class MetabolicService:
         """Convenience: map a meal payload to engine input format."""
         return self._assembler.build_meal_dict(meal_data, hour)
 
-    def to_glucose_prediction(self, contract: EngineContract | dict[str, Any], band_mgdl: int = 12) -> dict[str, Any] | None:
-        """Map engine contract to the production GlucosePrediction shape."""
+    # Uncertainty band around the predicted rise, by engine confidence.
+    # The band IS the uncertainty statement — a cold-start prediction must
+    # not claim the same precision as one learned from 20+ paired meals.
+    # An observed (already measured) response carries only sensor noise.
+    _BAND_BY_CONFIDENCE: dict[str, int] = {"high": 8, "moderate": 12, "cold-start": 18}
+    _BAND_OBSERVED = 5
+
+    def to_glucose_prediction(
+        self,
+        contract: EngineContract | dict[str, Any],
+        *,
+        live_pre: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Map engine contract to the production GlucosePrediction shape.
+
+        Three-tier display policy (clinical rule: never present a number as
+        measured when part of it is assumed):
+
+        1. ``live_pre`` given (real CGM reading at meal time) → ABSOLUTE
+           range anchored on it: "you're at 102 → expect ~103-115".
+        2. No live reading → RISE range ("+3-15 above your current level").
+           The twin prior is deliberately NOT used as an absolute anchor —
+           it is an estimate, and presenting it as measured would mislead.
+        3. Not enough data → the existing ``_show_number`` gate suppresses
+           the number entirely (caller falls back).
+        """
         c = contract.model_dump() if isinstance(contract, EngineContract) else contract
         pr = c.get("prediction") or {}
         rise = pr.get("observed_mgdl")
@@ -157,8 +181,26 @@ class MetabolicService:
             return None
 
         rise = float(rise)
+        conf_raw = str(pr.get("confidence", "moderate")).lower()
         conf_map = {"high": "high", "moderate": "medium", "cold-start": "low"}
-        conf = conf_map.get(str(pr.get("confidence", "moderate")).lower(), "medium")
+        conf = conf_map.get(conf_raw, "medium")
+        band = (
+            self._BAND_OBSERVED if kind == "observed"
+            else self._BAND_BY_CONFIDENCE.get(conf_raw, 12)
+        )
+
+        rise_low = int(round(max(0.0, rise - band)))
+        rise_high = int(round(rise + band))
+
+        if live_pre is not None:
+            basis = "absolute"
+            range_low = int(round(live_pre + max(0.0, rise - band)))
+            range_high = int(round(live_pre + rise + band))
+            pre_meal = int(round(live_pre))
+        else:
+            basis = "rise"
+            range_low, range_high = rise_low, rise_high
+            pre_meal = None
 
         lever = c.get("lever") or {}
         rationale = c.get("fact", "")
@@ -167,9 +209,25 @@ class MetabolicService:
 
         v31 = c.get("v31") or {}
 
+        # The twin prior (expected glucose at this hour, from the 90-day
+        # AGP) is exposed ONLY as a labeled estimate for orientation — it is
+        # never merged into the range and never presented as measured.
+        prior = (v31.get("pre_prior") or {}) if isinstance(c.get("v31"), dict) else {}
+
         return {
-            "range_mg_dl_low": int(round(max(0.0, rise - band_mgdl))),
-            "range_mg_dl_high": int(round(rise + band_mgdl)),
+            "range_mg_dl_low": range_low,
+            "range_mg_dl_high": range_high,
+            "basis": basis,
+            "pre_meal_mg_dl": pre_meal,
+            "pre_meal_estimate_mg_dl": (
+                int(round(float(prior["value"])))
+                if pre_meal is None and prior.get("value") is not None else None
+            ),
+            "pre_meal_estimate_source": (
+                prior.get("provenance") if pre_meal is None and prior.get("value") is not None else None
+            ),
+            "rise_mg_dl_low": rise_low,
+            "rise_mg_dl_high": rise_high,
             "peak_minutes_after": v31.get("peak_minutes", 60),
             "confidence": conf,
             "n_similar_meals": pr.get("n_meals_learned", 0),
