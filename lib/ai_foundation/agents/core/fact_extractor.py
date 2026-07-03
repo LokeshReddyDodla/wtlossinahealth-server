@@ -8,7 +8,6 @@ Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -230,8 +229,20 @@ class FactExtractor:
                 if not to_summarize:
                     continue
 
+                # Include the PREVIOUS summary in the input — the new summary
+                # replaces it, so leaving it out would permanently drop
+                # everything compacted in earlier cycles.
+                prior_summary = next(
+                    (f for f in facts if f.key == f"{cat}_summary"), None,
+                )
+
                 # Summarize old memories via LLM
                 items_text = "\n".join(f"- {f.key}: {f.value}" for f in to_summarize)
+                if prior_summary:
+                    items_text = (
+                        f"- earlier {cat} summary (merge this in): {prior_summary.value}\n"
+                        + items_text
+                    )
                 try:
                     response = await self._gateway.complete(
                         messages=[
@@ -255,16 +266,15 @@ class FactExtractor:
                     )
                     await self._memory.upsert_patient_facts(patient_id, [summary_fact])
 
-                    # Delete old individual memories only after summary is safely persisted.
-                    delete_tasks = [
-                        self._memory.delete_patient_fact(patient_id, f.key)
-                        for f in to_summarize
-                    ]
-                    delete_results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-                    for i, res in enumerate(delete_results):
-                        if isinstance(res, Exception):
-                            logger.warning("Failed to delete memory %s during compaction: %s", to_summarize[i].key, res)
-                    logger.info("Compacted %d %s memories → summary for %s", len(to_summarize), cat, patient_id[:8])
+                    # Delete old individual memories only after summary is
+                    # safely persisted — one bulk delete, not N round trips.
+                    deleted = await self._memory.delete_patient_facts(
+                        patient_id, [f.key for f in to_summarize],
+                    )
+                    logger.info(
+                        "Compacted %d %s memories → summary for %s (deleted %d)",
+                        len(to_summarize), cat, patient_id[:8], deleted,
+                    )
 
                 except Exception as exc:
                     logger.debug("Compaction failed for category %s: %s", cat, exc)

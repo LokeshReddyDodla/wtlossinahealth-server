@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
+from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     SSEDonePayload,
@@ -81,6 +82,7 @@ class ProductBotAgent(BaseAgent):
         )
         self._cache = cache_store
         self._analytics = analytics_collection
+        self._indexes_ensured = False
 
     # -- Tracing + history (single Redis read) --------------------------------
 
@@ -295,6 +297,7 @@ class ProductBotAgent(BaseAgent):
     ) -> None:
         if self._analytics is None:
             return
+        await self._maybe_ensure_indexes()
         try:
             doc: dict[str, Any] = {
                 "session_id": session_id,
@@ -312,6 +315,29 @@ class ProductBotAgent(BaseAgent):
             await self._analytics.insert_one(doc)
         except Exception:
             logger.debug("Failed to save product bot exchange for session %s", session_id)
+
+    async def _maybe_ensure_indexes(self) -> None:
+        """Indexes + TTL for the analytics collection (idempotent, lazy).
+
+        This collection takes writes from an UNAUTHENTICATED public endpoint —
+        without a TTL it grows forever; without indexes every analytics query
+        collection-scans.
+        """
+        if self._indexes_ensured or self._analytics is None:
+            return
+        try:
+            await self._analytics.create_index(
+                [("session_id", 1), ("turn", 1)],
+                name="pb_session_turn_idx",
+            )
+            await self._analytics.create_index(
+                "created_at",
+                name="pb_ttl_idx",
+                expireAfterSeconds=settings.PRODUCT_BOT_CONVERSATIONS_TTL_DAYS * 24 * 3600,
+            )
+            self._indexes_ensured = True
+        except Exception:
+            logger.debug("Product bot index creation deferred — may not be connected yet")
 
     def _append_history(
         self, session_id: str, user_msg: str, assistant_msg: str

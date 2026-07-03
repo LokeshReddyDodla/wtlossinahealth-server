@@ -214,26 +214,44 @@ TRIGGER_LABELS: dict[EventTrigger, str] = {
 # at the queue boundary; handlers parse the dict back into the right model
 # via ``parse_anchor`` so downstream code is fully typed.
 
-class MealLoggedAnchor(BaseModel):
+class _AnchorBase(BaseModel):
+    """Shared anchor fields.
+
+    ``event_time`` is when the SOURCE EVENT happened (meal consumed, reading
+    taken, symptom felt) — distinct from when the insight is generated.
+    Retro-logged entries make the two diverge by hours or days; consumers
+    (timeline placement, streak logic, analytics) need the event's own time.
+    Optional for queue-compat with in-flight payloads; publishers should
+    always set it.
+    """
+
+    event_time: str | None = None  # ISO timestamp of the source event
+
+
+class MealLoggedAnchor(_AnchorBase):
     meal_id: str
 
 
-class SMBGLoggedAnchor(BaseModel):
+class SMBGLoggedAnchor(_AnchorBase):
     reading_id: str
 
 
-class CGMThresholdCrossedAnchor(BaseModel):
+class CGMThresholdCrossedAnchor(_AnchorBase):
     kind: str  # CGMCrossingKind value (kept as str to avoid cross-module import in the contract)
     value: int
     unit: str = "mg/dL"
-    time: str  # ISO timestamp
+    time: str  # ISO timestamp (legacy name; mirrored into event_time)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.event_time is None:
+            self.event_time = self.time
 
 
-class SymptomLoggedAnchor(BaseModel):
+class SymptomLoggedAnchor(_AnchorBase):
     symptom_entry_id: str
 
 
-class MedicationMissedAnchor(BaseModel):
+class MedicationMissedAnchor(_AnchorBase):
     daily_task_id: str
     slot: str
     medication_name: str

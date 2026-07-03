@@ -49,11 +49,16 @@ async def generate_meal_vector(
 
         # Event-driven proactive insight — deferred 30s for Qdrant indexing.
         try:
+            # event_time = when the meal was CONSUMED (date + time from the
+            # meal record) — retro-logged meals diverge from scan time.
+            meal_event_time = None
+            if meal_data.get("date") and meal_data.get("time"):
+                meal_event_time = f"{meal_data['date']}T{meal_data['time']}"
             await enqueue_job(
                 "handle_proactive_event",
                 patient_id,
                 EventTrigger.MEAL_LOGGED.value,
-                {"meal_id": meal_id},
+                {"meal_id": meal_id, "event_time": meal_event_time},
                 _job_id=f"insight:{EventTrigger.MEAL_LOGGED.value}:{patient_id}:{meal_id}",
                 _defer_by=30,
                 _queue_name=Queues.DEFAULT,
