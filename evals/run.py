@@ -289,10 +289,16 @@ async def _run_meal_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, A
             f"Positives: {'; '.join(p.text for p in result.score.positives) or 'none'}."
         )
         if pred:
-            response += (
-                f" Predicted glucose rise: {pred.range_mg_dl_low}-{pred.range_mg_dl_high} "
-                f"mg/dL, peak ~{pred.peak_minutes_after} min ({pred.confidence})."
-            )
+            if pred.basis == "rise":
+                response += (
+                    f" Predicted glucose rise: +{pred.range_mg_dl_low}-{pred.range_mg_dl_high} "
+                    f"mg/dL above pre-meal level, peak ~{pred.peak_minutes_after} min ({pred.confidence})."
+                )
+            else:
+                response += (
+                    f" Predicted peak glucose: {pred.range_mg_dl_low}-{pred.range_mg_dl_high} "
+                    f"mg/dL, peak ~{pred.peak_minutes_after} min ({pred.confidence})."
+                )
 
         # Structural sanity — deterministic
         if not ext.items:
