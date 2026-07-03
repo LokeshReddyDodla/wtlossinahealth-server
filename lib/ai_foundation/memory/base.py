@@ -74,6 +74,19 @@ class MemoryFact(BaseModel):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
     )
+    created_at: datetime | None = Field(
+        default=None,
+        description="When this memory was FIRST learned. Set on insert, preserved across updates.",
+    )
+
+
+# Higher number = more authoritative. An auto-extraction must never
+# overwrite what the user explicitly told us.
+SOURCE_PRIORITY: dict[str, int] = {
+    MemorySource.USER_EXPLICIT.value: 2,
+    MemorySource.SYSTEM.value: 1,
+    MemorySource.AUTO_EXTRACTED.value: 0,
+}
 
 
 class ConversationTurn(BaseModel):

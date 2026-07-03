@@ -115,6 +115,7 @@ async def handle_proactive_event(
                 trigger=trigger,
                 entity_type=entity_type,
                 entity_id=entity_id,
+                event_time=typed_anchor.event_time,
             )
 
         return TaskResult(

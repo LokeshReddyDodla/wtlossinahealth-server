@@ -45,6 +45,7 @@ class AIFoundationSettings(BaseSettings):
 
     TURNS_TTL_DAYS: int = Field(default=90, description="Conversation turns TTL in days")
     SUMMARIES_TTL_DAYS: int = Field(default=90, description="TTL in days for thread summaries")
+    PRODUCT_BOT_CONVERSATIONS_TTL_DAYS: int = Field(default=90, description="TTL in days for public product-bot conversation analytics")
 
     # ── Reasoning Engine ──────────────────────────────────────────────────
 

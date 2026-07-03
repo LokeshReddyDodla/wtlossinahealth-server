@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, func, case, and_
+from sqlalchemy.exc import IntegrityError
 
 from lib.core.postgres_store import PostgresStore
 from lib.models.clinical_outcome import AdviceEvent, AdviceFollowup, ClinicalDecisionAudit
@@ -121,7 +122,14 @@ class OutcomeRepository:
             event = await session.get(AdviceEvent, event_id)
             if event:
                 event.followed_up = True
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                # unique(event_id): a concurrent worker already recorded
+                # this follow-up — theirs wins, nothing to do.
+                await session.rollback()
+                logger.info("followup already recorded by a concurrent run: event=%s", event_id)
+                return
             logger.info("followup recorded: event=%s complied=%s delta=%s outcome=%s",
                         event_id, complied, observed_delta, outcome)
 

@@ -702,11 +702,14 @@ class PatientTimelineService:
         to_dt = datetime.combine(selected_date + timedelta(days=1), time.min)
 
         try:
+            # by_event_time: a retro-logged meal's insight belongs on the day
+            # the meal happened, not the day the scan ran.
             docs = await self.insight_tracker.get_history(
                 patient_id,
                 limit=50,
                 from_date=from_dt,
                 to_date=to_dt,
+                by_event_time=True,
             )
         except Exception:
             return []
@@ -715,11 +718,11 @@ class PatientTimelineService:
         for doc in docs:
             if doc.get("category") == "engagement_drop":
                 continue
-            created = doc.get("created_at")
-            if not created:
+            # Place at the source event's time when known; created_at is the
+            # fallback for cron insights (no single source event).
+            placed = self._parse_ts(doc.get("event_time")) or self._parse_ts(doc.get("created_at"))
+            if not placed:
                 continue
-            if isinstance(created, str):
-                created = datetime.fromisoformat(created)
 
             data: dict = {
                 "category": doc.get("category"),
@@ -729,9 +732,13 @@ class PatientTimelineService:
                 data["suggested_query"] = doc["suggested_query"]
             if doc.get("trigger"):
                 data["trigger"] = doc["trigger"]
+            # Source entity link — lets anchoring snap to the exact event
+            # instead of guessing by time proximity.
+            if doc.get("entity_id"):
+                data["source_entity_id"] = str(doc["entity_id"])
 
             events.append(TimelineEvent(
-                timestamp=created,
+                timestamp=placed,
                 type=TimelineEventType.AI_INSIGHT,
                 title=doc.get("title") or doc.get("category", "Insight"),
                 subtitle=doc.get("message") or None,
@@ -753,11 +760,30 @@ class PatientTimelineService:
     def _anchor_insights(
         insights: list[TimelineEvent], data_events: list[TimelineEvent],
     ) -> None:
+        """Snap event-triggered insights directly under their source event.
+
+        Exact entity_id match first (the insight record stores which meal/
+        reading/symptom fired it); time proximity only as a fallback for
+        older records without the link. Proximity alone anchors to the
+        wrong sibling when two events of the same type share a day.
+        """
         for insight in insights:
             trigger = insight.data.get("trigger")
             target_type = PatientTimelineService._TRIGGER_TO_EVENT_TYPE.get(trigger)
             if not target_type:
                 continue
+
+            source_id = insight.data.get("source_entity_id")
+            if source_id:
+                exact = next(
+                    (e for e in data_events
+                     if e.type == target_type and str(e.entity_id) == source_id),
+                    None,
+                )
+                if exact:
+                    insight.timestamp = exact.timestamp + timedelta(seconds=1)
+                    continue
+
             candidates = [e for e in data_events if e.type == target_type]
             if not candidates:
                 continue

@@ -924,11 +924,14 @@ class ProactiveMonitorAgent(BaseAgent):
                     check = await self._insight_tracker.should_send(patient_id, category)
                     dedup_cache[category] = check
 
-                should_send, escalated_severity, _consecutive_days = check
+                should_send, escalated_severity, consecutive_days = check
                 if should_send:
                     escalated = InsightSeverity(escalated_severity)
                     if SEVERITY_RANK[escalated.value] > SEVERITY_RANK[insight.severity.value]:
                         insight.severity = escalated
+                    # Stash the streak so record_insight can skip re-deriving
+                    # it with another find_one (the tracker computed it here).
+                    insight.data["consecutive_days"] = consecutive_days
                     filtered.append(insight)
                 else:
                     logger.debug(
@@ -950,6 +953,7 @@ class ProactiveMonitorAgent(BaseAgent):
         trigger: str | None = None,
         entity_type: str | None = None,
         entity_id: str | None = None,
+        event_time: str | None = None,
     ) -> None:
         """Record that an insight was actually sent as a notification.
 
@@ -999,9 +1003,12 @@ class ProactiveMonitorAgent(BaseAgent):
             suggested_query=insight.suggested_query,
             trace_id=insight.data.get("trace_id"),
             trigger=trigger_val,
-            consecutive_days=1 if is_event else None,
+            # Event scans are streak-1 by definition; cron scans reuse the
+            # value _filter_insights computed via should_send.
+            consecutive_days=1 if is_event else insight.data.get("consecutive_days"),
             entity_type=entity_type,
             entity_id=entity_id,
+            event_time=event_time,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:

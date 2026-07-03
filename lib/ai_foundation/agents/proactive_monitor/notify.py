@@ -23,6 +23,7 @@ async def send_top_insight_notification(
     trigger: str | None = None,
     entity_type: str | None = None,
     entity_id: str | None = None,
+    event_time: str | None = None,
 ) -> None:
     """Send FCM push for the top-severity insight and record it."""
     if not insights:
@@ -63,6 +64,7 @@ async def send_top_insight_notification(
         await monitor.record_insight(
             patient_id, top, trigger=trigger,
             entity_type=entity_type, entity_id=entity_id,
+            event_time=event_time,
         )
     except Exception as e:
         logger.warning("Failed to send notification for %s: %s", patient_id, e)

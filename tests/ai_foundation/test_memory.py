@@ -178,51 +178,127 @@ def _make_mock_store():
     cursor.sort = MagicMock(return_value=cursor)
     cursor.limit = MagicMock(return_value=cursor)
     collection.find = MagicMock(return_value=cursor)
+    collection.bulk_write = AsyncMock()
+
+    def set_existing_docs(docs):
+        """Make collection.find() async-iterate over these docs (upsert path)."""
+        async def _aiter(self):
+            for d in docs:
+                yield d
+        cursor.__aiter__ = _aiter
+
+    set_existing_docs([])
+    collection.set_existing_docs = set_existing_docs
 
     mongo.get_collection = MagicMock(return_value=collection)
     return MongoMemoryStore(mongo), collection
 
 
 class TestMongoMemoryStoreUpsert:
+    @staticmethod
+    def _ops(collection):
+        collection.bulk_write.assert_called_once()
+        return collection.bulk_write.call_args[0][0]
+
     @pytest.mark.asyncio
     async def test_insert_new_fact(self):
         store, collection = _make_mock_store()
-        collection.find_one = AsyncMock(return_value=None)
 
         fact = MemoryFact(key="Health Goal", value="fat loss", category="goal")
         await store.upsert_patient_facts("p1", [fact])
 
-        collection.insert_one.assert_called_once()
-        doc = collection.insert_one.call_args[0][0]
+        ops = self._ops(collection)
+        assert len(ops) == 1
+        doc = ops[0]._doc  # ReplaceOne replacement document
         assert doc["key"] == "health_goal"  # normalized
         assert doc["patient_id"] == "p1"
         assert doc["category"] == "goal"
+        assert doc["created_at"]  # first-seen stamped on insert
 
     @pytest.mark.asyncio
     async def test_update_existing_fact(self):
         store, collection = _make_mock_store()
-        collection.find_one = AsyncMock(return_value={
+        collection.set_existing_docs([{
+            "key": "weight",
             "confidence": 0.5,
+            "source": "auto_extracted",
             "updated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
-        })
+            "created_at": datetime(2025, 6, 1, tzinfo=timezone.utc),
+        }])
 
         fact = MemoryFact(key="weight", value="80 kg", confidence=0.9)
         await store.upsert_patient_facts("p1", [fact])
 
-        collection.replace_one.assert_called_once()
+        ops = self._ops(collection)
+        assert len(ops) == 1
+        # first-seen time preserved across the replace
+        assert ops[0]._doc["created_at"] == "2025-06-01T00:00:00+00:00" or \
+            ops[0]._doc["created_at"] == datetime(2025, 6, 1, tzinfo=timezone.utc)
 
     @pytest.mark.asyncio
     async def test_skip_when_existing_is_better(self):
         store, collection = _make_mock_store()
-        collection.find_one = AsyncMock(return_value={
+        collection.set_existing_docs([{
+            "key": "weight",
             "confidence": 1.0,
+            "source": "auto_extracted",
             "updated_at": datetime(2099, 1, 1, tzinfo=timezone.utc),  # future
-        })
+        }])
 
-        fact = MemoryFact(key="weight", value="80 kg", confidence=0.5)
+        fact = MemoryFact(key="weight", value="80 kg", confidence=0.5,
+                          updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
         await store.upsert_patient_facts("p1", [fact])
 
-        collection.replace_one.assert_not_called()
+        collection.bulk_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_extracted_never_overwrites_user_explicit(self):
+        """The patient's word beats the LLM's inference, regardless of recency."""
+        store, collection = _make_mock_store()
+        collection.set_existing_docs([{
+            "key": "dietary_preference",
+            "confidence": 1.0,
+            "source": "user_explicit",
+            "updated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }])
+
+        fact = MemoryFact(
+            key="dietary_preference", value="loves biryani",
+            source="auto_extracted", confidence=0.9,  # fresher timestamp
+        )
+        await store.upsert_patient_facts("p1", [fact])
+
+        collection.bulk_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_user_explicit_overwrites_auto_extracted(self):
+        store, collection = _make_mock_store()
+        collection.set_existing_docs([{
+            "key": "dietary_preference",
+            "confidence": 0.9,
+            "source": "auto_extracted",
+            "updated_at": datetime(2099, 1, 1, tzinfo=timezone.utc),  # even future
+        }])
+
+        fact = MemoryFact(
+            key="dietary_preference", value="vegetarian",
+            source="user_explicit", confidence=1.0,
+        )
+        await store.upsert_patient_facts("p1", [fact])
+
+        assert len(self._ops(collection)) == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_is_one_read_one_bulk_write(self):
+        store, collection = _make_mock_store()
+
+        facts = [MemoryFact(key=f"k{i}", value=str(i)) for i in range(5)]
+        await store.upsert_patient_facts("p1", facts)
+
+        collection.find.assert_called_once()          # one read for all keys
+        collection.bulk_write.assert_called_once()    # one write for all facts
+        assert len(collection.bulk_write.call_args[0][0]) == 5
+        collection.find_one.assert_not_called()
         collection.insert_one.assert_not_called()
 
 
