@@ -152,3 +152,49 @@ jobs:
           name: eval-reports-${{ github.run_id }}
           path: evals/reports/*.json
           retention-days: 30
+
+      # Nightly failures must not rot silently in the Actions tab: open a
+      # GitHub issue (lands in notifications, visible to the team). Dedupes
+      # against an already-open eval-failure issue by appending a comment
+      # instead. PR failures don't need this — the red check blocks merge.
+      - name: Open issue on nightly failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = "Nightly AI eval failed";
+            const body = [
+              `The scheduled eval run failed on ${new Date().toISOString().slice(0, 10)}.`,
+              "",
+              `**Run:** ${runUrl} (full JSON reports in the run's artifacts)`,
+              "",
+              "Triage playbook:",
+              "1. Open the failing suite's log — each FAIL line lists the case + reason.",
+              "2. Critical case failed = it failed twice (retry already filtered flakes) → real regression or provider drift.",
+              "3. Fix prompt/code, `python -m evals.run --suite ...` locally until green, PR it.",
+              "4. If the judge is miscalibrated instead, fix evals/judge.py or the case criteria.",
+            ].join("\n");
+
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "eval-failure",
+            });
+            if (open.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.data[0].number,
+                body: `Failed again: ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["eval-failure"],
+              });
+            }
