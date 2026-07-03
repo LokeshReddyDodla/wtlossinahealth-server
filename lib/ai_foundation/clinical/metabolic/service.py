@@ -209,10 +209,19 @@ class MetabolicService:
 
         v31 = c.get("v31") or {}
 
-        # The twin prior (expected glucose at this hour, from the 90-day
-        # AGP) is exposed ONLY as a labeled estimate for orientation — it is
-        # never merged into the range and never presented as measured.
+        # The twin prior is exposed ONLY as a labeled estimate for
+        # orientation — never merged into the range, never presented as
+        # measured, and ONLY when it is a true time-of-day pattern
+        # ("90d_prior"). The flat 90-day mean is NOT time-specific, so
+        # surfacing it under "at this time" copy would mislabel it.
         prior = (v31.get("pre_prior") or {}) if isinstance(c.get("v31"), dict) else {}
+        if prior.get("provenance") != "90d_prior":
+            prior = {}
+
+        # "Similar meals" must mean similar meals: the top-k same-slot,
+        # carb-proximate past meals (evidence_meals) — NOT n_meals_learned,
+        # which is the personal model's total training count.
+        n_similar = len(v31.get("evidence_meals") or [])
 
         return {
             "range_mg_dl_low": range_low,
@@ -230,7 +239,8 @@ class MetabolicService:
             "rise_mg_dl_high": rise_high,
             "peak_minutes_after": v31.get("peak_minutes", 60),
             "confidence": conf,
-            "n_similar_meals": pr.get("n_meals_learned", 0),
+            "n_similar_meals": n_similar,
+            "n_meals_learned": pr.get("n_meals_learned", 0),
             "evidence": [],
             "_evidence_meals": v31.get("evidence_meals") or [],
             "rationale": rationale.strip(),
