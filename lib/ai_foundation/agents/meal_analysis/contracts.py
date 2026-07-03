@@ -235,6 +235,22 @@ class Pairing(BaseModel):
 
 
 class GlucosePrediction(BaseModel):
+    """Post-meal glucose prediction.
+
+    SEMANTICS ARE EXPLICIT via ``basis`` — this field exists because the
+    same range fields once silently switched meaning (absolute peaks from
+    the LLM predictor vs. rise deltas from the metabolic engine) and the
+    app rendered a "+3 mg/dL rise" as "your glucose will be 0-15":
+
+    - ``basis="absolute"``: range_mg_dl_* is the predicted PEAK glucose
+      (e.g. 103-115 mg/dL). Only used when anchored on a MEASURED pre-meal
+      reading (``pre_meal_mg_dl`` set) or when the predictor reasons from
+      historical absolute peaks (LLM path).
+    - ``basis="rise"``: range_mg_dl_* is the expected RISE above the
+      patient's (unmeasured) pre-meal level. Render as "+N-N above your
+      current level" — never as an absolute number.
+    """
+
     range_mg_dl_low: int
     range_mg_dl_high: int
     peak_minutes_after: int
@@ -242,6 +258,27 @@ class GlucosePrediction(BaseModel):
     n_similar_meals: int
     evidence: list[MealEvidenceRef] = Field(default_factory=list)
     rationale: str = Field(..., description="Short natural-language explanation")
+    basis: Literal["absolute", "rise"] = Field(
+        default="absolute",
+        description="What range_mg_dl_* means: absolute peak vs rise above pre-meal level.",
+    )
+    pre_meal_mg_dl: int | None = Field(
+        default=None,
+        description="MEASURED pre-meal glucose the absolute range is anchored on (CGM reading <=15 min old). None when basis='rise' or on the LLM path.",
+    )
+    rise_mg_dl_low: int | None = Field(
+        default=None,
+        description="Expected rise band — always delta semantics (engine path only).",
+    )
+    rise_mg_dl_high: int | None = Field(default=None)
+    pre_meal_estimate_mg_dl: int | None = Field(
+        default=None,
+        description="ESTIMATED typical glucose at this hour (90-day pattern) — orientation context only, never merged into the range. Render clearly as an estimate: 'you're usually around ~N at this time'.",
+    )
+    pre_meal_estimate_source: str | None = Field(
+        default=None,
+        description="Provenance of the estimate: '90d_prior' (time-of-day pattern) or '90d_mean'.",
+    )
 
 
 # ---------------------------------------------------------------------------

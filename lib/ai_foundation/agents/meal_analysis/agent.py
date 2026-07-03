@@ -290,14 +290,22 @@ class MealAnalysisAgent(BaseAgent):
                     hour=meal_hour,
                 )
                 contract = await self._metabolic.assess(patient_id, meal, live_pre=live_pre)
-                raw = self._metabolic.to_glucose_prediction(contract)
+                raw = self._metabolic.to_glucose_prediction(contract, live_pre=live_pre)
                 if raw and raw.get("_show_number", True):
                     conf_map = {"high": ConfidenceLevel.HIGH, "medium": ConfidenceLevel.MEDIUM, "low": ConfidenceLevel.LOW}
-                    logger.info("metabolic engine predicted for %s: rise=%s-%s, confidence=%s, source=%s",
-                                patient_id, raw["range_mg_dl_low"], raw["range_mg_dl_high"], raw["confidence"], raw.get("_source"))
+                    logger.info("metabolic engine predicted for %s: basis=%s range=%s-%s (rise=%s-%s, pre=%s), confidence=%s, source=%s",
+                                patient_id, raw["basis"], raw["range_mg_dl_low"], raw["range_mg_dl_high"],
+                                raw.get("rise_mg_dl_low"), raw.get("rise_mg_dl_high"),
+                                raw.get("pre_meal_mg_dl"), raw["confidence"], raw.get("_source"))
                     return GlucosePrediction(
                         range_mg_dl_low=raw["range_mg_dl_low"],
                         range_mg_dl_high=raw["range_mg_dl_high"],
+                        basis=raw["basis"],
+                        pre_meal_mg_dl=raw.get("pre_meal_mg_dl"),
+                        rise_mg_dl_low=raw.get("rise_mg_dl_low"),
+                        rise_mg_dl_high=raw.get("rise_mg_dl_high"),
+                        pre_meal_estimate_mg_dl=raw.get("pre_meal_estimate_mg_dl"),
+                        pre_meal_estimate_source=raw.get("pre_meal_estimate_source"),
                         peak_minutes_after=raw["peak_minutes_after"],
                         confidence=conf_map.get(raw["confidence"], ConfidenceLevel.MEDIUM),
                         n_similar_meals=raw["n_similar_meals"],
