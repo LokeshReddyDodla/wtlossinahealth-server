@@ -84,9 +84,15 @@ class MongoMemoryStore:
             {"_id": 0, "patient_id": 0},
         ).sort("updated_at", -1)
 
+        # Safety cap: compaction keeps counts ~50, so 500 means it's broken.
+        # Sorted by updated_at desc, truncation drops the OLDEST facts —
+        # deliberate degradation, callers always see the freshest memories.
         docs = await cursor.to_list(length=500)
         if len(docs) == 500:
-            logger.warning("Patient %s has 500+ memories — consider compaction", patient_id[:8])
+            logger.warning(
+                "Patient %s hit the 500-memory read cap (oldest dropped) — compaction is not keeping up",
+                patient_id[:8],
+            )
         return [MemoryFact(**doc) for doc in docs]
 
     async def upsert_patient_facts(

@@ -8,8 +8,10 @@ Both feed the same contract but evolve independently.
 Pure stdlib, stateless per patient. Evidence-backed: dimension targets and risk rules
 from bmiq_evidence_library.json (validated on 706-patient cohort, C1 longitudinal 127 patients).
 """
-import os, json, math
+import os, json
 from datetime import date, datetime
+
+from .util import num as _num
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,14 +29,6 @@ BMIQ_EVIDENCE = _load("bmiq_evidence_library.json", {"dimensionTargets": [], "ri
 
 DRAFT_FAST_LOSS_PCT_PER_WEEK = 1.5  # DRAFT: clinician sign-off needed before patient-facing use
 DRAFT_WAIST_SCORE_RAMP = "DRAFT_WAIST_SCORE_RAMP_IDF_SOUTH_ASIAN_ACTION_LEVELS"
-
-
-def _num(x):
-    try:
-        v = float(x)
-        return v if math.isfinite(v) else None
-    except Exception:
-        return None
 
 
 def _interp(x, xp, fp):

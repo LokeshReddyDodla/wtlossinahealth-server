@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime
 from typing import Any, List, Optional
 from uuid import UUID
@@ -28,6 +29,8 @@ from lib.models.patient_meal import (
 )
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.meal import MealCreateRequest
+
+logger = logging.getLogger(__name__)
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -261,15 +264,29 @@ class MealService:
 
             enqueue_daily_meal_report_sync(str(patient_id), meal.date)
 
-            # Gamification hook (fire-and-forget)
+            # EventBus publish — gamification (and any future subscribers)
+            # react from here, same as the save_from_preview flow.
             try:
-                from uuid import UUID as _UUID
+                from lib.ai_foundation.events.bus import EventBus
+                from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
                 from lib.core.container import container
-                from lib.services.gamification.event_handler import GamificationEventHandler
-                handler = container.resolve(GamificationEventHandler)
-                await handler.on_meal_logged(_UUID(patient_id))
+
+                bus = container.resolve(EventBus)
+                await bus.publish(
+                    HealthEvent(
+                        event_type=HealthEventType.MEAL_LOGGED.value,
+                        patient_id=str(patient_id),
+                        data={
+                            "meal_id": str(meal.id),
+                            "slot": meal.type,
+                            "consumed_at": meal_data.datetime.isoformat(),
+                            "source": meal.source,
+                        },
+                        source_agent="meal_upload",
+                    )
+                )
             except Exception:
-                pass
+                logger.exception("MEAL_LOGGED publish failed for %s", patient_id)
 
             return meal
 

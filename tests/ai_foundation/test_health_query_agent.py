@@ -217,12 +217,13 @@ class TestStreaming:
         engine = _mock_reasoning_engine()
 
         async def mock_reason_stream(**kwargs):
-            from lib.ai_foundation.streaming.sse import sse_status, sse_token, sse_reasoning, sse_done, SSEDonePayload, PipelineStage
+            from lib.ai_foundation.streaming.sse import sse_status, sse_token, sse_reasoning, SSEDonePayload, PipelineStage
             yield sse_status(PipelineStage.ANALYZING, "Investigating...")
             yield sse_reasoning(1, "Let me check glucose data")
             yield sse_token("Hello ")
             yield sse_token("world.")
-            yield sse_done(SSEDonePayload(cost_usd=0.005, data={"rounds_used": 1}))
+            # Engine contract: terminal item is the structured payload
+            yield SSEDonePayload(cost_usd=0.005, data={"rounds_used": 1, "full_response": "Hello world."})
 
         engine.reason_stream = mock_reason_stream
         agent = _make_agent(reasoning_engine=engine)
@@ -268,7 +269,6 @@ class TestStreaming:
             from lib.ai_foundation.streaming.sse import (
                 sse_status,
                 sse_token,
-                sse_done,
                 SSEDonePayload,
                 PipelineStage,
             )
@@ -276,7 +276,8 @@ class TestStreaming:
             yield sse_status(PipelineStage.ANALYZING, "Investigating...")
             yield sse_token("event: done appears in content")
             yield sse_token("final chunk")
-            yield sse_done(SSEDonePayload(cost_usd=0.005, data={"rounds_used": 1}))
+            # Engine contract: terminal item is the structured payload
+            yield SSEDonePayload(cost_usd=0.005, data={"rounds_used": 1})
 
         engine.reason_stream = mock_reason_stream
         agent = _make_agent(reasoning_engine=engine)

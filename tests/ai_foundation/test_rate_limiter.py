@@ -1,8 +1,7 @@
 """Tests for ai_foundation.rate_limit.limiter — closes a current coverage gap.
 
 The rate limiter is a critical guardrail (per-tenant throttling, priority-aware,
-fail-open on Redis errors) but had no dedicated test file. This locks every
-branch of check_and_record / check / record:
+fail-open on Redis errors). This locks every branch of check_and_record:
 
 - All 4 priority limits + default fallback
 - Allowed → not allowed transition at the boundary
@@ -10,7 +9,6 @@ branch of check_and_record / check / record:
 - Redis exception fail-open
 - Key construction format (tenant + priority)
 - Race semantics: TTL set after first INCR
-- Backwards-compat check() vs check_and_record()
 """
 
 from __future__ import annotations
@@ -128,20 +126,6 @@ class TestEnabledFlag:
         store.set_key.assert_not_called()
         store.incr_key.assert_not_called()
 
-    def test_disabled_check_does_not_hit_redis(self):
-        store = _store()
-        limiter = RateLimiter(store, enabled=False)
-        result = limiter.check("t1", RequestPriority.LOW)
-        assert result.allowed is True
-        store.get_key.assert_not_called()
-
-    def test_disabled_record_is_noop(self):
-        store = _store()
-        limiter = RateLimiter(store, enabled=False)
-        limiter.record("t1", RequestPriority.NORMAL)
-        store.set_key.assert_not_called()
-        store.incr_key.assert_not_called()
-
     def test_runtime_toggle(self):
         store = _store()
         limiter = RateLimiter(store, enabled=True)
@@ -165,20 +149,6 @@ class TestFailOpen:
         assert result.allowed is True
         assert result.remaining == 1000
         assert result.limit == 1000
-
-    def test_check_fails_open_to_zero_count(self):
-        store = MagicMock()
-        store.get_key = MagicMock(side_effect=Exception("Redis down"))
-        limiter = RateLimiter(store)
-        result = limiter.check("t1", RequestPriority.NORMAL)
-        # On exception, current is treated as 0
-        assert result.allowed is True
-        assert result.remaining == 1000
-
-    def test_record_swallows_exception(self):
-        store = _store(raises=Exception("Redis down"))
-        limiter = RateLimiter(store)
-        limiter.record("t1", RequestPriority.NORMAL)  # should not raise
 
 
 # ── Key construction ────────────────────────────────────────────────────────
@@ -239,40 +209,3 @@ class TestCustomLimits:
         # CRITICAL not in custom dict → fall back via DEFAULT_LIMITS[NORMAL]=1000
         result = limiter.check_and_record("t1", RequestPriority.CRITICAL)
         assert result.limit == 1000
-
-
-# ── check() (read-only) ────────────────────────────────────────────────────
-
-
-class TestReadOnlyCheck:
-    def test_check_does_not_increment(self):
-        store = _store(get_value="42")
-        limiter = RateLimiter(store)
-        result = limiter.check("t1", RequestPriority.NORMAL)
-        assert result.remaining == 1000 - 42
-        assert result.allowed is True
-        # No incr or set called
-        store.incr_key.assert_not_called()
-        store.set_key.assert_not_called()
-
-    def test_check_returns_zero_if_key_missing(self):
-        store = _store(get_value=None)
-        limiter = RateLimiter(store)
-        result = limiter.check("t1", RequestPriority.NORMAL)
-        assert result.remaining == 1000
-        assert result.allowed is True
-
-    @pytest.mark.parametrize(
-        "raw_value,expected_allowed",
-        [
-            ("0", True),
-            ("999", True),
-            ("1000", False),     # exactly at limit — check() rejects (strictly less than)
-            ("1500", False),
-        ],
-    )
-    def test_check_boundary(self, raw_value, expected_allowed):
-        store = _store(get_value=raw_value)
-        limiter = RateLimiter(store)
-        result = limiter.check("t1", RequestPriority.NORMAL)
-        assert result.allowed is expected_allowed

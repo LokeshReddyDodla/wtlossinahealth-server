@@ -52,6 +52,7 @@ class AIFoundationSettings(BaseSettings):
     REASONING_THINKER_MODEL: str = Field(default="claude-haiku-4-5-20251001", description="Model for reasoning/tool decisions")
     REASONING_RESPONDER_MODEL: str = Field(default="claude-sonnet-4-6", description="Model for final response generation")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
+    RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
 

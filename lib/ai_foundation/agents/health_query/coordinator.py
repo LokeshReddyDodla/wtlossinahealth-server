@@ -24,7 +24,6 @@ from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
-    sse_done,
     sse_error,
     sse_plan,
     sse_reflection,
@@ -150,8 +149,12 @@ class Coordinator:
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
         trace_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        """Streaming orchestration with SSE events."""
+    ) -> AsyncIterator[str | SSEDonePayload]:
+        """Streaming orchestration with SSE events.
+
+        Yields formatted SSE strings, then a terminal SSEDonePayload carrying
+        the structured result (full response, cost, evidence metrics).
+        """
         async for item in self._orchestrate_core(
             user_message=user_message,
             system_prompt=system_prompt,
@@ -166,7 +169,7 @@ class Coordinator:
             emit_events=True,
             trace_id=trace_id,
         ):
-            if isinstance(item, str):
+            if isinstance(item, (str, SSEDonePayload)):
                 yield item
 
     # ── Core loop (shared implementation) ─────────────────────────────
@@ -239,27 +242,24 @@ class Coordinator:
                 if emit_events:
                     yield sse_specialist_start(domain, budget_per_specialist)
 
-        # Run specialists in parallel, collect findings
+        # Run specialists in parallel, collect findings. Timeout is applied
+        # per specialist so one straggler can't discard finished work.
         if active_specialists:
             tasks = [
-                spec.investigate(
-                    messages=base_messages,
-                    patient_ids=patient_ids,
-                    max_rounds=budget_per_specialist,
-                    model_id=tier_cfg.thinker_model,
-                    patient_names=patient_names,
-                    trace_id=trace_id,
+                asyncio.wait_for(
+                    spec.investigate(
+                        messages=base_messages,
+                        patient_ids=patient_ids,
+                        max_rounds=budget_per_specialist,
+                        model_id=tier_cfg.thinker_model,
+                        patient_names=patient_names,
+                        trace_id=trace_id,
+                    ),
+                    timeout=settings.SPECIALIST_TIMEOUT_SECONDS,
                 )
                 for _, spec in active_specialists
             ]
-            try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(*tasks, return_exceptions=True),
-                    timeout=settings.SPECIALIST_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Specialist investigations timed out after %.0fs", settings.SPECIALIST_TIMEOUT_SECONDS)
-                results = [asyncio.TimeoutError("Specialist timeout") for _ in active_specialists]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
             findings: list[SpecialistFindings] = []
             failed_domains: list[str] = []
@@ -358,7 +358,7 @@ class Coordinator:
                     messages=responder_messages,
                     task=ModelTask.RESPONSE_GENERATION,
                     model_id=tier_cfg.responder_model,
-                    timeout=60.0,
+                    timeout=settings.RESPONDER_TIMEOUT_SECONDS,
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
@@ -380,7 +380,9 @@ class Coordinator:
             # Compute evidence confidence for SSE done payload
             evidence = self._compute_evidence_metrics(findings, reflection_result)
 
-            yield sse_done(SSEDonePayload(
+            # Yield the structured payload — the agent builds the final done
+            # event itself (no serialize → string-parse → re-serialize round-trip).
+            yield SSEDonePayload(
                 cost_usd=total_cost,
                 data={
                     "rounds_used": len(findings),
@@ -390,13 +392,17 @@ class Coordinator:
                     "full_response": process_charts("".join(full_response_parts)),
                     **evidence,
                 },
-            ))
+            )
         else:
-            # Non-streaming: single responder call
+            # Non-streaming: single responder call. Explicit timeout — the
+            # spec default (15s) is too tight for long multi-domain answers,
+            # and explicit model_id disables fallback, so a timeout here
+            # fails the whole query.
             final_response = await self._gateway.complete(
                 messages=responder_messages,
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=tier_cfg.responder_model,
+                timeout=settings.RESPONDER_TIMEOUT_SECONDS,
             )
             total_cost += safe_cost(final_response)
 

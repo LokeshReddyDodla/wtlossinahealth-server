@@ -251,10 +251,15 @@ class TestProactiveMonitorAgent:
         agent = _make_agent(qdrant=qdrant)
         await agent.scan_patient("p123", "Sarah")
 
-        qdrant.retrieve_filtered.assert_called_once()
-        call_args = qdrant.retrieve_filtered.call_args[0][0]
-        assert call_args.patient_ids == ["p123"]
-        assert "meal" in call_args.data_types
+        # Two fetches: the main scan-data fetch + the medications fetch
+        # (medications previously crashed on a missing `query` field and
+        # never reached the retriever — fixed, so both calls happen now).
+        assert qdrant.retrieve_filtered.call_count == 2
+        scan_call = qdrant.retrieve_filtered.call_args_list[0][0][0]
+        assert scan_call.patient_ids == ["p123"]
+        assert "meal" in scan_call.data_types
+        meds_call = qdrant.retrieve_filtered.call_args_list[1][0][0]
+        assert meds_call.data_types == ["medication"]
 
     @pytest.mark.asyncio
     async def test_scan_patient_no_data(self):

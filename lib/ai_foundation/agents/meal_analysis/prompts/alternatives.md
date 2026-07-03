@@ -17,7 +17,7 @@ uncited. If there's nothing to cite, return empty lists.
    alternative in the last 30 days.
 2. **Fall back to `source=guideline`** only when you can cite a specific
    numeric clinical rule in `reason` (e.g. "ADA suggests ≤45g carbs/meal"
-   or "lower glycemic index per the ADA glycemic index table"). No vague
+   or "lower glycemic index per the ADA glycemic index table" for a glucose-focused patient, or "roughly [N] fewer kcal per serving, higher satiety per WHO/ICMR guidance" for a weight-loss patient). Pick the rule that matches THIS patient's goals/conditions from the profile. No vague
    "generally healthier" — if you can't name a numeric rule, don't suggest
    it. `evidence` stays empty for guidelines; the rule lives in `reason`.
 3. Cuisine-match. Don't suggest oats to replace paratha if the patient

@@ -70,6 +70,38 @@ _POSITIVE_WEIGHT_BY_SOURCE: dict[EvidenceSource, int] = {
 _SCORE_BASELINE = 100
 _MAX_CONCERN_DEDUCTION = 70  # caps total deductions so score never goes below 30 purely from concerns
 
+# Magnitude-aware glycemic-load deduction. Flat per-source weights alone
+# gave a 100g-sugar dessert the same -10 as a mildly elevated GL (eval case
+# dessert_flagged scored 88/100). Clinical banding: per-meal GL >= 20 is
+# "high"; deduction ramps from _GL_DEDUCTION_START and caps at
+# _GL_DEDUCTION_MAX.
+#
+# GL weight is condition-dependent (clinically accurate scoring): for a
+# glycemic condition (diabetes/prediabetes) or a CGM user, GL directly
+# drives postprandial hyperglycemia — full weight. For everyone else,
+# healthy physiology compensates; GL's remaining relevance is satiety /
+# hunger-rebound, so it deducts at reduced weight and calories/protein
+# lead the score instead.
+#
+# Thresholds clinically validated and finalized 2026-07-03.
+_GL_DEDUCTION_START = 15.0
+_GL_DEDUCTION_PER_POINT = 1.0
+_GL_DEDUCTION_MAX = 45
+_GL_NON_GLYCEMIC_FACTOR = 0.4
+
+_GLYCEMIC_MARKERS = ("diabet", "prediabet", "insulin resist", "glucose intoler", "pcos")
+
+
+def _has_glycemic_context(context: MealAnalysisContext) -> bool:
+    """True when GL deserves full clinical weight for this patient."""
+    if context.has_cgm:
+        return True
+    profile_text = json.dumps(context.profile or {}, default=str).lower()
+    memory_text = " ".join(
+        f"{m.key} {m.value}" for m in (context.memories or [])
+    ).lower()
+    return any(mk in profile_text or mk in memory_text for mk in _GLYCEMIC_MARKERS)
+
 
 class _LLMInsight(BaseModel):
     """What the LLM returns. Strict: text/source/evidence all required."""
@@ -150,7 +182,10 @@ class MealScorer:
         # spot phantom allergies / conditions in real traffic.
         _log_profile_insights(cited_concerns, cited_positives, context)
 
-        overall, breakdown = _compute_score(cited_concerns, cited_positives)
+        overall, breakdown = _compute_score(
+            cited_concerns, cited_positives, gl,
+            glycemic_context=_has_glycemic_context(context),
+        )
 
         return MealScore(
             overall=overall,
@@ -203,13 +238,19 @@ def _to_insight(src: _LLMInsight) -> Insight:
 
 
 def _compute_score(
-    concerns: list[Insight], positives: list[Insight]
+    concerns: list[Insight],
+    positives: list[Insight],
+    glycemic_load: float = 0.0,
+    *,
+    glycemic_context: bool = True,
 ) -> tuple[int, list[ScoreBreakdownItem]]:
     """Derive a defensible 0–100 from cited concerns (deduct) and positives (add back).
 
-    Starts from 100. Each concern subtracts by source weight. Each positive
-    adds back by source weight, capped to prevent gaming. Deduction total is
-    capped at _MAX_CONCERN_DEDUCTION so even a terrible meal is bounded.
+    Starts from 100. Each concern subtracts by source weight; the glycemic
+    load additionally deducts by magnitude (a GL-75 dessert must score far
+    below a GL-25 meal). Positives add back by source weight, capped to
+    prevent gaming. Deduction total is capped at _MAX_CONCERN_DEDUCTION so
+    even a terrible meal is bounded.
     """
     breakdown: list[ScoreBreakdownItem] = []
 
@@ -219,6 +260,22 @@ def _compute_score(
         raw_deduction += -delta
         breakdown.append(
             ScoreBreakdownItem(delta=delta, source=c.source, evidence=c.evidence)
+        )
+
+    gl_deduction = min(
+        _GL_DEDUCTION_MAX,
+        max(0, int((glycemic_load - _GL_DEDUCTION_START) * _GL_DEDUCTION_PER_POINT)),
+    )
+    if not glycemic_context:
+        gl_deduction = int(gl_deduction * _GL_NON_GLYCEMIC_FACTOR)
+    if gl_deduction:
+        raw_deduction += gl_deduction
+        breakdown.append(
+            ScoreBreakdownItem(
+                delta=-gl_deduction,
+                source=EvidenceSource.COMPOSITION,
+                evidence=f"Glycemic load {glycemic_load:.0f} (magnitude-scaled deduction)",
+            )
         )
 
     if raw_deduction > _MAX_CONCERN_DEDUCTION:

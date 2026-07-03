@@ -18,6 +18,8 @@ from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 from lib.core.postgres_store import PostgresStore
 
+from .util import num as _num
+
 logger = logging.getLogger(__name__)
 
 _CGM_SUMMARY_TYPE = "cgm_summary_stats"
@@ -210,16 +212,6 @@ class DataAssembler:
 
 def _safe(value: Any, default: Any) -> Any:
     return default if isinstance(value, BaseException) else value
-
-
-def _num(x: Any) -> float | None:
-    if x is None:
-        return None
-    try:
-        v = float(x)
-        return v if v == v else None  # NaN check
-    except (ValueError, TypeError):
-        return None
 
 
 def _meals_to_engine_history(meals: list[dict[str, Any]]) -> list[dict[str, Any]]:

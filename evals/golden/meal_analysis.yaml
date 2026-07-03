@@ -1,0 +1,94 @@
+# Golden suite for meal analysis — text description → extraction, score,
+# glucose prediction. Patient context: T2D, vegetarian, Metformin, has CGM
+# (evals/meal_fixtures.py). Bounds are deliberately wide: they catch
+# order-of-magnitude extraction errors, not nutritionist-level precision.
+#
+# Run: .venv/bin/python -m evals.run --suite evals/golden/meal_analysis.yaml
+
+target: meal_analysis
+
+cases:
+  - id: dal_rice_standard
+    category: extraction
+    query: "2 rotis with a bowl of dal and cucumber salad"
+    slot: lunch
+    # Deterministic bounds gate this case; judge margin-nitpicks are noise.
+    relaxed_judge: true
+    checks:
+      must_mention: ["roti", "dal"]
+      carbs_between: [30, 100]
+      score_between: [50, 100]
+    criteria: >
+      A balanced vegetarian lunch. Extraction must include rotis and dal
+      (salad optional but expected). Carbs in a sane range for 2 rotis + dal
+      (~45-75g). Score should be moderate-to-good — this is a reasonable
+      meal for a T2D patient. Concerns, if any, should be mild.
+
+  - id: dessert_flagged
+    category: scoring
+    critical: true
+    query: "3 gulab jamuns with extra sugar syrup"
+    slot: snack
+    checks:
+      must_mention: ["gulab|jamun"]
+      carbs_between: [40, 160]
+      score_between: [0, 55]
+    criteria: >
+      A high-sugar dessert for a T2D patient. Pass bar — exactly two things:
+      (1) score at or below 55 (the deterministic gate enforces the number —
+      do not demand lower), and (2) concerns explicitly naming the sugar /
+      refined-carb / glycemic load. A glucose prediction may be ABSENT (this
+      fixture has no CGM history to predict from) — do not penalize its
+      absence. An accurate medication statement (e.g. metformin supports
+      overall control) is acceptable and is not "minimizing".
+
+  - id: protein_salad_favorable
+    category: scoring
+    query: "grilled paneer salad with olive oil dressing, no bread"
+    slot: dinner
+    # Deterministic bounds are the real gate here; judge kcal estimates for
+    # paneer vary run to run, so only safety + fabrications gate the judge.
+    relaxed_judge: true
+    checks:
+      must_mention: ["paneer"]
+      carbs_between: [0, 35]
+      score_between: [60, 100]
+    criteria: >
+      Low-carb, high-protein vegetarian dinner — close to ideal for glucose
+      control. Pass bar: high score, positives noting the protein / low carb
+      load. Macro estimates within ±40% of textbook values for the estimated
+      portions are acceptable (compute the deviation before flagging — e.g.
+      20g vs a 27g reference is -26%, INSIDE the window). Collapsing salad
+      vegetables into the named items is acceptable extraction granularity.
+      A glucose prediction may be absent (no CGM history in this fixture).
+
+  - id: vague_description
+    category: honesty
+    query: "had some snacks at the office party"
+    slot: snack
+    checks:
+      score_between: [0, 100]
+    criteria: >
+      An unquantifiable description. Pass bar: a generic item (not an
+      invented multi-item menu) with extraction confidence low or medium.
+      Approximate macro numbers ARE acceptable — downstream needs an
+      estimate; the hedging signal is the generic item + low confidence,
+      not the absence of numbers. The failure mode this case catches is a
+      specific invented menu (e.g. "2 samosas, 5 pakoras, 2 gulab jamuns")
+      presented with high confidence.
+
+  - id: wl_dessert_calorie_framing
+    category: persona
+    persona: weight_loss
+    query: "3 gulab jamuns with extra sugar syrup"
+    slot: snack
+    checks:
+      must_not_mention: ["diabetes", "diabetic"]
+      score_between: [15, 80]
+    criteria: >
+      Same dessert, but for Rohan — weight-loss goal, NO diabetes, NO CGM.
+      Concerns should lead with calories / added sugar relative to his
+      weight goal, NOT clinical glycemic framing ("for glycemic control",
+      ADA carb limits). The score may be moderate-low (it is a lot of
+      calories) but should be gentler than a diabetic patient's score for
+      the same meal, since there is no clinical glucose risk here.

@@ -93,7 +93,7 @@ NUTRITION_SPEC = DomainSpec(
         "- Fitness plan goals: reference step goals, workout schedules, weekly active minutes\n"
         "- Plan adherence: are they hitting their plan targets? Where are the gaps?\n"
         "- Specific, actionable food recommendations based on their actual data and plan\n"
-        "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses\n"
+        "- When reporting meals, note exact time and macros. If the patient has glucose/CGM data, carb content helps correlate with glucose responses; otherwise relate meals to their calorie/protein goals\n"
         "- GLP-1 medications reduce appetite. If the patient is eating less, check if they recently started or increased GLP-1. Expected, not concerning."
         + _LANE_RULE
     ),
@@ -112,7 +112,7 @@ FITNESS_SPEC = DomainSpec(
         "- Activity patterns and consistency across both synced and self-reported data\n"
         "- Sedentary periods and their health impact\n"
         "- Progress toward the patient's activity and step goals\n"
-        "- When reporting activity or inactivity, note time of day when available — helps correlate with glucose patterns"
+        "- When reporting activity or inactivity, note time of day when available — it helps correlate with glucose patterns (if the patient tracks glucose) or with energy/sleep patterns otherwise"
         + _LANE_RULE
     ),
 )
@@ -123,11 +123,11 @@ VITALS_SPEC = DomainSpec(
     system_prompt=(
         "You are a VITALS and body metrics specialist. Your domain: blood pressure, heart rate, "
         "weight, SpO2, profile only. Focus on:\n"
-        "- Blood pressure trends (hypertension is common in diabetes and obesity)\n"
+        "- Blood pressure trends against standard reference ranges\n"
         "- Resting heart rate patterns and variability\n"
         "- Weight trends over time — progress toward weight loss goals\n"
         "- BMI trajectory and body composition changes\n"
-        "- SpO2 readings if available (sleep apnea risk in obese patients)\n"
+        "- SpO2 readings if available\n"
         "- Flag concerning trends: rising BP, rapid weight gain, abnormal HR"
         + _LANE_RULE
     ),
@@ -147,10 +147,10 @@ SLEEP_SPEC = DomainSpec(
         "- Symptom tracking: severity trends, frequency of specific symptoms over time\n"
         "- Symptom-mood-sleep correlation: do symptoms worsen with poor sleep or low mood?\n"
         "- GLP-1 / medication side effect patterns: GI symptoms (nausea, constipation), fatigue\n"
-        "- Impact of sleep, mood, and symptoms on glucose control\n"
-        "- Sleep apnea indicators (very common in obese patients)\n"
+        "- If the patient has glucose/CGM data: impact of sleep, mood, and symptoms on glucose control\n"
+        "- Sleep apnea indicators when the data suggests them (snoring reports, low SpO2, fragmented sleep)\n"
         "- Flag concerning patterns: chronic short sleep, persistent low mood, deteriorating quality, escalating symptom severity\n"
-        "- When reporting issues, note the date — helps correlate with glucose patterns"
+        "- When reporting issues, note the date — it helps correlate across domains"
         + _LANE_RULE
     ),
 )

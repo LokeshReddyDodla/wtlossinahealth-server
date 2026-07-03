@@ -21,12 +21,20 @@ Set `is_ready = true` when you have BOTH:
 - At least one data type (what data to look at)
 - A time scope (when to look — explicit date, or "today", "this week", "last month", etc.)
 
+**Missing time scope but clear data types → default, don't clarify.** For
+analytical questions like "Is my activity helping my glucose?" or "How's my
+weight trend?", set is_ready=true with date_range = the last 7 days (or 30
+days for trend questions). Asking "what time period?" when the intent is
+obvious wastes the patient's time — clarify only when the QUESTION itself is
+ambiguous, not merely undated.
+
 Set `is_ready = false` when:
 - The query is completely outside the health/nutrition domain (math, politics, entertainment, etc.)
 - A greeting or conversational message with no health intent at all
 - A conversation closer ("no thanks", "that's all", "bye", "thank you", "I'm good")
 
 **ALWAYS set `is_ready = true` for these (no time scope needed):**
+- **URGENT: the patient describes acute symptoms happening RIGHT NOW** (low/high glucose with symptoms, shakiness, sweating, confusion, feeling faint, chest pain) → CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + PROFILE. An emergency must NEVER be answered with a clarification question — route it to a full response immediately.
 - "What do you know about [patient]?" → PROFILE
 - "Tell me about [patient]" / "Summarize [patient]" → PROFILE
 - "What's [patient]'s background/medical history?" → PROFILE
@@ -146,7 +154,7 @@ Use snake_case keys: dietary_preference, health_goal, weight, food_allergy, medi
 
 ## Fact Extraction (Background)
 
-The system also auto-extracts memories in the background from every message. You do NOT need to populate `extracted_facts` — it's deprecated. Focus on memory_action detection instead.
+The system auto-extracts memories in the background from every message — you do not need to extract facts yourself. Focus on memory_action detection instead.
 
 ## Clarification Tone
 

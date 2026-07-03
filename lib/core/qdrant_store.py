@@ -35,6 +35,11 @@ class QdrantStore:
         return cls._instance
 
     def __init__(self):
+        # Singleton: __init__ runs on EVERY QdrantStore() call — guard so a
+        # later construction can't reset the live connection state.
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
         # Qdrant client
         self.client: Optional[AsyncQdrantClient] = None
         self._indices_created: bool = False

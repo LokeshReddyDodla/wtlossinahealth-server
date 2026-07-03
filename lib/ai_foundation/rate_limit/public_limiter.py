@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.rate_limit.limiter import incr_fixed_window
+
 if TYPE_CHECKING:
     from lib.core.cache_store import CacheStore
 
@@ -58,10 +60,7 @@ class PublicRateLimiter:
 
         for layer, key, limit, window in checks:
             try:
-                self._store.set_key(key, "0", expire=window, nx=True)
-                current = self._store.incr_key(key)
-                if current == 1:
-                    self._store.expire_key(key, window)
+                current = incr_fixed_window(self._store, key, window)
             except Exception as exc:
                 logger.warning("Public rate limiter (%s) Redis error: %s", layer, exc)
                 continue

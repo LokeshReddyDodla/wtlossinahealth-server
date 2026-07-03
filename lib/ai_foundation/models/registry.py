@@ -311,9 +311,10 @@ def build_default_registry(
     from lib.ai_foundation.config import settings as _default_settings
 
     s = settings or _default_settings
-    thinker = s.REASONING_THINKER_MODEL          # default: gpt-4.1-mini
-    responder = s.REASONING_RESPONDER_MODEL       # default: gpt-5.1
-    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL  # default: gpt-4.1
+    # Defaults live in config.py — do not restate them here, they drift.
+    thinker = s.REASONING_THINKER_MODEL
+    responder = s.REASONING_RESPONDER_MODEL
+    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL
 
     registry = ModelRegistry()
 
@@ -432,7 +433,8 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes: Claude primary, OpenAI/Google as fallbacks
+    # Task routes: primaries come from settings (see config.py); fallbacks
+    # are cross-provider so one provider outage never takes down a task.
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,

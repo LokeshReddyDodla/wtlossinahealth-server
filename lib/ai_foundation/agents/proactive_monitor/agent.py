@@ -196,7 +196,7 @@ class ProactiveMonitorAgent(BaseAgent):
         point_id = hashlib.md5(entity_id.encode()).hexdigest()
 
         try:
-            store = QdrantStore()
+            store = QdrantStore()  # process-wide singleton — cheap to "construct"
             async with store.get_client() as client:
                 points = await client.retrieve(
                     collection_name=QDRANT_COLLECTION,
@@ -328,7 +328,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 trace_id=trace_id,
                 name="proactive_monitor_event" if is_event else "proactive_monitor",
                 input_text=(data_text[:500] if data_text
-                            else trigger_record.get("text_repr", "(trigger record only)")[:500] if trigger_record
+                            else (trigger_record.get("text_repr") or "(trigger record only)")[:500] if trigger_record
                             else "(no data)"),
                 metadata={
                     "agent": self.agent_id,
@@ -627,7 +627,9 @@ class ProactiveMonitorAgent(BaseAgent):
                 lines = [f"- {f.key}: {f.value}" for f in other]
                 parts.append("Patient facts:\n" + "\n".join(lines))
             return "\n\n".join(parts)
-        except Exception:
+        except Exception as exc:
+            # Degrades to a scan without facts — must be visible, not silent.
+            logger.warning("Failed to load facts for %s: %s", patient_id, exc)
             return ""
 
     async def _load_medications(self, patient_id: str) -> str:
@@ -635,6 +637,7 @@ class ProactiveMonitorAgent(BaseAgent):
         try:
             results = await self._qdrant.retrieve_filtered(
                 RetrievalRequest(
+                    query="",  # required field — omitting it made this a silent no-op
                     patient_ids=[patient_id],
                     data_types=[HealthDataType.MEDICATION.value],
                     limit=5,
@@ -646,8 +649,9 @@ class ProactiveMonitorAgent(BaseAgent):
                     text = r.payload.get("text_repr", "")
                     if text:
                         return text
-        except Exception:
-            pass
+        except Exception as exc:
+            # Degrades to a scan without meds context — must be visible, not silent.
+            logger.warning("Failed to load medications for %s: %s", patient_id, exc)
         return ""
 
     async def _load_metabolic_profile(self, patient_id: str) -> str:

@@ -72,7 +72,7 @@ _EXTRACTION_PROMPT = (
     '- "I\'m [DIET_PREF]" → key: dietary_preference, value: [DIET_PREF]\n'
     '- "My goal is to lose [N] kg" → key: weight_goal, value: lose [N] kg\n'
     '- "I\'m allergic to [FOOD]" → key: food_allergy, value: [FOOD]\n'
-    '- "I have [CONDITION]" → key: diabetes_type OR medical_condition, value: [CONDITION]\n'
+    '- "I have [CONDITION]" → key: medical_condition (or diabetes_type ONLY for explicit diabetes mentions), value: [CONDITION]\n'
     '- "I [ACTIVITY] every [TIME]" → key: activity_preference, value: [ACTIVITY]\n'
     '- "Show me my meals" → no memories (this is a data query)\n\n'
     "Set has_facts=true if ANY memories are found. "

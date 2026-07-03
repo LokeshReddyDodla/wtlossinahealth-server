@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -25,17 +26,9 @@ from .lenses import apply_lenses
 from .nudge import build_nudges
 from .outcome import OutcomeRepository, advice_event_from_contract
 from .render import build_prompt
+from .util import meal_slot as _meal_slot
 
 logger = logging.getLogger(__name__)
-
-_SLOT_MAP = {0: "breakfast", 1: "lunch", 2: "dinner", 3: "snack"}
-
-
-def _meal_slot(hour: float | None) -> str:
-    if hour is None:
-        return "lunch"
-    h = int(hour)
-    return "breakfast" if 5 <= h < 11 else "lunch" if 11 <= h < 16 else "dinner" if 16 <= h < 22 else "snack"
 
 
 class MetabolicService:
@@ -235,7 +228,8 @@ class MetabolicService:
                 before_minutes=15,
                 after_minutes=120,
             )
-            results = self._clickhouse.client.execute(query)
+            # clickhouse-driver is sync — run off the event loop
+            results = await asyncio.to_thread(self._clickhouse.client.execute, query)
             if not results:
                 return
 

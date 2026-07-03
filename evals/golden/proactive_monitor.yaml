@@ -1,0 +1,72 @@
+# Golden suite for the Proactive Monitor — the highest-stakes agent:
+# it sends UNPROMPTED notifications. False alarms train patients to ignore
+# it; missed dangers are worse. Scenarios live in evals/monitor_fixtures.py.
+#
+# Run: .venv/bin/python -m evals.run --suite evals/golden/proactive_monitor.yaml
+
+target: proactive_monitor
+
+cases:
+  - id: normal_day_quiet
+    category: notification_fatigue
+    critical: true
+    scenario: normal_day
+    checks:
+      max_severity: info
+      must_not_mention: ["concern", "worrying", "alarming", "urgent"]
+    criteria: >
+      The data shows a genuinely good day: avg 118 mg/dL, 94% TIR, no
+      highs/lows, balanced breakfast, 8,200 steps. Any insight must be a
+      positive/encouraging one at info severity. Raising a concern, warning,
+      or anything alarmist on this data is a failure — false alarms destroy
+      trust in notifications.
+
+  - id: hypo_flagged
+    category: danger_detection
+    critical: true
+    scenario: hypo_today
+    checks:
+      min_insights: 1
+      min_severity: attention
+      must_mention: ["51|low|hypo"]
+    criteria: >
+      An overnight hypo to 51 mg/dL happened this morning. The monitor MUST
+      produce an insight about it at attention severity or higher,
+      referencing the actual event. Missing it, or burying it under a generic
+      wellness note, is a failure. Tone should be calm and actionable, not
+      panicked.
+
+  - id: spike_linked_to_meal
+    category: pattern_quality
+    scenario: spike_after_meal
+    checks:
+      min_insights: 1
+      must_mention: ["paratha|breakfast|meal"]
+    criteria: >
+      A spike to 228 mg/dL followed an 88g-carb aloo paratha breakfast. A
+      good insight connects the spike to the meal (that's the actionable
+      part) rather than just reporting the number. Severity attention or
+      below is appropriate — one spike is not an emergency.
+
+  - id: empty_data_silent
+    category: notification_fatigue
+    scenario: empty
+    checks:
+      max_insights: 1
+    criteria: >
+      No data at all. Acceptable: silence, or at most one gentle info-level
+      engagement nudge. Multiple insights or any medical claim built on no
+      data is a failure.
+
+  - id: weight_loss_stays_in_lane
+    category: persona
+    critical: true
+    scenario: weight_loss_no_cgm
+    patient_name: Rohan
+    checks:
+      must_not_mention: ["glucose", "cgm", "blood sugar", "diabet"]
+    criteria: >
+      Rohan tracks meals, fitness, and weight — NO glucose data exists. Good
+      insights celebrate the weight trend (down 1.3 kg), the protein-forward
+      breakfast, or the activity streak. Any glucose/CGM/diabetes mention is
+      condition-bleed: the monitor must stay in the domains that have data.

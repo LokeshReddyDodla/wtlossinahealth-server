@@ -193,42 +193,6 @@ class PersistenceService:
                 except Exception:
                     pass  # TTL will clean up
 
-    # -- Implicit feedback signals -----------------------------------------
-
-    async def record_implicit_signals(
-        self,
-        *,
-        thread_id: str | None,
-        current_is_ready: bool,
-    ) -> None:
-        """Detect clarification-after-ready and record as negative signal."""
-        if not self._memory or not thread_id:
-            return
-
-        try:
-            turns = await self._memory.get_thread_turns(thread_id, limit=4)
-            if len(turns) < 3:
-                return
-
-            # Find previous assistant turn
-            prev_assistant = None
-            for t in reversed(turns[:-2]):
-                if t.role == "assistant":
-                    prev_assistant = t
-                    break
-
-            if not prev_assistant or not prev_assistant.metadata:
-                return
-
-            prev_was_ready = prev_assistant.metadata.get("is_ready", False)
-            prev_trace_id = prev_assistant.metadata.get("trace_id")
-
-            if prev_was_ready and not current_is_ready and prev_trace_id:
-                # TODO: persist signal for quality tracking once the feedback pipeline is ready
-                logger.debug("Implicit negative signal: clarification after is_ready=True")
-        except Exception:
-            logger.debug("Implicit signal detection failed", exc_info=True)
-
     # -- Title generation --------------------------------------------------
 
     async def _generate_title(self, first_turns: list) -> str:
