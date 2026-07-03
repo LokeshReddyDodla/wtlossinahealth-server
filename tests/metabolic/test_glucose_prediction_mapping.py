@@ -74,6 +74,16 @@ class TestRiseTier:
         assert raw["range_mg_dl_low"] == 0
         assert raw["range_mg_dl_high"] == 15
 
+    def test_range_mirrors_rise_when_basis_is_rise(self):
+        """APP CONTRACT GUARANTEE: when basis == "rise", range_mg_dl_* is
+        byte-identical to rise_mg_dl_* — the app may parse range_* alone
+        and prefix "+". Locked here because the Flutter side relies on it."""
+        for rise, conf in [(3.0, "moderate"), (30.0, "high"), (55.0, "cold-start")]:
+            raw = _service().to_glucose_prediction(_contract(rise=rise, confidence=conf))
+            assert raw["basis"] == "rise"
+            assert raw["range_mg_dl_low"] == raw["rise_mg_dl_low"]
+            assert raw["range_mg_dl_high"] == raw["rise_mg_dl_high"]
+
     def test_no_fabricated_anchor(self):
         """Without a measured reading there is no absolute claim at all."""
         raw = _service().to_glucose_prediction(_contract(rise=40.0))
