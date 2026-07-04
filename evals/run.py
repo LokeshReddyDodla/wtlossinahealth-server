@@ -53,7 +53,10 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
     from .judge import judge_case_voted
 
     fixture = case.get("fixture", "default")
-    if fixture == "weight_loss":
+    if fixture == "attribution_traps":
+        from .fixtures import attribution_trap_records
+        records, facts, name = attribution_trap_records(), default_facts(), None
+    elif fixture == "weight_loss":
         records, facts, name = weight_loss_records(), weight_loss_facts(), "Rohan"
     elif fixture == "default":
         records, facts, name = default_records(), default_facts(), None

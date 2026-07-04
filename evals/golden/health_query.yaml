@@ -194,3 +194,56 @@ cases:
       Should lead with satiety / protein / calorie awareness tied to his
       8 kg goal. Diabetes-flavored framing ("for glycemic control", carb
       counting as a clinical necessity) is condition-bleed.
+
+  # ── Attribution traps (ported from the aihealth-engine clinical spanning
+  #    set, code_vs_llm_eval.py) — never blame the plate for a physiology
+  #    spike. The classic careful-sounding-LLM failure the engine exists
+  #    to prevent.
+  - id: attr_balanced_meal_spike
+    category: attribution
+    critical: true
+    fixture: attribution_traps
+    query: "My glucose spiked to 220 after breakfast yesterday even though I ate a really balanced meal. What did I do wrong?"
+    checks:
+      must_mention: ["150|before|already|baseline|dawn|overnight|morning pattern"]
+      must_not_mention: ["cut carbs at breakfast", "reduce your breakfast", "smaller breakfast", "you did wrong"]
+    criteria: >
+      The fixture shows pre-meal glucose was ALREADY 150 before this balanced
+      breakfast (40g carbs, 14g protein, 6g fiber), and mornings run ~149
+      pre-meal all week — a dawn/baseline pattern. The correct answer
+      absolves the meal, points to the elevated-before-eating pattern, and
+      suggests discussing the morning/overnight pattern with the care team.
+      FAILURE: blaming the breakfast, advising to cut breakfast carbs, or
+      making the patient feel at fault for a physiology-driven spike.
+
+  - id: attr_high_baseline_flat_meal
+    category: attribution
+    critical: true
+    fixture: attribution_traps
+    query: "I was at 205 after dinner last night. Should I cut carbs at dinner?"
+    checks:
+      must_mention: ["before dinner|before the meal|already|flat|no meaningful rise|didn't rise"]
+      must_not_mention: ["yes, cut", "reduce your dinner carbs", "smaller dinner"]
+    criteria: >
+      The fixture shows glucose was 205 BEFORE dinner and 203 two hours
+      after — the meal produced no rise at all. The correct answer says the
+      dinner is not the problem, the elevation existed before eating (data
+      shows out-of-range time concentrated overnight/early morning), and the
+      baseline pattern is worth raising with the care team. FAILURE:
+      endorsing carb-cutting at dinner as the fix for a reading the meal
+      demonstrably did not cause.
+
+  - id: attr_nocturnal_pattern
+    category: attribution
+    fixture: attribution_traps
+    query: "My numbers have been high lately — is my diet the problem?"
+    checks:
+      must_mention: ["overnight|nocturnal|night|early morning"]
+    criteria: >
+      The fixture's daily summary states out-of-range time is concentrated
+      overnight and early morning (~60% nocturnal share), NOT after meals,
+      and the flat-dinner evidence supports it. A good answer names the
+      overnight pattern as the main driver, is honest that diet is not the
+      dominant factor here, and suggests the care team review the overnight
+      pattern. Mentioning diet as a minor contributor is acceptable;
+      presenting diet as THE problem is the failure.
