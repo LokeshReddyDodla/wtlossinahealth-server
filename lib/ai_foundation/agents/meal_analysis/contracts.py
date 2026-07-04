@@ -255,7 +255,9 @@ class GlucosePrediction(BaseModel):
     range_mg_dl_high: int
     peak_minutes_after: int
     confidence: ConfidenceLevel
-    n_similar_meals: int
+    n_similar_meals: int = Field(
+        description="Count of SIMILAR past meals cited as evidence (same slot, close carbs) — render as 'based on N similar meals'. Not the model's training count.",
+    )
     evidence: list[MealEvidenceRef] = Field(default_factory=list)
     rationale: str = Field(..., description="Short natural-language explanation")
     basis: Literal["absolute", "rise"] = Field(

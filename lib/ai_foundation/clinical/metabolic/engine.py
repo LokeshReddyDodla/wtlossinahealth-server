@@ -194,10 +194,10 @@ class MetabolicEngine:
             drv = ("mostly carbs" if carb_comp >= max(circ, pre_term) and carb_comp > 1 else
                    "morning circadian" if circ >= pre_term and circ > 0 else
                    "baseline glucose" if pre_term > 0 else "a small expected rise")
-            return "%dg carb, pre %s. Predicted peak about +%d mg/dL (driver: %s). Predicted, not yet observed." % (
+            return "%dg carb, pre %s. Predicted rise of about +%d mg/dL (driver: %s). Predicted, not yet observed." % (
                 carb, prestr, round(max(0.0, rise)), drv)
         if rise < 15:
-            f = "%dg carb, pre %s — no meaningful rise (observed peak %+d). This meal sat flat." % (carb, prestr, round(rise))
+            f = "%dg carb, pre %s — no meaningful rise (observed %+d). This meal sat flat." % (carb, prestr, round(rise))
             if pre is not None and pre >= 180:
                 f += " Pre-meal %d is high on its own — a baseline issue, not this plate." % pre
             return f
@@ -205,7 +205,7 @@ class MetabolicEngine:
         z = max(0.0, min(circ, rise - c))
         b = max(0.0, min(pre_term, rise - c - z))
         rem = max(0.0, rise - c - z - b)
-        base = "%dg carb, pre %s, observed peak +%d. Carbs explain about +%d" % (carb, prestr, round(rise), round(c))
+        base = "%dg carb, pre %s, observed rise +%d. Carbs explain about +%d" % (carb, prestr, round(rise), round(c))
         if z > 0: base += ", breakfast timing +%d" % round(z)
         if b > 0: base += ", baseline +%d" % round(b)
         base += "; the remaining +%d is other physiology." % round(rem)

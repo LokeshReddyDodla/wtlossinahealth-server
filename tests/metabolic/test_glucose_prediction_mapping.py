@@ -74,6 +74,16 @@ class TestRiseTier:
         assert raw["range_mg_dl_low"] == 0
         assert raw["range_mg_dl_high"] == 15
 
+    def test_range_mirrors_rise_when_basis_is_rise(self):
+        """APP CONTRACT GUARANTEE: when basis == "rise", range_mg_dl_* is
+        byte-identical to rise_mg_dl_* — the app may parse range_* alone
+        and prefix "+". Locked here because the Flutter side relies on it."""
+        for rise, conf in [(3.0, "moderate"), (30.0, "high"), (55.0, "cold-start")]:
+            raw = _service().to_glucose_prediction(_contract(rise=rise, confidence=conf))
+            assert raw["basis"] == "rise"
+            assert raw["range_mg_dl_low"] == raw["rise_mg_dl_low"]
+            assert raw["range_mg_dl_high"] == raw["rise_mg_dl_high"]
+
     def test_no_fabricated_anchor(self):
         """Without a measured reading there is no absolute claim at all."""
         raw = _service().to_glucose_prediction(_contract(rise=40.0))
@@ -91,6 +101,27 @@ class TestRiseTier:
         assert raw["pre_meal_estimate_mg_dl"] == 105       # labeled context
         assert raw["pre_meal_estimate_source"] == "90d_prior"
         assert raw["range_mg_dl_high"] == 22               # 10+12, NOT 105-based
+
+    def test_mean_prior_never_surfaces_as_time_estimate(self):
+        """The flat 90-day mean is NOT time-of-day specific — surfacing it
+        under 'usually around ~N at this time' copy would mislabel it."""
+        c = _contract(rise=10.0)
+        c["v31"]["pre_prior"] = {"value": 112.0, "provenance": "90d_mean"}
+        raw = _service().to_glucose_prediction(c)
+        assert raw["pre_meal_estimate_mg_dl"] is None
+        assert raw["pre_meal_estimate_source"] is None
+
+    def test_n_similar_meals_counts_evidence_not_training(self):
+        """'Based on N similar meals' must count SIMILAR meals (evidence),
+        not the model's total training count (n_meals_learned=7 here)."""
+        c = _contract(rise=10.0)
+        c["v31"]["evidence_meals"] = [
+            {"date": "2026-06-01", "observed_peak": 150, "carbs": 60},
+            {"date": "2026-06-10", "observed_peak": 145, "carbs": 55},
+        ]
+        raw = _service().to_glucose_prediction(c)
+        assert raw["n_similar_meals"] == 2       # the similar ones
+        assert raw["n_meals_learned"] == 7       # training count, separate field
 
     def test_measured_anchor_suppresses_estimate(self):
         """When a real reading exists, the estimate is redundant — omit it."""
