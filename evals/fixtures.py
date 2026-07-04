@@ -203,6 +203,94 @@ def weight_loss_records() -> list[dict[str, Any]]:
     return records
 
 
+def attribution_trap_records() -> list[dict[str, Any]]:
+    """Third persona-scenario: Asha with data engineered to punish meal-blaming.
+
+    Ported from the aihealth-engine spanning case set (code_vs_llm_eval.py /
+    gen_signoff_cases.py) — the traps a careful-sounding LLM falls into:
+    - Balanced breakfast (40g carb, 14g protein, 6g fiber) but pre-meal
+      glucose was ALREADY 150 (morning/dawn pattern) → spike to 220 is
+      physiology-driven; blaming the breakfast is the failure
+    - Evening: glucose standing at 205 BEFORE dinner, meal adds nothing
+      (flat) → "cut dinner carbs" is the failure; baseline is the issue
+    - Nocturnal pattern data present (overnight mean 168)
+    """
+    records: list[dict[str, Any]] = []
+
+    records.append({
+        "data_type": "profile",
+        "start_time": _epoch_ms(_day(365)),
+        "end_time": _epoch_ms(_day(0)),
+        "text_repr": (
+            f"Patient profile: {EVAL_PATIENT_NAME}, 42-year-old female, "
+            f"type 2 diabetes diagnosed 2022, on Metformin 500mg twice daily."
+        ),
+    })
+
+    d = _day(1)
+    records.append({
+        "data_type": "meal",
+        "start_time": _epoch_ms(_day(1, hour=8)),
+        "end_time": _epoch_ms(_day(1, hour=8)),
+        "text_repr": (
+            f"Meal on {d.date().isoformat()} 8:30 AM (breakfast): vegetable poha "
+            f"with sprouts and peanuts — approx 380 kcal, 40g carbs, 14g protein, "
+            f"6g fiber. Balanced composition."
+        ),
+    })
+    records.append({
+        "data_type": "rapid_spike_event",
+        "start_time": _epoch_ms(_day(1, hour=9)),
+        "end_time": _epoch_ms(_day(1, hour=9)),
+        "text_repr": (
+            f"Rapid glucose spike on {d.date().isoformat()} at 9:15 AM: rose from "
+            f"150 to 220 mg/dL after breakfast. NOTE: pre-meal glucose was already "
+            f"150 mg/dL before eating — elevated baseline."
+        ),
+    })
+    records.append({
+        "data_type": "time_period_stats",
+        "start_time": _epoch_ms(_day(7)),
+        "end_time": _epoch_ms(_day(1)),
+        "text_repr": (
+            "Morning period stats (6-10 AM, past 7 days): average pre-breakfast "
+            "glucose 149 mg/dL — consistently elevated BEFORE eating, consistent "
+            "with a dawn-effect pattern. Overnight (12-6 AM) mean 168 mg/dL."
+        ),
+    })
+    records.append({
+        "data_type": "meal",
+        "start_time": _epoch_ms(_day(1, hour=20)),
+        "end_time": _epoch_ms(_day(1, hour=20)),
+        "text_repr": (
+            f"Meal on {d.date().isoformat()} 8:00 PM (dinner): dal with one roti "
+            f"and vegetables — approx 480 kcal, 55g carbs, 15g protein."
+        ),
+    })
+    records.append({
+        "data_type": "cgm_semantic_window",
+        "start_time": _epoch_ms(_day(1, hour=20)),
+        "end_time": _epoch_ms(_day(1, hour=22)),
+        "text_repr": (
+            f"CGM window {d.date().isoformat()} 8:00-10:00 PM: glucose was 205 "
+            f"mg/dL BEFORE dinner and 203 mg/dL two hours after — the meal "
+            f"produced no meaningful rise (flat response). The elevation existed "
+            f"before eating."
+        ),
+    })
+    records.append({
+        "data_type": "cgm_summary_stats",
+        "start_time": _epoch_ms(d.replace(hour=0)),
+        "end_time": _epoch_ms(d.replace(hour=23)),
+        "text_repr": (
+            f"CGM daily summary for {d.date().isoformat()}: average glucose 158 "
+            f"mg/dL, TIR 61%. Out-of-range time is concentrated overnight and "
+            f"early morning (nocturnal share ~60%), not after meals."
+        ),
+    })
+    return records
+
+
 def weight_loss_facts() -> list[MemoryFact]:
     return [
         MemoryFact(key="health_goal", value="lose 8 kg by December", category="goal"),
