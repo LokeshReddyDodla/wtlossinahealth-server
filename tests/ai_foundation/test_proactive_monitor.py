@@ -637,3 +637,69 @@ class TestTimezoneScheduling:
         from lib.ai_foundation.agents.proactive_monitor.scheduling import is_within_scan_window
         result = is_within_scan_window(None)
         assert isinstance(result, bool)
+
+
+class TestPromptCacheStability:
+    """CACHE INVARIANT: scan system prompts must be byte-identical across
+    patients in a batch — per-patient values (name, greeting) ride in the
+    USER message. Provider prompt caching is prefix-based; one stable system
+    prompt per batch means patient 2..N read it from cache."""
+
+    _PLACEHOLDER = __import__("re").compile(r"\$\{?[a-z_]+\}?")
+
+    async def _capture(self, agent, method, **kwargs):
+        await method(**kwargs)
+        call = agent.gateway.extract.call_args
+        messages = call.kwargs["messages"]
+        system = [m["content"] for m in messages if m["role"] == "system"]
+        user = [m["content"] for m in messages if m["role"] == "user"]
+        return "\n".join(system), "\n".join(user)
+
+    def _scan_kwargs(self, name, pid, trigger=None):
+        return dict(
+            context_parts=["MEALS:\n- Lunch 80g carbs"],
+            greeting="Good morning",
+            scan_label="today so far",
+            scan_period="morning",
+            patient_id=pid,
+            patient_name=name,
+            domain_counts={"meal": 1},
+            trigger=trigger,
+        )
+
+    @pytest.mark.asyncio
+    async def test_cron_scan_system_prompt_stable_across_patients(self):
+        agent = _make_agent()
+        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1"))
+        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2"))
+
+        assert sys_a == sys_b, "cron scan system prompt varies per patient — breaks batch caching"
+        assert "PATIENT: Asha" in user_a and "Good morning" in user_a
+        assert "PATIENT: Rohan" in user_b
+        assert "Asha" not in sys_a and "Rohan" not in sys_b
+        assert not self._PLACEHOLDER.search(sys_a), f"unsubstituted placeholder in: {self._PLACEHOLDER.search(sys_a)}"
+
+    @pytest.mark.asyncio
+    async def test_event_scan_system_prompt_stable_across_patients(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        trig = EventTrigger.MEAL_LOGGED
+        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1", trigger=trig))
+        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2", trigger=trig))
+
+        assert sys_a == sys_b
+        assert "PATIENT: Asha" in user_a and "PATIENT: Rohan" in user_b
+        assert not self._PLACEHOLDER.search(sys_a)
+
+    @pytest.mark.asyncio
+    async def test_daily_brief_system_prompt_stable_across_patients(self):
+        agent = _make_agent()
+        kw_a = self._scan_kwargs("Asha", "p1"); kw_a.pop("trigger")
+        kw_b = self._scan_kwargs("Rohan", "p2"); kw_b.pop("trigger")
+        sys_a, user_a = await self._capture(agent, agent._llm_daily_brief, **kw_a)
+        sys_b, user_b = await self._capture(agent, agent._llm_daily_brief, **kw_b)
+
+        assert sys_a == sys_b
+        assert "PATIENT: Asha" in user_a and "GREETING: 'Good morning'" in user_a
+        assert "PATIENT: Rohan" in user_b
+        assert not self._PLACEHOLDER.search(sys_a)

@@ -489,12 +489,18 @@ class TestPromptLoading:
         assert "hq_planning" in registry
         assert "hq_reflection" in registry
 
-    def test_system_prompt_renders(self):
+    def test_system_prompt_renders_time_free(self):
+        """CACHE INVARIANT: system prompts must be byte-stable across requests —
+        no timestamps or other per-request values. Time rides in the per-turn
+        local-time context line instead (provider prompt caching is prefix-based)."""
         registry = PromptRegistry()
         registry.register_directory(Path("lib/ai_foundation/agents/health_query/prompts"), namespace="hq")
-        template = registry.get("hq_system_patient")
-        rendered = template.render(current_time="2026-03-24 10:00 UTC")
-        assert "2026-03-24" in rendered
+        for name in ("hq_system_patient", "hq_system_admin", "hq_system_care_provider", "hq_system_research"):
+            template = registry.get(name)
+            a = template.render(current_time="2026-03-24 10:00 UTC")
+            b = template.render(current_time="2027-01-01 23:59 UTC")
+            assert a == b, f"{name} is not byte-stable across renders"
+            assert "2026-03-24" not in a, f"{name} embeds the timestamp"
 
 
 class TestSSEEvents:
@@ -536,3 +542,51 @@ class TestSSEEvents:
         done = sse_specialist_done("glucose", "Found 3 spike patterns")
         assert "event: specialist_done" in done
         assert "spike" in done
+
+
+class TestLocalTimeFallback:
+    """Device local_time wins; server-computed value (from the patient's
+    stored timezone) is the fallback — the agent must never be time-blind."""
+
+    _SERVER_TIME = "2026-04-03 09:15 (Friday) IST"
+
+    def _loader_with_server_time(self):
+        loader = AsyncMock(spec=ContextLoader)
+        loader.load = AsyncMock(return_value=AgentContext(
+            facts=[], history=[], thread_summary=None,
+            patient_names={"p123": "Ahmed Khan"},
+            local_time=self._SERVER_TIME,
+        ))
+        return loader
+
+    @staticmethod
+    def _injected_time_lines(gateway):
+        lines = []
+        for call in gateway.extract.call_args_list:
+            for msg in call.kwargs.get("messages", []):
+                if "User's local time:" in msg.get("content", ""):
+                    lines.append(msg["content"])
+        return lines
+
+    @pytest.mark.asyncio
+    async def test_server_time_used_when_app_omits_local_time(self):
+        gateway = _mock_gateway()
+        agent = _make_agent(gateway=gateway, context_loader=self._loader_with_server_time())
+        await agent.run(_make_input())  # no metadata.local_time from the app
+
+        lines = self._injected_time_lines(gateway)
+        assert lines, "no local-time line injected into intent extraction"
+        assert all(self._SERVER_TIME in line for line in lines)
+
+    @pytest.mark.asyncio
+    async def test_device_time_wins_over_server_time(self):
+        gateway = _mock_gateway()
+        agent = _make_agent(gateway=gateway, context_loader=self._loader_with_server_time())
+        inp = _make_input()
+        inp.context.metadata = {"local_time": "2026-04-03 08:58 (Friday) IST"}
+        await agent.run(inp)
+
+        lines = self._injected_time_lines(gateway)
+        assert lines
+        assert all("08:58" in line for line in lines)
+        assert not any("09:15" in line for line in lines)

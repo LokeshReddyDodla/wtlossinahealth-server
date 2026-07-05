@@ -128,7 +128,7 @@ Set `is_ready = false` when:
 - "last 7 days" / "past week" → today minus 7 days
 - "last 30 days" / "past month" → today minus 30 days
 - "recently" / "lately" → last 7 days
-- Relative dates resolved against Current Time from system prompt
+- Relative dates resolved against the "User's local time" line in context — the patient's local date, not UTC
 
 ## Follow-up Resolution
 

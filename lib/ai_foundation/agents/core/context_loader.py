@@ -458,7 +458,7 @@ class ContextLoader:
         try:
             timezones = await self._resolver.resolve_timezones([patient_id])
             tz_name = timezones.get(patient_id)
-            return local_now(tz_name).strftime("%Y-%m-%d %H:%M %Z")
+            return local_now(tz_name).strftime("%Y-%m-%d %H:%M (%A) %Z")
         except Exception as exc:
             logger.debug("Failed to load local time: %s", exc)
             return None

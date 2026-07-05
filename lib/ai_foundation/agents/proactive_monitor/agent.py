@@ -778,29 +778,30 @@ class ProactiveMonitorAgent(BaseAgent):
         Cron mode (trigger=None) → 1-3 insights via system_scan.md.
         Event mode (trigger set) → at most 1 insight via system_event_scan.md.
         """
+        # Per-patient values (name, greeting) ride in the USER message, not the
+        # system prompt — keeps the system prompt byte-identical across a whole
+        # scan batch so provider prompt caching can reuse it patient-to-patient.
         if trigger is not None:
             template_str = self._get_event_scan_prompt_template()
             system_prompt = Template(template_str).safe_substitute(
                 trigger_label=TRIGGER_LABELS[trigger],
-                greeting=greeting,
-                patient_name=patient_name,
                 categories=LLM_INSIGHT_CATEGORIES_PROMPT,
             )
+            patient_line = f"PATIENT: {patient_name}"
         else:
             template_str = self._get_scan_prompt_template()
             system_prompt = Template(template_str).safe_substitute(
-                greeting=greeting,
                 scan_label=scan_label,
                 scan_period=scan_period,
                 categories=LLM_INSIGHT_CATEGORIES_PROMPT,
-                patient_name=patient_name,
             )
+            patient_line = f"PATIENT: {patient_name}. GREETING: '{greeting}'"
 
         try:
             scan_insights, llm_meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "\n\n".join(context_parts)},
+                    {"role": "user", "content": "\n\n".join([patient_line, *context_parts])},
                 ],
                 response_model=ScanInsights,
                 task=ModelTask.CLASSIFICATION,
@@ -840,19 +841,20 @@ class ProactiveMonitorAgent(BaseAgent):
         domain_counts: dict[str, int] | None,
     ) -> tuple[list[HealthInsight], LLMResponse | None]:
         """Morning cron: produce a single DailyBrief via system_scan_brief.md."""
+        # Name/greeting in the USER message — system prompt stays byte-identical
+        # across the batch (see _llm_scan_insights).
         system_prompt = Template(self._get_brief_prompt_template()).safe_substitute(
-            greeting=greeting,
             scan_label=scan_label,
             scan_period=scan_period,
             categories=LLM_INSIGHT_CATEGORIES_PROMPT,
-            patient_name=patient_name,
         )
+        patient_line = f"PATIENT: {patient_name}. GREETING: '{greeting}'"
 
         try:
             brief, llm_meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "\n\n".join(context_parts)},
+                    {"role": "user", "content": "\n\n".join([patient_line, *context_parts])},
                 ],
                 response_model=DailyBrief,
                 task=ModelTask.CLASSIFICATION,
