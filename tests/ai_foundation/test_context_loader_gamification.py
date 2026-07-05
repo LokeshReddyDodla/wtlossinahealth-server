@@ -110,7 +110,7 @@ class TestContextLoaderGamification:
         )
 
         assert context.patient_names == {patient_id: "Asha"}
-        assert context.local_time == "2026-04-03 09:15 IST"
+        assert context.local_time == "2026-04-03 09:15 (Friday) IST"
         assert context.gamification is not None
         assert context.gamification["level"] == 12
         assert context.gamification["tasks_today"] == {"completed": 4, "total": 6}

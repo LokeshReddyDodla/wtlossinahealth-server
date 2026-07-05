@@ -375,7 +375,9 @@ class HealthQueryAgent(BaseAgent):
         ))
 
         ctx = await self._load_context(input)
-        ctx.local_time = (input.context.metadata or {}).get("local_time")
+        # Device local time wins; fall back to the server-computed value from
+        # the patient's stored timezone so the agent is never time-blind.
+        ctx.local_time = (input.context.metadata or {}).get("local_time") or ctx.local_time
         intent, meta = await self._extract_intent(input, ctx)
 
         return _PipelineContext(
@@ -408,8 +410,9 @@ class HealthQueryAgent(BaseAgent):
             {"role": "system", "content": intent_prompt},
         ]
 
-        # Inject device local time for accurate date resolution
-        local_time = (input.context.metadata or {}).get("local_time")
+        # Inject local time for accurate date resolution (device value, else
+        # server-computed from the patient's stored timezone)
+        local_time = (input.context.metadata or {}).get("local_time") or getattr(ctx, "local_time", None)
         if local_time:
             messages.append({"role": "system", "content": (
                 f"User's local time: {local_time}. "
@@ -610,12 +613,18 @@ class HealthQueryAgent(BaseAgent):
         template = self.prompts.get(template_name)
         return template.render(
             available_data_types=AVAILABLE_HEALTH_DOMAINS,
+            # current_time is no longer used by local prompts (it broke
+            # provider prompt caching — time now rides in the per-turn
+            # local-time context line). Kept so older Langfuse prompt
+            # versions still render until they are synced.
             current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             **extra_vars,
         )
 
     def _get_system_prompt(self, user_role: str) -> str:
-        """Get system prompt, cached per role per minute."""
+        """Get system prompt, cached per role. The per-minute cache key is a
+        refresh TTL (picks up Langfuse prompt edits); the rendered content
+        itself is time-free and byte-stable, so provider prefix caching works."""
         self._ensure_prompts()
         now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
         cache_key = f"{user_role}:{now_minute}"
