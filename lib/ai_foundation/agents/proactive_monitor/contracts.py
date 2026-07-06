@@ -44,6 +44,8 @@ class InsightCategory(str, Enum):
     MEAL_HIGH_CARB = "meal_high_carb"
     MEAL_HIGH_CALORIE = "meal_high_calorie"  # goal-agnostic complement to high_carb
     MEAL_LOW_PROTEIN = "meal_low_protein"
+    MEAL_LOW_FIBER = "meal_low_fiber"  # dietitian review 30/06: fiber gaps were invisible
+    INTAKE_LOW = "intake_low"  # day's overall intake clearly too low (calories/protein)
     FITNESS_INACTIVE = "fitness_inactive"
     WEIGHT_TREND_CONCERN = "weight_trend_concern"  # weight moving against the goal
     SLEEP_POOR = "sleep_poor"
@@ -93,6 +95,7 @@ _CONCERN_CATEGORIES = [
     InsightCategory.GLUCOSE_RAPID_SPIKE, InsightCategory.GLUCOSE_RAPID_DROP,
     InsightCategory.GLUCOSE_WORSENING, InsightCategory.MEAL_HIGH_CARB,
     InsightCategory.MEAL_HIGH_CALORIE, InsightCategory.MEAL_LOW_PROTEIN,
+    InsightCategory.MEAL_LOW_FIBER, InsightCategory.INTAKE_LOW,
     InsightCategory.FITNESS_INACTIVE, InsightCategory.WEIGHT_TREND_CONCERN,
     InsightCategory.SLEEP_POOR, InsightCategory.MOOD_LOW,
 ]

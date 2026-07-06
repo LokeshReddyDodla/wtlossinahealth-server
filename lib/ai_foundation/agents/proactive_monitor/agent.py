@@ -596,11 +596,114 @@ class ProactiveMonitorAgent(BaseAgent):
 
             sections.append("\n".join(lines))
 
+        # Meal totals are computed in CODE, never by the LLM — small models
+        # mis-add lists of numbers, and a wrong total in a notification is a
+        # clinical-credibility bug (dietitian review 30/06).
+        totals = self._meal_totals_section(
+            by_type.get(HealthDataType.MEAL.value, []),
+            trigger=trigger,
+            trigger_record=exclude_record,
+        )
+        if totals:
+            # First section, right under the trigger block — sitting totals are
+            # the frame everything else must be read in.
+            sections.insert(0, totals)
+
         if trigger is not None:
             header = f"# Supporting Context\n"
         else:
             header = f"# Health Data for {patient_name} on {scan_date}\n"
         return header + "\n\n".join(sections), domain_counts
+
+    # Items logged within this window of the trigger meal are one sitting.
+    _SITTING_WINDOW_MS = 90 * 60 * 1000
+
+    @staticmethod
+    def _meal_macros(p: dict[str, Any]) -> tuple[float | None, ...]:
+        """(kcal, carbs, protein, fiber) from a meal payload — None when the
+        record carries no value for that macro. Missing is NOT zero: a record
+        without a fiber field says nothing about fiber, and rendering it as
+        0g makes the LLM claim a gap that may not exist.
+
+        Production payloads nest macros under ``nutrition`` (calories,
+        proteins, carbohydrates, fiber); some sources use flat keys.
+        """
+        n = p.get("nutrition") or {}
+
+        def pick(*candidates: tuple[dict, str]) -> float | None:
+            for src, key in candidates:
+                v = src.get(key)
+                if isinstance(v, (int, float)):
+                    return float(v)
+            return None
+
+        return (
+            pick((n, "calories"), (p, "calories")),
+            pick((n, "carbohydrates"), (p, "carbs_g")),
+            pick((n, "proteins"), (p, "protein_g")),
+            pick((n, "fiber"), (p, "fiber_g")),
+        )
+
+    def _meal_totals_section(
+        self,
+        meals: list[dict[str, Any]],
+        *,
+        trigger: EventTrigger | None,
+        trigger_record: dict[str, Any] | None,
+    ) -> str | None:
+        """Pre-computed meal totals the LLM can trust instead of adding
+        numbers itself.
+
+        * Cron sweep: totals across today's fetched meals.
+        * Meal event: totals for THIS SITTING — the trigger meal plus any
+          co-logged items within 90 minutes of it.
+        """
+        def fmt(label: str, items: list[dict[str, Any]]) -> str:
+            names = (" kcal", "g carbs", "g protein", "g fiber")
+            sums = [0.0] * 4
+            counts = [0] * 4
+            for m in items:
+                for i, v in enumerate(self._meal_macros(m)):
+                    if v is not None:
+                        sums[i] += v
+                        counts[i] += 1
+            parts: list[str] = []
+            partial = False
+            for i, unit in enumerate(names):
+                if counts[i] == 0:
+                    continue  # no record has this macro — unknown, not zero
+                prefix = "at least " if counts[i] < len(items) else ""
+                partial = partial or counts[i] < len(items)
+                parts.append(f"{prefix}{sums[i]:.0f}{unit}")
+            if not parts:
+                return f"{label}: {len(items)} items — no macro data recorded"
+            note = " (some items lack full macro data)" if partial else ""
+            return f"{label}: {len(items)} items — approx {', '.join(parts)}{note}"
+
+        if trigger == EventTrigger.MEAL_LOGGED and trigger_record is not None:
+            t0 = trigger_record.get("start_time")
+            if not isinstance(t0, (int, float)):
+                return None
+            sitting = [trigger_record] + [
+                m for m in meals
+                if isinstance(m.get("start_time"), (int, float))
+                and abs(m["start_time"] - t0) <= self._SITTING_WINDOW_MS
+            ]
+            if len(sitting) < 2:
+                return None  # single-item meal — the record speaks for itself
+            return (
+                "## THIS SITTING — trigger item + "
+                f"{len(sitting) - 1} co-logged item(s) within 90 min. COMPUTED "
+                "TOTALS, judge the meal by these (do not re-add numbers "
+                "yourself):\n- " + fmt("Combined sitting", sitting)
+            )
+
+        if trigger is None and meals:
+            return (
+                "## MEAL TOTALS TODAY — COMPUTED, trust these sums (do not "
+                "re-add numbers yourself):\n- " + fmt("Total so far", meals)
+            )
+        return None
 
     _GOAL_KEYS = frozenset({
         "health_goal", "weight_goal", "glucose_target_tir",
@@ -721,6 +824,17 @@ class ProactiveMonitorAgent(BaseAgent):
             # the anchor metadata is the event data itself.
             if trigger_record is not None:
                 event_text = trigger_record.get("text_repr") or self._format_record(trigger_record)
+                # Small models weight nearby instructions most: when the item is
+                # part of a multi-item sitting, say so INSIDE the trigger block,
+                # not only in the distant system prompt.
+                if data_text and "## THIS SITTING" in data_text:
+                    event_text += (
+                        "\n\nIMPORTANT: this item is one part of a multi-item sitting — "
+                        "see the computed THIS SITTING totals below. React to the WHOLE "
+                        "sitting by those totals: praise it if the combined meal is "
+                        "genuinely good, flag it if it is heavy — but never judge this "
+                        "item alone."
+                    )
                 context_parts.append(
                     f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n{event_text}"
                 )

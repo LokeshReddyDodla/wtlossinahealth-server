@@ -161,10 +161,45 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
         insight_tracker=None,  # no dedup — every scenario judged fresh
     )
 
+    # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
+    # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
+    # from the fixtures — the real fetch hits live Qdrant by point ID, which
+    # evals don't have. Anchor-only triggers (CGM crossing, missed dose) get
+    # dynamic time fields defaulted so cases don't hardcode dates.
+    scan_kwargs: dict[str, Any] = {}
+    if case.get("trigger"):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import (
+            EventTrigger, parse_anchor,
+        )
+        trig = EventTrigger(case["trigger"])
+        raw = dict(case.get("anchor") or {})
+        now_local = datetime.now(ZoneInfo(tz))
+        if trig is EventTrigger.CGM_THRESHOLD_CROSSED:
+            raw.setdefault("time", now_local.isoformat())
+        if trig is EventTrigger.MEDICATION_MISSED:
+            raw.setdefault("daily_task_id", "eval-task-1")
+            raw.setdefault("task_date", now_local.strftime("%Y-%m-%d"))
+        anchor = parse_anchor(trig, raw)
+
+        rec_field = {
+            EventTrigger.MEAL_LOGGED: "meal_id",
+            EventTrigger.SMBG_LOGGED: "reading_id",
+            EventTrigger.SYMPTOM_LOGGED: "symptom_entry_id",
+        }.get(trig)
+        if rec_field:
+            anchor_rec = dict(next(r for r in records if r.get(rec_field) == raw[rec_field]))
+            anchor_rec["patient_id"] = EVAL_PATIENT_ID
+
+            async def _fixture_trigger_record(pid, a, _rec=anchor_rec):
+                return _rec
+
+            agent._fetch_trigger_record = _fixture_trigger_record
+        scan_kwargs = {"trigger": trig, "anchor": anchor}
+
     patient_name = case.get("patient_name", EVAL_PATIENT_NAME)
     start = time.perf_counter()
     try:
-        result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz)
+        result = await agent.scan_patient(EVAL_PATIENT_ID, patient_name, tz, **scan_kwargs)
         insights = result.insights
         error = None
     except Exception as exc:
@@ -199,6 +234,17 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
 
     judgment = None
     if not no_judge and insights and not error:
+        # The judge's evidence must include the trigger anchor — for event
+        # scans the event itself (missed dose, CGM crossing value) is ground
+        # truth the agent reacts to, and it is NOT part of the records list.
+        judge_evidence = [r["text_repr"] for r in records]
+        if scan_kwargs:
+            trig = scan_kwargs["trigger"]
+            anchor_dump = scan_kwargs["anchor"].model_dump()
+            judge_evidence.append(
+                f"TRIGGER EVENT (ground truth — this event fired the scan): "
+                f"{trig.value} {anchor_dump}"
+            )
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),
@@ -207,7 +253,7 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
                     "insights, and are they grounded in the data?"
                 ),
                 response=combined,
-                fixture_texts=[r["text_repr"] for r in records],
+                fixture_texts=judge_evidence,
                 facts=[],
                 criteria=case.get("criteria", ""),
             )
