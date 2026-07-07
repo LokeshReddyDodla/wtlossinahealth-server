@@ -297,20 +297,23 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
             "calories": cal, "carbs_g": carb, "protein_g": prot, "fiber_g": fib,
         }
 
+    # The earlier lunch must stay OUTSIDE the 90-min sitting window no matter
+    # what wall-clock hour the eval runs at — CI runs at a different local
+    # time than dev machines, and absolute clamped hours can collapse onto
+    # the sitting. Anchor it RELATIVE to the sitting: 7 hours earlier.
+    rice_t = h - timedelta(hours=7)
     return _base_profile(tz_name) + [
-        # Earlier meal today — part of the "overall" picture
         {
             "data_type": "meal",
             "meal_id": "meal-rice-earlier",
-            "start_time": _ms(_today(tz_name, 13)),
-            "end_time": _ms(_today(tz_name, 13)),
+            "start_time": _ms(rice_t),
+            "end_time": _ms(rice_t),
             "text_repr": (
-                f"Meal on {d.date().isoformat()} 1:00 PM (lunch): rice with "
-                f"baingan bharta — approx 480 kcal, 74g carbs, 9g protein, 5g fiber."
+                "Meal (lunch, about 7 hours before the items below): rice with "
+                "baingan bharta — approx 480 kcal, 74g carbs, 9g protein, 5g fiber."
             ),
             "meal_type": "lunch", "description": "rice with baingan bharta",
             "calories": 480, "carbs_g": 74, "protein_g": 9, "fiber_g": 5,
-            "meal_time": "1:00 PM",
         },
         # The same-sitting items, logged minutes apart
         item(25, "meal-item-peanuts", "boiled peanuts (1 bowl)", 240, 14, 11, 5),
