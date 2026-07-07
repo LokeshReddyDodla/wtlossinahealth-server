@@ -30,6 +30,11 @@ jobs:
   evals:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write  # nightly failures file/dedupe an eval-failure issue
+
+
 
     env:
       # Real keys — the whole point is live model behavior

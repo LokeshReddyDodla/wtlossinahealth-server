@@ -29,6 +29,9 @@ cases:
       min_insights: 1
       min_severity: attention
       must_mention: ["51|low|hypo"]
+      # Asha is Metformin-only: ANY insulin mention is a fabricated medication
+      # (nightly 07/07 caught "adjust your overnight insulin")
+      must_not_mention: ["insulin"]
     criteria: >
       An overnight hypo to 51 mg/dL happened this morning. The monitor MUST
       produce an insight about it at attention severity or higher,
