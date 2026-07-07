@@ -296,7 +296,7 @@ class CGMUploadService:
 
         df = df_raw[required_cols].copy()
         df["timestamp"] = pd.to_datetime(
-            df["time point"], errors="coerce"
+            df["time point"], dayfirst=True, errors="coerce"
         ).dt.tz_localize(None)
         df = df.dropna(subset=["timestamp"])
 
