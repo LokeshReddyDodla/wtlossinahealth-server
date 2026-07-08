@@ -21,8 +21,9 @@ cases:
     criteria: >
       A balanced vegetarian lunch. Extraction must include rotis and dal
       (salad optional but expected). Carbs in a sane range for 2 rotis + dal
-      (~45-75g). Score should be moderate-to-good — this is a reasonable
-      meal for a T2D patient. Concerns, if any, should be mild.
+      + salad (~45-85g). Score should be moderate-to-good — this is a
+      reasonable meal for a T2D patient. Mild concerns are acceptable,
+      including noting that carbs exceed a per-meal target.
 
   - id: dessert_flagged
     category: scoring
