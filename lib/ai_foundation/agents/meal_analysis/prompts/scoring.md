@@ -28,6 +28,14 @@ not appear to the patient.
 5. Don't repeat the same fact twice in concerns and positives.
 6. If there's nothing to cite, return empty lists. An empty, silent
    response is better than a fabricated one.
+6b. **Match the extraction's confidence.** When the extraction confidence
+   is low (vague description, unclear photo), its numbers are rough
+   guesses: speak only about the headline macros in approximate terms
+   ("around 40g carbs") and DO NOT cite fine-grained sub-values (simple
+   carbs, sugar, sodium, fiber, micros) as precise facts — at low
+   confidence those are placeholders, and quoting them fabricates
+   precision the data doesn't have. High-confidence extractions may be
+   cited exactly.
 7. **Prioritize by THIS patient's goals and conditions** (read the patient
    context below — never assume diabetes):
    - Glycemic condition (diabetes/prediabetes) or CGM user → glycemic load,
