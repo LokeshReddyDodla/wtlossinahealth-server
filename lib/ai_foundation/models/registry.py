@@ -44,7 +44,8 @@ class ModelTask(str, Enum):
     INTENT_EXTRACTION = "intent_extraction"
     RESPONSE_GENERATION = "response_generation"
     STRUCTURED_ANALYSIS = "structured_analysis"
-    MEAL_ANALYSIS = "meal_analysis"
+    MEAL_ANALYSIS = "meal_analysis"  # vision: photo → items (extractor only)
+    MEAL_REASONING = "meal_reasoning"  # text-only: scoring, alternatives, glucose fallback
     CLASSIFICATION = "classification"
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
@@ -454,6 +455,13 @@ def build_default_registry(
         ModelTask.MEAL_ANALYSIS,
         primary="gpt-4o",
         fallbacks=["gpt-4.1-mini", "gemini-2.5-flash", thinker],
+    )
+    # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
+    # never the photo — vision pricing there was ~6x waste (efficiency audit).
+    registry.set_task_route(
+        ModelTask.MEAL_REASONING,
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", thinker],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,

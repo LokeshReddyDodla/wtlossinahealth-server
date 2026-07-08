@@ -14,6 +14,7 @@ from lib.ai_foundation.agents.meal_analysis.context_loader import MealAnalysisCo
 from lib.ai_foundation.agents.meal_analysis.extractor import MealExtractor
 from lib.ai_foundation.agents.meal_analysis.glucose_predictor import GlucosePredictor
 from lib.ai_foundation.agents.meal_analysis.scorer import MealScorer
+from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.prompts.registry import PromptRegistry
 
 from .agent_factory import shared_gateway
@@ -81,9 +82,14 @@ def build_meal_agent(persona: str = "t2d") -> MealAnalysisAgent:
         gateway=gateway,
         qdrant_retriever=FixtureRetriever([]),  # no similar-meal history
         context_loader=FakeMealContextLoader(persona),
+        # Mirror production wiring (lib/core/container.py): extractor on the
+        # vision route, text-only engines on MEAL_REASONING.
         extractor=MealExtractor(gateway=gateway, prompt_registry=prompts),
-        scorer=MealScorer(gateway=gateway, prompt_registry=prompts),
-        alternatives=AlternativesEngine(gateway=gateway, prompt_registry=prompts),
-        glucose_predictor=GlucosePredictor(gateway=gateway, prompt_registry=prompts),
+        scorer=MealScorer(gateway=gateway, prompt_registry=prompts,
+                          model_task=ModelTask.MEAL_REASONING),
+        alternatives=AlternativesEngine(gateway=gateway, prompt_registry=prompts,
+                                        model_task=ModelTask.MEAL_REASONING),
+        glucose_predictor=GlucosePredictor(gateway=gateway, prompt_registry=prompts,
+                                           model_task=ModelTask.MEAL_REASONING),
         metabolic_service=None,
     )

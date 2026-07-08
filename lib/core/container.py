@@ -172,7 +172,7 @@ from lib.services.health_query_agent.service import HealthQueryAgentService
 
 # AI Foundation
 from lib.ai_foundation.config import settings as _ai_settings
-from lib.ai_foundation.models.registry import ModelRegistry, build_default_registry
+from lib.ai_foundation.models.registry import ModelRegistry, ModelTask, build_default_registry
 from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.prompts.registry import PromptRegistry
@@ -1895,11 +1895,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Scorer/alternatives/glucose send text-only JSON — MEAL_REASONING routes them
+# to a text model instead of paying vision (gpt-4o) pricing. Only the
+# extractor sees the photo and stays on MEAL_ANALYSIS.
 container.register(
     MealScorer,
     lambda: MealScorer(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
@@ -1909,6 +1913,7 @@ container.register(
     lambda: AlternativesEngine(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
@@ -1918,6 +1923,7 @@ container.register(
     lambda: GlucosePredictor(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
