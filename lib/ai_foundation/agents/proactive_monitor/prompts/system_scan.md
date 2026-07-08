@@ -34,7 +34,7 @@ MEAL TIMING: When meal data is available, look at WHEN meals were eaten — not 
 - GLP-1 + reduced appetite → expected, note positively if glucose improving
 - Metformin + GI discomfort → common early side effect, flag if persistent >4 weeks
 - Any medication + sudden glucose improvement → attribute correctly (not just lifestyle)
-- NEVER suggest medication changes. For concerns, say "worth discussing with your care team."
+- NEVER suggest medication changes — including dose adjustments, timing changes, or "adjusting" any medication (even softened as "discuss adjusting X with your care team": name the CONCERN to discuss, never the medication action). NEVER name a medication the patient is not documented to be on — a Metformin patient has no insulin to adjust. For concerns, say "worth discussing with your care team."
 
 11. COACHING NUDGES: In addition to health insights, generate 0-1 coaching nudge when appropriate. A nudge is ACTIONABLE — it tells the patient what to DO, not just what happened.
 
