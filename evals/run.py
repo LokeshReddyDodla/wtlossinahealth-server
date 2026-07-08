@@ -372,11 +372,32 @@ async def _run_meal_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, A
     judgment = None
     if not no_judge and response and not error:
         try:
+            # The scorer's inputs include the EXTRACTION (macros + estimated
+            # micros like sodium) — the judge must see it, or any value the
+            # scorer cites from it looks fabricated (same evidence-gap class
+            # as the monitor's trigger anchor).
+            micros = ext.total_micros
+            micro_bits = ", ".join(
+                f"{k}: {v:.0f}" for k, v in (
+                    ("sodium_mg", micros.sodium_mg), ("potassium_mg", micros.potassium_mg),
+                    ("calcium_mg", micros.calcium_mg), ("iron_mg", micros.iron_mg),
+                ) if isinstance(v, (int, float))
+            ) if micros else ""
+            extraction_evidence = (
+                f"AI extraction the scorer received (all values are the "
+                f"extractor's table-based estimates): items: {items_txt}; "
+                f"{ext.total_macros.calories:.0f} kcal, {ext.total_macros.carbs:.0f}g carbs, "
+                f"{ext.total_macros.protein:.0f}g protein, fiber {ext.total_macros.fiber or 0:.0f}g"
+                + (f"; micros: {micro_bits}" if micro_bits else "")
+            )
             judgment = await judge_case_voted(
                 shared_gateway(),
                 question=f"Meal analysis for the description: {case['query']!r}",
                 response=response,
-                fixture_texts=[f"Patient's meal description: {case['query']}"],
+                fixture_texts=[
+                    f"Patient's meal description: {case['query']}",
+                    extraction_evidence,
+                ],
                 facts=PERSONAS[persona]["judge_facts"],
                 criteria=case.get("criteria", ""),
                 mode="estimation",
