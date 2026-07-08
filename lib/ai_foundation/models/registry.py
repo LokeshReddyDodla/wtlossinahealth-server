@@ -400,6 +400,17 @@ def build_default_registry(
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
+            model_id="gpt-5.2",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.00175,
+            cost_per_1k_output=0.007,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["vision", "multimodal"],
+        ),
+        ModelSpec(
             model_id="text-embedding-3-large",
             provider=ModelProvider.OPENAI,
             timeout_seconds=5.0,
@@ -451,10 +462,12 @@ def build_default_registry(
         primary=thinker,
         fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
+    # Extractor (photo → items). gpt-5.2: ~half the vision error of the 4o
+    # generation at lower price; gpt-4o first fallback = pre-upgrade behavior.
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
-        primary="gpt-4o",
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash", thinker],
+        primary="gpt-5.2",
+        fallbacks=["gpt-4o", "gemini-2.5-flash", thinker],
     )
     # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
     # never the photo — vision pricing there was ~6x waste (efficiency audit).
