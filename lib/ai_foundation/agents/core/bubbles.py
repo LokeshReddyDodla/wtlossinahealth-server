@@ -1,24 +1,54 @@
-"""Multi-bubble message protocol.
+"""Companion message markers: multi-bubble protocol + data-request markers.
 
-The responder LLM separates natural message breaks with a sentinel line
-(``[[BUBBLE]]``). Old clients must never see the literal, so:
+The responder LLM may emit two kinds of structural markers, both invisible
+to users:
 
-- ``split_bubbles``  → the final text as 1-4 clean bubble strings
-- ``strip_bubbles``  → the final text as one clean string (legacy rendering)
-- ``BubbleStreamFilter`` → removes sentinels from token deltas mid-stream,
-  holding back only a potential sentinel prefix at chunk boundaries
+- ``[[BUBBLE]]`` — natural message break (2-4 bubbles per turn)
+- ``[[AWAIT:<entity>]]`` — the reply explicitly invited the user to LOG the
+  named entity (meal, smbg, ...); the server records a pending data request
+  so the eventual log can continue this conversation (companion Phase 3).
 
-Design notes: the prompt instructs the model to place the sentinel between
-paragraphs and never inside code fences; the splitter still repairs fence
-breakage defensively (a bubble with an unclosed ``` is merged with the next)
-because prompt rules are advisory, not guarantees.
+API:
+- ``split_bubbles`` / ``strip_bubbles`` — final-text handling
+- ``extract_await`` — pull the awaited entity type out of the raw text
+- ``MarkerStreamFilter`` — removes all markers from token deltas mid-stream,
+  holding back only potential marker prefixes at chunk boundaries
+
+Design notes: the prompt instructs the model to place markers between
+paragraphs / at the end and never inside code fences; the splitter still
+repairs fence breakage defensively (a bubble with an unclosed ``` is merged
+with the next) because prompt rules are advisory, not guarantees.
 """
 
 from __future__ import annotations
 
+import re
+
 BUBBLE_DELIMITER = "[[BUBBLE]]"
 
+# Entity types the agent may ask the user to log (mirrors the event triggers
+# + checkin surfaces the app exposes).
+AWAIT_ENTITY_TYPES = ("meal", "smbg", "symptom", "sleep", "mood", "workout")
+
+_AWAIT_RE = re.compile(r"\[\[AWAIT:(" + "|".join(AWAIT_ENTITY_TYPES) + r")\]\]")
+
+# marker → visible replacement
+_MARKERS: dict[str, str] = {BUBBLE_DELIMITER: "\n\n"}
+_MARKERS.update({f"[[AWAIT:{e}]]": "" for e in AWAIT_ENTITY_TYPES})
+
 _MAX_BUBBLES = 4
+
+
+def extract_await(text: str) -> tuple[str, str | None]:
+    """Strip AWAIT markers; return (clean_text, awaited_entity_type|None).
+
+    Multiple markers: first entity wins (one pending request per turn).
+    """
+    if not text or "[[AWAIT:" not in text:
+        return text, None
+    match = _AWAIT_RE.search(text)
+    entity = match.group(1) if match else None
+    return _AWAIT_RE.sub("", text).strip(), entity
 
 
 def _fence_balanced(text: str) -> bool:
@@ -56,12 +86,12 @@ def strip_bubbles(text: str) -> str:
     return "\n\n".join(split_bubbles(text)) if BUBBLE_DELIMITER in text else text
 
 
-class BubbleStreamFilter:
-    """Removes sentinel occurrences from a stream of text deltas.
+class MarkerStreamFilter:
+    """Removes all known markers from a stream of text deltas.
 
-    The sentinel may arrive split across chunk boundaries, so the filter
-    holds back the longest suffix of emitted text that is a prefix of the
-    sentinel until it can be classified.
+    Markers may arrive split across chunk boundaries, so the filter holds
+    back the longest suffix of pending text that is a prefix of any marker
+    until it can be classified.
     """
 
     def __init__(self) -> None:
@@ -72,18 +102,23 @@ class BubbleStreamFilter:
         self._held = ""  # absorbed into buf; re-set only when holding a new suffix
         out: list[str] = []
         while buf:
-            idx = buf.find(BUBBLE_DELIMITER)
-            if idx != -1:
-                out.append(buf[:idx])
-                # sentinel becomes a paragraph break in the visible stream
-                out.append("\n\n")
-                buf = buf[idx + len(BUBBLE_DELIMITER):]
+            # earliest known marker in the buffer
+            first_idx, first_marker = -1, None
+            for marker in _MARKERS:
+                idx = buf.find(marker)
+                if idx != -1 and (first_idx == -1 or idx < first_idx):
+                    first_idx, first_marker = idx, marker
+            if first_marker is not None:
+                out.append(buf[:first_idx])
+                out.append(_MARKERS[first_marker])
+                buf = buf[first_idx + len(first_marker):]
                 continue
-            # hold back a trailing partial sentinel, emit the rest
+            # hold back a trailing partial marker, emit the rest
             hold = 0
-            max_check = min(len(buf), len(BUBBLE_DELIMITER) - 1)
+            max_check = min(len(buf), max(len(m) for m in _MARKERS) - 1)
             for k in range(max_check, 0, -1):
-                if BUBBLE_DELIMITER.startswith(buf[-k:]):
+                suffix = buf[-k:]
+                if any(m.startswith(suffix) for m in _MARKERS):
                     hold = k
                     break
             if hold:
@@ -91,10 +126,13 @@ class BubbleStreamFilter:
                 self._held = buf[-hold:]
             else:
                 out.append(buf)
-                self._held = ""
             buf = ""
         return "".join(out)
 
     def flush(self) -> str:
         held, self._held = self._held, ""
         return held
+
+
+# Backward-compatible alias (Phase 1 name)
+BubbleStreamFilter = MarkerStreamFilter

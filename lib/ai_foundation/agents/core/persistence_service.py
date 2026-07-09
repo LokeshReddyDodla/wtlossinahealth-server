@@ -114,6 +114,29 @@ class PersistenceService:
         except Exception as exc:
             logger.warning("Failed to persist turns (thread=%s): %s", thread_id, exc)
 
+    PENDING_REQUEST_TTL_HOURS = 24
+
+    async def record_pending_request(self, thread_id: str | None, entity_type: str) -> None:
+        """The agent asked the user to log ``entity_type`` — remember it so the
+        eventual log event can continue this conversation (companion Phase 3)."""
+        if not self._memory or not thread_id:
+            return
+        try:
+            from datetime import timedelta
+
+            now = datetime.now(timezone.utc)
+            summary = await self._memory.get_thread_summary(thread_id)
+            if summary is None:
+                summary = ThreadSummary(thread_id=thread_id, summary="", turn_count=0)
+            summary.pending_data_request = {
+                "entity_type": entity_type,
+                "asked_at": now.isoformat(),
+                "expires_at": (now + timedelta(hours=self.PENDING_REQUEST_TTL_HOURS)).isoformat(),
+            }
+            await self._memory.save_thread_summary(thread_id, summary)
+        except Exception as exc:
+            logger.debug("pending-request record failed (thread=%s): %s", thread_id, exc)
+
     @staticmethod
     def extract_open_question(assistant_message: str) -> str | None:
         """The last question the agent asked in its reply, if any.
@@ -242,6 +265,9 @@ class PersistenceService:
                 # preserve conversational micro-state — compaction must not wipe it
                 last_assistant_question=(
                     existing.last_assistant_question if existing else None
+                ),
+                pending_data_request=(
+                    existing.pending_data_request if existing else None
                 ),
             )
             await self._memory.save_thread_summary(thread_id, summary)

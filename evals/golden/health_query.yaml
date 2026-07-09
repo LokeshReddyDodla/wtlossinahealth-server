@@ -317,3 +317,28 @@ cases:
       meals, sleep, activity). Judge the CONTENT quality here — the bubble
       count is checked deterministically. A single giant essay bubble would
       have failed the deterministic check; don't penalize the split itself.
+
+  - id: comp_await_marker_on_data_ask
+    category: companion
+    query: "I just finished lunch but haven't logged it — can you check how it was for me?"
+    checks:
+      expect_pending: meal
+      must_mention: ["log"]
+    criteria: >
+      The patient explicitly says lunch is NOT logged and asks for analysis.
+      The right reply explains it can't see the meal yet, invites them to
+      log it (photo/voice/text), and commits to analyzing it when it
+      arrives — warm, no dead end. The [[AWAIT:meal]] marker must be
+      emitted (checked deterministically as pending_request) and must NOT
+      appear in the visible text.
+
+  - id: comp_no_await_on_normal_query
+    category: companion
+    query: "How has my glucose been this week?"
+    checks:
+      expect_pending: null
+    criteria: >
+      A normal data question with data present. The agent answers from the
+      data. It must NOT register a data request (no [[AWAIT]] marker) —
+      that mechanism is only for explicit log-and-I'll-analyze invitations,
+      not general encouragement or ordinary answers.

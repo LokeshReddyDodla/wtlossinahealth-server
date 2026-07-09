@@ -106,8 +106,14 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
             check_result.failures.append(
                 f"max_questions: {n_q} '?' > {checks['max_questions']}"
             )
-    if "[[BUBBLE]]" in response:
-        check_result.failures.append("raw bubble sentinel leaked into message")
+    if "[[BUBBLE]]" in response or "[[AWAIT:" in response:
+        check_result.failures.append("raw companion marker leaked into message")
+    if "expect_pending" in checks:
+        pending = (output.data or {}).get("pending_request") if error is None else None
+        if pending != checks["expect_pending"]:
+            check_result.failures.append(
+                f"expect_pending: got {pending!r}, want {checks['expect_pending']!r}"
+            )
 
     judgment = None
     if not no_judge and response and not error:

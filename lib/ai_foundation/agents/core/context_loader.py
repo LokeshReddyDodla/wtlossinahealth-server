@@ -365,6 +365,19 @@ class ContextLoader:
                 parts.append(summary.summary)
             if summary.goal:
                 parts.append(f"Patient's active goal in this conversation: {summary.goal}")
+            pending = summary.pending_data_request
+            if pending:
+                from datetime import datetime as _dt, timezone as _tz
+                try:
+                    not_expired = _dt.fromisoformat(pending["expires_at"]) > _dt.now(_tz.utc)
+                except Exception:
+                    not_expired = False
+                if not_expired:
+                    parts.append(
+                        f"You asked the user to log their {pending['entity_type']} and are "
+                        "waiting for it — you'll analyze it when it arrives. Don't re-ask; "
+                        "if they mention having logged it, look it up."
+                    )
             if summary.last_assistant_question:
                 parts.append(
                     "Open question you asked in your last reply (if the user's "

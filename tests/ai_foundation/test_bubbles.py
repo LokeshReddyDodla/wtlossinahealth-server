@@ -70,3 +70,38 @@ class TestStreamFilter:
 
     def test_multiple_sentinels(self):
         assert self._run([f"A{D}B{D}C"]) == "A\n\nB\n\nC"
+
+
+class TestAwaitMarkers:
+    def test_extract_await_basic(self):
+        from lib.ai_foundation.agents.core.bubbles import extract_await
+        clean, entity = extract_await("Log your lunch and I'll take a look. [[AWAIT:meal]]")
+        assert entity == "meal"
+        assert "[[AWAIT" not in clean and clean.endswith("look.")
+
+    def test_extract_await_none(self):
+        from lib.ai_foundation.agents.core.bubbles import extract_await
+        clean, entity = extract_await("Your TIR was 91% this week.")
+        assert entity is None and clean == "Your TIR was 91% this week."
+
+    def test_extract_await_first_wins(self):
+        from lib.ai_foundation.agents.core.bubbles import extract_await
+        clean, entity = extract_await("A [[AWAIT:smbg]] B [[AWAIT:meal]]")
+        assert entity == "smbg" and "[[AWAIT" not in clean
+
+    def test_unknown_await_type_passes_through(self):
+        from lib.ai_foundation.agents.core.bubbles import extract_await
+        clean, entity = extract_await("X [[AWAIT:unicorn]]")
+        assert entity is None and "[[AWAIT:unicorn]]" in clean
+
+    def test_stream_filter_swallows_await(self):
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        out = "".join(f.feed(c) for c in ["Log it. [[AWA", "IT:meal]]"]) + f.flush()
+        assert out == "Log it. "
+
+    def test_stream_filter_bubble_and_await_mixed(self):
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        out = f.feed("A[[BUBBLE]]B [[AWAIT:sleep]]") + f.flush()
+        assert out == "A\n\nB "
