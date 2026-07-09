@@ -79,9 +79,11 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
     )
 
     start = time.perf_counter()
+    bubbles: list[str] = []
     try:
         output = await agent.run(agent_input)
         response = output.message or ""
+        bubbles = (output.data or {}).get("messages") or ([response] if response else [])
         cost = output.cost_usd or 0.0
         trace_id = output.trace_id
         error = None
@@ -89,7 +91,23 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
         response, cost, trace_id, error = "", 0.0, None, f"{type(exc).__name__}: {exc}"
     latency_ms = int((time.perf_counter() - start) * 1000)
 
-    check_result = run_checks(response, case.get("checks") or {})
+    checks = case.get("checks") or {}
+    check_result = run_checks(response, checks)
+    # Companion bubble checks (deterministic)
+    if "bubbles_between" in checks:
+        lo, hi = checks["bubbles_between"]
+        if not (lo <= len(bubbles) <= hi):
+            check_result.failures.append(
+                f"bubbles_between: got {len(bubbles)} bubbles, want [{lo}, {hi}]"
+            )
+    if "max_questions" in checks:
+        n_q = response.count("?")
+        if n_q > checks["max_questions"]:
+            check_result.failures.append(
+                f"max_questions: {n_q} '?' > {checks['max_questions']}"
+            )
+    if "[[BUBBLE]]" in response:
+        check_result.failures.append("raw bubble sentinel leaked into message")
 
     judgment = None
     if not no_judge and response and not error:
@@ -108,7 +126,7 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
 
     passed = (
         error is None
-        and check_result.passed
+        and not check_result.failures  # not .passed — bubble checks append after construction
         and (no_judge or _judge_ok(judgment, case))
     )
 

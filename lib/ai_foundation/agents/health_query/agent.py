@@ -25,6 +25,7 @@ from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
+from lib.ai_foundation.agents.core.bubbles import split_bubbles, strip_bubbles
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -162,10 +163,12 @@ class HealthQueryAgent(BaseAgent):
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
             total_cost = safe_cost(meta) + result.total_cost
 
+            bubbles = split_bubbles(result.response)
             output = AgentOutput(
-                message=result.response, is_ready=True,
+                message=strip_bubbles(result.response), is_ready=True,
                 suggestions=[s.model_dump() for s in intent.suggestions],
                 data={
+                    "messages": bubbles,
                     "data_types": [dt.value for dt in intent.data_types],
                     "intent_confidence": intent.confidence,
                     "coverage_confidence": result.coverage_confidence,
@@ -290,7 +293,12 @@ class HealthQueryAgent(BaseAgent):
                     # own done event.
                     if isinstance(event, SSEDonePayload):
                         engine_data = event.data or {}
-                        full_text = engine_data.get("full_response", "")
+                        raw_text = engine_data.get("full_response", "")
+                        # Bubble protocol: legacy clients keep a clean single
+                        # string; new clients render data.messages as bubbles.
+                        full_text = strip_bubbles(raw_text)
+                        engine_data["full_response"] = full_text
+                        engine_data["messages"] = split_bubbles(raw_text)
                         intent_cost = safe_cost(meta)
                         total_cost = (event.cost_usd or 0.0) + intent_cost
                         elapsed = int((time.perf_counter() - pipeline_start) * 1000)

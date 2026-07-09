@@ -214,6 +214,7 @@ async def _process_patient_message(
         stream=False,
     )
 
+    output = None
     try:
         agent = _get_agent()
         output = await agent.run(agent_input)
@@ -227,7 +228,10 @@ async def _process_patient_message(
 
     if message_id:
         await _react_to_message(phone, message_id, "")
-    await _send_whatsapp_message(phone, response_text)
+    # Companion bubbles: send each part as its own WhatsApp message.
+    bubbles = ((output.data or {}).get("messages") if output else None) or [response_text]
+    for bubble in bubbles:
+        await _send_whatsapp_message(phone, bubble)
 
 
 # -- Twilio Sandbox -----------------------------------------------------------
@@ -328,6 +332,7 @@ async def twilio_receive_message(
         stream=False,
     )
 
+    output = None
     try:
         agent = _get_agent()
         output = await agent.run(agent_input)
@@ -339,5 +344,9 @@ async def twilio_receive_message(
             "Please try again in a moment."
         )
 
-    await _send_twilio_message(From, response_text)
+    # Companion bubbles: send each part as its own message (length-split per part).
+    bubbles = ((output.data or {}).get("messages") if output else None) or [response_text]
+    for bubble in bubbles:
+        for chunk in _split_message(bubble):
+            await _send_twilio_message(From, chunk)
     return Response(content="<Response></Response>", media_type="application/xml")

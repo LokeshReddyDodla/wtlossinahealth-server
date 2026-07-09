@@ -40,6 +40,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
     format_data_gaps,
 )
 
+from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter
 from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_loader import build_context_messages
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
@@ -352,6 +353,9 @@ class Coordinator:
             yield sse_status(PipelineStage.GENERATING_RESPONSE, "Building personalized insights...")
 
             full_response_parts: list[str] = []
+            # Visible stream never carries the bubble sentinel (see
+            # reasoning_engine — same protocol).
+            bubble_filter = BubbleStreamFilter()
 
             try:
                 async for chunk in self._gateway.stream(
@@ -362,7 +366,9 @@ class Coordinator:
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
-                        yield sse_token(chunk.delta)
+                        visible = bubble_filter.feed(chunk.delta)
+                        if visible:
+                            yield sse_token(visible)
                     if chunk.finished and chunk.usage:
                         total_cost += safe_cost(chunk)
             except Exception as exc:
@@ -376,6 +382,10 @@ class Coordinator:
                     fallback_text="".join(full_response_parts) or None,
                 )
                 return
+
+            tail = bubble_filter.flush()
+            if tail:
+                yield sse_token(tail)
 
             # Compute evidence confidence for SSE done payload
             evidence = self._compute_evidence_metrics(findings, reflection_result)
