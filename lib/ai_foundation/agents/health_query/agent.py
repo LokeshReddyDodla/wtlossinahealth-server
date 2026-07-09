@@ -112,14 +112,14 @@ class HealthQueryAgent(BaseAgent):
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 return output
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 return output
 
             # ── Route: single-agent vs multi-agent ──
@@ -199,7 +199,7 @@ class HealthQueryAgent(BaseAgent):
             self._log_quality_scores(trace_id, result)
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-            self._schedule_background(input)
+            self._schedule_background(input, ctx)
             return output
 
         except Exception as exc:
@@ -232,7 +232,7 @@ class HealthQueryAgent(BaseAgent):
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 yield sse_token(output.message)
                 yield sse_done(SSEDonePayload(trace_id=trace_id, latency_ms=int((time.perf_counter() - pipeline_start) * 1000)))
                 return
@@ -241,7 +241,7 @@ class HealthQueryAgent(BaseAgent):
                 msg = intent.clarification_msg or "Could you tell me more?"
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump() for s in intent.suggestions],
@@ -335,7 +335,7 @@ class HealthQueryAgent(BaseAgent):
                             ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
                         await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                        self._schedule_background(input)
+                        self._schedule_background(input, ctx)
 
                         # Emit our own done event with suggestions and trace
                         yield sse_done(SSEDonePayload(
@@ -572,7 +572,7 @@ class HealthQueryAgent(BaseAgent):
         # Unknown action fallback
         return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
-    def _schedule_background(self, input: AgentInput) -> None:
+    def _schedule_background(self, input: AgentInput, ctx: Any = None) -> None:
         """Schedule background tasks with timeout and error handling."""
         thread_id = input.context.thread_id or ""
         if self.persistence:
@@ -586,9 +586,17 @@ class HealthQueryAgent(BaseAgent):
         if self.fact_extractor:
             pid = self._resolve_single_pid(input)
             if pid:
+                # The agent's reply the user is responding to — short answers
+                # ("yes, around 1am") are meaningless without it.
+                preceding = None
+                for turn in reversed(getattr(ctx, "history", None) or []):
+                    if turn.get("role") == "assistant":
+                        preceding = turn.get("content")
+                        break
                 asyncio.create_task(self._run_background(
                     self.fact_extractor.extract_if_needed(
                         message=input.message, patient_id=pid, agent_id=self.agent_id,
+                        preceding_assistant_message=preceding,
                     ),
                     name="fact_extraction", thread_id=thread_id,
                 ))

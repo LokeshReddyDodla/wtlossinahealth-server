@@ -358,7 +358,20 @@ class ContextLoader:
             return None
         try:
             summary = await self._memory.get_thread_summary(thread_id)
-            return summary.summary if summary and summary.summary else None
+            if not summary:
+                return None
+            parts: list[str] = []
+            if summary.summary:
+                parts.append(summary.summary)
+            if summary.goal:
+                parts.append(f"Patient's active goal in this conversation: {summary.goal}")
+            if summary.last_assistant_question:
+                parts.append(
+                    "Open question you asked in your last reply (if the user's "
+                    f"message answers it, connect the two; if they ignored it, drop it — "
+                    f"do not re-ask): {summary.last_assistant_question}"
+                )
+            return "\n".join(parts) if parts else None
         except Exception as exc:
             logger.debug("Failed to load thread summary: %s", exc)
             return None

@@ -456,10 +456,71 @@ def _judge_ok(judgment, case: dict[str, Any]) -> bool:
     return judgment.passed
 
 
+async def _run_fact_extraction_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
+    """Run FactExtractor on a (question, reply) pair against a capturing memory.
+
+    The companion flywheel test: answers to the agent's own questions must
+    become durable, self-contained facts — and non-answers must not.
+    Deterministic checks only (no judge): expected keys / value substrings /
+    expect_no_facts.
+    """
+    from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
+
+    from .agent_factory import shared_gateway
+    from .fixtures import EVAL_PATIENT_ID, FakeMemory
+
+    memory = FakeMemory()
+    extractor = FactExtractor(memory=memory, gateway=shared_gateway())
+
+    start = time.perf_counter()
+    error = None
+    try:
+        await extractor.extract_if_needed(
+            message=case["reply"],
+            patient_id=EVAL_PATIENT_ID,
+            preceding_assistant_message=case.get("question"),
+        )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    stored = {k: f.value for k, f in memory.facts.items()}
+    blob = " | ".join(f"{k}={v}" for k, v in stored.items()).lower()
+    failures: list[str] = []
+    checks = case.get("checks") or {}
+
+    if checks.get("expect_no_facts") and stored:
+        failures.append(f"expect_no_facts: stored {list(stored)}")
+    if "expect_keys" in checks and not stored:
+        failures.append("expected facts, none stored")
+    for entry in checks.get("expect_keys", []):
+        alts = [a.strip().lower() for a in str(entry).split("|")]
+        if not any(a in k.lower() for k in stored for a in alts):
+            failures.append(f"expect_keys: none of {alts} in {list(stored)}")
+    for entry in checks.get("expect_value_mentions", []):
+        alts = [a.strip().lower() for a in str(entry).split("|")]
+        if not any(a in blob for a in alts):
+            failures.append(f"expect_value_mentions: none of {alts} in {blob!r}")
+
+    return {
+        "id": case["id"],
+        "category": case.get("category", ""),
+        "critical": bool(case.get("critical", False)),
+        "passed": error is None and not failures,
+        "latency_ms": latency_ms,
+        "cost_usd": 0.0,
+        "trace_id": None,
+        "failures": ([error] if error else []) + failures,
+        "response": blob,
+        "judge": None,
+    }
+
+
 _EXECUTORS = {
     "health_query": _run_case,
     "proactive_monitor": _run_monitor_case,
     "meal_analysis": _run_meal_case,
+    "fact_extraction": _run_fact_extraction_case,
 }
 
 

@@ -132,6 +132,15 @@ class ThreadSummary(BaseModel):
         default=None,
         description="Active date scope (e.g. 'this_week').",
     )
+    last_assistant_question: str | None = Field(
+        default=None,
+        description=(
+            "Open question the agent asked in its most recent reply, if any. "
+            "Cleared when the next reply asks nothing. Lets the agent avoid "
+            "re-asking ignored questions and resolve short answers after the "
+            "raw turn scrolls out of the history window."
+        ),
+    )
     turn_count: int = 0
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

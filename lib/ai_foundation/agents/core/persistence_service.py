@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+
+from pydantic import BaseModel
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +24,15 @@ if TYPE_CHECKING:
     from lib.ai_foundation.agents.state import AgentInput
 
 logger = logging.getLogger(__name__)
+
+
+class ThreadDigest(BaseModel):
+    """Structured compaction output — populates ThreadSummary continuity fields."""
+
+    summary: str
+    goal: str | None = None
+    domains: list[str] = []
+    date_scope: str | None = None
 
 
 class PersistenceService:
@@ -99,8 +110,50 @@ class PersistenceService:
             )
 
             await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
+            await self._update_thread_state(thread_id, assistant_message)
         except Exception as exc:
             logger.warning("Failed to persist turns (thread=%s): %s", thread_id, exc)
+
+    @staticmethod
+    def extract_open_question(assistant_message: str) -> str | None:
+        """The last question the agent asked in its reply, if any.
+
+        Takes the final '?'-terminated sentence outside code fences; a reply
+        with no question returns None (clears the stored state).
+        """
+        if not assistant_message or "?" not in assistant_message:
+            return None
+        # drop code fences — '?' inside charts/code is not a question
+        parts = assistant_message.split("```")
+        prose = " ".join(parts[::2])
+        candidates = [
+            seg.strip() for seg in prose.replace("\n", " ").split("?") if seg.strip()
+        ]
+        if not candidates or not prose.rstrip().endswith("?") and "?" not in prose:
+            pass
+        # last '?'-terminated sentence: take text after the last sentence break
+        last = None
+        for chunk in prose.split("?")[:-1]:
+            sent = chunk.split(". ")[-1].split("! ")[-1].strip().lstrip("-*# ")
+            if sent:
+                last = sent[-300:] + "?"
+        return last
+
+    async def _update_thread_state(self, thread_id: str, assistant_message: str) -> None:
+        """Persist conversational micro-state (open question) on the summary doc."""
+        try:
+            question = self.extract_open_question(assistant_message)
+            summary = await self._memory.get_thread_summary(thread_id)
+            if summary is None:
+                if question is None:
+                    return
+                summary = ThreadSummary(thread_id=thread_id, summary="", turn_count=0)
+            if summary.last_assistant_question == question:
+                return
+            summary.last_assistant_question = question
+            await self._memory.save_thread_summary(thread_id, summary)
+        except Exception as exc:
+            logger.debug("thread-state update failed (thread=%s): %s", thread_id, exc)
 
     # -- Thread compaction (non-blocking) ----------------------------------
 
@@ -162,14 +215,21 @@ class PersistenceService:
             turns_for_summary = await self._memory.get_thread_turns(thread_id, limit=settings.COMPACTION_HISTORY_WINDOW)
             conv_text = "\n".join(f"{t.role}: {t.content[:settings.SUMMARY_TRUNCATION_CHARS]}" for t in turns_for_summary)
 
-            response = await self._gateway.complete(
+            digest, _ = await self._gateway.extract(
                 messages=[
                     {"role": "system", "content": (
-                        "Summarize this health conversation in 2-3 sentences. "
-                        "Include: topics discussed, time period, patient goals. Be concise."
+                        "Digest this health conversation.\n"
+                        "- summary: 2-3 sentences — topics discussed, time period, key findings.\n"
+                        "- goal: the patient's active goal IF one is stated or clearly implied "
+                        "(e.g. 'lose 5 kg', 'improve overnight glucose'); null otherwise.\n"
+                        "- domains: health domains actively discussed "
+                        "(e.g. glucose, meals, sleep, fitness, weight, medications).\n"
+                        "- date_scope: the time period currently in focus "
+                        "(e.g. 'this_week', 'last_month'); null if unclear."
                     )},
                     {"role": "user", "content": conv_text},
                 ],
+                response_model=ThreadDigest,
                 task=ModelTask.SUMMARIZATION,
             )
 
@@ -177,7 +237,12 @@ class PersistenceService:
             pids = patient_ids or (existing.patient_ids if existing else [])
             summary = ThreadSummary(
                 thread_id=thread_id, title=title, patient_ids=pids,
-                summary=response.content, turn_count=turn_count,
+                summary=digest.summary, turn_count=turn_count,
+                goal=digest.goal, domains=digest.domains, date_scope=digest.date_scope,
+                # preserve conversational micro-state — compaction must not wipe it
+                last_assistant_question=(
+                    existing.last_assistant_question if existing else None
+                ),
             )
             await self._memory.save_thread_summary(thread_id, summary)
             elapsed_ms = int((_time.perf_counter() - start) * 1000)
