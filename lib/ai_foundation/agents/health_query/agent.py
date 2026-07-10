@@ -673,7 +673,10 @@ class HealthQueryAgent(BaseAgent):
         ):
             turn_bubbles = (getattr(output, "data", None) or {}).get("messages")
             asyncio.create_task(self._run_background(
-                self._attach_english_copy(turn_id, message, lang, turn_bubbles),
+                self._attach_english_copy(
+                    turn_id, message, lang, turn_bubbles,
+                    thread_id=thread_id, user_id=input.context.user_id,
+                ),
                 name="audit_translation", thread_id=thread_id,
             ))
         if self.persistence:
@@ -704,6 +707,7 @@ class HealthQueryAgent(BaseAgent):
 
     async def _attach_english_copy(
         self, turn_id: Any, message: str, lang: str, bubbles: list[str] | None = None,
+        *, thread_id: str | None = None, user_id: str | None = None,
     ) -> None:
         """Translate the reply the user saw back to English and attach it to
         exactly the turn it belongs to (audit invariant).
@@ -729,6 +733,19 @@ class HealthQueryAgent(BaseAgent):
             translations={"en": strip_bubbles(english)},
             en_bubbles=en_bubbles if len(en_bubbles) > 1 else None,
         )
+        # Nudge the open chat (silent data message) so "View in English"
+        # appears on the fresh reply without a reopen. Best-effort.
+        if user_id and thread_id:
+            try:
+                from lib.services.fcm_service import FCMService
+
+                await FCMService().send_fcm_data_to_user_devices(
+                    user_id=user_id,
+                    data={"type": "chat_thread_updated", "thread_id": thread_id,
+                          "reason": "translation"},
+                )
+            except Exception as exc:
+                logger.debug("chat_thread_updated nudge failed: %s", exc)
 
     async def _localize_text(self, text: str, ctx: Any, *, cached: bool = True) -> str:
         """English strings built outside the responder (memory replies,

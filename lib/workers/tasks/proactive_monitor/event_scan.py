@@ -262,6 +262,20 @@ async def _consume_pending_request(
         await memory.update_thread_summary_fields(
             thread_id, {"pending_data_request": None},
         )
+        # Nudge an open chat to refresh live (silent data message) — the
+        # visible push is the doorbell for a closed app; this covers the
+        # common case of the user still sitting in the conversation.
+        try:
+            from lib.services.fcm_service import FCMService
+
+            patient_id = thread_id.rsplit(":", 1)[-1]
+            await FCMService().send_fcm_data_to_user_devices(
+                user_id=patient_id,
+                data={"type": "chat_thread_updated", "thread_id": thread_id,
+                      "reason": "continuation"},
+            )
+        except Exception as exc:
+            logger.debug("chat_thread_updated nudge failed: %s", exc)
         logger.info("Chat continuation: %s fulfilled pending %s request", thread_id, entity_type)
         return True
     except Exception as exc:

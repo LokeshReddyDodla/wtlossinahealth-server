@@ -180,3 +180,30 @@ async def test_translate_cached_never_caches_fallbacks():
     svc = TranslationService(gw)
     assert await svc.translate_cached("Log sleep", "hi") == "Log sleep"
     assert svc._cache == {}  # transient failure must not pin English
+
+
+@pytest.mark.asyncio
+async def test_attach_english_copy_nudges_open_chat():
+    """After the audit copy lands, a silent chat_thread_updated data message
+    tells an open chat to refresh — the toggle appears without a reopen."""
+    from lib.ai_foundation.agents.health_query.agent import HealthQueryAgent
+
+    agent = HealthQueryAgent.__new__(HealthQueryAgent)
+    agent.translator = MagicMock()
+    agent.translator.translate = AsyncMock(return_value="English copy")
+    agent.persistence = MagicMock()
+    agent.persistence.attach_translation = AsyncMock()
+
+    sent = {}
+
+    class _FakeFCM:
+        async def send_fcm_data_to_user_devices(self, *, user_id, data):
+            sent.update({"user_id": user_id, **data})
+
+    with patch("lib.services.fcm_service.FCMService", _FakeFCM):
+        await agent._attach_english_copy(
+            "oid1", "हिंदी जवाब", "hi", None,
+            thread_id="bot:patient:p1", user_id="p1",
+        )
+    assert sent["type"] == "chat_thread_updated"
+    assert sent["thread_id"] == "bot:patient:p1" and sent["user_id"] == "p1"
