@@ -36,6 +36,7 @@ from lib.ai_foundation.streaming.sse import (
     sse_reasoning,
     sse_reflection,
     sse_status,
+    sse_bubble,
     sse_error,
     sse_token,
     sse_tool_call,
@@ -538,9 +539,11 @@ class ReasoningEngine:
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
-                        visible = bubble_filter.feed(chunk.delta)
-                        if visible:
-                            yield sse_token(visible)
+                        for kind, piece in bubble_filter.feed_events(chunk.delta):
+                            if kind == "bubble":
+                                yield sse_bubble()
+                            elif piece:
+                                yield sse_token(piece)
                     if chunk.finished and chunk.usage:
                         total_cost += safe_cost(chunk)
             except Exception as exc:

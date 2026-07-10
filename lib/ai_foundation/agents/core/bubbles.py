@@ -97,10 +97,22 @@ class MarkerStreamFilter:
     def __init__(self) -> None:
         self._held = ""
 
-    def feed(self, delta: str) -> str:
+    def feed_events(self, delta: str) -> list[tuple[str, str]]:
+        """Classify a delta into ordered events: ("text", chunk) and
+        ("bubble", "") boundary markers. AWAIT markers are silently dropped.
+
+        Lets the streaming pipeline emit a dedicated bubble-boundary SSE
+        event so clients can finalize the current bubble and stream the next
+        one live — no end-of-turn reorganization under the reader's eyes.
+        """
         buf = self._held + delta
         self._held = ""  # absorbed into buf; re-set only when holding a new suffix
-        out: list[str] = []
+        events: list[tuple[str, str]] = []
+
+        def emit_text(chunk: str) -> None:
+            if chunk:
+                events.append(("text", chunk))
+
         while buf:
             # earliest known marker in the buffer
             first_idx, first_marker = -1, None
@@ -109,8 +121,9 @@ class MarkerStreamFilter:
                 if idx != -1 and (first_idx == -1 or idx < first_idx):
                     first_idx, first_marker = idx, marker
             if first_marker is not None:
-                out.append(buf[:first_idx])
-                out.append(_MARKERS[first_marker])
+                emit_text(buf[:first_idx])
+                if first_marker == BUBBLE_DELIMITER:
+                    events.append(("bubble", ""))
                 buf = buf[first_idx + len(first_marker):]
                 continue
             # hold back a trailing partial marker, emit the rest
@@ -122,11 +135,19 @@ class MarkerStreamFilter:
                     hold = k
                     break
             if hold:
-                out.append(buf[:-hold])
+                emit_text(buf[:-hold])
                 self._held = buf[-hold:]
             else:
-                out.append(buf)
+                emit_text(buf)
             buf = ""
+        return events
+
+    def feed(self, delta: str) -> str:
+        """Flat variant: markers removed; bubble boundaries become paragraph
+        breaks. Kept for callers that need a single visible string."""
+        out: list[str] = []
+        for kind, chunk in self.feed_events(delta):
+            out.append("\n\n" if kind == "bubble" else chunk)
         return "".join(out)
 
     def flush(self) -> str:
