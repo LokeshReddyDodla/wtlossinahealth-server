@@ -22,6 +22,9 @@ async def log_last_active_time(
     if profile_type == ProfileTypeEnum.ADMIN:
         return
 
+    if request.headers.get("x-background") == "true":
+        return
+
     env = os.getenv("ENV", "dev").lower()
     is_production = env in ("prod", "production")
 
