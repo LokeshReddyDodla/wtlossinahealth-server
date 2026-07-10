@@ -489,6 +489,9 @@ class HealthQueryAgent(BaseAgent):
     ) -> None:
         if not self.persistence:
             return
+        # Persist the bubble split so history renders the same messages the
+        # user watched stream in — content stays the joined full text.
+        bubbles = (output.data or {}).get("messages")
         await self.persistence.save_turn(
             thread_id=input.context.thread_id,
             user_message=input.message,
@@ -510,6 +513,7 @@ class HealthQueryAgent(BaseAgent):
                 "input_mode": input.context.metadata.get("output_mode", "text"),
                 "channel": input.context.metadata.get("channel", "app"),
                 "audio_url": input.context.metadata.get("audio_url"),
+                **({"bubbles": bubbles} if bubbles and len(bubbles) > 1 else {}),
             },
         )
 
