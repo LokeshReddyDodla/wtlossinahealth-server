@@ -56,6 +56,23 @@ def _verify_payload_signature(payload: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature_header)
 
 
+async def _localize_for_patient(patient_id: str | None, text: str) -> str:
+    """Canned strings to a KNOWN patient go out in their AI language."""
+    if not patient_id:
+        return text
+    try:
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        from lib.ai_foundation.translation import TranslationService
+        from lib.core.types import DEFAULT_AI_LANGUAGE
+
+        lang = await container.resolve(PatientNameResolver).resolve_language(patient_id)
+        if lang == DEFAULT_AI_LANGUAGE:
+            return text
+        return await container.resolve(TranslationService).translate_cached(text, lang)
+    except Exception:
+        return text
+
+
 async def _lookup_patient_by_phone(phone: str) -> Patient | None:
     """Find a patient by their phone number (E.164 without '+')."""
     async with get_async_postgres_session() as session:
@@ -163,10 +180,14 @@ async def receive_message(request: Request) -> dict:
 
                 if msg.get("type") != "text":
                     await _mark_as_read(message_id)
+                    media_patient = await _lookup_patient_by_phone(sender_phone)
                     await _send_whatsapp_message(
                         sender_phone,
-                        "I can only read text messages for now. "
-                        "Please type your question and I'll be happy to help!",
+                        await _localize_for_patient(
+                            str(media_patient.patient_id) if media_patient else None,
+                            "I can only read text messages for now. "
+                            "Please type your question and I'll be happy to help!",
+                        ),
                     )
                     continue
 
@@ -224,9 +245,10 @@ async def _process_patient_message(
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
     if message_id:
@@ -304,10 +326,14 @@ async def twilio_receive_message(
         return Response(content="<Response></Response>", media_type="application/xml")
 
     if NumMedia > 0 and not Body:
+        media_patient = await _lookup_patient_by_phone(_normalize_twilio_phone(From))
         await _send_twilio_message(
             From,
-            "I can only read text messages for now. "
-            "Please type your question and I'll be happy to help!",
+            await _localize_for_patient(
+                str(media_patient.patient_id) if media_patient else None,
+                "I can only read text messages for now. "
+                "Please type your question and I'll be happy to help!",
+            ),
         )
         return Response(content="<Response></Response>", media_type="application/xml")
 
@@ -358,9 +384,10 @@ async def twilio_receive_message(
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
     # Companion bubbles: send each part as its own message (length-split per part).
