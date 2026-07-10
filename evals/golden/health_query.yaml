@@ -318,6 +318,20 @@ cases:
       count is checked deterministically. A single giant essay bubble would
       have failed the deterministic check; don't penalize the split itself.
 
+  - id: comp_bubbles_weekly_plan
+    category: companion
+    query: "What can I do to improve my health this week?"
+    checks:
+      bubbles_between: [2, 4]
+    criteria: >
+      A personalized weekly plan is a long multi-section answer (priorities,
+      what's working, what to watch, a closing takeaway) — it must arrive as
+      2-4 separate messages split at the section seams, never one wall. The
+      closing takeaway should land as its own short final bubble. Substance
+      must come from the patient's real data (sleep gap, sparse meal logging,
+      good glucose). The bubble count is checked deterministically — judge
+      the content quality and that each bubble stands alone.
+
   - id: comp_await_marker_on_data_ask
     category: companion
     query: "I just finished lunch but haven't logged it — can you check how it was for me?"

@@ -100,3 +100,21 @@ async def test_persistence_record_and_compaction_preserve():
     p = saved.pending_data_request
     assert p["entity_type"] == "meal"
     assert datetime.fromisoformat(p["expires_at"]) > datetime.now(timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_zero_insight_ack_still_closes_the_loop():
+    """When the scan finds nothing, a matching pending request still gets a
+    warm ack turn instead of silence."""
+    from lib.workers.tasks.proactive_monitor.event_scan import _ack_body
+
+    mem = _memory(_summary("meal"))
+    with patch("lib.workers.tasks.proactive_monitor.event_scan.container") as c:
+        c.resolve.return_value = mem
+        ok = await _consume_pending_request("bot:patient:p1", "meal", _ack_body("meal"))
+    assert ok is True
+    turns = mem.append_turns_batch.await_args.args[1]
+    assert "Got your meal" in turns[0].content
+    assert mem.save_thread_summary.await_args.args[1].pending_data_request is None
+    # unknown entity falls back to a generic word, never KeyErrors
+    assert "log" in _ack_body("unknown_thing") and "log" in _ack_body(None)

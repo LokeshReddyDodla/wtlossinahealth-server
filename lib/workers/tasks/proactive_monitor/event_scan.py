@@ -104,17 +104,18 @@ async def handle_proactive_event(
                 data={"patient_id": patient_id, "trigger": trigger},
             )
 
+        entity_type, entity_id = _extract_entity(typed_anchor)
+        thread_id = f"bot:patient:{patient_id}"
+
         if result.insights:
             for ins in result.insights:
                 ins.title = f"[Beta] {ins.title}"
             top = max(result.insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
             await _save_insight_to_record(typed_anchor, top.body)
-            entity_type, entity_id = _extract_entity(typed_anchor)
 
             # Companion Phase 3: if the health agent asked the user to log
             # exactly this kind of data, this insight CONTINUES that chat —
             # post it into the thread and route the push to the conversation.
-            thread_id = f"bot:patient:{patient_id}"
             continuation = await _consume_pending_request(thread_id, entity_type, top.body)
 
             await send_top_insight_notification(
@@ -126,6 +127,10 @@ async def handle_proactive_event(
                 chat_continuation=continuation,
                 thread_id=thread_id if continuation else None,
             )
+        else:
+            # The agent asked for this data and the user delivered — never
+            # answer that with silence, even when the scan has nothing to say.
+            await _consume_pending_request(thread_id, entity_type, _ack_body(entity_type))
 
         return TaskResult(
             success=True,
@@ -151,6 +156,24 @@ async def handle_proactive_event(
             error=str(exc),
             data={"patient_id": patient_id, "trigger": trigger},
         )
+
+
+_ACK_WORDS = {
+    "meal": "meal",
+    "smbg": "glucose reading",
+    "symptom": "symptom note",
+    "sleep": "sleep log",
+    "mood": "check-in",
+    "workout": "workout",
+}
+
+
+def _ack_body(entity_type: str | None) -> str:
+    word = _ACK_WORDS.get(entity_type or "", "log")
+    return (
+        f"Got your {word} — thanks for logging it. Nothing stands out right now, "
+        "but I'm keeping an eye on things and I'll flag anything worth knowing."
+    )
 
 
 async def _consume_pending_request(

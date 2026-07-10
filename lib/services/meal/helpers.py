@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import List
 
+from loguru import logger
 from markdownify import markdownify as md
 
 from lib.core.constants import ProfileTypeEnum
@@ -105,13 +106,21 @@ def trigger_meal_tasks(
     meal_date: date,
     meal_obj: PatientMealModel,
 ):
-    """Trigger background tasks for meal processing."""
+    """Trigger background tasks for meal processing.
+
+    Each enqueue fails independently and loudly — the vector task also
+    drives the proactive-insight event, so a swallowed failure here means
+    the meal silently never reaches Qdrant or the monitor.
+    """
     try:
         enqueue_daily_meal_report_sync(str(patient_id), meal_date)
+    except Exception:
+        logger.exception("Failed to enqueue daily meal report for meal %s (%s)", meal_id, patient_id)
+    try:
         enqueue_meal_vector_sync(
             str(patient_id),
             str(meal_id),
             PatientMealSchema.from_orm(meal_obj).model_dump(mode="json"),
         )
-    except Exception as task_error:
-        print(f"Failed to enqueue meal tasks: {task_error}")
+    except Exception:
+        logger.exception("Failed to enqueue meal vector for meal %s (%s)", meal_id, patient_id)
