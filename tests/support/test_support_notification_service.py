@@ -5,7 +5,7 @@ The queue-agent fan-out has three correctness concerns:
    the regular participant fan-out from ChatNotificationService)
 2. the sender must NOT receive their own message back as a queue ping
 3. when there are no eligible recipients, we must short-circuit and not
-   call ``enqueue_fcm_notification_sync`` at all
+   call ``enqueue_fcm_notification_async`` at all
 
 The PG side (`_fetch_queue_agents`) is stubbed on the instance so we can
 test the filter logic without spinning up a session — that SQL is plain
@@ -45,10 +45,10 @@ def fake_mongo(monkeypatch):
 
 @pytest.fixture
 def fake_enqueue(monkeypatch):
-    """Patch the sync FCM enqueue. Records the call args."""
-    enq = MagicMock(return_value="job-1")
+    """Patch the async FCM enqueue. Records the call args."""
+    enq = AsyncMock(return_value="job-1")
     monkeypatch.setattr(
-        "lib.services.support.support_notification_service.enqueue_fcm_notification_sync",
+        "lib.services.support.support_notification_service.enqueue_fcm_notification_async",
         enq,
     )
     return enq

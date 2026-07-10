@@ -19,8 +19,8 @@ from lib.schemas.ai_conversation_schemas import (
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientFoodItem as PatientFoodItemSchema
 from lib.workers.tasks.meal.enqueue import (
-    enqueue_daily_meal_report_sync,
-    enqueue_meal_vector_sync,
+    enqueue_daily_meal_report_async,
+    enqueue_meal_vector_async,
 )
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 
@@ -100,7 +100,7 @@ def generate_conversation_flow(
     ]
 
 
-def trigger_meal_tasks(
+async def trigger_meal_tasks(
     patient_id: str,
     meal_id: str,
     meal_date: date,
@@ -113,11 +113,11 @@ def trigger_meal_tasks(
     the meal silently never reaches Qdrant or the monitor.
     """
     try:
-        enqueue_daily_meal_report_sync(str(patient_id), meal_date)
+        await enqueue_daily_meal_report_async(str(patient_id), meal_date)
     except Exception:
         logger.exception("Failed to enqueue daily meal report for meal %s (%s)", meal_id, patient_id)
     try:
-        enqueue_meal_vector_sync(
+        await enqueue_meal_vector_async(
             str(patient_id),
             str(meal_id),
             PatientMealSchema.from_orm(meal_obj).model_dump(mode="json"),

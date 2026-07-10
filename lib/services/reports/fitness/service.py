@@ -91,7 +91,7 @@ class FitnessReportService:
             end_iso = end_date.isoformat()
 
             if regenerate:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
@@ -106,7 +106,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.DAILY
                 )
                 return None
@@ -134,7 +134,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.WEEKLY
                 )
 
@@ -161,7 +161,7 @@ class FitnessReportService:
                 {"_id": 0},
             )
             if not report:
-                self._trigger_report_generation(
+                await self._trigger_report_generation(
                     patient_id, start_date, end_date, FitnessReportType.MONTHLY
                 )
             return report
@@ -171,7 +171,7 @@ class FitnessReportService:
             )
             return None
 
-    def _trigger_report_generation(
+    async def _trigger_report_generation(
         self,
         patient_id: str,
         start_date: datetime,
@@ -180,10 +180,10 @@ class FitnessReportService:
     ):
         try:
             from lib.workers.tasks.fitness.enqueue import (
-                enqueue_process_fitness_upload_sync,
+                enqueue_process_fitness_upload_async,
             )
 
-            enqueue_process_fitness_upload_sync(patient_id, start_date, end_date)
+            await enqueue_process_fitness_upload_async(patient_id, start_date, end_date)
 
             logging.info(
                 f"Triggered fitness report generation for {patient_id} from {start_date} to {end_date}"

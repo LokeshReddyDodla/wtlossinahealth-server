@@ -62,8 +62,9 @@ class TestStreamFilter:
         # "[[B" that never completes must still be emitted
         assert self._run(["A[[B", "old]] text"]) == "A[[Bold]] text"
 
-    def test_trailing_partial_flushed(self):
-        assert self._run(["A", "[[BUB"]) == "A[[BUB"
+    def test_trailing_partial_marker_suppressed(self):
+        # A stream that truncates mid-marker must not flash protocol text.
+        assert self._run(["A", "[[BUB"]) == "A"
 
     def test_no_sentinel_passthrough(self):
         assert self._run(["Hello ", "world"]) == "Hello world"
@@ -138,3 +139,20 @@ class TestFeedEvents:
         from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
         f = MarkerStreamFilter()
         assert f.feed("A[[BUBBLE]]B") == "A\n\nB"
+
+
+class TestFlushSafety:
+    def test_flush_drops_truncated_marker(self):
+        # Stream dies mid-marker: the held fragment must not flash raw
+        # protocol text ("[[AWAIT:me") at the user.
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        out = f.feed("All good. [[AWAIT:me")
+        assert out == "All good. "
+        assert f.flush() == ""
+
+    def test_flush_keeps_ordinary_tail(self):
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        f.feed("hello wor")
+        assert f.flush() == ""  # nothing held for plain text

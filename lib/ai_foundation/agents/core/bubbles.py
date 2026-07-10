@@ -158,6 +158,12 @@ class MarkerStreamFilter:
 
     def flush(self) -> str:
         held, self._held = self._held, ""
+        # Text is only ever held because it's a marker prefix — if the stream
+        # truncated mid-marker, emitting "[[AWAIT:me" would flash raw
+        # protocol text at the user. The done-payload reconciliation still
+        # has the raw response, so dropping the fragment loses nothing.
+        if held and any(m.startswith(held) for m in _MARKERS):
+            return ""
         return held
 
 

@@ -132,6 +132,8 @@ async def handle_proactive_event(
                 event_time=typed_anchor.event_time,
                 chat_continuation=continuation,
                 thread_id=thread_id if continuation else None,
+                # already translated for the chat turn — push reuses it
+                body_translation=chat_body if english_body else None,
             )
         else:
             # The agent asked for this data and the user delivered — never
@@ -247,8 +249,8 @@ async def _consume_pending_request(
             return False
 
         # Append the reply FIRST, clear the pending after: if the append
-        # fails the ask survives for the next event (worst case a duplicate
-        # reply); the old order left the user with permanent silence.
+        # fails, the ask must survive for the next event. Worst case is a
+        # duplicate reply — never an unanswered ask.
         turn_metadata: dict = {"kind": "data_request_followup", "entity_type": entity_type}
         if language != "en" and english_body:
             turn_metadata["language"] = language

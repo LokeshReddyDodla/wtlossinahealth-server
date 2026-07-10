@@ -96,7 +96,7 @@ from lib.services.vector import PatientProfileVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.tasks.profile.enqueue import (
-    enqueue_generate_profile_vector_sync,
+    enqueue_generate_profile_vector_async,
 )
 
 
@@ -440,7 +440,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -575,7 +575,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -666,7 +666,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(updated_patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
             return updated_patient
 
         except IntegrityError as e:
@@ -859,7 +859,7 @@ class PatientProfileService:
             profile_data = CorePatientProfile.from_orm(patient).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
 
             # Chat-list notification stays gated to milestone events —
             # we don't want to spam the chat tray on every keystroke.

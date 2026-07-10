@@ -26,8 +26,14 @@ async def send_top_insight_notification(
     event_time: str | None = None,
     chat_continuation: bool = False,
     thread_id: str | None = None,
+    body_translation: str | None = None,
 ) -> None:
-    """Send FCM push for the top-severity insight and record it."""
+    """Send FCM push for the top-severity insight and record it.
+
+    ``body_translation``: the body already translated for this patient by the
+    caller (the event scan translates it for the chat turn) — reused here so
+    the push and the chat message can't diverge and we don't pay twice.
+    """
     if not insights:
         return
     target = notification_target or patient_id
@@ -46,7 +52,10 @@ async def send_top_insight_notification(
 
     # Preferred AI language: the user sees the translated push; the English
     # original stays on the insight record (audit invariant).
-    translation = await _translate_for_target(target, top)
+    translation = await _translate_for_target(
+        target, top,
+        body_translation=body_translation if target == patient_id else None,
+    )
     push_title = translation["title"] if translation else top.title
     push_body = translation["message"] if translation else top.body
     push_query = translation["suggested_query"] if translation else (top.suggested_query or "")
@@ -94,7 +103,9 @@ async def send_top_insight_notification(
         logger.warning("Failed to send notification for %s: %s", patient_id, e)
 
 
-async def _translate_for_target(target: str, top: HealthInsight) -> dict | None:
+async def _translate_for_target(
+    target: str, top: HealthInsight, *, body_translation: str | None = None,
+) -> dict | None:
     """Return {"language", "title", "message", "suggested_query"} in the
     target's preferred AI language, or None for English/on any failure."""
     try:
@@ -110,14 +121,24 @@ async def _translate_for_target(target: str, top: HealthInsight) -> dict | None:
         if language == DEFAULT_AI_LANGUAGE:
             return None
         translator = container.resolve(TranslationService)
+
+        # Product markers like "[Beta]" stay verbatim — translate only the title text.
+        title_prefix = ""
+        title_text = top.title
+        if title_text.startswith("[Beta] "):
+            title_prefix, title_text = "[Beta] ", title_text[len("[Beta] "):]
+
+        async def _body() -> str:
+            return body_translation or await translator.translate(top.body, language)
+
         title, message, query = await asyncio.gather(
-            translator.translate(top.title, language),
-            translator.translate(top.body, language),
+            translator.translate(title_text, language),
+            _body(),
             translator.translate(top.suggested_query or "", language),
         )
         return {
             "language": language,
-            "title": title,
+            "title": f"{title_prefix}{title}",
             "message": message,
             "suggested_query": query,
         }

@@ -927,21 +927,14 @@ class ProactiveMonitorAgent(BaseAgent):
                 insight.patient_id = patient_id
             return insights, llm_meta
         except Exception as exc:
+            # Stay silent in BOTH modes: a content-free "open the app" push
+            # helps nobody, and recording one dedup-blocks real insights for
+            # 24h. ERROR (not warning) so provider outages surface in ops
+            # alerting; the next scan retries with real content.
             mode = trigger.value if trigger is not None else "cron"
-            logger.warning("Insight analysis failed (%s): %s", mode, exc, exc_info=True)
-            if trigger is not None:
-                # Event mode: stay silent rather than ship a templated message.
-                return [], None
-            counts = domain_counts or {}
-            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
-            return [HealthInsight(
-                category=InsightCategory.GENERAL,
-                severity=InsightSeverity.INFO,
-                title="📊 Your daily health check",
-                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
-                patient_id=patient_id,
-                suggested_query=f"How was my health {scan_label}?",
-            )], None
+            logger.error("Insight analysis failed (%s) — skipping, no fallback push: %s",
+                         mode, exc, exc_info=True)
+            return [], None
 
     async def _llm_daily_brief(
         self,
@@ -983,17 +976,10 @@ class ProactiveMonitorAgent(BaseAgent):
                 data={"categories_covered": [c.value for c in brief.categories_covered]},
             )], llm_meta
         except Exception as exc:
-            logger.warning("Daily brief analysis failed: %s", exc, exc_info=True)
-            counts = domain_counts or {}
-            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
-            return [HealthInsight(
-                category=InsightCategory.GENERAL,
-                severity=InsightSeverity.INFO,
-                title="📋 Your morning brief",
-                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
-                patient_id=patient_id,
-                suggested_query=f"How was my health {scan_label}?",
-            )], None
+            # Same policy as _llm_scan_insights: no content-free fallback push.
+            logger.error("Daily brief analysis failed — skipping, no fallback push: %s",
+                         exc, exc_info=True)
+            return [], None
 
     async def _filter_insights(
         self,

@@ -3,7 +3,7 @@ from typing import List, Optional
 from lib.schemas.fcm_notification_info import FCMNotificationInfo
 from lib.services.chat.base import BaseChatService
 from lib.services.chat.chat_participant_service import ChatParticipantService
-from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_sync
+from lib.workers.tasks.fcm.enqueue import enqueue_fcm_notification_async
 
 
 class ChatNotificationService(BaseChatService):
@@ -48,13 +48,13 @@ class ChatNotificationService(BaseChatService):
 
             # Send FCM notification if required
             if notification_info:
-                self._send_fcm_notifications(participants, notification_info)
+                await self._send_fcm_notifications(participants, notification_info)
 
         except Exception as e:
             print(f"Failed to emit {message_key} to participants: {str(e)}")
             raise Exception(f"Failed to notify participants: {str(e)}")
 
-    def _send_fcm_notifications(
+    async def _send_fcm_notifications(
         self, participants: List[dict], notification_info: FCMNotificationInfo
     ):
         try:
@@ -64,7 +64,7 @@ class ChatNotificationService(BaseChatService):
             )
 
             # Trigger FCM notification task
-            enqueue_fcm_notification_sync(
+            await enqueue_fcm_notification_async(
                 participants=filtered_participants,
                 notification_info=notification_info.dict(),
             )

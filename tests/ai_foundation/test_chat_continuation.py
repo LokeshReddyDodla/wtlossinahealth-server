@@ -123,3 +123,17 @@ async def test_zero_insight_ack_still_closes_the_loop():
     )
     # unknown entity falls back to a generic word, never KeyErrors
     assert "log" in _ack_body("unknown_thing") and "log" in _ack_body(None)
+
+
+def test_extract_open_question_handles_hindi_danda():
+    """Devanagari '।' ends sentences — without splitting on it, the whole
+    Hindi paragraph got captured as 'the question'."""
+    from lib.ai_foundation.agents.core.persistence_service import PersistenceService
+
+    msg = "आपका ग्लूकोज़ आज स्थिर रहा। नींद भी ठीक थी। क्या आपने आज खाना लॉग किया?"
+    q = PersistenceService.extract_open_question(msg)
+    assert q == "क्या आपने आज खाना लॉग किया?"
+    # English behaviour unchanged
+    q2 = PersistenceService.extract_open_question("All good. Did you sleep well?")
+    assert q2 == "Did you sleep well?"
+    assert PersistenceService.extract_open_question("All good today.") is None

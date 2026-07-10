@@ -92,6 +92,17 @@ class HealthQueryAgent(BaseAgent):
         self.translator = translator
         self._prompts_registered = False
         self._prompt_cache: dict[str, str] = {}
+        # Strong refs: the event loop only weak-refs tasks, so a GC pass can
+        # destroy an unfinished fire-and-forget task (fact extraction /
+        # compaction / audit copy silently never happening).
+        self._bg_tasks: set[asyncio.Task] = set()
+
+    def _spawn_background(self, coro: Any, *, name: str, thread_id: str) -> None:
+        task = asyncio.create_task(
+            self._run_background(coro, name=name, thread_id=thread_id)
+        )
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
@@ -232,6 +243,10 @@ class HealthQueryAgent(BaseAgent):
         trace_id = f"trc_{uuid4().hex[:16]}"
         pipeline_start = time.perf_counter()
         ctx = None  # bound after _init_pipeline; error paths localize best-effort
+        intent = None
+        user_timestamp = None
+        delta_sink: list[str] = []
+        turn_saved = False
 
         try:
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
@@ -290,6 +305,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
                     trace_id=trace_id,
+                    delta_sink=delta_sink,
                 )
             else:
                 event_source = self.reasoning_engine.reason_stream(
@@ -303,6 +319,7 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in intent.data_types],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    delta_sink=delta_sink,
                 )
 
             async with asyncio.timeout(settings.STREAMING_PIPELINE_TIMEOUT_SECONDS):
@@ -361,6 +378,7 @@ class HealthQueryAgent(BaseAgent):
                             ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
                         turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                        turn_saved = True
                         self._schedule_background(input, ctx, output, turn_id)
 
                         # Emit our own done event with suggestions and trace
@@ -394,6 +412,28 @@ class HealthQueryAgent(BaseAgent):
                 code="agent_error",
                 fallback_text=await self._localize_text("Please try again in a moment.", ctx),
             )
+        finally:
+            # Client disconnect (GeneratorExit) mid-stream: history must
+            # still record what the user read — their message plus the
+            # delivered partial. (No yields here — only awaits are legal
+            # during async-generator finalization.)
+            if delta_sink and not turn_saved and intent is not None:
+                try:
+                    raw = "".join(delta_sink)
+                    clean, _ = extract_await(raw)
+                    partial = strip_bubbles(clean)
+                    if partial.strip():
+                        salvage = AgentOutput(
+                            message=partial, is_ready=True, trace_id=trace_id,
+                            data={"messages": split_bubbles(clean), "interrupted": True},
+                        )
+                        await self._save_turn(
+                            input, salvage, intent, user_timestamp=user_timestamp,
+                        )
+                        logger.info("Salvaged interrupted stream turn (thread=%s, %d chars)",
+                                    input.context.thread_id, len(partial))
+                except Exception as salvage_exc:
+                    logger.warning("Stream salvage failed: %s", salvage_exc)
 
     # ── Pipeline steps ────────────────────────────────────────────────────
 
@@ -550,6 +590,7 @@ class HealthQueryAgent(BaseAgent):
                 "channel": input.context.metadata.get("channel", "app"),
                 "audio_url": input.context.metadata.get("audio_url"),
                 **({"bubbles": bubbles} if bubbles and len(bubbles) > 1 else {}),
+                **({"interrupted": True} if (output.data or {}).get("interrupted") else {}),
             },
         )
 
@@ -640,12 +681,12 @@ class HealthQueryAgent(BaseAgent):
         """Persist the data-ask (fire-and-forget) + add an action chip so the
         app can open the right logging sheet in one tap."""
         if self.persistence:
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self.persistence.record_pending_request(
-                    thread_id=input.context.thread_id, entity_type=entity_type,
+                thread_id=input.context.thread_id, entity_type=entity_type,
                 ),
                 name="pending_request", thread_id=input.context.thread_id or "",
-            ))
+            )
         label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
         if language != DEFAULT_AI_LANGUAGE and self.translator:
             label = await self.translator.translate_cached(label, language)
@@ -672,21 +713,21 @@ class HealthQueryAgent(BaseAgent):
             and self.translator and self.persistence
         ):
             turn_bubbles = (getattr(output, "data", None) or {}).get("messages")
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self._attach_english_copy(
-                    turn_id, message, lang, turn_bubbles,
-                    thread_id=thread_id, user_id=input.context.user_id,
+                turn_id, message, lang, turn_bubbles,
+                thread_id=thread_id, user_id=input.context.user_id,
                 ),
                 name="audit_translation", thread_id=thread_id,
-            ))
+            )
         if self.persistence:
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self.persistence.compact_if_needed(
-                    thread_id=input.context.thread_id, agent_id=self.agent_id,
-                    patient_ids=input.context.patient_ids,
+                thread_id=input.context.thread_id, agent_id=self.agent_id,
+                patient_ids=input.context.patient_ids,
                 ),
                 name="compaction", thread_id=thread_id,
-            ))
+            )
         if self.fact_extractor:
             pid = self._resolve_single_pid(input)
             if pid:
@@ -697,13 +738,13 @@ class HealthQueryAgent(BaseAgent):
                     if turn.get("role") == "assistant":
                         preceding = turn.get("content")
                         break
-                asyncio.create_task(self._run_background(
+                self._spawn_background(
                     self.fact_extractor.extract_if_needed(
-                        message=input.message, patient_id=pid, agent_id=self.agent_id,
-                        preceding_assistant_message=preceding,
+                    message=input.message, patient_id=pid, agent_id=self.agent_id,
+                    preceding_assistant_message=preceding,
                     ),
                     name="fact_extraction", thread_id=thread_id,
-                ))
+                )
 
     async def _attach_english_copy(
         self, turn_id: Any, message: str, lang: str, bubbles: list[str] | None = None,

@@ -197,9 +197,17 @@ class FactExtractor:
                 # patient facts. Grep `fact_extractor.permanent_fact`.
                 for f in facts:
                     if f.is_permanent:
+                        # DEBUG: the value + source message are PHI — keep the
+                        # audit trail available (enable DEBUG to investigate
+                        # the wrong-fact class of bug) without writing health
+                        # content to INFO logs. Key alone stays at INFO.
                         logger.info(
-                            "fact_extractor.permanent_fact | patient=%s key=%s value=%r source_msg=%r",
-                            patient_id[:8], f.key, f.value, (message or "")[:200],
+                            "fact_extractor.permanent_fact | patient=%s key=%s",
+                            patient_id[:8], f.key,
+                        )
+                        logger.debug(
+                            "fact_extractor.permanent_fact.detail | value=%r source_msg=%r",
+                            f.value, (message or "")[:200],
                         )
                 await self._memory.upsert_patient_facts(patient_id, facts)
                 logger.debug("Persisted %d memories for patient %s", len(facts), patient_id[:8])
