@@ -65,6 +65,7 @@ class TestContextLoaderGamification:
         resolver.resolve_timezones = AsyncMock(
             return_value={patient_id: "Asia/Kolkata"}
         )
+        resolver.resolve_language = AsyncMock(return_value="en")
 
         tracker = AsyncMock()
         tracker.get_history = AsyncMock(return_value=[])

@@ -26,6 +26,7 @@ from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
+from lib.core.types import AI_LANGUAGE_NAMES, DEFAULT_AI_LANGUAGE
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -79,6 +80,7 @@ class HealthQueryAgent(BaseAgent):
         coordinator: Coordinator | None = None,
         persistence: Any = None,
         fact_extractor: Any = None,
+        translator: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -87,6 +89,7 @@ class HealthQueryAgent(BaseAgent):
         self.coordinator = coordinator
         self.persistence = persistence
         self.fact_extractor = fact_extractor
+        self.translator = translator
         self._prompts_registered = False
         self._prompt_cache: dict[str, str] = {}
 
@@ -111,21 +114,21 @@ class HealthQueryAgent(BaseAgent):
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
-                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input, ctx)
+                turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input, ctx, output, turn_id)
                 return output
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
-                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input, ctx)
+                turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input, ctx, output, turn_id)
                 return output
 
             # ── Route: single-agent vs multi-agent ──
             patient_ids = self._resolve_patient_ids(input)
             system_prompt = self._get_system_prompt(input.context.user_role)
-            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input)
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input, ctx.response_language)
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
@@ -166,7 +169,7 @@ class HealthQueryAgent(BaseAgent):
             clean_response, awaited = extract_await(result.response)
             suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
             if awaited:
-                self._register_pending_request(input, awaited, suggestions)
+                await self._register_pending_request(input, awaited, suggestions, ctx.response_language)
             bubbles = split_bubbles(clean_response)
             output = AgentOutput(
                 message=strip_bubbles(clean_response), is_ready=True,
@@ -203,8 +206,8 @@ class HealthQueryAgent(BaseAgent):
             ))
             self._log_quality_scores(trace_id, result)
 
-            await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-            self._schedule_background(input, ctx)
+            turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+            self._schedule_background(input, ctx, output, turn_id)
             return output
 
         except Exception as exc:
@@ -236,8 +239,8 @@ class HealthQueryAgent(BaseAgent):
             # ── Memory commands (remember/forget/list) ──
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
-                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input, ctx)
+                turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input, ctx, output, turn_id)
                 yield sse_token(output.message)
                 yield sse_done(SSEDonePayload(trace_id=trace_id, latency_ms=int((time.perf_counter() - pipeline_start) * 1000)))
                 return
@@ -245,8 +248,8 @@ class HealthQueryAgent(BaseAgent):
             if not intent.is_ready:
                 msg = intent.clarification_msg or "Could you tell me more?"
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
-                await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input, ctx)
+                turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                self._schedule_background(input, ctx, output, turn_id)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
                     suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
@@ -258,7 +261,7 @@ class HealthQueryAgent(BaseAgent):
             # ── Route: single-agent vs multi-agent (streaming) ──
             patient_ids = self._resolve_patient_ids(input)
             system_prompt = self._get_system_prompt(input.context.user_role)
-            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input)
+            reasoning_prompt, response_prompt = self._get_reasoning_prompts(input, ctx.response_language)
             tier = self._resolve_tier(input)
             specialist_domains = resolve_specialist_domains(intent.data_types)
 
@@ -302,7 +305,7 @@ class HealthQueryAgent(BaseAgent):
                         raw_text, awaited = extract_await(raw_text)
                         stream_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
                         if awaited:
-                            self._register_pending_request(input, awaited, stream_suggestions)
+                            await self._register_pending_request(input, awaited, stream_suggestions, ctx.response_language)
                         engine_data["pending_request"] = awaited
                         # Bubble protocol: legacy clients keep a clean single
                         # string; new clients render data.messages as bubbles.
@@ -320,6 +323,8 @@ class HealthQueryAgent(BaseAgent):
                             latency_ms=elapsed,
                             model_id=event.model_id,
                             data={
+                                "messages": engine_data.get("messages"),
+                                "pending_request": awaited,
                                 "data_types": [dt.value for dt in intent.data_types],
                                 "intent_confidence": intent.confidence,
                                 "coverage_confidence": engine_data.get("coverage_confidence"),
@@ -344,8 +349,8 @@ class HealthQueryAgent(BaseAgent):
                                 },
                             ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
-                        await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                        self._schedule_background(input, ctx)
+                        turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                        self._schedule_background(input, ctx, output, turn_id)
 
                         # Emit our own done event with suggestions and trace
                         yield sse_done(SSEDonePayload(
@@ -462,6 +467,16 @@ class HealthQueryAgent(BaseAgent):
                     f"In suggestions, use patient names, NEVER use 'my' or 'your'."
                 )})
 
+        lang = getattr(ctx, "response_language", DEFAULT_AI_LANGUAGE)
+        if lang != DEFAULT_AI_LANGUAGE:
+            lang_name = AI_LANGUAGE_NAMES.get(lang, lang)
+            messages.append({"role": "system", "content": (
+                f"The patient's preferred language is {lang_name}. Write "
+                f"suggestion labels, suggestion descriptions, and any "
+                f"clarification_msg in {lang_name}. All other extraction "
+                f"fields stay in English."
+            )})
+
         if ctx.facts:
             by_cat: dict[str, list[str]] = {}
             for f in ctx.facts[:settings.MAX_CONTEXT_FACTS]:
@@ -486,13 +501,14 @@ class HealthQueryAgent(BaseAgent):
     async def _save_turn(
         self, input: AgentInput, output: AgentOutput, intent: QueryIntent,
         user_timestamp: Any = None,
-    ) -> None:
+    ) -> Any | None:
+        """Returns the saved assistant turn's id (for targeted late metadata)."""
         if not self.persistence:
-            return
+            return None
         # Persist the bubble split so history renders the same messages the
         # user watched stream in — content stays the joined full text.
         bubbles = (output.data or {}).get("messages")
-        await self.persistence.save_turn(
+        return await self.persistence.save_turn(
             thread_id=input.context.thread_id,
             user_message=input.message,
             assistant_message=output.message,
@@ -586,6 +602,8 @@ class HealthQueryAgent(BaseAgent):
         # Unknown action fallback
         return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
+    # Canonical English chip labels — non-English users get these through
+    # the TranslationService (cached), same path as every other AI string.
     _AWAIT_CHIP_LABELS = {
         "meal": "Log a meal",
         "smbg": "Log glucose reading",
@@ -595,8 +613,9 @@ class HealthQueryAgent(BaseAgent):
         "workout": "Log workout",
     }
 
-    def _register_pending_request(
+    async def _register_pending_request(
         self, input: AgentInput, entity_type: str, suggestions: list[dict],
+        language: str = DEFAULT_AI_LANGUAGE,
     ) -> None:
         """Persist the data-ask (fire-and-forget) + add an action chip so the
         app can open the right logging sheet in one tap."""
@@ -608,15 +627,34 @@ class HealthQueryAgent(BaseAgent):
                 name="pending_request", thread_id=input.context.thread_id or "",
             ))
         label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
+        if language != DEFAULT_AI_LANGUAGE and self.translator:
+            label = await self.translator.translate_cached(label, language)
         suggestions.insert(0, {
             "action": f"log_{entity_type}",
             "label": label,
             "description": label,
         })
 
-    def _schedule_background(self, input: AgentInput, ctx: Any = None) -> None:
+    def _schedule_background(
+        self, input: AgentInput, ctx: Any = None, output: Any = None,
+        turn_id: Any = None,
+    ) -> None:
         """Schedule background tasks with timeout and error handling."""
         thread_id = input.context.thread_id or ""
+        # English audit copy: the invariant is that an English version of every
+        # AI reply always exists. Chat generates in the preferred language, so
+        # the English copy is attached to the saved turn (by id — a fast
+        # follow-up must not receive the previous turn's translation).
+        lang = getattr(ctx, "response_language", DEFAULT_AI_LANGUAGE)
+        message = getattr(output, "message", None)
+        if (
+            lang != DEFAULT_AI_LANGUAGE and message and turn_id is not None
+            and self.translator and self.persistence
+        ):
+            asyncio.create_task(self._run_background(
+                self._attach_english_copy(turn_id, message, lang),
+                name="audit_translation", thread_id=thread_id,
+            ))
         if self.persistence:
             asyncio.create_task(self._run_background(
                 self.persistence.compact_if_needed(
@@ -642,6 +680,15 @@ class HealthQueryAgent(BaseAgent):
                     ),
                     name="fact_extraction", thread_id=thread_id,
                 ))
+
+    async def _attach_english_copy(self, turn_id: Any, message: str, lang: str) -> None:
+        """Translate the reply the user saw back to English and attach it to
+        exactly the turn it belongs to (audit invariant)."""
+        english = await self.translator.translate(message, "en", source_lang=lang)
+        if english and english != message:
+            await self.persistence.attach_translation(
+                turn_id=turn_id, language=lang, translations={"en": english},
+            )
 
     async def _run_background(self, coro: Any, *, name: str, thread_id: str) -> None:
         """Run a background coroutine with timeout and error handling."""
@@ -697,12 +744,18 @@ class HealthQueryAgent(BaseAgent):
         self._prompt_cache[cache_key] = rendered
         return rendered
 
-    def _get_reasoning_prompts(self, input: AgentInput | None = None) -> tuple[str, str]:
+    def _get_reasoning_prompts(
+        self, input: AgentInput | None = None, response_language: str = DEFAULT_AI_LANGUAGE,
+    ) -> tuple[str, str]:
         """Return (reasoning_prompt, response_prompt) for the engine.
 
         When input.context.metadata contains output_mode='voice', voice-
         optimised prompts are used: conversational reasoning thoughts that
         sound natural when spoken aloud, and a brief response with no markdown.
+
+        ``response_language``: the patient's preferred AI language — rendered
+        into the response prompt so the agent writes directly in it (voice
+        stays English for now; TTS language support is v2).
         """
         self._ensure_prompts()
         output_mode = (
@@ -712,15 +765,32 @@ class HealthQueryAgent(BaseAgent):
             input.context.metadata.get("channel") if input else None
         )
 
+        lang_instruction = ""
+        if response_language != DEFAULT_AI_LANGUAGE:
+            lang_name = AI_LANGUAGE_NAMES.get(response_language, response_language)
+            lang_instruction = (
+                f"\n## Response Language\n"
+                f"Write your ENTIRE response in {lang_name} — this is the patient's "
+                f"chosen language. Numbers, units (mg/dL, g, kcal), medication names, "
+                f"and the [[BUBBLE]]/[[AWAIT:...]] markers stay exactly as-is. "
+                f"Table syntax stays markdown; translate only the cell text.\n"
+            )
+
         if output_mode == "voice":
             reasoning = self._render("hq_reasoning_voice")
             response = self._render("hq_final_response_voice")
         elif channel == "whatsapp":
             reasoning = self._render("hq_reasoning")
-            response = self._render("hq_final_response_whatsapp")
+            response = self._render(
+                "hq_final_response_whatsapp",
+                response_language_instruction=lang_instruction,
+            )
         else:
             reasoning = self._render("hq_reasoning")
-            response = self._render("hq_final_response")
+            response = self._render(
+                "hq_final_response",
+                response_language_instruction=lang_instruction,
+            )
         return reasoning, response
 
     def _log_quality_scores(self, trace_id: str, result: Any) -> None:

@@ -175,6 +175,7 @@ from lib.ai_foundation.config import settings as _ai_settings
 from lib.ai_foundation.models.registry import ModelRegistry, ModelTask, build_default_registry
 from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
 from lib.ai_foundation.models.gateway import ModelGateway
+from lib.ai_foundation.translation import TranslationService
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
@@ -1650,6 +1651,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Translation Service — patient-facing text in the preferred AI language
+container.register(
+    TranslationService,
+    lambda: TranslationService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Memory Store — cross-agent patient facts and conversation turns
 container.register(
     MongoMemoryStore,
@@ -1827,6 +1837,7 @@ container.register(
         coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
+        translator=cast(TranslationService, container.resolve(TranslationService)),
     ),
     scope=Scope.singleton,
 )

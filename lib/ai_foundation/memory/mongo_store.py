@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pymongo import ReplaceOne
 
@@ -273,17 +273,35 @@ class MongoMemoryStore:
 
     async def append_turns_batch(
         self, thread_id: str, turns: list[ConversationTurn]
-    ) -> None:
-        """Append multiple turns in a single batch write."""
+    ) -> list:
+        """Append multiple turns in a single batch write.
+
+        Returns the inserted Mongo ids (same order as ``turns``) so callers
+        can target a specific turn later — e.g. attaching the async English
+        audit translation to exactly the turn it belongs to.
+        """
         if not turns:
-            return
+            return []
         collection = self._mongo.get_collection(TURNS_COLLECTION)
         docs = []
         for turn in turns:
             doc = turn.model_dump(mode="json")
             doc["thread_id"] = thread_id
             docs.append(doc)
-        await collection.insert_many(docs)
+        result = await collection.insert_many(docs)
+        return list(result.inserted_ids)
+
+    async def update_turn_metadata_by_id(
+        self, turn_id: Any, metadata_patch: dict
+    ) -> bool:
+        """Merge keys into a specific turn's metadata (targeted by Mongo id —
+        never "the latest turn", which races with fast follow-up messages)."""
+        collection = self._mongo.get_collection(TURNS_COLLECTION)
+        result = await collection.update_one(
+            {"_id": turn_id},
+            {"$set": {f"metadata.{k}": v for k, v in metadata_patch.items()}},
+        )
+        return result.matched_count > 0
 
     # -- Thread Summaries ---------------------------------------------------
 
@@ -299,12 +317,35 @@ class MongoMemoryStore:
     async def save_thread_summary(
         self, thread_id: str, summary: ThreadSummary
     ) -> None:
-        """Save or replace a thread summary."""
+        """Save or replace a thread summary.
+
+        Whole-document write — use ONLY when constructing a brand-new summary.
+        Concurrent writers that own individual fields must use
+        :meth:`update_thread_summary_fields` or they clobber each other.
+        """
         collection = self._mongo.get_collection(SUMMARIES_COLLECTION)
         doc = summary.model_dump(mode="json")
         doc["thread_id"] = thread_id
         await collection.replace_one(
             {"thread_id": thread_id},
             doc,
+            upsert=True,
+        )
+
+    async def update_thread_summary_fields(
+        self, thread_id: str, fields: dict
+    ) -> None:
+        """Partial ``$set`` on a thread summary — each writer touches only
+        the fields it owns, so the pending-request recorder, the open-question
+        updater, compaction, and the event-scan consumer cannot wipe each
+        other's state (they race on every reply)."""
+        collection = self._mongo.get_collection(SUMMARIES_COLLECTION)
+        set_fields = dict(fields)
+        set_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+        defaults = {"thread_id": thread_id, "summary": "", "turn_count": 0}
+        on_insert = {k: v for k, v in defaults.items() if k not in set_fields}
+        await collection.update_one(
+            {"thread_id": thread_id},
+            {"$set": set_fields, "$setOnInsert": on_insert},
             upsert=True,
         )

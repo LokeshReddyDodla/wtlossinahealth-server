@@ -16,6 +16,7 @@ on:
       - "lib/ai_foundation/models/registry.py"
       - "lib/ai_foundation/config.py"
       - "lib/ai_foundation/agents/**"
+      - "lib/ai_foundation/translation/**"
       - "evals/**"
   schedule:
     # Nightly at 22:00 UTC (03:30 IST) — catches provider-side model drift
@@ -157,6 +158,10 @@ jobs:
       - name: Fact extraction suite
         if: steps.secrets_check.outputs.configured == 'true'
         run: poetry run python -m evals.run --suite evals/golden/fact_extraction.yaml
+
+      - name: Translation suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/translation.yaml
 
       - name: Upload eval reports
         if: always() && steps.secrets_check.outputs.configured == 'true'

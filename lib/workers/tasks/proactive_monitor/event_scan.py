@@ -88,6 +88,7 @@ async def handle_proactive_event(
 
         names = await resolver.resolve_names([patient_id])
         tzs = await resolver.resolve_timezones([patient_id])
+        language = await resolver.resolve_language(patient_id)
 
         result = await monitor.scan_patient(
             patient_id=patient_id,
@@ -116,7 +117,12 @@ async def handle_proactive_event(
             # Companion Phase 3: if the health agent asked the user to log
             # exactly this kind of data, this insight CONTINUES that chat —
             # post it into the thread and route the push to the conversation.
-            continuation = await _consume_pending_request(thread_id, entity_type, top.body)
+            # The chat turn shows the preferred language; English rides along.
+            chat_body, english_body = await _localize(top.body, language)
+            continuation = await _consume_pending_request(
+                thread_id, entity_type, chat_body,
+                language=language, english_body=english_body,
+            )
 
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
@@ -130,7 +136,13 @@ async def handle_proactive_event(
         else:
             # The agent asked for this data and the user delivered — never
             # answer that with silence, even when the scan has nothing to say.
-            await _consume_pending_request(thread_id, entity_type, _ack_body(entity_type))
+            ack_shown, ack_english = await _localize(
+                _ack_body(entity_type), language, cached=True,
+            )
+            await _consume_pending_request(
+                thread_id, entity_type, ack_shown,
+                language=language, english_body=ack_english,
+            )
 
         return TaskResult(
             success=True,
@@ -158,13 +170,11 @@ async def handle_proactive_event(
         )
 
 
+# Canonical English — non-English users get these through the
+# TranslationService (cached), same path as every other AI string.
 _ACK_WORDS = {
-    "meal": "meal",
-    "smbg": "glucose reading",
-    "symptom": "symptom note",
-    "sleep": "sleep log",
-    "mood": "check-in",
-    "workout": "workout",
+    "meal": "meal", "smbg": "glucose reading", "symptom": "symptom note",
+    "sleep": "sleep log", "mood": "check-in", "workout": "workout",
 }
 
 
@@ -176,14 +186,41 @@ def _ack_body(entity_type: str | None) -> str:
     )
 
 
+async def _localize(
+    body: str, language: str, *, cached: bool = False,
+) -> tuple[str, str | None]:
+    """Return (text shown in chat, English original when translated).
+
+    ``cached=True`` for fixed strings (the ack) — a tiny recurring set.
+    """
+    if language == "en":
+        return body, None
+    try:
+        from lib.ai_foundation.translation import TranslationService
+
+        translator = container.resolve(TranslationService)
+        if cached:
+            translated = await translator.translate_cached(body, language)
+        else:
+            translated = await translator.translate(body, language)
+        return translated, body
+    except Exception as exc:
+        logger.warning("Chat-continuation translation failed: %s", exc)
+        return body, None
+
+
 async def _consume_pending_request(
     thread_id: str, entity_type: str | None, insight_body: str,
+    *, language: str = "en", english_body: str | None = None,
 ) -> bool:
     """Close the ask→log→analyze loop.
 
     If the chat thread has a live pending_data_request matching this event's
     entity type: append the insight as the agent's next conversation turn,
     clear the request, and return True (caller routes the push to chat).
+
+    ``insight_body`` is what the user sees (their preferred language);
+    ``english_body`` carries the English original when they differ.
     """
     if not entity_type:
         return False
@@ -202,18 +239,29 @@ async def _consume_pending_request(
             expired = datetime.fromisoformat(pending["expires_at"]) <= datetime.now(timezone.utc)
         except Exception:
             expired = True
-        # Clear the request either way — fulfilled or stale, it's done.
-        summary.pending_data_request = None
-        await memory.save_thread_summary(thread_id, summary)
         if expired:
+            # Stale ask — clear it (partial $set: don't touch other fields).
+            await memory.update_thread_summary_fields(
+                thread_id, {"pending_data_request": None},
+            )
             return False
 
+        # Append the reply FIRST, clear the pending after: if the append
+        # fails the ask survives for the next event (worst case a duplicate
+        # reply); the old order left the user with permanent silence.
+        turn_metadata: dict = {"kind": "data_request_followup", "entity_type": entity_type}
+        if language != "en" and english_body:
+            turn_metadata["language"] = language
+            turn_metadata["translations"] = {"en": english_body}
         await memory.append_turns_batch(thread_id, [ConversationTurn(
             role="assistant",
             content=insight_body,
             agent_id="proactive_monitor_v2",
-            metadata={"kind": "data_request_followup", "entity_type": entity_type},
+            metadata=turn_metadata,
         )])
+        await memory.update_thread_summary_fields(
+            thread_id, {"pending_data_request": None},
+        )
         logger.info("Chat continuation: %s fulfilled pending %s request", thread_id, entity_type)
         return True
     except Exception as exc:

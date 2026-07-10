@@ -1,0 +1,88 @@
+# Translation fidelity — preferred AI language (en ↔ hi / hi-Latn).
+#
+# The TranslationService has live deterministic guards (numbers + markers
+# preserved, else fall back to source). These cases verify the guards AND
+# that real translation quality holds: script switches, health terms
+# survive, bubble markers ride through, safety wording isn't softened.
+#
+# Run: .venv/bin/python -m evals.run --suite evals/golden/translation.yaml
+
+target: translation
+
+cases:
+  - id: tr_hi_numbers_units
+    category: fidelity
+    critical: true
+    text: "Your average glucose yesterday was **118 mg/dL** with 92% time in range. Breakfast had 32g protein and 450 kcal."
+    target_lang: hi
+    checks:
+      not_source: true
+      expect_script: devanagari
+      must_mention: ["118", "92", "32", "450", "mg/dL"]
+
+  - id: tr_hinglish_roman_script
+    category: fidelity
+    critical: true
+    text: "Your glucose stayed stable after lunch — nice steady line from 2 PM to 6 PM."
+    target_lang: hi-Latn
+    checks:
+      not_source: true
+      expect_script: latin
+      must_mention: ["glucose", "2", "6"]
+
+  - id: tr_hi_bubble_markers_survive
+    category: structure
+    critical: true
+    text: "Your glucose looks great today — average 112 mg/dL.\n[[BUBBLE]]\nSleep was short though: 5.5 hours.\n[[BUBBLE]]\nWant to log dinner so I can check the evening picture?"
+    target_lang: hi
+    checks:
+      not_source: true
+      expect_script: devanagari
+      must_mention: ["[[BUBBLE]]", "112", "5.5"]
+
+  - id: tr_hi_table_structure
+    category: structure
+    text: "| Meal | Carbs | Response |\n|------|-------|----------|\n| Breakfast | 45g | +38 mg/dL |\n| Lunch | 60g | +55 mg/dL |"
+    target_lang: hi
+    checks:
+      not_source: true
+      must_mention: ["45", "60", "38", "55", "|"]
+
+  - id: tr_hi_safety_not_softened
+    category: safety
+    critical: true
+    text: "Don't take a double dose to catch up — that can cause a dangerous low. If you're unsure whether to skip or take it now, check with your care team."
+    target_lang: hi
+    checks:
+      not_source: true
+      expect_script: devanagari
+
+  - id: tr_hinglish_medication_names_intact
+    category: fidelity
+    critical: true
+    text: "You logged Metformin 500 mg this morning. Cimetidine can interact with some medicines, so keep both in your logs."
+    target_lang: hi-Latn
+    checks:
+      not_source: true
+      expect_script: latin
+      must_mention: ["metformin", "cimetidine", "500"]
+
+  - id: tr_audit_copy_hi_to_en
+    category: audit
+    critical: true
+    text: "आपका ग्लूकोज़ आज स्थिर रहा — औसत 115 mg/dL। नाश्ते में प्रोटीन अच्छा था (30g)।"
+    source_lang: hi
+    target_lang: en
+    checks:
+      not_source: true
+      expect_script: latin
+      must_mention: ["glucose", "115", "30"]
+
+  - id: tr_hinglish_companion_tone
+    category: tone
+    text: "That's a great streak — 17 days of showing up! Keep logging and I'll keep watch."
+    target_lang: hi-Latn
+    checks:
+      not_source: true
+      expect_script: latin
+      must_mention: ["17"]

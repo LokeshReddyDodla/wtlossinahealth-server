@@ -62,15 +62,18 @@ class PersistenceService:
         patient_ids: list[str] | None = None,
         intent_metadata: dict[str, Any] | None = None,
         user_timestamp: Any | None = None,
-    ) -> None:
+    ) -> Any | None:
         """Save user + assistant turns to the memory store.
+
+        Returns the assistant turn's Mongo id (or None on failure) so late
+        metadata (the async English audit copy) can target exactly this turn.
 
         Args:
             user_timestamp: When the user sent the message (captured at pipeline start).
                             If None, uses current time for both turns.
         """
         if not self._memory or not thread_id:
-            return
+            return None
 
         now = datetime.now(timezone.utc)
         user_ts = user_timestamp if user_timestamp else now
@@ -109,31 +112,58 @@ class PersistenceService:
                 timestamp=assistant_ts,
             )
 
-            await self._memory.append_turns_batch(thread_id, [user_turn, assistant_turn])
+            inserted = await self._memory.append_turns_batch(
+                thread_id, [user_turn, assistant_turn]
+            )
             await self._update_thread_state(thread_id, assistant_message)
+            return inserted[-1] if inserted else None
         except Exception as exc:
             logger.warning("Failed to persist turns (thread=%s): %s", thread_id, exc)
+            return None
+
+    async def attach_translation(
+        self, *, turn_id: Any, language: str, translations: dict[str, str],
+    ) -> None:
+        """Attach translation copies to a SPECIFIC assistant turn by id.
+
+        Targeted by id, never "the latest turn" — a fast follow-up message or
+        a proactive continuation can land a newer turn before this background
+        translation finishes, and the copy must not attach to that one.
+
+        ``language`` = what the user saw (turn content's language);
+        ``translations`` = other-language copies, e.g. {"en": ...} audit copy.
+        """
+        if not self._memory or turn_id is None:
+            return
+        try:
+            await self._memory.update_turn_metadata_by_id(
+                turn_id, {"language": language, "translations": translations},
+            )
+        except Exception as exc:
+            logger.warning("Failed to attach translation (turn=%s): %s", turn_id, exc)
 
     PENDING_REQUEST_TTL_HOURS = 24
 
     async def record_pending_request(self, thread_id: str | None, entity_type: str) -> None:
         """The agent asked the user to log ``entity_type`` — remember it so the
-        eventual log event can continue this conversation (companion Phase 3)."""
+        eventual log event can continue this conversation (companion Phase 3).
+
+        Partial $set — never a whole-doc write (races with save_turn's state
+        update and compaction in the same post-response burst).
+        """
         if not self._memory or not thread_id:
             return
         try:
             from datetime import timedelta
 
             now = datetime.now(timezone.utc)
-            summary = await self._memory.get_thread_summary(thread_id)
-            if summary is None:
-                summary = ThreadSummary(thread_id=thread_id, summary="", turn_count=0)
-            summary.pending_data_request = {
-                "entity_type": entity_type,
-                "asked_at": now.isoformat(),
-                "expires_at": (now + timedelta(hours=self.PENDING_REQUEST_TTL_HOURS)).isoformat(),
-            }
-            await self._memory.save_thread_summary(thread_id, summary)
+            await self._memory.update_thread_summary_fields(thread_id, {
+                "pending_data_request": {
+                    "entity_type": entity_type,
+                    "asked_at": now.isoformat(),
+                    "expires_at": (now + timedelta(hours=self.PENDING_REQUEST_TTL_HOURS)).isoformat(),
+                },
+            })
         except Exception as exc:
             logger.debug("pending-request record failed (thread=%s): %s", thread_id, exc)
 
@@ -163,18 +193,17 @@ class PersistenceService:
         return last
 
     async def _update_thread_state(self, thread_id: str, assistant_message: str) -> None:
-        """Persist conversational micro-state (open question) on the summary doc."""
+        """Persist conversational micro-state (open question) on the summary doc.
+
+        Partial $set — this races with the pending-request recorder, compaction,
+        and the event-scan consumer on every reply; a whole-doc write here
+        used to wipe their fields.
+        """
         try:
             question = self.extract_open_question(assistant_message)
-            summary = await self._memory.get_thread_summary(thread_id)
-            if summary is None:
-                if question is None:
-                    return
-                summary = ThreadSummary(thread_id=thread_id, summary="", turn_count=0)
-            if summary.last_assistant_question == question:
-                return
-            summary.last_assistant_question = question
-            await self._memory.save_thread_summary(thread_id, summary)
+            await self._memory.update_thread_summary_fields(
+                thread_id, {"last_assistant_question": question},
+            )
         except Exception as exc:
             logger.debug("thread-state update failed (thread=%s): %s", thread_id, exc)
 
@@ -218,12 +247,16 @@ class PersistenceService:
             if turn_count >= 2 and (not existing or not existing.title):
                 first_turns = await self._memory.get_first_thread_turns(thread_id, limit=2)
                 title = await self._generate_title(first_turns)
-                summary = existing or ThreadSummary(thread_id=thread_id, summary="", turn_count=turn_count)
-                summary.title = title
+                title_fields: dict = {"title": title}
                 if patient_ids:
-                    summary.patient_ids = patient_ids
-                await self._memory.save_thread_summary(thread_id, summary)
-                existing = summary
+                    title_fields["patient_ids"] = patient_ids
+                await self._memory.update_thread_summary_fields(thread_id, title_fields)
+                if existing:
+                    existing.title = title
+                else:
+                    existing = ThreadSummary(
+                        thread_id=thread_id, summary="", turn_count=turn_count, title=title,
+                    )
 
             # Compact summary at configured intervals
             threshold = settings.COMPACTION_TRIGGER_THRESHOLD
@@ -256,21 +289,18 @@ class PersistenceService:
                 task=ModelTask.SUMMARIZATION,
             )
 
-            title = existing.title if existing and existing.title else ""
-            pids = patient_ids or (existing.patient_ids if existing else [])
-            summary = ThreadSummary(
-                thread_id=thread_id, title=title, patient_ids=pids,
-                summary=digest.summary, turn_count=turn_count,
-                goal=digest.goal, domains=digest.domains, date_scope=digest.date_scope,
-                # preserve conversational micro-state — compaction must not wipe it
-                last_assistant_question=(
-                    existing.last_assistant_question if existing else None
-                ),
-                pending_data_request=(
-                    existing.pending_data_request if existing else None
-                ),
-            )
-            await self._memory.save_thread_summary(thread_id, summary)
+            # Partial $set of ONLY compaction-owned fields — micro-state
+            # (pending_data_request, last_assistant_question) belongs to other
+            # writers; a whole-doc write here used to erase a pending request
+            # recorded during the multi-second LLM call above.
+            digest_fields: dict = {
+                "summary": digest.summary, "turn_count": turn_count,
+                "goal": digest.goal, "domains": digest.domains,
+                "date_scope": digest.date_scope,
+            }
+            if patient_ids:
+                digest_fields["patient_ids"] = patient_ids
+            await self._memory.update_thread_summary_fields(thread_id, digest_fields)
             elapsed_ms = int((_time.perf_counter() - start) * 1000)
             logger.info("Compacted thread %s (%d turns, %dms)", thread_id, turn_count, elapsed_ms)
 

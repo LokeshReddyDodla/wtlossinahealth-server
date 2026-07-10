@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.agents.core.refs import Ref, ResolvedRef, resolve_refs
+from lib.core.types import DEFAULT_AI_LANGUAGE
 from lib.services.gamification.time_utils import local_now
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ class AgentContext(BaseModel):
     recent_insights: list[dict] = Field(default_factory=list)
     pinned_refs: list[ResolvedRef] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
+    response_language: str = "en"  # patient's preferred AI language
 
     model_config = {"arbitrary_types_allowed": True}
     gamification: dict[str, Any] | None = None
@@ -283,7 +285,7 @@ class ContextLoader:
             )
 
         # Single-patient mode: original behaviour
-        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs = await asyncio.gather(
+        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs, response_language = await asyncio.gather(
             self._load_facts(patient_id),
             self._load_history(thread_id),
             self._load_summary(thread_id),
@@ -293,6 +295,7 @@ class ContextLoader:
             self._load_local_time(patient_id),
             self._load_medications(patient_id),
             self._load_pinned_refs(refs, patient_id),
+            self._load_response_language(patient_id),
         )
 
         return AgentContext(
@@ -305,6 +308,7 @@ class ContextLoader:
             local_time=local_time,
             medications_text=medications_text,
             pinned_refs=pinned_refs,
+            response_language=response_language,
         )
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
@@ -429,6 +433,15 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to resolve pinned refs: %s", exc)
             return []
+
+    async def _load_response_language(self, patient_id: str | None) -> str:
+        if not patient_id or not self._resolver:
+            return DEFAULT_AI_LANGUAGE
+        try:
+            return await self._resolver.resolve_language(patient_id)
+        except Exception as exc:
+            logger.debug("Failed to resolve preferred AI language: %s", exc)
+            return DEFAULT_AI_LANGUAGE
 
     async def _load_gamification(self, patient_id: str | None) -> dict[str, Any] | None:
         if not patient_id or not self._gamification_service:

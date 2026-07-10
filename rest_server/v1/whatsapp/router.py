@@ -137,11 +137,14 @@ async def receive_message(request: Request) -> dict:
     """Handle incoming WhatsApp messages."""
     body = await request.body()
 
-    # TODO: re-enable signature verification once WHATSAPP_APP_SECRET is confirmed
-    # if WHATSAPP_APP_SECRET:
-    #     signature = request.headers.get("x-hub-signature-256", "")
-    #     if not _verify_payload_signature(body, signature):
-    #         raise HTTPException(status_code=403, detail="Invalid signature")
+    # Fail closed: an unsigned webhook would let anyone chat as any patient
+    # whose phone number they know. No secret configured = endpoint disabled.
+    if not WHATSAPP_APP_SECRET:
+        logger.error("WHATSAPP_APP_SECRET not configured — rejecting webhook")
+        raise HTTPException(status_code=403, detail="Webhook not configured")
+    signature = request.headers.get("x-hub-signature-256", "")
+    if not _verify_payload_signature(body, signature):
+        raise HTTPException(status_code=403, detail="Invalid signature")
 
     data = await request.json()
 
@@ -275,12 +278,28 @@ async def _send_twilio_message(to: str, text: str) -> None:
 
 @router.post("/twilio/webhook")
 async def twilio_receive_message(
+    request: Request,
     Body: str = Form(""),
     From: str = Form(""),
     To: str = Form(""),
     NumMedia: int = Form(0),
 ) -> Response:
     """Handle incoming WhatsApp messages from Twilio sandbox."""
+    # Fail closed: unsigned requests could impersonate any patient by phone.
+    if not TWILIO_AUTH_TOKEN:
+        logger.error("TWILIO_AUTH_TOKEN not configured — rejecting webhook")
+        raise HTTPException(status_code=403, detail="Webhook not configured")
+    from twilio.request_validator import RequestValidator
+
+    form = await request.form()
+    validator = RequestValidator(TWILIO_AUTH_TOKEN)
+    if not validator.validate(
+        str(request.url),
+        dict(form),
+        request.headers.get("X-Twilio-Signature", ""),
+    ):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
     if not From:
         return Response(content="<Response></Response>", media_type="application/xml")
 
@@ -296,7 +315,7 @@ async def twilio_receive_message(
         return Response(content="<Response></Response>", media_type="application/xml")
 
     phone = _normalize_twilio_phone(From)
-    logger.info("Twilio WhatsApp message from %s: %s", phone, Body[:100])
+    logger.info("Twilio WhatsApp message from %s… (%d chars)", phone[:6], len(Body))
 
     patient = await _lookup_patient_by_phone(phone)
 

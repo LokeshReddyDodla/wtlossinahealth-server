@@ -17,6 +17,8 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from lib.core.types import AiLanguageLiteral
+
 
 # ─────────────────────────── Enums (Literal types) ───────────────────────────
 
@@ -273,6 +275,7 @@ class PatientProfileUpdate(BaseModel):
     profile_picture: Optional[str] = None
     timezone: Optional[str] = None
     occupation: Optional[str] = None
+    preferred_ai_language: Optional[AiLanguageLiteral] = None
 
     # Body
     height_cm: Optional[float] = Field(default=None, ge=30, le=300)
