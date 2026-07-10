@@ -295,6 +295,7 @@ class FCMService:
             devices = await user_device_service.get_user_devices(user_id=UUID(user_id))
             tokens = [d.fcm_token for d in devices if d.fcm_token]
             if not tokens:
+                logger.info("Silent data message to %s: no FCM tokens registered", user_id)
                 return
 
             message = messaging.MulticastMessage(
@@ -310,7 +311,7 @@ class FCMService:
             response = await asyncio.to_thread(
                 messaging.send_each_for_multicast, message
             )
-            logger.debug(
+            logger.info(
                 "Silent data message to %s: %d ok, %d failed",
                 user_id, response.success_count, response.failure_count,
             )
