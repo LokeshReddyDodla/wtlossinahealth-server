@@ -928,10 +928,9 @@ class ProactiveMonitorAgent(BaseAgent):
             return insights, llm_meta
         except Exception as exc:
             # Stay silent in BOTH modes: a content-free "open the app" push
-            # helps nobody, and recording it dedup-blocked real insights for
-            # 24h while making a provider outage look like normal traffic.
-            # ERROR (not warning) so outages surface in ops alerting; the
-            # next scan retries with real content.
+            # helps nobody, and recording one dedup-blocks real insights for
+            # 24h. ERROR (not warning) so provider outages surface in ops
+            # alerting; the next scan retries with real content.
             mode = trigger.value if trigger is not None else "cron"
             logger.error("Insight analysis failed (%s) — skipping, no fallback push: %s",
                          mode, exc, exc_info=True)

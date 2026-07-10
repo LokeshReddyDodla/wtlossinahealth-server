@@ -266,10 +266,10 @@ class MongoMemoryStore:
     def _turn_doc(thread_id: str, turn: ConversationTurn) -> dict:
         doc = turn.model_dump(mode="json")
         doc["thread_id"] = thread_id
-        # Real BSON date, not the json-dump ISO string: Mongo TTL only
-        # expires Date fields, so string timestamps made the 90-day
-        # retention index a silent no-op (collections grew forever).
-        # scripts/migrate_memory_timestamps.py converts existing docs.
+        # Real BSON date, not the json-dump ISO string: Mongo TTL indexes
+        # only expire Date-typed fields, so the 90-day retention depends on
+        # this. (scripts/migrate_memory_timestamps.py converts legacy
+        # string-typed docs.)
         doc["timestamp"] = turn.timestamp
         return doc
 

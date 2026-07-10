@@ -74,10 +74,9 @@ async def generate_meal_vector(
         )
 
     except Exception as e:
-        # Re-raise so arq's retry machinery engages (retry_jobs/max_tries) —
-        # the upsert is idempotent, and swallowing into TaskResult(False)
-        # meant a transient Qdrant blip lost the meal vector AND its
-        # proactive insight permanently.
+        # Re-raise so arq's retry machinery engages (retry_jobs/max_tries):
+        # the upsert is idempotent, and this task is the only path that gets
+        # the meal into Qdrant AND fires its proactive insight.
         logger.error(f"Failed to generate meal vector for {patient_id}: {e}")
         raise
 

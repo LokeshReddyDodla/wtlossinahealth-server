@@ -413,10 +413,9 @@ class HealthQueryAgent(BaseAgent):
                 fallback_text=await self._localize_text("Please try again in a moment.", ctx),
             )
         finally:
-            # Client disconnect (GeneratorExit) mid-stream: without this the
-            # user's question AND the mostly-delivered reply vanish from
-            # history — the chat they read never happened on reopen. Salvage
-            # what was streamed. (No yields here — only awaits are legal
+            # Client disconnect (GeneratorExit) mid-stream: history must
+            # still record what the user read — their message plus the
+            # delivered partial. (No yields here — only awaits are legal
             # during async-generator finalization.)
             if delta_sink and not turn_saved and intent is not None:
                 try:

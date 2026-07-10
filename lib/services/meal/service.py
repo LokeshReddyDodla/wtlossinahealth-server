@@ -339,9 +339,9 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            # Re-upsert the Qdrant point too (deterministic id → overwrite):
-            # without this, edits through the legacy path left the agent
-            # citing the pre-edit meal until an analyze call happened.
+            # Re-upsert the Qdrant point (deterministic id → overwrite):
+            # every write path that changes a meal must refresh its vector,
+            # or the agent keeps citing the pre-edit meal.
             await trigger_meal_tasks(
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),

@@ -152,8 +152,9 @@ class PersistenceService:
         """The agent asked the user to log ``entity_type`` — remember it so the
         eventual log event can continue this conversation (companion Phase 3).
 
-        Partial $set — never a whole-doc write (races with save_turn's state
-        update and compaction in the same post-response burst).
+        Partial $set — the summary doc is shared with save_turn's state
+        update and compaction, which run concurrently in the same
+        post-response burst.
         """
         if not self._memory or not thread_id:
             return
@@ -184,8 +185,8 @@ class PersistenceService:
         parts = assistant_message.split("```")
         prose = " ".join(parts[::2])
         # last '?'-terminated sentence: take text after the last sentence
-        # break. '।' is the Hindi/Devanagari full stop — without it a Hindi
-        # reply's whole paragraph got captured as "the question".
+        # break. '।' is the Hindi/Devanagari full stop and counts as a
+        # sentence break like '. ' and '! '.
         last = None
         for chunk in prose.split("?")[:-1]:
             sent = chunk
@@ -199,9 +200,9 @@ class PersistenceService:
     async def _update_thread_state(self, thread_id: str, assistant_message: str) -> None:
         """Persist conversational micro-state (open question) on the summary doc.
 
-        Partial $set — this races with the pending-request recorder, compaction,
-        and the event-scan consumer on every reply; a whole-doc write here
-        used to wipe their fields.
+        Partial $set — the summary doc is shared with the pending-request
+        recorder, compaction, and the event-scan consumer; each writer may
+        touch only the fields it owns.
         """
         try:
             question = self.extract_open_question(assistant_message)
@@ -294,9 +295,9 @@ class PersistenceService:
             )
 
             # Partial $set of ONLY compaction-owned fields — micro-state
-            # (pending_data_request, last_assistant_question) belongs to other
-            # writers; a whole-doc write here used to erase a pending request
-            # recorded during the multi-second LLM call above.
+            # (pending_data_request, last_assistant_question) belongs to
+            # writers that run concurrently with the multi-second LLM call
+            # above.
             digest_fields: dict = {
                 "summary": digest.summary, "turn_count": turn_count,
                 "goal": digest.goal, "domains": digest.domains,

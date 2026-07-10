@@ -228,8 +228,8 @@ class FCMService:
                         f"Failed to send notification to device {tokens[idx][:20]}...: {resp.exception}"
                     )
 
-            # Prune dead registrations so a patient with rotated tokens does
-            # not silently stop receiving everything forever.
+            # Prune dead registrations: a patient whose tokens all rotated
+            # must start receiving again on their next valid registration.
             if invalid_tokens:
                 token_to_device = {d.fcm_token: d.device_id for d in devices if d.fcm_token}
                 for token in invalid_tokens:

@@ -235,9 +235,9 @@ class QdrantRetriever:
 
         # OVERLAP semantics, not containment: a record matches when its
         # [start_time, end_time] span intersects the query window. Point
-        # records (meals, readings) behave identically; range records no
-        # longer vanish from single-day queries — a 23:00→07:00 sleep
-        # session used to fail BOTH containment bounds for either day.
+        # records (meals, readings) are unaffected (start == end); range
+        # records (a 23:00→07:00 sleep session) must match BOTH days'
+        # single-day queries.
         if request.date_start:
             start_ms = _date_str_to_epoch_ms(request.date_start)
             conditions.append(FieldCondition(key="end_time", range=Range(gte=start_ms)))
