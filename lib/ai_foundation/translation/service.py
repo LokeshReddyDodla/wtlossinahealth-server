@@ -18,7 +18,7 @@ import re
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
-from lib.core.types import AI_LANGUAGE_NAMES
+from lib.core.types import ai_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ class TranslationService:
         if not text or not text.strip() or target_lang == source_lang:
             return text
 
-        target_name = AI_LANGUAGE_NAMES.get(target_lang, target_lang)
-        source_name = AI_LANGUAGE_NAMES.get(source_lang, source_lang)
+        target_name = ai_language_name(target_lang)
+        source_name = ai_language_name(source_lang)
         system = _SYSTEM_PROMPT.format(
             source_name=source_name,
             target_name=target_name,

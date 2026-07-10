@@ -229,3 +229,41 @@ class FCMService:
         except Exception as e:
             logger.error(f"Failed to send batch notifications to user {user_id}: {e}")
             raise
+
+    async def send_fcm_data_to_user_devices(
+        self,
+        user_id: str,
+        data: dict,
+    ) -> None:
+        """Send a SILENT data-only message to all of a user's devices.
+
+        No notification payload — nothing appears in the tray. Used to tell
+        a foregrounded app that server-side state changed (e.g. a chat thread
+        gained a turn or a translation) so open screens refresh live.
+        """
+        try:
+            postgres_store = cast(PostgresStore, container.resolve(PostgresStore))
+            user_device_service = UserDeviceService(postgres_store=postgres_store)
+            devices = await user_device_service.get_user_devices(user_id=UUID(user_id))
+            tokens = [d.fcm_token for d in devices if d.fcm_token]
+            if not tokens:
+                return
+
+            message = messaging.MulticastMessage(
+                tokens=tokens,
+                data={k: str(v) for k, v in data.items()},
+                android=messaging.AndroidConfig(priority="high"),
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(content_available=True),
+                    ),
+                ),
+            )
+            response = messaging.send_each_for_multicast(message)
+            logger.debug(
+                "Silent data message to %s: %d ok, %d failed",
+                user_id, response.success_count, response.failure_count,
+            )
+        except Exception as e:
+            # Best-effort: a missed refresh signal degrades to refresh-on-reopen.
+            logger.warning(f"Failed to send data message to user {user_id}: {e}")

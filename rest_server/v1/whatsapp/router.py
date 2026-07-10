@@ -21,9 +21,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from twilio.rest import Client as TwilioClient
 
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query import HealthQueryAgent
 from lib.ai_foundation.agents.state import AgentContext, AgentInput, RequestPriority
+from lib.ai_foundation.translation import TranslationService
 from lib.core.container import container
+from lib.core.types import DEFAULT_AI_LANGUAGE
 from lib.dependencies.database import get_async_postgres_session
 from lib.models.patient import Patient
 
@@ -54,6 +57,27 @@ def _verify_payload_signature(payload: bytes, signature_header: str) -> bool:
         WHATSAPP_APP_SECRET.encode(), payload, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(f"sha256={expected}", signature_header)
+
+
+def _get_resolver() -> "PatientNameResolver":
+    return container.resolve(PatientNameResolver)
+
+
+def _get_translator() -> "TranslationService":
+    return container.resolve(TranslationService)
+
+
+async def _localize_for_patient(patient_id: str | None, text: str) -> str:
+    """Canned strings to a KNOWN patient go out in their AI language."""
+    if not patient_id:
+        return text
+    try:
+        lang = await _get_resolver().resolve_language(patient_id)
+        if lang == DEFAULT_AI_LANGUAGE:
+            return text
+        return await _get_translator().translate_cached(text, lang)
+    except Exception:
+        return text
 
 
 async def _lookup_patient_by_phone(phone: str) -> Patient | None:
@@ -163,10 +187,14 @@ async def receive_message(request: Request) -> dict:
 
                 if msg.get("type") != "text":
                     await _mark_as_read(message_id)
+                    media_patient = await _lookup_patient_by_phone(sender_phone)
                     await _send_whatsapp_message(
                         sender_phone,
-                        "I can only read text messages for now. "
-                        "Please type your question and I'll be happy to help!",
+                        await _localize_for_patient(
+                            str(media_patient.patient_id) if media_patient else None,
+                            "I can only read text messages for now. "
+                            "Please type your question and I'll be happy to help!",
+                        ),
                     )
                     continue
 
@@ -224,9 +252,10 @@ async def _process_patient_message(
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
     if message_id:
@@ -304,10 +333,14 @@ async def twilio_receive_message(
         return Response(content="<Response></Response>", media_type="application/xml")
 
     if NumMedia > 0 and not Body:
+        media_patient = await _lookup_patient_by_phone(_normalize_twilio_phone(From))
         await _send_twilio_message(
             From,
-            "I can only read text messages for now. "
-            "Please type your question and I'll be happy to help!",
+            await _localize_for_patient(
+                str(media_patient.patient_id) if media_patient else None,
+                "I can only read text messages for now. "
+                "Please type your question and I'll be happy to help!",
+            ),
         )
         return Response(content="<Response></Response>", media_type="application/xml")
 
@@ -358,9 +391,10 @@ async def twilio_receive_message(
         response_text = output.message
     except Exception:
         logger.exception("Health agent error for WhatsApp patient %s", patient_id)
-        response_text = (
+        response_text = await _localize_for_patient(
+            patient_id,
             "I'm having trouble processing your request right now. "
-            "Please try again in a moment."
+            "Please try again in a moment.",
         )
 
     # Companion bubbles: send each part as its own message (length-split per part).
