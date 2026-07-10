@@ -25,6 +25,7 @@ from lib.ai_foundation.agents.base import BaseAgent
 from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
+from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -111,14 +112,14 @@ class HealthQueryAgent(BaseAgent):
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 return output
 
             if not intent.is_ready:
                 output = self._build_clarification(intent, meta)
                 await _maybe_await(self.gateway.langfuse_trace_output(trace_id=trace_id, output_text=output.message))
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 return output
 
             # ── Route: single-agent vs multi-agent ──
@@ -162,10 +163,17 @@ class HealthQueryAgent(BaseAgent):
             elapsed = int((time.perf_counter() - pipeline_start) * 1000)
             total_cost = safe_cost(meta) + result.total_cost
 
+            clean_response, awaited = extract_await(result.response)
+            suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
+            if awaited:
+                self._register_pending_request(input, awaited, suggestions)
+            bubbles = split_bubbles(clean_response)
             output = AgentOutput(
-                message=result.response, is_ready=True,
-                suggestions=[s.model_dump() for s in intent.suggestions],
+                message=strip_bubbles(clean_response), is_ready=True,
+                suggestions=suggestions,
                 data={
+                    "messages": bubbles,
+                    "pending_request": awaited,
                     "data_types": [dt.value for dt in intent.data_types],
                     "intent_confidence": intent.confidence,
                     "coverage_confidence": result.coverage_confidence,
@@ -196,7 +204,7 @@ class HealthQueryAgent(BaseAgent):
             self._log_quality_scores(trace_id, result)
 
             await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-            self._schedule_background(input)
+            self._schedule_background(input, ctx)
             return output
 
         except Exception as exc:
@@ -229,7 +237,7 @@ class HealthQueryAgent(BaseAgent):
             if intent.memory_action:
                 output = await self._handle_memory_action(input, intent, ctx, trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 yield sse_token(output.message)
                 yield sse_done(SSEDonePayload(trace_id=trace_id, latency_ms=int((time.perf_counter() - pipeline_start) * 1000)))
                 return
@@ -238,10 +246,10 @@ class HealthQueryAgent(BaseAgent):
                 msg = intent.clarification_msg or "Could you tell me more?"
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
                 await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                self._schedule_background(input)
+                self._schedule_background(input, ctx)
                 yield sse_token(msg)
                 yield sse_done(SSEDonePayload(
-                    suggestions=[s.model_dump() for s in intent.suggestions],
+                    suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
                     trace_id=trace_id,
                     latency_ms=int((time.perf_counter() - pipeline_start) * 1000),
                 ))
@@ -290,7 +298,17 @@ class HealthQueryAgent(BaseAgent):
                     # own done event.
                     if isinstance(event, SSEDonePayload):
                         engine_data = event.data or {}
-                        full_text = engine_data.get("full_response", "")
+                        raw_text = engine_data.get("full_response", "")
+                        raw_text, awaited = extract_await(raw_text)
+                        stream_suggestions = [s.model_dump(exclude_none=True) for s in intent.suggestions]
+                        if awaited:
+                            self._register_pending_request(input, awaited, stream_suggestions)
+                        engine_data["pending_request"] = awaited
+                        # Bubble protocol: legacy clients keep a clean single
+                        # string; new clients render data.messages as bubbles.
+                        full_text = strip_bubbles(raw_text)
+                        engine_data["full_response"] = full_text
+                        engine_data["messages"] = split_bubbles(raw_text)
                         intent_cost = safe_cost(meta)
                         total_cost = (event.cost_usd or 0.0) + intent_cost
                         elapsed = int((time.perf_counter() - pipeline_start) * 1000)
@@ -327,11 +345,11 @@ class HealthQueryAgent(BaseAgent):
                             ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
                         await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
-                        self._schedule_background(input)
+                        self._schedule_background(input, ctx)
 
                         # Emit our own done event with suggestions and trace
                         yield sse_done(SSEDonePayload(
-                            suggestions=[s.model_dump() for s in intent.suggestions],
+                            suggestions=stream_suggestions,
                             trace_id=trace_id,
                             cost_usd=total_cost,
                             latency_ms=elapsed,
@@ -564,7 +582,35 @@ class HealthQueryAgent(BaseAgent):
         # Unknown action fallback
         return AgentOutput(message="I'm not sure what you'd like me to remember. Could you try again?", is_ready=True, trace_id=trace_id)
 
-    def _schedule_background(self, input: AgentInput) -> None:
+    _AWAIT_CHIP_LABELS = {
+        "meal": "Log a meal",
+        "smbg": "Log glucose reading",
+        "symptom": "Log symptoms",
+        "sleep": "Log sleep",
+        "mood": "Log mood",
+        "workout": "Log workout",
+    }
+
+    def _register_pending_request(
+        self, input: AgentInput, entity_type: str, suggestions: list[dict],
+    ) -> None:
+        """Persist the data-ask (fire-and-forget) + add an action chip so the
+        app can open the right logging sheet in one tap."""
+        if self.persistence:
+            asyncio.create_task(self._run_background(
+                self.persistence.record_pending_request(
+                    thread_id=input.context.thread_id, entity_type=entity_type,
+                ),
+                name="pending_request", thread_id=input.context.thread_id or "",
+            ))
+        label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
+        suggestions.insert(0, {
+            "action": f"log_{entity_type}",
+            "label": label,
+            "description": label,
+        })
+
+    def _schedule_background(self, input: AgentInput, ctx: Any = None) -> None:
         """Schedule background tasks with timeout and error handling."""
         thread_id = input.context.thread_id or ""
         if self.persistence:
@@ -578,9 +624,17 @@ class HealthQueryAgent(BaseAgent):
         if self.fact_extractor:
             pid = self._resolve_single_pid(input)
             if pid:
+                # The agent's reply the user is responding to — short answers
+                # ("yes, around 1am") are meaningless without it.
+                preceding = None
+                for turn in reversed(getattr(ctx, "history", None) or []):
+                    if turn.get("role") == "assistant":
+                        preceding = turn.get("content")
+                        break
                 asyncio.create_task(self._run_background(
                     self.fact_extractor.extract_if_needed(
                         message=input.message, patient_id=pid, agent_id=self.agent_id,
+                        preceding_assistant_message=preceding,
                     ),
                     name="fact_extraction", thread_id=thread_id,
                 ))
@@ -699,7 +753,7 @@ class HealthQueryAgent(BaseAgent):
         return AgentOutput(
             message=intent.clarification_msg or "Could you tell me more?",
             is_ready=False,
-            suggestions=[s.model_dump() for s in intent.suggestions],
+            suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
             data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},
             trace_id=meta.trace_id if meta else None,
             cost_usd=safe_cost(meta) or None,

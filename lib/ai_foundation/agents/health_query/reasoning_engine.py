@@ -65,6 +65,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
 
 logger = logging.getLogger(__name__)
 
+from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter
 from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner
 
@@ -524,6 +525,9 @@ class ReasoningEngine:
 
             full_response_parts: list[str] = []
             responder_start = time.perf_counter()
+            # Visible stream never carries the bubble sentinel; the raw text
+            # (with sentinels) is kept for done-payload splitting.
+            bubble_filter = BubbleStreamFilter()
 
             try:
                 async for chunk in self._gateway.stream(
@@ -534,7 +538,9 @@ class ReasoningEngine:
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
-                        yield sse_token(chunk.delta)
+                        visible = bubble_filter.feed(chunk.delta)
+                        if visible:
+                            yield sse_token(visible)
                     if chunk.finished and chunk.usage:
                         total_cost += safe_cost(chunk)
             except Exception as exc:
@@ -549,6 +555,9 @@ class ReasoningEngine:
                 )
                 return
 
+            tail = bubble_filter.flush()
+            if tail:
+                yield sse_token(tail)
             perf["responder_ms"] += int((time.perf_counter() - responder_start) * 1000)
         else:
             # Non-streaming: single responder call

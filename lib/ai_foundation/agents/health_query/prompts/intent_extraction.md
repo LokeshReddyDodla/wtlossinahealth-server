@@ -40,6 +40,7 @@ Set `is_ready = false` when:
 - "What's [patient]'s background/medical history?" → PROFILE
 - "What medications/allergies does [patient] have?" → PROFILE
 - Any question about profile, remembered facts, known information → PROFILE
+- **Medication or dosing questions** ("how much X should I take", "should I adjust my dose", any drug by name) → PROFILE (+ CGM_SUMMARY when glucose-related): the safe answer MUST be grounded in what the patient is actually prescribed — e.g. noticing they aren't on insulin at all
 - "Prepare a summary for my appointment with [patient]" → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
 - "Give me a full health overview" / "How's [patient] doing?" → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
 
@@ -129,6 +130,7 @@ Set `is_ready = false` when:
 - "last 30 days" / "past month" → today minus 30 days
 - "recently" / "lately" → last 7 days
 - Relative dates resolved against the "User's local time" line in context — the patient's local date, not UTC
+- FUTURE-oriented questions ("what will my sugar be tomorrow?", "will I spike tonight?") → is_ready=true with the SAME data types as the past-tense version, scoped to the recent past (last 7 days): the answer comes from showing recent patterns honestly, never from predicting — but the responder needs that data fetched to do it
 
 ## Follow-up Resolution
 

@@ -24,6 +24,8 @@ async def send_top_insight_notification(
     entity_type: str | None = None,
     entity_id: str | None = None,
     event_time: str | None = None,
+    chat_continuation: bool = False,
+    thread_id: str | None = None,
 ) -> None:
     """Send FCM push for the top-severity insight and record it."""
     if not insights:
@@ -57,6 +59,13 @@ async def send_top_insight_notification(
                 "patient_id": patient_id,
                 "suggested_query": top.suggested_query or "",
                 "total_insights": str(len(insights)),
+                # Source-event linkage + chat routing (companion Phase 3).
+                # route=chat means: this insight continues the health-agent
+                # conversation — open the chat, not the insights list.
+                "entity_type": entity_type or "",
+                "entity_id": entity_id or "",
+                "route": "chat" if chat_continuation else "",
+                "thread_id": thread_id or "",
             },
         )
         if not is_event:

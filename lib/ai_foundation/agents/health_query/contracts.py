@@ -197,6 +197,9 @@ class NumericFilter(BaseModel):
 
 
 class SuggestedAction(BaseModel):
+    # Optional app action for chip rendering (e.g. "log_meal" opens the meal
+    # sheet). None = plain follow-up query chip (tap sends `description`).
+    action: str | None = None
     label: str = Field(..., description="Short button text.")
     description: str = Field(..., description="Complete follow-up question.")
 

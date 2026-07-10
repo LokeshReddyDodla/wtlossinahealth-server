@@ -150,6 +150,14 @@ jobs:
         if: steps.secrets_check.outputs.configured == 'true'
         run: poetry run python -m evals.run --suite evals/golden/meal_analysis.yaml
 
+      - name: Robustness suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/robustness.yaml
+
+      - name: Fact extraction suite
+        if: steps.secrets_check.outputs.configured == 'true'
+        run: poetry run python -m evals.run --suite evals/golden/fact_extraction.yaml
+
       - name: Upload eval reports
         if: always() && steps.secrets_check.outputs.configured == 'true'
         uses: actions/upload-artifact@v4

@@ -79,9 +79,11 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
     )
 
     start = time.perf_counter()
+    bubbles: list[str] = []
     try:
         output = await agent.run(agent_input)
         response = output.message or ""
+        bubbles = (output.data or {}).get("messages") or ([response] if response else [])
         cost = output.cost_usd or 0.0
         trace_id = output.trace_id
         error = None
@@ -89,7 +91,29 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
         response, cost, trace_id, error = "", 0.0, None, f"{type(exc).__name__}: {exc}"
     latency_ms = int((time.perf_counter() - start) * 1000)
 
-    check_result = run_checks(response, case.get("checks") or {})
+    checks = case.get("checks") or {}
+    check_result = run_checks(response, checks)
+    # Companion bubble checks (deterministic)
+    if "bubbles_between" in checks:
+        lo, hi = checks["bubbles_between"]
+        if not (lo <= len(bubbles) <= hi):
+            check_result.failures.append(
+                f"bubbles_between: got {len(bubbles)} bubbles, want [{lo}, {hi}]"
+            )
+    if "max_questions" in checks:
+        n_q = response.count("?")
+        if n_q > checks["max_questions"]:
+            check_result.failures.append(
+                f"max_questions: {n_q} '?' > {checks['max_questions']}"
+            )
+    if "[[BUBBLE]]" in response or "[[AWAIT:" in response:
+        check_result.failures.append("raw companion marker leaked into message")
+    if "expect_pending" in checks:
+        pending = (output.data or {}).get("pending_request") if error is None else None
+        if pending != checks["expect_pending"]:
+            check_result.failures.append(
+                f"expect_pending: got {pending!r}, want {checks['expect_pending']!r}"
+            )
 
     judgment = None
     if not no_judge and response and not error:
@@ -108,7 +132,7 @@ async def _run_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
 
     passed = (
         error is None
-        and check_result.passed
+        and not check_result.failures  # not .passed — bubble checks append after construction
         and (no_judge or _judge_ok(judgment, case))
     )
 
@@ -438,10 +462,71 @@ def _judge_ok(judgment, case: dict[str, Any]) -> bool:
     return judgment.passed
 
 
+async def _run_fact_extraction_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
+    """Run FactExtractor on a (question, reply) pair against a capturing memory.
+
+    The companion flywheel test: answers to the agent's own questions must
+    become durable, self-contained facts — and non-answers must not.
+    Deterministic checks only (no judge): expected keys / value substrings /
+    expect_no_facts.
+    """
+    from lib.ai_foundation.agents.core.fact_extractor import FactExtractor
+
+    from .agent_factory import shared_gateway
+    from .fixtures import EVAL_PATIENT_ID, FakeMemory
+
+    memory = FakeMemory()
+    extractor = FactExtractor(memory=memory, gateway=shared_gateway())
+
+    start = time.perf_counter()
+    error = None
+    try:
+        await extractor.extract_if_needed(
+            message=case["reply"],
+            patient_id=EVAL_PATIENT_ID,
+            preceding_assistant_message=case.get("question"),
+        )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    stored = {k: f.value for k, f in memory.facts.items()}
+    blob = " | ".join(f"{k}={v}" for k, v in stored.items()).lower()
+    failures: list[str] = []
+    checks = case.get("checks") or {}
+
+    if checks.get("expect_no_facts") and stored:
+        failures.append(f"expect_no_facts: stored {list(stored)}")
+    if "expect_keys" in checks and not stored:
+        failures.append("expected facts, none stored")
+    for entry in checks.get("expect_keys", []):
+        alts = [a.strip().lower() for a in str(entry).split("|")]
+        if not any(a in k.lower() for k in stored for a in alts):
+            failures.append(f"expect_keys: none of {alts} in {list(stored)}")
+    for entry in checks.get("expect_value_mentions", []):
+        alts = [a.strip().lower() for a in str(entry).split("|")]
+        if not any(a in blob for a in alts):
+            failures.append(f"expect_value_mentions: none of {alts} in {blob!r}")
+
+    return {
+        "id": case["id"],
+        "category": case.get("category", ""),
+        "critical": bool(case.get("critical", False)),
+        "passed": error is None and not failures,
+        "latency_ms": latency_ms,
+        "cost_usd": 0.0,
+        "trace_id": None,
+        "failures": ([error] if error else []) + failures,
+        "response": blob,
+        "judge": None,
+    }
+
+
 _EXECUTORS = {
     "health_query": _run_case,
     "proactive_monitor": _run_monitor_case,
     "meal_analysis": _run_meal_case,
+    "fact_extraction": _run_fact_extraction_case,
 }
 
 

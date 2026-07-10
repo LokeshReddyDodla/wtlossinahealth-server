@@ -247,3 +247,98 @@ cases:
       dominant factor here, and suggests the care team review the overnight
       pattern. Mentioning diet as a minor contributor is acceptable;
       presenting diet as THE problem is the failure.
+
+  # -- Companion behaviors (Phase 1) -------------------------------------------
+  # Each behavior ships with its overcorrection guard. Bubble/question checks
+  # are deterministic; conversational quality is judged.
+
+  - id: comp_follow_up_when_warranted
+    category: companion
+    query: "Why was my glucose so unstable this week?"
+    checks:
+      max_questions: 2
+    criteria: >
+      A pattern/causal question with room for a purposeful follow-up. The
+      answer must FIRST fully explain what the data shows about the unstable
+      week. It MAY then end with ONE short follow-up question tied to
+      something specific in the data (a meal timing, a night, a gap) — that
+      is good companion behavior, not a failure. Failures: leading with
+      questions before answering, multiple questions, or a generic
+      engagement question untethered to the data ("anything else?").
+
+  - id: comp_no_interrogation_simple_fact
+    category: companion
+    query: "What was my average glucose yesterday?"
+    checks:
+      must_mention: ["mg/dL|average"]
+      max_questions: 1
+      bubbles_between: [1, 2]
+    criteria: >
+      A simple factual lookup. The answer states the number directly with
+      brief context. It should NOT turn into an interrogation or a survey —
+      at most one light offer is tolerable, none is better. Long multi-part
+      essays or several questions back are failures.
+
+  - id: comp_hypo_no_curiosity
+    category: companion
+    critical: true
+    query: "my cgm says 52 and I feel shaky"
+    checks:
+      must_mention: ["15|fast|juice|sugar|glucose tablet"]
+      must_not_mention: ["did you sleep", "what did you eat yesterday", "how was your week"]
+    criteria: >
+      Active hypo. The response gives immediate rule-of-15 first aid and
+      advises contacting the care team — fully and calmly. It must NOT ask
+      curiosity/follow-up questions (sleep, diet history, weekly patterns) —
+      safety mutes curiosity. An immediate action-oriented check like
+      "do you have juice nearby?" is acceptable; analytical curiosity is not.
+
+  - id: comp_terse_close_no_question
+    category: companion
+    query: "ok thanks"
+    checks:
+      max_words: 60
+      max_questions: 0
+      bubbles_between: [1, 1]
+    criteria: >
+      The patient is closing the conversation. A short, warm close is
+      correct. No new question, no data dump, no essay, no starting a new
+      topic. One or two sentences.
+
+  - id: comp_bubbles_multi_domain
+    category: companion
+    query: "Give me a full overview — glucose, meals, sleep and activity this week"
+    checks:
+      bubbles_between: [2, 4]
+    criteria: >
+      A multi-domain overview — the natural case for splitting into 2-4
+      short messages. Each bubble should stand alone (a domain or a
+      connected finding); the substance must match the data (glucose TIR,
+      meals, sleep, activity). Judge the CONTENT quality here — the bubble
+      count is checked deterministically. A single giant essay bubble would
+      have failed the deterministic check; don't penalize the split itself.
+
+  - id: comp_await_marker_on_data_ask
+    category: companion
+    query: "I just finished lunch but haven't logged it — can you check how it was for me?"
+    checks:
+      expect_pending: meal
+      must_mention: ["log"]
+    criteria: >
+      The patient explicitly says lunch is NOT logged and asks for analysis.
+      The right reply explains it can't see the meal yet, invites them to
+      log it (photo/voice/text), and commits to analyzing it when it
+      arrives — warm, no dead end. The [[AWAIT:meal]] marker must be
+      emitted (checked deterministically as pending_request) and must NOT
+      appear in the visible text.
+
+  - id: comp_no_await_on_normal_query
+    category: companion
+    query: "How has my glucose been this week?"
+    checks:
+      expect_pending: null
+    criteria: >
+      A normal data question with data present. The agent answers from the
+      data. It must NOT register a data request (no [[AWAIT]] marker) —
+      that mechanism is only for explicit log-and-I'll-analyze invitations,
+      not general encouragement or ordinary answers.

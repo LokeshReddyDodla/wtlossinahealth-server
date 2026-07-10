@@ -110,12 +110,21 @@ async def handle_proactive_event(
             top = max(result.insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
             await _save_insight_to_record(typed_anchor, top.body)
             entity_type, entity_id = _extract_entity(typed_anchor)
+
+            # Companion Phase 3: if the health agent asked the user to log
+            # exactly this kind of data, this insight CONTINUES that chat —
+            # post it into the thread and route the push to the conversation.
+            thread_id = f"bot:patient:{patient_id}"
+            continuation = await _consume_pending_request(thread_id, entity_type, top.body)
+
             await send_top_insight_notification(
                 patient_id, result.insights, monitor, FCMService(),
                 trigger=trigger,
                 entity_type=entity_type,
                 entity_id=entity_id,
                 event_time=typed_anchor.event_time,
+                chat_continuation=continuation,
+                thread_id=thread_id if continuation else None,
             )
 
         return TaskResult(
@@ -142,6 +151,51 @@ async def handle_proactive_event(
             error=str(exc),
             data={"patient_id": patient_id, "trigger": trigger},
         )
+
+
+async def _consume_pending_request(
+    thread_id: str, entity_type: str | None, insight_body: str,
+) -> bool:
+    """Close the ask→log→analyze loop.
+
+    If the chat thread has a live pending_data_request matching this event's
+    entity type: append the insight as the agent's next conversation turn,
+    clear the request, and return True (caller routes the push to chat).
+    """
+    if not entity_type:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        from lib.ai_foundation.memory.base import ConversationTurn
+        from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
+
+        memory = container.resolve(MongoMemoryStore)
+        summary = await memory.get_thread_summary(thread_id)
+        pending = summary.pending_data_request if summary else None
+        if not pending or pending.get("entity_type") != entity_type:
+            return False
+        try:
+            expired = datetime.fromisoformat(pending["expires_at"]) <= datetime.now(timezone.utc)
+        except Exception:
+            expired = True
+        # Clear the request either way — fulfilled or stale, it's done.
+        summary.pending_data_request = None
+        await memory.save_thread_summary(thread_id, summary)
+        if expired:
+            return False
+
+        await memory.append_turns_batch(thread_id, [ConversationTurn(
+            role="assistant",
+            content=insight_body,
+            agent_id="proactive_monitor_v2",
+            metadata={"kind": "data_request_followup", "entity_type": entity_type},
+        )])
+        logger.info("Chat continuation: %s fulfilled pending %s request", thread_id, entity_type)
+        return True
+    except Exception as exc:
+        logger.warning("pending-request continuation failed (%s): %s", thread_id, exc)
+        return False
 
 
 async def _save_insight_to_record(anchor: Any, body: str) -> None:

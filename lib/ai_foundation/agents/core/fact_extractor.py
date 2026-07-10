@@ -74,6 +74,18 @@ _EXTRACTION_PROMPT = (
     '- "I have [CONDITION]" → key: medical_condition (or diabetes_type ONLY for explicit diabetes mentions), value: [CONDITION]\n'
     '- "I [ACTIVITY] every [TIME]" → key: activity_preference, value: [ACTIVITY]\n'
     '- "Show me my meals" → no memories (this is a data query)\n\n'
+    "CONVERSATIONAL ANSWERS: when an assistant message is provided as context, "
+    "the user may be ANSWERING it. Resolve short replies against the assistant's "
+    "question and store a SELF-CONTAINED fact — subject and meaning come from the "
+    "question, value from the answer:\n"
+    '- Assistant: "Did dinner run late on [DAY]?" / User: "yes, around [TIME]" '
+    "→ key: meal_timing, value: sometimes eats dinner late (around [TIME])\n"
+    '- Assistant: "Are you [DIET_PREF]?" / User: "yes" → key: dietary_preference, value: [DIET_PREF]\n'
+    '- Assistant: "Are you [DIET_PREF]?" / User: "no" → NO fact (a denial is not a fact '
+    "unless the user states an alternative)\n"
+    "Never store a fact the user did not confirm. Acknowledgments and closers "
+    '("ok", "thanks", "got it") contain no facts. If the user ignores the '
+    "question and says something new, extract only from what they actually said.\n\n"
     "Set has_facts=true if ANY memories are found. "
     "Set has_facts=false if the message is just a data query with no personal facts."
 )
@@ -112,8 +124,14 @@ class FactExtractor:
         message: str,
         patient_id: str | None,
         agent_id: str = "health_query_v3",
+        preceding_assistant_message: str | None = None,
     ) -> None:
         """Extract memories from the message. Always runs — LLM decides if facts exist.
+
+        ``preceding_assistant_message`` is the agent's reply the user is
+        responding to — without it, answers to the agent's own questions
+        ("yes, around 1am") are contextless and evaporate. The companion
+        flywheel depends on this parameter.
 
         This is called via asyncio.ensure_future so it never blocks the response.
         """
@@ -123,10 +141,19 @@ class FactExtractor:
         try:
             from lib.ai_foundation.models.registry import ModelTask
 
+            if preceding_assistant_message:
+                user_content = (
+                    "Assistant's previous message (the user may be answering it):\n"
+                    f"{preceding_assistant_message[:1500]}\n\n"
+                    f"User's message:\n{message}"
+                )
+            else:
+                user_content = message
+
             result, _ = await self._gateway.extract(
                 messages=[
                     {"role": "system", "content": _EXTRACTION_PROMPT},
-                    {"role": "user", "content": message},
+                    {"role": "user", "content": user_content},
                 ],
                 response_model=ExtractedFacts,
                 task=ModelTask.CLASSIFICATION,

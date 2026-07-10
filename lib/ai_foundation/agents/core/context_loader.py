@@ -358,7 +358,33 @@ class ContextLoader:
             return None
         try:
             summary = await self._memory.get_thread_summary(thread_id)
-            return summary.summary if summary and summary.summary else None
+            if not summary:
+                return None
+            parts: list[str] = []
+            if summary.summary:
+                parts.append(summary.summary)
+            if summary.goal:
+                parts.append(f"Patient's active goal in this conversation: {summary.goal}")
+            pending = summary.pending_data_request
+            if pending:
+                from datetime import datetime as _dt, timezone as _tz
+                try:
+                    not_expired = _dt.fromisoformat(pending["expires_at"]) > _dt.now(_tz.utc)
+                except Exception:
+                    not_expired = False
+                if not_expired:
+                    parts.append(
+                        f"You asked the user to log their {pending['entity_type']} and are "
+                        "waiting for it — you'll analyze it when it arrives. Don't re-ask; "
+                        "if they mention having logged it, look it up."
+                    )
+            if summary.last_assistant_question:
+                parts.append(
+                    "Open question you asked in your last reply (if the user's "
+                    f"message answers it, connect the two; if they ignored it, drop it — "
+                    f"do not re-ask): {summary.last_assistant_question}"
+                )
+            return "\n".join(parts) if parts else None
         except Exception as exc:
             logger.debug("Failed to load thread summary: %s", exc)
             return None

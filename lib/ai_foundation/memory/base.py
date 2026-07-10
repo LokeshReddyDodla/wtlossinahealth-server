@@ -132,6 +132,24 @@ class ThreadSummary(BaseModel):
         default=None,
         description="Active date scope (e.g. 'this_week').",
     )
+    last_assistant_question: str | None = Field(
+        default=None,
+        description=(
+            "Open question the agent asked in its most recent reply, if any. "
+            "Cleared when the next reply asks nothing. Lets the agent avoid "
+            "re-asking ignored questions and resolve short answers after the "
+            "raw turn scrolls out of the history window."
+        ),
+    )
+    pending_data_request: dict | None = Field(
+        default=None,
+        description=(
+            "Set when the agent asked the user to LOG data "
+            "({entity_type, asked_at, expires_at} ISO). The event-driven "
+            "monitor checks this on data-logged events: a match turns the "
+            "event insight into a continuation of this conversation."
+        ),
+    )
     turn_count: int = 0
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
