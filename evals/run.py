@@ -522,11 +522,73 @@ async def _run_fact_extraction_case(case: dict[str, Any], *, no_judge: bool) -> 
     }
 
 
+async def _run_translation_case(case: dict[str, Any], *, no_judge: bool) -> dict[str, Any]:
+    """Translate ``text`` to ``target_lang`` via the real TranslationService.
+
+    Deterministic checks (the service's own fidelity guards are also live,
+    so a check failure here means the guard let something through):
+    - numbers/markers preserved (always, implicit — service falls back)
+    - expect_script: devanagari|latin — the output actually switched language
+    - must_mention / must_not_mention substrings (case-insensitive)
+    - not_source: output must differ from the input (translation happened)
+    """
+    import re as _re
+
+    from lib.ai_foundation.translation.service import TranslationService
+
+    from .agent_factory import shared_gateway
+
+    svc = TranslationService(shared_gateway())
+    start = time.perf_counter()
+    error = None
+    out = ""
+    try:
+        out = await svc.translate(
+            case["text"], case["target_lang"], source_lang=case.get("source_lang", "en"),
+        )
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    failures: list[str] = []
+    checks = case.get("checks") or {}
+    low = out.lower()
+
+    if checks.get("not_source") and out.strip() == case["text"].strip():
+        failures.append("output identical to source — translation fell back or no-opped")
+    script = checks.get("expect_script")
+    if script == "devanagari" and not _re.search(r"[ऀ-ॿ]", out):
+        failures.append("no Devanagari characters in output")
+    if script == "latin" and _re.search(r"[ऀ-ॿ]", out):
+        failures.append("Devanagari found — expected roman-script Hinglish")
+    for phrase in checks.get("must_mention", []):
+        alts = [a.strip().lower() for a in str(phrase).split("|")]
+        if not any(a in low for a in alts):
+            failures.append(f"must_mention: none of {alts}")
+    for phrase in checks.get("must_not_mention", []):
+        if str(phrase).lower() in low:
+            failures.append(f"must_not_mention: {phrase!r}")
+
+    return {
+        "id": case["id"],
+        "category": case.get("category", ""),
+        "critical": bool(case.get("critical", False)),
+        "passed": error is None and not failures,
+        "latency_ms": latency_ms,
+        "cost_usd": 0.0,
+        "trace_id": None,
+        "failures": ([error] if error else []) + failures,
+        "response": out,
+        "judge": None,
+    }
+
+
 _EXECUTORS = {
     "health_query": _run_case,
     "proactive_monitor": _run_monitor_case,
     "meal_analysis": _run_meal_case,
     "fact_extraction": _run_fact_extraction_case,
+    "translation": _run_translation_case,
 }
 
 

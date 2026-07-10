@@ -109,8 +109,14 @@ class InsightTracker:
         entity_type: str | None = None,
         entity_id: str | None = None,
         event_time: datetime | str | None = None,
+        translation: dict | None = None,
     ) -> None:
         """Record that an insight was sent.
+
+        ``translation``: what the user actually saw when their preferred AI
+        language isn't English — {"language", "title", "message",
+        "suggested_query"}. The top-level title/message stay English (the
+        canonical audit copy).
 
         ``event_time`` is when the SOURCE EVENT happened (meal consumed,
         reading taken) — distinct from ``created_at`` (when the insight was
@@ -165,6 +171,8 @@ class InsightTracker:
             doc["entity_type"] = entity_type
         if entity_id:
             doc["entity_id"] = entity_id
+        if translation:
+            doc["translation"] = translation
         if event_time:
             if isinstance(event_time, str):
                 try:

@@ -43,6 +43,9 @@ class InsightHistoryItem(BaseModel):
     message: str
     suggested_query: str | None = None
     created_at: str
+    # Preferred-AI-language copy the user saw ({language, title, message,
+    # suggested_query}); title/message above stay the English originals.
+    translation: dict | None = None
 
 
 @router.get("/proactive-insights", response_model=SuccessResponse[list[InsightHistoryItem]])
@@ -94,6 +97,7 @@ async def get_insight_history(
             message=doc.get("message", ""),
             suggested_query=doc.get("suggested_query"),
             created_at=str(doc.get("created_at", "")),
+            translation=doc.get("translation"),
         )
         for doc in docs
     ]

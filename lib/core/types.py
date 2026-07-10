@@ -8,6 +8,19 @@ ProfileTypeLiteral = Literal[
 
 ChatKindLiteral = Literal["direct", "group", "support"]
 
+# Language the AI responds in. "hi-Latn" = Hinglish (roman-script Hindi).
+# Adding a language = new value here + translation eval pass.
+AiLanguageLiteral = Literal["en", "hi", "hi-Latn"]
+AI_LANGUAGES: tuple[str, ...] = ("en", "hi", "hi-Latn")
+DEFAULT_AI_LANGUAGE = "en"
+
+# Human-readable names used in prompts ("respond in <name>").
+AI_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "hi": "Hindi (Devanagari script)",
+    "hi-Latn": "Hinglish (Hindi in roman script, casual conversational)",
+}
+
 SupportScopeLiteral = Literal["product", "facility"]
 
 SupportTicketStatusLiteral = Literal["open", "pending", "resolved", "closed"]

@@ -51,6 +51,7 @@ class ModelTask(str, Enum):
     EMBEDDING = "embedding"
     QUALITY_JUDGE = "quality_judge"
     PRODUCT_BOT = "product_bot"
+    TRANSLATION = "translation"
 
 
 class ModelProvider(str, Enum):
@@ -497,6 +498,13 @@ def build_default_registry(
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+    )
+    # Patient-facing translation (preferred AI language). Cheap tier — the
+    # deterministic post-checks in TranslationService guard fidelity.
+    registry.set_task_route(
+        ModelTask.TRANSLATION,
         primary="gpt-4.1-mini",
         fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
     )

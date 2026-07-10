@@ -711,7 +711,7 @@ class PatientProfileService:
             # ── Identity & body scalars ─────────────────────────────────
             for field in (
                 "first_name", "last_name", "email", "gender", "dob",
-                "profile_picture", "occupation",
+                "profile_picture", "occupation", "preferred_ai_language",
                 "height_cm", "weight_kg", "waist_cm", "hip_cm",
             ):
                 if field in sent:
