@@ -171,6 +171,7 @@ class Coordinator:
             user_role=user_role,
             emit_events=True,
             trace_id=trace_id,
+            delta_sink=delta_sink,
         ):
             if isinstance(item, (str, SSEDonePayload)):
                 yield item
@@ -192,6 +193,7 @@ class Coordinator:
         user_role: str = "patient",
         emit_events: bool = False,
         trace_id: str | None = None,
+        delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified orchestration loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]

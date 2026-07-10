@@ -266,6 +266,7 @@ class ReasoningEngine:
             patient_names=patient_names,
             user_role=user_role,
             emit_events=True,
+            delta_sink=delta_sink,
         ):
             if isinstance(item, (str, SSEDonePayload)):
                 yield item
@@ -286,6 +287,7 @@ class ReasoningEngine:
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
         emit_events: bool = False,
+        delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | ReasoningResult]:
         """Unified reasoning loop that yields SSE strings and/or a ReasoningResult."""
         tier_cfg = TIER_CONFIGS[tier]
