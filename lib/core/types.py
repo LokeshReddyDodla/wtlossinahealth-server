@@ -8,18 +8,43 @@ ProfileTypeLiteral = Literal[
 
 ChatKindLiteral = Literal["direct", "group", "support"]
 
-# Language the AI responds in. "hi-Latn" = Hinglish (roman-script Hindi).
-# Adding a language = new value here + translation eval pass.
-AiLanguageLiteral = Literal["en", "hi", "hi-Latn"]
-AI_LANGUAGES: tuple[str, ...] = ("en", "hi", "hi-Latn")
+# Language the AI responds in — ANY valid BCP-47 tag the user picks; the
+# LLM translator is generic and the fidelity guards (numbers/markers) are
+# language-agnostic, so the server never limits the picker. Validation is
+# structural (is it a real language tag?), not a membership whitelist.
+# hi/hi-Latn have dedicated eval coverage; other languages ride the same
+# guarded path with the English toggle as the safety net.
 DEFAULT_AI_LANGUAGE = "en"
 
-# Human-readable names used in prompts ("respond in <name>").
-AI_LANGUAGE_NAMES: dict[str, str] = {
+# Curated prompt descriptors where the plain language name isn't enough.
+_AI_LANGUAGE_OVERRIDES: dict[str, str] = {
     "en": "English",
     "hi": "Hindi (Devanagari script)",
     "hi-Latn": "Hinglish (Hindi in roman script, casual conversational)",
 }
+
+
+def is_valid_ai_language(code: str) -> bool:
+    """Structurally valid, real language tag (e.g. 'en', 'hi-Latn', 'ur')."""
+    import langcodes
+
+    try:
+        return langcodes.Language.get(code).is_valid()
+    except Exception:
+        return False
+
+
+def ai_language_name(code: str) -> str:
+    """Human-readable name for prompts ('respond in <name>')."""
+    override = _AI_LANGUAGE_OVERRIDES.get(code)
+    if override:
+        return override
+    import langcodes
+
+    try:
+        return langcodes.Language.get(code).display_name()
+    except Exception:
+        return code
 
 SupportScopeLiteral = Literal["product", "facility"]
 

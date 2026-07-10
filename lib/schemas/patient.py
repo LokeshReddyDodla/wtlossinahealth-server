@@ -4,7 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from lib.core.types import AiLanguageLiteral
 from lib.schemas.care_provider import CareProvider
 from lib.schemas.patient_alcohol_consumption import PatientAlcoholConsumption
 from lib.schemas.patient_connected_app import PatientConnectedApp
@@ -51,7 +50,7 @@ class PatientBase(BaseModel):
     locale: Optional[str] = None
     timezone: Optional[str] = None
     occupation: Optional[str] = None
-    preferred_ai_language: Optional[AiLanguageLiteral] = None
+    preferred_ai_language: Optional[str] = None
 
 
 class PatientCreate(PatientBase):

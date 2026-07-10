@@ -64,6 +64,7 @@ rich = "^14.3.2"
 2captcha-python = "^2.0.2"
 pydantic-settings = "^2.13.1"
 sarvamai = "^0.1.28"
+langcodes = {extras = ["data"], version = "^3.5.1"}
 
 
 [tool.poetry.group.dev.dependencies]
