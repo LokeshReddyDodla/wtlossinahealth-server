@@ -105,3 +105,34 @@ class TestAwaitMarkers:
         f = MarkerStreamFilter()
         out = f.feed("A[[BUBBLE]]B [[AWAIT:sleep]]") + f.flush()
         assert out == "A\n\nB "
+
+
+class TestFeedEvents:
+    def _events(self, chunks):
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        evs = []
+        for c in chunks:
+            evs.extend(f.feed_events(c))
+        tail = f.flush()
+        if tail:
+            evs.append(("text", tail))
+        return evs
+
+    def test_boundary_becomes_event(self):
+        assert self._events(["A[[BUBBLE]]B"]) == [("text", "A"), ("bubble", ""), ("text", "B")]
+
+    def test_boundary_split_across_chunks(self):
+        assert self._events(["A[[BUB", "BLE]]B"]) == [("text", "A"), ("bubble", ""), ("text", "B")]
+
+    def test_await_dropped_no_event(self):
+        assert self._events(["A [[AWAIT:meal]]"]) == [("text", "A ")]
+
+    def test_mixed_markers(self):
+        evs = self._events(["A[[BUBBLE]]B [[AWAIT:smbg]][[BUBBLE]]C"])
+        assert evs == [("text", "A"), ("bubble", ""), ("text", "B "), ("bubble", ""), ("text", "C")]
+
+    def test_flat_feed_still_paragraph_breaks(self):
+        from lib.ai_foundation.agents.core.bubbles import MarkerStreamFilter
+        f = MarkerStreamFilter()
+        assert f.feed("A[[BUBBLE]]B") == "A\n\nB"
