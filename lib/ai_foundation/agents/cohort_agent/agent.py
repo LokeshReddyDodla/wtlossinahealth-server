@@ -91,7 +91,7 @@ async def run_cohort_query(
         )
         return {"answer": result.final_output or "", "history": result.to_input_list()}
     finally:
-        client.close()
+        await client.close()
 
 
 # re-exported for callers / the router

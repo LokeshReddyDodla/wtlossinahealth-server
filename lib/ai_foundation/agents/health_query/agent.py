@@ -92,6 +92,17 @@ class HealthQueryAgent(BaseAgent):
         self.translator = translator
         self._prompts_registered = False
         self._prompt_cache: dict[str, str] = {}
+        # Strong refs: the event loop only weak-refs tasks, so a GC pass can
+        # destroy an unfinished fire-and-forget task (fact extraction /
+        # compaction / audit copy silently never happening).
+        self._bg_tasks: set[asyncio.Task] = set()
+
+    def _spawn_background(self, coro: Any, *, name: str, thread_id: str) -> None:
+        task = asyncio.create_task(
+            self._run_background(coro, name=name, thread_id=thread_id)
+        )
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
@@ -640,12 +651,12 @@ class HealthQueryAgent(BaseAgent):
         """Persist the data-ask (fire-and-forget) + add an action chip so the
         app can open the right logging sheet in one tap."""
         if self.persistence:
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self.persistence.record_pending_request(
-                    thread_id=input.context.thread_id, entity_type=entity_type,
+                thread_id=input.context.thread_id, entity_type=entity_type,
                 ),
                 name="pending_request", thread_id=input.context.thread_id or "",
-            ))
+            )
         label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
         if language != DEFAULT_AI_LANGUAGE and self.translator:
             label = await self.translator.translate_cached(label, language)
@@ -672,21 +683,21 @@ class HealthQueryAgent(BaseAgent):
             and self.translator and self.persistence
         ):
             turn_bubbles = (getattr(output, "data", None) or {}).get("messages")
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self._attach_english_copy(
-                    turn_id, message, lang, turn_bubbles,
-                    thread_id=thread_id, user_id=input.context.user_id,
+                turn_id, message, lang, turn_bubbles,
+                thread_id=thread_id, user_id=input.context.user_id,
                 ),
                 name="audit_translation", thread_id=thread_id,
-            ))
+            )
         if self.persistence:
-            asyncio.create_task(self._run_background(
+            self._spawn_background(
                 self.persistence.compact_if_needed(
-                    thread_id=input.context.thread_id, agent_id=self.agent_id,
-                    patient_ids=input.context.patient_ids,
+                thread_id=input.context.thread_id, agent_id=self.agent_id,
+                patient_ids=input.context.patient_ids,
                 ),
                 name="compaction", thread_id=thread_id,
-            ))
+            )
         if self.fact_extractor:
             pid = self._resolve_single_pid(input)
             if pid:
@@ -697,13 +708,13 @@ class HealthQueryAgent(BaseAgent):
                     if turn.get("role") == "assistant":
                         preceding = turn.get("content")
                         break
-                asyncio.create_task(self._run_background(
+                self._spawn_background(
                     self.fact_extractor.extract_if_needed(
-                        message=input.message, patient_id=pid, agent_id=self.agent_id,
-                        preceding_assistant_message=preceding,
+                    message=input.message, patient_id=pid, agent_id=self.agent_id,
+                    preceding_assistant_message=preceding,
                     ),
                     name="fact_extraction", thread_id=thread_id,
-                ))
+                )
 
     async def _attach_english_copy(
         self, turn_id: Any, message: str, lang: str, bubbles: list[str] | None = None,

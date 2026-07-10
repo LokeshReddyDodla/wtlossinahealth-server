@@ -48,14 +48,11 @@ async def generate_daily_meal_report(
         )
 
     except Exception as e:
+        # Re-raise: report regeneration is idempotent — let arq retry.
         logger.error(
             f"Failed to generate meal report for {patient_id} on {report_date}: {e}"
         )
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "report_date": str(report_date)},
-        )
+        raise
 
 
 async def _enqueue_daily_meal_report(patient_id: str, report_date: date) -> str | None:

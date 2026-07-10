@@ -779,7 +779,7 @@ class ProfileUpdateAgentService:
             try:
                 from lib.schemas.patient import CorePatientProfile
                 from lib.workers.tasks.profile.enqueue import (
-                    enqueue_generate_profile_vector_sync,
+                    enqueue_generate_profile_vector_async,
                 )
 
                 # Refresh to get the fully committed state.
@@ -790,7 +790,7 @@ class ProfileUpdateAgentService:
                 profile_data = CorePatientProfile.from_orm(detailed).model_dump(
                     mode="json"
                 )
-                enqueue_generate_profile_vector_sync(patient_id, profile_data)
+                await enqueue_generate_profile_vector_async(patient_id, profile_data)
             except Exception:
                 logger.warning(
                     "Failed to enqueue vector sync after batch apply for %s",

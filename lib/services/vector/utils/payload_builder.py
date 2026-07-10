@@ -107,6 +107,11 @@ class PayloadBuilder:
             "start_time": int(start_time.timestamp() * 1000),
             "end_time": int(end_time.timestamp() * 1000),
             "date": start_time.date().isoformat(),
+            # Every type gets an hour — a Qdrant range condition on a missing
+            # key matches NOTHING, so types without it (meals, check-ins)
+            # silently vanished from hour-filtered queries ("yesterday
+            # morning"). Existing points need scripts/backfill_payload_hour.py.
+            "hour": start_time.hour,
             "day_of_week": start_time.weekday(),
             "is_weekend": start_time.weekday() >= 5,
             "week_number": start_time.isocalendar()[1],

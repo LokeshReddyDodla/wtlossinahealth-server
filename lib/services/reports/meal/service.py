@@ -61,7 +61,7 @@ class MealReportService:
             date_iso = report_date.isoformat()
 
             if regenerate:
-                self.trigger_daily_report_generation(patient_id, report_date)
+                await self.trigger_daily_report_generation(patient_id, report_date)
                 return None
 
             report = await self.meal_report_collection.find_one(
@@ -75,7 +75,7 @@ class MealReportService:
                 {"_id": 0},
             )
             if not report:
-                self.trigger_daily_report_generation(patient_id, report_date)
+                await self.trigger_daily_report_generation(patient_id, report_date)
                 return None
 
             if "meals" in report and isinstance(report["meals"], list):
@@ -88,15 +88,15 @@ class MealReportService:
             )
             return None
 
-    def trigger_daily_report_generation(
+    async def trigger_daily_report_generation(
         self,
         patient_id: str,
         report_date: date,
     ):
         try:
-            from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_sync
+            from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_async
 
-            enqueue_daily_meal_report_sync(patient_id, report_date)
+            await enqueue_daily_meal_report_async(patient_id, report_date)
             logging.info(
                 f"Triggered daily report generation for {patient_id} on {report_date}"
             )

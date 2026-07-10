@@ -5,12 +5,16 @@ endpoints over loopback (http://localhost:8000 by default) — NOT the public
 Cloudflare URL (which would loop through the edge and get bot-challenged). The
 caller's JWT + device id are forwarded so every call is scoped to the same
 care provider, exactly as if the browser had made it.
+
+Fully async: a blocking client here doesn't just stall the worker — because
+the request loops back to THIS server, a blocked event loop can never serve
+its own loopback call (self-deadlock on a single worker).
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
-import time
 from typing import Any
 
 import httpx
@@ -28,7 +32,7 @@ class InternalAPIClient:
         self.base_url = (base_url or INTERNAL_API_BASE).rstrip("/")
         self.token = token
         self.device_id = device_id
-        self._http = httpx.Client(timeout=60.0)
+        self._http = httpx.AsyncClient(timeout=60.0)
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {}
@@ -38,20 +42,20 @@ class InternalAPIClient:
             h["x-device-id"] = self.device_id
         return h
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET an API path and return parsed JSON, unwrapping the standard
         ``{status, data, message}`` envelope to ``data`` when present."""
         url = path if path.startswith("http") else f"{self.base_url}/{path.lstrip('/')}"
         last_exc: Exception | None = None
         for attempt in range(3):
             try:
-                r = self._http.get(url, params=params, headers=self._headers())
+                r = await self._http.get(url, params=params, headers=self._headers())
             except httpx.TransportError as e:  # transient network blip
                 last_exc = e
-                time.sleep(0.4 * (attempt + 1))
+                await asyncio.sleep(0.4 * (attempt + 1))
                 continue
             if r.status_code in _RETRY_STATUSES and attempt < 2:
-                time.sleep(0.4 * (attempt + 1))
+                await asyncio.sleep(0.4 * (attempt + 1))
                 continue
             r.raise_for_status()
             body = r.json()
@@ -66,8 +70,8 @@ class InternalAPIClient:
             raise last_exc
         raise RuntimeError(f"GET {path} failed after retries")
 
-    def close(self) -> None:
+    async def close(self) -> None:
         try:
-            self._http.close()
+            await self._http.aclose()
         except Exception:  # noqa: BLE001
             pass

@@ -38,10 +38,10 @@ def _compact(obj: Any, limit: int = 10000) -> str:
     return s if len(s) <= limit else s[:limit] + f"... [truncated, {len(s)} chars]"
 
 
-def _name_map(ctx: RunContextWrapper["CohortContext"]) -> dict[str, str]:
+async def _name_map(ctx: RunContextWrapper["CohortContext"]) -> dict[str, str]:
     cache = ctx.context._names
     if not cache:
-        data = _client(ctx).get("/v1/patients", {"limit": 1000})
+        data = await _client(ctx).get("/v1/patients", {"limit": 1000})
         items = data.get("items", []) if isinstance(data, dict) else (data or [])
         for it in items:
             if it.get("patient_id"):
@@ -49,20 +49,20 @@ def _name_map(ctx: RunContextWrapper["CohortContext"]) -> dict[str, str]:
     return cache
 
 
-def _pname(ctx: RunContextWrapper["CohortContext"], r: dict[str, Any]) -> str:
+async def _pname(ctx: RunContextWrapper["CohortContext"], r: dict[str, Any]) -> str:
     pid = str(r.get("patient_id", ""))
-    nm = _name_map(ctx).get(pid)
+    nm = (await _name_map(ctx)).get(pid)
     if nm:
         return nm
     pi = r.get("patient") or {}
     return pi.get("full_name") or f"{pi.get('first_name','')} {pi.get('last_name','')}".strip() or pid[:8]
 
 
-def _pull_cgm(ctx: RunContextWrapper["CohortContext"], metric: str, days: int) -> list[dict[str, Any]]:
+async def _pull_cgm(ctx: RunContextWrapper["CohortContext"], metric: str, days: int) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     while True:
-        page = _client(ctx).get(f"/dashboard/metrics/cgm/{metric}", {"days": days, "limit": 200, "offset": offset})
+        page = await _client(ctx).get(f"/dashboard/metrics/cgm/{metric}", {"days": days, "limit": 200, "offset": offset})
         items = page.get("items", page) if isinstance(page, dict) else page
         if not items:
             break
@@ -80,7 +80,7 @@ async def list_patients(ctx: RunContextWrapper["CohortContext"], limit: int = 10
     params: dict[str, Any] = {"limit": limit, "order_by": "last_active_at", "order": "desc"}
     if search:
         params["search"] = search
-    data = _client(ctx).get("/v1/patients", params)
+    data = await _client(ctx).get("/v1/patients", params)
     items = data.get("items", []) if isinstance(data, dict) else (data or [])
     slim = [
         {"patient_id": it.get("patient_id"), "name": it.get("full_name"), "age": it.get("age"),
@@ -94,19 +94,19 @@ async def list_patients(ctx: RunContextWrapper["CohortContext"], limit: int = 10
 @function_tool
 async def get_patient(ctx: RunContextWrapper["CohortContext"], patient_id: str) -> str:
     """Full profile for one patient (demographics, diabetic_history, packages, reports, ...)."""
-    return _compact(_client(ctx).get(f"/care-providers/patients/{patient_id}"), 8000)
+    return _compact(await _client(ctx).get(f"/care-providers/patients/{patient_id}"), 8000)
 
 
 @function_tool
 async def get_medications(ctx: RunContextWrapper["CohortContext"], patient_id: str) -> str:
     """Active/paused/as-needed/completed medications for a patient."""
-    return _compact(_client(ctx).get(f"/v1/medications/{patient_id}"))
+    return _compact(await _client(ctx).get(f"/v1/medications/{patient_id}"))
 
 
 @function_tool
 async def cohort_demographics(ctx: RunContextWrapper["CohortContext"]) -> str:
     """Age + gender + BMI breakdown across the whole panel in one call."""
-    data = _client(ctx).get("/v1/patients", {"limit": 1000})
+    data = await _client(ctx).get("/v1/patients", {"limit": 1000})
     items = data.get("items", []) if isinstance(data, dict) else (data or [])
     gender: dict[str, int] = {}
     bands = {"<30": 0, "30-39": 0, "40-49": 0, "50-59": 0, "60-69": 0, "70+": 0, "unknown": 0}
@@ -143,9 +143,9 @@ async def cohort_demographics(ctx: RunContextWrapper["CohortContext"]) -> str:
 async def cgm_hyper_patients(ctx: RunContextWrapper["CohortContext"], days: int = 30) -> str:
     """All patients with hyperglycemic spike events in `days`: name, spike_events, peak_glucose, days_affected."""
     agg: dict[str, dict[str, Any]] = defaultdict(lambda: {"name": None, "events": 0, "peak": 0, "days": set()})
-    for r in _pull_cgm(ctx, "hyper-patients", days):
+    for r in await _pull_cgm(ctx, "hyper-patients", days):
         a = agg[r["patient_id"]]
-        a["name"] = _pname(ctx, r)
+        a["name"] = await _pname(ctx, r)
         a["days"].add(str(r.get("date"))[:10])
         for ev in r.get("hyper_events", []):
             a["events"] += 1
@@ -160,9 +160,9 @@ async def cgm_hyper_patients(ctx: RunContextWrapper["CohortContext"], days: int 
 async def cgm_hypo_patients(ctx: RunContextWrapper["CohortContext"], days: int = 30) -> str:
     """All patients with hypoglycemic (<70) events in `days`: name, low_events, lowest_glucose, days_affected."""
     agg: dict[str, dict[str, Any]] = defaultdict(lambda: {"name": None, "events": 0, "lowest": 999, "days": set()})
-    for r in _pull_cgm(ctx, "hypo-patients", days):
+    for r in await _pull_cgm(ctx, "hypo-patients", days):
         a = agg[r["patient_id"]]
-        a["name"] = _pname(ctx, r)
+        a["name"] = await _pname(ctx, r)
         a["days"].add(str(r.get("date"))[:10])
         for ev in r.get("hypo_events", []):
             a["events"] += 1
@@ -177,9 +177,9 @@ async def cgm_hypo_patients(ctx: RunContextWrapper["CohortContext"], days: int =
 async def cgm_high_gv_patients(ctx: RunContextWrapper["CohortContext"], days: int = 30) -> str:
     """All patients with high glucose variability in `days`: name, max_variability, days_affected."""
     agg: dict[str, dict[str, Any]] = defaultdict(lambda: {"name": None, "gv": 0.0, "days": set()})
-    for r in _pull_cgm(ctx, "high-gv-patients", days):
+    for r in await _pull_cgm(ctx, "high-gv-patients", days):
         a = agg[r["patient_id"]]
-        a["name"] = _pname(ctx, r)
+        a["name"] = await _pname(ctx, r)
         a["days"].add(str(r.get("date"))[:10])
         if r.get("glucose_variability") is not None:
             a["gv"] = max(a["gv"], r["glucose_variability"])
@@ -196,9 +196,9 @@ async def cgm_glycemic_summary(ctx: RunContextWrapper["CohortContext"], days: in
     reads: dict[str, dict[str, float]] = defaultdict(dict)
     names: dict[str, str] = {}
     for metric in ("hyper-patients", "high-gv-patients", "hypo-patients"):
-        for r in _pull_cgm(ctx, metric, days):
+        for r in await _pull_cgm(ctx, metric, days):
             pid = r["patient_id"]
-            names[pid] = _pname(ctx, r)
+            names[pid] = await _pname(ctx, r)
             for x in r.get("cgm_readings", []):
                 if x.get("glucose_mgdl") is not None and x.get("device_timestamp"):
                     reads[pid][x["device_timestamp"]] = x["glucose_mgdl"]
@@ -228,8 +228,8 @@ async def cgm_spike_timing(ctx: RunContextWrapper["CohortContext"], days: int = 
                 if h < 14 else "afternoon (14-17)" if h < 17 else "evening (17-22)" if h < 22 else "late (22-24)")
     per_patient: dict[str, list[int]] = defaultdict(list)
     names: dict[str, str] = {}
-    for r in _pull_cgm(ctx, "hyper-patients", days):
-        names[r["patient_id"]] = _pname(ctx, r)
+    for r in await _pull_cgm(ctx, "hyper-patients", days):
+        names[r["patient_id"]] = await _pname(ctx, r)
         for ev in r.get("hyper_events", []):
             ts = ev.get("start_time")
             if ts:
@@ -262,7 +262,7 @@ async def meal_logging_regularity(ctx: RunContextWrapper["CohortContext"], start
     offset = 0
     total = 0
     while True:
-        page = _client(ctx).get("/dashboard/metrics/meals/filter-macro",
+        page = await _client(ctx).get("/dashboard/metrics/meals/filter-macro",
                                  {"start": start_date, "end": end_date, "limit": 300, "offset": offset})
         rows = page if isinstance(page, list) else page.get("items", [])
         if not rows:
@@ -302,7 +302,7 @@ async def api_get(ctx: RunContextWrapper["CohortContext"], path: str, params_jso
         params = json.loads(params_json) if params_json else {}
     except json.JSONDecodeError as e:
         return f"ERROR: params_json is not valid JSON: {e}"
-    return _compact(_client(ctx).get(path, params), 12000)
+    return _compact(await _client(ctx).get(path, params), 12000)
 
 
 @function_tool
@@ -313,25 +313,38 @@ async def run_python(ctx: RunContextWrapper["CohortContext"], code: str) -> str:
     ``json``, ``statistics``, ``datetime``, ``collections``, ``Counter``,
     ``defaultdict``, ``math``. Only what you PRINT is returned — print a concise
     summary, never raw records. Use for custom aggregation (GMI, joins, etc.)."""
+    import asyncio
     import collections
     import math
 
     client = _client(ctx)
+    loop = asyncio.get_running_loop()
+
+    def api_get_sync(path, params=None):
+        # exec runs in a worker thread; hop each API call back onto the loop
+        # (the loop must stay free — these calls loop back to THIS server).
+        return asyncio.run_coroutine_threadsafe(client.get(path, params), loop).result(timeout=60)
+
     scope: dict[str, Any] = {
-        "api_get": lambda path, params=None: client.get(path, params),
+        "api_get": api_get_sync,
         "json": json, "statistics": statistics, "datetime": _dt, "collections": collections,
         "Counter": collections.Counter, "defaultdict": collections.defaultdict, "math": math,
     }
     buf = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buf):
-            exec(code, scope)  # noqa: S102 - trusted operator tool, gated by care-provider auth
-    except KeyboardInterrupt:
-        raise
-    except SystemExit:
-        return (buf.getvalue() + "\n[run_python: code called exit(); treated as end of script]").strip()
-    except BaseException as e:  # noqa: BLE001 - keep the agent loop alive
-        return f"{buf.getvalue()}\nERROR: {type(e).__name__}: {e}"
+
+    def _run() -> str | None:
+        try:
+            with contextlib.redirect_stdout(buf):
+                exec(code, scope)  # noqa: S102 - trusted operator tool, gated by care-provider auth
+        except SystemExit:
+            return (buf.getvalue() + "\n[run_python: code called exit(); treated as end of script]").strip()
+        except BaseException as e:  # noqa: BLE001 - keep the agent loop alive
+            return f"{buf.getvalue()}\nERROR: {type(e).__name__}: {e}"
+        return None
+
+    early = await asyncio.to_thread(_run)
+    if early is not None:
+        return early
     out = buf.getvalue().strip()
     return out[:8000] if out else "(no output printed)"
 

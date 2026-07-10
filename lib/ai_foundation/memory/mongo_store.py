@@ -262,14 +262,23 @@ class MongoMemoryStore:
         docs.reverse()  # chronological order
         return [ConversationTurn(**doc) for doc in docs]
 
+    @staticmethod
+    def _turn_doc(thread_id: str, turn: ConversationTurn) -> dict:
+        doc = turn.model_dump(mode="json")
+        doc["thread_id"] = thread_id
+        # Real BSON date, not the json-dump ISO string: Mongo TTL only
+        # expires Date fields, so string timestamps made the 90-day
+        # retention index a silent no-op (collections grew forever).
+        # scripts/migrate_memory_timestamps.py converts existing docs.
+        doc["timestamp"] = turn.timestamp
+        return doc
+
     async def append_turn(
         self, thread_id: str, turn: ConversationTurn
     ) -> None:
         """Append a turn to a conversation thread."""
         collection = self._mongo.get_collection(TURNS_COLLECTION)
-        doc = turn.model_dump(mode="json")
-        doc["thread_id"] = thread_id
-        await collection.insert_one(doc)
+        await collection.insert_one(self._turn_doc(thread_id, turn))
 
     async def append_turns_batch(
         self, thread_id: str, turns: list[ConversationTurn]
@@ -283,11 +292,7 @@ class MongoMemoryStore:
         if not turns:
             return []
         collection = self._mongo.get_collection(TURNS_COLLECTION)
-        docs = []
-        for turn in turns:
-            doc = turn.model_dump(mode="json")
-            doc["thread_id"] = thread_id
-            docs.append(doc)
+        docs = [self._turn_doc(thread_id, turn) for turn in turns]
         result = await collection.insert_many(docs)
         return list(result.inserted_ids)
 
@@ -326,6 +331,7 @@ class MongoMemoryStore:
         collection = self._mongo.get_collection(SUMMARIES_COLLECTION)
         doc = summary.model_dump(mode="json")
         doc["thread_id"] = thread_id
+        doc["updated_at"] = datetime.now(timezone.utc)  # BSON date for TTL
         await collection.replace_one(
             {"thread_id": thread_id},
             doc,
@@ -341,7 +347,7 @@ class MongoMemoryStore:
         other's state (they race on every reply)."""
         collection = self._mongo.get_collection(SUMMARIES_COLLECTION)
         set_fields = dict(fields)
-        set_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+        set_fields["updated_at"] = datetime.now(timezone.utc)  # BSON date for TTL
         defaults = {"thread_id": thread_id, "summary": "", "turn_count": 0}
         on_insert = {k: v for k, v in defaults.items() if k not in set_fields}
         await collection.update_one(

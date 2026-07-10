@@ -7,9 +7,9 @@ from sqlalchemy import delete
 from lib.core.postgres_store import PostgresStore
 from lib.models.patient_smbg import PatientSMBG
 from lib.workers.tasks.fitness.enqueue import (
-    enqueue_process_fitness_upload_sync,
+    enqueue_process_fitness_upload_async,
 )
-from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_sync
+from lib.workers.tasks.sleep.enqueue import enqueue_process_sleep_upload_async
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.fitness.api_schema import FitnessDataRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,9 +51,9 @@ class FitnessUploadService:
         await postgres_session.commit()
 
         # Trigger report generation asynchronously
-        enqueue_process_fitness_upload_sync(patient_id, start_datetime, end_datetime)
+        await enqueue_process_fitness_upload_async(patient_id, start_datetime, end_datetime)
 
-        enqueue_process_sleep_upload_sync(patient_id, start_datetime, end_datetime)
+        await enqueue_process_sleep_upload_async(patient_id, start_datetime, end_datetime)
 
         # Gamification hook (fire-and-forget)
         try:

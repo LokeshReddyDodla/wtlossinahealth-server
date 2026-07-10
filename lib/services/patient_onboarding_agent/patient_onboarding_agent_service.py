@@ -59,7 +59,7 @@ from lib.schemas.patient_onboarding_agent import (
 from lib.services.patient_onboarding_agent.prompts import build_system_prompt
 from lib.services.patient_profile_service import PatientProfileService
 from lib.utils.postgres_session_decorator import with_postgres_session
-from lib.workers.tasks.profile.enqueue import enqueue_generate_profile_vector_sync
+from lib.workers.tasks.profile.enqueue import enqueue_generate_profile_vector_async
 
 logger = logging.getLogger(__name__)
 
@@ -1045,7 +1045,7 @@ class PatientOnboardingAgentService:
             profile_data = CorePatientProfile.from_orm(detailed).model_dump(
                 mode="json"
             )
-            enqueue_generate_profile_vector_sync(patient_id, profile_data)
+            await enqueue_generate_profile_vector_async(patient_id, profile_data)
         except Exception:
             logger.warning(
                 "Failed to enqueue profile vector sync after onboarding apply for %s",

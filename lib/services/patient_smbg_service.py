@@ -1,3 +1,4 @@
+import logging
 from typing import List, Tuple
 
 from fastapi import status
@@ -15,9 +16,12 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import SMBGVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+
 from lib.workers.tasks.smbg.enqueue import (
-    enqueue_generate_smbg_vector_sync,
+    enqueue_generate_smbg_vector_async,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PatientSmbgService:
@@ -85,7 +89,7 @@ class PatientSmbgService:
                 "uploaded_at": new_smbg.uploaded_at,
                 "source": new_smbg.source_name or "app",
             }
-            enqueue_generate_smbg_vector_sync(
+            await enqueue_generate_smbg_vector_async(
                 patient_id=patient_id,
                 reading_id=str(new_smbg.id),
                 reading_data=reading_data,
@@ -143,7 +147,7 @@ class PatientSmbgService:
                 "uploaded_at": smbg_record.uploaded_at,
                 "source": smbg_record.source_name or "app",
             }
-            enqueue_generate_smbg_vector_sync(
+            await enqueue_generate_smbg_vector_async(
                 patient_id=patient_id,
                 reading_id=str(smbg_record.id),
                 reading_data=reading_data,
@@ -189,7 +193,16 @@ class PatientSmbgService:
             await postgres_session.delete(smbg_record)
             await postgres_session.commit()
 
-            await self.smbg_vector_service.delete_smbg_vector(smbg_id)
+            try:
+                await self.smbg_vector_service.delete_smbg_vector(smbg_id)
+            except Exception:
+                logger.exception("Inline vector delete failed for SMBG %s — enqueuing retry", smbg_id)
+                from lib.workers.arq.redis import enqueue_job
+
+                await enqueue_job(
+                    "delete_smbg_vector_task", smbg_id,
+                    _job_id=f"smbg:vector:delete:{smbg_id}",
+                )
 
             try:
                 from lib.core.container import container

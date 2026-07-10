@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List, Optional, cast
 from uuid import UUID
@@ -60,7 +61,8 @@ class FCMService:
             fcm_token, title, body, channel_key, group_key, data=data
         )
         try:
-            response = messaging.send(message)
+            # firebase-admin is blocking network I/O — keep it off the loop.
+            response = await asyncio.to_thread(messaging.send, message)
             logger.info(f"Notification sent to device. Response: {response}")
         except Exception as e:
             logger.error(f"Failed to send notification to device {fcm_token[:20]}...: {e}")
@@ -212,19 +214,42 @@ class FCMService:
                 data=data,
             )
 
-            response = messaging.send_each_for_multicast(multicast_message)
+            # firebase-admin is blocking network I/O — keep it off the loop.
+            response = await asyncio.to_thread(
+                messaging.send_each_for_multicast, multicast_message
+            )
 
-            if response.failure_count > 0:
-                for idx, resp in enumerate(response.responses):
-                    if not resp.success:
-                        logger.warning(
-                            f"Failed to send notification to device {tokens[idx][:20]}...: {resp.exception}"
-                        )
+            invalid_tokens: list[str] = []
+            for idx, resp in enumerate(response.responses):
+                if not resp.success:
+                    if isinstance(resp.exception, messaging.UnregisteredError):
+                        invalid_tokens.append(tokens[idx])
+                    logger.warning(
+                        f"Failed to send notification to device {tokens[idx][:20]}...: {resp.exception}"
+                    )
+
+            # Prune dead registrations so a patient with rotated tokens does
+            # not silently stop receiving everything forever.
+            if invalid_tokens:
+                token_to_device = {d.fcm_token: d.device_id for d in devices if d.fcm_token}
+                for token in invalid_tokens:
+                    device_id = token_to_device.get(token)
+                    if device_id:
+                        try:
+                            await user_device_service.delete_user_device(device_id)
+                        except Exception as prune_exc:
+                            logger.warning(f"Failed to prune dead FCM token: {prune_exc}")
 
             logger.info(
                 f"Notification batch completed for user {user_id}: "
                 f"{response.success_count} success, {response.failure_count} failure(s)"
             )
+            if response.success_count == 0:
+                # Every device failed — surface it instead of reporting a
+                # delivered notification that nobody received.
+                raise RuntimeError(
+                    f"All {len(tokens)} FCM sends failed for user {user_id}"
+                )
 
         except Exception as e:
             logger.error(f"Failed to send batch notifications to user {user_id}: {e}")
@@ -259,7 +284,9 @@ class FCMService:
                     ),
                 ),
             )
-            response = messaging.send_each_for_multicast(message)
+            response = await asyncio.to_thread(
+                messaging.send_each_for_multicast, message
+            )
             logger.debug(
                 "Silent data message to %s: %d ok, %d failed",
                 user_id, response.success_count, response.failure_count,

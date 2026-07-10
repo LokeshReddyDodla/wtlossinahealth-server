@@ -74,12 +74,30 @@ async def generate_meal_vector(
         )
 
     except Exception as e:
+        # Re-raise so arq's retry machinery engages (retry_jobs/max_tries) —
+        # the upsert is idempotent, and swallowing into TaskResult(False)
+        # meant a transient Qdrant blip lost the meal vector AND its
+        # proactive insight permanently.
         logger.error(f"Failed to generate meal vector for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "meal_id": meal_id},
-        )
+        raise
+
+
+@task_with_logging
+async def delete_meal_vector_task(
+    ctx: Dict[str, Any],
+    meal_id: str,
+) -> TaskResult:
+    """Retryable Qdrant point delete — used when the inline delete after a
+    Postgres meal delete fails, so the point can't survive as an orphan the
+    agent keeps citing."""
+    from lib.dependencies.service_dependencies import get_meal_vector_service
+
+    try:
+        await get_meal_vector_service().delete_meal_vector(meal_id)
+        return TaskResult(success=True, data={"meal_id": meal_id})
+    except Exception as e:
+        logger.error(f"Failed to delete meal vector {meal_id}: {e}")
+        raise  # idempotent — let arq retry
 
 
 async def _enqueue_meal_vector(
