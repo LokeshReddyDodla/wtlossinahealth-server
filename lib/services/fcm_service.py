@@ -41,11 +41,34 @@ class FCMService:
         )
         return credentials
 
+    _HTTP_POOL_SIZE = 32  # ≥ max concurrent sends in a cron fan-out
+
     def _initialize_firebase(self):
         """Initialize the Firebase app using the service account JSON key."""
         if not firebase_admin._apps:
             cred = credentials.Certificate(self.json_key_path)
             firebase_admin.initialize_app(cred)
+            self._widen_transport_pool()
+
+    def _widen_transport_pool(self):
+        """urllib3 pools default to 10 connections per host; concurrent FCM
+        fan-outs exceed that, so excess connections get opened, used once,
+        and discarded (TLS churn + 'Connection pool is full' warning spam).
+        firebase-admin exposes no pool config, so mount wider adapters on
+        the messaging transport session directly. Best-effort: sends work
+        either way, just without connection reuse."""
+        try:
+            from requests.adapters import HTTPAdapter
+
+            service = messaging._get_messaging_service(firebase_admin.get_app())
+            session = service._client.session
+            adapter = HTTPAdapter(
+                pool_connections=self._HTTP_POOL_SIZE,
+                pool_maxsize=self._HTTP_POOL_SIZE,
+            )
+            session.mount("https://", adapter)
+        except Exception as exc:
+            logger.warning(f"Could not widen FCM transport pool: {exc}")
 
     async def send_fcm_notification(
         self,
