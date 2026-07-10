@@ -81,6 +81,50 @@ async def test_attach_translation_targets_specific_turn():
     assert mem.update_turn_metadata_by_id.await_count == 1
 
 
+@pytest.mark.asyncio
+async def test_english_audit_copy_is_per_bubble():
+    """A 3-bubble Hindi turn gets 3 aligned English bubbles — 'View in
+    English' must work on EVERY bubble, not dump the whole turn's English
+    into the last one."""
+    from lib.ai_foundation.agents.health_query.agent import HealthQueryAgent
+
+    hindi_bubbles = ["पहला", "दूसरा", "तीसरा?"]
+    english_marked = "First\n[[BUBBLE]]\nSecond\n[[BUBBLE]]\nThird?"
+
+    agent = HealthQueryAgent.__new__(HealthQueryAgent)  # no full DI needed
+    agent.translator = MagicMock()
+    agent.translator.translate = AsyncMock(return_value=english_marked)
+    agent.persistence = MagicMock()
+    agent.persistence.attach_translation = AsyncMock()
+
+    await agent._attach_english_copy(
+        "oid1", "\n\n".join(hindi_bubbles), "hi", hindi_bubbles,
+    )
+
+    # translated WITH markers so the split survives the round trip
+    source_sent = agent.translator.translate.await_args.args[0]
+    assert source_sent.count("[[BUBBLE]]") == 2
+    kwargs = agent.persistence.attach_translation.await_args.kwargs
+    assert kwargs["en_bubbles"] == ["First", "Second", "Third?"]
+    assert "[[BUBBLE]]" not in kwargs["translations"]["en"]
+
+
+@pytest.mark.asyncio
+async def test_single_bubble_turn_has_no_en_bubbles():
+    from lib.ai_foundation.agents.health_query.agent import HealthQueryAgent
+
+    agent = HealthQueryAgent.__new__(HealthQueryAgent)
+    agent.translator = MagicMock()
+    agent.translator.translate = AsyncMock(return_value="Just one part")
+    agent.persistence = MagicMock()
+    agent.persistence.attach_translation = AsyncMock()
+
+    await agent._attach_english_copy("oid1", "एक ही हिस्सा", "hi", ["एक ही हिस्सा"])
+    kwargs = agent.persistence.attach_translation.await_args.kwargs
+    assert kwargs["en_bubbles"] is None
+    assert kwargs["translations"]["en"] == "Just one part"
+
+
 def test_unknown_await_entity_stripped_but_not_registered():
     from lib.ai_foundation.agents.core.bubbles import AWAIT_ENTITY_TYPES, extract_await
 

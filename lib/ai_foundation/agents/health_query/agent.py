@@ -651,8 +651,9 @@ class HealthQueryAgent(BaseAgent):
             lang != DEFAULT_AI_LANGUAGE and message and turn_id is not None
             and self.translator and self.persistence
         ):
+            turn_bubbles = (getattr(output, "data", None) or {}).get("messages")
             asyncio.create_task(self._run_background(
-                self._attach_english_copy(turn_id, message, lang),
+                self._attach_english_copy(turn_id, message, lang, turn_bubbles),
                 name="audit_translation", thread_id=thread_id,
             ))
         if self.persistence:
@@ -681,14 +682,33 @@ class HealthQueryAgent(BaseAgent):
                     name="fact_extraction", thread_id=thread_id,
                 ))
 
-    async def _attach_english_copy(self, turn_id: Any, message: str, lang: str) -> None:
+    async def _attach_english_copy(
+        self, turn_id: Any, message: str, lang: str, bubbles: list[str] | None = None,
+    ) -> None:
         """Translate the reply the user saw back to English and attach it to
-        exactly the turn it belongs to (audit invariant)."""
-        english = await self.translator.translate(message, "en", source_lang=lang)
-        if english and english != message:
-            await self.persistence.attach_translation(
-                turn_id=turn_id, language=lang, translations={"en": english},
-            )
+        exactly the turn it belongs to (audit invariant).
+
+        Multi-bubble turns are translated WITH the [[BUBBLE]] markers in place
+        (the fidelity guards keep them intact) and split back, so every bubble
+        gets its own aligned English copy — the app's "View in English" works
+        per bubble, not just on the last one.
+        """
+        from lib.ai_foundation.agents.core.bubbles import BUBBLE_DELIMITER
+
+        source = (
+            f"\n{BUBBLE_DELIMITER}\n".join(bubbles)
+            if bubbles and len(bubbles) > 1
+            else message
+        )
+        english = await self.translator.translate(source, "en", source_lang=lang)
+        if not english or english == source:
+            return
+        en_bubbles = split_bubbles(english)
+        await self.persistence.attach_translation(
+            turn_id=turn_id, language=lang,
+            translations={"en": strip_bubbles(english)},
+            en_bubbles=en_bubbles if len(en_bubbles) > 1 else None,
+        )
 
     async def _run_background(self, coro: Any, *, name: str, thread_id: str) -> None:
         """Run a background coroutine with timeout and error handling."""

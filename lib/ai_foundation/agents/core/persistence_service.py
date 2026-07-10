@@ -123,6 +123,7 @@ class PersistenceService:
 
     async def attach_translation(
         self, *, turn_id: Any, language: str, translations: dict[str, str],
+        en_bubbles: list[str] | None = None,
     ) -> None:
         """Attach translation copies to a SPECIFIC assistant turn by id.
 
@@ -131,14 +132,17 @@ class PersistenceService:
         translation finishes, and the copy must not attach to that one.
 
         ``language`` = what the user saw (turn content's language);
-        ``translations`` = other-language copies, e.g. {"en": ...} audit copy.
+        ``translations`` = other-language copies, e.g. {"en": ...} audit copy;
+        ``en_bubbles`` = the English copy split per bubble (same order as
+        metadata.bubbles) so the app can toggle each bubble independently.
         """
         if not self._memory or turn_id is None:
             return
         try:
-            await self._memory.update_turn_metadata_by_id(
-                turn_id, {"language": language, "translations": translations},
-            )
+            patch: dict[str, Any] = {"language": language, "translations": translations}
+            if en_bubbles:
+                patch["en_bubbles"] = en_bubbles
+            await self._memory.update_turn_metadata_by_id(turn_id, patch)
         except Exception as exc:
             logger.warning("Failed to attach translation (turn=%s): %s", turn_id, exc)
 
