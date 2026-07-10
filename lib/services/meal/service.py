@@ -339,7 +339,15 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            await enqueue_daily_meal_report_async(str(patient_id), meal.date)
+            # Re-upsert the Qdrant point too (deterministic id → overwrite):
+            # without this, edits through the legacy path left the agent
+            # citing the pre-edit meal until an analyze call happened.
+            await trigger_meal_tasks(
+                patient_id=str(patient_id),
+                meal_id=str(meal.id),
+                meal_date=meal.date,
+                meal_obj=meal,
+            )
 
             # Refresh macro task progress (totals changed)
             try:

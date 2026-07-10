@@ -151,6 +151,7 @@ class Coordinator:
         patient_names: dict[str, str] | None = None,
         user_role: str = "patient",
         trace_id: str | None = None,
+        delta_sink: list[str] | None = None,
     ) -> AsyncIterator[str | SSEDonePayload]:
         """Streaming orchestration with SSE events.
 
@@ -367,6 +368,8 @@ class Coordinator:
                 ):
                     if chunk.delta:
                         full_response_parts.append(chunk.delta)
+                        if delta_sink is not None:
+                            delta_sink.append(chunk.delta)
                         for kind, piece in bubble_filter.feed_events(chunk.delta):
                             if kind == "bubble":
                                 yield sse_bubble()

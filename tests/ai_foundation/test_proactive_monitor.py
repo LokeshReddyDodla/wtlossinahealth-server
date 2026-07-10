@@ -276,8 +276,10 @@ class TestProactiveMonitorAgent:
         gateway.extract.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_scan_llm_failure_fallback(self):
-        """If LLM extraction fails, return static fallback insight."""
+    async def test_scan_llm_failure_stays_silent(self):
+        """LLM failure = NO insight, no fallback push. A content-free
+        'open the app' push helped nobody, and recording it dedup-blocked
+        real insights for 24h while masking provider outages."""
         gateway = AsyncMock()
         gateway.extract = AsyncMock(side_effect=Exception("LLM down"))
         gateway.set_langfuse_context = MagicMock()
@@ -288,9 +290,7 @@ class TestProactiveMonitorAgent:
         result = await agent.scan_patient("p_fail", "Sarah")
 
         assert result.error is None  # outer scan didn't crash
-        assert result.has_insights is True
-        assert result.insights[0].category == InsightCategory.GENERAL
-        assert "health check" in result.insights[0].title.lower() or "morning brief" in result.insights[0].title.lower()
+        assert result.has_insights is False  # silence + ERROR log, retry next scan
 
     @pytest.mark.asyncio
     async def test_scan_publishes_events(self):

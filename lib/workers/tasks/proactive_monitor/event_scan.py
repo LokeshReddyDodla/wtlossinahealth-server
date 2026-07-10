@@ -132,6 +132,8 @@ async def handle_proactive_event(
                 event_time=typed_anchor.event_time,
                 chat_continuation=continuation,
                 thread_id=thread_id if continuation else None,
+                # already translated for the chat turn — push reuses it
+                body_translation=chat_body if english_body else None,
             )
         else:
             # The agent asked for this data and the user delivered — never

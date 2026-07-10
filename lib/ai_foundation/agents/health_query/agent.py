@@ -243,6 +243,10 @@ class HealthQueryAgent(BaseAgent):
         trace_id = f"trc_{uuid4().hex[:16]}"
         pipeline_start = time.perf_counter()
         ctx = None  # bound after _init_pipeline; error paths localize best-effort
+        intent = None
+        user_timestamp = None
+        delta_sink: list[str] = []
+        turn_saved = False
 
         try:
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
@@ -301,6 +305,7 @@ class HealthQueryAgent(BaseAgent):
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
                     trace_id=trace_id,
+                    delta_sink=delta_sink,
                 )
             else:
                 event_source = self.reasoning_engine.reason_stream(
@@ -314,6 +319,7 @@ class HealthQueryAgent(BaseAgent):
                     intent_data_types=[dt.value for dt in intent.data_types],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
+                    delta_sink=delta_sink,
                 )
 
             async with asyncio.timeout(settings.STREAMING_PIPELINE_TIMEOUT_SECONDS):
@@ -372,6 +378,7 @@ class HealthQueryAgent(BaseAgent):
                             ))
                         self._log_quality_scores_from_data(trace_id, engine_data)
                         turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
+                        turn_saved = True
                         self._schedule_background(input, ctx, output, turn_id)
 
                         # Emit our own done event with suggestions and trace
@@ -405,6 +412,29 @@ class HealthQueryAgent(BaseAgent):
                 code="agent_error",
                 fallback_text=await self._localize_text("Please try again in a moment.", ctx),
             )
+        finally:
+            # Client disconnect (GeneratorExit) mid-stream: without this the
+            # user's question AND the mostly-delivered reply vanish from
+            # history — the chat they read never happened on reopen. Salvage
+            # what was streamed. (No yields here — only awaits are legal
+            # during async-generator finalization.)
+            if delta_sink and not turn_saved and intent is not None:
+                try:
+                    raw = "".join(delta_sink)
+                    clean, _ = extract_await(raw)
+                    partial = strip_bubbles(clean)
+                    if partial.strip():
+                        salvage = AgentOutput(
+                            message=partial, is_ready=True, trace_id=trace_id,
+                            data={"messages": split_bubbles(clean), "interrupted": True},
+                        )
+                        await self._save_turn(
+                            input, salvage, intent, user_timestamp=user_timestamp,
+                        )
+                        logger.info("Salvaged interrupted stream turn (thread=%s, %d chars)",
+                                    input.context.thread_id, len(partial))
+                except Exception as salvage_exc:
+                    logger.warning("Stream salvage failed: %s", salvage_exc)
 
     # ── Pipeline steps ────────────────────────────────────────────────────
 
@@ -561,6 +591,7 @@ class HealthQueryAgent(BaseAgent):
                 "channel": input.context.metadata.get("channel", "app"),
                 "audio_url": input.context.metadata.get("audio_url"),
                 **({"bubbles": bubbles} if bubbles and len(bubbles) > 1 else {}),
+                **({"interrupted": True} if (output.data or {}).get("interrupted") else {}),
             },
         )
 

@@ -233,13 +233,18 @@ class QdrantRetriever:
         """Build date_start/date_end/month filter conditions."""
         conditions: list[FieldCondition] = []
 
+        # OVERLAP semantics, not containment: a record matches when its
+        # [start_time, end_time] span intersects the query window. Point
+        # records (meals, readings) behave identically; range records no
+        # longer vanish from single-day queries — a 23:00→07:00 sleep
+        # session used to fail BOTH containment bounds for either day.
         if request.date_start:
             start_ms = _date_str_to_epoch_ms(request.date_start)
-            conditions.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
+            conditions.append(FieldCondition(key="end_time", range=Range(gte=start_ms)))
 
         if request.date_end:
             end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
-            conditions.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
+            conditions.append(FieldCondition(key="start_time", range=Range(lte=end_ms)))
 
         month_filters = request.filters.get("month_filters")
         if month_filters:

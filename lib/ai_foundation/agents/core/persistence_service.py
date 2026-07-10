@@ -183,15 +183,15 @@ class PersistenceService:
         # drop code fences — '?' inside charts/code is not a question
         parts = assistant_message.split("```")
         prose = " ".join(parts[::2])
-        candidates = [
-            seg.strip() for seg in prose.replace("\n", " ").split("?") if seg.strip()
-        ]
-        if not candidates or not prose.rstrip().endswith("?") and "?" not in prose:
-            pass
-        # last '?'-terminated sentence: take text after the last sentence break
+        # last '?'-terminated sentence: take text after the last sentence
+        # break. '।' is the Hindi/Devanagari full stop — without it a Hindi
+        # reply's whole paragraph got captured as "the question".
         last = None
         for chunk in prose.split("?")[:-1]:
-            sent = chunk.split(". ")[-1].split("! ")[-1].strip().lstrip("-*# ")
+            sent = chunk
+            for sep in (". ", "! ", "। "):
+                sent = sent.split(sep)[-1]
+            sent = sent.strip().lstrip("-*# ")
             if sent:
                 last = sent[-300:] + "?"
         return last
