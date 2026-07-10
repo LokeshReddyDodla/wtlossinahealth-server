@@ -31,6 +31,7 @@ def _memory(summary: ThreadSummary | None):
     mem = MagicMock()
     mem.get_thread_summary = AsyncMock(return_value=summary)
     mem.save_thread_summary = AsyncMock()
+    mem.update_thread_summary_fields = AsyncMock()
     mem.append_turns_batch = AsyncMock()
     return mem
 
@@ -47,9 +48,10 @@ async def test_match_appends_turn_clears_and_routes():
     assert turns[0].role == "assistant"
     assert "32g protein" in turns[0].content
     assert turns[0].metadata["kind"] == "data_request_followup"
-    # pending cleared
-    saved = mem.save_thread_summary.await_args.args[1]
-    assert saved.pending_data_request is None
+    # pending cleared via partial $set — AFTER the turn was appended
+    mem.update_thread_summary_fields.assert_awaited_once_with(
+        "bot:patient:p1", {"pending_data_request": None},
+    )
 
 
 @pytest.mark.asyncio
@@ -60,7 +62,7 @@ async def test_wrong_entity_type_untouched():
         ok = await _consume_pending_request("bot:patient:p1", "meal", "body")
     assert ok is False
     mem.append_turns_batch.assert_not_awaited()
-    mem.save_thread_summary.assert_not_awaited()  # pending stays for the right event
+    mem.update_thread_summary_fields.assert_not_awaited()  # pending stays for the right event
 
 
 @pytest.mark.asyncio
@@ -71,8 +73,9 @@ async def test_expired_request_cleared_but_no_continuation():
         ok = await _consume_pending_request("bot:patient:p1", "meal", "body")
     assert ok is False
     mem.append_turns_batch.assert_not_awaited()
-    saved = mem.save_thread_summary.await_args.args[1]
-    assert saved.pending_data_request is None  # stale ask cleaned up
+    mem.update_thread_summary_fields.assert_awaited_once_with(
+        "bot:patient:p1", {"pending_data_request": None},
+    )  # stale ask cleaned up
 
 
 @pytest.mark.asyncio
@@ -92,12 +95,12 @@ async def test_persistence_record_and_compaction_preserve():
 
     mem = MagicMock()
     mem.get_thread_summary = AsyncMock(return_value=None)
-    mem.save_thread_summary = AsyncMock()
+    mem.update_thread_summary_fields = AsyncMock()
     svc = PersistenceService(memory=mem, gateway=MagicMock())
     await svc.record_pending_request(thread_id="t1", entity_type="meal")
 
-    saved = mem.save_thread_summary.await_args.args[1]
-    p = saved.pending_data_request
+    fields = mem.update_thread_summary_fields.await_args.args[1]
+    p = fields["pending_data_request"]
     assert p["entity_type"] == "meal"
     assert datetime.fromisoformat(p["expires_at"]) > datetime.now(timezone.utc)
 
@@ -115,6 +118,8 @@ async def test_zero_insight_ack_still_closes_the_loop():
     assert ok is True
     turns = mem.append_turns_batch.await_args.args[1]
     assert "Got your meal" in turns[0].content
-    assert mem.save_thread_summary.await_args.args[1].pending_data_request is None
+    mem.update_thread_summary_fields.assert_awaited_once_with(
+        "bot:patient:p1", {"pending_data_request": None},
+    )
     # unknown entity falls back to a generic word, never KeyErrors
     assert "log" in _ack_body("unknown_thing") and "log" in _ack_body(None)

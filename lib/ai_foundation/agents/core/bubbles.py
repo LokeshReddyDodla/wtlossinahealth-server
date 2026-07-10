@@ -26,11 +26,17 @@ import re
 
 BUBBLE_DELIMITER = "[[BUBBLE]]"
 
-# Entity types the agent may ask the user to log (mirrors the event triggers
-# + checkin surfaces the app exposes).
-AWAIT_ENTITY_TYPES = ("meal", "smbg", "symptom", "sleep", "mood", "workout")
+# Entity types the agent may ask the user to log. MUST stay a subset of the
+# event triggers that actually enqueue handle_proactive_event (meal + smbg
+# vector tasks, symptom via daily_checkin_service) — an AWAIT for an entity
+# with no producer is a promise the system can never keep: the user logs it
+# and nothing ever replies. Add sleep/mood/workout ONLY with their triggers.
+AWAIT_ENTITY_TYPES = ("meal", "smbg", "symptom")
 
 _AWAIT_RE = re.compile(r"\[\[AWAIT:(" + "|".join(AWAIT_ENTITY_TYPES) + r")\]\]")
+# Strip ANY await-shaped marker (incl. hallucinated entities) from user-visible
+# text; only known entities count for the pending-request decision.
+_AWAIT_ANY_RE = re.compile(r"\[\[AWAIT:[a-z_]+\]\]")
 
 # marker → visible replacement
 _MARKERS: dict[str, str] = {BUBBLE_DELIMITER: "\n\n"}
@@ -48,7 +54,7 @@ def extract_await(text: str) -> tuple[str, str | None]:
         return text, None
     match = _AWAIT_RE.search(text)
     entity = match.group(1) if match else None
-    return _AWAIT_RE.sub("", text).strip(), entity
+    return _AWAIT_ANY_RE.sub("", text).strip(), entity
 
 
 def _fence_balanced(text: str) -> bool:

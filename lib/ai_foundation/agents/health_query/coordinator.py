@@ -41,7 +41,7 @@ from lib.ai_foundation.agents.health_query.evidence import (
     format_data_gaps,
 )
 
-from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter
+from lib.ai_foundation.agents.core.bubbles import BubbleStreamFilter, extract_await, strip_bubbles
 from lib.ai_foundation.agents.core.chart_processor import process_charts
 from lib.ai_foundation.agents.core.context_loader import build_context_messages
 from lib.ai_foundation.agents.core.context_pruner import ContextPruner, MIN_TRUNCATION_CHARS as _MIN_TRUNCATION_CHARS
@@ -382,7 +382,7 @@ class Coordinator:
                 yield sse_error(
                     message="The response was interrupted. Please try again.",
                     code="stream_error",
-                    fallback_text="".join(full_response_parts) or None,
+                    fallback_text=strip_bubbles(extract_await("".join(full_response_parts))[0]) or None,
                 )
                 return
 
