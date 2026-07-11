@@ -123,10 +123,12 @@ async def _translate_for_target(
         translator = container.resolve(TranslationService)
 
         # Product markers like "[Beta]" stay verbatim — translate only the title text.
+        from lib.ai_foundation.agents.proactive_monitor.contracts import BETA_TITLE_PREFIX
+
         title_prefix = ""
         title_text = top.title
-        if title_text.startswith("[Beta] "):
-            title_prefix, title_text = "[Beta] ", title_text[len("[Beta] "):]
+        if title_text.startswith(BETA_TITLE_PREFIX):
+            title_prefix, title_text = BETA_TITLE_PREFIX, title_text[len(BETA_TITLE_PREFIX):]
 
         async def _body() -> str:
             return body_translation or await translator.translate(top.body, language)

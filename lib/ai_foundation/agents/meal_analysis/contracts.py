@@ -7,7 +7,7 @@ Nothing here writes to a database; save is a separate, dumb path.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 from uuid import UUID
@@ -306,6 +306,50 @@ class PatientMealRef(BaseModel):
     meal_name: str
     consumed_at: datetime
     slot: MealSlot
+
+    @classmethod
+    def from_payload(
+        cls, meal: dict, slot: MealSlot | None = None
+    ) -> "PatientMealRef | None":
+        """Build a ref from a Qdrant meal payload; None when unusable.
+
+        ``slot=None`` parses the payload's own slot (invalid slot → None);
+        an explicit slot overrides. consumed_at is normalized to a NAIVE
+        UTC datetime regardless of whether the stored string carried an
+        offset — mixed aware/naive refs break every comparison downstream.
+        """
+        meal_id = meal.get("meal_id")
+        if not meal_id:
+            return None
+        try:
+            mid = UUID(str(meal_id))
+        except (ValueError, TypeError):
+            return None
+
+        if slot is None:
+            try:
+                slot = MealSlot((meal.get("slot") or "").strip().lower())
+            except ValueError:
+                return None
+
+        consumed_at_str = meal.get("consumed_at")
+        try:
+            consumed_at = (
+                datetime.fromisoformat(consumed_at_str)
+                if consumed_at_str
+                else datetime.now(timezone.utc)
+            )
+        except ValueError:
+            consumed_at = datetime.now(timezone.utc)
+        if consumed_at.tzinfo is not None:
+            consumed_at = consumed_at.astimezone(timezone.utc).replace(tzinfo=None)
+
+        return cls(
+            meal_id=mid,
+            meal_name=meal.get("name") or "",
+            consumed_at=consumed_at,
+            slot=slot,
+        )
 
 
 class RepeatFlag(BaseModel):

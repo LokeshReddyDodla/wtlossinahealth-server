@@ -705,10 +705,11 @@ class ProactiveMonitorAgent(BaseAgent):
             )
         return None
 
-    _GOAL_KEYS = frozenset({
-        "health_goal", "weight_goal", "glucose_target_tir",
-        "weight_target", "steps_target", "sleep_target", "calorie_target",
-    })
+    # Derived from the canonical memory schema — a goal key added to the
+    # fact extractor must appear in the monitor's goals section automatically.
+    from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS as _CMK
+    _GOAL_KEYS = frozenset(k for k, v in _CMK.items() if v["category"] == "goal")
+    del _CMK
 
     async def _load_facts(self, patient_id: str) -> str:
         """Load patient facts from memory, with goals in a dedicated section."""

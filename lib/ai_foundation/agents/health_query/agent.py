@@ -853,8 +853,13 @@ class HealthQueryAgent(BaseAgent):
         """Render a prompt with common variables (available_data_types, current_time)."""
         from lib.ai_foundation.agents.health_query.contracts import AVAILABLE_HEALTH_DOMAINS
         template = self.prompts.get(template_name)
+        from lib.ai_foundation.agents.core.bubbles import AWAIT_ENTITY_TYPES
+
         return template.render(
             available_data_types=AVAILABLE_HEALTH_DOMAINS,
+            # single source of truth: bubbles.AWAIT_ENTITY_TYPES — a prompt
+            # list that drifts from the regex silently kills the closed loop
+            await_entity_types=", ".join(AWAIT_ENTITY_TYPES),
             # current_time is no longer used by local prompts (it broke
             # provider prompt caching — time now rides in the per-turn
             # local-time context line). Kept so older Langfuse prompt

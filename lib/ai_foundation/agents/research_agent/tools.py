@@ -31,7 +31,6 @@ of patients without context-window pressure.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -811,16 +810,13 @@ def _normalize_condition(condition: str) -> str:
     "T1D"             → "diabetes"
     """
     raw = condition.strip().lower()
+    # Inverted from _CONDITION_SYNONYMS so a synonym added there normalizes
+    # here automatically — a second hand-typed alias map had already drifted.
     aliases = {
-        "type 1 diabetes": "diabetes",
-        "type 2 diabetes": "diabetes",
-        "t1d": "diabetes",
-        "t2d": "diabetes",
-        "diabetic": "diabetes",
-        "hemorrhoids": "piles",
-        "haemorrhoids": "piles",
-        "high blood pressure": "hypertension",
-        "htn": "hypertension",
+        syn: canonical
+        for canonical, syns in _CONDITION_SYNONYMS.items()
+        for syn in syns
+        if syn != canonical and syn not in _CONDITION_SYNONYMS
     }
     return aliases.get(raw, raw)
 

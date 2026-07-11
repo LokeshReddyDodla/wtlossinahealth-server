@@ -12,6 +12,7 @@ ReasoningEngine and the Coordinator.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 from typing import TYPE_CHECKING, Any
 
@@ -351,7 +352,7 @@ class ContextLoader:
         if not self._memory or not thread_id:
             return []
         try:
-            turns = await self._memory.get_thread_turns(thread_id, limit=10)
+            turns = await self._memory.get_thread_turns(thread_id, limit=settings.MAX_HISTORY_MESSAGES)
             return [{"role": t.role, "content": t.content} for t in turns]
         except Exception as exc:
             logger.debug("Failed to load history: %s", exc)
@@ -371,9 +372,8 @@ class ContextLoader:
                 parts.append(f"Patient's active goal in this conversation: {summary.goal}")
             pending = summary.pending_data_request
             if pending:
-                from datetime import datetime as _dt, timezone as _tz
                 try:
-                    not_expired = _dt.fromisoformat(pending["expires_at"]) > _dt.now(_tz.utc)
+                    not_expired = datetime.fromisoformat(pending["expires_at"]) > datetime.now(timezone.utc)
                 except Exception:
                     not_expired = False
                 if not_expired:

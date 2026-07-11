@@ -117,8 +117,11 @@ for _domain, _types in DOMAIN_MAPPING.items():
     for _dt in _types:
         _TYPE_TO_DOMAIN[_dt] = _domain
 
-# Specialist domain names (domains that have specialist agents)
-SPECIALIST_DOMAINS = {"glucose", "nutrition", "fitness", "vitals", "sleep", "documents"}
+# Roles that see provider-formatted evidence (clinical framing, patient
+# named in third person). Everything else gets the patient framing. Any
+# role check MUST use this set — ad-hoc tuples drifted and gave admins a
+# research prompt with patient-formatted evidence.
+PROVIDER_VIEW_ROLES = frozenset({"care_provider", "research", "admin"})
 
 # Map DomainName enum to specialist domain key
 _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
@@ -255,46 +258,6 @@ class QueryIntent(BaseModel):
         None, description="For add: the memory value (e.g. 'vegetarian').",
     )
 
-
-class PatientFact(BaseModel):
-    """A single extracted patient fact."""
-
-    key: str = Field(
-        ...,
-        description=(
-            "Fact category. Must be one of: goal, weight, dietary_preference, "
-            "food_allergy, body_note, medication_note, fasting_context, "
-            "communication_style, medical_condition, activity_preference, "
-            "or any other descriptive key."
-        ),
-    )
-    value: str = Field(
-        ...,
-        description="The fact value, exactly as stated by the user.",
-    )
-
-
-class ExtractedFacts(BaseModel):
-    """Facts extracted from a user message. Used as response_model for a dedicated LLM call."""
-
-    facts: list[PatientFact] = Field(
-        ...,
-        description=(
-            "ALL durable patient facts found in the message. "
-            "Extract every goal, weight, dietary preference, allergy, body note, "
-            "medical condition, medication, fasting context mentioned. "
-            "Return an empty list ONLY if the message contains NO patient facts."
-        ),
-    )
-    has_facts: bool = Field(
-        ...,
-        description="True if any patient facts were found in the message. False otherwise.",
-    )
-
-
-# ---------------------------------------------------------------------------
-# API Response (backward-compatible)
-# ---------------------------------------------------------------------------
 
 
 class QueryResponse(BaseModel):

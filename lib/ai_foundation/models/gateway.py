@@ -322,7 +322,15 @@ class ModelGateway:
         """
         clean = self._clean_messages(messages)
         try:
-            return litellm.token_counter(model=model or "gpt-4.1-mini", messages=clean)
+            fallback = model
+            if not fallback:
+                try:
+                    # tokenizer choice barely matters for budgeting — use the
+                    # registry's cheap-tier primary so model upgrades propagate
+                    fallback = self._registry.route(ModelTask.CLASSIFICATION).model_id
+                except Exception:
+                    fallback = "gpt-4.1-mini"
+            return litellm.token_counter(model=fallback, messages=clean)
         except Exception:
             return sum(len(m.get("content", "") or "") for m in clean) // 4
 

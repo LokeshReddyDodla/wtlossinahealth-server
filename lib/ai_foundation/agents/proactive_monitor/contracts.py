@@ -24,6 +24,11 @@ class InsightSeverity(str, Enum):
     ALERT = "alert"          # needs immediate attention
 
 
+# Product marker prefixed to event-insight titles; stripped before
+# translation so it never gets localized. One constant — the prepender
+# and the stripper live in different modules.
+BETA_TITLE_PREFIX = "[Beta] "
+
 SEVERITY_RANK: dict[str, int] = {
     "info": 1,
     "attention": 2,

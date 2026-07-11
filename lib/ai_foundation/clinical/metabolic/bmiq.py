@@ -8,7 +8,9 @@ Both feed the same contract but evolve independently.
 Pure stdlib, stateless per patient. Evidence-backed: dimension targets and risk rules
 from bmiq_evidence_library.json (validated on 706-patient cohort, C1 longitudinal 127 patients).
 """
-import os, json
+import json
+import logging
+import os
 from datetime import date, datetime
 
 from .util import num as _num
@@ -22,6 +24,9 @@ def _load(name, default):
         with open(p, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
+        # Degraded clinical mode must be LOUD (empty evidence library
+        # silently weakens BMIQ output).
+        logging.getLogger(__name__).error("bmiq data file %s failed to load — running degraded", name, exc_info=True)
         return default
 
 

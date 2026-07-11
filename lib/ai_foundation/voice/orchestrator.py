@@ -95,6 +95,7 @@ class VoiceOrchestrator:
         patient_resolver: PatientNameResolver,
         settings: VoiceSettings,
         upload_audio: UploadAudio | None = None,
+        translation: Any = None,
     ) -> None:
         self._stt = stt
         self._tts = tts
@@ -102,17 +103,15 @@ class VoiceOrchestrator:
         self._patient_resolver = patient_resolver
         self._settings = settings
         self._upload_audio = upload_audio
+        self._translation = translation
 
     async def _localize(self, text: str, language: str) -> str:
         """Canned strings (greeting, errors) in the session language — same
         cached-translation path every other surface uses."""
-        if language == "en" or not text:
+        if language == "en" or not text or self._translation is None:
             return text
         try:
-            from lib.ai_foundation.translation import TranslationService
-            from lib.core.container import container
-
-            return await container.resolve(TranslationService).translate_cached(text, language)
+            return await self._translation.translate_cached(text, language)
         except Exception:
             return text  # spoken English beats silence
 

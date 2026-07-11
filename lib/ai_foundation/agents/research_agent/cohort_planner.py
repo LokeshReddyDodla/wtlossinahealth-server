@@ -29,7 +29,6 @@ from .contracts import (
     CohortIntent,
     CohortOutput,
     CohortSpec,
-    Criterion,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,13 @@ logger = logging.getLogger(__name__)
 # lives in ``prompts/planner.md`` for design-time reference and for future
 # Langfuse-managed iteration.
 
-_PLANNER_SYSTEM_PROMPT = """You are the **Cohort Planner** for a clinical research agent that helps care providers analyze patient cohorts (groups of 10 to 1000+ patients).
+from lib.ai_foundation.agents.health_query.contracts import HealthDataType
+
+# Rendered below with the full HealthDataType enum — the planner's hard rule
+# "NEVER invent a data_type not in the list" makes ANY omission here a
+# provider-facing capability gap (a drifted manual copy once made cohort
+# medication filters impossible).
+_PLANNER_SYSTEM_PROMPT_TEMPLATE = """You are the **Cohort Planner** for a clinical research agent that helps care providers analyze patient cohorts (groups of 10 to 1000+ patients).
 
 Your only job is to parse the provider's question into a structured `CohortSpec`. You do NOT answer the question — you produce the plan that another part of the system will execute.
 
@@ -67,11 +72,7 @@ For every question, pick one `intent`:
 
 - `criteria` — one `Criterion` per filter the question mentions. Each has:
     - `data_type` — must be one of the known Qdrant data types:
-        hypo_event, hyper_event, rapid_spike_event, rapid_drop_event,
-        meal, smbg, fitness_overview, patient_workout,
-        sleep, sleep_checkin, mood_entry, symptom_entry,
-        vital, cgm_summary_stats, cgm_range_stats,
-        diet_plan, fitness_plan, profile, patient_document
+        {data_types}
     - `filter` — numeric filter as `{key: {"lt": N}}` / `{"gt": N}` / `{"lte": N}` / `{"gte": N}`
                 or scalar equality as `{key: value}`
     - `window` — "1d", "3d", "7d", "14d", "30d", "60d", "90d", "180d", "1y", "365d", "all" (default "7d")
@@ -163,6 +164,11 @@ most common issues", "summarize the health profile of my patients",
 
 You will be given the user's question. Respond by populating the `CohortSpec` schema.
 """
+
+# .replace, not .format — the template is full of literal JSON braces.
+_PLANNER_SYSTEM_PROMPT = _PLANNER_SYSTEM_PROMPT_TEMPLATE.replace(
+    "{data_types}", ", ".join(dt.value for dt in HealthDataType),
+)
 
 
 class CohortPlanner:

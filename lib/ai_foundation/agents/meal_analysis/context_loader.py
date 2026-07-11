@@ -382,32 +382,7 @@ def _partition_meals_by_date(
 def _patient_meal_ref_from_dict(
     meal: dict[str, Any], slot: MealSlot
 ) -> PatientMealRef | None:
-    from uuid import UUID
-
-    meal_id = meal.get("meal_id")
-    if not meal_id:
-        return None
-    try:
-        mid = UUID(str(meal_id))
-    except (ValueError, TypeError):
-        return None
-
-    consumed_at_str = meal.get("consumed_at")
-    try:
-        consumed_at = (
-            datetime.fromisoformat(consumed_at_str)
-            if consumed_at_str
-            else datetime.utcnow()
-        )
-    except ValueError:
-        consumed_at = datetime.utcnow()
-
-    return PatientMealRef(
-        meal_id=mid,
-        meal_name=meal.get("name") or "",
-        consumed_at=consumed_at,
-        slot=slot,
-    )
+    return PatientMealRef.from_payload(meal, slot)
 
 
 def _meal_payload_to_dict(r: RetrievalResult) -> dict[str, Any]:

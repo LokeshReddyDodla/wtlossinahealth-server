@@ -2013,6 +2013,7 @@ container.register(
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
         upload_audio=_upload_voice_audio,
+        translation=cast(TranslationService, container.resolve(TranslationService)),
     ),
     scope=Scope.singleton,
 )

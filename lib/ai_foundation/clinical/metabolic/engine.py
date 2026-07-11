@@ -14,8 +14,9 @@ Two call modes:
   - assess(state, meal) with meal['observed_peak'] present  -> post-hoc / follow-up: full attribution.
   - assess(state, meal) without observed_peak               -> live (meal just logged): predicted rise.
 """
-import os, json
-from datetime import date, datetime
+import json
+import logging
+import os
 
 from .bmiq import BmiqScorer
 from .util import num as _num, slot_index as slot
@@ -26,6 +27,9 @@ def _load(name, default):
     try:
         with open(p, "r", encoding="utf-8") as f: return json.load(f)
     except Exception:
+        # Degraded clinical mode must be LOUD: with the default, the engine
+        # runs with no levers / no spike model and nothing explains why.
+        logging.getLogger(__name__).error("metabolic data file %s failed to load — running degraded", name, exc_info=True)
         return default
 
 LEVERS_DATA = _load("levers.json", {"levers": {}, "circadian_breakfast_mgdl": 12.35})

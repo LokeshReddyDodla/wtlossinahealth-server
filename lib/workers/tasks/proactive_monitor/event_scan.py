@@ -16,6 +16,7 @@ from sqlalchemy import update
 from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.contracts import (
+    BETA_TITLE_PREFIX,
     EventTrigger,
     MealLoggedAnchor,
     SMBGLoggedAnchor,
@@ -110,7 +111,7 @@ async def handle_proactive_event(
 
         if result.insights:
             for ins in result.insights:
-                ins.title = f"[Beta] {ins.title}"
+                ins.title = f"{BETA_TITLE_PREFIX}{ins.title}"
             top = max(result.insights, key=lambda i: SEVERITY_RANK.get(i.severity.value, 0))
             await _save_insight_to_record(typed_anchor, top.body)
 

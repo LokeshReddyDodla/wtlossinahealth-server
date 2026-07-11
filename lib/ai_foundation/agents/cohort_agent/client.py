@@ -14,13 +14,14 @@ its own loopback call (self-deadlock on a single worker).
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any
 
 import httpx
 
 # Loopback base for in-process API calls. Override with COHORT_AGENT_API_BASE.
-INTERNAL_API_BASE = os.getenv("COHORT_AGENT_API_BASE", "http://localhost:8000").rstrip("/")
+from lib.ai_foundation.config import settings as _ai_settings
+
+INTERNAL_API_BASE = _ai_settings.COHORT_AGENT_API_BASE.rstrip("/")
 
 _RETRY_STATUSES = {502, 503, 504}
 

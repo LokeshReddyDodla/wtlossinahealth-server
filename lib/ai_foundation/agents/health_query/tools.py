@@ -23,7 +23,7 @@ from lib.ai_foundation.config import settings
 from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
 
 if TYPE_CHECKING:
-    from lib.ai_foundation.models.gateway import LLMToolResponse, ToolCall
+    from lib.ai_foundation.models.gateway import LLMToolResponse
     from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
     from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
     from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
