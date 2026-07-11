@@ -119,8 +119,7 @@ for _domain, _types in DOMAIN_MAPPING.items():
 
 # Roles that see provider-formatted evidence (clinical framing, patient
 # named in third person). Everything else gets the patient framing. Any
-# role check MUST use this set — ad-hoc tuples drifted and gave admins a
-# research prompt with patient-formatted evidence.
+# role check MUST use this set — scattered ad-hoc tuples diverge.
 PROVIDER_VIEW_ROLES = frozenset({"care_provider", "research", "admin"})
 
 # Map DomainName enum to specialist domain key

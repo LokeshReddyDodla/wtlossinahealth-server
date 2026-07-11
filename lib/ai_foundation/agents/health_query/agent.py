@@ -860,10 +860,10 @@ class HealthQueryAgent(BaseAgent):
             # single source of truth: bubbles.AWAIT_ENTITY_TYPES — a prompt
             # list that drifts from the regex silently kills the closed loop
             await_entity_types=", ".join(AWAIT_ENTITY_TYPES),
-            # current_time is no longer used by local prompts (it broke
-            # provider prompt caching — time now rides in the per-turn
-            # local-time context line). Kept so older Langfuse prompt
-            # versions still render until they are synced.
+            # Local prompts must not reference this — a time-varying value
+            # in the system prompt defeats provider prefix caching (time
+            # rides in the per-turn local-time context line). Supplied only
+            # so older Langfuse prompt versions render until synced.
             current_time=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             **extra_vars,
         )

@@ -45,8 +45,7 @@ from lib.ai_foundation.agents.health_query.contracts import HealthDataType
 
 # Rendered below with the full HealthDataType enum — the planner's hard rule
 # "NEVER invent a data_type not in the list" makes ANY omission here a
-# provider-facing capability gap (a drifted manual copy once made cohort
-# medication filters impossible).
+# provider-facing capability gap.
 _PLANNER_SYSTEM_PROMPT_TEMPLATE = """You are the **Cohort Planner** for a clinical research agent that helps care providers analyze patient cohorts (groups of 10 to 1000+ patients).
 
 Your only job is to parse the provider's question into a structured `CohortSpec`. You do NOT answer the question — you produce the plan that another part of the system will execute.

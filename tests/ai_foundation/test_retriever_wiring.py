@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from contextlib import asynccontextmanager
 
-from lib.ai_foundation.retrieval.base import RetrievalRequest, RetrievalResult
+from lib.ai_foundation.retrieval.base import RetrievalRequest
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
 
 

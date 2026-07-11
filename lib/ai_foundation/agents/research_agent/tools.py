@@ -810,8 +810,8 @@ def _normalize_condition(condition: str) -> str:
     "T1D"             → "diabetes"
     """
     raw = condition.strip().lower()
-    # Inverted from _CONDITION_SYNONYMS so a synonym added there normalizes
-    # here automatically — a second hand-typed alias map had already drifted.
+    # Inverted from _CONDITION_SYNONYMS so a synonym added there
+    # normalizes here automatically — one table owns both directions.
     aliases = {
         syn: canonical
         for canonical, syns in _CONDITION_SYNONYMS.items()

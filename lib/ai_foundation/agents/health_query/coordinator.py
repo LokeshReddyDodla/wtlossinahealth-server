@@ -790,8 +790,8 @@ class Coordinator:
                 "_meta": {"type": "data_gap"},
             })
 
-        # Inject evidence summary from specialist findings (shared block —
-        # includes the "⚠ DATA NOTES" conflict notes the engine already had)
+        # Shared evidence block — treatment must not diverge between the
+        # coordinator and reasoning-engine responders.
         if findings:
             evidence_text = format_evidence_block(evidence_items_from_findings(findings), user_role)
             if evidence_text:

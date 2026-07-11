@@ -19,10 +19,8 @@ import pytest
 
 from lib.ai_foundation.agents.state import RequestPriority
 from lib.ai_foundation.rate_limit.limiter import (
-    DEFAULT_LIMITS,
     RateLimitConfig,
     RateLimiter,
-    RateLimitResult,
 )
 
 
