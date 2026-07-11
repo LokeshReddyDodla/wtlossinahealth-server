@@ -27,7 +27,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from lib.ai_foundation.config import settings
-from lib.ai_foundation.models.gateway import LLMToolResponse, safe_cost
+from lib.ai_foundation.models.gateway import safe_cost
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
@@ -58,10 +58,8 @@ from lib.ai_foundation.agents.health_query.evidence import (
     detect_conflicts,
     extract_evidence_from_fallback,
     extract_evidence_from_tool_round,
-    format_coverage_note,
     format_data_gaps,
-    format_patient,
-    format_provider,
+    format_evidence_block,
 )
 
 logger = logging.getLogger(__name__)
@@ -895,16 +893,7 @@ class ReasoningEngine:
 
         # Inject evidence summary (pruning-safe — built from ledger, not messages)
         if evidence_ledger is not None:
-            summary = build_summary(evidence_ledger)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
-            coverage_note = format_coverage_note(summary)
-            if coverage_note:
-                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
-            # Append conflict notes if any
-            conflicts = detect_conflicts(evidence_ledger)
-            if conflicts:
-                conflict_text = "\n".join(f"- {c}" for c in conflicts)
-                evidence_text = f"{evidence_text}\n⚠ DATA NOTES:\n{conflict_text}" if evidence_text else f"⚠ DATA NOTES:\n{conflict_text}"
+            evidence_text = format_evidence_block(evidence_ledger, user_role)
             if evidence_text:
                 messages.append({
                     "role": "system",

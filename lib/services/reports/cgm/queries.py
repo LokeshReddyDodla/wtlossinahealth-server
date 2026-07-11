@@ -161,23 +161,29 @@ def generate_daily_avg_query(patient_id: str, start_date: str, end_date: str) ->
 
 def generate_readings_around_meal_query(
     patient_id: str, meal_time: str, before_minutes: int = 30, after_minutes: int = 30
-) -> str:
-    """Generate query to fetch CGM readings around a meal time."""
-    return f"""
+) -> tuple[str, dict]:
+    """Query + params to fetch CGM readings around a meal time.
+
+    Parameterized (unlike the report queries above, whose inputs are
+    server-generated) because meal_time flows in from stored meal payloads —
+    execute as ``client.execute(query, params)``.
+    """
+    query = f"""
     SELECT
         time AS reading_time,
         glucose_level AS glucose_mgdl
     FROM
         aihealth.cgm_data
     WHERE
-        patient_id = '{patient_id}'
+        patient_id = %(patient_id)s
         AND record_type = 'historic'
-        AND time BETWEEN 
-            toDateTime('{meal_time}') - INTERVAL {before_minutes} MINUTE
-            AND 
-            toDateTime('{meal_time}') + INTERVAL {after_minutes} MINUTE
+        AND time BETWEEN
+            toDateTime(%(meal_time)s) - INTERVAL {int(before_minutes)} MINUTE
+            AND
+            toDateTime(%(meal_time)s) + INTERVAL {int(after_minutes)} MINUTE
     ORDER BY time;
     """
+    return query, {"patient_id": patient_id, "meal_time": meal_time}
 
 
 def generate_total_readings_count_query(patient_id: str, start_date: str, end_date: str) -> str:
