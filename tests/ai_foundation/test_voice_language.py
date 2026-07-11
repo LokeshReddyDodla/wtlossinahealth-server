@@ -119,3 +119,111 @@ def test_voice_prompt_gets_language_instruction():
 
     _, response_en = agent._get_reasoning_prompts(voice_input, "en")
     assert "reply ENTIRELY in" not in response_en
+
+
+@pytest.mark.asyncio
+async def test_handle_utterance_real_path_mirrors_spoken_language():
+    """Executes the REAL orchestrator pipeline with a Hindi utterance:
+    detected language must reach the agent (metadata.voice_language),
+    the TTS (per-request language), and the session state."""
+    from lib.ai_foundation.voice.config import VoiceSettings
+    from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
+    from lib.ai_foundation.voice.session import VoiceSession
+
+    settings = VoiceSettings()
+
+    stt_result = MagicMock()
+    stt_result.text = "मेरा ग्लूकोज़ कैसा है?"
+    stt_result.language = "hi-IN"
+    stt_result.duration_seconds = 2.0
+    stt = MagicMock()
+    stt.transcribe = AsyncMock(return_value=stt_result)
+
+    tts = MagicMock()
+    tts.supports_language = MagicMock(return_value=True)
+    spoken: list[tuple[str, str | None]] = []
+
+    async def fake_stream(text, language=None):
+        spoken.append((text[:20], language))
+        yield b"\x00" * 10
+
+    tts.synthesize_stream = MagicMock(side_effect=fake_stream)
+
+    captured_inputs = []
+
+    async def fake_run_stream(agent_input):
+        captured_inputs.append(agent_input)
+        yield 'event: done\ndata: {"data": {"full_response": "आपका ग्लूकोज़ स्थिर है।"}}\n\n'
+
+    agent = MagicMock()
+    agent.run_stream = MagicMock(side_effect=fake_run_stream)
+
+    orch = VoiceOrchestrator(
+        stt=stt, tts=tts, agent=agent,
+        patient_resolver=AsyncMock(), settings=settings,
+    )
+    session = VoiceSession(
+        user_id="p1", patient_id="p1", thread_id="bot:patient:p1", settings=settings,
+    )
+    sent_json, sent_bytes = [], []
+
+    async def send_json(d): sent_json.append(d)
+    async def send_bytes(b): sent_bytes.append(b)
+
+    await orch.handle_utterance(session, b"audio", send_json=send_json, send_bytes=send_bytes)
+
+    # detected hi-IN → normalized hi → agent override + TTS language + session
+    assert captured_inputs[0].context.metadata["voice_language"] == "hi"
+    assert session.language == "hi"
+    response_speaks = [lang for text, lang in spoken if "ग्लूकोज़" in text or lang]
+    assert ("आपका ग्लूकोज़ स्थिर है।"[:20], "hi") in spoken
+    assert sent_bytes, "audio must have streamed"
+
+
+@pytest.mark.asyncio
+async def test_handle_utterance_unspeakable_language_falls_back():
+    """Urdu on a TTS that can't voice it: reply language falls back to the
+    session seed instead of erroring mid-conversation."""
+    from lib.ai_foundation.voice.config import VoiceSettings
+    from lib.ai_foundation.voice.orchestrator import VoiceOrchestrator
+    from lib.ai_foundation.voice.session import VoiceSession
+
+    settings = VoiceSettings()
+    stt_result = MagicMock()
+    stt_result.text = "salaam"
+    stt_result.language = "ur"
+    stt_result.duration_seconds = 1.0
+    stt = MagicMock()
+    stt.transcribe = AsyncMock(return_value=stt_result)
+
+    tts = MagicMock()
+    tts.supports_language = MagicMock(side_effect=lambda lang: lang != "ur")
+
+    async def fake_stream(text, language=None):
+        yield b"\x00"
+
+    tts.synthesize_stream = MagicMock(side_effect=fake_stream)
+
+    captured = []
+
+    async def fake_run_stream(agent_input):
+        captured.append(agent_input)
+        yield 'event: done\ndata: {"data": {"full_response": "ok"}}\n\n'
+
+    agent = MagicMock()
+    agent.run_stream = MagicMock(side_effect=fake_run_stream)
+
+    orch = VoiceOrchestrator(
+        stt=stt, tts=tts, agent=agent,
+        patient_resolver=AsyncMock(), settings=settings,
+    )
+    session = VoiceSession(
+        user_id="p1", patient_id="p1", thread_id="t", settings=settings,
+    )
+    session.language = "en"  # seed
+
+    async def send(_): ...
+    await orch.handle_utterance(session, b"a", send_json=send, send_bytes=send)
+
+    assert captured[0].context.metadata["voice_language"] == "en"
+    assert session.language == "en"
