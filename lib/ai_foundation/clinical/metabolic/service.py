@@ -290,14 +290,14 @@ class MetabolicService:
             return
         try:
             from lib.services.reports.cgm.queries import generate_readings_around_meal_query
-            query = generate_readings_around_meal_query(
+            query, params = generate_readings_around_meal_query(
                 str(event.patient_id),
                 event.meal_time.strftime("%Y-%m-%d %H:%M:%S"),
                 before_minutes=15,
                 after_minutes=120,
             )
             # clickhouse-driver is sync — run off the event loop
-            results = await asyncio.to_thread(self._clickhouse.client.execute, query)
+            results = await asyncio.to_thread(self._clickhouse.client.execute, query, params)
             if not results:
                 return
 

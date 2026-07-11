@@ -1,8 +1,8 @@
 """
 Fact Extractor — LLM-based patient memory extraction from every message.
 
-Runs in the background (asyncio.ensure_future) so it never blocks the
-response. The LLM decides whether memories exist — no hardcoded keywords.
+Runs as a background task (spawned with a strong reference by the agent)
+so it never blocks the response. The LLM decides whether memories exist — no hardcoded keywords.
 Cost: ~$0.0002 per call (classification model). Worth it to never miss a fact.
 """
 
@@ -133,7 +133,7 @@ class FactExtractor:
         ("yes, around 1am") are contextless and evaporate. The companion
         flywheel depends on this parameter.
 
-        This is called via asyncio.ensure_future so it never blocks the response.
+        Runs as an agent-spawned background task — never blocks the response.
         """
         if not self._memory or not self._gateway or not patient_id:
             return

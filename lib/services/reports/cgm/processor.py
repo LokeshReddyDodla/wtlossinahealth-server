@@ -80,13 +80,13 @@ class CGMStatsProcessor:
         after_minutes: int = 90,
     ):
         """Get CGM readings around a meal time."""
-        query = generate_readings_around_meal_query(
+        query, params = generate_readings_around_meal_query(
             patient_id,
             meal_time.strftime("%Y-%m-%d %H:%M:%S"),
             before_minutes,
             after_minutes,
         )
-        results = self.clickhouse_store.client.execute(query)
+        results = self.clickhouse_store.client.execute(query, params)
 
         glucose_before = [r for r in results if r[0] < meal_time]
         glucose_after = [r for r in results if r[0] >= meal_time]

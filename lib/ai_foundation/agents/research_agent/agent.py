@@ -55,8 +55,6 @@ from .cohort_planner import CohortPlanner
 from .contracts import (
     CohortRef,
     CohortRefKind,
-    ExecutionResult,
-    ExecutionResultKind,
     ResearchInput,
     ResearchOutput,
 )

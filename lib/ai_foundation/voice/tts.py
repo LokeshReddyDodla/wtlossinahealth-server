@@ -36,28 +36,37 @@ class BaseTextToSpeech(ABC):
 
     def __init__(self, settings: VoiceSettings) -> None:
         self._settings = settings
-        self._filler_cache: OrderedDict[str, bytes] = OrderedDict()
+        self._filler_cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
 
     @abstractmethod
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]: ...
+    def supports_language(self, language: str) -> bool:
+        """Whether this provider can SPEAK ``language`` (base code, e.g. "hi").
+        STT may understand more languages than TTS can voice — callers must
+        pick a speakable reply language before generation, not after."""
 
     @abstractmethod
-    async def _synthesize_full(self, text: str) -> bytes:
+    async def synthesize_stream(
+        self, text: str, language: str | None = None,
+    ) -> AsyncIterator[bytes]: ...
+
+    @abstractmethod
+    async def _synthesize_full(self, text: str, language: str | None = None) -> bytes:
         """One-shot synthesis of the full text — provider-specific."""
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, language: str | None = None) -> bytes:
         if not text.strip():
             return b""
 
-        cached = self._filler_cache.get(text)
+        cache_key = (language or "", text)
+        cached = self._filler_cache.get(cache_key)
         if cached is not None:
             return cached
 
         logger.debug("TTS [%s]: synthesizing %d chars", type(self).__name__, len(text))
-        audio = await self._synthesize_full(text)
+        audio = await self._synthesize_full(text, language)
 
         if len(text) <= _FILLER_MAX_CHARS:
-            self._filler_cache[text] = audio
+            self._filler_cache[cache_key] = audio
             while len(self._filler_cache) > self._settings.TTS_FILLER_CACHE_MAX_SIZE:
                 self._filler_cache.popitem(last=False)
 
@@ -82,7 +91,12 @@ class OpenAITextToSpeech(BaseTextToSpeech):
         super().__init__(settings)
         self._client = AsyncOpenAI()
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    def supports_language(self, language: str) -> bool:
+        return True  # OpenAI voices are multilingual; no per-language gating
+
+    async def synthesize_stream(
+        self, text: str, language: str | None = None,
+    ) -> AsyncIterator[bytes]:
         if not text.strip():
             return
 
@@ -98,7 +112,7 @@ class OpenAITextToSpeech(BaseTextToSpeech):
             async for chunk in response.iter_bytes(chunk_size=self._settings.TTS_STREAM_CHUNK_SIZE):
                 yield chunk
 
-    async def _synthesize_full(self, text: str) -> bytes:
+    async def _synthesize_full(self, text: str, language: str | None = None) -> bytes:
         response = await self._client.audio.speech.create(
             model=self._settings.TTS_MODEL,
             voice=self._settings.TTS_VOICE,
@@ -120,20 +134,26 @@ class SarvamTextToSpeech(BaseTextToSpeech):
         super().__init__(settings)
         self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
 
-    def _resolve_language(self) -> str:
-        lang = self._settings.SARVAM_TTS_LANGUAGE
+    def _resolve_language(self, language: str | None = None) -> str:
+        lang = language or self._settings.SARVAM_TTS_LANGUAGE
         if lang and lang in SARVAM_TTS_LANGUAGE_MAP.values():
             return lang
         return SARVAM_TTS_LANGUAGE_MAP.get(lang or "en", "en-IN")
 
+    def supports_language(self, language: str) -> bool:
+        return (
+            language in SARVAM_TTS_LANGUAGE_MAP
+            or language in SARVAM_TTS_LANGUAGE_MAP.values()
+        )
+
     def _resolve_codec(self) -> str:
         return SARVAM_OUTPUT_CODECS.get(self._settings.TTS_RESPONSE_FORMAT, "mp3")
 
-    async def _synthesize_full(self, text: str) -> bytes:
+    async def _synthesize_full(self, text: str, language: str | None = None) -> bytes:
         """Call Sarvam TTS REST API and return decoded audio bytes."""
         response = await self._client.text_to_speech.convert(
             text=text,
-            target_language_code=self._resolve_language(),
+            target_language_code=self._resolve_language(language),
             model=self._settings.SARVAM_TTS_MODEL,
             speaker=self._settings.SARVAM_TTS_SPEAKER,
             pace=self._settings.TTS_SPEED,
@@ -142,7 +162,9 @@ class SarvamTextToSpeech(BaseTextToSpeech):
         )
         return base64.b64decode(response.audios[0])
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(
+        self, text: str, language: str | None = None,
+    ) -> AsyncIterator[bytes]:
         if not text.strip():
             return
 
@@ -150,7 +172,7 @@ class SarvamTextToSpeech(BaseTextToSpeech):
 
         chunk_size = self._settings.TTS_STREAM_CHUNK_SIZE
         for segment in _split_text(text, max_chars=2400):
-            audio = await self._synthesize_full(segment)
+            audio = await self._synthesize_full(segment, language)
             for i in range(0, len(audio), chunk_size):
                 yield audio[i:i + chunk_size]
 

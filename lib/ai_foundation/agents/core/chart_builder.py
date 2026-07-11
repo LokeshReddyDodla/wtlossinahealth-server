@@ -10,7 +10,6 @@ Supports 4 chart types: bar, line, pie, gantt.
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import re

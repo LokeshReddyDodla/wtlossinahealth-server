@@ -110,6 +110,15 @@ class AIFoundationSettings(BaseSettings):
 
     # ── Langfuse Observability ────────────────────────────────────────────
 
+    # ── Cohort Agent (openai-agents SDK — runs OUTSIDE ModelGateway, so its
+    # model is configured here rather than registry-routed; the registry only
+    # routes gateway-called tasks). validation_alias keeps the existing
+    # COHORT_AGENT_* env names.
+    COHORT_AGENT_MODEL: str = Field(default="gpt-5.2", description="LiteLLM model id for the cohort agent", validation_alias="COHORT_AGENT_MODEL")
+    COHORT_AGENT_API_KEY: str = Field(default="", description="Explicit API key override (blank = provider env vars)", validation_alias="COHORT_AGENT_API_KEY")
+    COHORT_AGENT_MAX_TURNS: int = Field(default=30, description="Max agent loop turns per cohort query", validation_alias="COHORT_AGENT_MAX_TURNS")
+    COHORT_AGENT_API_BASE: str = Field(default="http://localhost:8000", description="Loopback base URL for the agent's internal API calls", validation_alias="COHORT_AGENT_API_BASE")
+
     # Note: Langfuse fields use validation_alias to read LANGFUSE_* (no AI_ prefix)
     # so both LiteLLM and our code read the same env vars.
     LANGFUSE_ENABLED: bool = Field(default=False, description="Enable Langfuse LLM tracing", validation_alias="LANGFUSE_ENABLED")

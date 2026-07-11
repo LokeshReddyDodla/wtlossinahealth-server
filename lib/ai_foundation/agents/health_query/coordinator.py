@@ -745,10 +745,8 @@ class Coordinator:
     ) -> list[dict[str, Any]]:
         """Build messages for the responder model."""
         from lib.ai_foundation.agents.health_query.evidence import (
-            build_summary_from_findings,
-            format_coverage_note,
-            format_patient,
-            format_provider,
+            evidence_items_from_findings,
+            format_evidence_block,
         )
 
         messages: list[dict[str, Any]] = []
@@ -792,13 +790,10 @@ class Coordinator:
                 "_meta": {"type": "data_gap"},
             })
 
-        # Inject evidence summary from specialist findings
+        # Shared evidence block — treatment must not diverge between the
+        # coordinator and reasoning-engine responders.
         if findings:
-            summary = build_summary_from_findings(findings)
-            evidence_text = format_provider(summary) if user_role in ("care_provider", "research") else format_patient(summary)
-            coverage_note = format_coverage_note(summary)
-            if coverage_note:
-                evidence_text = f"{evidence_text}\n{coverage_note}" if evidence_text else coverage_note
+            evidence_text = format_evidence_block(evidence_items_from_findings(findings), user_role)
             if evidence_text:
                 messages.append({
                     "role": "system",

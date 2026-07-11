@@ -126,7 +126,7 @@ async def process_query_v3(
     - Admin: queries any patient(s) across all facilities
     """
     priority = _resolve_priority(current_actor.role)
-    enforce_rate_limit(current_actor, priority)
+    await enforce_rate_limit(current_actor, priority)
 
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,
@@ -172,7 +172,7 @@ async def process_query_v3_stream(
     - Admin: queries any patient(s) across all facilities
     """
     priority = _resolve_priority(current_actor.role)
-    enforce_rate_limit(current_actor, priority)
+    await enforce_rate_limit(current_actor, priority)
 
     resolved_patient_ids = await resolve_patient_ids_for_query(
         current_actor=current_actor,

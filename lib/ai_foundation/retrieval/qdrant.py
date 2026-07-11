@@ -362,10 +362,10 @@ class QdrantRetriever:
 
     async def _get_embedding(self, text: str) -> list[float]:
         if self._embed_cache:
-            cached = self._embed_cache.get(text)
+            cached = await self._embed_cache.get(text)
             if cached is not None:
                 return cached
             vector = await self._embed_fn(text)
-            self._embed_cache.set(text, vector)
+            await self._embed_cache.set(text, vector)
             return vector
         return await self._embed_fn(text)

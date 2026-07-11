@@ -49,3 +49,21 @@ cases:
       Active hypo over voice: immediate first-aid steps (fast-acting carbs,
       recheck in 15 minutes), spoken plainly. Urgency must survive the voice
       format — no deferral-only answer, no markdown.
+
+  - id: voice_hindi_mirror
+    category: voice_language
+    critical: true
+    query: "मेरा ग्लूकोज़ इस हफ्ते कैसा रहा?"
+    metadata:
+      output_mode: voice
+      voice_language: hi
+    checks:
+      must_mention: ["है|हैं|आप|रहा"]
+      must_not_mention: ["##", "**", "```", "[[BUBBLE]]"]
+      max_words: 220
+    criteria: >
+      The patient SPOKE in Hindi (voice mirrors the utterance language, not
+      the stored preference), so the entire reply must be in Hindi —
+      Devanagari script, natural and speakable, no markdown, no English
+      sentences (glucose numbers, units like mg/dL, and common health terms
+      may stay as-is). Substance must reflect the fixture glucose data.

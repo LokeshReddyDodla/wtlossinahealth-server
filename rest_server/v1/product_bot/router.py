@@ -75,10 +75,10 @@ def _resolve_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _check_rate_limit(
+async def _check_rate_limit(
     limiter: PublicRateLimiter, ip: str, session_id: str
 ) -> None:
-    result = limiter.check_and_record(ip, session_id)
+    result = await limiter.check_and_record(ip, session_id)
     if not result.allowed:
         retry_after = max(1, int(result.reset_at - time.time()))
         raise HTTPException(
@@ -100,7 +100,7 @@ async def product_bot_stream(
 ):
     """Stream a product-knowledge answer via SSE. No auth required."""
     ip = _resolve_ip(request)
-    _check_rate_limit(limiter, ip, payload.session_id)
+    await _check_rate_limit(limiter, ip, payload.session_id)
 
     agent_input = AgentInput(
         message=payload.message,
@@ -127,7 +127,7 @@ async def product_bot_query(
 ):
     """Non-streaming product-bot response. No auth required."""
     ip = _resolve_ip(request)
-    _check_rate_limit(limiter, ip, payload.session_id)
+    await _check_rate_limit(limiter, ip, payload.session_id)
 
     agent_input = AgentInput(
         message=payload.message,
