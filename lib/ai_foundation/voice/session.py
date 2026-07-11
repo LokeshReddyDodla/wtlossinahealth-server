@@ -47,6 +47,11 @@ class VoiceSession:
         self.patient_id = patient_id
         self.thread_id = thread_id
         self.metadata: dict = metadata or {}
+        # Reply language for this session: seeded from the patient's stored
+        # preference, then MIRRORS whatever language each utterance is spoken
+        # in (voice has no "view in English" toggle — the spoken language IS
+        # the user's choice). Always a TTS-speakable code.
+        self.language: str = "en"
         self.state = VoiceSessionState.IDLE
         self.created_at: float = time.monotonic()
         self.last_activity: float = time.monotonic()

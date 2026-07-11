@@ -36,6 +36,32 @@ from lib.ai_foundation.voice.tts import BaseTextToSpeech
 
 logger = logging.getLogger(__name__)
 
+def _normalize_spoken_language(raw: str | None) -> str | None:
+    """Detected STT language → base ISO code, or None when unusable.
+
+    Providers disagree on the output format — Sarvam gives tags ("hi-IN"),
+    Whisper can give full names ("hindi"). langcodes resolves both for any
+    language; no hand-maintained name list.
+    """
+    if not raw:
+        return None
+    code = raw.strip().lower()
+    if code in ("unknown", "und"):
+        return None
+
+    import langcodes
+
+    try:
+        lang = langcodes.Language.get(code)
+        if lang.is_valid():
+            return lang.language
+    except Exception:
+        pass
+    try:
+        return langcodes.find(code).language  # full names: "hindi" → "hi"
+    except LookupError:
+        return None
+
 # SSE events forwarded as JSON to the client (same type names as text chat)
 _FORWARDED_EVENTS = frozenset({
     "status", "intent", "reasoning", "tool_call", "tool_result",
@@ -77,6 +103,26 @@ class VoiceOrchestrator:
         self._settings = settings
         self._upload_audio = upload_audio
 
+    async def _localize(self, text: str, language: str) -> str:
+        """Canned strings (greeting, errors) in the session language — same
+        cached-translation path every other surface uses."""
+        if language == "en" or not text:
+            return text
+        try:
+            from lib.ai_foundation.translation import TranslationService
+            from lib.core.container import container
+
+            return await container.resolve(TranslationService).translate_cached(text, language)
+        except Exception:
+            return text  # spoken English beats silence
+
+    def _speakable_language(self, language: str | None) -> str | None:
+        """A language is usable only if the TTS provider can voice it —
+        STT understands more languages than TTS speaks (e.g. Urdu on Sarvam)."""
+        if language and self._tts.supports_language(language):
+            return language
+        return None
+
     async def greet(
         self,
         session: VoiceSession,
@@ -86,14 +132,25 @@ class VoiceOrchestrator:
     ) -> None:
         """Send a warm spoken greeting when the voice session starts."""
         try:
-            name = await self._patient_resolver.resolve_name(session.patient_id or session.user_id)
+            pid = session.patient_id or session.user_id
+            name = await self._patient_resolver.resolve_name(pid)
             first_name = name.split()[0] if name else ""
-            greeting = _pick_greeting(first_name)
+
+            # No speech heard yet — the stored preference is the best signal.
+            # Each utterance re-decides by mirroring the spoken language.
+            try:
+                pref = await self._patient_resolver.resolve_language(pid)
+            except Exception:
+                pref = "en"
+            session.language = self._speakable_language(pref) or "en"
+
+            greeting = await self._localize(_pick_greeting(first_name), session.language)
 
             # Semantic event first (Flutter shows text from this)
             await send_json({"type": "greeting", "text": greeting})
             # Then audio with explicit boundaries
-            await self._speak(greeting, send_json, send_bytes, session, segment_type="greeting")
+            await self._speak(greeting, send_json, send_bytes, session,
+                              segment_type="greeting", language=session.language)
         except Exception:
             logger.warning("Greeting failed for session %s", session.session_id, exc_info=True)
 
@@ -126,7 +183,9 @@ class VoiceOrchestrator:
             logger.error("STT failed for session %s: %s", session.session_id, result, exc_info=result)
             await send_json(VoiceErrorMsg(
                 code="stt_failed",
-                message="I couldn't understand the audio. Could you try again?",
+                message=await self._localize(
+                    "I couldn't understand the audio. Could you try again?", session.language,
+                ),
             ).model_dump())
             session.state = VoiceSessionState.IDLE
             return
@@ -145,12 +204,22 @@ class VoiceOrchestrator:
         if not result.text.strip():
             await send_json(VoiceErrorMsg(
                 code="empty_transcript",
-                message="I didn't catch that. Could you say that again?",
+                message=await self._localize(
+                    "I didn't catch that. Could you say that again?", session.language,
+                ),
             ).model_dump())
             session.state = VoiceSessionState.IDLE
             return
 
-        # ── 2. Build AgentInput ──────────────────────────────────────────
+        # ── 2. Reply language MIRRORS the spoken language ────────────────
+        # Speaking is itself a language choice — voice has no "view in
+        # English" toggle, so the utterance wins over the stored preference.
+        # Constrained to what TTS can voice; falls back to the session seed.
+        spoken = self._speakable_language(_normalize_spoken_language(result.language))
+        voice_language = spoken or session.language or "en"
+        session.language = voice_language
+
+        # ── 3. Build AgentInput ──────────────────────────────────────────
         agent_input = AgentInput(
             message=result.text,
             context=AgentContext(
@@ -164,6 +233,7 @@ class VoiceOrchestrator:
                     **session.metadata,
                     "output_mode": "voice",
                     "audio_url": audio_url,
+                    "voice_language": voice_language,
                 },
             ),
             stream=True,
@@ -185,14 +255,17 @@ class VoiceOrchestrator:
                 if event_name in _FORWARDED_EVENTS:
                     await send_json({"type": event_name, **event_data})
 
-                # Speak thoughts aloud — sequential, one at a time
+                # Speak thoughts aloud — sequential, one at a time. Thoughts
+                # are generated in English; voicing them in a non-English
+                # session would mix languages mid-conversation, so they stay
+                # text-only there (still forwarded as JSON above).
                 extractor = _SPEAKABLE_EVENTS.get(event_name)
-                if extractor and not session.is_cancelled:
+                if extractor and not session.is_cancelled and voice_language == "en":
                     phrase = extractor(event_data)
                     if phrase and phrase.strip():
                         await self._speak(
                             phrase, send_json, send_bytes, session,
-                            segment_type=event_name,
+                            segment_type=event_name, language="en",
                         )
 
                 # Accumulate response tokens
@@ -216,7 +289,7 @@ class VoiceOrchestrator:
                         session.state = VoiceSessionState.SPEAKING
                         await self._speak(
                             full_response, send_json, send_bytes, session,
-                            segment_type="response_text",
+                            segment_type="response_text", language=voice_language,
                         )
 
                     # done always after the final audio_end
@@ -237,7 +310,7 @@ class VoiceOrchestrator:
                     if not session.is_cancelled:
                         await self._speak(
                             fallback, send_json, send_bytes, session,
-                            segment_type="error",
+                            segment_type="error", language=voice_language,
                         )
 
                     session.state = VoiceSessionState.IDLE
@@ -247,7 +320,9 @@ class VoiceOrchestrator:
             logger.exception("Voice pipeline error for session %s", session.session_id)
             await send_json(VoiceErrorMsg(
                 code="pipeline_error",
-                message="Sorry, something went wrong. Please try again.",
+                message=await self._localize(
+                    "Sorry, something went wrong. Please try again.", session.language,
+                ),
             ).model_dump())
         finally:
             session.state = VoiceSessionState.IDLE
@@ -262,6 +337,7 @@ class VoiceOrchestrator:
         session: VoiceSession,
         *,
         segment_type: str,
+        language: str | None = None,
     ) -> None:
         """Stream TTS audio wrapped in audio_start/audio_end.
 
@@ -291,7 +367,7 @@ class VoiceOrchestrator:
         reason: str | None = None
 
         try:
-            async for chunk in self._tts.synthesize_stream(text):
+            async for chunk in self._tts.synthesize_stream(text, language=language):
                 if session.is_cancelled:
                     completed = False
                     reason = "interrupted"

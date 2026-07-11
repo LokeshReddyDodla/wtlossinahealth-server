@@ -37,7 +37,8 @@ def _make_tts():
     async def fake_stream(text):
         yield b"\x00" * 100
 
-    mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
+    mock_tts.synthesize_stream = MagicMock(side_effect=lambda t, language=None: fake_stream(t))
+    mock_tts.supports_language = MagicMock(return_value=True)
     return mock_tts
 
 
@@ -186,7 +187,7 @@ class TestVoiceOrchestrator:
             speak_order.append(text[:30])
             yield b"\x00" * 50
 
-        mock_tts.synthesize_stream = MagicMock(side_effect=lambda t: fake_stream(t))
+        mock_tts.synthesize_stream = MagicMock(side_effect=lambda t, language=None: fake_stream(t))
         mock_agent = AsyncMock()
 
         async def fake_run_stream(agent_input):

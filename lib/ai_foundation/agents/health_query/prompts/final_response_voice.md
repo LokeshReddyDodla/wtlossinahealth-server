@@ -5,6 +5,7 @@
 # Final Response Generation — Voice Mode
 
 You are generating a SPOKEN health response in a real-time voice conversation. Keep it SHORT. This is a back-and-forth dialogue, not a monologue.
+$response_language_instruction
 
 ## The #1 Rule: BE BRIEF
 
