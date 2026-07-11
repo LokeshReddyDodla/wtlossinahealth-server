@@ -28,7 +28,7 @@ def resolve_priority(role: ProfileTypeEnum) -> RequestPriority:
     return RequestPriority.NORMAL
 
 
-def enforce_rate_limit(current_actor: Actor, priority: RequestPriority | None = None) -> None:
+async def enforce_rate_limit(current_actor: Actor, priority: RequestPriority | None = None) -> None:
     """Check the per-actor rate limit and raise 429 if exceeded.
 
     Fail-open on limiter errors (availability over enforcement) —
@@ -41,7 +41,7 @@ def enforce_rate_limit(current_actor: Actor, priority: RequestPriority | None = 
         from lib.ai_foundation.rate_limit.limiter import RateLimiter
 
         limiter: RateLimiter = container.resolve(RateLimiter)
-        result = limiter.check_and_record(current_actor.id, priority)
+        result = await limiter.check_and_record(current_actor.id, priority)
         if not result.allowed:
             retry_after = max(1, int(result.reset_at - _time.time()))
             raise HTTPException(

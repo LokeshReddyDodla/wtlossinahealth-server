@@ -1,6 +1,7 @@
 from typing import List, Optional, Union
 
 import redis
+import redis.asyncio as aioredis
 from decouple import config
 
 # Read redis host from env
@@ -21,6 +22,9 @@ class CacheStore:
             raise ConnectionError("Unable to connect to redis")
 
         self.__client: redis.Redis = redis_client
+        # Async twin for event-loop callers — connects lazily on first await,
+        # so creating it here (before any loop exists) is safe.
+        self.__aclient: aioredis.Redis = aioredis.from_url(REDIS_URL)
 
     def _get_client(self) -> redis.Redis:
         """Protected method to access client safely"""
@@ -76,6 +80,39 @@ class CacheStore:
     def delete_key(self, key: str) -> Optional[int]:
         key = f"{self.__namespace}:{key.strip()}"
         return self.__client.delete(key)
+
+    # ── Async variants — same semantics as the sync methods above, backed by
+    # redis.asyncio so event-loop callers don't block the loop on Redis I/O.
+
+    async def aget_key(self, key: str) -> Optional[bytes]:
+        key = f"{self.__namespace}:{key.strip()}"
+        return await self.__aclient.get(key)
+
+    async def aset_key(
+        self,
+        key: str,
+        value: str,
+        expire: Optional[int] = 300,
+        nx: bool = False,
+    ) -> Optional[bool]:
+        key = f"{self.__namespace}:{key.strip()}"
+        if nx:
+            return await self.__aclient.set(name=key, value=value, ex=expire, nx=True)
+        if expire is not None:
+            return await self.__aclient.setex(name=key, time=expire, value=value)
+        return await self.__aclient.set(name=key, value=value)
+
+    async def aincr_key(self, key: str) -> int:
+        key = f"{self.__namespace}:{key.strip()}"
+        return await self.__aclient.incr(key)
+
+    async def aexpire_key(self, key: str, seconds: int) -> bool:
+        key = f"{self.__namespace}:{key.strip()}"
+        return await self.__aclient.expire(key, seconds)
+
+    async def adelete_key(self, key: str) -> Optional[int]:
+        key = f"{self.__namespace}:{key.strip()}"
+        return await self.__aclient.delete(key)
 
     def get_keys_with_prefix(self, prefix: str) -> List[str]:
         """

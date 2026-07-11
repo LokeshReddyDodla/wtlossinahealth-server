@@ -48,7 +48,7 @@ async def submit_feedback(
 
     The feedback is logged to Langfuse as a score against the trace.
     """
-    enforce_rate_limit(current_actor)
+    await enforce_rate_limit(current_actor)
     score = 1.0 if payload.thumbs_up else 0.0
 
     # Log score to Langfuse

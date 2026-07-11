@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from lib.ai_foundation.config import settings
@@ -21,7 +22,6 @@ from lib.ai_foundation.models.registry import ModelTask
 if TYPE_CHECKING:
     from lib.ai_foundation.memory.base import MemoryStore
     from lib.ai_foundation.models.gateway import ModelGateway
-    from lib.ai_foundation.agents.state import AgentInput
 
 logger = logging.getLogger(__name__)
 
@@ -80,19 +80,16 @@ class PersistenceService:
         assistant_ts = now  # always "now" — when the response was generated
 
         try:
-            # Ensure thread summary exists with patient_ids (on first turn)
+            # Ensure the summary carries patient_ids. Partial $set only —
+            # the summary doc is shared with concurrent writers (pending
+            # request, compaction, event scan); a whole-doc replace from a
+            # stale read wipes their fields.
             if patient_ids:
                 existing = await self._memory.get_thread_summary(thread_id)
-                if not existing:
-                    await self._memory.save_thread_summary(thread_id, ThreadSummary(
-                        thread_id=thread_id,
-                        patient_ids=patient_ids,
-                        summary="",
-                        turn_count=0,
-                    ))
-                elif not existing.patient_ids and patient_ids:
-                    existing.patient_ids = patient_ids
-                    await self._memory.save_thread_summary(thread_id, existing)
+                if not existing or not existing.patient_ids:
+                    await self._memory.update_thread_summary_fields(
+                        thread_id, {"patient_ids": patient_ids},
+                    )
 
             meta = intent_metadata or {}
             user_meta = {}
@@ -159,8 +156,6 @@ class PersistenceService:
         if not self._memory or not thread_id:
             return
         try:
-            from datetime import timedelta
-
             now = datetime.now(timezone.utc)
             await self._memory.update_thread_summary_fields(thread_id, {
                 "pending_data_request": {
@@ -230,7 +225,7 @@ class PersistenceService:
             try:
                 # TTL = 2x task timeout so lock outlives the task even under slow LLM calls
                 lock_ttl = int(settings.BACKGROUND_TASK_TIMEOUT_SECONDS * 2)
-                acquired = self._cache.set_key(lock_key, "1", expire=lock_ttl, nx=True)
+                acquired = await self._cache.aset_key(lock_key, "1", expire=lock_ttl, nx=True)
                 if not acquired:
                     logger.debug("Skipping compaction for %s — locked by another instance", thread_id)
                     return
@@ -239,8 +234,7 @@ class PersistenceService:
 
         self._compacting.add(thread_id)
         try:
-            import time as _time
-            start = _time.perf_counter()
+            start = time.perf_counter()
 
             # Get real turn count + summary in parallel
             turn_count, existing = await asyncio.gather(
@@ -306,7 +300,7 @@ class PersistenceService:
             if patient_ids:
                 digest_fields["patient_ids"] = patient_ids
             await self._memory.update_thread_summary_fields(thread_id, digest_fields)
-            elapsed_ms = int((_time.perf_counter() - start) * 1000)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
             logger.info("Compacted thread %s (%d turns, %dms)", thread_id, turn_count, elapsed_ms)
 
         except Exception as exc:
@@ -315,9 +309,9 @@ class PersistenceService:
             self._compacting.discard(thread_id)
             if self._cache:
                 try:
-                    self._cache.delete_key(lock_key)
-                except Exception:
-                    pass  # TTL will clean up
+                    await self._cache.adelete_key(lock_key)
+                except Exception as exc:
+                    logger.debug("compaction lock cleanup failed (TTL covers it): %s", exc)
 
     # -- Title generation --------------------------------------------------
 

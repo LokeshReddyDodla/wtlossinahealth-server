@@ -24,17 +24,17 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT_PREFIX = "rl"
 
 
-def incr_fixed_window(store: CacheStore, key: str, window_seconds: int) -> int:
+async def incr_fixed_window(store: CacheStore, key: str, window_seconds: int) -> int:
     """Atomically increment a fixed-window counter, returning the new count.
 
     SET NX creates the key with a TTL; INCR bumps it. If INCR recreated an
     expired key (race between SET NX and INCR), the new key has no TTL — so
     re-apply the TTL when the count is 1. Never overwrites the value.
     """
-    store.set_key(key, "0", expire=window_seconds, nx=True)
-    current = store.incr_key(key)
+    await store.aset_key(key, "0", expire=window_seconds, nx=True)
+    current = await store.aincr_key(key)
     if current == 1:
-        store.expire_key(key, window_seconds)
+        await store.aexpire_key(key, window_seconds)
     return current
 
 
@@ -75,7 +75,7 @@ class RateLimiter:
 
         limiter = RateLimiter(cache_store)
 
-        result = limiter.check_and_record("facility_123", RequestPriority.NORMAL)
+        result = await limiter.check_and_record("facility_123", RequestPriority.NORMAL)
         if not result.allowed:
             # return 429 Too Many Requests
     """
@@ -91,7 +91,7 @@ class RateLimiter:
         self._limits = limits or DEFAULT_LIMITS
         self._enabled = enabled
 
-    def check_and_record(
+    async def check_and_record(
         self,
         tenant_id: str,
         priority: RequestPriority = RequestPriority.NORMAL,
@@ -113,7 +113,7 @@ class RateLimiter:
         key = self._build_key(tenant_id, priority)
 
         try:
-            current = incr_fixed_window(self._store, key, config.window_seconds)
+            current = await incr_fixed_window(self._store, key, config.window_seconds)
         except Exception as exc:
             logger.warning("Rate limiter failed for %s: %s", tenant_id, exc)
             # Fail open — allow the request on Redis errors

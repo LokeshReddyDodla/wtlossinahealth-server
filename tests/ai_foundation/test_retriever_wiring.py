@@ -142,8 +142,8 @@ class TestSemanticSearch:
             return [0.1] * 3072
 
         cache = MagicMock()
-        cache.get = MagicMock(return_value=None)
-        cache.set = MagicMock()
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
 
         retriever = QdrantRetriever(qdrant_store=store, embedding_fn=mock_embed, embedding_cache=cache)
         await retriever.retrieve(RetrievalRequest(query="test", patient_ids=["p1"]))
@@ -162,7 +162,7 @@ class TestSemanticSearch:
             return [0.1] * 3072
 
         cache = MagicMock()
-        cache.get = MagicMock(return_value=[0.2] * 3072)
+        cache.get = AsyncMock(return_value=[0.2] * 3072)
 
         retriever = QdrantRetriever(qdrant_store=store, embedding_fn=mock_embed, embedding_cache=cache)
         await retriever.retrieve(RetrievalRequest(query="cached", patient_ids=["p1"]))

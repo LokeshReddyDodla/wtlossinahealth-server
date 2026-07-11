@@ -116,7 +116,7 @@ async def add_memory(
     memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Manually add a memory for a patient."""
-    enforce_rate_limit(current_actor)
+    await enforce_rate_limit(current_actor)
     verified_pid = await resolve_patient_access(
         actor=current_actor,
         patient_id=parse_patient_uuid(payload.patient_id),
@@ -168,7 +168,7 @@ async def delete_memory(
     memory: MongoMemoryStore = Depends(get_memory_store),
 ):
     """Delete a specific memory by key."""
-    enforce_rate_limit(current_actor)
+    await enforce_rate_limit(current_actor)
     verified_pid = await resolve_patient_access(
         actor=current_actor,
         patient_id=parse_patient_uuid(patient_id),

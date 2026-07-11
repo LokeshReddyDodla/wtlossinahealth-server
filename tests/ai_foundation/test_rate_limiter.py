@@ -13,7 +13,7 @@ fail-open on Redis errors). This locks every branch of check_and_record:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -33,15 +33,15 @@ def _store(get_value=None, incr_value=1, set_returns=True, raises=None):
     """Build a CacheStore mock with configurable return values."""
     store = MagicMock()
     if raises:
-        store.set_key = MagicMock(side_effect=raises)
-        store.incr_key = MagicMock(side_effect=raises)
-        store.get_key = MagicMock(side_effect=raises)
-        store.expire_key = MagicMock(side_effect=raises)
+        store.aset_key = AsyncMock(side_effect=raises)
+        store.aincr_key = AsyncMock(side_effect=raises)
+        store.aget_key = AsyncMock(side_effect=raises)
+        store.aexpire_key = AsyncMock(side_effect=raises)
     else:
-        store.set_key = MagicMock(return_value=set_returns)
-        store.incr_key = MagicMock(return_value=incr_value)
-        store.get_key = MagicMock(return_value=get_value)
-        store.expire_key = MagicMock(return_value=True)
+        store.aset_key = AsyncMock(return_value=set_returns)
+        store.aincr_key = AsyncMock(return_value=incr_value)
+        store.aget_key = AsyncMock(return_value=get_value)
+        store.aexpire_key = AsyncMock(return_value=True)
     return store
 
 
@@ -58,34 +58,37 @@ class TestCheckAndRecordHappy:
             (RequestPriority.LOW, 500),
         ],
     )
-    def test_default_limits_per_priority(self, priority, expected_limit):
+    @pytest.mark.asyncio
+    async def test_default_limits_per_priority(self, priority, expected_limit):
         store = _store(incr_value=1)
         limiter = RateLimiter(store)
-        result = limiter.check_and_record("tenant_a", priority)
+        result = await limiter.check_and_record("tenant_a", priority)
         assert result.allowed is True
         assert result.limit == expected_limit
         assert result.remaining == expected_limit - 1
 
-    def test_first_call_initializes_with_ttl(self):
+    @pytest.mark.asyncio
+    async def test_first_call_initializes_with_ttl(self):
         store = _store(incr_value=1)
         limiter = RateLimiter(store)
-        limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
+        await limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
         # set_key called with NX
-        store.set_key.assert_called_once()
-        call = store.set_key.call_args
+        store.aset_key.assert_called_once()
+        call = store.aset_key.call_args
         assert call.kwargs.get("nx") is True
         assert call.kwargs.get("expire") == 3600
         # incr_key called once
-        store.incr_key.assert_called_once()
+        store.aincr_key.assert_called_once()
         # When current == 1, expire_key called to ensure TTL
-        store.expire_key.assert_called_once()
+        store.aexpire_key.assert_called_once()
 
-    def test_subsequent_call_does_not_re_expire(self):
+    @pytest.mark.asyncio
+    async def test_subsequent_call_does_not_re_expire(self):
         store = _store(incr_value=42)
         limiter = RateLimiter(store)
-        limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
+        await limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
         # Not the first call (incr returned 42) — no re-expire
-        store.expire_key.assert_not_called()
+        store.aexpire_key.assert_not_called()
 
 
 # ── Boundary semantics ──────────────────────────────────────────────────────
@@ -103,12 +106,13 @@ class TestBoundary:
             (5000, False, 0),
         ],
     )
-    def test_at_and_over_limit(
+    @pytest.mark.asyncio
+    async def test_at_and_over_limit(
         self, incr_value, expected_allowed, expected_remaining,
     ):
         store = _store(incr_value=incr_value)
         limiter = RateLimiter(store)
-        result = limiter.check_and_record("t1", RequestPriority.NORMAL)
+        result = await limiter.check_and_record("t1", RequestPriority.NORMAL)
         assert result.allowed is expected_allowed
         assert result.remaining == expected_remaining
 
@@ -117,23 +121,25 @@ class TestBoundary:
 
 
 class TestEnabledFlag:
-    def test_disabled_always_allows(self):
+    @pytest.mark.asyncio
+    async def test_disabled_always_allows(self):
         store = _store()
         limiter = RateLimiter(store, enabled=False)
-        result = limiter.check_and_record("t1", RequestPriority.NORMAL)
+        result = await limiter.check_and_record("t1", RequestPriority.NORMAL)
         assert result.allowed is True
         # No Redis interaction
-        store.set_key.assert_not_called()
-        store.incr_key.assert_not_called()
+        store.aset_key.assert_not_called()
+        store.aincr_key.assert_not_called()
 
-    def test_runtime_toggle(self):
+    @pytest.mark.asyncio
+    async def test_runtime_toggle(self):
         store = _store()
         limiter = RateLimiter(store, enabled=True)
         assert limiter.enabled is True
         limiter.enabled = False
         assert limiter.enabled is False
-        result = limiter.check_and_record("t1", RequestPriority.NORMAL)
-        store.set_key.assert_not_called()
+        result = await limiter.check_and_record("t1", RequestPriority.NORMAL)
+        store.aset_key.assert_not_called()
         assert result.allowed is True
 
 
@@ -141,10 +147,11 @@ class TestEnabledFlag:
 
 
 class TestFailOpen:
-    def test_check_and_record_fails_open(self):
+    @pytest.mark.asyncio
+    async def test_check_and_record_fails_open(self):
         store = _store(raises=Exception("Redis down"))
         limiter = RateLimiter(store)
-        result = limiter.check_and_record("t1", RequestPriority.NORMAL)
+        result = await limiter.check_and_record("t1", RequestPriority.NORMAL)
         # Per source: failure path returns allowed=True with full quota
         assert result.allowed is True
         assert result.remaining == 1000
@@ -169,16 +176,17 @@ class TestKeyConstruction:
     def test_build_key(self, tenant_id, priority, expected_key):
         assert RateLimiter._build_key(tenant_id, priority) == expected_key
 
-    def test_tenant_isolation(self):
+    @pytest.mark.asyncio
+    async def test_tenant_isolation(self):
         """Different tenants get different keys → independent counters."""
         store = _store(incr_value=1)
         limiter = RateLimiter(store)
 
-        limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
-        limiter.check_and_record("tenant_b", RequestPriority.NORMAL)
+        await limiter.check_and_record("tenant_a", RequestPriority.NORMAL)
+        await limiter.check_and_record("tenant_b", RequestPriority.NORMAL)
 
         # Two different keys passed to set_key
-        keys_used = {c.args[0] for c in store.set_key.call_args_list}
+        keys_used = {c.args[0] for c in store.aset_key.call_args_list}
         assert "rl:tenant_a:normal" in keys_used
         assert "rl:tenant_b:normal" in keys_used
 
@@ -187,7 +195,8 @@ class TestKeyConstruction:
 
 
 class TestCustomLimits:
-    def test_custom_limit_overrides_default(self):
+    @pytest.mark.asyncio
+    async def test_custom_limit_overrides_default(self):
         custom = {
             RequestPriority.NORMAL: RateLimitConfig(
                 max_requests=50, window_seconds=60,
@@ -195,11 +204,12 @@ class TestCustomLimits:
         }
         store = _store(incr_value=1)
         limiter = RateLimiter(store, limits=custom)
-        result = limiter.check_and_record("t1", RequestPriority.NORMAL)
+        result = await limiter.check_and_record("t1", RequestPriority.NORMAL)
         assert result.limit == 50
         assert result.remaining == 49
 
-    def test_unknown_priority_falls_back_to_normal(self):
+    @pytest.mark.asyncio
+    async def test_unknown_priority_falls_back_to_normal(self):
         """If a priority isn't in the limits dict, defaults to NORMAL."""
         custom = {
             RequestPriority.NORMAL: RateLimitConfig(max_requests=42),
@@ -207,5 +217,5 @@ class TestCustomLimits:
         store = _store(incr_value=1)
         limiter = RateLimiter(store, limits=custom)
         # CRITICAL not in custom dict → fall back via DEFAULT_LIMITS[NORMAL]=1000
-        result = limiter.check_and_record("t1", RequestPriority.CRITICAL)
+        result = await limiter.check_and_record("t1", RequestPriority.CRITICAL)
         assert result.limit == 1000

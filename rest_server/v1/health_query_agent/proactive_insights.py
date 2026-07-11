@@ -143,7 +143,7 @@ async def submit_insight_feedback(
 
     Logs to Langfuse as a score for quality tracking.
     """
-    enforce_rate_limit(current_actor)
+    await enforce_rate_limit(current_actor)
 
     recorded = False
     try:
