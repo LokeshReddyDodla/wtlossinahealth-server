@@ -160,6 +160,28 @@ def resolve_specialist_domains(data_types: list[HealthDataType]) -> list[str]:
     return sorted(specialists)
 
 
+def expand_to_domain_types(data_types: list[HealthDataType]) -> list[HealthDataType]:
+    """Expand each requested type to its whole domain family (via DOMAIN_MAPPING).
+
+    A glucose question naming one type ("any spikes?") otherwise retrieves only
+    the intent extractor's narrow pick — e.g. daily summaries without the
+    rapid_spike/hypo EVENT records — and the agent then truthfully-but-wrongly
+    reports "no spikes" because the events were never fetched. Expanding to the
+    domain family makes the single-agent path fetch the same complete picture
+    the specialist path already does. Order-preserving and deduplicated.
+    """
+    seen: set[HealthDataType] = set()
+    out: list[HealthDataType] = []
+    for dt in data_types:
+        domain = _TYPE_TO_DOMAIN.get(dt)
+        family = DOMAIN_MAPPING[domain] if domain else [dt]
+        for t in family:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+    return out
+
+
 class ResponseMode(str, Enum):
     """How the agent should format its response."""
 

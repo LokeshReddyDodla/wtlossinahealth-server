@@ -926,7 +926,7 @@ class ReasoningEngine:
         logger.info("LLM call [responder]: %d tokens (budget=%d, %.0f%%)",
                     tokens, budget, tokens / max(budget, 1) * 100)
 
-        return await self._gateway.complete(
+        resp = await self._gateway.complete(
             messages=responder_messages,
             task=ModelTask.RESPONSE_GENERATION,
             model_id=model_id,
@@ -935,6 +935,53 @@ class ReasoningEngine:
             # would fail the whole query.
             timeout=settings.RESPONDER_TIMEOUT_SECONDS,
         )
+        # Grounding gate: a health reply must not fabricate patient data, confirm
+        # a false patient claim, or disavow real data. Verify against the same
+        # evidence it was built from and correct once on a violation.
+        if (
+            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger
+            and (getattr(resp, "content", "") or "").strip()
+        ):
+            resp = await self._verify_and_correct(
+                resp, responder_messages, evidence_ledger, user_role, model_id,
+            )
+        return resp
+
+    async def _verify_and_correct(
+        self, resp: Any, responder_messages: list[dict[str, Any]],
+        evidence_ledger: list, user_role: str, model_id: str,
+    ) -> Any:
+        """Verify the draft against evidence; regenerate once with a targeted
+        correction if it fabricates / confirms-a-false-claim / disavows real
+        data. Any failure in the gate leaves the original response untouched —
+        the gate can only improve the answer, never block it."""
+        from lib.ai_foundation.agents.health_query.evidence import format_evidence_block
+        from lib.ai_foundation.agents.health_query.grounding import (
+            build_correction,
+            verify_grounding,
+        )
+        try:
+            evidence_text = format_evidence_block(evidence_ledger, user_role)
+            verdict = await verify_grounding(
+                self._gateway, response=resp.content, evidence_text=evidence_text,
+            )
+            if verdict.grounded:
+                return resp
+            logger.info(
+                "Grounding gate: correcting (ungrounded=%d, wrongly_denied=%d)",
+                len(verdict.ungrounded_claims), len(verdict.wrongly_denied),
+            )
+            corrected = await self._gateway.complete(
+                messages=responder_messages
+                + [{"role": "system", "content": build_correction(verdict)}],
+                task=ModelTask.RESPONSE_GENERATION,
+                model_id=model_id,
+                timeout=settings.RESPONDER_TIMEOUT_SECONDS,
+            )
+            return corrected if (corrected.content or "").strip() else resp
+        except Exception as exc:
+            logger.warning("Grounding gate failed, using original response: %s", exc)
+            return resp
 
     @staticmethod
     def _summarize_result(tool_name: str, result: str) -> str:

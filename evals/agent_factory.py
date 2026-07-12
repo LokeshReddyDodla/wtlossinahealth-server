@@ -54,11 +54,21 @@ def build_eval_agent(
     records: list[dict[str, Any]],
     facts: list | None = None,
     patient_name: str | None = None,
+    *,
+    memory: Any = None,
+    resolver: Any = None,
+    persistence: Any = None,
+    translator: Any = None,
 ) -> HealthQueryAgent:
+    """Assemble the eval agent. The keyword doubles let the conversation
+    harness inject stateful memory/persistence (multi-turn) and a resolver
+    with a preferred language; omitted, they fall back to the single-shot
+    stateless fakes and ``persistence=None`` (nothing writes)."""
     gateway = shared_gateway()
     retriever = FixtureRetriever(records)
-    memory = FakeMemory(facts)
-    resolver = FakeResolver(patient_name) if patient_name else FakeResolver()
+    memory = memory if memory is not None else FakeMemory(facts)
+    if resolver is None:
+        resolver = FakeResolver(patient_name) if patient_name else FakeResolver()
     tracker = FakeInsightTracker()
 
     tools = ToolExecutor(
@@ -104,6 +114,7 @@ def build_eval_agent(
         context_loader=context_loader,
         reasoning_engine=engine,
         coordinator=coordinator,
-        persistence=None,      # evals never write
+        persistence=persistence,   # None for single-shot; stateful double for conversations
         fact_extractor=None,
+        translator=translator,
     )

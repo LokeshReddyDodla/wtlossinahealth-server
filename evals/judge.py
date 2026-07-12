@@ -126,6 +126,7 @@ async def judge_case(
     facts: list[str],
     criteria: str,
     mode: str = "grounding",  # "grounding" (data Q&A) | "estimation" (meal analysis)
+    conversation: str | None = None,
 ) -> EvalJudgment:
     fixture_block = "\n".join(f"- {t}" for t in fixture_texts) or "- (no data records)"
     facts_block = "\n".join(f"- {f}" for f in facts) or "- (none)"
@@ -135,8 +136,17 @@ async def judge_case(
         if mode == "grounding"
         else "## Input the assistant analyzed"
     )
+    # In a multi-turn conversation the patient states facts about themselves
+    # (poor sleep, what they ate, symptoms) that are NOT in the data records.
+    # The assistant using those is correct, not fabrication — so the judge must
+    # see the conversation, or it flags legitimate recall as invention.
+    convo_block = (
+        f"## Conversation so far (facts the patient stated here are TRUE)\n{conversation}\n\n"
+        if conversation else ""
+    )
     user_msg = (
         f"## Patient question\n{question}\n\n"
+        f"{convo_block}"
         f"{data_header}\n{fixture_block}\n\n"
         f"## Known patient facts\n{facts_block}\n\n"
         f"## Case-specific criteria\n{criteria or '(none)'}\n\n"
@@ -144,6 +154,15 @@ async def judge_case(
     )
 
     system = _JUDGE_SYSTEM if mode == "grounding" else _JUDGE_SYSTEM_ESTIMATION
+    if conversation:
+        system += (
+            "\n\nMULTI-TURN: the patient supplies facts about themselves during "
+            "the conversation (see 'Conversation so far'). Anything the patient "
+            "stated in an earlier turn — symptoms, meals, sleep, readings they "
+            "report — is TRUE for this evaluation; the assistant relying on it is "
+            "NOT fabrication. Only patient-data claims absent from BOTH the data "
+            "records AND the conversation count as fabrication."
+        )
     judgment, _ = await gateway.extract(
         messages=[
             {"role": "system", "content": system},

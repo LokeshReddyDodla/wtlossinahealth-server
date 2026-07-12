@@ -12,7 +12,7 @@ ReasoningEngine and the Coordinator.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +53,25 @@ class AgentContext(BaseModel):
     panel_insights: dict[str, list[dict]] = Field(default_factory=dict)
 
 
+def _recent_date_reference(local_time: str, days: int = 8) -> str | None:
+    """Map recent calendar dates to weekday names, anchored on the date in
+    ``local_time``. The responder computes weekdays from ISO dates unreliably
+    (consistently off by one), so it must COPY these pairings, not derive them.
+    Anchored on the same date the agent is told is 'today', so the map can't
+    disagree with it. Pure calendar arithmetic — timezone-free by construction.
+    """
+    try:
+        anchor = datetime.strptime(local_time.strip()[:10], "%Y-%m-%d").date()
+    except (ValueError, AttributeError):
+        return None
+    lines = []
+    for i in range(days):
+        d = anchor - timedelta(days=i)
+        tag = " (today)" if i == 0 else " (yesterday)" if i == 1 else ""
+        lines.append(f"- {d.isoformat()} = {d.strftime('%A')}{tag}")
+    return "\n".join(lines)
+
+
 def build_context_messages(
     *,
     user_message: str,
@@ -78,6 +97,13 @@ def build_context_messages(
             f"User's local time: {context.local_time}. "
             f"Use THIS for resolving 'today', 'yesterday', 'this week', etc."
         )
+        date_ref = _recent_date_reference(context.local_time)
+        if date_ref:
+            context_parts.append(
+                "Exact date↔weekday pairings for recent days (COPY these when you "
+                "name a weekday — never compute a weekday from a date yourself):\n"
+                + date_ref
+            )
     if context.patient_names:
         names = [f"- {pid}: {name}" for pid, name in context.patient_names.items()]
         context_parts.append("Patient names:\n" + "\n".join(names))
