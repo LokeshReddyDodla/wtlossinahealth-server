@@ -39,7 +39,7 @@ from lib.ai_foundation.streaming.sse import (
 
 from lib.ai_foundation.models.gateway import safe_cost
 
-from .contracts import QueryIntent, QueryResponse, resolve_specialist_domains
+from .contracts import QueryIntent, QueryResponse, expand_to_domain_types, resolve_specialist_domains
 from .coordinator import Coordinator
 from .reasoning_engine import ReasoningEngine, ReasoningTier
 
@@ -174,7 +174,11 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
-                    intent_data_types=[dt.value for dt in intent.data_types],
+                    # Expand to the full domain family so a glucose query
+                    # about spikes/lows fetches the event records, not just
+                    # summaries (the single-agent path otherwise trusts the
+                    # extractor's narrow pick — see expand_to_domain_types).
+                    intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
                 )
@@ -318,7 +322,11 @@ class HealthQueryAgent(BaseAgent):
                     context=ctx,
                     patient_ids=patient_ids,
                     tier=tier,
-                    intent_data_types=[dt.value for dt in intent.data_types],
+                    # Expand to the full domain family so a glucose query
+                    # about spikes/lows fetches the event records, not just
+                    # summaries (the single-agent path otherwise trusts the
+                    # extractor's narrow pick — see expand_to_domain_types).
+                    intent_data_types=[dt.value for dt in expand_to_domain_types(intent.data_types)],
                     patient_names=ctx.patient_names,
                     user_role=input.context.user_role,
                     delta_sink=delta_sink,
