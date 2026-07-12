@@ -65,6 +65,7 @@ class AIFoundationSettings(BaseSettings):
     # ── Reflection ────────────────────────────────────────────────────────
 
     REFLECTION_ENABLED: bool = Field(default=True, description="Enable reflection/critic for ADVANCED+ tiers")
+    GROUNDING_VERIFY_ENABLED: bool = Field(default=True, description="Verify the final response against its evidence and correct once if it fabricates, confirms a false claim, or disavows real data")
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
 
