@@ -150,10 +150,15 @@ class TranslationService:
         """Deterministic checks; returns a description of the first problem."""
         if not candidate:
             return "empty translation"
-        # A chip that grew into a paragraph/list means the model answered or
-        # elaborated instead of translating — reject so we fall back to source.
-        if terse and len(candidate) > max(60, 3 * len(source)):
-            return f"expanded chip: {len(candidate)} chars from {len(source)}"
+        if terse:
+            # A chip that grew into a paragraph/list means the model answered or
+            # elaborated instead of translating — reject so we retry/fall back.
+            if len(candidate) > max(60, 3 * len(source)):
+                return f"expanded chip: {len(candidate)} chars from {len(source)}"
+            # Returned the source verbatim = didn't translate (the model kept a
+            # short English label as-is). Retry; a second pass usually renders it.
+            if candidate.strip().casefold() == source.strip().casefold():
+                return "untranslated (identical to source)"
         missing = [n for n in set(_NUMBER_RE.findall(source)) if n not in candidate]
         if missing:
             return f"numbers missing: {sorted(missing)[:5]}"
