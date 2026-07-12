@@ -42,6 +42,22 @@ _REGISTER_EXTRA = {
     "hi-Latn": "\n6. Hinglish means Hindi written in roman script, the way people casually text (\"aapka glucose aaj stable raha\"). Keep common English health words (glucose, protein, sleep) as-is where natural.",
 }
 
+# Chips (suggestion labels, one-line follow-up questions) get their own prompt:
+# the prose translator preserves/expands structure and will "answer" an
+# imperative label ("high-protein dinner options") by generating a list. This
+# one forbids elaboration and keeps the chip a chip.
+_TERSE_SYSTEM = """You translate a SHORT UI element in a health app from {source_name} to {target_name}.
+
+The text is a tappable button label or a single follow-up question — NOT a request to answer, expand, or give options.
+
+Hard rules — violating any makes the output unusable:
+1. Output ONLY the translation, on ONE line. No preamble, no lists, no bullets, no elaboration, and NEVER answer the question.
+2. Keep it as short as the original — a label stays a label, a one-line question stays one line.
+3. Every number stays EXACTLY as written.
+4. Register: warm, casual companion.{register_extra}
+
+Output only the translated text, nothing else."""
+
 
 class TranslationService:
     """LLM translation with deterministic fidelity checks."""
@@ -55,14 +71,16 @@ class TranslationService:
         self._cache: dict[tuple[str, str], str] = {}
 
     async def translate_cached(
-        self, text: str, target_lang: str, *, source_lang: str = "en",
+        self, text: str, target_lang: str, *, source_lang: str = "en", terse: bool = False,
     ) -> str:
         """``translate`` with an in-memory cache — ONLY for fixed strings
-        (labels, canned acks), never for patient-specific content."""
-        key = (target_lang, text)
+        (labels, canned acks), never for patient-specific content.
+
+        ``terse`` uses the short-UI prompt (chip labels) — see :meth:`translate`."""
+        key = (f"t:{target_lang}" if terse else target_lang, text)
         if key in self._cache:
             return self._cache[key]
-        result = await self.translate(text, target_lang, source_lang=source_lang)
+        result = await self.translate(text, target_lang, source_lang=source_lang, terse=terse)
         # Don't cache fallbacks — a transient provider failure shouldn't
         # pin the English text for the process lifetime.
         if result != text or target_lang == source_lang:
@@ -78,15 +96,21 @@ class TranslationService:
         *,
         source_lang: str = "en",
         trace_id: str | None = None,
+        terse: bool = False,
     ) -> str:
         """Translate ``text``; returns the source text unchanged when the
-        languages match, the text is empty, or the translation fails checks."""
+        languages match, the text is empty, or the translation fails checks.
+
+        ``terse=True`` translates short UI chips (labels, one-line follow-ups)
+        with a prompt that forbids elaboration, keeps the output to one line,
+        and rejects expansion — falling back to the source text rather than
+        ever shipping a chip the model blew up into a list/answer."""
         if not text or not text.strip() or target_lang == source_lang:
             return text
 
         target_name = ai_language_name(target_lang)
         source_name = ai_language_name(source_lang)
-        system = _SYSTEM_PROMPT.format(
+        system = (_TERSE_SYSTEM if terse else _SYSTEM_PROMPT).format(
             source_name=source_name,
             target_name=target_name,
             register_extra=_REGISTER_EXTRA.get(target_lang, ""),
@@ -105,7 +129,9 @@ class TranslationService:
                     trace_id=trace_id,
                 )
                 candidate = (response.content or "").strip()
-                problem = self._fidelity_problem(text, candidate)
+                if terse and candidate:
+                    candidate = candidate.splitlines()[0].strip()
+                problem = self._fidelity_problem(text, candidate, terse=terse)
                 if problem is None:
                     return candidate
                 logger.warning(
@@ -120,10 +146,14 @@ class TranslationService:
         return text
 
     @staticmethod
-    def _fidelity_problem(source: str, candidate: str) -> str | None:
+    def _fidelity_problem(source: str, candidate: str, terse: bool = False) -> str | None:
         """Deterministic checks; returns a description of the first problem."""
         if not candidate:
             return "empty translation"
+        # A chip that grew into a paragraph/list means the model answered or
+        # elaborated instead of translating — reject so we fall back to source.
+        if terse and len(candidate) > max(60, 3 * len(source)):
+            return f"expanded chip: {len(candidate)} chars from {len(source)}"
         missing = [n for n in set(_NUMBER_RE.findall(source)) if n not in candidate]
         if missing:
             return f"numbers missing: {sorted(missing)[:5]}"

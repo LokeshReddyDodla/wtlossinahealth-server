@@ -461,6 +461,11 @@ class HealthQueryAgent(BaseAgent):
         # the patient's stored timezone so the agent is never time-blind.
         ctx.local_time = (input.context.metadata or {}).get("local_time") or ctx.local_time
         intent, meta = await self._extract_intent(input, ctx)
+        # Force chips into the patient's language before any path dumps them —
+        # the extractor is told to write suggestions in-language but doesn't
+        # reliably obey for short labels. One place, so run(), run_stream(), and
+        # the clarification path all inherit it.
+        await self._localize_suggestions(intent, self._effective_language(input, ctx))
 
         return _PipelineContext(
             pipeline_start=pipeline_start,
@@ -826,6 +831,27 @@ class HealthQueryAgent(BaseAgent):
             return await self.translator.translate(text, lang)
         except Exception:
             return text  # provider down → English beats nothing
+
+    async def _localize_suggestions(self, intent: Any, lang: str) -> None:
+        """Force suggestion chips into the patient's language via the TERSE
+        translation path — the prose translator expands imperative labels into
+        lists, so chips get the short-UI prompt with an expansion guard. Label
+        cached (chip labels recur); description live (it becomes the next user
+        message, so it must be in-language too). Per-chip failure leaves that
+        chip unchanged rather than dropping the suggestion."""
+        if lang == DEFAULT_AI_LANGUAGE or not self.translator or not intent.suggestions:
+            return
+
+        async def _one(s: Any) -> None:
+            try:
+                s.label, s.description = await asyncio.gather(
+                    self.translator.translate_cached(s.label, lang, terse=True),
+                    self.translator.translate(s.description, lang, terse=True),
+                )
+            except Exception:
+                pass
+
+        await asyncio.gather(*(_one(s) for s in intent.suggestions))
 
     async def _run_background(self, coro: Any, *, name: str, thread_id: str) -> None:
         """Run a background coroutine with timeout and error handling."""
