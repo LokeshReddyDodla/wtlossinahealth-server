@@ -48,7 +48,7 @@ from .fixtures import (
     weight_loss_facts,
     weight_loss_records,
 )
-from .judge import judge_case
+from .judge import judge_case_voted
 
 
 # ── Stateful doubles: make memory real across turns ──────────────────────────
@@ -565,7 +565,10 @@ async def run_scenario(
                 for t in transcript[:-2]
             ) or "(this is the first turn)"
             try:
-                j = await judge_case(
+                # Voted, like the conversation judge — a single per-turn vote
+                # swings hard (a full run went 3/14 then 9/14 on identical code),
+                # so the majority verdict is the trustworthy signal.
+                j = await judge_case_voted(
                     gateway, question=patient_msg, response=response,
                     fixture_texts=fixture_texts,
                     facts=fact_lines + [f"current local time: {local_time}"],
