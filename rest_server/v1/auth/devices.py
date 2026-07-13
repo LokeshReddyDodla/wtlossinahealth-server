@@ -21,11 +21,40 @@ from rest_server.response_models import SuccessResponse
 from .api_schema import (
     DeleteAllDevicesResponse,
     DeleteDeviceResponse,
+    DeviceHeartbeatRequest,
     ListDevicesResponse,
     UserDeviceResponse,
     UserDevicesListResponse,
 )
 from .router import router
+
+
+@router.post(
+    "/devices/heartbeat",
+    response_model=SuccessResponse,
+    summary="Device Heartbeat",
+    description="Called on app cold boot to refresh device info (app version, FCM token, etc.).",
+)
+async def device_heartbeat(
+    body: DeviceHeartbeatRequest,
+    token_data: tuple = Depends(get_current_user),
+    user_device_service: UserDeviceService = Depends(get_user_device_service),
+) -> SuccessResponse:
+    update_data = body.model_dump(exclude={"device_id"}, exclude_none=True)
+    try:
+        device = await user_device_service.update_user_device(
+            device_id=UUID(body.device_id),
+            user_device_data=update_data,
+        )
+    except ValueError:
+        raise_http_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="Device not found",
+        )
+    return SuccessResponse(
+        message="Heartbeat received",
+        data={"device_id": str(device.device_id)},
+    )
 
 
 @router.get(
