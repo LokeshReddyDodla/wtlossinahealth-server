@@ -17,11 +17,25 @@ ChatKindLiteral = Literal["direct", "group", "support"]
 DEFAULT_AI_LANGUAGE = "en"
 
 # Curated prompt descriptors where the plain language name isn't enough.
+# Script/style only — register lives in RESPECTFUL_REGISTER_INSTRUCTION,
+# which applies to every language, not a curated few.
 _AI_LANGUAGE_OVERRIDES: dict[str, str] = {
     "en": "English",
     "hi": "Hindi (Devanagari script)",
-    "hi-Latn": "Hinglish (Hindi in roman script, casual conversational)",
+    "hi-Latn": "Hinglish (Hindi in roman script, everyday texting style)",
 }
+
+# Universal register rule for any generated or translated patient-facing text.
+# Language-agnostic on purpose: every language with a T–V distinction (Hindi
+# aap/tu, Bengali apni/tui, Urdu aap/tum, ...) must land on the respectful
+# form, including languages nobody on the team can review. "casual" wording
+# in prompts previously pushed models to the intimate form.
+RESPECTFUL_REGISTER_INSTRUCTION = (
+    "Address the patient in the language's RESPECTFUL second-person register "
+    "— the polite form used with someone you respect (e.g. a client or an "
+    "elder) — while staying warm and friendly. NEVER use the intimate or "
+    "overly familiar form, in any language."
+)
 
 
 def is_valid_ai_language(code: str) -> bool:
