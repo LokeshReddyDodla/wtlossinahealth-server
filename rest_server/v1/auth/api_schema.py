@@ -65,6 +65,22 @@ class CareProviderLoginRequest(BaseModel):
     )
 
 
+class DeviceHeartbeatRequest(BaseModel):
+    device_id: str = Field(..., description="Device ID from local storage (assigned at login)")
+    fcm_token: Optional[str] = None
+    device_type: Optional[str] = None
+    platform_version: Optional[str] = None
+    device_model: Optional[str] = None
+    manufacturer: Optional[str] = None
+    device_name: Optional[str] = None
+    is_physical_device: Optional[bool] = None
+    app_name: Optional[str] = None
+    app_version: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_name: Optional[str] = None
+
+
 class LogoutRequest(BaseModel):
     device_id: Optional[str] = Field(
         None, description="Device ID to logout from"
