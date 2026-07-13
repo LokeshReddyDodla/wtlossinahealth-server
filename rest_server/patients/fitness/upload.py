@@ -31,7 +31,8 @@ async def upload_fitness_data(
 
         return SuccessResponse(
             message="Fitness data uploaded and stored successfully.",
-            data={"last_sync_timestamp": last_sync_time},
+            # ponytail: temporary full-resync override, revert after Android users re-sync
+            data={"last_sync_timestamp": "2024-01-01T00:00:00"},
         )
     except Exception as e:
         raise_http_exception(
