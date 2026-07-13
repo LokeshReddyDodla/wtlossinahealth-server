@@ -26,7 +26,7 @@ from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
-from lib.core.types import ai_language_name, DEFAULT_AI_LANGUAGE
+from lib.core.types import RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name, DEFAULT_AI_LANGUAGE
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -549,7 +549,7 @@ class HealthQueryAgent(BaseAgent):
                 f"The patient's preferred language is {lang_name}. Write "
                 f"suggestion labels, suggestion descriptions, and any "
                 f"clarification_msg in {lang_name}. All other extraction "
-                f"fields stay in English."
+                f"fields stay in English. {RESPECTFUL_REGISTER_INSTRUCTION}"
             )})
 
         if ctx.facts:
@@ -950,14 +950,15 @@ class HealthQueryAgent(BaseAgent):
                 f"Write your ENTIRE response in {lang_name} — this is the patient's "
                 f"chosen language. Numbers, units (mg/dL, g, kcal), medication names, "
                 f"and the [[BUBBLE]]/[[AWAIT:...]] markers stay exactly as-is. "
-                f"Table syntax stays markdown; translate only the cell text.\n"
+                f"Table syntax stays markdown; translate only the cell text. "
+                f"{RESPECTFUL_REGISTER_INSTRUCTION}\n"
             )
             # Voice mirrors the SPOKEN language — reply how the patient spoke.
             voice_lang_instruction = (
                 f"\n## Response Language\n"
                 f"The patient spoke in {lang_name} — reply ENTIRELY in {lang_name}, "
                 f"natural and speakable. Say numbers with their units plainly; "
-                f"keep medication names as-is.\n"
+                f"keep medication names as-is. {RESPECTFUL_REGISTER_INSTRUCTION}\n"
             )
 
         if output_mode == "voice":

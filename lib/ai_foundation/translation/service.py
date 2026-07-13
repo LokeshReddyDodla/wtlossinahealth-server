@@ -18,7 +18,7 @@ import re
 
 from lib.ai_foundation.models.gateway import ModelGateway
 from lib.ai_foundation.models.registry import ModelTask
-from lib.core.types import ai_language_name
+from lib.core.types import RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +34,12 @@ Hard rules — violating any of these makes the translation unusable:
 2. Markdown structure survives verbatim: headings, **bold**, bullet lists, tables (translate cell text, never the table syntax), emoji, code fences.
 3. Any [[BUBBLE]] or [[AWAIT:...]] token is copied through unchanged, on its own line, same position.
 4. Translate everything else faithfully — no added advice, no dropped sentences, no summarizing.
-5. Register: warm, caring companion — the tone of a friend who knows your health, not a formal document.{register_extra}
+5. Register: warm, caring companion — the tone of a friend who knows your health, not a formal document. {register_rule}{register_extra}
 
 Output ONLY the translation. No preamble, no notes."""
 
 _REGISTER_EXTRA = {
-    "hi-Latn": "\n6. Hinglish means Hindi written in roman script, the way people casually text (\"aapka glucose aaj stable raha\"). Keep common English health words (glucose, protein, sleep) as-is where natural.",
+    "hi-Latn": "\n6. Hinglish means Hindi written in roman script, the way people text (\"aapka glucose aaj stable raha\"). Keep common English health words (glucose, protein, sleep) as-is where natural.",
 }
 
 # Chips (suggestion labels, one-line follow-up questions) get their own prompt:
@@ -54,7 +54,7 @@ Hard rules — violating any makes the output unusable:
 1. Output ONLY the translation, on ONE line. No preamble, no lists, no bullets, no elaboration, and NEVER answer the question.
 2. Keep it as short as the original — a label stays a label, a one-line question stays one line.
 3. Every number stays EXACTLY as written.
-4. Register: warm, casual companion.{register_extra}
+4. Register: warm companion. {register_rule}{register_extra}
 
 Output only the translated text, nothing else."""
 
@@ -113,6 +113,7 @@ class TranslationService:
         system = (_TERSE_SYSTEM if terse else _SYSTEM_PROMPT).format(
             source_name=source_name,
             target_name=target_name,
+            register_rule=RESPECTFUL_REGISTER_INSTRUCTION,
             register_extra=_REGISTER_EXTRA.get(target_lang, ""),
         )
         messages = [
