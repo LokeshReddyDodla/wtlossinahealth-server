@@ -109,7 +109,7 @@ class FitnessUploadService:
         if source_name:
             smbg_query = smbg_query.where(PatientSMBG.source_name == source_name)
         else:
-            smbg_query = smbg_query.where(PatientSMBG.source_name != "manual")
+            smbg_query = smbg_query.where(PatientSMBG.source_name.notin_(("manual", "app")))
 
         await postgres_session.execute(smbg_query)
 
