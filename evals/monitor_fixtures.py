@@ -279,8 +279,18 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
     """Real case: patient logged one meal as 6 separate items; each item got
     praised individually ('light choice') while the aggregate was high in
     calories and carbs. Anchor = the salad (the item that got the praise)."""
-    d = _today(tz_name, 6)
-    h = _today(tz_name, 20)
+    # The sitting ends 45 min before "now" — a meal_logged trigger fires right
+    # after logging, so relative anchoring is realistic AND immune to the
+    # wall-clock hour of the eval run. Absolute/clamped hours made this case
+    # hour-sensitive: at early-local-hours CI runs the clamp produced a
+    # "dinner" at ~2 PM and the LLM (correctly, per its no-nagging rule)
+    # declined to comment on an incoherent borderline meal.
+    now = datetime.now(ZoneInfo(tz_name))
+    d = now
+    h = now - timedelta(minutes=45)
+    # pick_afternoon_timezone guarantees local hour ∈ [12, 22): sitting lands
+    # 11:15-21:15 → lunch before 5 PM, dinner after.
+    sitting_meal_type = "lunch" if h.hour < 17 else "dinner"
 
     def item(mins_ago: int, mid: str, desc: str, cal: int, carb: int, prot: int, fib: int):
         t = h - timedelta(minutes=mins_ago)
@@ -293,15 +303,14 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
                 f"meal): {desc} — approx {cal} kcal, {carb}g carbs, {prot}g "
                 f"protein, {fib}g fiber."
             ),
-            "meal_type": "dinner", "description": desc,
+            "meal_type": sitting_meal_type, "description": desc,
             "calories": cal, "carbs_g": carb, "protein_g": prot, "fiber_g": fib,
         }
 
-    # The earlier lunch must stay OUTSIDE the 90-min sitting window no matter
-    # what wall-clock hour the eval runs at — CI runs at a different local
-    # time than dev machines, and absolute clamped hours can collapse onto
-    # the sitting. Anchor it RELATIVE to the sitting: 7 hours earlier.
-    rice_t = h - timedelta(hours=7)
+    # The earlier meal stays well OUTSIDE the 90-min sitting window at any
+    # wall-clock hour: anchored RELATIVE to the sitting, 4 hours earlier.
+    rice_t = h - timedelta(hours=4)
+    rice_meal_type = "breakfast" if rice_t.hour < 11 else "lunch"
     return _base_profile(tz_name) + [
         {
             "data_type": "meal",
@@ -309,18 +318,22 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
             "start_time": _ms(rice_t),
             "end_time": _ms(rice_t),
             "text_repr": (
-                "Meal (lunch, about 7 hours before the items below): rice with "
-                "baingan bharta — approx 480 kcal, 74g carbs, 9g protein, 5g fiber."
+                "Meal (earlier today): rice with baingan bharta — approx 480 kcal, "
+                "74g carbs, 9g protein, 5g fiber."
             ),
-            "meal_type": "lunch", "description": "rice with baingan bharta",
+            "meal_type": rice_meal_type, "description": "rice with baingan bharta",
             "calories": 480, "carbs_g": 74, "protein_g": 9, "fiber_g": 5,
         },
         # The same-sitting items, logged minutes apart
-        item(25, "meal-item-peanuts", "boiled peanuts (1 bowl)", 240, 14, 11, 5),
+        # Each item reads "light" alone; combined ≈ 1010 kcal / 107g carbs —
+        # unambiguously heavy for one sitting, so a silent scan is a real
+        # miss, not defensible restraint (borderline macros made the LLM
+        # legitimately decline at some wall-clock hours → flaky gate).
+        item(25, "meal-item-peanuts", "boiled peanuts (1 large bowl)", 280, 18, 12, 6),
         item(20, "meal-item-tindora", "tindora sabji", 130, 13, 3, 4),
-        item(16, "meal-item-chapati", "half chapati", 60, 12, 2, 1),
+        item(16, "meal-item-chapati", "2 chapatis", 120, 24, 4, 2),
         item(12, "meal-item-bhurji", "egg bhurji (2 eggs)", 230, 4, 14, 0),
-        item(8, "meal-item-pav", "half pav", 95, 18, 3, 1),
+        item(8, "meal-item-pav", "1 pav", 190, 36, 6, 2),
         item(2, "meal-item-salad", "cucumber, carrot and beetroot salad", 60, 12, 2, 4),
     ]
 
