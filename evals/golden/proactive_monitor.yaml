@@ -122,16 +122,18 @@ cases:
     checks:
       min_insights: 1
     criteria: >
-      The patient logged one dinner as six separate items minutes apart
+      The patient logged one meal as six separate items minutes apart
       (boiled peanuts, tindora sabji, half chapati, egg bhurji, half pav,
-      salad) after a rice lunch. Dietitian correction on the real case: each
-      item was praised individually ("light choice") while the combined
-      dinner is high in calories (~800 kcal) and carbs (~73g). The trigger
-      item is just the salad, but the surrounding items are visible in the
-      data. A good insight recognizes the salad is PART of a larger sitting
-      and judges the meal as a whole (or the day overall). Praising the
-      salad as a light/smart dinner while ignoring the co-logged items
-      repeats the flagged mistake and is a failure.
+      salad), a few hours after an earlier rice-based meal. Dietitian
+      correction on the real case: each item was praised individually
+      ("light choice") while the combined sitting is high in calories
+      (~1000 kcal) and carbs (~107g). The trigger item is just the salad, but
+      the surrounding items are visible in the data. A good insight
+      recognizes the salad is PART of a larger sitting and judges the
+      sitting as a whole (or the day overall) — whichever meal slot it
+      calls it is irrelevant. Praising the salad alone as a light/smart
+      choice while ignoring the co-logged items repeats the flagged
+      mistake and is a failure.
 
   - id: df_low_intake_flags_calories_protein
     category: dietitian_feedback
