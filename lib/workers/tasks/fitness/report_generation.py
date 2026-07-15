@@ -282,6 +282,57 @@ async def _merge_manual_workouts(
         logger.warning(f"Failed to merge manual workouts for {patient_id}: {e}")
 
 
+@task_with_logging
+async def force_regenerate_fitness_reports(
+    ctx: Dict[str, Any],
+    patient_id: str,
+    start_date: datetime,
+    end_date: datetime,
+) -> TaskResult:
+    """Force-regenerate all fitness reports in the date range (skips freshness filter)."""
+    try:
+        months_between = get_months_between_dates(start_date, end_date)
+
+        if not months_between:
+            return TaskResult(
+                success=True,
+                data={"processed": 0, "reason": "no_valid_months"},
+            )
+
+        logger.info(
+            f"Force-regenerating {len(months_between)} months for {patient_id}"
+        )
+
+        results = []
+        for year, month in months_between:
+            month_start, month_end = get_month_start_end(year, month)
+            result = await _generate_monthly_reports(patient_id, month_start, month_end)
+            results.append(result)
+
+        successful = sum(1 for r in results if r.get("success"))
+
+        await _trigger_vector_generation(patient_id, start_date, end_date)
+
+        return TaskResult(
+            success=True,
+            data={
+                "total_months": len(months_between),
+                "processed": successful,
+                "results": results,
+            },
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Failed to force-regenerate fitness reports for {patient_id}: {e}"
+        )
+        return TaskResult(
+            success=False,
+            error=str(e),
+            data={"patient_id": patient_id},
+        )
+
+
 async def _enqueue_fitness_upload(
     patient_id: str, start_date: datetime, end_date: datetime
 ) -> str | None:
