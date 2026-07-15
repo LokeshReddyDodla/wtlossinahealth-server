@@ -28,7 +28,7 @@ class ClickHouseStore:
         self.client.execute("""
         CREATE TABLE IF NOT EXISTS aihealth.cgm_data (
             patient_id String,
-            time DateTime64(3),
+            time DateTime,
             glucose_level Float32,
             record_type LowCardinality(String),
             source LowCardinality(String) DEFAULT 'unknown',
@@ -47,7 +47,7 @@ class ClickHouseStore:
             source_platform LowCardinality(String),
             unit LowCardinality(String),
             value Float64,
-            start_datetime DateTime64(3),
+            start_datetime DateTime,
             end_datetime DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
@@ -63,7 +63,7 @@ class ClickHouseStore:
             source_name LowCardinality(String),
             source_platform LowCardinality(String),
             sleep_duration Float64,
-            sleep_start_time DateTime64(3),
+            sleep_start_time DateTime,
             sleep_end_time DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
@@ -78,7 +78,7 @@ class ClickHouseStore:
             vital_id String DEFAULT '',
             type LowCardinality(String),
             value Float64,
-            time DateTime64(3),
+            time DateTime,
             source_name LowCardinality(String) DEFAULT '',
             source_platform LowCardinality(String) DEFAULT '',
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
@@ -94,32 +94,27 @@ class ClickHouseStore:
         self.create_vitals_data_table()
 
     def migrate_to_optimized_types(self):
-        """One-time migration: String→LowCardinality, DateTime→DateTime64(3).
+        """One-time migration: String→LowCardinality + non-key DateTime→DateTime64(3).
 
-        Safe on existing data — each ALTER rewrites the column via mutation.
-        Run once, then remove. Idempotent (re-running on already-migrated
-        columns is a no-op).
+        ORDER BY key columns (time, start_datetime, sleep_start_time) cannot be
+        ALTERed — those need table recreation in a maintenance window.
         """
         alterations = [
-            # cgm_data
-            "ALTER TABLE aihealth.cgm_data MODIFY COLUMN time DateTime64(3)",
+            # cgm_data (time is ORDER BY key — skip)
             "ALTER TABLE aihealth.cgm_data MODIFY COLUMN record_type LowCardinality(String)",
             "ALTER TABLE aihealth.cgm_data MODIFY COLUMN source LowCardinality(String)",
-            # fitness_data
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN start_datetime DateTime64(3)",
+            # fitness_data (start_datetime is ORDER BY key — skip)
             "ALTER TABLE aihealth.fitness_data MODIFY COLUMN end_datetime DateTime64(3)",
             "ALTER TABLE aihealth.fitness_data MODIFY COLUMN type LowCardinality(String)",
             "ALTER TABLE aihealth.fitness_data MODIFY COLUMN source_name LowCardinality(String)",
             "ALTER TABLE aihealth.fitness_data MODIFY COLUMN source_platform LowCardinality(String)",
             "ALTER TABLE aihealth.fitness_data MODIFY COLUMN unit LowCardinality(String)",
-            # sleep_data
-            "ALTER TABLE aihealth.sleep_data MODIFY COLUMN sleep_start_time DateTime64(3)",
+            # sleep_data (sleep_start_time is ORDER BY key — skip)
             "ALTER TABLE aihealth.sleep_data MODIFY COLUMN sleep_end_time DateTime64(3)",
             "ALTER TABLE aihealth.sleep_data MODIFY COLUMN type LowCardinality(String)",
             "ALTER TABLE aihealth.sleep_data MODIFY COLUMN source_name LowCardinality(String)",
             "ALTER TABLE aihealth.sleep_data MODIFY COLUMN source_platform LowCardinality(String)",
-            # vitals_data
-            "ALTER TABLE aihealth.vitals_data MODIFY COLUMN time DateTime64(3)",
+            # vitals_data (time is ORDER BY key — skip)
             "ALTER TABLE aihealth.vitals_data MODIFY COLUMN type LowCardinality(String)",
             "ALTER TABLE aihealth.vitals_data MODIFY COLUMN source_name LowCardinality(String)",
             "ALTER TABLE aihealth.vitals_data MODIFY COLUMN source_platform LowCardinality(String)",
