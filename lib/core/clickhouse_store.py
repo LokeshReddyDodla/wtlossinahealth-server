@@ -35,6 +35,7 @@ class ClickHouseStore:
             INDEX idx_record_type record_type TYPE set(100) GRANULARITY 4,
             INDEX idx_source source TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(time)
         ORDER BY (patient_id, time, source, record_type);
         """)
 
@@ -52,6 +53,7 @@ class ClickHouseStore:
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(start_datetime)
         ORDER BY (patient_id, type, start_datetime, source_name);
         """)
 
@@ -68,6 +70,7 @@ class ClickHouseStore:
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(sleep_start_time)
         ORDER BY (patient_id, type, sleep_start_time, source_name);
         """)
 
@@ -84,6 +87,7 @@ class ClickHouseStore:
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source source_name TYPE set(100) GRANULARITY 4
         ) ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(time)
         ORDER BY (patient_id, type, time, source_name);
         """)
 
@@ -115,6 +119,7 @@ class ClickHouseStore:
                 INDEX idx_record_type record_type TYPE set(100) GRANULARITY 4,
                 INDEX idx_source source TYPE set(100) GRANULARITY 4
             ) ENGINE = ReplacingMergeTree()
+            PARTITION BY toYYYYMM(time)
             ORDER BY (patient_id, time, source, record_type)
             """,
         )
@@ -133,6 +138,7 @@ class ClickHouseStore:
                 INDEX idx_type type TYPE set(100) GRANULARITY 4,
                 INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
             ) ENGINE = ReplacingMergeTree()
+            PARTITION BY toYYYYMM(sleep_start_time)
             ORDER BY (patient_id, type, sleep_start_time, source_name)
             """,
         )
@@ -155,6 +161,7 @@ class ClickHouseStore:
                 INDEX idx_type type TYPE set(100) GRANULARITY 4,
                 INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
             ) ENGINE = ReplacingMergeTree()
+            PARTITION BY toYYYYMM(start_datetime)
             ORDER BY (patient_id, type, start_datetime, source_name)
             """,
         )
@@ -173,6 +180,7 @@ class ClickHouseStore:
                 INDEX idx_type type TYPE set(100) GRANULARITY 4,
                 INDEX idx_source source_name TYPE set(100) GRANULARITY 4
             ) ENGINE = ReplacingMergeTree()
+            PARTITION BY toYYYYMM(time)
             ORDER BY (patient_id, type, time, source_name)
             """,
         )
