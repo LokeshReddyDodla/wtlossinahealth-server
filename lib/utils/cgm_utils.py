@@ -15,7 +15,7 @@ class CGMDataUtils:
 
         query = f"""
         SELECT count() as cnt, min(toDate(time)) as min_date, max(toDate(time)) as max_date
-        FROM aihealth.cgm_data
+        FROM aihealth.cgm_data FINAL
         WHERE patient_id = '{patient_id}' AND toDate(time) BETWEEN toDate('{start_date}') AND toDate('{end_date}')
         """
         result = self.clickhouse_store.query_data(query)

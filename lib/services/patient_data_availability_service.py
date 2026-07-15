@@ -153,7 +153,7 @@ class PatientDataAvailabilityService:
     ) -> Dict[date, int]:
         query = f"""
         SELECT toDate(time) AS d, count() AS c
-        FROM aihealth.vitals_data
+        FROM aihealth.vitals_data FINAL
         WHERE patient_id = '{patient_id}'
             AND toDate(time) >= '{start_date}'
             AND toDate(time) <= '{end_date}'

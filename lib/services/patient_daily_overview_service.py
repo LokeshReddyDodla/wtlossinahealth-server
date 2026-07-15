@@ -319,7 +319,7 @@ class PatientDailyOverviewService:
         start_date = end_date - timedelta(days=days - 1)
         query = f"""
         SELECT time, value
-        FROM aihealth.vitals_data
+        FROM aihealth.vitals_data FINAL
         WHERE patient_id = '{patient_id}'
             AND type = '{vital_type}'
             AND toDate(time) >= '{start_date}'
@@ -341,7 +341,7 @@ class PatientDailyOverviewService:
         session: AsyncSession,
     ) -> Optional[float]:
         query = f"""
-        SELECT value FROM aihealth.vitals_data
+        SELECT value FROM aihealth.vitals_data FINAL
         WHERE patient_id = '{patient_id}'
             AND type = 'weight'
             AND toDate(time) <= '{selected_date}'
