@@ -82,7 +82,7 @@ class PrescriptionExtractionService:
             messages=messages,
             response_model=ExtractedPrescription,
             task=ModelTask.STRUCTURED_ANALYSIS,
-            model_id="gpt-4o",
+            model_id="gpt-5.6-terra",
             trace_id=trace_id,
         )
 
