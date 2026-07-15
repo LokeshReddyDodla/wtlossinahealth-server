@@ -14,7 +14,7 @@ def generate_summary_stats_query(
         SUM(CASE WHEN type = 'FLIGHTS_CLIMBED' THEN value ELSE 0 END) AS total_flights_climbed,
         SUM(CASE WHEN type = 'EXERCISE_TIME' THEN value ELSE 0 END) AS total_exercise_time
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND start_datetime >= '{start_datetime}'
@@ -49,7 +49,7 @@ def generate_hourly_stats_query(
             start_datetime,
             end_datetime
         FROM
-            aihealth.fitness_data
+            aihealth.fitness_data FINAL
         WHERE
             patient_id = '{patient_id}'
             AND start_datetime >= '{start_datetime}'
@@ -71,7 +71,7 @@ def generate_average_active_session_duration_query(
     SELECT
         AVG(COALESCE(dateDiff('minute', start_datetime, end_datetime), 0)) AS average_active_session_duration
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND start_datetime >= '{start_datetime}'
@@ -98,7 +98,7 @@ def generate_activity_distribution_query(
         SUM(CASE WHEN type IN ('DISTANCE_WALKING_RUNNING', 'DISTANCE_DELTA') THEN value ELSE 0 END) AS distance,
         SUM(CASE WHEN type = 'FLIGHTS_CLIMBED' THEN value ELSE 0 END) AS flights_climbed
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND start_datetime >= '{start_datetime}'
@@ -132,7 +132,7 @@ def generate_peak_activity_time_query(
             SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS max_active_energy,
             SUM(CASE WHEN type IN ('DISTANCE_WALKING_RUNNING', 'DISTANCE_DELTA') THEN value ELSE 0 END) AS max_distance
         FROM
-            aihealth.fitness_data
+            aihealth.fitness_data FINAL
         WHERE
             patient_id = '{patient_id}'
             AND start_datetime >= '{start_datetime}'
@@ -162,7 +162,7 @@ def generate_inactive_periods_query(
             type AS preceding_activity,
             toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
-            aihealth.fitness_data
+            aihealth.fitness_data FINAL
         WHERE
             patient_id = '{patient_id}'
             AND start_datetime >= toDateTime('{start_datetime}')
@@ -175,7 +175,7 @@ def generate_inactive_periods_query(
             type AS following_activity,
             toInt64(row_number() OVER (ORDER BY start_datetime)) AS rn
         FROM
-            aihealth.fitness_data
+            aihealth.fitness_data FINAL
         WHERE
             patient_id = '{patient_id}'
             AND start_datetime >= toDateTime('{start_datetime}')
@@ -202,7 +202,7 @@ def generate_daily_activity_metrics_query(
         SUM(CASE WHEN type = 'FLIGHTS_CLIMBED' THEN value ELSE 0 END) AS flights_climbed,
         SUM(CASE WHEN type = 'EXERCISE_TIME' THEN value ELSE 0 END) AS exercise_time
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND toDate(start_datetime) >= '{start_date}'
@@ -225,7 +225,7 @@ def generate_daily_detected_workouts_query(
         dateDiff('minute', start_datetime, end_datetime) AS duration_minutes,
         value AS calories
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND toDate(start_datetime) >= '{start_date}'
@@ -248,7 +248,7 @@ def generate_workouts_query(
         SUM(value) AS total_energy,
         any(source_platform) AS source
     FROM
-        aihealth.fitness_data
+        aihealth.fitness_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND start_datetime >= '{start_datetime}'

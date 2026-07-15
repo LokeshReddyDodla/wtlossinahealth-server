@@ -525,7 +525,7 @@ class PatientSummaryService:
         if len(set(r["date"] for r in rows)) > 1:
             agg_query = f"""
             SELECT type, avg(value), max(value)
-            FROM aihealth.vitals_data
+            FROM aihealth.vitals_data FINAL
             WHERE patient_id = '{patient_id}'
                 AND time >= toDateTime('{start_date.replace(tzinfo=None)}')
                 AND time <= toDateTime('{end_date.replace(tzinfo=None)}')

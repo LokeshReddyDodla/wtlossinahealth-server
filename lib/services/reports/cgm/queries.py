@@ -13,7 +13,7 @@ def generate_hourly_agp_points_query(patient_id: str, start_date: str, end_date:
         quantile(0.75)(glucose_level) AS percentile_75,
         quantile(0.90)(glucose_level) AS percentile_90
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -34,7 +34,7 @@ def generate_range_coverage_query(
         SUM(CASE WHEN {range_condition} THEN 1 ELSE 0 END) AS condition_met,
         IF(COUNT(*) = 0, 0, (SUM(CASE WHEN {range_condition} THEN 1 ELSE 0 END) / COUNT(*)) * 100) AS {alias}
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -54,7 +54,7 @@ def generate_summary_stats_query(patient_id: str, start_date: str, end_date: str
         MIN(glucose_level) AS lowest_glucose_mgdl,
         argMin(time, glucose_level) AS lowest_glucose_date
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -93,7 +93,7 @@ def generate_time_period_stats_query(patient_id: str, start_date: str, end_date:
         MIN(glucose_level) AS lowest_glucose_mgdl,
         SUM(CASE WHEN glucose_level < 70 OR glucose_level > 180 THEN 1 ELSE 0 END) / COUNT(*) * 100 AS out_of_range_percentage
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -112,7 +112,7 @@ def generate_readings_in_range_query(patient_id: str, start_date: str, end_date:
         time AS device_timestamp,
         glucose_level AS glucose_mgdl
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -130,7 +130,7 @@ def generate_hourly_avg_query(patient_id: str, start_date: str, end_date: str) -
         formatDateTime(time, '%I:00 %p') AS hour,
         avg(glucose_level) AS avg_glucose_mgdl
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -148,7 +148,7 @@ def generate_daily_avg_query(patient_id: str, start_date: str, end_date: str) ->
         toDate(time) AS date,
         AVG(glucose_level) AS average_glucose_mgdl
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = '{patient_id}'
         AND record_type = 'historic'
@@ -173,7 +173,7 @@ def generate_readings_around_meal_query(
         time AS reading_time,
         glucose_level AS glucose_mgdl
     FROM
-        aihealth.cgm_data
+        aihealth.cgm_data FINAL
     WHERE
         patient_id = %(patient_id)s
         AND record_type = 'historic'
@@ -190,7 +190,7 @@ def generate_total_readings_count_query(patient_id: str, start_date: str, end_da
     """Generate query to count total CGM readings in a date range."""
     return f"""
     SELECT COUNT(*) 
-    FROM aihealth.cgm_data
+    FROM aihealth.cgm_data FINAL
     WHERE patient_id = '{patient_id}'
     AND record_type = 'historic'
     AND time >= '{start_date}'

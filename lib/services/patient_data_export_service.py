@@ -593,7 +593,7 @@ class PatientDataExportService:
     def _extract_clickhouse_data(self, patient_id: str) -> Dict[str, List[Dict[str, Any]]]:
         output: Dict[str, List[Dict[str, Any]]] = {}
         for table in self.CLICKHOUSE_TABLES:
-            query = f"SELECT * FROM {table} WHERE patient_id = %(patient_id)s"
+            query = f"SELECT * FROM {table} FINAL WHERE patient_id = %(patient_id)s"
             rows, columns = self.clickhouse_store.client.execute(
                 query,
                 {"patient_id": patient_id},

@@ -49,7 +49,7 @@ class DailyReportsMixin:
                 meals = meals_result.scalars().all()
 
                 _vitals_query = f"""
-                SELECT type, value FROM aihealth.vitals_data
+                SELECT type, value FROM aihealth.vitals_data FINAL
                 WHERE patient_id = '{patient_id}'
                     AND toDate(time) = '{current_date}'
                 ORDER BY time DESC
@@ -134,7 +134,7 @@ class DailyReportsMixin:
                 SUM(CASE WHEN type = 'ACTIVE_ENERGY_BURNED' THEN value ELSE 0 END) AS total_active_energy,
                 SUM(dateDiff('minute', start_datetime, end_datetime)) AS total_active_duration
             FROM
-                aihealth.fitness_data
+                aihealth.fitness_data FINAL
             WHERE
                 patient_id = '{str(patient_id)}'
                 AND start_datetime >= '{start_datetime}'
