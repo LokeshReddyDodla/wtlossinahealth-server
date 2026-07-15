@@ -55,10 +55,10 @@ class EmbeddingCache:
         cache = EmbeddingCache(cache_store, ttl_seconds=86400)
 
         # Try cache first
-        vector = cache.get("How were my sugars this week?")
+        vector = await cache.get("How were my sugars this week?")
         if vector is None:
             vector = await openai.embeddings.create(input=text, ...)
-            cache.set("How were my sugars this week?", vector)
+            await cache.set("How were my sugars this week?", vector)
     """
 
     def __init__(
@@ -75,14 +75,14 @@ class EmbeddingCache:
 
     # -- Public API ---------------------------------------------------------
 
-    def get(self, text: str) -> list[float] | None:
+    async def get(self, text: str) -> list[float] | None:
         """Look up a cached embedding vector. Returns ``None`` on miss."""
         if not self._enabled:
             return None
 
         key = self._build_key(text)
         try:
-            raw = self._store.get_key(key)
+            raw = await self._store.aget_key(key)
             if raw is None:
                 self._stats.misses += 1
                 return None
@@ -97,7 +97,7 @@ class EmbeddingCache:
             logger.warning("Embedding cache GET error: %s", exc)
             return None
 
-    def set(self, text: str, vector: list[float]) -> None:
+    async def set(self, text: str, vector: list[float]) -> None:
         """Store an embedding vector in cache."""
         if not self._enabled:
             return
@@ -105,18 +105,18 @@ class EmbeddingCache:
         key = self._build_key(text)
         try:
             payload = json.dumps(vector)
-            self._store.set_key(key, payload, expire=self._ttl)
+            await self._store.aset_key(key, payload, expire=self._ttl)
             self._stats.writes += 1
             logger.debug("Embedding cache SET: %s (ttl=%ds)", key, self._ttl)
         except Exception as exc:
             self._stats.errors += 1
             logger.warning("Embedding cache SET error: %s", exc)
 
-    def invalidate(self, text: str) -> None:
+    async def invalidate(self, text: str) -> None:
         """Explicitly remove a cached embedding."""
         key = self._build_key(text)
         try:
-            self._store.delete_key(key)
+            await self._store.adelete_key(key)
         except Exception as exc:
             logger.warning("Embedding cache DELETE error: %s", exc)
 

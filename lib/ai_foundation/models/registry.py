@@ -44,12 +44,14 @@ class ModelTask(str, Enum):
     INTENT_EXTRACTION = "intent_extraction"
     RESPONSE_GENERATION = "response_generation"
     STRUCTURED_ANALYSIS = "structured_analysis"
-    MEAL_ANALYSIS = "meal_analysis"
+    MEAL_ANALYSIS = "meal_analysis"  # vision: photo → items (extractor only)
+    MEAL_REASONING = "meal_reasoning"  # text-only: scoring, alternatives, glucose fallback
     CLASSIFICATION = "classification"
     SUMMARIZATION = "summarization"
     EMBEDDING = "embedding"
     QUALITY_JUDGE = "quality_judge"
     PRODUCT_BOT = "product_bot"
+    TRANSLATION = "translation"
 
 
 class ModelProvider(str, Enum):
@@ -311,9 +313,10 @@ def build_default_registry(
     from lib.ai_foundation.config import settings as _default_settings
 
     s = settings or _default_settings
-    thinker = s.REASONING_THINKER_MODEL          # default: gpt-4.1-mini
-    responder = s.REASONING_RESPONDER_MODEL       # default: gpt-5.1
-    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL  # default: gpt-4.1
+    # Defaults live in config.py — do not restate them here, they drift.
+    thinker = s.REASONING_THINKER_MODEL
+    responder = s.REASONING_RESPONDER_MODEL
+    adv_thinker = s.REASONING_ADVANCED_THINKER_MODEL
 
     registry = ModelRegistry()
 
@@ -398,6 +401,17 @@ def build_default_registry(
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
+            model_id="gpt-5.2",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=30.0,
+            cost_per_1k_input=0.00175,
+            cost_per_1k_output=0.007,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["vision", "multimodal"],
+        ),
+        ModelSpec(
             model_id="text-embedding-3-large",
             provider=ModelProvider.OPENAI,
             timeout_seconds=5.0,
@@ -432,7 +446,8 @@ def build_default_registry(
         ),
     ])
 
-    # Task routes: Claude primary, OpenAI/Google as fallbacks
+    # Task routes: primaries come from settings (see config.py); fallbacks
+    # are cross-provider so one provider outage never takes down a task.
     registry.set_task_route(
         ModelTask.INTENT_EXTRACTION,
         primary=thinker,
@@ -448,10 +463,19 @@ def build_default_registry(
         primary=thinker,
         fallbacks=["gpt-4.1-mini", "gemini-2.5-flash"],
     )
+    # Extractor (photo → items). gpt-5.2: ~half the vision error of the 4o
+    # generation at lower price; gpt-4o first fallback = pre-upgrade behavior.
     registry.set_task_route(
         ModelTask.MEAL_ANALYSIS,
-        primary="gpt-4o",
-        fallbacks=["gpt-4.1-mini", "gemini-2.5-flash", thinker],
+        primary="gpt-5.2",
+        fallbacks=["gpt-4o", "gemini-2.5-flash", thinker],
+    )
+    # Text-only meal engines (scorer/alternatives/glucose fallback) send JSON,
+    # never the photo — vision pricing there was ~6x waste (efficiency audit).
+    registry.set_task_route(
+        ModelTask.MEAL_REASONING,
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", thinker],
     )
     registry.set_task_route(
         ModelTask.CLASSIFICATION,
@@ -474,6 +498,13 @@ def build_default_registry(
     )
     registry.set_task_route(
         ModelTask.PRODUCT_BOT,
+        primary="gpt-4.1-mini",
+        fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
+    )
+    # Patient-facing translation (preferred AI language). Cheap tier — the
+    # deterministic post-checks in TranslationService guard fidelity.
+    registry.set_task_route(
+        ModelTask.TRANSLATION,
         primary="gpt-4.1-mini",
         fallbacks=["gemini-2.5-flash", "claude-haiku-4-5-20251001"],
     )

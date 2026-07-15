@@ -12,16 +12,21 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+from lib.ai_foundation.models.gateway import ModelGateway
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
 from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
-from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_insight_tracker,
+    get_model_gateway,
+)
 from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
 from .router import router
-from .utils import parse_patient_uuid
+from .utils import enforce_rate_limit, parse_patient_uuid
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +43,9 @@ class InsightHistoryItem(BaseModel):
     message: str
     suggested_query: str | None = None
     created_at: str
+    # Preferred-AI-language copy the user saw ({language, title, message,
+    # suggested_query}); title/message above stay the English originals.
+    translation: dict | None = None
 
 
 @router.get("/proactive-insights", response_model=SuccessResponse[list[InsightHistoryItem]])
@@ -59,6 +67,7 @@ async def get_insight_history(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    tracker: InsightTracker = Depends(get_insight_tracker),
 ):
     """Get recent proactive insight history for a patient.
 
@@ -71,9 +80,6 @@ async def get_insight_history(
         care_provider_access_service=care_provider_access_service,
     )
 
-    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
-
-    tracker: InsightTracker = container.resolve(InsightTracker)
     docs = await tracker.get_history(
         str(verified_pid),
         limit=limit,
@@ -91,6 +97,7 @@ async def get_insight_history(
             message=doc.get("message", ""),
             suggested_query=doc.get("suggested_query"),
             created_at=str(doc.get("created_at", "")),
+            translation=doc.get("translation"),
         )
         for doc in docs
     ]
@@ -129,17 +136,17 @@ async def submit_insight_feedback(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    tracker: InsightTracker = Depends(get_insight_tracker),
+    gateway: ModelGateway = Depends(get_model_gateway),
 ):
     """Submit feedback on a proactive insight.
 
     Logs to Langfuse as a score for quality tracking.
     """
-    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
-    from lib.ai_foundation.models.gateway import ModelGateway
+    await enforce_rate_limit(current_actor)
 
     recorded = False
     try:
-        tracker: InsightTracker = container.resolve(InsightTracker)
         doc = await tracker.get_by_insight_id(payload.insight_id)
         if not doc or not doc.get("patient_id"):
             raise HTTPException(status_code=404, detail="Insight not found")
@@ -151,7 +158,6 @@ async def submit_insight_feedback(
         trace_id = doc.get("trace_id") if doc else None
         if not trace_id:
             raise ValueError("No trace_id found for insight feedback")
-        gateway: ModelGateway = container.resolve(ModelGateway)
         gateway.log_score(
             trace_id=trace_id,
             name="insight_feedback",

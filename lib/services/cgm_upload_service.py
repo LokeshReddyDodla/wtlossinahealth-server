@@ -21,7 +21,7 @@ from lib.utils.libre_view_sensor_report_generator import SensorLifecycleReportGe
 from lib.utils.postgres_session_decorator import with_postgres_session
 from lib.workers.arq.config import Queues
 from lib.workers.arq.redis import enqueue_job
-from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_sync
+from lib.workers.tasks.cgm.enqueue import enqueue_cgm_report_generation_async
 
 
 class CGMUploadService:
@@ -57,7 +57,7 @@ class CGMUploadService:
 
             await self._update_last_sync(postgres_session, patient_id, "libreview", end_time)
 
-            enqueue_cgm_report_generation_sync(patient_id, report_periods)
+            await enqueue_cgm_report_generation_async(patient_id, report_periods)
 
             # Gamification hook (fire-and-forget)
             try:
@@ -177,7 +177,7 @@ class CGMUploadService:
 
             await self._update_last_sync(postgres_session, patient_id, "sinocare", end_time)
 
-            enqueue_cgm_report_generation_sync(patient_id, report_periods)
+            await enqueue_cgm_report_generation_async(patient_id, report_periods)
 
             # Gamification hook (fire-and-forget)
             try:
@@ -227,7 +227,7 @@ class CGMUploadService:
             report_periods = self._generate_report_periods(lifecycle_df)
 
             await self._update_last_sync(postgres_session, patient_id, "linx", end_time)
-            enqueue_cgm_report_generation_sync(patient_id, report_periods)
+            await enqueue_cgm_report_generation_async(patient_id, report_periods)
 
             # Gamification hook (fire-and-forget)
             try:
@@ -296,7 +296,7 @@ class CGMUploadService:
 
         df = df_raw[required_cols].copy()
         df["timestamp"] = pd.to_datetime(
-            df["time point"], errors="coerce"
+            df["time point"], dayfirst=True, errors="coerce"
         ).dt.tz_localize(None)
         df = df.dropna(subset=["timestamp"])
 

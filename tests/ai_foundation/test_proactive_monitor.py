@@ -251,10 +251,15 @@ class TestProactiveMonitorAgent:
         agent = _make_agent(qdrant=qdrant)
         await agent.scan_patient("p123", "Sarah")
 
-        qdrant.retrieve_filtered.assert_called_once()
-        call_args = qdrant.retrieve_filtered.call_args[0][0]
-        assert call_args.patient_ids == ["p123"]
-        assert "meal" in call_args.data_types
+        # Two fetches: the main scan-data fetch + the medications fetch
+        # (medications previously crashed on a missing `query` field and
+        # never reached the retriever — fixed, so both calls happen now).
+        assert qdrant.retrieve_filtered.call_count == 2
+        scan_call = qdrant.retrieve_filtered.call_args_list[0][0][0]
+        assert scan_call.patient_ids == ["p123"]
+        assert "meal" in scan_call.data_types
+        meds_call = qdrant.retrieve_filtered.call_args_list[1][0][0]
+        assert meds_call.data_types == ["medication"]
 
     @pytest.mark.asyncio
     async def test_scan_patient_no_data(self):
@@ -271,8 +276,10 @@ class TestProactiveMonitorAgent:
         gateway.extract.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_scan_llm_failure_fallback(self):
-        """If LLM extraction fails, return static fallback insight."""
+    async def test_scan_llm_failure_stays_silent(self):
+        """LLM failure = NO insight, no fallback push. A content-free
+        'open the app' push helped nobody, and recording it dedup-blocked
+        real insights for 24h while masking provider outages."""
         gateway = AsyncMock()
         gateway.extract = AsyncMock(side_effect=Exception("LLM down"))
         gateway.set_langfuse_context = MagicMock()
@@ -283,9 +290,7 @@ class TestProactiveMonitorAgent:
         result = await agent.scan_patient("p_fail", "Sarah")
 
         assert result.error is None  # outer scan didn't crash
-        assert result.has_insights is True
-        assert result.insights[0].category == InsightCategory.GENERAL
-        assert "health check" in result.insights[0].title.lower() or "morning brief" in result.insights[0].title.lower()
+        assert result.has_insights is False  # silence + ERROR log, retry next scan
 
     @pytest.mark.asyncio
     async def test_scan_publishes_events(self):
@@ -575,7 +580,7 @@ class TestInsightTracker:
         store, collection = _make_mock_mongo_store()
         tracker = InsightTracker(store)
         await tracker.ensure_indexes()
-        assert collection.create_index.call_count == 3
+        assert collection.create_index.call_count == 6
 
     @pytest.mark.asyncio
     async def test_collection_name(self):
@@ -632,3 +637,141 @@ class TestTimezoneScheduling:
         from lib.ai_foundation.agents.proactive_monitor.scheduling import is_within_scan_window
         result = is_within_scan_window(None)
         assert isinstance(result, bool)
+
+
+class TestPromptCacheStability:
+    """CACHE INVARIANT: scan system prompts must be byte-identical across
+    patients in a batch — per-patient values (name, greeting) ride in the
+    USER message. Provider prompt caching is prefix-based; one stable system
+    prompt per batch means patient 2..N read it from cache."""
+
+    _PLACEHOLDER = __import__("re").compile(r"\$\{?[a-z_]+\}?")
+
+    async def _capture(self, agent, method, **kwargs):
+        await method(**kwargs)
+        call = agent.gateway.extract.call_args
+        messages = call.kwargs["messages"]
+        system = [m["content"] for m in messages if m["role"] == "system"]
+        user = [m["content"] for m in messages if m["role"] == "user"]
+        return "\n".join(system), "\n".join(user)
+
+    def _scan_kwargs(self, name, pid, trigger=None):
+        return dict(
+            context_parts=["MEALS:\n- Lunch 80g carbs"],
+            greeting="Good morning",
+            scan_label="today so far",
+            scan_period="morning",
+            patient_id=pid,
+            patient_name=name,
+            domain_counts={"meal": 1},
+            trigger=trigger,
+        )
+
+    @pytest.mark.asyncio
+    async def test_cron_scan_system_prompt_stable_across_patients(self):
+        agent = _make_agent()
+        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1"))
+        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2"))
+
+        assert sys_a == sys_b, "cron scan system prompt varies per patient — breaks batch caching"
+        assert "PATIENT: Asha" in user_a and "Good morning" in user_a
+        assert "PATIENT: Rohan" in user_b
+        assert "Asha" not in sys_a and "Rohan" not in sys_b
+        assert not self._PLACEHOLDER.search(sys_a), f"unsubstituted placeholder in: {self._PLACEHOLDER.search(sys_a)}"
+
+    @pytest.mark.asyncio
+    async def test_event_scan_system_prompt_stable_across_patients(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        trig = EventTrigger.MEAL_LOGGED
+        sys_a, user_a = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Asha", "p1", trigger=trig))
+        sys_b, user_b = await self._capture(agent, agent._llm_scan_insights, **self._scan_kwargs("Rohan", "p2", trigger=trig))
+
+        assert sys_a == sys_b
+        assert "PATIENT: Asha" in user_a and "PATIENT: Rohan" in user_b
+        assert not self._PLACEHOLDER.search(sys_a)
+
+    @pytest.mark.asyncio
+    async def test_daily_brief_system_prompt_stable_across_patients(self):
+        agent = _make_agent()
+        kw_a = self._scan_kwargs("Asha", "p1"); kw_a.pop("trigger")
+        kw_b = self._scan_kwargs("Rohan", "p2"); kw_b.pop("trigger")
+        sys_a, user_a = await self._capture(agent, agent._llm_daily_brief, **kw_a)
+        sys_b, user_b = await self._capture(agent, agent._llm_daily_brief, **kw_b)
+
+        assert sys_a == sys_b
+        assert "PATIENT: Asha" in user_a and "GREETING: 'Good morning'" in user_a
+        assert "PATIENT: Rohan" in user_b
+        assert not self._PLACEHOLDER.search(sys_a)
+
+
+class TestMealTotalsComputed:
+    """Meal arithmetic happens in code, not in the LLM — wrong sums in a
+    notification are a clinical-credibility bug (dietitian review 30/06)."""
+
+    def test_macros_from_production_nutrition_dict_and_flat_keys(self):
+        prod = {"nutrition": {"calories": 480, "carbohydrates": 74, "proteins": 9, "fiber": 5}}
+        flat = {"calories": 240, "carbs_g": 14, "protein_g": 11, "fiber_g": 5}
+        assert ProactiveMonitorAgent._meal_macros(prod) == (480.0, 74.0, 9.0, 5.0)
+        assert ProactiveMonitorAgent._meal_macros(flat) == (240.0, 14.0, 11.0, 5.0)
+        assert ProactiveMonitorAgent._meal_macros({}) == (None, None, None, None)
+
+    def test_sitting_totals_within_window_only(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        t0 = 1_000_000_000_000.0
+        trigger_rec = {"start_time": t0, "calories": 60, "carbs_g": 12, "protein_g": 2, "fiber_g": 4}
+        meals = [
+            {"start_time": t0 - 20 * 60 * 1000, "calories": 240, "carbs_g": 14, "protein_g": 11, "fiber_g": 5},
+            {"start_time": t0 - 60 * 60 * 1000, "calories": 95, "carbs_g": 18, "protein_g": 3, "fiber_g": 1},
+            # 7 hours earlier — a different meal, must NOT be in the sitting
+            {"start_time": t0 - 7 * 3600 * 1000, "calories": 480, "carbs_g": 74, "protein_g": 9, "fiber_g": 5},
+        ]
+        section = agent._meal_totals_section(
+            meals, trigger=EventTrigger.MEAL_LOGGED, trigger_record=trigger_rec,
+        )
+        assert "THIS SITTING" in section and "2 co-logged" in section
+        assert "395 kcal" in section      # 60+240+95, excludes the 480
+        assert "44g carbs" in section     # 12+14+18
+        assert "16g protein" in section
+        assert "10g fiber" in section
+
+    def test_single_item_sitting_returns_none(self):
+        from lib.ai_foundation.agents.proactive_monitor.contracts import EventTrigger
+        agent = _make_agent()
+        assert agent._meal_totals_section(
+            [], trigger=EventTrigger.MEAL_LOGGED,
+            trigger_record={"start_time": 1.0, "calories": 300},
+        ) is None
+
+    def test_cron_day_totals(self):
+        agent = _make_agent()
+        meals = [
+            {"nutrition": {"calories": 180, "carbohydrates": 32, "proteins": 4, "fiber": 2}},
+            {"nutrition": {"calories": 240, "carbohydrates": 38, "proteins": 9, "fiber": 5}},
+        ]
+        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
+        assert "MEAL TOTALS TODAY" in section
+        assert "420 kcal" in section and "13g protein" in section
+
+    def test_missing_macro_is_unknown_not_zero(self):
+        """A record with no fiber field must not produce '0g fiber' — the
+        LLM turns that into 'your meal had 0g fiber' (dietitian-visible bug)."""
+        agent = _make_agent()
+        meals = [
+            {"calories": 320, "carbs_g": 28, "protein_g": 18},  # no fiber field
+            {"calories": 200, "carbs_g": 30, "protein_g": 6},
+        ]
+        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
+        assert "fiber" not in section
+        assert "520 kcal" in section and "24g protein" in section
+
+    def test_partial_macro_data_marked(self):
+        agent = _make_agent()
+        meals = [
+            {"calories": 300, "fiber_g": 6},
+            {"calories": 200},  # no fiber
+        ]
+        section = agent._meal_totals_section(meals, trigger=None, trigger_record=None)
+        assert "at least 6g fiber" in section
+        assert "lack full macro data" in section

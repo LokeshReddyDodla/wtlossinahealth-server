@@ -1,0 +1,72 @@
+# Golden suite for the fact extractor — the companion flywheel.
+# The agent asks; the patient answers; the answer must become a durable,
+# self-contained fact. Non-answers (denials, closers, topic changes) must not.
+# Deterministic checks only — fast and judge-free.
+#
+# Run: .venv/bin/python -m evals.run --suite evals/golden/fact_extraction.yaml
+
+target: fact_extraction
+
+cases:
+  - id: fx_short_answer_meal_timing
+    category: flywheel
+    critical: true
+    question: "Your glucose ran higher on Tuesday night — did dinner run late that evening?"
+    reply: "yes, we ate around 11pm"
+    checks:
+      expect_keys: ["meal|dinner|eating|timing|habit"]
+      expect_value_mentions: ["11", "late|dinner"]
+
+  - id: fx_bare_yes_resolves_against_question
+    category: flywheel
+    critical: true
+    question: "Quick check so I can tailor suggestions — are you vegetarian?"
+    reply: "yes"
+    checks:
+      expect_keys: ["dietary|diet"]
+      expect_value_mentions: ["vegetarian"]
+
+  - id: fx_denial_stores_nothing
+    category: guard
+    critical: true
+    question: "Quick check so I can tailor suggestions — are you vegetarian?"
+    reply: "no"
+    checks:
+      expect_no_facts: true
+
+  - id: fx_denial_with_alternative
+    category: flywheel
+    question: "Are you vegetarian?"
+    reply: "no, but I don't eat beef"
+    checks:
+      expect_keys: ["dietary|diet|food"]
+      expect_value_mentions: ["beef"]
+
+  - id: fx_closer_stores_nothing
+    category: guard
+    question: "Want me to keep an eye on your overnight numbers this week?"
+    reply: "ok thanks"
+    checks:
+      expect_no_facts: true
+
+  - id: fx_ignored_question_new_topic
+    category: guard
+    question: "Did dinner run late on Tuesday?"
+    reply: "what was my time in range last week?"
+    checks:
+      expect_no_facts: true
+
+  - id: fx_statement_without_context
+    category: regression
+    reply: "by the way I'm allergic to peanuts"
+    checks:
+      expect_keys: ["allergy"]
+      expect_value_mentions: ["peanut"]
+
+  - id: fx_wake_time_answer
+    category: flywheel
+    question: "What time do you usually wake up? It affects how I read your fasting numbers."
+    reply: "around 6"
+    checks:
+      expect_keys: ["wake|sleep|routine|schedule|morning|fasting"]
+      expect_value_mentions: ["6"]

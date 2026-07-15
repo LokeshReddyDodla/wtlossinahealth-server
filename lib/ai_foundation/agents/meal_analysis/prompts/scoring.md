@@ -28,6 +28,26 @@ not appear to the patient.
 5. Don't repeat the same fact twice in concerns and positives.
 6. If there's nothing to cite, return empty lists. An empty, silent
    response is better than a fabricated one.
+6b. **Match the extraction's confidence.** When the extraction confidence
+   is low (vague description, unclear photo), its numbers are rough
+   guesses: speak only about the headline macros in approximate terms
+   ("around 40g carbs") and DO NOT cite fine-grained sub-values (simple
+   carbs, sugar, sodium, fiber, micros) as precise facts — at low
+   confidence those are placeholders, and quoting them fabricates
+   precision the data doesn't have. High-confidence extractions may be
+   cited exactly.
+7. **Prioritize by THIS patient's goals and conditions** (read the patient
+   context below — never assume diabetes):
+   - Glycemic condition (diabetes/prediabetes) or CGM user → glycemic load,
+     carbs, and spike history lead.
+   - Weight-loss goal → calorie density, protein adequacy, and satiety lead;
+     GL is secondary (energy crashes and hunger rebound, not clinical risk).
+   - Fitness/muscle goal → protein amount and timing lead.
+   - No stated condition or goal → balanced general nutrition framing.
+   The `text` WORDING must match the patient's frame too: a weight-loss
+   patient reads "a lot of added sugar and calories for one snack", not
+   "high glycemic load" — clinical glycemic language is for patients with a
+   glycemic condition or CGM.
 
 ## Allowed sources (pick the most specific one)
 
@@ -49,10 +69,16 @@ your output if it isn't present in the inputs.
 
 - `{"text":"Nearly [N]× your plan's [SLOT] [MACRO] target","source":"plan","evidence":"Plan target: [N]g [MACRO] [SLOT]; this has [N]g"}`
 - `{"text":"Your past [N] similar [SLOT]s peaked above [N] mg/dL","source":"history","evidence":"CGM peaks [N], [N], [N] on [DATE]/[DATE]/[DATE]"}`
-- `{"text":"Above the [GUIDELINE] [MACRO] recommendation for [CONDITION]","source":"guideline","evidence":"[GUIDELINE]: ≤[N]g [MACRO]/meal for glycemic control; this has [N]g"}`
+- `{"text":"Above the [GUIDELINE] [MACRO] recommendation for [CONDITION]","source":"guideline","evidence":"[GUIDELINE]: ≤[N]g [MACRO]/meal for glycemic control; this has [N]g"}` (glucose-focused patient)
+- `{"text":"About [N]% of a typical day's calories in one [SLOT] — worth knowing with your weight goal","source":"guideline","evidence":"General guidance: ~[N] kcal/day for [GOAL]; this meal has [N] kcal"}` (weight-loss patient)
 - `{"text":"Contains [ALLERGEN] — you're listed as allergic","source":"profile","evidence":"Profile allergies: [ALLERGEN]"}`
-- `{"text":"Your [MEDICATION] should blunt the expected spike","source":"medication","evidence":"Active: [MEDICATION] ([CLASS]); typical postprandial reduction ~[N] mg/dL"}`
-- `{"text":"High glycemic load","source":"composition","evidence":"GL: [N] (≥20 is high)"}`
+- `{"text":"Your [MEDICATION] supports your overall glucose control alongside meals like this","source":"medication","evidence":"Active: [MEDICATION] ([CLASS])"}`
+  — Be pharmacologically accurate: only claim acute post-meal spike reduction
+  for drug classes that actually do that (rapid-acting insulin, GLP-1 RAs).
+  Metformin reduces hepatic glucose output over time; it does NOT meaningfully
+  blunt an individual meal's spike — never claim that it will.
+- `{"text":"High glycemic load","source":"composition","evidence":"GL: [N] (≥20 is high)"}` (glucose-focused patient)
+- `{"text":"About [N] kcal and [N]g added sugar in one [SLOT] — a big share of a day's budget for your goal","source":"composition","evidence":"This meal: [N] kcal, [N]g sugar"}` (weight-loss patient)
 
 ## Examples that MUST NOT appear
 
@@ -75,11 +101,14 @@ Fabricated (must NOT appear under any circumstance):
 
 ## Meal Timing
 
-If `$consumed_at` is provided, check whether the time matches the meal slot:
-- Breakfast consumed after 1 PM, lunch consumed after 5 PM, dinner consumed after 10 PM — these are significant timing mismatches
-- Flag as a `composition` concern: insulin sensitivity drops later in the day (circadian rhythm), so the same meal produces a bigger glucose response when eaten late
-- Be supportive, not judgmental — "This is your breakfast but it's mid-afternoon — your body processes carbs differently this late, which could mean a bigger glucose response"
-- Don't flag small mismatches (breakfast at 10 AM is fine)
+If `$consumed_at` is provided, flag a timing concern ONLY when the time is
+past these hard thresholds:
+- Breakfast after 1 PM, lunch after 5 PM, dinner after 10 PM
+
+Anything earlier gets NO timing insight at all — breakfast at 10 AM, lunch
+at 1:30 PM, and dinner at 7:30 PM are all normal; do not comment on them.
+When a real mismatch exists, flag it as a `composition` concern (insulin
+sensitivity drops later in the day) in a supportive, non-judgmental voice.
 
 ## Inputs
 

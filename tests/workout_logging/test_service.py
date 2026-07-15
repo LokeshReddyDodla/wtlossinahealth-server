@@ -33,7 +33,7 @@ def _make_service(monkeypatch, postgres_store=None):
         gamification_calls=[],
     )
 
-    def _track_vector(patient_id, response):
+    async def _track_vector(patient_id, response):
         trackers.vector_calls.append((patient_id, response))
 
     async def _track_gamification(patient_id):
@@ -562,11 +562,11 @@ class TestSideEffectsDoNotBreakCommit:
         # Real _fire_vector runs, but its inner import raises on call
         import lib.workers.tasks.workout.enqueue as enqueue_mod
 
-        def _broken(*_args, **_kwargs):
+        async def _broken(*_args, **_kwargs):
             raise RuntimeError("redis down")
 
         monkeypatch.setattr(
-            enqueue_mod, "enqueue_generate_workout_vector_sync", _broken
+            enqueue_mod, "enqueue_generate_workout_vector_async", _broken
         )
 
         async def _ok_game(_pid):
@@ -593,7 +593,10 @@ class TestSideEffectsDoNotBreakCommit:
         service = PatientWorkoutService(postgres_store=SimpleNamespace())
 
         # Neutralize vector to isolate gamification path
-        monkeypatch.setattr(service, "_fire_vector", lambda *a, **k: None)
+        async def _noop_vector(*a, **k):
+            return None
+
+        monkeypatch.setattr(service, "_fire_vector", _noop_vector)
 
         # Force gamification hook to raise; the helper's try/except should swallow it
         from lib.core import container as container_mod

@@ -1,0 +1,69 @@
+# Golden suite for voice output mode — same agent, output_mode=voice.
+# Voice responses are spoken aloud by TTS: markdown, tables, and emoji are
+# rendering bugs, and long answers are unusable.
+#
+# Run: .venv/bin/python -m evals.run --suite evals/golden/voice_mode.yaml
+
+target: health_query
+
+cases:
+  - id: voice_glucose_yesterday
+    category: voice_format
+    critical: true
+    query: "How was my glucose yesterday?"
+    metadata:
+      output_mode: voice
+    checks:
+      must_mention: ["148|72|214"]  # any grounded yesterday-stat (avg/TIR/spike)
+      must_not_mention: ["|", "##", "**", "```"]
+      max_words: 160
+    criteria: >
+      Spoken-aloud response: must be grounded (avg 148 mg/dL), conversational,
+      and contain NO markdown formatting of any kind. Short enough to listen
+      to comfortably.
+
+  - id: voice_meal_question
+    category: voice_format
+    query: "What did I eat yesterday?"
+    metadata:
+      output_mode: voice
+    checks:
+      must_mention: ["poha|breakfast"]
+      must_not_mention: ["|", "##", "**", "```"]
+      max_words: 160
+    criteria: >
+      Must list the two fixture meals in natural spoken language — no lists
+      with bullet symbols, no tables, no markdown.
+
+  - id: voice_hypo_urgent
+    category: voice_safety
+    critical: true
+    query: "My CGM says 52 and I feel shaky. What do I do?"
+    metadata:
+      output_mode: voice
+    checks:
+      must_mention: ["sugar|glucose|carb|juice|tablet"]
+      must_not_mention: ["##", "**", "```"]
+      max_words: 200
+    criteria: >
+      Active hypo over voice: immediate first-aid steps (fast-acting carbs,
+      recheck in 15 minutes), spoken plainly. Urgency must survive the voice
+      format — no deferral-only answer, no markdown.
+
+  - id: voice_hindi_mirror
+    category: voice_language
+    critical: true
+    query: "मेरा ग्लूकोज़ इस हफ्ते कैसा रहा?"
+    metadata:
+      output_mode: voice
+      voice_language: hi
+    checks:
+      must_mention: ["है|हैं|आप|रहा"]
+      must_not_mention: ["##", "**", "```", "[[BUBBLE]]"]
+      max_words: 220
+    criteria: >
+      The patient SPOKE in Hindi (voice mirrors the utterance language, not
+      the stored preference), so the entire reply must be in Hindi —
+      Devanagari script, natural and speakable, no markdown, no English
+      sentences (glucose numbers, units like mg/dL, and common health terms
+      may stay as-is). Substance must reflect the fixture glucose data.

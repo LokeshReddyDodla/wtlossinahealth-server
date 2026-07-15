@@ -187,33 +187,4 @@ def _suggest(
 
 
 def _to_ref(meal: dict[str, Any]) -> PatientMealRef | None:
-    meal_id = meal.get("meal_id")
-    if not meal_id:
-        return None
-
-    try:
-        from uuid import UUID
-        meal_uuid = UUID(str(meal_id))
-    except (ValueError, TypeError):
-        return None
-
-    slot_raw = (meal.get("slot") or "").strip().lower()
-    try:
-        slot = MealSlot(slot_raw)
-    except ValueError:
-        return None
-
-    consumed_at_str = meal.get("consumed_at")
-    try:
-        consumed_at = (
-            datetime.fromisoformat(consumed_at_str) if consumed_at_str else datetime.utcnow()
-        )
-    except ValueError:
-        consumed_at = datetime.utcnow()
-
-    return PatientMealRef(
-        meal_id=meal_uuid,
-        meal_name=meal.get("name") or "",
-        consumed_at=consumed_at,
-        slot=slot,
-    )
+    return PatientMealRef.from_payload(meal)

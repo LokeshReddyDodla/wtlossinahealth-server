@@ -196,7 +196,7 @@ class ProactiveMonitorAgent(BaseAgent):
         point_id = hashlib.md5(entity_id.encode()).hexdigest()
 
         try:
-            store = QdrantStore()
+            store = QdrantStore()  # process-wide singleton — cheap to "construct"
             async with store.get_client() as client:
                 points = await client.retrieve(
                     collection_name=QDRANT_COLLECTION,
@@ -328,7 +328,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 trace_id=trace_id,
                 name="proactive_monitor_event" if is_event else "proactive_monitor",
                 input_text=(data_text[:500] if data_text
-                            else trigger_record.get("text_repr", "(trigger record only)")[:500] if trigger_record
+                            else (trigger_record.get("text_repr") or "(trigger record only)")[:500] if trigger_record
                             else "(no data)"),
                 metadata={
                     "agent": self.agent_id,
@@ -596,16 +596,120 @@ class ProactiveMonitorAgent(BaseAgent):
 
             sections.append("\n".join(lines))
 
+        # Meal totals are computed in CODE, never by the LLM — small models
+        # mis-add lists of numbers, and a wrong total in a notification is a
+        # clinical-credibility bug (dietitian review 30/06).
+        totals = self._meal_totals_section(
+            by_type.get(HealthDataType.MEAL.value, []),
+            trigger=trigger,
+            trigger_record=exclude_record,
+        )
+        if totals:
+            # First section, right under the trigger block — sitting totals are
+            # the frame everything else must be read in.
+            sections.insert(0, totals)
+
         if trigger is not None:
             header = f"# Supporting Context\n"
         else:
             header = f"# Health Data for {patient_name} on {scan_date}\n"
         return header + "\n\n".join(sections), domain_counts
 
-    _GOAL_KEYS = frozenset({
-        "health_goal", "weight_goal", "glucose_target_tir",
-        "weight_target", "steps_target", "sleep_target", "calorie_target",
-    })
+    # Items logged within this window of the trigger meal are one sitting.
+    _SITTING_WINDOW_MS = 90 * 60 * 1000
+
+    @staticmethod
+    def _meal_macros(p: dict[str, Any]) -> tuple[float | None, ...]:
+        """(kcal, carbs, protein, fiber) from a meal payload — None when the
+        record carries no value for that macro. Missing is NOT zero: a record
+        without a fiber field says nothing about fiber, and rendering it as
+        0g makes the LLM claim a gap that may not exist.
+
+        Production payloads nest macros under ``nutrition`` (calories,
+        proteins, carbohydrates, fiber); some sources use flat keys.
+        """
+        n = p.get("nutrition") or {}
+
+        def pick(*candidates: tuple[dict, str]) -> float | None:
+            for src, key in candidates:
+                v = src.get(key)
+                if isinstance(v, (int, float)):
+                    return float(v)
+            return None
+
+        return (
+            pick((n, "calories"), (p, "calories")),
+            pick((n, "carbohydrates"), (p, "carbs_g")),
+            pick((n, "proteins"), (p, "protein_g")),
+            pick((n, "fiber"), (p, "fiber_g")),
+        )
+
+    def _meal_totals_section(
+        self,
+        meals: list[dict[str, Any]],
+        *,
+        trigger: EventTrigger | None,
+        trigger_record: dict[str, Any] | None,
+    ) -> str | None:
+        """Pre-computed meal totals the LLM can trust instead of adding
+        numbers itself.
+
+        * Cron sweep: totals across today's fetched meals.
+        * Meal event: totals for THIS SITTING — the trigger meal plus any
+          co-logged items within 90 minutes of it.
+        """
+        def fmt(label: str, items: list[dict[str, Any]]) -> str:
+            names = (" kcal", "g carbs", "g protein", "g fiber")
+            sums = [0.0] * 4
+            counts = [0] * 4
+            for m in items:
+                for i, v in enumerate(self._meal_macros(m)):
+                    if v is not None:
+                        sums[i] += v
+                        counts[i] += 1
+            parts: list[str] = []
+            partial = False
+            for i, unit in enumerate(names):
+                if counts[i] == 0:
+                    continue  # no record has this macro — unknown, not zero
+                prefix = "at least " if counts[i] < len(items) else ""
+                partial = partial or counts[i] < len(items)
+                parts.append(f"{prefix}{sums[i]:.0f}{unit}")
+            if not parts:
+                return f"{label}: {len(items)} items — no macro data recorded"
+            note = " (some items lack full macro data)" if partial else ""
+            return f"{label}: {len(items)} items — approx {', '.join(parts)}{note}"
+
+        if trigger == EventTrigger.MEAL_LOGGED and trigger_record is not None:
+            t0 = trigger_record.get("start_time")
+            if not isinstance(t0, (int, float)):
+                return None
+            sitting = [trigger_record] + [
+                m for m in meals
+                if isinstance(m.get("start_time"), (int, float))
+                and abs(m["start_time"] - t0) <= self._SITTING_WINDOW_MS
+            ]
+            if len(sitting) < 2:
+                return None  # single-item meal — the record speaks for itself
+            return (
+                "## THIS SITTING — trigger item + "
+                f"{len(sitting) - 1} co-logged item(s) within 90 min. COMPUTED "
+                "TOTALS, judge the meal by these (do not re-add numbers "
+                "yourself):\n- " + fmt("Combined sitting", sitting)
+            )
+
+        if trigger is None and meals:
+            return (
+                "## MEAL TOTALS TODAY — COMPUTED, trust these sums (do not "
+                "re-add numbers yourself):\n- " + fmt("Total so far", meals)
+            )
+        return None
+
+    # Derived from the canonical memory schema — a goal key added to the
+    # fact extractor must appear in the monitor's goals section automatically.
+    from lib.ai_foundation.agents.core.fact_extractor import CANONICAL_MEMORY_KEYS as _CMK
+    _GOAL_KEYS = frozenset(k for k, v in _CMK.items() if v["category"] == "goal")
+    del _CMK
 
     async def _load_facts(self, patient_id: str) -> str:
         """Load patient facts from memory, with goals in a dedicated section."""
@@ -627,7 +731,9 @@ class ProactiveMonitorAgent(BaseAgent):
                 lines = [f"- {f.key}: {f.value}" for f in other]
                 parts.append("Patient facts:\n" + "\n".join(lines))
             return "\n\n".join(parts)
-        except Exception:
+        except Exception as exc:
+            # Degrades to a scan without facts — must be visible, not silent.
+            logger.warning("Failed to load facts for %s: %s", patient_id, exc)
             return ""
 
     async def _load_medications(self, patient_id: str) -> str:
@@ -635,6 +741,7 @@ class ProactiveMonitorAgent(BaseAgent):
         try:
             results = await self._qdrant.retrieve_filtered(
                 RetrievalRequest(
+                    query="",  # required field — omitting it made this a silent no-op
                     patient_ids=[patient_id],
                     data_types=[HealthDataType.MEDICATION.value],
                     limit=5,
@@ -646,8 +753,9 @@ class ProactiveMonitorAgent(BaseAgent):
                     text = r.payload.get("text_repr", "")
                     if text:
                         return text
-        except Exception:
-            pass
+        except Exception as exc:
+            # Degrades to a scan without meds context — must be visible, not silent.
+            logger.warning("Failed to load medications for %s: %s", patient_id, exc)
         return ""
 
     async def _load_metabolic_profile(self, patient_id: str) -> str:
@@ -717,6 +825,17 @@ class ProactiveMonitorAgent(BaseAgent):
             # the anchor metadata is the event data itself.
             if trigger_record is not None:
                 event_text = trigger_record.get("text_repr") or self._format_record(trigger_record)
+                # Small models weight nearby instructions most: when the item is
+                # part of a multi-item sitting, say so INSIDE the trigger block,
+                # not only in the distant system prompt.
+                if data_text and "## THIS SITTING" in data_text:
+                    event_text += (
+                        "\n\nIMPORTANT: this item is one part of a multi-item sitting — "
+                        "see the computed THIS SITTING totals below. React to the WHOLE "
+                        "sitting by those totals: praise it if the combined meal is "
+                        "genuinely good, flag it if it is heavy — but never judge this "
+                        "item alone."
+                    )
                 context_parts.append(
                     f"# TRIGGER EVENT — this is what just happened, your insight MUST be about this:\n{event_text}"
                 )
@@ -774,29 +893,30 @@ class ProactiveMonitorAgent(BaseAgent):
         Cron mode (trigger=None) → 1-3 insights via system_scan.md.
         Event mode (trigger set) → at most 1 insight via system_event_scan.md.
         """
+        # Per-patient values (name, greeting) ride in the USER message, not the
+        # system prompt — keeps the system prompt byte-identical across a whole
+        # scan batch so provider prompt caching can reuse it patient-to-patient.
         if trigger is not None:
             template_str = self._get_event_scan_prompt_template()
             system_prompt = Template(template_str).safe_substitute(
                 trigger_label=TRIGGER_LABELS[trigger],
-                greeting=greeting,
-                patient_name=patient_name,
                 categories=LLM_INSIGHT_CATEGORIES_PROMPT,
             )
+            patient_line = f"PATIENT: {patient_name}"
         else:
             template_str = self._get_scan_prompt_template()
             system_prompt = Template(template_str).safe_substitute(
-                greeting=greeting,
                 scan_label=scan_label,
                 scan_period=scan_period,
                 categories=LLM_INSIGHT_CATEGORIES_PROMPT,
-                patient_name=patient_name,
             )
+            patient_line = f"PATIENT: {patient_name}. GREETING: '{greeting}'"
 
         try:
             scan_insights, llm_meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "\n\n".join(context_parts)},
+                    {"role": "user", "content": "\n\n".join([patient_line, *context_parts])},
                 ],
                 response_model=ScanInsights,
                 task=ModelTask.CLASSIFICATION,
@@ -808,21 +928,14 @@ class ProactiveMonitorAgent(BaseAgent):
                 insight.patient_id = patient_id
             return insights, llm_meta
         except Exception as exc:
+            # Stay silent in BOTH modes: a content-free "open the app" push
+            # helps nobody, and recording one dedup-blocks real insights for
+            # 24h. ERROR (not warning) so provider outages surface in ops
+            # alerting; the next scan retries with real content.
             mode = trigger.value if trigger is not None else "cron"
-            logger.warning("Insight analysis failed (%s): %s", mode, exc, exc_info=True)
-            if trigger is not None:
-                # Event mode: stay silent rather than ship a templated message.
-                return [], None
-            counts = domain_counts or {}
-            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
-            return [HealthInsight(
-                category=InsightCategory.GENERAL,
-                severity=InsightSeverity.INFO,
-                title="📊 Your daily health check",
-                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
-                patient_id=patient_id,
-                suggested_query=f"How was my health {scan_label}?",
-            )], None
+            logger.error("Insight analysis failed (%s) — skipping, no fallback push: %s",
+                         mode, exc, exc_info=True)
+            return [], None
 
     async def _llm_daily_brief(
         self,
@@ -836,19 +949,20 @@ class ProactiveMonitorAgent(BaseAgent):
         domain_counts: dict[str, int] | None,
     ) -> tuple[list[HealthInsight], LLMResponse | None]:
         """Morning cron: produce a single DailyBrief via system_scan_brief.md."""
+        # Name/greeting in the USER message — system prompt stays byte-identical
+        # across the batch (see _llm_scan_insights).
         system_prompt = Template(self._get_brief_prompt_template()).safe_substitute(
-            greeting=greeting,
             scan_label=scan_label,
             scan_period=scan_period,
             categories=LLM_INSIGHT_CATEGORIES_PROMPT,
-            patient_name=patient_name,
         )
+        patient_line = f"PATIENT: {patient_name}. GREETING: '{greeting}'"
 
         try:
             brief, llm_meta = await self.gateway.extract(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "\n\n".join(context_parts)},
+                    {"role": "user", "content": "\n\n".join([patient_line, *context_parts])},
                 ],
                 response_model=DailyBrief,
                 task=ModelTask.CLASSIFICATION,
@@ -863,17 +977,10 @@ class ProactiveMonitorAgent(BaseAgent):
                 data={"categories_covered": [c.value for c in brief.categories_covered]},
             )], llm_meta
         except Exception as exc:
-            logger.warning("Daily brief analysis failed: %s", exc, exc_info=True)
-            counts = domain_counts or {}
-            summary = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items())
-            return [HealthInsight(
-                category=InsightCategory.GENERAL,
-                severity=InsightSeverity.INFO,
-                title="📋 Your morning brief",
-                body=f"{greeting} {patient_name}! We found {summary} {scan_label}. Open the app for details.",
-                patient_id=patient_id,
-                suggested_query=f"How was my health {scan_label}?",
-            )], None
+            # Same policy as _llm_scan_insights: no content-free fallback push.
+            logger.error("Daily brief analysis failed — skipping, no fallback push: %s",
+                         exc, exc_info=True)
+            return [], None
 
     async def _filter_insights(
         self,
@@ -920,11 +1027,14 @@ class ProactiveMonitorAgent(BaseAgent):
                     check = await self._insight_tracker.should_send(patient_id, category)
                     dedup_cache[category] = check
 
-                should_send, escalated_severity, _consecutive_days = check
+                should_send, escalated_severity, consecutive_days = check
                 if should_send:
                     escalated = InsightSeverity(escalated_severity)
                     if SEVERITY_RANK[escalated.value] > SEVERITY_RANK[insight.severity.value]:
                         insight.severity = escalated
+                    # Stash the streak so record_insight can skip re-deriving
+                    # it with another find_one (the tracker computed it here).
+                    insight.data["consecutive_days"] = consecutive_days
                     filtered.append(insight)
                 else:
                     logger.debug(
@@ -944,6 +1054,10 @@ class ProactiveMonitorAgent(BaseAgent):
         insight: HealthInsight,
         *,
         trigger: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        event_time: str | None = None,
+        translation: dict | None = None,
     ) -> None:
         """Record that an insight was actually sent as a notification.
 
@@ -968,6 +1082,9 @@ class ProactiveMonitorAgent(BaseAgent):
                 suggested_query=insight.suggested_query,
                 trace_id=insight.data.get("trace_id"),
                 trigger=trigger_val,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                translation=translation,
             )
             # Record dedup-only entries for each covered category (no insight_id)
             # so afternoon/evening scans correctly skip already-mentioned topics
@@ -991,7 +1108,13 @@ class ProactiveMonitorAgent(BaseAgent):
             suggested_query=insight.suggested_query,
             trace_id=insight.data.get("trace_id"),
             trigger=trigger_val,
-            consecutive_days=1 if is_event else None,
+            # Event scans are streak-1 by definition; cron scans reuse the
+            # value _filter_insights computed via should_send.
+            consecutive_days=1 if is_event else insight.data.get("consecutive_days"),
+            entity_type=entity_type,
+            entity_id=entity_id,
+            event_time=event_time,
+            translation=translation,
         )
 
     async def _publish_insight(self, insight: HealthInsight) -> None:

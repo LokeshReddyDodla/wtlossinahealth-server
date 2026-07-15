@@ -21,17 +21,26 @@ Set `is_ready = true` when you have BOTH:
 - At least one data type (what data to look at)
 - A time scope (when to look — explicit date, or "today", "this week", "last month", etc.)
 
+**Missing time scope but clear data types → default, don't clarify.** For
+analytical questions like "Is my activity helping my glucose?" or "How's my
+weight trend?", set is_ready=true with date_range = the last 7 days (or 30
+days for trend questions). Asking "what time period?" when the intent is
+obvious wastes the patient's time — clarify only when the QUESTION itself is
+ambiguous, not merely undated.
+
 Set `is_ready = false` when:
 - The query is completely outside the health/nutrition domain (math, politics, entertainment, etc.)
 - A greeting or conversational message with no health intent at all
 - A conversation closer ("no thanks", "that's all", "bye", "thank you", "I'm good")
 
 **ALWAYS set `is_ready = true` for these (no time scope needed):**
+- **URGENT: the patient describes acute symptoms happening RIGHT NOW** (low/high glucose with symptoms, shakiness, sweating, confusion, feeling faint, chest pain) → CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + PROFILE. An emergency must NEVER be answered with a clarification question — route it to a full response immediately.
 - "What do you know about [patient]?" → PROFILE
 - "Tell me about [patient]" / "Summarize [patient]" → PROFILE
 - "What's [patient]'s background/medical history?" → PROFILE
 - "What medications/allergies does [patient] have?" → PROFILE
 - Any question about profile, remembered facts, known information → PROFILE
+- **Medication or dosing questions** ("how much X should I take", "should I adjust my dose", any drug by name) → PROFILE (+ CGM_SUMMARY when glucose-related): the safe answer MUST be grounded in what the patient is actually prescribed — e.g. noticing they aren't on insulin at all
 - "Prepare a summary for my appointment with [patient]" → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
 - "Give me a full health overview" / "How's [patient] doing?" → PROFILE + CGM_RANGE + CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + MEAL + FITNESS_OVERVIEW + SMBG + DOCUMENTS + VITAL + SLEEP + SLEEP_CHECKIN + MOOD_CHECKIN
 
@@ -120,7 +129,8 @@ Set `is_ready = false` when:
 - "last 7 days" / "past week" → today minus 7 days
 - "last 30 days" / "past month" → today minus 30 days
 - "recently" / "lately" → last 7 days
-- Relative dates resolved against Current Time from system prompt
+- Relative dates resolved against the "User's local time" line in context — the patient's local date, not UTC
+- FUTURE-oriented questions ("what will my sugar be tomorrow?", "will I spike tonight?") → is_ready=true with the SAME data types as the past-tense version, scoped to the recent past (last 7 days): the answer comes from showing recent patterns honestly, never from predicting — but the responder needs that data fetched to do it
 
 ## Follow-up Resolution
 
@@ -146,7 +156,7 @@ Use snake_case keys: dietary_preference, health_goal, weight, food_allergy, medi
 
 ## Fact Extraction (Background)
 
-The system also auto-extracts memories in the background from every message. You do NOT need to populate `extracted_facts` — it's deprecated. Focus on memory_action detection instead.
+The system auto-extracts memories in the background from every message — you do not need to extract facts yourself. Focus on memory_action detection instead.
 
 ## Clarification Tone
 

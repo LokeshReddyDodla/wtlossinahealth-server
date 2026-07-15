@@ -64,6 +64,9 @@ class Patient(Base):
     locale = Column(String(50), nullable=True, default="Asia/Kolkata")
     timezone = Column(String(64), nullable=True)
     occupation = Column(String(120), nullable=True)
+    # Language the AI responds in ("en" | "hi" | "hi-Latn") — NOT app chrome
+    # locale. NOTE: the `locale` column above is misnamed legacy timezone data.
+    preferred_ai_language = Column(String(16), nullable=True, default="en")
     is_verified = Column(Boolean, default=False)
 
     profile_completion = Column(

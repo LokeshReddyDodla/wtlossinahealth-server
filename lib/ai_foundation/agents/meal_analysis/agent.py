@@ -62,6 +62,32 @@ async def _timed(coro: Any) -> tuple[Any, int]:
     return result, int((time.perf_counter() - t0) * 1000)
 
 
+_PRE_MEAL_FRESHNESS_MS = 15 * 60 * 1000  # 15 minutes
+
+
+def _fresh_pre_meal_glucose(context: Any) -> float | None:
+    """Extract the most recent CGM reading within 15 min as live pre-meal glucose."""
+    events = getattr(context, "cgm_events", None) or []
+    if not events:
+        return None
+    now_ms = int(getattr(context, "local_now", datetime.now(timezone.utc)).timestamp() * 1000)
+    best_time, best_val = 0, None
+    for e in events:
+        st = e.get("start_time")
+        if not isinstance(st, (int, float)):
+            continue
+        if st > best_time:
+            peak = e.get("peak_value") or e.get("min_value")
+            if peak is not None:
+                best_time, best_val = st, peak
+    if best_val is not None and (now_ms - best_time) <= _PRE_MEAL_FRESHNESS_MS:
+        try:
+            return float(best_val)
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 class MealAnalysisAgent(BaseAgent):
     """Preview-only meal analysis pipeline.
 
@@ -255,29 +281,50 @@ class MealAnalysisAgent(BaseAgent):
         trace_id: str,
         meal_hour: int | None = None,
     ) -> GlucosePrediction | None:
-        # ponytail: engine first, LLM fallback. No retry logic — if engine says None, LLM gets a shot.
         if self._metabolic:
             try:
                 m = extraction.total_macros
+                live_pre = _fresh_pre_meal_glucose(context)
                 meal = self._metabolic.build_meal_dict(
-                    {"carb": m.carbs, "protein": m.protein, "fiber": m.fiber, "cal": m.calories},
+                    {"carb": m.carbs, "protein": m.protein, "fat": m.fat, "fiber": m.fiber, "cal": m.calories, "pre": live_pre},
                     hour=meal_hour,
                 )
-                contract = await self._metabolic.assess(patient_id, meal)
-                raw = self._metabolic.to_glucose_prediction(contract)
-                if raw:
+                contract = await self._metabolic.assess(patient_id, meal, live_pre=live_pre)
+                raw = self._metabolic.to_glucose_prediction(contract, live_pre=live_pre)
+                if raw and raw.get("_show_number", True):
                     conf_map = {"high": ConfidenceLevel.HIGH, "medium": ConfidenceLevel.MEDIUM, "low": ConfidenceLevel.LOW}
+                    logger.info("metabolic engine predicted for %s: basis=%s range=%s-%s (rise=%s-%s, pre=%s), confidence=%s, source=%s",
+                                patient_id, raw["basis"], raw["range_mg_dl_low"], raw["range_mg_dl_high"],
+                                raw.get("rise_mg_dl_low"), raw.get("rise_mg_dl_high"),
+                                raw.get("pre_meal_mg_dl"), raw["confidence"], raw.get("_source"))
                     return GlucosePrediction(
                         range_mg_dl_low=raw["range_mg_dl_low"],
                         range_mg_dl_high=raw["range_mg_dl_high"],
+                        basis=raw["basis"],
+                        pre_meal_mg_dl=raw.get("pre_meal_mg_dl"),
+                        rise_mg_dl_low=raw.get("rise_mg_dl_low"),
+                        rise_mg_dl_high=raw.get("rise_mg_dl_high"),
+                        pre_meal_estimate_mg_dl=raw.get("pre_meal_estimate_mg_dl"),
+                        pre_meal_estimate_source=raw.get("pre_meal_estimate_source"),
                         peak_minutes_after=raw["peak_minutes_after"],
                         confidence=conf_map.get(raw["confidence"], ConfidenceLevel.MEDIUM),
                         n_similar_meals=raw["n_similar_meals"],
                         evidence=raw.get("evidence", []),
                         rationale=raw["rationale"],
                     )
+                c = contract.model_dump() if hasattr(contract, "model_dump") else contract
+                v31 = (c.get("v31") or {}) if raw else {}
+                logger.info("metabolic engine suppressed for %s: raw=%s, show_number=%s, has_cgm=%s, "
+                            "confidence_tier=%s, rise=%s-%s, mode=%s — falling back to LLM",
+                            patient_id, raw is not None, raw.get("_show_number") if raw else None,
+                            v31.get("has_cgm"), v31.get("confidence_tier"),
+                            raw.get("range_mg_dl_low") if raw else None,
+                            raw.get("range_mg_dl_high") if raw else None,
+                            c.get("output_mode") if raw else None)
             except Exception:
                 logger.exception("metabolic engine failed for %s, falling back to LLM", patient_id)
+        else:
+            logger.info("metabolic service not injected, using LLM for glucose prediction")
 
         return await self._glucose.predict(
             extraction=extraction,

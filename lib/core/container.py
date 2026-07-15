@@ -172,9 +172,10 @@ from lib.services.health_query_agent.service import HealthQueryAgentService
 
 # AI Foundation
 from lib.ai_foundation.config import settings as _ai_settings
-from lib.ai_foundation.models.registry import ModelRegistry, build_default_registry
+from lib.ai_foundation.models.registry import ModelRegistry, ModelTask, build_default_registry
 from lib.ai_foundation.models.circuit_breaker import CircuitBreaker
 from lib.ai_foundation.models.gateway import ModelGateway
+from lib.ai_foundation.translation import TranslationService
 from lib.ai_foundation.prompts.registry import PromptRegistry
 from lib.ai_foundation.memory.mongo_store import MongoMemoryStore
 from lib.ai_foundation.retrieval.qdrant import QdrantRetriever
@@ -1650,6 +1651,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Translation Service — patient-facing text in the preferred AI language
+container.register(
+    TranslationService,
+    lambda: TranslationService(
+        gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
 # Memory Store — cross-agent patient facts and conversation turns
 container.register(
     MongoMemoryStore,
@@ -1703,6 +1713,7 @@ container.register(
     lambda: MetabolicService(
         retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
         postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=container.resolve(ClickHouseStore),
     ),
     scope=Scope.singleton,
 )
@@ -1826,6 +1837,7 @@ container.register(
         coordinator=cast(Coordinator, container.resolve(Coordinator)),
         persistence=cast(PersistenceService, container.resolve(PersistenceService)),
         fact_extractor=cast(FactExtractor, container.resolve(FactExtractor)),
+        translator=cast(TranslationService, container.resolve(TranslationService)),
     ),
     scope=Scope.singleton,
 )
@@ -1894,11 +1906,15 @@ container.register(
     scope=Scope.singleton,
 )
 
+# Scorer/alternatives/glucose send text-only JSON — MEAL_REASONING routes them
+# to a text model instead of paying vision (gpt-4o) pricing. Only the
+# extractor sees the photo and stays on MEAL_ANALYSIS.
 container.register(
     MealScorer,
     lambda: MealScorer(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
@@ -1908,6 +1924,7 @@ container.register(
     lambda: AlternativesEngine(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
@@ -1917,6 +1934,7 @@ container.register(
     lambda: GlucosePredictor(
         gateway=cast(ModelGateway, container.resolve(ModelGateway)),
         prompt_registry=cast(PromptRegistry, container.resolve(PromptRegistry)),
+        model_task=ModelTask.MEAL_REASONING,
     ),
     scope=Scope.singleton,
 )
@@ -1995,6 +2013,7 @@ container.register(
         patient_resolver=cast(PatientNameResolver, container.resolve(PatientNameResolver)),
         settings=_voice_settings,
         upload_audio=_upload_voice_audio,
+        translation=cast(TranslationService, container.resolve(TranslationService)),
     ),
     scope=Scope.singleton,
 )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -117,8 +117,10 @@ for _domain, _types in DOMAIN_MAPPING.items():
     for _dt in _types:
         _TYPE_TO_DOMAIN[_dt] = _domain
 
-# Specialist domain names (domains that have specialist agents)
-SPECIALIST_DOMAINS = {"glucose", "nutrition", "fitness", "vitals", "sleep", "documents"}
+# Roles that see provider-formatted evidence (clinical framing, patient
+# named in third person). Everything else gets the patient framing. Any
+# role check MUST use this set — scattered ad-hoc tuples diverge.
+PROVIDER_VIEW_ROLES = frozenset({"care_provider", "research", "admin"})
 
 # Map DomainName enum to specialist domain key
 _DOMAIN_TO_SPECIALIST: dict[DomainName, str] = {
@@ -156,6 +158,28 @@ def resolve_specialist_domains(data_types: list[HealthDataType]) -> list[str]:
             if specialist:
                 specialists.add(specialist)
     return sorted(specialists)
+
+
+def expand_to_domain_types(data_types: list[HealthDataType]) -> list[HealthDataType]:
+    """Expand each requested type to its whole domain family (via DOMAIN_MAPPING).
+
+    A glucose question naming one type ("any spikes?") otherwise retrieves only
+    the intent extractor's narrow pick — e.g. daily summaries without the
+    rapid_spike/hypo EVENT records — and the agent then truthfully-but-wrongly
+    reports "no spikes" because the events were never fetched. Expanding to the
+    domain family makes the single-agent path fetch the same complete picture
+    the specialist path already does. Order-preserving and deduplicated.
+    """
+    seen: set[HealthDataType] = set()
+    out: list[HealthDataType] = []
+    for dt in data_types:
+        domain = _TYPE_TO_DOMAIN.get(dt)
+        family = DOMAIN_MAPPING[domain] if domain else [dt]
+        for t in family:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+    return out
 
 
 class ResponseMode(str, Enum):
@@ -197,6 +221,9 @@ class NumericFilter(BaseModel):
 
 
 class SuggestedAction(BaseModel):
+    # Optional app action for chip rendering (e.g. "log_meal" opens the meal
+    # sheet). None = plain follow-up query chip (tap sends `description`).
+    action: str | None = None
     label: str = Field(..., description="Short button text.")
     description: str = Field(..., description="Complete follow-up question.")
 
@@ -241,10 +268,6 @@ class QueryIntent(BaseModel):
     confidence: float | None = Field(
         None, description="Confidence score 0.0-1.0.",
     )
-    extracted_facts: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Deprecated — facts are now extracted via a separate LLM call.",
-    )
     # Memory management — detected from user messages like "remember X", "forget X"
     memory_action: Literal["add", "delete", "list"] | None = Field(
         None, description="Memory action: 'add', 'delete', 'list', or null if not a memory command.",
@@ -256,46 +279,6 @@ class QueryIntent(BaseModel):
         None, description="For add: the memory value (e.g. 'vegetarian').",
     )
 
-
-class PatientFact(BaseModel):
-    """A single extracted patient fact."""
-
-    key: str = Field(
-        ...,
-        description=(
-            "Fact category. Must be one of: goal, weight, dietary_preference, "
-            "food_allergy, body_note, medication_note, fasting_context, "
-            "communication_style, medical_condition, activity_preference, "
-            "or any other descriptive key."
-        ),
-    )
-    value: str = Field(
-        ...,
-        description="The fact value, exactly as stated by the user.",
-    )
-
-
-class ExtractedFacts(BaseModel):
-    """Facts extracted from a user message. Used as response_model for a dedicated LLM call."""
-
-    facts: list[PatientFact] = Field(
-        ...,
-        description=(
-            "ALL durable patient facts found in the message. "
-            "Extract every goal, weight, dietary preference, allergy, body note, "
-            "medical condition, medication, fasting context mentioned. "
-            "Return an empty list ONLY if the message contains NO patient facts."
-        ),
-    )
-    has_facts: bool = Field(
-        ...,
-        description="True if any patient facts were found in the message. False otherwise.",
-    )
-
-
-# ---------------------------------------------------------------------------
-# API Response (backward-compatible)
-# ---------------------------------------------------------------------------
 
 
 class QueryResponse(BaseModel):

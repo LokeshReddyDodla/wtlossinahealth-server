@@ -45,6 +45,7 @@ class AIFoundationSettings(BaseSettings):
 
     TURNS_TTL_DAYS: int = Field(default=90, description="Conversation turns TTL in days")
     SUMMARIES_TTL_DAYS: int = Field(default=90, description="TTL in days for thread summaries")
+    PRODUCT_BOT_CONVERSATIONS_TTL_DAYS: int = Field(default=90, description="TTL in days for public product-bot conversation analytics")
 
     # ── Reasoning Engine ──────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ class AIFoundationSettings(BaseSettings):
     REASONING_THINKER_MODEL: str = Field(default="claude-haiku-4-5-20251001", description="Model for reasoning/tool decisions")
     REASONING_RESPONDER_MODEL: str = Field(default="claude-sonnet-4-6", description="Model for final response generation")
     REASONING_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-round timeout for thinker LLM calls")
+    RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
 
@@ -63,6 +65,7 @@ class AIFoundationSettings(BaseSettings):
     # ── Reflection ────────────────────────────────────────────────────────
 
     REFLECTION_ENABLED: bool = Field(default=True, description="Enable reflection/critic for ADVANCED+ tiers")
+    GROUNDING_VERIFY_ENABLED: bool = Field(default=True, description="Verify the final response against its evidence and correct once if it fabricates, confirms a false claim, or disavows real data")
     REFLECTION_MAX_ROUNDS: int = Field(default=2, description="Max reflection rounds for UNLIMITED tier")
     REFLECTION_TIMEOUT_SECONDS: float = Field(default=15.0, description="Timeout for reflection LLM call")
 
@@ -108,6 +111,15 @@ class AIFoundationSettings(BaseSettings):
 
     # ── Langfuse Observability ────────────────────────────────────────────
 
+    # ── Cohort Agent (openai-agents SDK — runs OUTSIDE ModelGateway, so its
+    # model is configured here rather than registry-routed; the registry only
+    # routes gateway-called tasks). validation_alias keeps the existing
+    # COHORT_AGENT_* env names.
+    COHORT_AGENT_MODEL: str = Field(default="gpt-5.2", description="LiteLLM model id for the cohort agent", validation_alias="COHORT_AGENT_MODEL")
+    COHORT_AGENT_API_KEY: str = Field(default="", description="Explicit API key override (blank = provider env vars)", validation_alias="COHORT_AGENT_API_KEY")
+    COHORT_AGENT_MAX_TURNS: int = Field(default=30, description="Max agent loop turns per cohort query", validation_alias="COHORT_AGENT_MAX_TURNS")
+    COHORT_AGENT_API_BASE: str = Field(default="http://localhost:8000", description="Loopback base URL for the agent's internal API calls", validation_alias="COHORT_AGENT_API_BASE")
+
     # Note: Langfuse fields use validation_alias to read LANGFUSE_* (no AI_ prefix)
     # so both LiteLLM and our code read the same env vars.
     LANGFUSE_ENABLED: bool = Field(default=False, description="Enable Langfuse LLM tracing", validation_alias="LANGFUSE_ENABLED")
@@ -126,6 +138,14 @@ class AIFoundationSettings(BaseSettings):
     MEAL_LLM_TIMEOUT_SECONDS: float = Field(default=45.0, description="Per-call timeout for meal analysis LLM calls (big structured context)")
     MEAL_PROMPT_RECENT_MEALS_LIMIT: int = Field(default=15, description="Max recent meals sent into meal analysis prompts")
     MEAL_PROMPT_CGM_EVENTS_LIMIT: int = Field(default=15, description="Max CGM events sent into meal analysis prompts")
+
+    # ── Metabolic Engine (operational tunables, NOT model calibration) ──
+
+    METABOLIC_ASSEMBLER_CACHE_TTL: int = Field(default=30, description="Assembler patient-state cache TTL in seconds")
+    METABOLIC_FOLLOWUP_WINDOW_HOURS: int = Field(default=2, description="Min hours after meal before CGM follow-up")
+    METABOLIC_FOLLOWUP_MAX_AGE_DAYS: int = Field(default=7, description="Max days to look back for unfollowed advice")
+    METABOLIC_CGM_STALE_DAYS: int = Field(default=2, description="Days after which CGM data triggers a freshness nudge")
+    METABOLIC_MAX_NUDGES: int = Field(default=2, description="Max nudges per assessment turn (safety always survives cap)")
 
     # ── Context Window Management ────────────────────────────────────────
 

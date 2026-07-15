@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime
 from typing import Any, List, Optional
 from uuid import UUID
@@ -28,6 +29,8 @@ from lib.models.patient_meal import (
 )
 from lib.schemas.patient import CorePatientProfile
 from lib.schemas.meal import MealCreateRequest
+
+logger = logging.getLogger(__name__)
 from lib.schemas.patient_meal import MealAnalysisResponse
 from lib.schemas.patient_meal import PatientMeal as PatientMealSchema
 from lib.services.ai_conversation_service.ai_conversation_service import (
@@ -35,7 +38,7 @@ from lib.services.ai_conversation_service.ai_conversation_service import (
 )
 from lib.services.vector import MealVectorService
 from lib.services.patient_profile_service import PatientProfileService
-from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_sync
+from lib.workers.tasks.meal.enqueue import enqueue_daily_meal_report_async
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
 from rest_server.patients.meals.api_schema import (
@@ -259,17 +262,31 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
+            await enqueue_daily_meal_report_async(str(patient_id), meal.date)
 
-            # Gamification hook (fire-and-forget)
+            # EventBus publish — gamification (and any future subscribers)
+            # react from here, same as the save_from_preview flow.
             try:
-                from uuid import UUID as _UUID
+                from lib.ai_foundation.events.bus import EventBus
+                from lib.ai_foundation.events.schemas import HealthEvent, HealthEventType
                 from lib.core.container import container
-                from lib.services.gamification.event_handler import GamificationEventHandler
-                handler = container.resolve(GamificationEventHandler)
-                await handler.on_meal_logged(_UUID(patient_id))
+
+                bus = container.resolve(EventBus)
+                await bus.publish(
+                    HealthEvent(
+                        event_type=HealthEventType.MEAL_LOGGED.value,
+                        patient_id=str(patient_id),
+                        data={
+                            "meal_id": str(meal.id),
+                            "slot": meal.type,
+                            "consumed_at": meal_data.datetime.isoformat(),
+                            "source": meal.source,
+                        },
+                        source_agent="meal_upload",
+                    )
+                )
             except Exception:
-                pass
+                logger.exception("MEAL_LOGGED publish failed for %s", patient_id)
 
             return meal
 
@@ -309,6 +326,7 @@ class MealService:
             meal.score = None
             meal.feedback = None
             meal.tags = None
+            meal.ai_insight = None
 
             for item in meal.items:
                 await postgres_session.delete(item)
@@ -321,7 +339,15 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal.date)
+            # Re-upsert the Qdrant point (deterministic id → overwrite):
+            # every write path that changes a meal must refresh its vector,
+            # or the agent keeps citing the pre-edit meal.
+            await trigger_meal_tasks(
+                patient_id=str(patient_id),
+                meal_id=str(meal.id),
+                meal_date=meal.date,
+                meal_obj=meal,
+            )
 
             # Refresh macro task progress (totals changed)
             try:
@@ -380,7 +406,7 @@ class MealService:
                 )
 
             await self._create_meal_conversation(meal_orm, meal_id, parsed_ai_response)
-            trigger_meal_tasks(str(patient_id), str(meal_id), meal.date, updated_meal)
+            await trigger_meal_tasks(str(patient_id), str(meal_id), meal.date, updated_meal)
 
             # Refresh macro task progress (nutritional values changed after analysis)
             try:
@@ -524,7 +550,7 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            trigger_meal_tasks(
+            await trigger_meal_tasks(
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
@@ -634,7 +660,7 @@ class MealService:
             await postgres_session.commit()
             await postgres_session.refresh(meal)
 
-            trigger_meal_tasks(
+            await trigger_meal_tasks(
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
@@ -642,7 +668,7 @@ class MealService:
             )
             if old_date != meal.date:
                 try:
-                    enqueue_daily_meal_report_sync(str(patient_id), old_date)
+                    await enqueue_daily_meal_report_async(str(patient_id), old_date)
                 except Exception:
                     pass
 
@@ -759,8 +785,28 @@ class MealService:
             await postgres_session.delete(meal)
             await postgres_session.commit()
 
-            enqueue_daily_meal_report_sync(str(patient_id), meal_date)
-            await self.meal_vector_service.delete_meal_vector(str(meal_id))
+            await enqueue_daily_meal_report_async(str(patient_id), meal_date)
+            try:
+                await self.meal_vector_service.delete_meal_vector(str(meal_id))
+            except Exception:
+                # PG row is already gone — an orphaned Qdrant point would be
+                # cited by the agent forever. Hand cleanup to a retryable job.
+                logger.exception("Inline vector delete failed for meal %s — enqueuing retry", meal_id)
+                from lib.workers.arq.redis import enqueue_job
+
+                await enqueue_job(
+                    "delete_meal_vector_task", str(meal_id),
+                    _job_id=f"meal:vector:delete:{meal_id}",
+                )
+
+            # Clean up linked proactive insights
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+                tracker = container.resolve(InsightTracker)
+                await tracker.delete_by_entity("meal", str(meal_id))
+            except Exception:
+                pass
 
             # Refresh macro task progress (totals decreased)
             try:

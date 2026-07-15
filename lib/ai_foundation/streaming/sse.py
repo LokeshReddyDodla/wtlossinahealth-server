@@ -27,6 +27,7 @@ class SSEEventType(str, Enum):
     STATUS = "status"
     INTENT = "intent"
     TOKEN = "token"
+    BUBBLE = "bubble"  # message-boundary during streaming (companion multi-bubble)
     DONE = "done"
     ERROR = "error"
     # Agentic reasoning events
@@ -103,6 +104,13 @@ def sse_status(stage: str | PipelineStage, message: str | None = None) -> str:
 def sse_token(delta: str) -> str:
     """Convenience: emit a TOKEN event with a text delta."""
     return sse_event(SSEEventType.TOKEN, {"delta": delta})
+
+
+def sse_bubble() -> str:
+    """Bubble boundary: the streaming message ends here; the next tokens
+    belong to a NEW chat bubble. Clients that don't know this event ignore
+    it and render one bubble (reconciled from done.data.messages)."""
+    return sse_event(SSEEventType.BUBBLE, {})
 
 
 def sse_intent(intent_data: dict[str, Any]) -> str:

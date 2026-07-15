@@ -49,11 +49,16 @@ async def generate_meal_vector(
 
         # Event-driven proactive insight — deferred 30s for Qdrant indexing.
         try:
+            # event_time = when the meal was CONSUMED (date + time from the
+            # meal record) — retro-logged meals diverge from scan time.
+            meal_event_time = None
+            if meal_data.get("date") and meal_data.get("time"):
+                meal_event_time = f"{meal_data['date']}T{meal_data['time']}"
             await enqueue_job(
                 "handle_proactive_event",
                 patient_id,
                 EventTrigger.MEAL_LOGGED.value,
-                {"meal_id": meal_id},
+                {"meal_id": meal_id, "event_time": meal_event_time},
                 _job_id=f"insight:{EventTrigger.MEAL_LOGGED.value}:{patient_id}:{meal_id}",
                 _defer_by=30,
                 _queue_name=Queues.DEFAULT,
@@ -69,12 +74,29 @@ async def generate_meal_vector(
         )
 
     except Exception as e:
+        # Re-raise so arq's retry machinery engages (retry_jobs/max_tries):
+        # the upsert is idempotent, and this task is the only path that gets
+        # the meal into Qdrant AND fires its proactive insight.
         logger.error(f"Failed to generate meal vector for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "meal_id": meal_id},
-        )
+        raise
+
+
+@task_with_logging
+async def delete_meal_vector_task(
+    ctx: Dict[str, Any],
+    meal_id: str,
+) -> TaskResult:
+    """Retryable Qdrant point delete — used when the inline delete after a
+    Postgres meal delete fails, so the point can't survive as an orphan the
+    agent keeps citing."""
+    from lib.dependencies.service_dependencies import get_meal_vector_service
+
+    try:
+        await get_meal_vector_service().delete_meal_vector(meal_id)
+        return TaskResult(success=True, data={"meal_id": meal_id})
+    except Exception as e:
+        logger.error(f"Failed to delete meal vector {meal_id}: {e}")
+        raise  # idempotent — let arq retry
 
 
 async def _enqueue_meal_vector(

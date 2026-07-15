@@ -57,8 +57,11 @@ def _date_to_epoch_ms(dt: datetime) -> float:
     return dt.timestamp() * 1000
 
 
-def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float | None:
+def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float:
     """Convert ISO date string to epoch milliseconds.
+
+    Raises ValueError on an unparseable date — silently dropping the filter
+    would widen a medical query's scope without anyone noticing.
 
     Args:
         date_str: ISO date or datetime string.
@@ -78,8 +81,8 @@ def _date_str_to_epoch_ms(date_str: str, *, end_of_day: bool = False) -> float |
             if end_of_day:
                 dt = dt.replace(hour=23, minute=59, second=59)
         return dt.timestamp() * 1000
-    except (ValueError, AttributeError):
-        return None
+    except (ValueError, AttributeError) as exc:
+        raise ValueError(f"Unparseable date filter: {date_str!r}") from exc
 
 
 def _expand_data_types(data_types: list[str]) -> list[str]:
@@ -230,15 +233,18 @@ class QdrantRetriever:
         """Build date_start/date_end/month filter conditions."""
         conditions: list[FieldCondition] = []
 
+        # OVERLAP semantics, not containment: a record matches when its
+        # [start_time, end_time] span intersects the query window. Point
+        # records (meals, readings) are unaffected (start == end); range
+        # records (a 23:00→07:00 sleep session) must match BOTH days'
+        # single-day queries.
         if request.date_start:
             start_ms = _date_str_to_epoch_ms(request.date_start)
-            if start_ms is not None:
-                conditions.append(FieldCondition(key="start_time", range=Range(gte=start_ms)))
+            conditions.append(FieldCondition(key="end_time", range=Range(gte=start_ms)))
 
         if request.date_end:
             end_ms = _date_str_to_epoch_ms(request.date_end, end_of_day=True)
-            if end_ms is not None:
-                conditions.append(FieldCondition(key="end_time", range=Range(lte=end_ms)))
+            conditions.append(FieldCondition(key="start_time", range=Range(lte=end_ms)))
 
         month_filters = request.filters.get("month_filters")
         if month_filters:
@@ -356,10 +362,10 @@ class QdrantRetriever:
 
     async def _get_embedding(self, text: str) -> list[float]:
         if self._embed_cache:
-            cached = self._embed_cache.get(text)
+            cached = await self._embed_cache.get(text)
             if cached is not None:
                 return cached
             vector = await self._embed_fn(text)
-            self._embed_cache.set(text, vector)
+            await self._embed_cache.set(text, vector)
             return vector
         return await self._embed_fn(text)

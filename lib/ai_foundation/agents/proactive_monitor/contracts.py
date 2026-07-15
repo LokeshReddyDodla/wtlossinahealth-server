@@ -24,6 +24,11 @@ class InsightSeverity(str, Enum):
     ALERT = "alert"          # needs immediate attention
 
 
+# Product marker prefixed to event-insight titles; stripped before
+# translation so it never gets localized. One constant — the prepender
+# and the stripper live in different modules.
+BETA_TITLE_PREFIX = "[Beta] "
+
 SEVERITY_RANK: dict[str, int] = {
     "info": 1,
     "attention": 2,
@@ -42,13 +47,18 @@ class InsightCategory(str, Enum):
     GLUCOSE_RAPID_DROP = "glucose_rapid_drop"
     GLUCOSE_WORSENING = "glucose_worsening"
     MEAL_HIGH_CARB = "meal_high_carb"
+    MEAL_HIGH_CALORIE = "meal_high_calorie"  # goal-agnostic complement to high_carb
     MEAL_LOW_PROTEIN = "meal_low_protein"
+    MEAL_LOW_FIBER = "meal_low_fiber"  # dietitian review 30/06: fiber gaps were invisible
+    INTAKE_LOW = "intake_low"  # day's overall intake clearly too low (calories/protein)
     FITNESS_INACTIVE = "fitness_inactive"
+    WEIGHT_TREND_CONCERN = "weight_trend_concern"  # weight moving against the goal
     SLEEP_POOR = "sleep_poor"
     MOOD_LOW = "mood_low"
 
     # Positives (LLM-generated)
     GLUCOSE_IMPROVING = "glucose_improving"
+    WEIGHT_PROGRESS = "weight_progress"  # weight moving toward the goal
     FITNESS_STREAK = "fitness_streak"
     SLEEP_IMPROVING = "sleep_improving"
     MOOD_IMPROVING = "mood_improving"
@@ -59,6 +69,7 @@ class InsightCategory(str, Enum):
     SLEEP_MOOD_CORRELATION = "sleep_mood_correlation"
     MEAL_SPIKE_PATTERN = "meal_spike_pattern"
     ACTIVITY_GLUCOSE_BENEFIT = "activity_glucose_benefit"
+    ACTIVITY_WEIGHT_BENEFIT = "activity_weight_benefit"  # non-glucose cross-domain home
     LIFESTYLE_PATTERN = "lifestyle_pattern"
 
     # Goal tracking (LLM-generated)
@@ -88,11 +99,14 @@ _CONCERN_CATEGORIES = [
     InsightCategory.GLUCOSE_SPIKE, InsightCategory.GLUCOSE_HYPO,
     InsightCategory.GLUCOSE_RAPID_SPIKE, InsightCategory.GLUCOSE_RAPID_DROP,
     InsightCategory.GLUCOSE_WORSENING, InsightCategory.MEAL_HIGH_CARB,
-    InsightCategory.MEAL_LOW_PROTEIN, InsightCategory.FITNESS_INACTIVE,
+    InsightCategory.MEAL_HIGH_CALORIE, InsightCategory.MEAL_LOW_PROTEIN,
+    InsightCategory.MEAL_LOW_FIBER, InsightCategory.INTAKE_LOW,
+    InsightCategory.FITNESS_INACTIVE, InsightCategory.WEIGHT_TREND_CONCERN,
     InsightCategory.SLEEP_POOR, InsightCategory.MOOD_LOW,
 ]
 _POSITIVE_CATEGORIES = [
-    InsightCategory.GLUCOSE_IMPROVING, InsightCategory.FITNESS_STREAK,
+    InsightCategory.GLUCOSE_IMPROVING, InsightCategory.WEIGHT_PROGRESS,
+    InsightCategory.FITNESS_STREAK,
     InsightCategory.SLEEP_IMPROVING, InsightCategory.MOOD_IMPROVING,
     InsightCategory.GOAL_PROGRESS,
     InsightCategory.STREAK_MAINTAINED, InsightCategory.TARGET_HIT,
@@ -109,6 +123,7 @@ _CROSS_DOMAIN_CATEGORIES = [
     InsightCategory.SLEEP_MOOD_CORRELATION,
     InsightCategory.MEAL_SPIKE_PATTERN,
     InsightCategory.ACTIVITY_GLUCOSE_BENEFIT,
+    InsightCategory.ACTIVITY_WEIGHT_BENEFIT,
     InsightCategory.LIFESTYLE_PATTERN,
 ]
 
@@ -207,26 +222,44 @@ TRIGGER_LABELS: dict[EventTrigger, str] = {
 # at the queue boundary; handlers parse the dict back into the right model
 # via ``parse_anchor`` so downstream code is fully typed.
 
-class MealLoggedAnchor(BaseModel):
+class _AnchorBase(BaseModel):
+    """Shared anchor fields.
+
+    ``event_time`` is when the SOURCE EVENT happened (meal consumed, reading
+    taken, symptom felt) — distinct from when the insight is generated.
+    Retro-logged entries make the two diverge by hours or days; consumers
+    (timeline placement, streak logic, analytics) need the event's own time.
+    Optional for queue-compat with in-flight payloads; publishers should
+    always set it.
+    """
+
+    event_time: str | None = None  # ISO timestamp of the source event
+
+
+class MealLoggedAnchor(_AnchorBase):
     meal_id: str
 
 
-class SMBGLoggedAnchor(BaseModel):
+class SMBGLoggedAnchor(_AnchorBase):
     reading_id: str
 
 
-class CGMThresholdCrossedAnchor(BaseModel):
+class CGMThresholdCrossedAnchor(_AnchorBase):
     kind: str  # CGMCrossingKind value (kept as str to avoid cross-module import in the contract)
     value: int
     unit: str = "mg/dL"
-    time: str  # ISO timestamp
+    time: str  # ISO timestamp (legacy name; mirrored into event_time)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.event_time is None:
+            self.event_time = self.time
 
 
-class SymptomLoggedAnchor(BaseModel):
+class SymptomLoggedAnchor(_AnchorBase):
     symptom_entry_id: str
 
 
-class MedicationMissedAnchor(BaseModel):
+class MedicationMissedAnchor(_AnchorBase):
     daily_task_id: str
     slot: str
     medication_name: str

@@ -1,3 +1,4 @@
+import logging
 from typing import List, Tuple
 
 from fastapi import status
@@ -15,9 +16,12 @@ from lib.services.patient_profile_service import PatientProfileService
 from lib.services.vector import SMBGVectorService
 from lib.utils.http_exceptions import raise_http_exception
 from lib.utils.postgres_session_decorator import with_postgres_session
+
 from lib.workers.tasks.smbg.enqueue import (
-    enqueue_generate_smbg_vector_sync,
+    enqueue_generate_smbg_vector_async,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PatientSmbgService:
@@ -85,13 +89,79 @@ class PatientSmbgService:
                 "uploaded_at": new_smbg.uploaded_at,
                 "source": new_smbg.source_name or "app",
             }
-            enqueue_generate_smbg_vector_sync(
+            await enqueue_generate_smbg_vector_async(
                 patient_id=patient_id,
                 reading_id=str(new_smbg.id),
                 reading_data=reading_data,
             )
 
             return new_smbg
+
+        except SQLAlchemyError as e:
+            await postgres_session.rollback()
+            raise_http_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database Error",
+                detail=str(e),
+            )
+
+    @with_postgres_session
+    async def update_smbg(
+        self,
+        smbg_id: str,
+        patient_id: str,
+        update_data: PatientSMBGCreate,
+        *,
+        postgres_session: AsyncSession,
+    ) -> PatientSMBGModel:
+        try:
+            result = await postgres_session.execute(
+                select(PatientSMBGModel).where(
+                    PatientSMBGModel.id == smbg_id,
+                    PatientSMBGModel.patient_id == patient_id,
+                )
+            )
+            smbg_record = result.scalars().first()
+
+            if not smbg_record:
+                raise_http_exception(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    message="SMBG record not found",
+                )
+
+            smbg_record.glucose_level = update_data.glucose_level
+            smbg_record.reading_time = update_data.reading_time
+            smbg_record.source_name = update_data.source_name
+            smbg_record.source_platform = update_data.source_platform
+            smbg_record.type = update_data.type
+            smbg_record.notes = update_data.notes
+
+            await postgres_session.commit()
+            await postgres_session.refresh(smbg_record)
+
+            reading_data = {
+                "glucose_mgdl": smbg_record.glucose_level,
+                "reading_time": smbg_record.reading_time.isoformat(),
+                "type": smbg_record.type,
+                "notes": smbg_record.notes,
+                "uploaded_at": smbg_record.uploaded_at,
+                "source": smbg_record.source_name or "app",
+            }
+            await enqueue_generate_smbg_vector_async(
+                patient_id=patient_id,
+                reading_id=str(smbg_record.id),
+                reading_data=reading_data,
+            )
+
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+                tracker = container.resolve(InsightTracker)
+                await tracker.delete_by_entity("smbg", smbg_id)
+            except Exception:
+                pass
+
+            return smbg_record
 
         except SQLAlchemyError as e:
             await postgres_session.rollback()
@@ -122,6 +192,25 @@ class PatientSmbgService:
 
             await postgres_session.delete(smbg_record)
             await postgres_session.commit()
+
+            try:
+                await self.smbg_vector_service.delete_smbg_vector(smbg_id)
+            except Exception:
+                logger.exception("Inline vector delete failed for SMBG %s — enqueuing retry", smbg_id)
+                from lib.workers.arq.redis import enqueue_job
+
+                await enqueue_job(
+                    "delete_smbg_vector_task", smbg_id,
+                    _job_id=f"smbg:vector:delete:{smbg_id}",
+                )
+
+            try:
+                from lib.core.container import container
+                from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+                tracker = container.resolve(InsightTracker)
+                await tracker.delete_by_entity("smbg", smbg_id)
+            except Exception:
+                pass
         except SQLAlchemyError as e:
             await postgres_session.rollback()
             raise_http_exception(

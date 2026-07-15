@@ -49,6 +49,8 @@ def _make_fake_mongo():
 
     collection.find = MagicMock(side_effect=_chain)
 
+    collection.count_documents = AsyncMock(return_value=0)
+
     # Chats collection: defaults to an empty-participants chat doc so the
     # idempotent-participant check in agent_reply runs.
     chats_collection = MagicMock()
@@ -56,8 +58,19 @@ def _make_fake_mongo():
         return_value={"_id": "chat-1", "participants": []}
     )
 
+    # Reads collection for unread tracking.
+    reads_collection = MagicMock()
+    reads_collection.update_one = AsyncMock()
+    reads_cursor = MagicMock()
+    reads_cursor.to_list = AsyncMock(return_value=[])
+    reads_collection.find = MagicMock(return_value=reads_cursor)
+
     store = MagicMock()
-    store.db = {"support_tickets": collection, "chats": chats_collection}
+    store.db = {
+        "support_tickets": collection,
+        "chats": chats_collection,
+        "support_ticket_reads": reads_collection,
+    }
     store.insert_document = AsyncMock()
     return store, collection
 
@@ -96,6 +109,13 @@ def svc(fake_mongo, monkeypatch):
         "lib.services.support.support_notification_service.SupportNotificationService",
         _FakeNotifSvc,
     )
+
+    # Stub ProfileResolverService.resolve so list_queue doesn't hit PG.
+    monkeypatch.setattr(
+        "lib.services.support.support_ticket_service.ProfileResolverService.resolve",
+        AsyncMock(return_value={}),
+    )
+
     s._fake_notif_svc_cls = _FakeNotifSvc  # exposed for assertions
     return s
 
@@ -301,6 +321,8 @@ async def test_get_with_messages_returns_thread_for_agent(svc, fake_mongo):
         "chat_id": "chat-1",
         "scope": "product",
         "health_facility_id": None,
+        "requester_id": "user-1",
+        "requester_type": "patient",
     }
     collection.find_one = AsyncMock(return_value=ticket)
 
@@ -318,6 +340,7 @@ async def test_get_with_messages_returns_thread_for_agent(svc, fake_mongo):
 
     out = await svc.get_ticket_with_messages_for_agent(
         ticket_id="t-1",
+        agent_id="agent-1",
         agent_scopes=["product"],
         agent_facility_ids=[],
     )
@@ -346,6 +369,7 @@ async def test_get_with_messages_returns_none_when_out_of_scope(
 
     out = await svc.get_ticket_with_messages_for_agent(
         ticket_id="t-1",
+        agent_id="agent-1",
         agent_scopes=["product"],  # admin has no facility scope
         agent_facility_ids=[],
     )
@@ -1038,6 +1062,7 @@ async def test_list_queue_admin_only_sees_product(svc, fake_mongo):
     _, collection = fake_mongo
 
     await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=["product"],
         agent_facility_ids=[],
         scope_filter=None,
@@ -1059,6 +1084,7 @@ async def test_list_queue_facility_agent_only_sees_own_facility(
     _, collection = fake_mongo
 
     await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=["facility"],
         agent_facility_ids=["facility-A"],
         scope_filter=None,
@@ -1084,7 +1110,8 @@ async def test_list_queue_facility_agent_without_facility_returns_empty(
     query."""
     _, collection = fake_mongo
 
-    out = await svc.list_queue(
+    tickets, total = await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=["facility"],
         agent_facility_ids=[],
         scope_filter=None,
@@ -1094,7 +1121,8 @@ async def test_list_queue_facility_agent_without_facility_returns_empty(
         offset=0,
     )
 
-    assert out == []
+    assert tickets == []
+    assert total == 0
     collection.find.assert_not_called()
 
 
@@ -1104,7 +1132,8 @@ async def test_list_queue_empty_scopes_returns_empty_without_querying(
 ):
     _, collection = fake_mongo
 
-    out = await svc.list_queue(
+    tickets, total = await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=[],
         agent_facility_ids=[],
         scope_filter=None,
@@ -1114,7 +1143,8 @@ async def test_list_queue_empty_scopes_returns_empty_without_querying(
         offset=0,
     )
 
-    assert out == []
+    assert tickets == []
+    assert total == 0
     collection.find.assert_not_called()
 
 
@@ -1126,7 +1156,8 @@ async def test_list_queue_admin_scope_filter_to_facility_returns_empty(
     gets nothing — not a leak."""
     _, collection = fake_mongo
 
-    out = await svc.list_queue(
+    tickets, total = await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=["product"],
         agent_facility_ids=[],
         scope_filter="facility",
@@ -1136,7 +1167,8 @@ async def test_list_queue_admin_scope_filter_to_facility_returns_empty(
         offset=0,
     )
 
-    assert out == []
+    assert tickets == []
+    assert total == 0
     collection.find.assert_not_called()
 
 
@@ -1147,6 +1179,7 @@ async def test_list_queue_combines_status_and_requester_type_filters(
     _, collection = fake_mongo
 
     await svc.list_queue(
+        agent_id="agent-1",
         agent_scopes=["product"],
         agent_facility_ids=[],
         scope_filter=None,
@@ -1292,9 +1325,9 @@ async def test_change_status_returns_none_when_out_of_scope(
 async def test_change_status_resolved_at_is_idempotent(svc, fake_mongo):
     """Re-resolving an already-resolved ticket must NOT overwrite the
     original resolved_at — that would lose audit history."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    original = datetime.utcnow() - timedelta(days=1)
+    original = datetime.now(tz=timezone.utc) - timedelta(days=1)
     _, collection = fake_mongo
     ticket = {
         "_id": "t-1",
@@ -1321,9 +1354,9 @@ async def test_change_status_resolved_at_is_idempotent(svc, fake_mongo):
 
 @pytest.mark.asyncio
 async def test_change_status_closed_at_is_idempotent(svc, fake_mongo):
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    original = datetime.utcnow() - timedelta(days=2)
+    original = datetime.now(tz=timezone.utc) - timedelta(days=2)
     _, collection = fake_mongo
     ticket = {
         "_id": "t-1",

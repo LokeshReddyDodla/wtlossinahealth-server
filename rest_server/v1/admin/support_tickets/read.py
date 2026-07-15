@@ -24,6 +24,7 @@ async def list_queue(
         None, alias="status"
     ),
     requester_type: Optional[RequesterTypeLiteral] = Query(None),
+    q: Optional[str] = Query(None, max_length=100),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     agent: SupportAgent = Depends(get_support_agent_actor),
@@ -32,16 +33,21 @@ async def list_queue(
     ),
 ):
     try:
-        tickets = await support_ticket_service.list_queue(
+        tickets, total = await support_ticket_service.list_queue(
+            agent_id=agent.id,
             agent_scopes=agent.allowed_scopes,
             agent_facility_ids=agent.facility_ids,
             scope_filter=scope,
             status_filter=status_filter,
             requester_type_filter=requester_type,
+            search=q,
             limit=limit,
             offset=offset,
         )
-        return SuccessResponse(data=jsonable_encoder(tickets))
+        return SuccessResponse(data=jsonable_encoder({
+            "tickets": tickets,
+            "total": total,
+        }))
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -66,6 +72,7 @@ async def get_ticket(
     try:
         ticket = await support_ticket_service.get_ticket_with_messages_for_agent(
             ticket_id=ticket_id,
+            agent_id=agent.id,
             agent_scopes=agent.allowed_scopes,
             agent_facility_ids=agent.facility_ids,
         )

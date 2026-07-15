@@ -209,8 +209,8 @@ def build_summary(evidence_ledger: list[EvidenceItem]) -> InvestigationSummary:
     )
 
 
-def build_summary_from_findings(findings: list[SpecialistFindings]) -> InvestigationSummary:
-    """Build evidence summary from coordinator specialist findings."""
+def evidence_items_from_findings(findings: list[SpecialistFindings]) -> list[EvidenceItem]:
+    """Convert coordinator specialist findings into evidence-ledger items."""
     items: list[EvidenceItem] = []
 
     for f in findings:
@@ -236,7 +236,33 @@ def build_summary_from_findings(findings: list[SpecialistFindings]) -> Investiga
             had_data=has_parsed_records,
         ))
 
-    return build_summary(items)
+    return items
+
+
+def build_summary_from_findings(findings: list[SpecialistFindings]) -> InvestigationSummary:
+    """Build evidence summary from coordinator specialist findings."""
+    return build_summary(evidence_items_from_findings(findings))
+
+
+def format_evidence_block(evidence_ledger: list[EvidenceItem], user_role: str) -> str:
+    """Full INVESTIGATION EVIDENCE body: role-aware summary + coverage note
+    + conflict "⚠ DATA NOTES". Empty string when there's nothing to say.
+
+    Shared by the reasoning engine and the multi-domain coordinator so both
+    responders get identical evidence treatment.
+    """
+    from lib.ai_foundation.agents.health_query.contracts import PROVIDER_VIEW_ROLES
+
+    summary = build_summary(evidence_ledger)
+    text = format_provider(summary) if user_role in PROVIDER_VIEW_ROLES else format_patient(summary)
+    coverage_note = format_coverage_note(summary)
+    if coverage_note:
+        text = f"{text}\n{coverage_note}" if text else coverage_note
+    conflicts = detect_conflicts(evidence_ledger)
+    if conflicts:
+        conflict_text = "\n".join(f"- {c}" for c in conflicts)
+        text = f"{text}\n⚠ DATA NOTES:\n{conflict_text}" if text else f"⚠ DATA NOTES:\n{conflict_text}"
+    return text
 
 
 # ── Formatters — role-aware ──────────────────────────────────────────────

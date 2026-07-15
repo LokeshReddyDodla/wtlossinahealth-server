@@ -208,6 +208,82 @@ class TokenUsageService:
             await postgres_session.rollback()
             raise ValueError(f"Failed to log token usage: {e}")
 
+    @with_postgres_session
+    async def get_platform_usage_summary(
+        self,
+        start_date: date,
+        end_date: date,
+        *,
+        postgres_session: AsyncSession,
+    ):
+        end_datetime = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=None)
+        start_datetime = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=None)
+
+        daily_query = (
+            select(
+                func.date(TokenUsageLog.created_at).label("usage_date"),
+                func.sum(TokenUsageLog.input_tokens).label("total_input_tokens"),
+                func.sum(TokenUsageLog.output_tokens).label("total_output_tokens"),
+                func.sum(TokenUsageLog.cached_input_tokens).label("total_cached_input_tokens"),
+                func.sum(TokenUsageLog.cost).label("total_cost"),
+                func.count().label("total_calls"),
+            )
+            .where(
+                TokenUsageLog.created_at >= start_datetime,
+                TokenUsageLog.created_at <= end_datetime,
+            )
+            .group_by(func.date(TokenUsageLog.created_at))
+            .order_by(func.date(TokenUsageLog.created_at))
+        )
+
+        model_query = (
+            select(
+                TokenUsageLog.model_used,
+                TokenUsageLog.model_provider,
+                func.sum(TokenUsageLog.input_tokens).label("total_input_tokens"),
+                func.sum(TokenUsageLog.output_tokens).label("total_output_tokens"),
+                func.sum(TokenUsageLog.cost).label("total_cost"),
+                func.count().label("total_calls"),
+            )
+            .where(
+                TokenUsageLog.created_at >= start_datetime,
+                TokenUsageLog.created_at <= end_datetime,
+            )
+            .group_by(TokenUsageLog.model_used, TokenUsageLog.model_provider)
+            .order_by(func.sum(TokenUsageLog.cost).desc())
+        )
+
+        daily_result = await postgres_session.execute(daily_query)
+        model_result = await postgres_session.execute(model_query)
+
+        daily_rows = daily_result.all()
+        model_rows = model_result.all()
+
+        return {
+            "daily": [
+                {
+                    "date": row.usage_date,
+                    "total_input_tokens": row.total_input_tokens or 0,
+                    "total_output_tokens": row.total_output_tokens or 0,
+                    "total_cached_input_tokens": row.total_cached_input_tokens or 0,
+                    "total_cost": float(row.total_cost or 0),
+                    "total_calls": row.total_calls,
+                }
+                for row in daily_rows
+            ],
+            "by_model": [
+                {
+                    "model": row.model_used,
+                    "provider": row.model_provider,
+                    "total_input_tokens": row.total_input_tokens or 0,
+                    "total_output_tokens": row.total_output_tokens or 0,
+                    "total_cost": float(row.total_cost or 0),
+                    "total_calls": row.total_calls,
+                }
+                for row in model_rows
+            ],
+        }
+
     def calculate_cost(
         self,
         model_used: str,

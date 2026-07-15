@@ -7,7 +7,7 @@ Nothing here writes to a database; save is a separate, dumb path.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 from uuid import UUID
@@ -235,13 +235,52 @@ class Pairing(BaseModel):
 
 
 class GlucosePrediction(BaseModel):
+    """Post-meal glucose prediction.
+
+    SEMANTICS ARE EXPLICIT via ``basis`` — this field exists because the
+    same range fields once silently switched meaning (absolute peaks from
+    the LLM predictor vs. rise deltas from the metabolic engine) and the
+    app rendered a "+3 mg/dL rise" as "your glucose will be 0-15":
+
+    - ``basis="absolute"``: range_mg_dl_* is the predicted PEAK glucose
+      (e.g. 103-115 mg/dL). Only used when anchored on a MEASURED pre-meal
+      reading (``pre_meal_mg_dl`` set) or when the predictor reasons from
+      historical absolute peaks (LLM path).
+    - ``basis="rise"``: range_mg_dl_* is the expected RISE above the
+      patient's (unmeasured) pre-meal level. Render as "+N-N above your
+      current level" — never as an absolute number.
+    """
+
     range_mg_dl_low: int
     range_mg_dl_high: int
     peak_minutes_after: int
     confidence: ConfidenceLevel
-    n_similar_meals: int
+    n_similar_meals: int = Field(
+        description="Count of SIMILAR past meals cited as evidence (same slot, close carbs) — render as 'based on N similar meals'. Not the model's training count.",
+    )
     evidence: list[MealEvidenceRef] = Field(default_factory=list)
     rationale: str = Field(..., description="Short natural-language explanation")
+    basis: Literal["absolute", "rise"] = Field(
+        default="absolute",
+        description="What range_mg_dl_* means: absolute peak vs rise above pre-meal level.",
+    )
+    pre_meal_mg_dl: int | None = Field(
+        default=None,
+        description="MEASURED pre-meal glucose the absolute range is anchored on (CGM reading <=15 min old). None when basis='rise' or on the LLM path.",
+    )
+    rise_mg_dl_low: int | None = Field(
+        default=None,
+        description="Expected rise band — always delta semantics (engine path only).",
+    )
+    rise_mg_dl_high: int | None = Field(default=None)
+    pre_meal_estimate_mg_dl: int | None = Field(
+        default=None,
+        description="ESTIMATED typical glucose at this hour (90-day pattern) — orientation context only, never merged into the range. Render clearly as an estimate: 'you're usually around ~N at this time'.",
+    )
+    pre_meal_estimate_source: str | None = Field(
+        default=None,
+        description="Provenance of the estimate: '90d_prior' (time-of-day pattern) or '90d_mean'.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +306,50 @@ class PatientMealRef(BaseModel):
     meal_name: str
     consumed_at: datetime
     slot: MealSlot
+
+    @classmethod
+    def from_payload(
+        cls, meal: dict, slot: MealSlot | None = None
+    ) -> "PatientMealRef | None":
+        """Build a ref from a Qdrant meal payload; None when unusable.
+
+        ``slot=None`` parses the payload's own slot (invalid slot → None);
+        an explicit slot overrides. consumed_at is normalized to a NAIVE
+        UTC datetime regardless of whether the stored string carried an
+        offset — mixed aware/naive refs break every comparison downstream.
+        """
+        meal_id = meal.get("meal_id")
+        if not meal_id:
+            return None
+        try:
+            mid = UUID(str(meal_id))
+        except (ValueError, TypeError):
+            return None
+
+        if slot is None:
+            try:
+                slot = MealSlot((meal.get("slot") or "").strip().lower())
+            except ValueError:
+                return None
+
+        consumed_at_str = meal.get("consumed_at")
+        try:
+            consumed_at = (
+                datetime.fromisoformat(consumed_at_str)
+                if consumed_at_str
+                else datetime.now(timezone.utc)
+            )
+        except ValueError:
+            consumed_at = datetime.now(timezone.utc)
+        if consumed_at.tzinfo is not None:
+            consumed_at = consumed_at.astimezone(timezone.utc).replace(tzinfo=None)
+
+        return cls(
+            meal_id=mid,
+            meal_name=meal.get("name") or "",
+            consumed_at=consumed_at,
+            slot=slot,
+        )
 
 
 class RepeatFlag(BaseModel):

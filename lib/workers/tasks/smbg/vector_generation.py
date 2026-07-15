@@ -52,7 +52,8 @@ async def generate_smbg_vector(
                 "handle_proactive_event",
                 patient_id,
                 EventTrigger.SMBG_LOGGED.value,
-                {"reading_id": reading_id},
+                {"reading_id": reading_id,
+                 "event_time": reading_data.get("reading_time")},
                 _job_id=f"insight:{EventTrigger.SMBG_LOGGED.value}:{patient_id}:{reading_id}",
                 _defer_by=30,
                 _queue_name=Queues.DEFAULT,
@@ -68,12 +69,25 @@ async def generate_smbg_vector(
         )
 
     except Exception as e:
+        # Re-raise: idempotent upsert — let arq retry transient failures.
         logger.error(f"Failed to generate SMBG vector for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={"patient_id": patient_id, "reading_id": reading_id},
-        )
+        raise
+
+
+@task_with_logging
+async def delete_smbg_vector_task(
+    ctx: Dict[str, Any],
+    reading_id: str,
+) -> TaskResult:
+    """Retryable Qdrant point delete (see meal counterpart)."""
+    from lib.dependencies.service_dependencies import get_smbg_vector_service
+
+    try:
+        await get_smbg_vector_service().delete_smbg_vector(reading_id)
+        return TaskResult(success=True, data={"reading_id": reading_id})
+    except Exception as e:
+        logger.error(f"Failed to delete SMBG vector {reading_id}: {e}")
+        raise  # idempotent — let arq retry
 
 
 async def _enqueue_smbg_vector(

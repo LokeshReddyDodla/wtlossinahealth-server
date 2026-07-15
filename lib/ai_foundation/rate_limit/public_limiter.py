@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.rate_limit.limiter import incr_fixed_window
+
 if TYPE_CHECKING:
     from lib.core.cache_store import CacheStore
 
@@ -46,7 +48,7 @@ class PublicRateLimiter:
     def __init__(self, cache_store: CacheStore) -> None:
         self._store = cache_store
 
-    def check_and_record(self, ip: str, session_id: str) -> PublicRateLimitResult:
+    async def check_and_record(self, ip: str, session_id: str) -> PublicRateLimitResult:
         now = time.time()
         ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
 
@@ -58,10 +60,7 @@ class PublicRateLimiter:
 
         for layer, key, limit, window in checks:
             try:
-                self._store.set_key(key, "0", expire=window, nx=True)
-                current = self._store.incr_key(key)
-                if current == 1:
-                    self._store.expire_key(key, window)
+                current = await incr_fixed_window(self._store, key, window)
             except Exception as exc:
                 logger.warning("Public rate limiter (%s) Redis error: %s", layer, exc)
                 continue
@@ -77,14 +76,14 @@ class PublicRateLimiter:
 
         return PublicRateLimitResult(
             allowed=True,
-            remaining=max(0, _IP_LIMIT - self._get_count(f"{_PREFIX}:ip:{ip_hash}")),
+            remaining=max(0, _IP_LIMIT - await self._get_count(f"{_PREFIX}:ip:{ip_hash}")),
             limit=_IP_LIMIT,
             reset_at=now + _IP_WINDOW,
         )
 
-    def _get_count(self, key: str) -> int:
+    async def _get_count(self, key: str) -> int:
         try:
-            raw = self._store.get_key(key)
+            raw = await self._store.aget_key(key)
             return int(raw) if raw else 0
         except Exception:
             return 0

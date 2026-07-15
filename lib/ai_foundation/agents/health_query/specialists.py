@@ -54,15 +54,28 @@ _LANE_RULE = (
     "\n5. When you find notable events (spikes, drops, anomalies), include exact timing (date and time) when available so other specialists can cross-reference."
 )
 
+def _domain_data_types(spec_key: str, *extra: str) -> list[str]:
+    """Derive a specialist's data types from contracts.DOMAIN_MAPPING —
+    the routing tables are the single source of truth. A hand-typed list
+    here silently strands any HealthDataType added to a domain later
+    (the specialist's scoped tools can only expose spec.data_types).
+    ``extra``: deliberate additions beyond the domain mapping."""
+    from lib.ai_foundation.agents.health_query.contracts import (
+        DOMAIN_MAPPING,
+        _DOMAIN_TO_SPECIALIST,
+    )
+
+    types: list[str] = []
+    for domain, key in _DOMAIN_TO_SPECIALIST.items():
+        if key == spec_key:
+            types.extend(dt.value for dt in DOMAIN_MAPPING[domain])
+    types.extend(t for t in extra if t not in types)
+    return types
+
+
 GLUCOSE_SPEC = DomainSpec(
     domain="glucose",
-    data_types=[
-        "cgm_range_stats", "cgm_summary_stats",
-        "hypo_event", "hypo_stats", "hyper_event", "hyper_stats",
-        "rapid_spike_event", "rapid_spike_stats",
-        "rapid_drop_event", "rapid_drop_stats",
-        "smbg", "time_period_stats", "agp_point", "cgm_semantic_window",
-    ],
+    data_types=_domain_data_types("glucose"),
     system_prompt=(
         "You are a GLUCOSE analysis specialist. Your domain: CGM readings, glucose summaries, "
         "hypo/hyper events, spikes, drops, SMBG. Focus on:\n"
@@ -81,7 +94,7 @@ GLUCOSE_SPEC = DomainSpec(
 
 NUTRITION_SPEC = DomainSpec(
     domain="nutrition",
-    data_types=["meal", "diet_plan", "fitness_plan"],
+    data_types=_domain_data_types("nutrition"),
     system_prompt=(
         "You are a NUTRITION & PLANS specialist. Your domains: meals, diet plans, and fitness plans.\n"
         "Focus on:\n"
@@ -93,7 +106,7 @@ NUTRITION_SPEC = DomainSpec(
         "- Fitness plan goals: reference step goals, workout schedules, weekly active minutes\n"
         "- Plan adherence: are they hitting their plan targets? Where are the gaps?\n"
         "- Specific, actionable food recommendations based on their actual data and plan\n"
-        "- When reporting meals, note exact time and carb content when available — helps correlate with glucose responses\n"
+        "- When reporting meals, note exact time and macros. If the patient has glucose/CGM data, carb content helps correlate with glucose responses; otherwise relate meals to their calorie/protein goals\n"
         "- GLP-1 medications reduce appetite. If the patient is eating less, check if they recently started or increased GLP-1. Expected, not concerning."
         + _LANE_RULE
     ),
@@ -101,10 +114,7 @@ NUTRITION_SPEC = DomainSpec(
 
 FITNESS_SPEC = DomainSpec(
     domain="fitness",
-    data_types=[
-        "fitness_overview", "fitness_activity_distribution",
-        "fitness_inactive_periods", "patient_workout",
-    ],
+    data_types=_domain_data_types("fitness"),
     system_prompt=(
         "You are a FITNESS and activity specialist. Your domain: activity, steps, exercise, and workouts. Focus on:\n"
         "- Daily steps, active minutes, calories burned\n"
@@ -112,22 +122,22 @@ FITNESS_SPEC = DomainSpec(
         "- Activity patterns and consistency across both synced and self-reported data\n"
         "- Sedentary periods and their health impact\n"
         "- Progress toward the patient's activity and step goals\n"
-        "- When reporting activity or inactivity, note time of day when available — helps correlate with glucose patterns"
+        "- When reporting activity or inactivity, note time of day when available — it helps correlate with glucose patterns (if the patient tracks glucose) or with energy/sleep patterns otherwise"
         + _LANE_RULE
     ),
 )
 
 VITALS_SPEC = DomainSpec(
     domain="vitals",
-    data_types=["vital", "profile"],
+    data_types=_domain_data_types("vitals", "profile"),
     system_prompt=(
         "You are a VITALS and body metrics specialist. Your domain: blood pressure, heart rate, "
         "weight, SpO2, profile only. Focus on:\n"
-        "- Blood pressure trends (hypertension is common in diabetes and obesity)\n"
+        "- Blood pressure trends against standard reference ranges\n"
         "- Resting heart rate patterns and variability\n"
         "- Weight trends over time — progress toward weight loss goals\n"
         "- BMI trajectory and body composition changes\n"
-        "- SpO2 readings if available (sleep apnea risk in obese patients)\n"
+        "- SpO2 readings if available\n"
         "- Flag concerning trends: rising BP, rapid weight gain, abnormal HR"
         + _LANE_RULE
     ),
@@ -135,7 +145,7 @@ VITALS_SPEC = DomainSpec(
 
 SLEEP_SPEC = DomainSpec(
     domain="sleep",
-    data_types=["sleep", "sleep_checkin", "mood_entry", "symptom_entry"],
+    data_types=_domain_data_types("sleep"),
     system_prompt=(
         "You are a SLEEP & WELLNESS specialist. Your domains: sleep data, self-reported sleep check-ins, mood entries, and symptom entries.\n"
         "Focus on:\n"
@@ -147,17 +157,17 @@ SLEEP_SPEC = DomainSpec(
         "- Symptom tracking: severity trends, frequency of specific symptoms over time\n"
         "- Symptom-mood-sleep correlation: do symptoms worsen with poor sleep or low mood?\n"
         "- GLP-1 / medication side effect patterns: GI symptoms (nausea, constipation), fatigue\n"
-        "- Impact of sleep, mood, and symptoms on glucose control\n"
-        "- Sleep apnea indicators (very common in obese patients)\n"
+        "- If the patient has glucose/CGM data: impact of sleep, mood, and symptoms on glucose control\n"
+        "- Sleep apnea indicators when the data suggests them (snoring reports, low SpO2, fragmented sleep)\n"
         "- Flag concerning patterns: chronic short sleep, persistent low mood, deteriorating quality, escalating symptom severity\n"
-        "- When reporting issues, note the date — helps correlate with glucose patterns"
+        "- When reporting issues, note the date — it helps correlate across domains"
         + _LANE_RULE
     ),
 )
 
 DOCUMENTS_SPEC = DomainSpec(
     domain="documents",
-    data_types=["patient_document"],
+    data_types=_domain_data_types("documents"),
     system_prompt=(
         "You are a MEDICAL DOCUMENTS specialist. Your domain: lab reports, prescriptions, "
         "clinical notes, and body composition reports. Focus on:\n"

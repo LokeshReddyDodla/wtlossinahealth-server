@@ -106,8 +106,22 @@ class InsightTracker:
         trace_id: str | None = None,
         trigger: str | None = None,
         consecutive_days: int | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        event_time: datetime | str | None = None,
+        translation: dict | None = None,
     ) -> None:
         """Record that an insight was sent.
+
+        ``translation``: what the user actually saw when their preferred AI
+        language isn't English — {"language", "title", "message",
+        "suggested_query"}. The top-level title/message stay English (the
+        canonical audit copy).
+
+        ``event_time`` is when the SOURCE EVENT happened (meal consumed,
+        reading taken) — distinct from ``created_at`` (when the insight was
+        generated). Retro-logged entries diverge; timeline placement and
+        analytics need the event's own time.
 
         Args:
             consecutive_days: If provided (from :meth:`should_send`), skips
@@ -153,6 +167,21 @@ class InsightTracker:
         if trace_id:
             doc["trace_id"] = trace_id
         doc["trigger"] = trigger or "cron"
+        if entity_type:
+            doc["entity_type"] = entity_type
+        if entity_id:
+            doc["entity_id"] = entity_id
+        if translation:
+            doc["translation"] = translation
+        if event_time:
+            if isinstance(event_time, str):
+                try:
+                    event_time = datetime.fromisoformat(event_time)
+                except ValueError:
+                    logger.warning("Unparseable event_time %r — storing created_at only", event_time)
+                    event_time = None
+            if event_time is not None:
+                doc["event_time"] = event_time
 
         await self._collection.insert_one(doc)
 
@@ -171,11 +200,17 @@ class InsightTracker:
         *,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
+        by_event_time: bool = False,
     ) -> list[dict]:
         """Get recent insight history for a patient (newest first).
 
         Excludes dedup-only records (those without an insight_id) that are
         created by daily briefs to block afternoon/evening duplicate topics.
+
+        ``by_event_time=True`` filters the date range against the SOURCE
+        EVENT's time (falling back to created_at for records without one) —
+        used by the timeline, where a retro-logged meal's insight belongs on
+        the day the meal happened, not the day the insight was generated.
         """
         await self._maybe_ensure_indexes()
         query: dict = {"patient_id": patient_id, "insight_id": {"$exists": True}}
@@ -189,7 +224,13 @@ class InsightTracker:
                 range_clause["$lte"] = (
                     to_date if to_date.tzinfo else to_date.replace(tzinfo=timezone.utc)
                 )
-            query["created_at"] = range_clause
+            if by_event_time:
+                query["$or"] = [
+                    {"event_time": range_clause},
+                    {"event_time": {"$exists": False}, "created_at": range_clause},
+                ]
+            else:
+                query["created_at"] = range_clause
         cursor = self._collection.find(
             query,
             sort=[("created_at", -1)],
@@ -242,6 +283,17 @@ class InsightTracker:
 
         return by_patient
 
+    async def delete_by_entity(self, entity_type: str, entity_id: str) -> int:
+        """Delete all insights linked to a source entity (meal, reading, etc.).
+
+        Returns the number of deleted documents.
+        """
+        await self._maybe_ensure_indexes()
+        result = await self._collection.delete_many(
+            {"entity_type": entity_type, "entity_id": entity_id},
+        )
+        return result.deleted_count
+
     async def ensure_indexes(self) -> None:
         """Create indexes for efficient lookups. Safe to call multiple times."""
         await self._collection.create_index(
@@ -256,6 +308,23 @@ class InsightTracker:
         await self._collection.create_index(
             "insight_id",
             name="insight_id_idx",
+        )
+        await self._collection.create_index(
+            [("entity_type", 1), ("entity_id", 1)],
+            name="insight_entity_idx",
+            sparse=True,
+        )
+        # Covers get_history / get_insights_for_patients: equality on
+        # patient_id + sort on created_at (the category index can't serve
+        # that sort — category sits between the prefix and the sort key).
+        await self._collection.create_index(
+            [("patient_id", 1), ("created_at", -1)],
+            name="insight_patient_time_idx",
+        )
+        await self._collection.create_index(
+            [("patient_id", 1), ("event_time", -1)],
+            name="insight_patient_event_time_idx",
+            sparse=True,
         )
         self._indexes_ensured = True
 

@@ -18,9 +18,14 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from lib.core.constants import ProfileTypeEnum
-from lib.core.container import container
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
 from lib.ai_foundation.agents.proactive_monitor.notify import send_top_insight_notification
 from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.service_dependencies import (
+    get_patient_name_resolver,
+    get_proactive_monitor_agent,
+)
 from rest_server.response_models import SuccessResponse
 
 logger = logging.getLogger(__name__)
@@ -53,22 +58,18 @@ async def trigger_proactive_scan(
             check_permissions=False,
         )
     ),
+    monitor: ProactiveMonitorAgent = Depends(get_proactive_monitor_agent),
+    resolver: PatientNameResolver = Depends(get_patient_name_resolver),
 ):
     """Manually trigger a proactive health scan for a patient. Admin only.
 
     Scans the patient's recent data and returns structured health insights.
     Optionally sends FCM notification to a different user (for testing).
     """
-    from lib.ai_foundation.agents.proactive_monitor import ProactiveMonitorAgent
-
-    monitor: ProactiveMonitorAgent = container.resolve(ProactiveMonitorAgent)
-
     # Resolve patient name + timezone
     patient_name = None
     tz_name = None
     try:
-        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
-        resolver: PatientNameResolver = container.resolve(PatientNameResolver)
         names = await resolver.resolve_names([payload.patient_id])
         timezones = await resolver.resolve_timezones([payload.patient_id])
         patient_name = names.get(payload.patient_id)

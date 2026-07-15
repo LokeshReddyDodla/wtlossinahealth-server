@@ -10,7 +10,6 @@ share the same TranscriptionResult contract so callers never know which ran.
 
 from __future__ import annotations
 
-import base64
 import io
 import logging
 import wave
@@ -20,6 +19,11 @@ from typing import Literal
 from pydantic import BaseModel
 
 from lib.ai_foundation.voice.config import VoiceSettings
+from lib.ai_foundation.voice.providers import (
+    AudioProvider,
+    SARVAM_INPUT_CODECS,
+    SARVAM_STT_LANGUAGE_MAP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,19 +169,6 @@ class OpenAISpeechToText(BaseSpeechToText):
 
 # ── Sarvam AI ───────────────────────────────────────────────────────────────
 
-_SARVAM_LANGUAGE_MAP: dict[str, str] = {
-    "hi": "hi-IN", "bn": "bn-IN", "kn": "kn-IN", "ml": "ml-IN",
-    "mr": "mr-IN", "od": "od-IN", "pa": "pa-IN", "ta": "ta-IN",
-    "te": "te-IN", "en": "en-IN", "gu": "gu-IN", "as": "as-IN",
-    "ur": "ur-IN", "ne": "ne-IN",
-}
-
-_FORMAT_TO_SARVAM_CODEC: dict[str, str] = {
-    "pcm": "pcm_s16le", "wav": "wav", "mp3": "mp3", "mp4": "mp4",
-    "m4a": "mp4", "webm": "webm", "ogg": "ogg", "flac": "flac",
-    "mpeg": "mpeg", "mpga": "mpeg",
-}
-
 
 class SarvamSpeechToText(BaseSpeechToText):
     """Async Sarvam AI STT client."""
@@ -205,8 +196,8 @@ class SarvamSpeechToText(BaseSpeechToText):
             upload_bytes = audio_bytes
 
         lang = language or self._settings.STT_LANGUAGE
-        sarvam_lang = _SARVAM_LANGUAGE_MAP.get(lang, "unknown") if lang else "unknown"
-        sarvam_codec = _FORMAT_TO_SARVAM_CODEC.get(audio_format, "wav")
+        sarvam_lang = SARVAM_STT_LANGUAGE_MAP.get(lang, "unknown") if lang else "unknown"
+        sarvam_codec = SARVAM_INPUT_CODECS.get(audio_format, "wav")
 
         logger.debug(
             "STT [sarvam]: transcribing %d bytes (format=%s, lang=%s)",
@@ -242,8 +233,6 @@ class SarvamSpeechToText(BaseSpeechToText):
 
 def build_stt(settings: VoiceSettings) -> BaseSpeechToText:
     """Build the STT client based on the configured provider."""
-    from lib.ai_foundation.voice.providers import AudioProvider
-
     provider = AudioProvider(settings.STT_PROVIDER)
     if provider == AudioProvider.SARVAM:
         try:

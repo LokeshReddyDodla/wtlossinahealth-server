@@ -74,6 +74,19 @@ class MemoryFact(BaseModel):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
     )
+    created_at: datetime | None = Field(
+        default=None,
+        description="When this memory was FIRST learned. Set on insert, preserved across updates.",
+    )
+
+
+# Higher number = more authoritative. An auto-extraction must never
+# overwrite what the user explicitly told us.
+SOURCE_PRIORITY: dict[str, int] = {
+    MemorySource.USER_EXPLICIT.value: 2,
+    MemorySource.SYSTEM.value: 1,
+    MemorySource.AUTO_EXTRACTED.value: 0,
+}
 
 
 class ConversationTurn(BaseModel):
@@ -118,6 +131,24 @@ class ThreadSummary(BaseModel):
     date_scope: str | None = Field(
         default=None,
         description="Active date scope (e.g. 'this_week').",
+    )
+    last_assistant_question: str | None = Field(
+        default=None,
+        description=(
+            "Open question the agent asked in its most recent reply, if any. "
+            "Cleared when the next reply asks nothing. Lets the agent avoid "
+            "re-asking ignored questions and resolve short answers after the "
+            "raw turn scrolls out of the history window."
+        ),
+    )
+    pending_data_request: dict | None = Field(
+        default=None,
+        description=(
+            "Set when the agent asked the user to LOG data "
+            "({entity_type, asked_at, expires_at} ISO). The event-driven "
+            "monitor checks this on data-logged events: a match turns the "
+            "event insight into a continuation of this conversation."
+        ),
     )
     turn_count: int = 0
     updated_at: datetime = Field(

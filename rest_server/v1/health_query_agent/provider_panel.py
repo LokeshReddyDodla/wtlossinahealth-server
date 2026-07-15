@@ -17,10 +17,16 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
 from lib.ai_foundation.agents.health_query.provider_panel_utils import has_partial_access
+from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
 from lib.core.constants import ProfileTypeEnum
 from lib.dependencies.actor import Actor, get_current_actor
-from lib.dependencies.service_dependencies import get_care_provider_access_service
+from lib.dependencies.service_dependencies import (
+    get_care_provider_access_service,
+    get_insight_tracker,
+    get_patient_name_resolver,
+)
 from lib.services.care_provider_access_service import CareProviderAccessService
 from rest_server.response_models import SuccessResponse
 
@@ -56,6 +62,8 @@ async def get_provider_panel(
     care_provider_access_service: CareProviderAccessService = Depends(
         get_care_provider_access_service
     ),
+    resolver: PatientNameResolver = Depends(get_patient_name_resolver),
+    tracker: InsightTracker = Depends(get_insight_tracker),
 ):
     """Ranked list of patients needing attention based on recent health insights.
 
@@ -95,16 +103,9 @@ async def get_provider_panel(
         )
 
     # Resolve patient names
-    from lib.core.container import container
-    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
-
-    resolver: PatientNameResolver = container.resolve(PatientNameResolver)
     names = await resolver.resolve_names(patient_ids)
 
     # Query recent insights
-    from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
-
-    tracker: InsightTracker = container.resolve(InsightTracker)
     insights_by_patient = await tracker.get_insights_for_patients(
         patient_ids, since_days=days, limit_per_patient=5,
     )
