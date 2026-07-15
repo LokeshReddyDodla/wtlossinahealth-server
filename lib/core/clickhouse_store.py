@@ -28,7 +28,7 @@ class ClickHouseStore:
         self.client.execute("""
         CREATE TABLE IF NOT EXISTS aihealth.cgm_data (
             patient_id String,
-            time DateTime,
+            time DateTime64(3),
             glucose_level Float32,
             record_type LowCardinality(String),
             source LowCardinality(String) DEFAULT 'unknown',
@@ -47,7 +47,7 @@ class ClickHouseStore:
             source_platform LowCardinality(String),
             unit LowCardinality(String),
             value Float64,
-            start_datetime DateTime,
+            start_datetime DateTime64(3),
             end_datetime DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
@@ -63,7 +63,7 @@ class ClickHouseStore:
             source_name LowCardinality(String),
             source_platform LowCardinality(String),
             sleep_duration Float64,
-            sleep_start_time DateTime,
+            sleep_start_time DateTime64(3),
             sleep_end_time DateTime64(3),
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
             INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
@@ -78,7 +78,7 @@ class ClickHouseStore:
             vital_id String DEFAULT '',
             type LowCardinality(String),
             value Float64,
-            time DateTime,
+            time DateTime64(3),
             source_name LowCardinality(String) DEFAULT '',
             source_platform LowCardinality(String) DEFAULT '',
             INDEX idx_type type TYPE set(100) GRANULARITY 4,
@@ -94,33 +94,95 @@ class ClickHouseStore:
         self.create_vitals_data_table()
 
     def migrate_to_optimized_types(self):
-        """One-time migration: String→LowCardinality + non-key DateTime→DateTime64(3).
+        """One-time migration: LowCardinality + DateTime64(3) via table recreation.
 
-        ORDER BY key columns (time, start_datetime, sleep_start_time) cannot be
-        ALTERed — those need table recreation in a maintenance window.
+        Phase 1: cgm_data, sleep_data (run first to validate)
+        Phase 2: fitness_data, vitals_data (call migrate_phase2 after)
+
+        Stop writes before running. Data is copied, old table dropped, new
+        table renamed. Atomic rename = no window where the table doesn't exist.
         """
-        alterations = [
-            # cgm_data (time is ORDER BY key — skip)
-            "ALTER TABLE aihealth.cgm_data MODIFY COLUMN record_type LowCardinality(String)",
-            "ALTER TABLE aihealth.cgm_data MODIFY COLUMN source LowCardinality(String)",
-            # fitness_data (start_datetime is ORDER BY key — skip)
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN end_datetime DateTime64(3)",
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN type LowCardinality(String)",
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN source_name LowCardinality(String)",
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN source_platform LowCardinality(String)",
-            "ALTER TABLE aihealth.fitness_data MODIFY COLUMN unit LowCardinality(String)",
-            # sleep_data (sleep_start_time is ORDER BY key — skip)
-            "ALTER TABLE aihealth.sleep_data MODIFY COLUMN sleep_end_time DateTime64(3)",
-            "ALTER TABLE aihealth.sleep_data MODIFY COLUMN type LowCardinality(String)",
-            "ALTER TABLE aihealth.sleep_data MODIFY COLUMN source_name LowCardinality(String)",
-            "ALTER TABLE aihealth.sleep_data MODIFY COLUMN source_platform LowCardinality(String)",
-            # vitals_data (time is ORDER BY key — skip)
-            "ALTER TABLE aihealth.vitals_data MODIFY COLUMN type LowCardinality(String)",
-            "ALTER TABLE aihealth.vitals_data MODIFY COLUMN source_name LowCardinality(String)",
-            "ALTER TABLE aihealth.vitals_data MODIFY COLUMN source_platform LowCardinality(String)",
-        ]
-        for stmt in alterations:
-            self.client.execute(stmt, settings={"mutations_sync": 2})
+        self._recreate_table(
+            old="aihealth.cgm_data",
+            new="aihealth.cgm_data_new",
+            create_sql="""
+            CREATE TABLE aihealth.cgm_data_new (
+                patient_id String,
+                time DateTime64(3),
+                glucose_level Float32,
+                record_type LowCardinality(String),
+                source LowCardinality(String) DEFAULT 'unknown',
+                INDEX idx_record_type record_type TYPE set(100) GRANULARITY 4,
+                INDEX idx_source source TYPE set(100) GRANULARITY 4
+            ) ENGINE = ReplacingMergeTree()
+            ORDER BY (patient_id, time, source, record_type)
+            """,
+        )
+        self._recreate_table(
+            old="aihealth.sleep_data",
+            new="aihealth.sleep_data_new",
+            create_sql="""
+            CREATE TABLE aihealth.sleep_data_new (
+                patient_id String,
+                type LowCardinality(String),
+                source_name LowCardinality(String),
+                source_platform LowCardinality(String),
+                sleep_duration Float64,
+                sleep_start_time DateTime64(3),
+                sleep_end_time DateTime64(3),
+                INDEX idx_type type TYPE set(100) GRANULARITY 4,
+                INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
+            ) ENGINE = ReplacingMergeTree()
+            ORDER BY (patient_id, type, sleep_start_time, source_name)
+            """,
+        )
+
+    def migrate_phase2(self):
+        """Phase 2: recreate fitness_data and vitals_data."""
+        self._recreate_table(
+            old="aihealth.fitness_data",
+            new="aihealth.fitness_data_new",
+            create_sql="""
+            CREATE TABLE aihealth.fitness_data_new (
+                patient_id String,
+                type LowCardinality(String),
+                source_name LowCardinality(String),
+                source_platform LowCardinality(String),
+                unit LowCardinality(String),
+                value Float64,
+                start_datetime DateTime64(3),
+                end_datetime DateTime64(3),
+                INDEX idx_type type TYPE set(100) GRANULARITY 4,
+                INDEX idx_source_name source_name TYPE set(100) GRANULARITY 4
+            ) ENGINE = ReplacingMergeTree()
+            ORDER BY (patient_id, type, start_datetime, source_name)
+            """,
+        )
+        self._recreate_table(
+            old="aihealth.vitals_data",
+            new="aihealth.vitals_data_new",
+            create_sql="""
+            CREATE TABLE aihealth.vitals_data_new (
+                patient_id String,
+                vital_id String DEFAULT '',
+                type LowCardinality(String),
+                value Float64,
+                time DateTime64(3),
+                source_name LowCardinality(String) DEFAULT '',
+                source_platform LowCardinality(String) DEFAULT '',
+                INDEX idx_type type TYPE set(100) GRANULARITY 4,
+                INDEX idx_source source_name TYPE set(100) GRANULARITY 4
+            ) ENGINE = ReplacingMergeTree()
+            ORDER BY (patient_id, type, time, source_name)
+            """,
+        )
+
+    def _recreate_table(self, old: str, new: str, create_sql: str):
+        self.client.execute(f"DROP TABLE IF EXISTS {new}")
+        self.client.execute(create_sql)
+        self.client.execute(f"INSERT INTO {new} SELECT * FROM {old}")
+        self.client.execute(f"DROP TABLE {old}")
+        self.client.execute(f"RENAME TABLE {new} TO {old}")
 
     def write_data(self, table_name, data):
         if not data:
