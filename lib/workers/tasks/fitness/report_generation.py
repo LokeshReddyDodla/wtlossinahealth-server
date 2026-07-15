@@ -123,9 +123,11 @@ async def process_fitness_upload(
             )
 
         # Filter months that need processing (including updates)
+        # Reverse so the most recent month is processed first
         months_to_process = await _filter_months_needing_reports(
             patient_id, months_between
         )
+        months_to_process.reverse()
 
         if not months_to_process:
             logger.info(f"All fitness reports up to date for {patient_id}")
