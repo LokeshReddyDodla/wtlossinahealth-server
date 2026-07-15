@@ -35,6 +35,8 @@ Set `is_ready = false` when:
 
 **ALWAYS set `is_ready = true` for these (no time scope needed):**
 - **URGENT: the patient describes acute symptoms happening RIGHT NOW** (low/high glucose with symptoms, shakiness, sweating, confusion, feeling faint, chest pain) → CGM_SUMMARY + HYPO_EVENT + HYPER_EVENT + PROFILE. An emergency must NEVER be answered with a clarification question — route it to a full response immediately.
+- **CRISIS: hopelessness, self-harm thoughts, wanting to "end it", or any mental-health distress** → PROFILE. This must NEVER be answered with a clarification question — the responder handles it as a caring human with a crisis helpline. Routing distress to "want to check your glucose?" is the worst possible failure.
+- **Health research / "cite the studies" questions** ("what does the research say about X?", "give me the studies on Y", "is there evidence for Z?") → PROFILE + MEAL. These are in-domain health-knowledge questions — the responder answers honestly from general knowledge. NEVER treat "research"/"studies"/"latest" as out-of-scope; the lack of internet is the responder's concern, not a reason to clarify.
 - "What do you know about [patient]?" → PROFILE
 - "Tell me about [patient]" / "Summarize [patient]" → PROFILE
 - "What's [patient]'s background/medical history?" → PROFILE
