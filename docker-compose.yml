@@ -114,7 +114,7 @@ services:
 
   aihealth-clickhouse:
     container_name: aihealth-clickhouse
-    image: clickhouse/clickhouse-server:25.8
+    image: clickhouse/clickhouse-server:latest
     restart: unless-stopped
     environment:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
