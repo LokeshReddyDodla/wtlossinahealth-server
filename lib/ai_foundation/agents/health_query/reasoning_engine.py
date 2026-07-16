@@ -937,9 +937,12 @@ class ReasoningEngine:
         )
         # Grounding gate: a health reply must not fabricate patient data, confirm
         # a false patient claim, or disavow real data. Verify against the same
-        # evidence it was built from and correct once on a violation.
+        # evidence it was built from and correct once on a violation. Runs
+        # even with an empty ledger: no-tool turns are exactly where the
+        # responder spontaneously retracts its own prior-turn data, and the
+        # verifier sees history/context as grounded sources.
         if (
-            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger
+            settings.GROUNDING_VERIFY_ENABLED and evidence_ledger is not None
             and (getattr(resp, "content", "") or "").strip()
         ):
             resp = await self._verify_and_correct(
