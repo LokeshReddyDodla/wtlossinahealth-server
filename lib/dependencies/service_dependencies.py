@@ -242,6 +242,12 @@ def get_care_provider_profile_service() -> CareProviderProfileService:
     )
 
 
+def get_care_intent_service():
+    from lib.services.care_intent_service import CareIntentService
+
+    return cast(CareIntentService, container.resolve(CareIntentService))
+
+
 def get_care_provider_access_service() -> CareProviderAccessService:
     return cast(
         CareProviderAccessService,

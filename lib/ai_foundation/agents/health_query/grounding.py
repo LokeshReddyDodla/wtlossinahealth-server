@@ -69,6 +69,9 @@ NOT violations (never list these):
 - Arithmetic derived from evidence numbers (sums, averages, ranges, differences).
 - Hedged inferences that cite evidence ("the peanuts likely slowed absorption").
 - The patient's SUBJECTIVE experience (how they felt, what they say they did) — only a specific NUMBER or logged EVENT must match the evidence.
+- Anything stated in PRE-LOADED PATIENT CONTEXT or EARLIER CONVERSATION sections below — care-team instructions, medications, memory facts, and the assistant's own earlier statements are all grounded sources, exactly like tool evidence.
+
+CRITICAL: statements the assistant made in EARLIER turns were grounded in evidence gathered at that time. A reply that retracts, apologizes for, or calls fabricated its own earlier statements is a wrongly_denied violation — the assistant must never disavow its prior turns just because this turn's tool evidence doesn't repeat that data.
 
 Be literal and conservative: only list a claim you are confident is false-about-the-data or a denial of data that is genuinely present. If the reply is faithful, return empty lists."""
 

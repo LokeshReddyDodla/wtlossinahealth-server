@@ -281,10 +281,9 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
     calories and carbs. Anchor = the salad (the item that got the praise)."""
     # The sitting ends 45 min before "now" — a meal_logged trigger fires right
     # after logging, so relative anchoring is realistic AND immune to the
-    # wall-clock hour of the eval run. Absolute/clamped hours made this case
-    # hour-sensitive: at early-local-hours CI runs the clamp produced a
-    # "dinner" at ~2 PM and the LLM (correctly, per its no-nagging rule)
-    # declined to comment on an incoherent borderline meal.
+    # wall-clock hour of the eval run. Absolute/clamped hours collapse to
+    # incoherent times at early local hours (a "dinner" at ~2 PM), and the
+    # LLM then legitimately declines per its no-nagging rule.
     now = datetime.now(ZoneInfo(tz_name))
     d = now
     h = now - timedelta(minutes=45)
@@ -327,8 +326,8 @@ def scenario_meal_items_need_aggregation(tz_name: str) -> list[dict[str, Any]]:
         # The same-sitting items, logged minutes apart
         # Each item reads "light" alone; combined ≈ 1010 kcal / 107g carbs —
         # unambiguously heavy for one sitting, so a silent scan is a real
-        # miss, not defensible restraint (borderline macros made the LLM
-        # legitimately decline at some wall-clock hours → flaky gate).
+        # miss, not defensible restraint (borderline macros let the LLM
+        # legitimately decline, which makes the gate hour-flaky).
         item(25, "meal-item-peanuts", "boiled peanuts (1 large bowl)", 280, 18, 12, 6),
         item(20, "meal-item-tindora", "tindora sabji", 130, 13, 3, 4),
         item(16, "meal-item-chapati", "2 chapatis", 120, 24, 4, 2),

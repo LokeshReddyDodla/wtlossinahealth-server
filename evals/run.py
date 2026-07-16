@@ -185,6 +185,18 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
         insight_tracker=None,  # no dedup — every scenario judged fresh
     )
 
+    # `care_intents:` on a case injects provider-authored guidance (attributed
+    # dicts, same shape CareIntentService.get_active_context serves).
+    if case.get("care_intents"):
+        class _IntentReader:
+            def __init__(self, intents):
+                self._intents = intents
+
+            async def get_active_context(self, _pid):
+                return self._intents
+
+        agent._care_intents = _IntentReader(case["care_intents"])
+
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
     # from the fixtures — the real fetch hits live Qdrant by point ID, which

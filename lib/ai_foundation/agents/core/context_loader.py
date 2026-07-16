@@ -44,12 +44,15 @@ class AgentContext(BaseModel):
     pinned_refs: list[ResolvedRef] = Field(default_factory=list)
     local_time: str | None = None  # device local time for date resolution
     response_language: str = "en"  # patient's preferred AI language
+    # Active provider-authored guidance (attributed dicts from CareIntentService)
+    care_intents: list[dict] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}
     gamification: dict[str, Any] | None = None
     medications_text: str | None = None  # all medications (active + past) from Qdrant
     # Panel (multi-patient) mode — keyed by patient_id
     panel_facts: dict[str, list[dict]] = Field(default_factory=dict)
+    panel_care_intents: dict[str, list[dict]] = Field(default_factory=dict)
     panel_insights: dict[str, list[dict]] = Field(default_factory=dict)
 
 
@@ -135,6 +138,31 @@ def build_context_messages(
 
     if context.medications_text:
         context_parts.append(f"Patient Medications:\n{context.medications_text}")
+
+    if context.care_intents:
+        lines = []
+        for ci in context.care_intents:
+            cond = f" (when: {ci['trigger_condition']})" if ci.get("trigger_condition") else ""
+            lines.append(f"- [{ci['author_name']}, {ci['author_role']}] {ci['original_text']}{cond}")
+        context_parts.append(
+            "CARE TEAM FOCUS — instructions this patient's providers gave for their care. "
+            "When your answer touches one of these, reinforce it and attribute the provider "
+            "by name (\"Dr. Mehta asked you to...\"). You are the patient's companion: "
+            "acknowledge the care team's guidance, never police the patient with it, and "
+            "NEVER invent an instruction that is not listed:\n" + "\n".join(lines)
+        )
+
+    if context.panel_care_intents:
+        pnames = context.patient_names
+        lines = [
+            "CARE TEAM FOCUS (by patient) — provider instructions on record. "
+            "Reinforce with attribution when relevant; never invent one:"
+        ]
+        for pid, intents in context.panel_care_intents.items():
+            name = pnames.get(pid, f"Patient {pid[:8]}")
+            for ci in intents:
+                lines.append(f"- {name}: [{ci['author_name']}, {ci['author_role']}] {ci['original_text']}")
+        context_parts.append("\n".join(lines))
 
     if context_parts:
         messages.append({
@@ -269,12 +297,15 @@ class ContextLoader:
         insight_tracker: InsightTracker | None = None,
         gamification_service: GamificationService | None = None,
         retriever: QdrantRetriever | None = None,
+        care_intents: Any | None = None,
     ) -> None:
         self._memory = memory
         self._resolver = patient_resolver
         self._insight_tracker = insight_tracker
         self._gamification_service = gamification_service
         self._retriever = retriever
+        # Duck-typed reader: get_active_context(patient_id) -> list[dict]
+        self._care_intents = care_intents
 
     async def load(
         self,
@@ -292,12 +323,13 @@ class ContextLoader:
 
         if is_panel:
             # Panel mode: load facts + insights for every patient; skip gamification + local_time
-            names, history, summary, panel_facts, panel_insights = await asyncio.gather(
+            names, history, summary, panel_facts, panel_insights, panel_care_intents = await asyncio.gather(
                 self._load_names(all_pids),
                 self._load_history(thread_id),
                 self._load_summary(thread_id),
                 self._load_panel_facts(all_pids),
                 self._load_panel_insights(all_pids),
+                self._load_panel_care_intents(all_pids),
             )
             return AgentContext(
                 facts=[],
@@ -309,10 +341,11 @@ class ContextLoader:
                 local_time=None,
                 panel_facts=panel_facts,
                 panel_insights=panel_insights,
+                panel_care_intents=panel_care_intents,
             )
 
         # Single-patient mode: original behaviour
-        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs, response_language = await asyncio.gather(
+        facts, history, summary, names, insights, gamification, local_time, medications_text, pinned_refs, response_language, care_intents = await asyncio.gather(
             self._load_facts(patient_id),
             self._load_history(thread_id),
             self._load_summary(thread_id),
@@ -323,6 +356,7 @@ class ContextLoader:
             self._load_medications(patient_id),
             self._load_pinned_refs(refs, patient_id),
             self._load_response_language(patient_id),
+            self._load_care_intents(patient_id),
         )
 
         return AgentContext(
@@ -336,7 +370,17 @@ class ContextLoader:
             medications_text=medications_text,
             pinned_refs=pinned_refs,
             response_language=response_language,
+            care_intents=care_intents,
         )
+
+    async def _load_care_intents(self, patient_id: str | None) -> list[dict]:
+        if not self._care_intents or not patient_id:
+            return []
+        try:
+            return await self._care_intents.get_active_context(patient_id)
+        except Exception as exc:
+            logger.debug("Failed to load care intents: %s", exc)
+            return []
 
     async def _load_facts(self, patient_id: str | None) -> list[dict]:
         if not self._memory or not patient_id:
@@ -480,6 +524,22 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to load gamification context: %s", exc)
             return None
+
+    async def _load_panel_care_intents(self, patient_ids: list[str]) -> dict[str, list[dict]]:
+        if not self._care_intents or not patient_ids:
+            return {}
+
+        import asyncio
+
+        async def _one(pid: str) -> tuple[str, list[dict]]:
+            try:
+                return pid, await self._care_intents.get_active_context(pid)
+            except Exception as exc:
+                logger.debug("Failed to load care intents for %s: %s", pid, exc)
+                return pid, []
+
+        results = await asyncio.gather(*(_one(pid) for pid in patient_ids))
+        return {pid: intents for pid, intents in results if intents}
 
     async def _load_panel_facts(self, patient_ids: list[str]) -> dict[str, list[dict]]:
         """Load facts for every patient in a panel, keyed by patient_id."""

@@ -106,7 +106,7 @@ class HealthQueryAgent(BaseAgent):
 
     # ── Public: Non-streaming ─────────────────────────────────────────────
 
-    async def run(self, input: AgentInput) -> AgentOutput:
+    async def run(self, input: AgentInput, _is_retry: bool = False) -> AgentOutput:
         # Fallbacks in case _init_pipeline fails before assigning the real ones
         # (the exception handlers below reference both).
         trace_id = f"trc_{uuid4().hex[:16]}"
@@ -231,7 +231,17 @@ class HealthQueryAgent(BaseAgent):
             return output
 
         except Exception as exc:
-            logger.exception("HealthQueryAgent.run failed: %s", exc)
+            # One silent retry before any patient-visible error: transient
+            # provider timeouts are the dominant failure, and nothing
+            # user-facing has been emitted (turn save + background tasks only
+            # happen after success, so a full re-attempt is side-effect free).
+            if not _is_retry:
+                logger.warning(
+                    "HealthQueryAgent.run attempt failed, retrying once: %s", exc,
+                )
+                await asyncio.sleep(settings.PIPELINE_RETRY_BACKOFF_SECONDS)
+                return await self.run(input, _is_retry=True)
+            logger.exception("HealthQueryAgent.run failed after retry: %s", exc)
             return AgentOutput(
                 message=await self._localize_text(
                     "I'm having trouble processing your request right now. Please try again.",
@@ -255,7 +265,17 @@ class HealthQueryAgent(BaseAgent):
 
         try:
             yield sse_status(PipelineStage.EXTRACTING_INTENT, "Understanding the question...")
-            pc = await self._init_pipeline(input)
+            try:
+                pc = await self._init_pipeline(input)
+            except Exception as exc:
+                # Pre-content: nothing but a status event has been sent, so a
+                # silent retry is safe. Post-token failures keep the existing
+                # error/salvage path — retrying would duplicate content.
+                logger.warning(
+                    "run_stream init failed pre-content, retrying once: %s", exc,
+                )
+                await asyncio.sleep(settings.PIPELINE_RETRY_BACKOFF_SECONDS)
+                pc = await self._init_pipeline(input)
             pipeline_start = pc.pipeline_start
             user_timestamp = pc.user_timestamp
             trace_id = pc.trace_id

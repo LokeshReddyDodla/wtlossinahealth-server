@@ -4,6 +4,8 @@ Base = declarative_base()
 
 # Import all models to ensure they are registered with the base
 from .admin import Admin
+from .care_intent import CareIntent
+from .care_intent_event import CareIntentEvent
 from .care_provider import CareProvider
 from .health_facility import HealthFacility
 from .package import Package

@@ -56,6 +56,7 @@ class AIFoundationSettings(BaseSettings):
     RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
+    PIPELINE_RETRY_BACKOFF_SECONDS: float = Field(default=2.5, description="Backoff before the single silent pipeline retry that precedes any patient-visible error")
 
     # ── Planning ──────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ class AIFoundationSettings(BaseSettings):
     LOOKUP_DEFAULT_LIMIT: int = Field(default=200, description="Default record limit for look_up tool")
     BASELINE_DISPLAY_LIMIT: int = Field(default=200, description="Max individual records shown in compare_baseline")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
-    MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
+    MAX_HISTORY_MESSAGES: int = Field(default=24, description="Max conversation history messages in LLM context — a companion that forgets (and then denies) its own turn-4 advice by turn 12 gaslights the patient; 12 exchanges covers a long session")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
     # ── Panel (Multi-Patient) Queries ─────────────────────────────────────
