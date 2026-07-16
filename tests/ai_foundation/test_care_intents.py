@@ -674,3 +674,35 @@ class TestEscalationPush:
             miss_streak=3, escalated_at=datetime.now().replace(tzinfo=None),
         )
         fcm.send_fcm_notification_to_user_devices.assert_not_called()
+
+
+# ── translation retry carries the failure reason ─────────────────────────────
+
+
+class TestTranslationCorrectiveRetry:
+    @pytest.mark.asyncio
+    async def test_echo_retry_includes_problem(self):
+        from lib.ai_foundation.translation.service import TranslationService
+
+        gateway = MagicMock()
+        gateway.complete = AsyncMock(side_effect=[
+            SimpleNamespace(content="Create today's meal plan"),   # echo — fails check
+            SimpleNamespace(content="Aaj ka meal plan banao"),     # corrected
+        ])
+        ts = TranslationService(gateway)
+        out = await ts.translate("Create today's meal plan", "hi-Latn", terse=True)
+        assert out == "Aaj ka meal plan banao"
+        # Second call must carry the corrective turn, not repeat the identical request
+        second_messages = gateway.complete.call_args_list[1].kwargs["messages"]
+        assert any("failed a check" in m["content"] for m in second_messages if m["role"] == "user")
+
+    @pytest.mark.asyncio
+    async def test_double_echo_falls_back_to_source(self):
+        from lib.ai_foundation.translation.service import TranslationService
+
+        gateway = MagicMock()
+        gateway.complete = AsyncMock(return_value=SimpleNamespace(content="Create today's meal plan"))
+        ts = TranslationService(gateway)
+        out = await ts.translate("Create today's meal plan", "hi-Latn", terse=True)
+        assert out == "Create today's meal plan"  # English beats broken — by design
+        assert gateway.complete.await_count == 2

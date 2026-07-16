@@ -139,6 +139,17 @@ class TranslationService:
                     "Translation fidelity check failed (attempt %d, %s→%s): %s",
                     attempt, source_lang, target_lang, problem,
                 )
+                # Re-sending the identical request at low temperature mostly
+                # reproduces the identical failure — tell the model what was
+                # wrong so the second attempt actually differs.
+                if attempt == 1:
+                    messages = messages + [
+                        {"role": "assistant", "content": candidate},
+                        {"role": "user", "content": (
+                            f"That output failed a check: {problem}. Produce the "
+                            f"{target_name} translation again, fixing exactly that."
+                        )},
+                    ]
             except Exception as exc:
                 logger.warning(
                     "Translation call failed (attempt %d, %s→%s): %s",
