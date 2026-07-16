@@ -17,6 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from lib.ai_foundation.care_intents.advisor import detect_intent_conflicts, propose_intents
 from lib.ai_foundation.care_intents.contracts import CareIntentView, StructuredCareIntent
 from lib.ai_foundation.care_intents.structurer import structure_care_intent
 from lib.ai_foundation.models.gateway import ModelGateway
@@ -27,6 +28,7 @@ from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
     get_care_intent_service,
     get_care_provider_access_service,
+    get_insight_tracker,
     get_model_gateway,
 )
 from lib.models.care_intent import CareIntent
@@ -55,6 +57,10 @@ class CareIntentCreateRequest(BaseModel):
 
 class CareIntentStatusRequest(BaseModel):
     status: str = Field(..., pattern="^(active|paused|expired)$")
+
+
+class CareIntentProposeRequest(BaseModel):
+    patient_id: UUID
 
 
 class FocusAreaItem(BaseModel):
@@ -120,10 +126,23 @@ async def create_care_intent(
             ).strip(),
         )
 
+    # Advisory only — conflicts warn the provider, never block or resolve.
+    conflicts: list[str] = []
+    try:
+        existing = await service.get_active_context(str(verified_pid))
+        conflicts = await detect_intent_conflicts(
+            gateway, new_text=payload.text, existing=existing,
+        )
+    except Exception:
+        logger.warning("Conflict check failed — creating without warnings", exc_info=True)
+
     if payload.dry_run:
         return SuccessResponse(
             message="Structured (not saved)",
-            data={"structured": structured.model_dump(mode="json")},
+            data={
+                "structured": structured.model_dump(mode="json"),
+                "conflicts": conflicts,
+            },
         )
 
     provider = current_actor.model
@@ -137,7 +156,43 @@ async def create_care_intent(
     )
     return SuccessResponse(
         message="Care intent created",
-        data={"care_intent": _view(intent).model_dump(mode="json")},
+        data={
+            "care_intent": _view(intent).model_dump(mode="json"),
+            "conflicts": conflicts,
+        },
+    )
+
+
+@router.post("/propose", response_model=SuccessResponse[dict])
+async def propose_care_intents(
+    payload: CareIntentProposeRequest,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
+        check_permissions=False,
+    ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+    gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
+    tracker: Annotated[object, Depends(get_insight_tracker)],
+):
+    """AI-drafted intent proposals from the patient's recent insights.
+
+    Returns 0-2 grounded suggestions with rationale — NOTHING is stored;
+    the provider approves one via the normal create flow.
+    """
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=payload.patient_id,
+        care_provider_access_service=access,
+    )
+    insights = await tracker.get_history(str(verified_pid), limit=15)
+    existing = await service.get_active_context(str(verified_pid))
+    proposals = await propose_intents(
+        gateway, recent_insights=insights, existing=existing,
+    )
+    return SuccessResponse(
+        message="OK",
+        data={"proposals": [p.model_dump() for p in proposals]},
     )
 
 
@@ -152,16 +207,30 @@ async def list_care_intents(
     service: Annotated[CareIntentService, Depends(get_care_intent_service)],
     include_inactive: bool = Query(False),
 ):
-    """All intents for a patient — the whole care team sees each other's."""
+    """All intents for a patient — the whole care team sees each other's.
+
+    Each intent carries its adherence report ("did what I asked happen"):
+    daily verdicts, follow rate, barriers the data surfaced, and a
+    needs_attention flag on repeated consecutive misses.
+    """
     verified_pid = await resolve_patient_access(
         actor=current_actor,
         patient_id=patient_id,
         care_provider_access_service=access,
     )
     intents = await service.list_for_patient(verified_pid, include_inactive=include_inactive)
+    adherence = await service.adherence_summary([i.care_intent_id for i in intents])
     return SuccessResponse(
         message="OK",
-        data={"care_intents": [_view(i).model_dump(mode="json") for i in intents]},
+        data={
+            "care_intents": [
+                {
+                    **_view(i).model_dump(mode="json"),
+                    "adherence": adherence.get(str(i.care_intent_id)),
+                }
+                for i in intents
+            ],
+        },
     )
 
 

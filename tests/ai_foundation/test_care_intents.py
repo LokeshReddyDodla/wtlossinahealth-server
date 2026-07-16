@@ -79,12 +79,17 @@ class _FakeScalars:
 
 
 class _FakeSession:
-    def __init__(self, rows):
-        self._rows = rows
+    def __init__(self, *result_sets):
+        self._result_sets = list(result_sets)
         self.committed = False
+        self.executed = []
 
     async def scalars(self, stmt):
-        return _FakeScalars(self._rows)
+        rows = self._result_sets.pop(0) if self._result_sets else []
+        return _FakeScalars(rows)
+
+    async def execute(self, stmt):
+        self.executed.append(stmt)
 
     async def commit(self):
         self.committed = True
@@ -92,6 +97,7 @@ class _FakeSession:
 
 def _row(days_until_review: int, author="Dr. Mehta"):
     return SimpleNamespace(
+        care_intent_id=uuid4(),
         author_name=author,
         author_role="Doctor",
         original_text="Walk after dinner",
@@ -108,7 +114,7 @@ class TestGetActiveContext:
     @pytest.mark.asyncio
     async def test_serves_fresh_expires_stale(self):
         fresh, stale = _row(5), _row(-1, author="Dr. Old")
-        session = _FakeSession([fresh, stale])
+        session = _FakeSession([fresh, stale], [])  # intents, then (no) events
         svc = CareIntentService(postgres_store=None)
 
         out = await svc.get_active_context(str(uuid4()), postgres_session=session)
@@ -117,13 +123,14 @@ class TestGetActiveContext:
         assert stale.status == "expired"
         assert session.committed  # expiry persisted
         assert set(out[0]) == {
-            "author_name", "author_role", "original_text",
+            "care_intent_id", "author_name", "author_role", "original_text",
             "intent_type", "domain", "trigger_condition", "cadence",
+            "adherence_hint",
         }
 
     @pytest.mark.asyncio
     async def test_all_fresh_no_commit(self):
-        session = _FakeSession([_row(5)])
+        session = _FakeSession([_row(5)], [])
         svc = CareIntentService(postgres_store=None)
         out = await svc.get_active_context(str(uuid4()), postgres_session=session)
         assert len(out) == 1
@@ -166,7 +173,7 @@ class TestMonitorInjection:
     @pytest.mark.asyncio
     async def test_section_is_attributed(self):
         agent = self._agent(_FakeReader([_INTENT_DICT]))
-        text = await agent._load_care_intents("p1")
+        text = agent._format_care_intents_section(await agent._get_care_intents("p1"))
         assert "CARE TEAM FOCUS" in text
         assert "[Dr. Mehta, Doctor]" in text
         assert "walk after dinner" in text
@@ -174,12 +181,23 @@ class TestMonitorInjection:
 
     @pytest.mark.asyncio
     async def test_no_reader_or_empty_is_silent(self):
-        assert await self._agent(None)._load_care_intents("p1") == ""
-        assert await self._agent(_FakeReader([]))._load_care_intents("p1") == ""
+        agent = self._agent(None)
+        assert agent._format_care_intents_section(await agent._get_care_intents("p1")) == ""
+        agent = self._agent(_FakeReader([]))
+        assert agent._format_care_intents_section(await agent._get_care_intents("p1")) == ""
 
     @pytest.mark.asyncio
     async def test_reader_failure_degrades_to_empty(self):
-        assert await self._agent(_FakeReader(raises=True))._load_care_intents("p1") == ""
+        agent = self._agent(_FakeReader(raises=True))
+        assert await agent._get_care_intents("p1") == []
+
+    def test_adherence_hint_rendered_with_gentle_framing(self):
+        agent = self._agent(None)
+        text = agent._format_care_intents_section([
+            {**_INTENT_DICT, "adherence_hint": "followed 2 of last 5 evaluated days; missed the last 2"},
+        ])
+        assert "recent adherence: followed 2 of last 5" in text
+        assert "never scold" in text
 
 
 class TestChatInjection:
@@ -330,3 +348,204 @@ class TestCreateEndpoint:
         assert kwargs["author_name"] == "Dr. Mehta"
         assert kwargs["patient_id"] == pid
         assert resp.data["care_intent"]["author_name"] == "Dr. Mehta"
+
+
+# ── v2: adherence evaluator ──────────────────────────────────────────────────
+
+
+class TestAdherenceEvaluator:
+    @pytest.mark.asyncio
+    async def test_verdicts_map_by_index_and_default_unclear(self):
+        from lib.ai_foundation.care_intents.adherence import (
+            AdherenceVerdicts,
+            IntentVerdict,
+            evaluate_adherence,
+        )
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(
+            AdherenceVerdicts(verdicts=[
+                IntentVerdict(intent_index=0, status="followed"),
+                # index 1 skipped by the model → must default to "unclear"
+            ]),
+            None,
+        ))
+        intents = [
+            {"care_intent_id": "a", "original_text": "Walk after dinner"},
+            {"care_intent_id": "b", "original_text": "No rice at dinner"},
+        ]
+        out = await evaluate_adherence(
+            gateway, intents=intents, day_data_text="...", day_label="yesterday",
+        )
+        assert out == [
+            {"care_intent_id": "a", "status": "followed", "note": None},
+            {"care_intent_id": "b", "status": "unclear", "note": None},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_barrier_note_carried(self):
+        from lib.ai_foundation.care_intents.adherence import (
+            AdherenceVerdicts,
+            IntentVerdict,
+            evaluate_adherence,
+        )
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(
+            AdherenceVerdicts(verdicts=[
+                IntentVerdict(intent_index=0, status="missed", barrier_note="knee pain logged 7/10"),
+            ]),
+            None,
+        ))
+        out = await evaluate_adherence(
+            gateway,
+            intents=[{"care_intent_id": "a", "original_text": "Walk after dinner"}],
+            day_data_text="Symptom: knee pain 7/10",
+            day_label="yesterday",
+        )
+        assert out[0]["note"] == "knee pain logged 7/10"
+
+    @pytest.mark.asyncio
+    async def test_no_intents_no_llm_call(self):
+        from lib.ai_foundation.care_intents.adherence import evaluate_adherence
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock()
+        assert await evaluate_adherence(gateway, intents=[], day_data_text="x", day_label="y") == []
+        gateway.extract.assert_not_called()
+
+
+# ── v2: adherence summary + escalation flag ─────────────────────────────────
+
+
+def _event(days_ago: int, status: str, note=None):
+    return SimpleNamespace(
+        event_date=date.today() - timedelta(days=days_ago),
+        status=status,
+        note=note,
+    )
+
+
+class TestAdherenceSummary:
+    @pytest.mark.asyncio
+    async def test_needs_attention_after_three_consecutive_misses(self):
+        intent_id = uuid4()
+        events = [
+            _event(1, "missed"), _event(2, "missed"), _event(3, "missed", note="no dinner logged"),
+            _event(4, "followed"), _event(5, "unclear"),
+        ]
+        for e in events:
+            e.care_intent_id = intent_id
+        session = _FakeSession(events)
+        svc = CareIntentService(postgres_store=None)
+        out = await svc.adherence_summary([intent_id], postgres_session=session)
+        s = out[str(intent_id)]
+        assert s["consecutive_missed"] == 3
+        assert s["needs_attention"] is True
+        assert s["days_evaluated"] == 4  # unclear not judged
+        assert s["days_followed"] == 1
+        assert s["barriers"] == ["no dinner logged"]
+
+    @pytest.mark.asyncio
+    async def test_follow_streak_not_flagged(self):
+        intent_id = uuid4()
+        events = [_event(1, "followed"), _event(2, "missed"), _event(3, "missed")]
+        for e in events:
+            e.care_intent_id = intent_id
+        session = _FakeSession(events)
+        svc = CareIntentService(postgres_store=None)
+        out = await svc.adherence_summary([intent_id], postgres_session=session)
+        assert out[str(intent_id)]["needs_attention"] is False
+
+
+# ── v2: monitor morning hook ─────────────────────────────────────────────────
+
+
+class TestMonitorAdherenceHook:
+    @pytest.mark.asyncio
+    async def test_records_on_morning_cron_only_semantics(self, monkeypatch):
+        """_record_adherence evaluates with scan data and upserts via reader."""
+        from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+        import lib.ai_foundation.care_intents.adherence as adherence_mod
+
+        reader = MagicMock()
+        reader.record_adherence = AsyncMock()
+        agent = ProactiveMonitorAgent(gateway=MagicMock(), qdrant=MagicMock(), care_intents=reader)
+
+        verdicts = [{"care_intent_id": "abcd1234", "status": "followed", "note": None}]
+        monkeypatch.setattr(adherence_mod, "evaluate_adherence", AsyncMock(return_value=verdicts))
+
+        await agent._record_adherence(
+            "patient-1", [{"care_intent_id": "abcd1234", "original_text": "x"}],
+            "day data", "2026-07-15", "yesterday",
+        )
+        kwargs = reader.record_adherence.call_args
+        assert kwargs.args[0] == verdicts
+        assert str(kwargs.kwargs["event_date"]) == "2026-07-15"
+
+    @pytest.mark.asyncio
+    async def test_failure_never_raises(self, monkeypatch):
+        from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+        import lib.ai_foundation.care_intents.adherence as adherence_mod
+
+        monkeypatch.setattr(
+            adherence_mod, "evaluate_adherence", AsyncMock(side_effect=RuntimeError("llm down")),
+        )
+        agent = ProactiveMonitorAgent(gateway=MagicMock(), qdrant=MagicMock(), care_intents=MagicMock())
+        await agent._record_adherence("p", [{"care_intent_id": "a", "original_text": "x"}], "d", "2026-07-15", "yesterday")
+
+
+# ── v3: conflicts + proposals ────────────────────────────────────────────────
+
+
+class TestAdvisor:
+    @pytest.mark.asyncio
+    async def test_no_existing_intents_skips_llm(self):
+        from lib.ai_foundation.care_intents.advisor import detect_intent_conflicts
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock()
+        assert await detect_intent_conflicts(gateway, new_text="x", existing=[]) == []
+        gateway.extract.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_conflicts_returned(self):
+        from lib.ai_foundation.care_intents.advisor import ConflictReport, detect_intent_conflicts
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(
+            ConflictReport(conflicts=['Dr. Mehta\'s "no food after 9 PM" conflicts with a bedtime snack.']),
+            None,
+        ))
+        out = await detect_intent_conflicts(
+            gateway,
+            new_text="add a small bedtime snack",
+            existing=[_INTENT_DICT],
+        )
+        assert len(out) == 1 and "conflicts" in out[0]
+
+    @pytest.mark.asyncio
+    async def test_proposals_capped_at_two_and_empty_without_insights(self):
+        from lib.ai_foundation.care_intents.advisor import (
+            IntentProposal,
+            IntentProposals,
+            propose_intents,
+        )
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(
+            IntentProposals(proposals=[
+                IntentProposal(text=f"t{i}", rationale="r") for i in range(4)
+            ]),
+            None,
+        ))
+        out = await propose_intents(
+            gateway,
+            recent_insights=[{"title": "x", "message": "y", "severity": "warning"}],
+            existing=[],
+        )
+        assert len(out) == 2
+
+        gateway.extract.reset_mock()
+        assert await propose_intents(gateway, recent_insights=[], existing=[]) == []
+        gateway.extract.assert_not_called()

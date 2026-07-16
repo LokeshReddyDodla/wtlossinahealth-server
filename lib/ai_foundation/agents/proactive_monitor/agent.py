@@ -304,9 +304,16 @@ class ProactiveMonitorAgent(BaseAgent):
 
             # 3. Facts + care-team intents + medications + metabolic profile
             facts_text = await self._load_facts(patient_id)
-            care_text = await self._load_care_intents(patient_id)
+            care_intents = await self._get_care_intents(patient_id)
+            care_text = self._format_care_intents_section(care_intents)
             if care_text:
                 facts_text = f"{facts_text}\n\n{care_text}" if facts_text else care_text
+            # Morning cron sees the completed previous day — the only window
+            # where an adherence verdict isn't premature.
+            if care_intents and not is_event and scan_period == "morning":
+                await self._record_adherence(
+                    patient_id, care_intents, data_text, scan_date, scan_label,
+                )
             med_text = await self._load_medications(patient_id)
             if med_text:
                 facts_text = (
@@ -744,35 +751,70 @@ class ProactiveMonitorAgent(BaseAgent):
             logger.warning("Failed to load facts for %s: %s", patient_id, exc)
             return ""
 
-    async def _load_care_intents(self, patient_id: str) -> str:
-        """Active care-team intents as an attributed prompt section.
-
-        Attribution is the lever: "Dr. Mehta asked us to check" lands where
-        "the app suggests" doesn't — every line carries its author.
-        """
+    async def _get_care_intents(self, patient_id: str) -> list[dict]:
         if not self._care_intents:
-            return ""
+            return []
         try:
-            intents = await self._care_intents.get_active_context(patient_id)
-            if not intents:
-                return ""
-            lines = []
-            for ci in intents:
-                cond = f" (when: {ci['trigger_condition']})" if ci.get("trigger_condition") else ""
-                lines.append(
-                    f"- [{ci['author_name']}, {ci['author_role']}] "
-                    f"{ci['original_text']}{cond}"
-                )
-            return (
-                "CARE TEAM FOCUS — instructions from this patient's providers. "
-                "Weave these into insights where today's data makes them relevant, "
-                "attributing the provider by name. NEVER invent an instruction "
-                "that is not listed:\n" + "\n".join(lines)
-            )
+            return await self._care_intents.get_active_context(patient_id)
         except Exception as exc:
             # Degrades to a scan without care-team context — visible, not silent.
             logger.warning("Failed to load care intents for %s: %s", patient_id, exc)
+            return []
+
+    @staticmethod
+    def _format_care_intents_section(intents: list[dict]) -> str:
+        """Attributed prompt section. Attribution is the lever: "Dr. Mehta
+        asked us to check" lands where "the app suggests" doesn't."""
+        if not intents:
             return ""
+        lines = []
+        for ci in intents:
+            cond = f" (when: {ci['trigger_condition']})" if ci.get("trigger_condition") else ""
+            adherence = (
+                f"\n  recent adherence: {ci['adherence_hint']}"
+                if ci.get("adherence_hint")
+                else ""
+            )
+            lines.append(
+                f"- [{ci['author_name']}, {ci['author_role']}] "
+                f"{ci['original_text']}{cond}{adherence}"
+            )
+        return (
+            "CARE TEAM FOCUS — instructions from this patient's providers. "
+            "Weave these into insights where today's data makes them relevant, "
+            "attributing the provider by name. When adherence shows repeated "
+            "misses, gently explore what's making it hard — never scold. "
+            "NEVER invent an instruction that is not listed:\n" + "\n".join(lines)
+        )
+
+    async def _record_adherence(
+        self, patient_id: str, intents: list[dict], data_text: str, scan_date: str, scan_label: str,
+    ) -> None:
+        """Morning-cron only: judge each intent against the completed previous
+        day and upsert the verdicts. Failure never touches the scan."""
+        try:
+            from datetime import date as _date
+
+            from lib.ai_foundation.care_intents.adherence import evaluate_adherence
+
+            verdicts = await evaluate_adherence(
+                self.gateway,
+                intents=intents,
+                day_data_text=data_text,
+                day_label=scan_label,
+            )
+            await self._care_intents.record_adherence(
+                verdicts,
+                patient_id=patient_id,
+                event_date=_date.fromisoformat(scan_date),
+            )
+            logger.info(
+                "care_intents.adherence_recorded | patient=%s date=%s verdicts=%s",
+                patient_id[:8], scan_date,
+                {v["care_intent_id"][:8]: v["status"] for v in verdicts},
+            )
+        except Exception as exc:
+            logger.warning("Adherence evaluation failed for %s: %s", patient_id, exc)
 
     async def _load_medications(self, patient_id: str) -> str:
         """Load all medications from Qdrant (no date filter — persistent context)."""

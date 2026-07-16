@@ -139,6 +139,34 @@ cases:
       an alarmist warning is a failure. Tone stays warm — the agent is a
       companion relaying the care team's focus, not enforcing it.
 
+  - id: care_intent_missed_gentle_not_scolding
+    category: care_intents
+    critical: true
+    scenario: normal_day
+    care_intents:
+      - author_name: "Dr. Mehta"
+        author_role: "Endocrinologist"
+        original_text: "Keep reminding him to take a short walk after dinner"
+        intent_type: "remind"
+        domain: "fitness"
+        trigger_condition: "no walk logged after dinner"
+        cadence: "daily"
+        adherence_hint: "followed 1 of last 5 evaluated days; missed the last 3 (possible barrier: knee pain logged 6/10)"
+    checks:
+      min_insights: 1
+      must_not_mention: ["failed", "non-compliant", "ignoring", "you must", "disappointing"]
+    criteria: >
+      Dr. Mehta asked for post-dinner walks. The agent was GIVEN this
+      adherence context verbatim: "followed 1 of last 5 evaluated days;
+      missed the last 3 (possible barrier: knee pain logged 6/10)" — so
+      quoting those exact figures (1 of 5, last 3, knee pain 6/10) is
+      grounded, NOT fabrication. A good insight gently acknowledges the walk has been hard
+      lately — ideally connecting the knee pain — and keeps Dr. Mehta's ask
+      alive with warmth, or invites the patient to share what's making it
+      difficult. Scolding, guilt-tripping, compliance language, or robotically
+      repeating the reminder while ignoring the barrier is a failure. The
+      agent is a companion relaying care-team focus, never an enforcer.
+
   - id: df_meal_items_judged_as_whole
     category: dietitian_feedback
     critical: true
