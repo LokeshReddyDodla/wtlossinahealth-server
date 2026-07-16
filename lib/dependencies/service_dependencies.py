@@ -430,6 +430,24 @@ def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
+def get_holistic_data_service():
+    from lib.services.weightloss_agent.holistic_data_service import (
+        HolisticDataService,
+    )
+
+    return cast(HolisticDataService, container.resolve(HolisticDataService))
+
+
+def get_holistic_summary_service():
+    from lib.services.weightloss_agent.holistic_summary_service import (
+        HolisticSummaryService,
+    )
+
+    return cast(
+        HolisticSummaryService, container.resolve(HolisticSummaryService)
+    )
+
+
 def get_osteoflag_service() -> OsteoFlagService:
     return cast(OsteoFlagService, container.resolve(OsteoFlagService))
 

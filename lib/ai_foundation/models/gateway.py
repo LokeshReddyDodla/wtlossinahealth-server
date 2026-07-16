@@ -673,6 +673,7 @@ class ModelGateway:
             "messages": self._clean_messages(messages),
             "temperature": spec.temperature,
             "metadata": self._trace_metadata(trace_id),
+            **spec.extra,
         }
         if spec.max_tokens is not None:
             kwargs["max_tokens"] = spec.max_tokens
@@ -716,6 +717,7 @@ class ModelGateway:
                 messages=self._clean_messages(messages),
                 temperature=spec.temperature,
                 metadata=self._trace_metadata(trace_id),
+                **spec.extra,
             ),
             timeout=spec.timeout_seconds,
         )

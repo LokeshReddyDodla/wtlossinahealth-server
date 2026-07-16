@@ -164,6 +164,12 @@ from lib.services.weightloss_agent.task_service import TaskService
 from lib.services.weightloss_agent.agentic_chat_service import (
     AgenticChatService,
 )
+from lib.services.weightloss_agent.holistic_data_service import (
+    HolisticDataService,
+)
+from lib.services.weightloss_agent.holistic_summary_service import (
+    HolisticSummaryService,
+)
 from lib.services.weightloss_agent.agentic_orchestrator import (
     AgenticOrchestrator,
 )
@@ -421,6 +427,20 @@ container.register(
     "weekly_symptoms_glp1_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_weekly_symptoms_glp1"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    "daily_coach_analyses_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_daily_coach_analyses"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
+    "whole_person_summaries_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "wtloss_whole_person_summaries"
     ),
     scope=Scope.singleton,
 )
@@ -1243,7 +1263,43 @@ container.register(
             CoachMessengerService, container.resolve(CoachMessengerService)
         ),
         suggestion_cards_collection=container.resolve("suggestion_cards_collection"),
+        holistic_summary_service=cast(
+            HolisticSummaryService, container.resolve(HolisticSummaryService)
+        ),
     ),
+)
+
+# 🔹 Holistic Data Service — one-day snapshots across all stores
+container.register(
+    HolisticDataService,
+    lambda: HolisticDataService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+        inbody_reports_collection=container.resolve("inbody_reports_collection"),
+        glp1_settings_collection=container.resolve(
+            "weightloss_glp_injection_collection"
+        ),
+    ),
+    scope=Scope.singleton,
+)
+
+# 🔹 Holistic Summary Service — whole-person LLM analysis + daily coach messages
+container.register(
+    HolisticSummaryService,
+    lambda: HolisticSummaryService(
+        holistic_data_service=cast(
+            HolisticDataService, container.resolve(HolisticDataService)
+        ),
+        model_gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+        daily_analyses_collection=container.resolve(
+            "daily_coach_analyses_collection"
+        ),
+        summaries_collection=container.resolve(
+            "whole_person_summaries_collection"
+        ),
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+    scope=Scope.singleton,
 )
 
 

@@ -412,6 +412,21 @@ def build_default_registry(
             tags=["vision", "multimodal"],
         ),
         ModelSpec(
+            model_id="gpt-5.6-terra",
+            provider=ModelProvider.OPENAI,
+            temperature=0.0,
+            timeout_seconds=60.0,
+            cost_per_1k_input=0.005,
+            cost_per_1k_output=0.015,
+            supports_structured=True,
+            supports_streaming=True,
+            tags=["powerful", "reasoning"],
+            # This model rejects function tools on /v1/chat/completions unless
+            # reasoning_effort is 'none' (Instructor's structured output uses
+            # function tools).
+            extra={"reasoning_effort": "none"},
+        ),
+        ModelSpec(
             model_id="text-embedding-3-large",
             provider=ModelProvider.OPENAI,
             timeout_seconds=5.0,
