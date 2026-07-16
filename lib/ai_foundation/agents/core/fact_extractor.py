@@ -216,7 +216,7 @@ class FactExtractor:
             await self._compact_if_needed(patient_id)
 
         except Exception as exc:
-            logger.debug("Memory extraction failed (non-blocking): %s", exc)
+            logger.warning("Memory extraction failed (non-blocking): %s", exc)
 
     # -- Memory compaction --------------------------------------------------
 

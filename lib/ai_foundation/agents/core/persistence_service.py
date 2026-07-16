@@ -165,7 +165,7 @@ class PersistenceService:
                 },
             })
         except Exception as exc:
-            logger.debug("pending-request record failed (thread=%s): %s", thread_id, exc)
+            logger.warning("pending-request record failed (thread=%s): %s", thread_id, exc)
 
     @staticmethod
     def extract_open_question(assistant_message: str) -> str | None:
@@ -205,7 +205,7 @@ class PersistenceService:
                 thread_id, {"last_assistant_question": question},
             )
         except Exception as exc:
-            logger.debug("thread-state update failed (thread=%s): %s", thread_id, exc)
+            logger.warning("thread-state update failed (thread=%s): %s", thread_id, exc)
 
     # -- Thread compaction (non-blocking) ----------------------------------
 

@@ -43,6 +43,9 @@ class DataAssembler:
     ) -> None:
         self._qdrant = retriever
         self._postgres = postgres_store
+        # Bounded: entries hold up to ~500 meal payloads each and the service
+        # is a process-lifetime singleton — without eviction this grows one
+        # heavy entry per patient forever.
         self._state_cache: dict[str, tuple[float, dict]] = {}
 
     async def build_patient_state(
@@ -80,8 +83,18 @@ class DataAssembler:
             "profile": profile,
             "base": _extract_base(cgm_summary),
         }
+        self._evict_stale(now)
         self._state_cache[cache_key] = (now, state)
         return state
+
+    _CACHE_MAX_ENTRIES = 256
+
+    def _evict_stale(self, now: float) -> None:
+        expired = [k for k, (ts, _) in self._state_cache.items() if (now - ts) >= _CACHE_TTL]
+        for k in expired:
+            del self._state_cache[k]
+        while len(self._state_cache) >= self._CACHE_MAX_ENTRIES:
+            self._state_cache.pop(next(iter(self._state_cache)))
 
     async def build_signals(self, patient_id: str, patient_state: dict | None = None) -> dict[str, Any]:
         state = patient_state or await self.build_patient_state(patient_id)
@@ -142,7 +155,7 @@ class DataAssembler:
                     data_types=[_MEAL_TYPE],
                     date_start=start,
                     date_end=end,
-                    limit=500,
+                    limit=settings.METABOLIC_MEAL_HISTORY_LIMIT,
                 )
             )
             return [r.payload for r in results if (r.data_type or r.payload.get("data_type")) == _MEAL_TYPE]

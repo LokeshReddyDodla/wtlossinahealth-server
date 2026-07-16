@@ -81,7 +81,7 @@ class AIFoundationSettings(BaseSettings):
     STEP_LOG_TRUNCATION_CHARS: int = Field(default=500, description="Max chars per tool result in reasoning step logs")
     SUMMARY_TRUNCATION_CHARS: int = Field(default=200, description="Max chars for display summaries in SSE events")
     LOOKUP_DEFAULT_LIMIT: int = Field(default=200, description="Default record limit for look_up tool")
-    BASELINE_DISPLAY_LIMIT: int = Field(default=200, description="Max individual records shown in compare_baseline")
+    METABOLIC_MEAL_HISTORY_LIMIT: int = Field(default=500, description="Max meal records assembled into a metabolic patient state")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
     MAX_HISTORY_MESSAGES: int = Field(default=24, description="Max conversation history messages in LLM context — a companion that forgets (and then denies) its own turn-4 advice by turn 12 gaslights the patient; 12 exchanges covers a long session")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")

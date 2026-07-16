@@ -25,6 +25,34 @@ from lib.models.patient_notification import PatientNotification
 logger = logging.getLogger(__name__)
 
 
+async def localize_for_patient(patient_id: str, title: str, body: str) -> tuple[str, str]:
+    """Translate title/body into the patient's preferred AI language.
+
+    Titles are near-fixed strings (cached translation); bodies carry
+    patient-specific content (uncached). Any failure returns the English
+    originals.
+    """
+    try:
+        import asyncio
+
+        from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+        from lib.ai_foundation.translation import TranslationService
+        from lib.core.types import DEFAULT_AI_LANGUAGE
+
+        resolver = container.resolve(PatientNameResolver)
+        language = await resolver.resolve_language(patient_id)
+        if language == DEFAULT_AI_LANGUAGE:
+            return title, body
+        translator = container.resolve(TranslationService)
+        return tuple(await asyncio.gather(
+            translator.translate_cached(title, language),
+            translator.translate(body, language),
+        ))
+    except Exception as exc:
+        logger.warning("Notification translation failed for %s: %s", patient_id, exc)
+        return title, body
+
+
 _CATEGORY_CHANNEL: dict[
     NotificationCategoryLiteral,
     tuple[FCMNotificationChannelKeyLiteral, FCMNotificationGroupKeyLiteral],
@@ -56,6 +84,12 @@ async def record_and_send_notification(
     """
     data = data or {}
     channel_key, group_key = _CATEGORY_CHANNEL[category]
+
+    # The language invariant applies to EVERY patient-facing surface: the
+    # inbox row and the push must both arrive in the preferred AI language.
+    # English is canonical in code; delivery translates. Fail-open — an
+    # English push beats no push.
+    title, body = await localize_for_patient(patient_id, title, body)
 
     store = container.resolve(PostgresStore)
 
