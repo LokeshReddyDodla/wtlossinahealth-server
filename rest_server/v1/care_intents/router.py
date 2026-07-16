@@ -63,6 +63,12 @@ class CareIntentProposeRequest(BaseModel):
     patient_id: UUID
 
 
+class CareIntentUpdateRequest(BaseModel):
+    text: str = Field(..., min_length=5, max_length=1000)
+    dry_run: bool = False
+    structured: StructuredCareIntent | None = None
+
+
 class FocusAreaItem(BaseModel):
     """Patient-facing view — friendly summary + who asked, nothing clinical."""
 
@@ -232,6 +238,94 @@ async def list_care_intents(
             ],
         },
     )
+
+
+@router.put("/{care_intent_id}", response_model=SuccessResponse[dict])
+async def update_care_intent(
+    care_intent_id: UUID,
+    payload: CareIntentUpdateRequest,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
+        check_permissions=False,
+    ))],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+    gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
+):
+    """Edit an intent's instruction (author-only). Re-runs structuring, the
+    safety gate, and the conflict check (against OTHER intents — an intent
+    can't conflict with itself). Adherence history stays attached."""
+    structured = payload.structured or await structure_care_intent(gateway, payload.text)
+
+    if structured.safety_flag:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This instruction looks like a clinical order (medication/dosing/"
+                "diagnosis) and can't run as a nudge. "
+                + (structured.safety_reason or "")
+            ).strip(),
+        )
+
+    existing_intent = await service.get_by_id(
+        care_intent_id, author_id=current_actor.model.care_provider_id,
+    )
+    if existing_intent is None:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to edit")
+
+    conflicts: list[str] = []
+    try:
+        others = [
+            ci for ci in await service.get_active_context(str(existing_intent.patient_id))
+            if ci["care_intent_id"] != str(care_intent_id)
+        ]
+        conflicts = await detect_intent_conflicts(
+            gateway, new_text=payload.text, existing=others,
+        )
+    except Exception:
+        logger.warning("Conflict check failed — updating without warnings", exc_info=True)
+
+    if payload.dry_run:
+        return SuccessResponse(
+            message="Structured (not saved)",
+            data={
+                "structured": structured.model_dump(mode="json"),
+                "conflicts": conflicts,
+            },
+        )
+
+    intent = await service.update(
+        care_intent_id,
+        author_id=current_actor.model.care_provider_id,
+        original_text=payload.text.strip(),
+        structured=structured,
+    )
+    if intent is None:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to edit")
+    return SuccessResponse(
+        message="Care intent updated",
+        data={
+            "care_intent": _view(intent).model_dump(mode="json"),
+            "conflicts": conflicts,
+        },
+    )
+
+
+@router.delete("/{care_intent_id}", response_model=SuccessResponse[dict])
+async def delete_care_intent(
+    care_intent_id: UUID,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
+        check_permissions=False,
+    ))],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+):
+    """Remove an intent and its adherence history — only the author deletes."""
+    deleted = await service.delete(
+        care_intent_id, author_id=current_actor.model.care_provider_id,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to delete")
+    return SuccessResponse(message="Care intent deleted", data={"deleted": True})
 
 
 @router.patch("/{care_intent_id}/status", response_model=SuccessResponse[dict])
