@@ -962,6 +962,29 @@ class ReasoningEngine:
         )
         try:
             evidence_text = format_evidence_block(evidence_ledger, user_role)
+            # The responder legitimately grounds on more than this turn's tool
+            # evidence: pre-loaded patient context (care intents, meds, memory
+            # facts) and its OWN earlier turns. Verifying against tool evidence
+            # alone made the gate force false retractions of prior-turn data.
+            context_parts = [
+                m["content"] for m in responder_messages
+                if m.get("_meta", {}).get("type") in ("context", "gathered_data")
+            ]
+            history_parts = [
+                f"[{m['role']}] {m['content']}" for m in responder_messages
+                if m.get("_meta", {}).get("type") == "history"
+            ]
+            if context_parts:
+                evidence_text += (
+                    "\n\n## PRE-LOADED PATIENT CONTEXT (grounded sources)\n"
+                    + "\n\n".join(context_parts)
+                )
+            if history_parts:
+                evidence_text += (
+                    "\n\n## EARLIER CONVERSATION (assistant statements here were "
+                    "grounded when made — retracting them is a violation)\n"
+                    + "\n".join(history_parts)
+                )
             verdict = await verify_grounding(
                 self._gateway, response=resp.content, evidence_text=evidence_text,
             )

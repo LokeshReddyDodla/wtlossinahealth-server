@@ -82,7 +82,7 @@ class AIFoundationSettings(BaseSettings):
     LOOKUP_DEFAULT_LIMIT: int = Field(default=200, description="Default record limit for look_up tool")
     BASELINE_DISPLAY_LIMIT: int = Field(default=200, description="Max individual records shown in compare_baseline")
     MAX_CONTEXT_FACTS: int = Field(default=10, description="Max patient facts included in LLM context")
-    MAX_HISTORY_MESSAGES: int = Field(default=8, description="Max conversation history messages in LLM context")
+    MAX_HISTORY_MESSAGES: int = Field(default=24, description="Max conversation history messages in LLM context — a companion that forgets (and then denies) its own turn-4 advice by turn 12 gaslights the patient; 12 exchanges covers a long session")
     PROMPT_CACHE_MAX_SIZE: int = Field(default=5, description="Max entries in per-role prompt cache")
 
     # ── Panel (Multi-Patient) Queries ─────────────────────────────────────
