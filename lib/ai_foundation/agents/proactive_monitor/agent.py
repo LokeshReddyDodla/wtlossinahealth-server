@@ -306,16 +306,19 @@ class ProactiveMonitorAgent(BaseAgent):
             facts_text = await self._load_facts(patient_id)
             memory_facts_text = facts_text  # pre-care-section copy for the evaluator
             care_intents = await self._get_care_intents(patient_id)
-            care_text = self._format_care_intents_section(care_intents)
-            if care_text:
-                facts_text = f"{facts_text}\n\n{care_text}" if facts_text else care_text
             # Morning cron sees the completed previous day — the only window
-            # where an adherence verdict isn't premature.
+            # where an adherence verdict isn't premature. Verdicts are
+            # recorded BEFORE hints render so the brief never carries a
+            # hint that excludes the day it is talking about.
             if care_intents and not is_event and scan_period == "morning":
                 await self._record_adherence(
                     patient_id, care_intents, data_text, scan_date, scan_label,
                     facts_text=memory_facts_text,
                 )
+                care_intents = await self._get_care_intents(patient_id)
+            care_text = self._format_care_intents_section(care_intents)
+            if care_text:
+                facts_text = f"{facts_text}\n\n{care_text}" if facts_text else care_text
             med_text = await self._load_medications(patient_id)
             if med_text:
                 facts_text = (
@@ -800,6 +803,14 @@ class ProactiveMonitorAgent(BaseAgent):
 
             from lib.ai_foundation.care_intents.adherence import evaluate_adherence
 
+            judged_day = _date.fromisoformat(scan_date)
+            # An intent created after the judged day can't be missed on it.
+            intents = [
+                ci for ci in intents
+                if not ci.get("created_at") or ci["created_at"][:10] <= scan_date
+            ]
+            if not intents:
+                return
             verdicts = await evaluate_adherence(
                 self.gateway,
                 intents=intents,
@@ -810,7 +821,7 @@ class ProactiveMonitorAgent(BaseAgent):
             await self._care_intents.record_adherence(
                 verdicts,
                 patient_id=patient_id,
-                event_date=_date.fromisoformat(scan_date),
+                event_date=judged_day,
             )
             logger.info(
                 "care_intents.adherence_recorded | patient=%s date=%s verdicts=%s",

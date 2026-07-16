@@ -89,7 +89,9 @@ class OpenAITextToSpeech(BaseTextToSpeech):
     def __init__(self, settings: VoiceSettings) -> None:
         from openai import AsyncOpenAI
         super().__init__(settings)
-        self._client = AsyncOpenAI()
+        # Library default is 600s — a hung provider call must not stall a live
+        # voice turn for 10 minutes.
+        self._client = AsyncOpenAI(timeout=settings.PROVIDER_TIMEOUT_SECONDS)
 
     def supports_language(self, language: str) -> bool:
         return True  # OpenAI voices are multilingual; no per-language gating
@@ -132,7 +134,7 @@ class SarvamTextToSpeech(BaseTextToSpeech):
     def __init__(self, settings: VoiceSettings) -> None:
         from sarvamai import AsyncSarvamAI
         super().__init__(settings)
-        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
+        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY, timeout=settings.PROVIDER_TIMEOUT_SECONDS)
 
     def _resolve_language(self, language: str | None = None) -> str:
         lang = language or self._settings.SARVAM_TTS_LANGUAGE

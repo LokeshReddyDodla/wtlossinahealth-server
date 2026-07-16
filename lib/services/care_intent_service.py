@@ -79,7 +79,25 @@ class CareIntentService:
         if not include_inactive:
             stmt = stmt.where(CareIntent.status == "active")
         stmt = stmt.order_by(CareIntent.created_at.desc())
-        return list((await postgres_session.scalars(stmt)).all())
+        rows = list((await postgres_session.scalars(stmt)).all())
+        if self._expire_stale(rows):
+            await postgres_session.commit()
+        if not include_inactive:
+            rows = [r for r in rows if r.status == "active"]
+        return rows
+
+    @staticmethod
+    def _expire_stale(rows: list[CareIntent]) -> bool:
+        """Flip active intents past review_date to expired. Every read path
+        runs this so no surface (patient, provider, AI) ever disagrees about
+        whether an intent is live."""
+        today = date.today()
+        changed = False
+        for r in rows:
+            if r.status == "active" and r.review_date and r.review_date < today:
+                r.status = "expired"
+                changed = True
+        return changed
 
     @with_postgres_session
     async def update_status(
@@ -102,7 +120,7 @@ class CareIntentService:
         intent.status = status
         # Reactivating with a past review date would be lazily re-expired on
         # the very next AI read — resuming implies a fresh review window.
-        if status == "active" and intent.review_date and intent.review_date <= date.today():
+        if status == "active" and intent.review_date and intent.review_date < date.today():
             intent.review_date = date.today() + timedelta(days=DEFAULT_REVIEW_DAYS)
         await postgres_session.commit()
         await postgres_session.refresh(intent)
@@ -157,7 +175,10 @@ class CareIntentService:
         intent.patient_summary = structured.patient_summary
         intent.success_criteria = structured.success_criteria
         intent.review_date = date.today() + timedelta(days=structured.review_days)
-        intent.status = "active"
+        # Editing revives an expired intent (fresh ask, fresh window) but must
+        # not silently resume one the author deliberately paused.
+        if intent.status == "expired":
+            intent.status = "active"
         intent.escalated_at = None
         await postgres_session.commit()
         await postgres_session.refresh(intent)
@@ -218,18 +239,9 @@ class CareIntentService:
             .order_by(CareIntent.created_at.desc())
         )
         rows = list((await postgres_session.scalars(stmt)).all())
-
-        today = datetime.now().date()
-        fresh: list[CareIntent] = []
-        expired_any = False
-        for r in rows:
-            if r.review_date and r.review_date < today:
-                r.status = "expired"
-                expired_any = True
-            else:
-                fresh.append(r)
-        if expired_any:
+        if self._expire_stale(rows):
             await postgres_session.commit()
+        fresh = [r for r in rows if r.status == "active"]
 
         hints = await self._adherence_hints(
             [r.care_intent_id for r in fresh], postgres_session=postgres_session,
@@ -244,6 +256,7 @@ class CareIntentService:
                 "domain": r.domain,
                 "trigger_condition": r.trigger_condition,
                 "cadence": r.cadence,
+                "created_at": str(r.created_at) if r.created_at else None,
                 "adherence_hint": hints.get(r.care_intent_id),
             }
             for r in fresh
@@ -256,44 +269,23 @@ class CareIntentService:
         postgres_session: AsyncSession,
         window_days: int = 7,
     ) -> dict[UUID, str | None]:
-        """Short per-intent recent-adherence phrase for LLM context, e.g.
-        "followed 4 of last 6 evaluated days; missed the last 2"."""
-        if not intent_ids:
-            return {}
-        since = date.today() - timedelta(days=window_days)
-        stmt = (
-            select(CareIntentEvent)
-            .where(
-                and_(
-                    CareIntentEvent.care_intent_id.in_(intent_ids),
-                    CareIntentEvent.event_date >= since,
-                )
-            )
-            .order_by(CareIntentEvent.event_date.desc())
+        """Short per-intent recent-adherence phrase for LLM context, derived
+        from the same stats the provider report uses — one implementation,
+        one definition of "streak"."""
+        summary = await self.adherence_summary(
+            intent_ids, window_days=window_days, postgres_session=postgres_session,
         )
-        rows = list((await postgres_session.scalars(stmt)).all())
-        by_intent: dict[UUID, list[CareIntentEvent]] = {}
-        for r in rows:
-            by_intent.setdefault(r.care_intent_id, []).append(r)
-
-        hints: dict[UUID, str | None] = {i: None for i in intent_ids}
-        for intent_id, events in by_intent.items():
-            judged = [e for e in events if e.status in ("followed", "missed")]
-            if not judged:
+        hints: dict[UUID, str | None] = {}
+        for intent_id in intent_ids:
+            stats = summary.get(str(intent_id)) or {}
+            if not stats.get("days_evaluated"):
+                hints[intent_id] = None
                 continue
-            followed = sum(1 for e in judged if e.status == "followed")
-            hint = f"followed {followed} of last {len(judged)} evaluated days"
-            streak = 0
-            for e in judged:  # newest first
-                if e.status == "missed":
-                    streak += 1
-                else:
-                    break
-            if streak >= 2:
-                hint += f"; missed the last {streak}"
-            barrier = next((e.note for e in events if e.note), None)
-            if barrier:
-                hint += f" (possible barrier: {barrier})"
+            hint = f"followed {stats['days_followed']} of last {stats['days_evaluated']} evaluated days"
+            if stats["consecutive_missed"] >= 2:
+                hint += f"; missed the last {stats['consecutive_missed']}"
+            if stats.get("barriers"):
+                hint += f" (possible barrier: {stats['barriers'][0]})"
             hints[intent_id] = hint
         return hints
 
@@ -353,21 +345,30 @@ class CareIntentService:
         summary = await self.adherence_summary(
             missed_intent_ids, postgres_session=postgres_session,
         )
+        candidates = list((await postgres_session.scalars(
+            select(CareIntent).where(CareIntent.care_intent_id.in_(missed_intent_ids))
+        )).all())
         to_escalate: list[CareIntent] = []
-        for intent_id in missed_intent_ids:
-            s = summary.get(str(intent_id)) or {}
-            if s.get("consecutive_missed") != NEEDS_ATTENTION_CONSECUTIVE_MISSES:
+        for intent in candidates:
+            stats = summary.get(str(intent.care_intent_id)) or {}
+            if stats.get("consecutive_missed") != NEEDS_ATTENTION_CONSECUTIVE_MISSES:
                 continue
-            intent = await postgres_session.scalar(
-                select(CareIntent).where(CareIntent.care_intent_id == intent_id)
-            )
-            if intent is None:
-                continue
+            # escalated_at is server-naive, event_date is the patient-local
+            # judged day; safe because the morning scan always runs the
+            # calendar day AFTER the day it judges, in every timezone.
             if intent.escalated_at and intent.escalated_at.date() >= event_date:
                 continue
             to_escalate.append(intent)
         if not to_escalate:
             return
+
+        # CLAIM before SEND: escalated_at is committed first so a concurrent
+        # scan (or a send failure mid-loop) can never double-ping the author.
+        # Worst case on send failure is one missed ping, never a duplicate.
+        now = datetime.now().replace(tzinfo=None)
+        for intent in to_escalate:
+            intent.escalated_at = now
+        await postgres_session.commit()
 
         from lib.models.patient import Patient
 
@@ -378,29 +379,33 @@ class CareIntentService:
 
         fcm = self._get_provider_fcm()
         for intent in to_escalate:
-            barriers = (summary.get(str(intent.care_intent_id)) or {}).get("barriers") or []
-            barrier_line = f" Possible barrier: {barriers[0]}." if barriers else ""
-            await fcm.send_fcm_notification_to_user_devices(
-                user_id=str(intent.author_id),
-                title=f"Adherence alert — {patient_name}",
-                body=(
-                    f"{patient_name} has missed \"{intent.original_text}\" "
-                    f"{NEEDS_ATTENTION_CONSECUTIVE_MISSES} days in a row.{barrier_line}"
-                ),
-                channel_key="alerts",
-                group_key="alert_group",
-                data={
-                    "type": "care_intent_escalation",
-                    "care_intent_id": str(intent.care_intent_id),
-                    "patient_id": patient_id,
-                },
-            )
-            intent.escalated_at = datetime.now().replace(tzinfo=None)
-            logger.info(
-                "care_intents.escalated | intent=%s author=%s patient=%s",
-                str(intent.care_intent_id)[:8], str(intent.author_id)[:8], patient_id[:8],
-            )
-        await postgres_session.commit()
+            try:
+                barriers = (summary.get(str(intent.care_intent_id)) or {}).get("barriers") or []
+                barrier_line = f" Possible barrier: {barriers[0]}." if barriers else ""
+                await fcm.send_fcm_notification_to_user_devices(
+                    user_id=str(intent.author_id),
+                    title=f"Adherence alert — {patient_name}",
+                    body=(
+                        f"{patient_name} has missed \"{intent.original_text}\" "
+                        f"{NEEDS_ATTENTION_CONSECUTIVE_MISSES} days in a row.{barrier_line}"
+                    ),
+                    channel_key="alerts",
+                    group_key="alert_group",
+                    data={
+                        "type": "care_intent_escalation",
+                        "care_intent_id": str(intent.care_intent_id),
+                        "patient_id": patient_id,
+                    },
+                )
+                logger.info(
+                    "care_intents.escalated | intent=%s author=%s patient=%s",
+                    str(intent.care_intent_id)[:8], str(intent.author_id)[:8], patient_id[:8],
+                )
+            except Exception:
+                logger.warning(
+                    "Escalation push failed for intent %s (claimed — will not re-ping)",
+                    str(intent.care_intent_id)[:8], exc_info=True,
+                )
 
     def _get_provider_fcm(self):
         """Provider-app FCM client, built lazily (Firebase init needs prod

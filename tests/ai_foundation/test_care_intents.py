@@ -98,6 +98,7 @@ class _FakeSession:
 def _row(days_until_review: int, author="Dr. Mehta"):
     return SimpleNamespace(
         care_intent_id=uuid4(),
+        created_at=datetime.now(),
         author_name=author,
         author_role="Doctor",
         original_text="Walk after dinner",
@@ -125,7 +126,7 @@ class TestGetActiveContext:
         assert set(out[0]) == {
             "care_intent_id", "author_name", "author_role", "original_text",
             "intent_type", "domain", "trigger_condition", "cadence",
-            "adherence_hint",
+            "created_at", "adherence_hint",
         }
 
     @pytest.mark.asyncio
@@ -262,21 +263,29 @@ class TestCreateEndpoint:
 
     @pytest.mark.asyncio
     async def test_safety_flagged_rejected_not_stored(self, monkeypatch):
+        """The safety verdict is server-side ONLY — the request schema has no
+        structured field a client could forge."""
         import importlib
 
         router = importlib.import_module("rest_server.v1.care_intents.router")
 
+        assert "structured" not in router.CareIntentCreateRequest.model_fields
+        assert "structured" not in router.CareIntentUpdateRequest.model_fields
+
         monkeypatch.setattr(
             router, "resolve_patient_access", AsyncMock(return_value=uuid4()),
         )
-        service = MagicMock()
-        service.create = AsyncMock()
         flagged = _structured(
             safety_flag=True, safety_reason="Changes metformin dosing",
         )
+        monkeypatch.setattr(
+            router, "structure_care_intent", AsyncMock(return_value=flagged),
+        )
+        service = MagicMock()
+        service.create = AsyncMock()
         with pytest.raises(HTTPException) as exc:
             await router.create_care_intent(
-                payload=self._payload(structured=flagged),
+                payload=self._payload(),
                 current_actor=self._actor(),
                 access=MagicMock(),
                 service=service,
@@ -365,8 +374,8 @@ class TestAdherenceEvaluator:
         gateway = MagicMock()
         gateway.extract = AsyncMock(return_value=(
             AdherenceVerdicts(verdicts=[
-                IntentVerdict(intent_index=0, status="followed"),
-                # index 1 skipped by the model → must default to "unclear"
+                IntentVerdict(intent_index=1, status="followed"),
+                # index 2 skipped by the model → must default to "unclear"
             ]),
             None,
         ))
@@ -393,7 +402,7 @@ class TestAdherenceEvaluator:
         gateway = MagicMock()
         gateway.extract = AsyncMock(return_value=(
             AdherenceVerdicts(verdicts=[
-                IntentVerdict(intent_index=0, status="missed", barrier_note="knee pain logged 7/10"),
+                IntentVerdict(intent_index=1, status="missed", barrier_note="knee pain logged 7/10"),
             ]),
             None,
         ))
@@ -638,9 +647,11 @@ class TestEscalationPush:
         fcm.send_fcm_notification_to_user_devices = AsyncMock()
         svc = CareIntentService(postgres_store=None, provider_fcm=fcm)
         session = _EscalationSession(
-            result_sets=[_miss_events(intent_id, miss_streak)],  # adherence_summary query
+            result_sets=[
+                _miss_events(intent_id, miss_streak),           # adherence_summary events
+                [_intent_row(intent_id, escalated_at=escalated_at)],  # candidates IN-select
+            ],
             scalar_rows=[
-                _intent_row(intent_id, escalated_at=escalated_at),
                 SimpleNamespace(first_name="Asha"),  # patient lookup
             ],
         )
@@ -681,31 +692,36 @@ class TestEscalationPush:
 
 class TestTranslationCorrectiveRetry:
     @pytest.mark.asyncio
-    async def test_echo_retry_includes_problem(self):
+    async def test_echo_retry_includes_problem_for_non_latin_target(self):
         from lib.ai_foundation.translation.service import TranslationService
 
         gateway = MagicMock()
         gateway.complete = AsyncMock(side_effect=[
-            SimpleNamespace(content="Create today's meal plan"),   # echo — fails check
-            SimpleNamespace(content="Aaj ka meal plan banao"),     # corrected
+            SimpleNamespace(content="Log a meal"),        # Latin echo to a Devanagari target — fails
+            SimpleNamespace(content="खाना लॉग करें"),      # corrected
         ])
         ts = TranslationService(gateway)
-        out = await ts.translate("Create today's meal plan", "hi-Latn", terse=True)
-        assert out == "Aaj ka meal plan banao"
+        out = await ts.translate("Log a meal", "hi", terse=True)
+        assert out == "खाना लॉग करें"
         # Second call must carry the corrective turn, not repeat the identical request
         second_messages = gateway.complete.call_args_list[1].kwargs["messages"]
         assert any("failed a check" in m["content"] for m in second_messages if m["role"] == "user")
 
     @pytest.mark.asyncio
-    async def test_double_echo_falls_back_to_source(self):
+    async def test_latin_target_echo_accepted_first_try(self):
+        """hi-Latn chips legitimately keep English words — an identical output
+        is ACCEPTED (and cacheable), never a 2-LLM-call retry loop."""
         from lib.ai_foundation.translation.service import TranslationService
 
         gateway = MagicMock()
-        gateway.complete = AsyncMock(return_value=SimpleNamespace(content="Create today's meal plan"))
+        gateway.complete = AsyncMock(return_value=SimpleNamespace(content="BMI details"))
         ts = TranslationService(gateway)
-        out = await ts.translate("Create today's meal plan", "hi-Latn", terse=True)
-        assert out == "Create today's meal plan"  # English beats broken — by design
-        assert gateway.complete.await_count == 2
+        out = await ts.translate_cached("BMI details", "hi-Latn", terse=True)
+        assert out == "BMI details"
+        assert gateway.complete.await_count == 1
+        # cached — second call is free
+        assert await ts.translate_cached("BMI details", "hi-Latn", terse=True) == "BMI details"
+        assert gateway.complete.await_count == 1
 
 
 # ── full-fledged CRUD: delete, edit, resume-bumps-review ─────────────────────

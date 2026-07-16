@@ -61,7 +61,9 @@ class OpenAISpeechToText(BaseSpeechToText):
 
     def __init__(self, settings: VoiceSettings) -> None:
         from openai import AsyncOpenAI
-        self._client = AsyncOpenAI()
+        # Library default is 600s — a hung provider call must not stall a live
+        # voice turn for 10 minutes.
+        self._client = AsyncOpenAI(timeout=settings.PROVIDER_TIMEOUT_SECONDS)
         self._settings = settings
 
     async def transcribe_file(
@@ -175,7 +177,7 @@ class SarvamSpeechToText(BaseSpeechToText):
 
     def __init__(self, settings: VoiceSettings) -> None:
         from sarvamai import AsyncSarvamAI
-        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY)
+        self._client = AsyncSarvamAI(api_subscription_key=settings.SARVAM_API_KEY, timeout=settings.PROVIDER_TIMEOUT_SECONDS)
         self._settings = settings
 
     async def transcribe(

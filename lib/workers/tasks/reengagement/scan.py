@@ -107,6 +107,12 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
                 if not can_send(pid, "re_engagement"):
                     continue
 
+                # Same language invariant as every patient push — the
+                # templates are English canonical, delivery translates.
+                from lib.services.notifications.sender import localize_for_patient
+
+                title, body = await localize_for_patient(pid, title, body)
+
                 await fcm.send_fcm_notification_to_user_devices(
                     user_id=pid,
                     title=title,

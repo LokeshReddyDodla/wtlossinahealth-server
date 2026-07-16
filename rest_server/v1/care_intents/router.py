@@ -51,8 +51,6 @@ class CareIntentCreateRequest(BaseModel):
         default=False,
         description="Structure and return without saving — for the confirm/edit step.",
     )
-    # Provider-confirmed override of the LLM structuring (from a prior dry_run).
-    structured: StructuredCareIntent | None = None
 
 
 class CareIntentStatusRequest(BaseModel):
@@ -66,7 +64,6 @@ class CareIntentProposeRequest(BaseModel):
 class CareIntentUpdateRequest(BaseModel):
     text: str = Field(..., min_length=5, max_length=1000)
     dry_run: bool = False
-    structured: StructuredCareIntent | None = None
 
 
 class FocusAreaItem(BaseModel):
@@ -77,6 +74,18 @@ class FocusAreaItem(BaseModel):
     author_role: str
     summary: str
     since: str
+
+
+def _raise_if_unsafe(structured: StructuredCareIntent) -> None:
+    if structured.safety_flag:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This instruction looks like a clinical order (medication/dosing/"
+                "diagnosis) and can't run as a nudge. "
+                + (structured.safety_reason or "")
+            ).strip(),
+        )
 
 
 def _view(i: CareIntent) -> CareIntentView:
@@ -120,17 +129,11 @@ async def create_care_intent(
         care_provider_access_service=access,
     )
 
-    structured = payload.structured or await structure_care_intent(gateway, payload.text)
-
-    if structured.safety_flag:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "This instruction looks like a clinical order (medication/dosing/"
-                "diagnosis) and can't run as a nudge. "
-                + (structured.safety_reason or "")
-            ).strip(),
-        )
+    # Safety verdict comes from the server-side structurer ONLY — accepting a
+    # client-supplied structure would let a forged safety_flag store a
+    # clinical order.
+    structured = await structure_care_intent(gateway, payload.text)
+    _raise_if_unsafe(structured)
 
     # Advisory only — conflicts warn the provider, never block or resolve.
     conflicts: list[str] = []
@@ -248,29 +251,28 @@ async def update_care_intent(
         allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
         check_permissions=False,
     ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
     service: Annotated[CareIntentService, Depends(get_care_intent_service)],
     gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
 ):
     """Edit an intent's instruction (author-only). Re-runs structuring, the
     safety gate, and the conflict check (against OTHER intents — an intent
     can't conflict with itself). Adherence history stays attached."""
-    structured = payload.structured or await structure_care_intent(gateway, payload.text)
-
-    if structured.safety_flag:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "This instruction looks like a clinical order (medication/dosing/"
-                "diagnosis) and can't run as a nudge. "
-                + (structured.safety_reason or "")
-            ).strip(),
-        )
+    structured = await structure_care_intent(gateway, payload.text)
+    _raise_if_unsafe(structured)
 
     existing_intent = await service.get_by_id(
         care_intent_id, author_id=current_actor.model.care_provider_id,
     )
     if existing_intent is None:
         raise HTTPException(status_code=404, detail="Care intent not found or not yours to edit")
+    # Authorship isn't enough — a provider removed from the care team loses
+    # write power over the patient's AI guidance.
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=existing_intent.patient_id,
+        care_provider_access_service=access,
+    )
 
     conflicts: list[str] = []
     try:
@@ -317,9 +319,20 @@ async def delete_care_intent(
         allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
         check_permissions=False,
     ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
     service: Annotated[CareIntentService, Depends(get_care_intent_service)],
 ):
     """Remove an intent and its adherence history — only the author deletes."""
+    intent = await service.get_by_id(
+        care_intent_id, author_id=current_actor.model.care_provider_id,
+    )
+    if intent is None:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to delete")
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=intent.patient_id,
+        care_provider_access_service=access,
+    )
     deleted = await service.delete(
         care_intent_id, author_id=current_actor.model.care_provider_id,
     )
@@ -336,9 +349,20 @@ async def update_care_intent_status(
         allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
         check_permissions=False,
     ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
     service: Annotated[CareIntentService, Depends(get_care_intent_service)],
 ):
     """Pause/resume/expire — only the author edits their own intent."""
+    existing = await service.get_by_id(
+        care_intent_id, author_id=current_actor.model.care_provider_id,
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to change")
+    await resolve_patient_access(
+        actor=current_actor,
+        patient_id=existing.patient_id,
+        care_provider_access_service=access,
+    )
     intent = await service.update_status(
         care_intent_id,
         payload.status,
@@ -370,14 +394,17 @@ async def get_focus_areas(
     summaries = [i.patient_summary for i in intents]
     language = await _preferred_language(str(current_actor.model.patient_id))
     if language != DEFAULT_AI_LANGUAGE and summaries:
+        import asyncio
+
         from lib.ai_foundation.translation import TranslationService
         from lib.core.container import container
 
         translator = container.resolve(TranslationService)
-        # Summaries are stable per intent — translate_cached pays once each.
-        summaries = [
-            await translator.translate_cached(s, language) for s in summaries
-        ]
+        # Patient-specific content — the fixed-string cache is off-limits
+        # (it is small, shared fleet-wide, and clears wholesale when full).
+        summaries = list(await asyncio.gather(
+            *(translator.translate(s, language) for s in summaries)
+        ))
 
     items = [
         FocusAreaItem(

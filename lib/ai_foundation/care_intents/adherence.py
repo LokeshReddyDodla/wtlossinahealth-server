@@ -25,7 +25,9 @@ For EVERY numbered instruction, return one verdict:
 
 barrier_note: ONLY when the day's data or the patient's own words (PATIENT CONTEXT) show a likely reason for a miss — a symptom entry, an unusual schedule, no data after a certain hour, or something the patient told the assistant ("knee pain makes walking hard"). One short factual phrase, no speculation. null otherwise.
 
-Return a verdict for every instruction index, in any order."""
+The day's data may be TRUNCATED (heavy loggers get capped records). For "restrict" style instructions, absence of a violating record in truncated data is NOT proof it was followed — prefer "unclear" when coverage looks partial.
+
+Instructions are numbered starting at 1. Return a verdict for every instruction index, in any order."""
 
 
 class IntentVerdict(BaseModel):
@@ -59,7 +61,7 @@ async def evaluate_adherence(
     numbered = "\n".join(
         f"{i}. {ci['original_text']}"
         + (f" (relevant when: {ci['trigger_condition']})" if ci.get("trigger_condition") else "")
-        for i, ci in enumerate(intents)
+        for i, ci in enumerate(intents, start=1)
     )
     user_msg = (
         f"INSTRUCTIONS:\n{numbered}\n\n"
@@ -81,7 +83,7 @@ async def evaluate_adherence(
 
     by_index = {v.intent_index: v for v in result.verdicts}
     out = []
-    for i, ci in enumerate(intents):
+    for i, ci in enumerate(intents, start=1):
         v = by_index.get(i)
         out.append({
             "care_intent_id": ci["care_intent_id"],

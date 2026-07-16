@@ -29,11 +29,17 @@ _RETRY_STATUSES = {502, 503, 504}
 class InternalAPIClient:
     """Authenticated, loopback HTTP client used by the agent's tools."""
 
+    # One connection pool for the process — a cohort run makes dozens of
+    # loopback calls and per-query pools pay TCP setup for every one.
+    _shared_http: httpx.AsyncClient | None = None
+
     def __init__(self, token: str, device_id: str | None, base_url: str | None = None) -> None:
         self.base_url = (base_url or INTERNAL_API_BASE).rstrip("/")
         self.token = token
         self.device_id = device_id
-        self._http = httpx.AsyncClient(timeout=60.0)
+        if InternalAPIClient._shared_http is None:
+            InternalAPIClient._shared_http = httpx.AsyncClient(timeout=60.0)
+        self._http = InternalAPIClient._shared_http
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {}
@@ -72,7 +78,4 @@ class InternalAPIClient:
         raise RuntimeError(f"GET {path} failed after retries")
 
     async def close(self) -> None:
-        try:
-            await self._http.aclose()
-        except Exception:  # noqa: BLE001
-            pass
+        """No-op: the pool is process-shared and long-lived by design."""

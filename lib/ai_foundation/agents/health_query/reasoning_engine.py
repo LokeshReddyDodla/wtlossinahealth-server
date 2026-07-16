@@ -971,7 +971,10 @@ class ReasoningEngine:
             # alone forces false retractions of prior-turn data.
             context_parts = [
                 m["content"] for m in responder_messages
-                if m.get("_meta", {}).get("type") in ("context", "gathered_data")
+                if m.get("_meta", {}).get("type") in (
+                    "context", "gathered_data", "fact", "summary",
+                    "insight", "pinned_ref", "evidence_summary",
+                )
             ]
             history_parts = [
                 f"[{m['role']}] {m['content']}" for m in responder_messages
@@ -997,9 +1000,13 @@ class ReasoningEngine:
                 "Grounding gate: correcting (ungrounded=%d, wrongly_denied=%d)",
                 len(verdict.ungrounded_claims), len(verdict.wrongly_denied),
             )
+            # The draft rides INSIDE the correction instruction — appending it
+            # as an assistant message anchors it as an already-sent turn, and
+            # the model then writes a conversational apology ("sorry, those
+            # numbers were wrong") instead of a clean rewrite.
             corrected = await self._gateway.complete(
                 messages=responder_messages
-                + [{"role": "system", "content": build_correction(verdict)}],
+                + [{"role": "system", "content": build_correction(verdict, draft=resp.content)}],
                 task=ModelTask.RESPONSE_GENERATION,
                 model_id=model_id,
                 timeout=settings.RESPONDER_TIMEOUT_SECONDS,

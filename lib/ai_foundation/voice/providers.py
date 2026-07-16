@@ -34,6 +34,9 @@ SARVAM_TTS_LANGUAGE_MAP: dict[str, str] = {
     k: v for k, v in SARVAM_STT_LANGUAGE_MAP.items()
     if k not in ("as", "ur", "ne")
 }
+# Hinglish is Hindi in roman script — the hi-IN voice reads romanized Hindi
+# fine, so a hi-Latn preference must not silently degrade to English.
+SARVAM_TTS_LANGUAGE_MAP["hi-Latn"] = "hi-IN"
 
 # Input codecs accepted by Sarvam STT (keyed by our AudioFormat).
 SARVAM_INPUT_CODECS: dict[str, str] = {

@@ -26,7 +26,7 @@ from lib.ai_foundation.agents.state import AgentInput, AgentOutput
 from lib.ai_foundation.config import settings
 from lib.ai_foundation.models.registry import ModelTask
 from lib.ai_foundation.agents.core.bubbles import extract_await, split_bubbles, strip_bubbles
-from lib.core.types import RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name, DEFAULT_AI_LANGUAGE
+from lib.core.types import NUMBER_FIDELITY_INSTRUCTION, RESPECTFUL_REGISTER_INSTRUCTION, ai_language_name, DEFAULT_AI_LANGUAGE
 from lib.ai_foundation.streaming.sse import (
     PipelineStage,
     SSEDonePayload,
@@ -46,6 +46,9 @@ from .reasoning_engine import ReasoningEngine, ReasoningTier
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+# Canned fallback when the extractor marks not-ready without a clarification.
+_CLARIFY_FALLBACK = "Could you tell me more?"
 
 
 @dataclass
@@ -231,11 +234,14 @@ class HealthQueryAgent(BaseAgent):
             return output
 
         except Exception as exc:
-            # One silent retry before any patient-visible error: transient
-            # provider timeouts are the dominant failure, and nothing
-            # user-facing has been emitted (turn save + background tasks only
-            # happen after success, so a full re-attempt is side-effect free).
-            if not _is_retry:
+            # One silent retry before any patient-visible error — but ONLY for
+            # transient provider failures (timeouts, rate limits, brownouts).
+            # A deterministic error would just double the spend; and the
+            # memory-command path has side effects, so it must never re-run.
+            from lib.ai_foundation.models.gateway import AllProvidersUnavailableError, _is_retryable
+
+            transient = _is_retryable(exc) or isinstance(exc, AllProvidersUnavailableError)
+            if not _is_retry and transient:
                 logger.warning(
                     "HealthQueryAgent.run attempt failed, retrying once: %s", exc,
                 )
@@ -296,7 +302,7 @@ class HealthQueryAgent(BaseAgent):
 
             if not intent.is_ready:
                 msg = intent.clarification_msg or await self._localize_text(
-                    "Could you tell me more?", ctx, input=input,
+                    _CLARIFY_FALLBACK, ctx, input=input,
                 )
                 output = AgentOutput(message=msg, is_ready=False, trace_id=trace_id)
                 turn_id = await self._save_turn(input, output, intent, user_timestamp=user_timestamp)
@@ -724,7 +730,7 @@ class HealthQueryAgent(BaseAgent):
             )
         label = self._AWAIT_CHIP_LABELS.get(entity_type, f"Log {entity_type}")
         if language != DEFAULT_AI_LANGUAGE and self.translator:
-            label = await self.translator.translate_cached(label, language)
+            label = await self.translator.translate_cached(label, language, terse=True)
         suggestions.insert(0, {
             "action": f"log_{entity_type}",
             "label": label,
@@ -876,8 +882,9 @@ class HealthQueryAgent(BaseAgent):
                     self.translator.translate_cached(s.label, lang, terse=True),
                     self.translator.translate(s.description, lang, terse=True),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # English chip ships (better than none) — but never silently.
+                logger.warning("Suggestion chip translation failed (%s): %s", lang, exc)
 
         await asyncio.gather(*(_one(s) for s in intent.suggestions))
 
@@ -968,8 +975,7 @@ class HealthQueryAgent(BaseAgent):
             lang_instruction = (
                 f"\n## Response Language\n"
                 f"Write your ENTIRE response in {lang_name} — this is the patient's "
-                f"chosen language. Numbers, units (mg/dL, g, kcal), medication names, "
-                f"and the [[BUBBLE]]/[[AWAIT:...]] markers stay exactly as-is. "
+                f"chosen language. {NUMBER_FIDELITY_INSTRUCTION} "
                 f"Table syntax stays markdown; translate only the cell text. "
                 f"{RESPECTFUL_REGISTER_INSTRUCTION}\n"
             )
@@ -1033,7 +1039,7 @@ class HealthQueryAgent(BaseAgent):
 
     def _build_clarification(self, intent: QueryIntent, meta: Any) -> AgentOutput:
         return AgentOutput(
-            message=intent.clarification_msg or "Could you tell me more?",
+            message=intent.clarification_msg or _CLARIFY_FALLBACK,
             is_ready=False,
             suggestions=[s.model_dump(exclude_none=True) for s in intent.suggestions],
             data={"data_types": [dt.value for dt in intent.data_types], "confidence": intent.confidence},

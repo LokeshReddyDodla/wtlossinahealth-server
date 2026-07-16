@@ -37,6 +37,16 @@ RESPECTFUL_REGISTER_INSTRUCTION = (
     "overly familiar form, in any language."
 )
 
+# Medical fidelity rule for any generated or translated patient-facing text.
+# One wording, every surface — hand-copies of this rule drift (and a drifted
+# copy is how numbers get converted or [[BUBBLE]] markers get translated).
+NUMBER_FIDELITY_INSTRUCTION = (
+    "Every number stays EXACTLY as written: values, units (mg/dL, g, kcal, "
+    "hours, %), dates, times, medication names. Never convert, round, or "
+    "spell out numbers. Any [[BUBBLE]] or [[AWAIT:...]] token is copied "
+    "through unchanged."
+)
+
 
 def is_valid_ai_language(code: str) -> bool:
     """Structurally valid, real language tag (e.g. 'en', 'hi-Latn', 'ur')."""

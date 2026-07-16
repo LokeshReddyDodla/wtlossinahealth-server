@@ -27,6 +27,7 @@ class VoiceSettings(BaseSettings):
 
     STT_PROVIDER: str = Field(default="openai", description="STT provider: openai or sarvam")
     TTS_PROVIDER: str = Field(default="openai", description="TTS provider: openai or sarvam")
+    PROVIDER_TIMEOUT_SECONDS: float = Field(default=30.0, description="Per-call STT/TTS provider timeout — a hung call must not stall a live voice turn for the library-default 10 minutes")
 
     # ── OpenAI Speech-to-Text ────────────────────────────────────────────
 
