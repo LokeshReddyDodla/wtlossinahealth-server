@@ -56,6 +56,7 @@ class AIFoundationSettings(BaseSettings):
     RESPONDER_TIMEOUT_SECONDS: float = Field(default=60.0, description="Timeout for final response generation (long answers exceed model spec defaults)")
     REASONING_MAX_TOOL_RESULT_CHARS: int = Field(default=16_000, description="Max chars per tool result")
     STREAMING_PIPELINE_TIMEOUT_SECONDS: float = Field(default=90.0, description="End-to-end timeout for the full streaming pipeline")
+    PIPELINE_RETRY_BACKOFF_SECONDS: float = Field(default=2.5, description="Backoff before the single silent pipeline retry that precedes any patient-visible error")
 
     # ── Planning ──────────────────────────────────────────────────────────
 
