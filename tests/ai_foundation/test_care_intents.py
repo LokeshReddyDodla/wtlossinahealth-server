@@ -706,3 +706,83 @@ class TestTranslationCorrectiveRetry:
         out = await ts.translate("Create today's meal plan", "hi-Latn", terse=True)
         assert out == "Create today's meal plan"  # English beats broken — by design
         assert gateway.complete.await_count == 2
+
+
+# ── full-fledged CRUD: delete, edit, resume-bumps-review ─────────────────────
+
+
+class _CrudSession(_FakeSession):
+    def __init__(self, scalar_rows):
+        super().__init__()
+        self._scalar_rows = list(scalar_rows)
+        self.deleted = []
+
+    async def scalar(self, stmt):
+        return self._scalar_rows.pop(0) if self._scalar_rows else None
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
+
+    async def refresh(self, obj):
+        pass
+
+
+class TestCareIntentCrud:
+    @pytest.mark.asyncio
+    async def test_resume_expired_bumps_review_date(self):
+        intent = SimpleNamespace(
+            care_intent_id=uuid4(), status="paused",
+            review_date=date.today() - timedelta(days=2),
+        )
+        session = _CrudSession([intent])
+        svc = CareIntentService(postgres_store=None)
+        out = await svc.update_status(intent.care_intent_id, "active", postgres_session=session)
+        assert out.status == "active"
+        assert out.review_date > date.today()  # fresh window, not instant re-expiry
+
+    @pytest.mark.asyncio
+    async def test_pause_does_not_touch_review_date(self):
+        rd = date.today() + timedelta(days=5)
+        intent = SimpleNamespace(care_intent_id=uuid4(), status="active", review_date=rd)
+        session = _CrudSession([intent])
+        svc = CareIntentService(postgres_store=None)
+        out = await svc.update_status(intent.care_intent_id, "paused", postgres_session=session)
+        assert out.review_date == rd
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_events_then_intent_author_only(self):
+        intent = SimpleNamespace(care_intent_id=uuid4(), author_id=uuid4())
+        session = _CrudSession([intent])
+        svc = CareIntentService(postgres_store=None)
+        ok = await svc.delete(intent.care_intent_id, author_id=intent.author_id, postgres_session=session)
+        assert ok is True
+        assert len(session.executed) == 1  # events delete statement
+        assert session.deleted == [intent]
+        assert session.committed
+
+        session2 = _CrudSession([None])  # author mismatch → no row
+        assert await svc.delete(uuid4(), author_id=uuid4(), postgres_session=session2) is False
+        assert session2.deleted == []
+
+    @pytest.mark.asyncio
+    async def test_update_replaces_fields_resets_escalation(self):
+        intent = SimpleNamespace(
+            care_intent_id=uuid4(), author_id=uuid4(),
+            original_text="old", intent_type="remind", domain="fitness",
+            trigger_condition=None, cadence="daily", patient_summary="old",
+            success_criteria=None, review_date=date.today() - timedelta(days=1),
+            status="expired", escalated_at=datetime.now(),
+        )
+        session = _CrudSession([intent])
+        svc = CareIntentService(postgres_store=None)
+        out = await svc.update(
+            intent.care_intent_id,
+            author_id=intent.author_id,
+            original_text="Walk 10 minutes after every meal",
+            structured=_structured(patient_summary="A short walk after meals helps."),
+            postgres_session=session,
+        )
+        assert out.original_text == "Walk 10 minutes after every meal"
+        assert out.status == "active"
+        assert out.escalated_at is None
+        assert out.review_date > date.today()

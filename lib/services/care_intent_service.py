@@ -12,11 +12,12 @@ from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, select
+from sqlalchemy import delete as delete_stmt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from lib.ai_foundation.care_intents.contracts import StructuredCareIntent
+from lib.ai_foundation.care_intents.contracts import DEFAULT_REVIEW_DAYS, StructuredCareIntent
 from lib.core.postgres_store import PostgresStore
 from lib.models.care_intent import CareIntent
 from lib.models.care_intent_event import CareIntentEvent
@@ -99,9 +100,97 @@ class CareIntentService:
         if intent is None:
             return None
         intent.status = status
+        # Reactivating with a past review date would be lazily re-expired on
+        # the very next AI read — resuming implies a fresh review window.
+        if status == "active" and intent.review_date and intent.review_date <= date.today():
+            intent.review_date = date.today() + timedelta(days=DEFAULT_REVIEW_DAYS)
         await postgres_session.commit()
         await postgres_session.refresh(intent)
         return intent
+
+    @with_postgres_session
+    async def get_by_id(
+        self,
+        care_intent_id: UUID,
+        *,
+        author_id: UUID,
+        postgres_session: AsyncSession,
+    ) -> CareIntent | None:
+        """Author-scoped fetch — a non-author gets None, never a peek at
+        another provider's intent via its id."""
+        return await postgres_session.scalar(
+            select(CareIntent).where(
+                and_(
+                    CareIntent.care_intent_id == care_intent_id,
+                    CareIntent.author_id == author_id,
+                )
+            )
+        )
+
+    @with_postgres_session
+    async def update(
+        self,
+        care_intent_id: UUID,
+        *,
+        author_id: UUID,
+        original_text: str,
+        structured: StructuredCareIntent,
+        postgres_session: AsyncSession,
+    ) -> CareIntent | None:
+        """Replace an intent's instruction (author-only). Adherence history
+        stays attached — the behavior asked for evolved, it didn't restart."""
+        intent = await postgres_session.scalar(
+            select(CareIntent).where(
+                and_(
+                    CareIntent.care_intent_id == care_intent_id,
+                    CareIntent.author_id == author_id,
+                )
+            )
+        )
+        if intent is None:
+            return None
+        intent.original_text = original_text
+        intent.intent_type = structured.intent_type.value
+        intent.domain = structured.domain.value
+        intent.trigger_condition = structured.trigger_condition
+        intent.cadence = structured.cadence.value
+        intent.patient_summary = structured.patient_summary
+        intent.success_criteria = structured.success_criteria
+        intent.review_date = date.today() + timedelta(days=structured.review_days)
+        intent.status = "active"
+        intent.escalated_at = None
+        await postgres_session.commit()
+        await postgres_session.refresh(intent)
+        return intent
+
+    @with_postgres_session
+    async def delete(
+        self,
+        care_intent_id: UUID,
+        *,
+        author_id: UUID,
+        postgres_session: AsyncSession,
+    ) -> bool:
+        """Hard delete (author-only), adherence events included — the FK has
+        no cascade, so events go first."""
+        intent = await postgres_session.scalar(
+            select(CareIntent).where(
+                and_(
+                    CareIntent.care_intent_id == care_intent_id,
+                    CareIntent.author_id == author_id,
+                )
+            )
+        )
+        if intent is None:
+            return False
+        await postgres_session.execute(
+            delete_stmt(CareIntentEvent).where(
+                CareIntentEvent.care_intent_id == care_intent_id
+            )
+        )
+        await postgres_session.delete(intent)
+        await postgres_session.commit()
+        return True
 
     # -- AI-facing read (duck-typed dependency for ai_foundation) -----------
 
