@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 class CareIntentService:
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(self, postgres_store: PostgresStore, provider_fcm=None):
         self.postgres_store = postgres_store
+        self._provider_fcm = provider_fcm
 
     @with_postgres_session
     async def create(
@@ -216,7 +217,9 @@ class CareIntentService:
         event_date: date,
         postgres_session: AsyncSession,
     ) -> None:
-        """Upsert one day's verdicts — later scans of the same day overwrite."""
+        """Upsert one day's verdicts — later scans of the same day overwrite.
+        A verdict that puts an intent at the needs-attention threshold pings
+        its author (once per miss-streak)."""
         if not verdicts:
             return
         for v in verdicts:
@@ -232,6 +235,93 @@ class CareIntentService:
             )
             await postgres_session.execute(stmt)
         await postgres_session.commit()
+
+        missed_ids = [
+            UUID(str(v["care_intent_id"])) for v in verdicts if v["status"] == "missed"
+        ]
+        if missed_ids:
+            try:
+                await self._escalate_if_needed(
+                    missed_ids, patient_id, event_date, postgres_session=postgres_session,
+                )
+            except Exception:
+                # Escalation is best-effort — never let a push failure poison
+                # the recorded verdicts.
+                logger.warning("Care-intent escalation failed", exc_info=True)
+
+    async def _escalate_if_needed(
+        self,
+        missed_intent_ids: list[UUID],
+        patient_id: str,
+        event_date: date,
+        *,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Ping the author when an intent CROSSES the consecutive-miss
+        threshold. Exactly-at-threshold + escalated_at guard = one ping per
+        miss-streak: day 4+ of the same streak stays quiet, a fresh streak
+        after a followed day pings again."""
+        summary = await self.adherence_summary(
+            missed_intent_ids, postgres_session=postgres_session,
+        )
+        to_escalate: list[CareIntent] = []
+        for intent_id in missed_intent_ids:
+            s = summary.get(str(intent_id)) or {}
+            if s.get("consecutive_missed") != NEEDS_ATTENTION_CONSECUTIVE_MISSES:
+                continue
+            intent = await postgres_session.scalar(
+                select(CareIntent).where(CareIntent.care_intent_id == intent_id)
+            )
+            if intent is None:
+                continue
+            if intent.escalated_at and intent.escalated_at.date() >= event_date:
+                continue
+            to_escalate.append(intent)
+        if not to_escalate:
+            return
+
+        from lib.models.patient import Patient
+
+        patient = await postgres_session.scalar(
+            select(Patient).where(Patient.patient_id == UUID(patient_id))
+        )
+        patient_name = (patient.first_name if patient else None) or "Your patient"
+
+        fcm = self._get_provider_fcm()
+        for intent in to_escalate:
+            barriers = (summary.get(str(intent.care_intent_id)) or {}).get("barriers") or []
+            barrier_line = f" Possible barrier: {barriers[0]}." if barriers else ""
+            await fcm.send_fcm_notification_to_user_devices(
+                user_id=str(intent.author_id),
+                title=f"Adherence alert — {patient_name}",
+                body=(
+                    f"{patient_name} has missed \"{intent.original_text}\" "
+                    f"{NEEDS_ATTENTION_CONSECUTIVE_MISSES} days in a row.{barrier_line}"
+                ),
+                channel_key="alerts",
+                group_key="alert_group",
+                data={
+                    "type": "care_intent_escalation",
+                    "care_intent_id": str(intent.care_intent_id),
+                    "patient_id": patient_id,
+                },
+            )
+            intent.escalated_at = datetime.now().replace(tzinfo=None)
+            logger.info(
+                "care_intents.escalated | intent=%s author=%s patient=%s",
+                str(intent.care_intent_id)[:8], str(intent.author_id)[:8], patient_id[:8],
+            )
+        await postgres_session.commit()
+
+    def _get_provider_fcm(self):
+        """Provider-app FCM client, built lazily (Firebase init needs prod
+        credentials — tests and intent-free deployments never touch it)."""
+        if self._provider_fcm is None:
+            from lib.core.constants import FCMProjectEnum
+            from lib.services.fcm_service import FCMService
+
+            self._provider_fcm = FCMService(project=FCMProjectEnum.CARE_PROVIDER_APP)
+        return self._provider_fcm
 
     @with_postgres_session
     async def adherence_summary(

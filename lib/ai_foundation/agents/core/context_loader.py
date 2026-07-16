@@ -52,6 +52,7 @@ class AgentContext(BaseModel):
     medications_text: str | None = None  # all medications (active + past) from Qdrant
     # Panel (multi-patient) mode — keyed by patient_id
     panel_facts: dict[str, list[dict]] = Field(default_factory=dict)
+    panel_care_intents: dict[str, list[dict]] = Field(default_factory=dict)
     panel_insights: dict[str, list[dict]] = Field(default_factory=dict)
 
 
@@ -150,6 +151,18 @@ def build_context_messages(
             "acknowledge the care team's guidance, never police the patient with it, and "
             "NEVER invent an instruction that is not listed:\n" + "\n".join(lines)
         )
+
+    if context.panel_care_intents:
+        pnames = context.patient_names
+        lines = [
+            "CARE TEAM FOCUS (by patient) — provider instructions on record. "
+            "Reinforce with attribution when relevant; never invent one:"
+        ]
+        for pid, intents in context.panel_care_intents.items():
+            name = pnames.get(pid, f"Patient {pid[:8]}")
+            for ci in intents:
+                lines.append(f"- {name}: [{ci['author_name']}, {ci['author_role']}] {ci['original_text']}")
+        context_parts.append("\n".join(lines))
 
     if context_parts:
         messages.append({
@@ -310,12 +323,13 @@ class ContextLoader:
 
         if is_panel:
             # Panel mode: load facts + insights for every patient; skip gamification + local_time
-            names, history, summary, panel_facts, panel_insights = await asyncio.gather(
+            names, history, summary, panel_facts, panel_insights, panel_care_intents = await asyncio.gather(
                 self._load_names(all_pids),
                 self._load_history(thread_id),
                 self._load_summary(thread_id),
                 self._load_panel_facts(all_pids),
                 self._load_panel_insights(all_pids),
+                self._load_panel_care_intents(all_pids),
             )
             return AgentContext(
                 facts=[],
@@ -327,6 +341,7 @@ class ContextLoader:
                 local_time=None,
                 panel_facts=panel_facts,
                 panel_insights=panel_insights,
+                panel_care_intents=panel_care_intents,
             )
 
         # Single-patient mode: original behaviour
@@ -509,6 +524,22 @@ class ContextLoader:
         except Exception as exc:
             logger.debug("Failed to load gamification context: %s", exc)
             return None
+
+    async def _load_panel_care_intents(self, patient_ids: list[str]) -> dict[str, list[dict]]:
+        if not self._care_intents or not patient_ids:
+            return {}
+
+        import asyncio
+
+        async def _one(pid: str) -> tuple[str, list[dict]]:
+            try:
+                return pid, await self._care_intents.get_active_context(pid)
+            except Exception as exc:
+                logger.debug("Failed to load care intents for %s: %s", pid, exc)
+                return pid, []
+
+        results = await asyncio.gather(*(_one(pid) for pid in patient_ids))
+        return {pid: intents for pid, intents in results if intents}
 
     async def _load_panel_facts(self, patient_ids: list[str]) -> dict[str, list[dict]]:
         """Load facts for every patient in a panel, keyed by patient_id."""

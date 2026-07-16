@@ -549,3 +549,128 @@ class TestAdvisor:
         gateway.extract.reset_mock()
         assert await propose_intents(gateway, recent_insights=[], existing=[]) == []
         gateway.extract.assert_not_called()
+
+
+# ── prod-readiness: chat barriers, panel mode, escalation push ───────────────
+
+
+class TestPatientContextReachesEvaluator:
+    @pytest.mark.asyncio
+    async def test_memory_facts_in_prompt(self):
+        from lib.ai_foundation.care_intents.adherence import AdherenceVerdicts, evaluate_adherence
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(AdherenceVerdicts(), None))
+        await evaluate_adherence(
+            gateway,
+            intents=[{"care_intent_id": "a", "original_text": "Walk after dinner"}],
+            day_data_text="no walk logged",
+            day_label="yesterday",
+            patient_context="Patient facts:\n- symptom: knee pain makes stairs hard",
+        )
+        user_msg = gateway.extract.call_args.kwargs["messages"][1]["content"]
+        assert "PATIENT CONTEXT (from the patient's own words)" in user_msg
+        assert "knee pain makes stairs hard" in user_msg
+
+
+class TestPanelCareIntents:
+    def test_panel_render_groups_by_patient(self):
+        from lib.ai_foundation.agents.core.context_loader import (
+            AgentContext,
+            build_context_messages,
+        )
+
+        ctx = AgentContext(
+            patient_names={"p1": "Asha", "p2": "Rohan"},
+            panel_care_intents={"p1": [_INTENT_DICT]},
+        )
+        msgs = build_context_messages(
+            user_message="x", system_prompt="s", reasoning_prompt="r", context=ctx,
+        )
+        content = next(
+            m["content"] for m in msgs if m.get("_meta", {}).get("type") == "context"
+        )
+        assert "CARE TEAM FOCUS (by patient)" in content
+        assert "Asha: [Dr. Mehta, Doctor]" in content
+
+    @pytest.mark.asyncio
+    async def test_panel_loader_skips_empty(self):
+        from lib.ai_foundation.agents.core.context_loader import ContextLoader
+
+        loader = ContextLoader(care_intents=_FakeReader([]))
+        assert await loader._load_panel_care_intents(["p1", "p2"]) == {}
+
+
+class _EscalationSession(_FakeSession):
+    """Queued scalars() result-sets + queued scalar() single rows."""
+
+    def __init__(self, result_sets, scalar_rows):
+        super().__init__(*result_sets)
+        self._scalar_rows = list(scalar_rows)
+
+    async def scalar(self, stmt):
+        return self._scalar_rows.pop(0) if self._scalar_rows else None
+
+
+def _intent_row(intent_id, escalated_at=None):
+    return SimpleNamespace(
+        care_intent_id=intent_id,
+        author_id=uuid4(),
+        original_text="Walk after dinner",
+        escalated_at=escalated_at,
+    )
+
+
+def _miss_events(intent_id, count, total=5):
+    events = []
+    for i in range(1, total + 1):
+        status = "missed" if i <= count else "followed"
+        e = _event(i, status)
+        e.care_intent_id = intent_id
+        events.append(e)
+    return events
+
+
+class TestEscalationPush:
+    async def _run(self, *, miss_streak, escalated_at=None):
+        intent_id = uuid4()
+        fcm = MagicMock()
+        fcm.send_fcm_notification_to_user_devices = AsyncMock()
+        svc = CareIntentService(postgres_store=None, provider_fcm=fcm)
+        session = _EscalationSession(
+            result_sets=[_miss_events(intent_id, miss_streak)],  # adherence_summary query
+            scalar_rows=[
+                _intent_row(intent_id, escalated_at=escalated_at),
+                SimpleNamespace(first_name="Asha"),  # patient lookup
+            ],
+        )
+        await svc._escalate_if_needed(
+            [intent_id], str(uuid4()), date.today() - timedelta(days=1),
+            postgres_session=session,
+        )
+        return fcm, session
+
+    @pytest.mark.asyncio
+    async def test_fires_exactly_at_threshold(self):
+        fcm, session = await self._run(miss_streak=3)
+        fcm.send_fcm_notification_to_user_devices.assert_called_once()
+        kwargs = fcm.send_fcm_notification_to_user_devices.call_args.kwargs
+        assert "Asha" in kwargs["title"]
+        assert "3 days in a row" in kwargs["body"]
+        assert kwargs["channel_key"] == "alerts"
+        assert kwargs["data"]["type"] == "care_intent_escalation"
+        assert session.committed  # escalated_at persisted
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("streak", [2, 4])
+    async def test_quiet_off_threshold(self, streak):
+        """Below threshold = not yet; above = already pinged for this streak."""
+        fcm, _ = await self._run(miss_streak=streak)
+        fcm.send_fcm_notification_to_user_devices.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_already_escalated_today_stays_quiet(self):
+        fcm, _ = await self._run(
+            miss_streak=3, escalated_at=datetime.now().replace(tzinfo=None),
+        )
+        fcm.send_fcm_notification_to_user_devices.assert_not_called()

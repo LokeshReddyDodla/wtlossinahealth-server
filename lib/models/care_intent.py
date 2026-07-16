@@ -56,6 +56,9 @@ class CareIntent(Base):
     # Every intent expires — stale instructions must never nag forever.
     review_date = Column(Date, nullable=False)
     status = Column(String(10), nullable=False, default="active", index=True)  # active|paused|expired
+    # When the author was last pinged about repeated misses — one ping per
+    # miss-streak, not one per day.
+    escalated_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now().replace(tzinfo=None))
     updated_at = Column(

@@ -304,6 +304,7 @@ class ProactiveMonitorAgent(BaseAgent):
 
             # 3. Facts + care-team intents + medications + metabolic profile
             facts_text = await self._load_facts(patient_id)
+            memory_facts_text = facts_text  # pre-care-section copy for the evaluator
             care_intents = await self._get_care_intents(patient_id)
             care_text = self._format_care_intents_section(care_intents)
             if care_text:
@@ -313,6 +314,7 @@ class ProactiveMonitorAgent(BaseAgent):
             if care_intents and not is_event and scan_period == "morning":
                 await self._record_adherence(
                     patient_id, care_intents, data_text, scan_date, scan_label,
+                    facts_text=memory_facts_text,
                 )
             med_text = await self._load_medications(patient_id)
             if med_text:
@@ -789,6 +791,7 @@ class ProactiveMonitorAgent(BaseAgent):
 
     async def _record_adherence(
         self, patient_id: str, intents: list[dict], data_text: str, scan_date: str, scan_label: str,
+        facts_text: str = "",
     ) -> None:
         """Morning-cron only: judge each intent against the completed previous
         day and upsert the verdicts. Failure never touches the scan."""
@@ -802,6 +805,7 @@ class ProactiveMonitorAgent(BaseAgent):
                 intents=intents,
                 day_data_text=data_text,
                 day_label=scan_label,
+                patient_context=facts_text,
             )
             await self._care_intents.record_adherence(
                 verdicts,

@@ -23,7 +23,7 @@ For EVERY numbered instruction, return one verdict:
 - "missed" — the data shows it did not happen, or clearly contradicts the instruction.
 - "unclear" — the data cannot tell (nothing relevant logged, instruction is passive/observational, or coverage is too thin). When in doubt, "unclear" — never guess "missed" from absence of data alone unless the instruction is specifically about logging.
 
-barrier_note: ONLY when the day's data itself shows a likely reason for a miss (a symptom entry, an unusual schedule, no data at all after a certain hour). One short factual phrase, no speculation. null otherwise.
+barrier_note: ONLY when the day's data or the patient's own words (PATIENT CONTEXT) show a likely reason for a miss — a symptom entry, an unusual schedule, no data after a certain hour, or something the patient told the assistant ("knee pain makes walking hard"). One short factual phrase, no speculation. null otherwise.
 
 Return a verdict for every instruction index, in any order."""
 
@@ -44,6 +44,7 @@ async def evaluate_adherence(
     intents: list[dict],
     day_data_text: str,
     day_label: str,
+    patient_context: str = "",
 ) -> list[dict]:
     """Judge each intent against one completed day's data.
 
@@ -64,6 +65,10 @@ async def evaluate_adherence(
         f"INSTRUCTIONS:\n{numbered}\n\n"
         f"DATA FOR {day_label} (complete day):\n{day_data_text or '(no data logged)'}"
     )
+    if patient_context:
+        # Memory carries what the patient TOLD the assistant (chat) — the
+        # barrier channel logged data can't see.
+        user_msg += f"\n\nPATIENT CONTEXT (from the patient's own words):\n{patient_context}"
 
     result, _ = await gateway.extract(
         messages=[
