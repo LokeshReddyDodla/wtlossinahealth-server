@@ -28,8 +28,8 @@ _AI_LANGUAGE_OVERRIDES: dict[str, str] = {
 # Universal register rule for any generated or translated patient-facing text.
 # Language-agnostic on purpose: every language with a T–V distinction (Hindi
 # aap/tu, Bengali apni/tui, Urdu aap/tum, ...) must land on the respectful
-# form, including languages nobody on the team can review. "casual" wording
-# in prompts previously pushed models to the intimate form.
+# form, including languages nobody on the team can review — models read
+# "casual" in a prompt as license for the intimate form.
 RESPECTFUL_REGISTER_INSTRUCTION = (
     "Address the patient in the language's RESPECTFUL second-person register "
     "— the polite form used with someone you respect (e.g. a client or an "

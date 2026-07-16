@@ -968,7 +968,7 @@ class ReasoningEngine:
             # The responder legitimately grounds on more than this turn's tool
             # evidence: pre-loaded patient context (care intents, meds, memory
             # facts) and its OWN earlier turns. Verifying against tool evidence
-            # alone made the gate force false retractions of prior-turn data.
+            # alone forces false retractions of prior-turn data.
             context_parts = [
                 m["content"] for m in responder_messages
                 if m.get("_meta", {}).get("type") in ("context", "gathered_data")

@@ -50,7 +50,8 @@ class CareIntent(Base):
     cadence = Column(String(10), nullable=False, default="passive")  # daily|event|passive
     patient_summary = Column(Text, nullable=False)  # friendly, patient-facing, English canonical
 
-    # v2 schema room: adherence tracking evaluates against this.
+    # Provider-stated measurable bar; informational on the report-back —
+    # the adherence evaluator judges against original_text, not this.
     success_criteria = Column(Text, nullable=True)
 
     # Every intent expires — stale instructions must never nag forever.
