@@ -1,0 +1,240 @@
+"""Care Intents — provider-authored guidance that shapes the AI's behavior.
+
+A provider types one sentence ("keep reminding him to walk after dinner");
+the structurer LLM fills every field; the provider confirms. Active intents
+feed the proactive monitor and the health agent as attributed context.
+
+Providers author independently (N per patient, each attributed); patients
+see their active intents as friendly "care team focus areas".
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from lib.ai_foundation.care_intents.contracts import CareIntentView, StructuredCareIntent
+from lib.ai_foundation.care_intents.structurer import structure_care_intent
+from lib.ai_foundation.models.gateway import ModelGateway
+from lib.core.constants import ProfileTypeEnum
+from lib.core.types import DEFAULT_AI_LANGUAGE
+from lib.dependencies.actor import Actor, get_current_actor
+from lib.dependencies.patient_access import resolve_patient_access
+from lib.dependencies.service_dependencies import (
+    get_care_intent_service,
+    get_care_provider_access_service,
+    get_model_gateway,
+)
+from lib.models.care_intent import CareIntent
+from lib.services.care_intent_service import CareIntentService
+from lib.services.care_provider_access_service import CareProviderAccessService
+from rest_server.response_models import SuccessResponse
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/care-intents", tags=["Care Intents"])
+
+
+# -- Schemas -------------------------------------------------------------------
+
+
+class CareIntentCreateRequest(BaseModel):
+    patient_id: UUID
+    text: str = Field(..., min_length=5, max_length=1000, description="The instruction, as the provider would say it.")
+    dry_run: bool = Field(
+        default=False,
+        description="Structure and return without saving — for the confirm/edit step.",
+    )
+    # Provider-confirmed override of the LLM structuring (from a prior dry_run).
+    structured: StructuredCareIntent | None = None
+
+
+class CareIntentStatusRequest(BaseModel):
+    status: str = Field(..., pattern="^(active|paused|expired)$")
+
+
+class FocusAreaItem(BaseModel):
+    """Patient-facing view — friendly summary + who asked, nothing clinical."""
+
+    care_intent_id: str
+    author_name: str
+    author_role: str
+    summary: str
+    since: str
+
+
+def _view(i: CareIntent) -> CareIntentView:
+    return CareIntentView(
+        care_intent_id=str(i.care_intent_id),
+        patient_id=str(i.patient_id),
+        author_id=str(i.author_id),
+        author_role=i.author_role,
+        author_name=i.author_name,
+        original_text=i.original_text,
+        intent_type=i.intent_type,
+        domain=i.domain,
+        trigger_condition=i.trigger_condition,
+        cadence=i.cadence,
+        patient_summary=i.patient_summary,
+        success_criteria=i.success_criteria,
+        review_date=i.review_date,
+        status=i.status,
+        created_at=str(i.created_at),
+    )
+
+
+# -- Provider endpoints ---------------------------------------------------------
+
+
+@router.post("", response_model=SuccessResponse[dict])
+async def create_care_intent(
+    payload: CareIntentCreateRequest,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
+        check_permissions=False,
+    ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+    gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
+):
+    """Create (or dry-run structure) a care intent from one sentence."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=payload.patient_id,
+        care_provider_access_service=access,
+    )
+
+    structured = payload.structured or await structure_care_intent(gateway, payload.text)
+
+    if structured.safety_flag:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This instruction looks like a clinical order (medication/dosing/"
+                "diagnosis) and can't run as a nudge. "
+                + (structured.safety_reason or "")
+            ).strip(),
+        )
+
+    if payload.dry_run:
+        return SuccessResponse(
+            message="Structured (not saved)",
+            data={"structured": structured.model_dump(mode="json")},
+        )
+
+    provider = current_actor.model
+    intent = await service.create(
+        patient_id=verified_pid,
+        author_id=provider.care_provider_id,
+        author_role=str(provider.role),
+        author_name=provider.full_name,
+        original_text=payload.text.strip(),
+        structured=structured,
+    )
+    return SuccessResponse(
+        message="Care intent created",
+        data={"care_intent": _view(intent).model_dump(mode="json")},
+    )
+
+
+@router.get("", response_model=SuccessResponse[dict])
+async def list_care_intents(
+    patient_id: UUID,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER, ProfileTypeEnum.ADMIN],
+        check_permissions=False,
+    ))],
+    access: Annotated[CareProviderAccessService, Depends(get_care_provider_access_service)],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+    include_inactive: bool = Query(False),
+):
+    """All intents for a patient — the whole care team sees each other's."""
+    verified_pid = await resolve_patient_access(
+        actor=current_actor,
+        patient_id=patient_id,
+        care_provider_access_service=access,
+    )
+    intents = await service.list_for_patient(verified_pid, include_inactive=include_inactive)
+    return SuccessResponse(
+        message="OK",
+        data={"care_intents": [_view(i).model_dump(mode="json") for i in intents]},
+    )
+
+
+@router.patch("/{care_intent_id}/status", response_model=SuccessResponse[dict])
+async def update_care_intent_status(
+    care_intent_id: UUID,
+    payload: CareIntentStatusRequest,
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.CARE_PROVIDER],
+        check_permissions=False,
+    ))],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+):
+    """Pause/resume/expire — only the author edits their own intent."""
+    intent = await service.update_status(
+        care_intent_id,
+        payload.status,
+        author_id=current_actor.model.care_provider_id,
+    )
+    if intent is None:
+        raise HTTPException(status_code=404, detail="Care intent not found or not yours to change")
+    return SuccessResponse(
+        message="Status updated",
+        data={"care_intent": _view(intent).model_dump(mode="json")},
+    )
+
+
+# -- Patient endpoint ------------------------------------------------------------
+
+
+@router.get("/focus-areas", response_model=SuccessResponse[list[FocusAreaItem]])
+async def get_focus_areas(
+    current_actor: Annotated[Actor, Depends(get_current_actor(
+        allowed_roles=[ProfileTypeEnum.PATIENT],
+        check_permissions=False,
+    ))],
+    service: Annotated[CareIntentService, Depends(get_care_intent_service)],
+):
+    """The patient's active care-team focus areas — transparency by design:
+    the patient always sees what their care team asked the AI to focus on."""
+    intents = await service.list_for_patient(current_actor.model.patient_id)
+
+    summaries = [i.patient_summary for i in intents]
+    language = await _preferred_language(str(current_actor.model.patient_id))
+    if language != DEFAULT_AI_LANGUAGE and summaries:
+        from lib.ai_foundation.translation import TranslationService
+        from lib.core.container import container
+
+        translator = container.resolve(TranslationService)
+        # Summaries are stable per intent — translate_cached pays once each.
+        summaries = [
+            await translator.translate_cached(s, language) for s in summaries
+        ]
+
+    items = [
+        FocusAreaItem(
+            care_intent_id=str(i.care_intent_id),
+            author_name=i.author_name,
+            author_role=i.author_role,
+            summary=s,
+            since=str(i.created_at.date() if i.created_at else ""),
+        )
+        for i, s in zip(intents, summaries)
+    ]
+    return SuccessResponse(message="OK", data=items)
+
+
+async def _preferred_language(patient_id: str) -> str:
+    from lib.ai_foundation.agents.core.patient_resolver import PatientNameResolver
+    from lib.core.container import container
+
+    try:
+        resolver = container.resolve(PatientNameResolver)
+        return await resolver.resolve_language(patient_id)
+    except Exception:
+        return DEFAULT_AI_LANGUAGE

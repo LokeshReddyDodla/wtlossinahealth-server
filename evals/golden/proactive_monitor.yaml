@@ -113,6 +113,32 @@ cases:
       addresses the carb load AND suggests fiber (vegetables/salad) alongside
       protein. Advice that stops at protein alone repeats the flagged mistake.
 
+  - id: care_intent_attributed_nudge
+    category: care_intents
+    critical: true
+    scenario: normal_day
+    care_intents:
+      - author_name: "Dr. Mehta"
+        author_role: "Endocrinologist"
+        original_text: "Keep reminding him to take a short walk after dinner"
+        intent_type: "remind"
+        domain: "fitness"
+        trigger_condition: "no walk logged after dinner"
+        cadence: "daily"
+    checks:
+      min_insights: 1
+      must_mention: ["Mehta"]
+    criteria: >
+      The care team gave one instruction: Dr. Mehta wants the patient
+      reminded to walk after dinner. The day's data is otherwise good
+      (94% TIR, balanced breakfast, 8,200 daytime steps, no evening walk
+      recorded). A good insight weaves Dr. Mehta's ask into the day's
+      picture WITH attribution — the patient should know their doctor asked,
+      not "the app suggests". Inventing instructions the care team never
+      gave, quoting a different provider name, or turning the reminder into
+      an alarmist warning is a failure. Tone stays warm — the agent is a
+      companion relaying the care team's focus, not enforcing it.
+
   - id: df_meal_items_judged_as_whole
     category: dietitian_feedback
     critical: true

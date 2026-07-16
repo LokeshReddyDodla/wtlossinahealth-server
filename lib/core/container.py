@@ -28,6 +28,7 @@ from lib.services.ai_conversation_service_v1.context_builder import (
 from lib.services.ai_conversation_service_v1.context_resolver import (
     AIConversationContextResolver,
 )
+from lib.services.care_intent_service import CareIntentService
 from lib.services.care_provider_access_service import (
     CareProviderAccessService,
 )
@@ -1006,6 +1007,14 @@ container.register(
     ),
 )
 
+# 🔹 Care Intent Service (provider-authored AI guidance)
+container.register(
+    CareIntentService,
+    lambda: CareIntentService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+    ),
+)
+
 # 🔹 Package Query Service
 container.register(
     PackageQueryService,
@@ -1736,6 +1745,7 @@ container.register(
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         gamification_service=cast(GamificationService, container.resolve(GamificationService)),
         retriever=cast(QdrantRetriever, container.resolve(QdrantRetriever)),
+        care_intents=cast(CareIntentService, container.resolve(CareIntentService)),
     ),
     scope=Scope.singleton,
 )
@@ -1877,6 +1887,7 @@ container.register(
         event_bus=cast(EventBus, container.resolve(EventBus)),
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
+        care_intents=cast(CareIntentService, container.resolve(CareIntentService)),
     ),
     scope=Scope.singleton,
 )

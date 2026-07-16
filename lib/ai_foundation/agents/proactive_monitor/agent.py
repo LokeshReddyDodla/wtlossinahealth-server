@@ -141,11 +141,16 @@ class ProactiveMonitorAgent(BaseAgent):
         memory: Any | None = None,
         insight_tracker: Any | None = None,
         metabolic_service: Any | None = None,
+        care_intents: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
         self._insight_tracker = insight_tracker
         self._metabolic = metabolic_service
+        # Duck-typed reader with get_active_context(patient_id) -> list[dict]
+        # (CareIntentService in production) — ai_foundation stays import-free
+        # of the service layer.
+        self._care_intents = care_intents
 
     @classmethod
     def _get_scan_prompt_template(cls) -> str:
@@ -297,8 +302,11 @@ class ProactiveMonitorAgent(BaseAgent):
                 ", ".join(f"{k}={v}" for k, v in domain_counts.items()) or "no data",
             )
 
-            # 3. Facts + medications + metabolic profile
+            # 3. Facts + care-team intents + medications + metabolic profile
             facts_text = await self._load_facts(patient_id)
+            care_text = await self._load_care_intents(patient_id)
+            if care_text:
+                facts_text = f"{facts_text}\n\n{care_text}" if facts_text else care_text
             med_text = await self._load_medications(patient_id)
             if med_text:
                 facts_text = (
@@ -734,6 +742,36 @@ class ProactiveMonitorAgent(BaseAgent):
         except Exception as exc:
             # Degrades to a scan without facts — must be visible, not silent.
             logger.warning("Failed to load facts for %s: %s", patient_id, exc)
+            return ""
+
+    async def _load_care_intents(self, patient_id: str) -> str:
+        """Active care-team intents as an attributed prompt section.
+
+        Attribution is the lever: "Dr. Mehta asked us to check" lands where
+        "the app suggests" doesn't — every line carries its author.
+        """
+        if not self._care_intents:
+            return ""
+        try:
+            intents = await self._care_intents.get_active_context(patient_id)
+            if not intents:
+                return ""
+            lines = []
+            for ci in intents:
+                cond = f" (when: {ci['trigger_condition']})" if ci.get("trigger_condition") else ""
+                lines.append(
+                    f"- [{ci['author_name']}, {ci['author_role']}] "
+                    f"{ci['original_text']}{cond}"
+                )
+            return (
+                "CARE TEAM FOCUS — instructions from this patient's providers. "
+                "Weave these into insights where today's data makes them relevant, "
+                "attributing the provider by name. NEVER invent an instruction "
+                "that is not listed:\n" + "\n".join(lines)
+            )
+        except Exception as exc:
+            # Degrades to a scan without care-team context — visible, not silent.
+            logger.warning("Failed to load care intents for %s: %s", patient_id, exc)
             return ""
 
     async def _load_medications(self, patient_id: str) -> str:
