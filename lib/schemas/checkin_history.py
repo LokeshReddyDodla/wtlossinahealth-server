@@ -39,10 +39,16 @@ class SymptomSnapshot(BaseModel):
     recorded_at: datetime
 
 
+class WeightSnapshot(BaseModel):
+    value: float
+    time: datetime
+
+
 class CheckinDay(BaseModel):
     date: date
     sleep: SleepSnapshot | None = None
     mood: MoodSnapshot | None = None
+    weight: WeightSnapshot | None = None
     symptoms: list[SymptomSnapshot] = Field(default_factory=list)
     xp_earned: int = 0
     tasks_completed: list[str] = Field(default_factory=list)

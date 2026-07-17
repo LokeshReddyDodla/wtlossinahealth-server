@@ -107,8 +107,13 @@ class PatientVitalService:
             vital_data=vital_data_dict,
         )
 
-        # Gamification hook — check if weight was logged (fire-and-forget)
+        # Weight sync + gamification (fire-and-forget)
         if vital_data.weight is not None:
+            try:
+                from lib.utils.sync_profile_weight import sync_profile_weight
+                await sync_profile_weight(patient_id, float(vital_data.weight))
+            except Exception:
+                pass
             try:
                 from uuid import UUID as _UUID
                 from lib.core.container import container
