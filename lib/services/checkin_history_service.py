@@ -11,6 +11,7 @@ from sqlalchemy import cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from lib.core.clickhouse_store import ClickHouseStore
 from lib.core.postgres_store import PostgresStore
 from lib.models.gamification import DailyTask, PlayerProfile, XPLedgerEntry
 from lib.models.mood_entry import MoodEntry
@@ -24,6 +25,7 @@ from lib.schemas.checkin_history import (
     SleepSnapshot,
     SymptomItem,
     SymptomSnapshot,
+    WeightSnapshot,
     WeeklyRecap,
 )
 
@@ -31,8 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 class CheckinHistoryService:
-    def __init__(self, postgres_store: PostgresStore):
+    def __init__(self, postgres_store: PostgresStore, clickhouse_store: ClickHouseStore):
         self.postgres_store = postgres_store
+        self.clickhouse_store = clickhouse_store
 
     async def get_history(
         self,
@@ -61,6 +64,7 @@ class CheckinHistoryService:
             task_rows,
             xp_rows,
             profile,
+            weight_rows,
         ) = await asyncio.gather(
             _with_session(self._fetch_sleep, patient_id, start, end),
             _with_session(self._fetch_moods, patient_id, start, end),
@@ -68,6 +72,7 @@ class CheckinHistoryService:
             _with_session(self._fetch_tasks, patient_id, start, end),
             _with_session(self._fetch_xp_per_day, patient_id, start, end),
             _with_session(self._fetch_profile, patient_id),
+            asyncio.to_thread(self._fetch_weight, patient_id, start, end),
         )
 
         # Build lookup maps
@@ -89,6 +94,11 @@ class CheckinHistoryService:
             task_map[t.task_date].append(t)
 
         xp_map: dict[date, int] = dict(xp_rows)
+
+        weight_map: dict[date, WeightSnapshot] = {}
+        for w in weight_rows:
+            d = w["time"].date() if isinstance(w["time"], datetime) else w["time"]
+            weight_map[d] = WeightSnapshot(value=w["value"], time=w["time"])
 
         # Build days
         all_dates = sorted(
@@ -112,6 +122,7 @@ class CheckinHistoryService:
                     date=d,
                     sleep=self._sleep_snapshot(sleep) if sleep else None,
                     mood=self._mood_snapshot(mood) if mood else None,
+                    weight=weight_map.get(d),
                     symptoms=[self._symptom_snapshot(s) for s in symptoms],
                     xp_earned=xp_map.get(d, 0),
                     tasks_completed=completed_tasks,
@@ -207,6 +218,35 @@ class CheckinHistoryService:
             .group_by("day")
         )
         return [(row.day, int(row.xp)) for row in result.all()]
+
+    def _fetch_weight(self, pid: str, start: date, end: date) -> list[dict]:
+        """Latest weight reading per day from ClickHouse (sync — called via to_thread)."""
+        start_dt = datetime.combine(start, datetime.min.time())
+        end_dt = datetime.combine(end, datetime.max.time()).replace(microsecond=0)
+        rows, _ = self.clickhouse_store.query_vitals(
+            pid, start_time=start_dt, end_time=end_dt, types=["weight"], limit=1000, offset=0,
+        )
+        # Keep latest per day
+        by_day: dict[date, dict] = {}
+        for r in rows:
+            d = r["time"].date() if isinstance(r["time"], datetime) else r["time"]
+            if d not in by_day:
+                by_day[d] = r
+        return list(by_day.values())
+
+    def _fetch_weight(self, pid: str, start: date, end: date) -> list[dict]:
+        """Latest weight reading per day from ClickHouse (sync — called via to_thread)."""
+        start_dt = datetime.combine(start, datetime.min.time())
+        end_dt = datetime.combine(end, datetime.max.time()).replace(microsecond=0)
+        rows, _ = self.clickhouse_store.query_vitals(
+            pid, start_time=start_dt, end_time=end_dt, types=["weight"], limit=1000, offset=0,
+        )
+        by_day: dict[date, dict] = {}
+        for r in rows:
+            d = r["time"].date() if isinstance(r["time"], datetime) else r["time"]
+            if d not in by_day:
+                by_day[d] = r
+        return list(by_day.values())
 
     async def _fetch_profile(
         self, session: AsyncSession, pid: str

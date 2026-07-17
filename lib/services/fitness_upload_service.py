@@ -81,6 +81,12 @@ class FitnessUploadService:
             # Weight via HealthKit
             if fitness_data.weight:
                 await handler.on_weight_logged(_UUID(patient_id))
+                try:
+                    from lib.utils.sync_profile_weight import sync_profile_weight
+                    latest = max(fitness_data.weight, key=lambda w: w.end_datetime)
+                    await sync_profile_weight(patient_id, float(latest.value))
+                except Exception:
+                    pass
         except Exception:
             pass
 
