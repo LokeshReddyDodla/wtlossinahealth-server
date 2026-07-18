@@ -130,7 +130,7 @@ class CheckinHistoryService:
             )
 
         summary = self._build_summary(
-            sleep_rows, mood_rows, symptom_rows, xp_rows, profile
+            sleep_rows, mood_rows, symptom_rows, xp_rows, profile, weight_rows
         )
         weekly_recaps = self._build_weekly_recaps(
             all_dates, sleep_map, mood_map, symptom_map, xp_map
@@ -300,7 +300,7 @@ class CheckinHistoryService:
 
     @staticmethod
     def _build_summary(
-        sleep_rows, mood_rows, symptom_rows, xp_rows, profile
+        sleep_rows, mood_rows, symptom_rows, xp_rows, profile, weight_rows
     ) -> CheckinSummary:
         # Days logged = days with any checkin
         sleep_dates = {r.checkin_date for r in sleep_rows}
@@ -330,6 +330,14 @@ class CheckinHistoryService:
         # XP
         total_xp = sum(xp for _, xp in xp_rows)
 
+        # Weight
+        sorted_weights = sorted(weight_rows, key=lambda w: w["time"]) if weight_rows else []
+        latest_weight = sorted_weights[-1]["value"] if sorted_weights else None
+        weight_change = (
+            round(sorted_weights[-1]["value"] - sorted_weights[0]["value"], 1)
+            if len(sorted_weights) >= 2 else None
+        )
+
         total_days = max(len(all_logged_dates), 1)
 
         return CheckinSummary(
@@ -340,6 +348,9 @@ class CheckinHistoryService:
             avg_sleep_quality=round(sum(sleep_qualities) / len(sleep_qualities), 1) if sleep_qualities else None,
             dominant_mood=dominant_mood,
             dominant_mood_level=round(sum(mood_levels) / len(mood_levels)) if mood_levels else None,
+            latest_weight=latest_weight,
+            weight_change=weight_change,
+            total_weight_logs=len(sorted_weights),
             total_symptoms_logged=len(all_symptom_names),
             most_common_symptom=most_common[0][0] if most_common else None,
             total_xp_earned=total_xp,

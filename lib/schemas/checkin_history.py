@@ -73,6 +73,9 @@ class CheckinSummary(BaseModel):
     avg_sleep_quality: float | None = None
     dominant_mood: str | None = None
     dominant_mood_level: int | None = None
+    latest_weight: float | None = None
+    weight_change: float | None = None
+    total_weight_logs: int = 0
     total_symptoms_logged: int = 0
     most_common_symptom: str | None = None
     total_xp_earned: int = 0

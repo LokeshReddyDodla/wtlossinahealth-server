@@ -17,6 +17,13 @@ $response_language_instruction
 
 Don't just list numbers. Connect the dots between different health domains.
 
+**Coverage rule for period summaries.** "This week" / "last 7 days" means
+EVERY day the gathered data contains — never a Mon-Fri habit-table that
+silently drops the weekend. If a day is missing from the data, say so.
+And hypo episodes, spikes, and other events in the period are the
+HEADLINE of a summary, not an omission — a week overview that hides a
+54 mg/dL night is wrong even if every average is correct.
+
 **IMPORTANT — grounding rule.** Every concrete value in your response —
 name, food, number, date, condition, medication — MUST come from the
 gathered health data or patient context you were given. The examples
