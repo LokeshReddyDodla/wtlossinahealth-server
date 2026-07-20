@@ -50,6 +50,7 @@ from .analysis import MealAnalysisService
 from .helpers import (
     create_food_item,
     generate_conversation_flow,
+    serialize_meal_for_vector,
     trigger_meal_tasks,
 )
 
@@ -195,6 +196,35 @@ class MealService:
             )
 
         return meal
+
+    @with_postgres_session
+    async def get_meal_vector_data(
+        self, meal_id: str, *, postgres_session: AsyncSession
+    ) -> dict | None:
+        """Serialize a meal into the Qdrant vector payload, macros included.
+
+        Reads Postgres (source of truth) with macro/micro relationships
+        eager-loaded, so the vector can never drift from the report. Returns
+        None when the meal no longer exists (deleted before the worker ran).
+        """
+        query = (
+            select(PatientMealModel)
+            .where(PatientMealModel.id == meal_id)
+            .options(
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.macro_nutritional_values
+                ),
+                selectinload(PatientMealModel.items).selectinload(
+                    PatientFoodItemModel.micro_nutritional_values
+                ),
+                selectinload(PatientMealModel.total_macro_nutritional_value),
+                selectinload(PatientMealModel.total_micro_nutritional_value),
+            )
+        )
+        meal = (await postgres_session.execute(query)).scalars().first()
+        if meal is None:
+            return None
+        return serialize_meal_for_vector(meal)
 
     @with_postgres_session
     async def get_meal_counts_by_date(
@@ -346,7 +376,6 @@ class MealService:
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
-                meal_obj=meal,
             )
 
             # Refresh macro task progress (totals changed)
@@ -406,7 +435,7 @@ class MealService:
                 )
 
             await self._create_meal_conversation(meal_orm, meal_id, parsed_ai_response)
-            await trigger_meal_tasks(str(patient_id), str(meal_id), meal.date, updated_meal)
+            await trigger_meal_tasks(str(patient_id), str(meal_id), meal.date)
 
             # Refresh macro task progress (nutritional values changed after analysis)
             try:
@@ -554,7 +583,6 @@ class MealService:
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
-                meal_obj=meal,
             )
 
             # EventBus publish — gamification and any future subscribers
@@ -664,7 +692,6 @@ class MealService:
                 patient_id=str(patient_id),
                 meal_id=str(meal.id),
                 meal_date=meal.date,
-                meal_obj=meal,
             )
             if old_date != meal.date:
                 try:

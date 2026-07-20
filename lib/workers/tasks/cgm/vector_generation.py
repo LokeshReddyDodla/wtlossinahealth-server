@@ -169,16 +169,10 @@ async def generate_cgm_vectors(
         )
 
     except Exception as e:
+        # Re-raise so arq retries: the upsert is idempotent, and a swallowed
+        # failure leaves the Qdrant point stale until the next device upload.
         logger.error(f"Failed to generate CGM vectors for {patient_id}: {e}")
-        return TaskResult(
-            success=False,
-            error=str(e),
-            data={
-                "patient_id": patient_id,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-        )
+        raise
 
 
 async def _trigger_vector_generation(
@@ -220,7 +214,11 @@ async def _trigger_vector_generation(
         logger.info(f"Triggered CGM vector generation for {patient_id}")
 
     except Exception as e:
+        # Re-raise so the report task retries and re-enqueues: a swallowed
+        # enqueue failure leaves the report with no Qdrant point until the
+        # next upload. Re-enqueue is deduped by job_id; the report is idempotent.
         logger.error(f"Failed to trigger CGM vector generation for {patient_id}: {e}")
+        raise
 
 
 @task_with_logging
