@@ -431,6 +431,13 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "inbody_analyses_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "inbody_analyses"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
     "daily_coach_analyses_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "wtloss_daily_coach_analyses"
@@ -1267,6 +1274,31 @@ container.register(
             HolisticSummaryService, container.resolve(HolisticSummaryService)
         ),
     ),
+)
+
+# 🔹 InBody — standalone patient-level report domain
+from lib.services.inbody.extraction_service import InbodyExtractionService
+from lib.services.inbody.service import InbodyReportService
+
+container.register(
+    InbodyExtractionService,
+    lambda: InbodyExtractionService(
+        model_gateway=cast(ModelGateway, container.resolve(ModelGateway)),
+    ),
+    scope=Scope.singleton,
+)
+
+container.register(
+    InbodyReportService,
+    lambda: InbodyReportService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        analyses_collection=container.resolve("inbody_analyses_collection"),
+        extraction_service=cast(
+            InbodyExtractionService,
+            container.resolve(InbodyExtractionService),
+        ),
+    ),
+    scope=Scope.singleton,
 )
 
 # 🔹 Holistic Data Service — one-day snapshots across all stores

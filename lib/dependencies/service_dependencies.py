@@ -430,6 +430,12 @@ def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
+def get_inbody_report_service():
+    from lib.services.inbody.service import InbodyReportService
+
+    return cast(InbodyReportService, container.resolve(InbodyReportService))
+
+
 def get_holistic_data_service():
     from lib.services.weightloss_agent.holistic_data_service import (
         HolisticDataService,

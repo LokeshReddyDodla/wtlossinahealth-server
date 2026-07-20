@@ -15,6 +15,7 @@ from rest_server.health_facility.router import router as health_facility_router
 from rest_server.patients.router import router as patients_router
 from rest_server.admin.router import router as admin_router
 from rest_server.weight_loss_agent.router import router as weight_loss_agent_router
+from rest_server.inbody.router import router as inbody_router
 from rest_server.profile_update_agent.router import router as profile_update_agent_router
 from rest_server.patient_onboarding_agent.router import (
     router as patient_onboarding_agent_router,
@@ -127,6 +128,7 @@ def import_routes(app: FastAPI) -> None:
     # The weight loss agent router already declares its own prefix and tags.
     # Including with an additional prefix would double it (e.g., /weight-loss-agent/weight-loss-agent).
     app.include_router(weight_loss_agent_router)
+    app.include_router(inbody_router)
 
     ###########################################################################
     # Test
