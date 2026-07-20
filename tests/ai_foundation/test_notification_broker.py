@@ -173,3 +173,33 @@ class TestInsightsNotFiledAsNotifications:
         r = await _deliver("medication_dose")  # a real notification
         assert r.delivered
         stubs["persist"].assert_awaited_once()
+
+
+class TestPersistOrderAndFcmPayload:
+    @pytest.mark.asyncio
+    async def test_persist_happens_before_fcm(self, stubs, monkeypatch):
+        """A failed push must still leave an inbox row — so persist runs first."""
+        order: list[str] = []
+        stubs["persist"].side_effect = lambda *a, **k: order.append("persist") or "notif-1"
+        stubs["fcm"].side_effect = lambda *a, **k: order.append("fcm") or True
+        await _deliver("medication_dose")
+        assert order == ["persist", "fcm"]
+
+    @pytest.mark.asyncio
+    async def test_fcm_payload_carries_id_category_and_passthrough(self, stubs):
+        """Mobile deeplinks off notification_id + category; caller data is preserved."""
+        await _deliver("medication_dose", data={"achievement_id": "abc"})
+        payload = stubs["fcm"].call_args.args[5]
+        assert payload["notification_id"] == "notif-1"
+        assert payload["category"] == "medication_dose"
+        assert payload["achievement_id"] == "abc"
+
+    @pytest.mark.asyncio
+    async def test_fcm_failure_is_swallowed_and_inbox_row_survives(self, stubs, monkeypatch):
+        """FCM refusal on a permission-respecting tier: no raise, row kept, not sent."""
+        monkeypatch.setattr(broker._budget, "under_cap", AsyncMock(return_value=True))
+        stubs["fcm"].return_value = False
+        r = await _deliver("proactive_insight")
+        assert r.delivered is False and r.reason == "no_permission"
+        assert r.notification_id == "notif-1"  # persisted before the failed push
+        stubs["persist"].assert_awaited_once()
