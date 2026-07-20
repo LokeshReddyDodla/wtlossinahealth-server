@@ -5,16 +5,14 @@ Every patient-facing push is one of four TIERS. A tier fixes the defaults
 a per-category entry can override the daily cap. Adding a new notification
 type = adding one row here, not wiring a new gate somewhere in the codebase.
 
-    CRITICAL — meds, safety alerts. Unlimited, ignores quiet hours, UNMUTABLE,
-               bypasses the master notification permission. The floor of care.
-    EVENT    — the patient just logged/did something and is waiting to hear.
-               Unlimited, ignores quiet hours, not mutable (they asked for it
-               by acting). Respects the master permission.
-    PROACTIVE— the system reaches out unprompted (insights, brief, provider
-               care-intent nudges, re-engagement). Per-category daily cap,
-               respects quiet hours, mutable.
-    SOCIAL   — streaks, achievements, buddy. Own (small) cap, quiet hours,
-               mutable. Must never starve health content — hence a separate cap.
+    CRITICAL — meds, safety alerts. Unlimited, ignores quiet hours, unmutable,
+               bypasses the master notification permission.
+    EVENT    — the patient just logged/did something. Unlimited, ignores quiet
+               hours, not mutable. Respects the master permission.
+    PROACTIVE— unprompted outreach (insights, brief, care-intent nudges,
+               re-engagement). Per-category daily cap, quiet hours, mutable.
+    SOCIAL   — streaks, achievements, buddy. Separate (small) cap so it can't
+               consume the proactive budget. Quiet hours, mutable.
 """
 
 from __future__ import annotations
@@ -93,9 +91,8 @@ _CATEGORY_CAP: dict[str, int] = {
 
 
 def policy_for(category: str) -> NotificationPolicy:
-    """Resolve the delivery policy for a category. Unknown categories default
-    to PROACTIVE (safe: rate-limited, quiet-hours-respecting, mutable) so a
-    miswired new type can never accidentally become an unmutable firehose."""
+    """Resolve the delivery policy for a category. Unknown category → PROACTIVE
+    (rate-limited, quiet-hours, mutable) — the safe default, never CRITICAL."""
     tier = _CATEGORY_TIER.get(category, NotificationTier.PROACTIVE)
     base = _TIER_DEFAULTS[tier]
     cap = _CATEGORY_CAP.get(category, base.daily_cap)

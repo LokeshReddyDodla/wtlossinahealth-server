@@ -1,11 +1,8 @@
 """Per-category, patient-local daily notification budget (async Redis).
 
-Replaces the old single blind 8/day counter. Each category counts against its
-OWN key, so critical medication reminders can never drain the room a patient's
-proactive insights need, and chatty gamification can never starve either. The
-day boundary is the PATIENT's local day, not the server's.
-
-Fail-open: if Redis is unavailable, never block a notification.
+Each category has its own counter and cap, so one category's volume never
+consumes another's. The day boundary is the patient's local day. Fail-open:
+Redis unavailable → never block a notification.
 """
 
 from __future__ import annotations

@@ -6,17 +6,14 @@ policy.py:
     resolve policy → mute check → permission check → quiet-hours →
     per-category budget → translate → persist inbox row → FCM → record budget
 
-Callers declare WHAT the notification is (category); the broker decides whether,
-when, and how it goes out. Adding a notification type never means adding a gate
-here — it means adding a policy row.
+A new notification type is a new policy row (policy.py), not a new gate here.
 
-Insights vs notifications are DELIBERATELY separate: insights are a durable,
-actionable feed with their own store; notifications are ephemeral pings that
-live in the inbox. Both route through here for the delivery decision, but only
-notifications are filed as inbox rows (record_inbox=False for insights).
+Insights and notifications use separate stores: only notifications are filed
+as inbox rows; insights route through for the delivery decision but pass
+record_inbox=False.
 
-Every step fails open toward delivery for infra errors (Redis/DB down), but
-fails closed for explicit patient choices (mute, permission).
+Infra errors (Redis/DB down) fail open toward delivery; explicit patient
+choices (mute, permission) fail closed.
 """
 
 from __future__ import annotations
@@ -57,19 +54,10 @@ async def deliver(
     data: Optional[dict[str, Any]] = None,
     severity: Optional[str] = None,
     deeplink: Optional[str] = None,
-    # An already-translated body (proactive path translates once for chat reuse).
-    body_translation: Optional[str] = None,
-    # title/body are already in the patient's language — skip translation
-    # (the proactive path translates alongside its insight record).
-    prelocalized: bool = False,
-    # Whether to file a PatientNotification inbox row. Notifications (reminders,
-    # gamification, re-engagement) are ephemeral pings and belong in the inbox.
-    # Insights are a separate, durable, actionable feed with their own store —
-    # they route through here for the DELIVERY decision but must NOT be filed
-    # as notifications, so the proactive path passes record_inbox=False.
-    record_inbox: bool = True,
-    # Skip FCM permission entirely (internal/system sends). Rare.
-    force: bool = False,
+    body_translation: Optional[str] = None,  # pre-translated body, reused if given
+    prelocalized: bool = False,  # title/body already in-language; skip translation
+    record_inbox: bool = True,  # False for insights (own store, not the inbox)
+    force: bool = False,  # bypass mute/quiet/budget/permission (system sends)
 ) -> DeliveryResult:
     data = data or {}
     pol = policy_for(category)
@@ -86,8 +74,8 @@ async def deliver(
         if not is_within_scan_window(tz_name):
             return DeliveryResult(False, "quiet_hours")
 
-    # 3. Per-category daily budget — patient-local. Unlimited tiers never
-    # touch the budget at all (a CRITICAL/EVENT push is never rate-limited).
+    # 3. Per-category daily budget, patient-local. daily_cap None = unlimited
+    # (CRITICAL/EVENT), never counted.
     if pol.daily_cap is not None and not force:
         if not await _budget.under_cap(patient_id, category, pol.daily_cap, tz_name):
             return DeliveryResult(False, "over_cap")
@@ -98,9 +86,8 @@ async def deliver(
     else:
         title_out, body_out = await _localize(patient_id, title, body, body_translation)
 
-    # 5. Persist the inbox row FIRST — a failed push still leaves a record.
-    # Skipped for insights: they are recorded in the insight store, not the
-    # notification inbox — the two are kept separate by design.
+    # 5. Inbox row before FCM, so a failed push still leaves a record.
+    # Insights skip this — their record lives in the insight store.
     notif_id = (
         await _persist(patient_id, category, title_out, body_out, severity, deeplink, data)
         if record_inbox else None

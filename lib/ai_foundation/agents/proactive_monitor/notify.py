@@ -52,9 +52,8 @@ async def send_top_insight_notification(
     push_body = translation["message"] if translation else top.body
     push_query = translation["suggested_query"] if translation else (top.suggested_query or "")
 
-    # Record BEFORE sending: a recorded-but-unsent insight self-heals (next
-    # scan dedups against it and can resend); a sent-but-unrecorded one
-    # double-pushes the patient and leaves a dangling insight_id in the app.
+    # Record before sending: a recorded-but-unsent insight is retried next
+    # scan; a sent-but-unrecorded one double-pushes and leaves a dangling id.
     try:
         await monitor.record_insight(
             patient_id, top, trigger=trigger,
@@ -81,9 +80,7 @@ async def send_top_insight_notification(
         group_key="alert_group" if is_urgent else "health_insights_group",
         severity=top.severity.value,
         prelocalized=True,
-        # Insights are their own durable feed (recorded via record_insight
-        # above) — deliver through the broker, but never file as a notification.
-        record_inbox=False,
+        record_inbox=False,  # insights live in the insight store, not the inbox
         data={
             "type": "proactive_insight",
             "insight_id": top.insight_id,

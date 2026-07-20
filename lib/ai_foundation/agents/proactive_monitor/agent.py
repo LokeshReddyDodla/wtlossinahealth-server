@@ -326,9 +326,8 @@ class ProactiveMonitorAgent(BaseAgent):
                     [ci.get("care_intent_id", "")[:8] for ci in care_intents],
                 )
             if care_intents and not is_event and scan_period == "morning":
-                # Only BEHAVIORAL intents get an adherence verdict — a "watch"
-                # or passive intent asks the provider to observe, not the
-                # patient to act, so a daily "unclear" on it is pure noise.
+                # Adherence applies to behavioral intents only; watch/passive
+                # intents have no patient action to score.
                 trackable = [
                     ci for ci in care_intents
                     if ci.get("intent_type") != "watch" and ci.get("cadence") != "passive"
@@ -348,9 +347,8 @@ class ProactiveMonitorAgent(BaseAgent):
             nudge_text = await self._load_active_nudges(patient_id)
             if nudge_text:
                 facts_text = f"{facts_text}\n\n{nudge_text}" if facts_text else nudge_text
-            # Feedback loop: categories the patient has thumbs-downed — ease off
-            # unless materially important. Closes the loop that used to dead-end
-            # in Langfuse.
+            # Categories the patient downvoted — ease off unless today's data
+            # is materially important.
             disliked_text = await self._load_disliked_categories(patient_id)
             if disliked_text:
                 facts_text = f"{facts_text}\n\n{disliked_text}" if facts_text else disliked_text
@@ -792,9 +790,8 @@ class ProactiveMonitorAgent(BaseAgent):
             return ""
 
     async def _load_disliked_categories(self, patient_id: str) -> str:
-        """Prompt section listing insight categories the patient downvoted, so
-        the brain eases off them. Feedback that used to only hit Langfuse now
-        shapes what the patient actually sees."""
+        """Prompt section: insight categories the patient downvoted, so the
+        scan eases off them unless today's data is materially important."""
         if not self._insight_tracker:
             return ""
         try:
@@ -843,8 +840,8 @@ class ProactiveMonitorAgent(BaseAgent):
 
     @staticmethod
     def _format_care_intents_section(intents: list[dict]) -> str:
-        """Attributed prompt section. Attribution is the lever: "Dr. Mehta
-        asked us to check" lands where "the app suggests" doesn't."""
+        """Care-team intents as a prompt section, each attributed to its
+        author (the responder must name the provider, not say "the app")."""
         if not intents:
             return ""
         lines = []
