@@ -197,6 +197,18 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
 
         agent._care_intents = _IntentReader(case["care_intents"])
 
+    # `active_nudges:` on a case injects the day's other proactive nudges
+    # (gamification task titles) so coordination/de-conflict can be tested.
+    if case.get("active_nudges"):
+        class _NudgeReader:
+            def __init__(self, nudges):
+                self._nudges = nudges
+
+            async def get_active_nudges(self, _pid):
+                return self._nudges
+
+        agent._daily_tasks = _NudgeReader(case["active_nudges"])
+
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
     # from the fixtures — the real fetch hits live Qdrant by point ID, which

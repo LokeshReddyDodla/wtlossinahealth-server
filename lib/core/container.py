@@ -1889,6 +1889,7 @@ container.register(
         insight_tracker=cast(InsightTracker, container.resolve(InsightTracker)),
         metabolic_service=cast(MetabolicService, container.resolve(MetabolicService)),
         care_intents=cast(CareIntentService, container.resolve(CareIntentService)),
+        daily_tasks=cast(GamificationService, container.resolve(GamificationService)),
     ),
     scope=Scope.singleton,
 )

@@ -142,6 +142,7 @@ class ProactiveMonitorAgent(BaseAgent):
         insight_tracker: Any | None = None,
         metabolic_service: Any | None = None,
         care_intents: Any | None = None,
+        daily_tasks: Any | None = None,
     ) -> None:
         super().__init__(gateway=gateway, prompts=prompts, event_bus=event_bus, memory=memory)
         self._qdrant = qdrant
@@ -151,6 +152,10 @@ class ProactiveMonitorAgent(BaseAgent):
         # (CareIntentService in production) — ai_foundation stays import-free
         # of the service layer.
         self._care_intents = care_intents
+        # Duck-typed reader with get_active_nudges(patient_id) -> list[str]
+        # (GamificationService) — the day's other proactive nudges, so this
+        # brain coordinates with them instead of duplicating them.
+        self._daily_tasks = daily_tasks
 
     @classmethod
     def _get_scan_prompt_template(cls) -> str:
@@ -337,6 +342,12 @@ class ProactiveMonitorAgent(BaseAgent):
             care_text = self._format_care_intents_section(care_intents)
             if care_text:
                 facts_text = f"{facts_text}\n\n{care_text}" if facts_text else care_text
+            # Coordination: the day's other proactive nudges (gamification
+            # tasks) so this brain complements them instead of being a third
+            # voice about the same topic.
+            nudge_text = await self._load_active_nudges(patient_id)
+            if nudge_text:
+                facts_text = f"{facts_text}\n\n{nudge_text}" if facts_text else nudge_text
             med_text = await self._load_medications(patient_id)
             if med_text:
                 facts_text = (
@@ -772,6 +783,26 @@ class ProactiveMonitorAgent(BaseAgent):
         except Exception as exc:
             # Degrades to a scan without facts — must be visible, not silent.
             logger.warning("Failed to load facts for %s: %s", patient_id, exc)
+            return ""
+
+    async def _load_active_nudges(self, patient_id: str) -> str:
+        """Today's pending gamification nudges as a de-conflict prompt section.
+        The brain must not repeat a nudge the patient is already getting."""
+        if not self._daily_tasks:
+            return ""
+        try:
+            nudges = await self._daily_tasks.get_active_nudges(patient_id)
+            if not nudges:
+                return ""
+            lines = "\n".join(f"- {n}" for n in nudges)
+            return (
+                "ALREADY NUDGING TODAY — the patient is already being reminded "
+                "about these today. Do NOT repeat them as if new; build on or "
+                "complement them, or focus somewhere else entirely:\n" + lines
+            )
+        except Exception as exc:
+            # Degrades to a scan without coordination — visible, not silent.
+            logger.warning("Failed to load active nudges for %s: %s", patient_id, exc)
             return ""
 
     async def _get_care_intents(self, patient_id: str) -> list[dict]:

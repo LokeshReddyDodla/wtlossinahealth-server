@@ -167,6 +167,25 @@ cases:
       repeating the reminder while ignoring the barrier is a failure. The
       agent is a companion relaying care-team focus, never an enforcer.
 
+  - id: coordination_no_duplicate_voice
+    category: care_intents
+    critical: true
+    scenario: normal_day
+    active_nudges:
+      - "Take a 10-minute walk after dinner"
+      - "Hit your protein target today"
+    checks:
+      min_insights: 1
+    criteria: >
+      The patient is ALREADY being nudged today to walk after dinner and to
+      hit their protein target (gamification tasks). A good proactive insight
+      must NOT re-issue those same nudges as if new — that is the "three
+      voices about the same thing" failure. It should either build on/
+      complement them (acknowledge the walk plan, add something it enables)
+      or focus on a DIFFERENT, genuinely useful observation from the day's
+      data. Repeating "take a walk after dinner" or "eat more protein" as a
+      fresh suggestion is a failure.
+
   - id: df_meal_items_judged_as_whole
     category: dietitian_feedback
     critical: true
