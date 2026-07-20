@@ -1,52 +1,21 @@
-"""Daily notification budget — prevents notification fatigue.
+"""DEPRECATED — budgeting now lives in the Notification Broker.
 
-Health-critical notifications (medication, refill, follow-up, prescription changes)
-always send. Lower-priority notifications (insights, streaks, re-engagement) are
-capped at DAILY_CAP per patient per day.
+The old single blind 8/day counter was category-blind (critical meds starved
+insights) and server-tz. The broker (lib/services/notifications/broker.py +
+policy.py + budget.py) replaced it with per-category, patient-local caps at
+the single delivery choke point.
+
+These shims stay only so any un-migrated caller keeps working: ``can_send``
+never blocks (the broker decides), ``record_sent`` is a no-op (the broker
+counts). Remove once no imports remain.
 """
 
-from datetime import date
-
-DAILY_CAP = 8
-
-ALWAYS_SEND = frozenset({
-    "medication_reminder",
-    "refill_reminder",
-    "follow_up_reminder",
-    "prescription_confirmed",
-    "prescription_edited",
-    "medication_paused",
-    "medication_resumed",
-    "medication_discontinued",
-    "medication_activated",
-})
-
-_cache = None
-
-
-def _get_cache():
-    global _cache
-    if _cache is None:
-        from lib.core.cache_store import CacheStore
-        _cache = CacheStore("notif_budget")
-    return _cache
+from __future__ import annotations
 
 
 def can_send(patient_id: str, notification_type: str) -> bool:
-    if notification_type in ALWAYS_SEND:
-        return True
-    try:
-        key = f"{patient_id}:{date.today().isoformat()}"
-        count = _get_cache().get_key(key)
-        return int(count or 0) < DAILY_CAP
-    except Exception:
-        return True  # if Redis is down, don't block notifications
+    return True
 
 
 def record_sent(patient_id: str) -> None:
-    try:
-        key = f"{patient_id}:{date.today().isoformat()}"
-        _get_cache().incr_key(key)
-        _get_cache().expire_key(key, 86400)
-    except Exception:
-        pass  # best-effort — don't crash if Redis is down
+    return None

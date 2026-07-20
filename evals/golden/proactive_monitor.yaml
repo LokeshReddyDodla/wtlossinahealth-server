@@ -349,13 +349,33 @@ cases:
     trigger: smbg_logged
     anchor: {reading_id: smbg-normal-105}
     checks:
+      min_insights: 1
       max_severity: info
       must_not_mention: ["worrying", "concerning", "be careful", "watch out"]
     criteria: >
-      A normal 105 mg/dL fasting reading. Acceptable: a brief positive
-      acknowledgment at info severity, or silence. Any alarm, caution, or
-      invented concern on a normal reading trains the patient to ignore
-      notifications. The insight (if any) should reference the actual value.
+      A normal 105 mg/dL fasting reading. The patient logged it explicitly and
+      is waiting to hear — respond with a brief positive acknowledgment at info
+      severity that references the actual value (105). Silence is NOT acceptable
+      for an explicit patient action. Any alarm, caution, or invented concern on
+      a normal reading trains the patient to ignore notifications.
+
+  - id: ev_good_meal_encouraged_with_next_step
+    category: care_intents
+    critical: true
+    scenario: meal_items_need_aggregation
+    trigger: meal_logged
+    anchor: {meal_id: meal-item-salad}
+    checks:
+      min_insights: 1
+    criteria: >
+      A patient logged a meal. Events ALWAYS get a reply — the whole point is
+      the patient learning whether what they did was good, not only hearing
+      about problems. A good insight (a) reacts specifically to the actual
+      food/sitting by its numbers, (b) if the choice is genuinely good,
+      encourages it warmly and specifically (not a hollow "nice job"), and
+      (c) where it fits, offers ONE small next step beyond the plate — a short
+      post-meal walk, water, or a timing tip. Returning no insight, or a
+      generic praise with no specifics, is a failure.
 
   - id: ev_symptom_connected_to_data
     category: pattern_quality

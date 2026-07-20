@@ -30,7 +30,6 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
             is_within_scan_window,
         )
         from lib.services.fcm_service import FCMService
-        from lib.services.notification_budget import can_send, record_sent
 
         from .templates import get_message, get_tier
 
@@ -104,17 +103,13 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
                 attempt = attempt_counts.get(pid, 0) + 1
                 title, body = get_message(tier, first_name, days_inactive, attempt)
 
-                if not can_send(pid, "re_engagement"):
-                    continue
+                # Through the broker: re_engagement is PROACTIVE (cap 1/day,
+                # quiet hours, mutable), translation + inbox row handled there.
+                from lib.services.notifications.broker import deliver
 
-                # Same language invariant as every patient push — the
-                # templates are English canonical, delivery translates.
-                from lib.services.notifications.sender import localize_for_patient
-
-                title, body = await localize_for_patient(pid, title, body)
-
-                await fcm.send_fcm_notification_to_user_devices(
-                    user_id=pid,
+                result = await deliver(
+                    pid,
+                    category="re_engagement",
                     title=title,
                     body=body,
                     channel_key="reminders",
@@ -125,7 +120,8 @@ async def run_reengagement_scan(ctx: dict[str, Any]) -> TaskResult:
                         "days_inactive": str(days_inactive),
                     },
                 )
-                record_sent(pid)
+                if not result.delivered:
+                    continue
 
                 await tracker.record(
                     pid,
