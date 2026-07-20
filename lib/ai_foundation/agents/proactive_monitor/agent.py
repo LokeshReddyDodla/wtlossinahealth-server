@@ -311,10 +311,18 @@ class ProactiveMonitorAgent(BaseAgent):
             # recorded BEFORE hints render so the brief never carries a
             # hint that excludes the day it is talking about.
             if care_intents and not is_event and scan_period == "morning":
-                await self._record_adherence(
-                    patient_id, care_intents, data_text, scan_date, scan_label,
-                    facts_text=memory_facts_text,
-                )
+                # Only BEHAVIORAL intents get an adherence verdict — a "watch"
+                # or passive intent asks the provider to observe, not the
+                # patient to act, so a daily "unclear" on it is pure noise.
+                trackable = [
+                    ci for ci in care_intents
+                    if ci.get("intent_type") != "watch" and ci.get("cadence") != "passive"
+                ]
+                if trackable:
+                    await self._record_adherence(
+                        patient_id, trackable, data_text, scan_date, scan_label,
+                        facts_text=memory_facts_text,
+                    )
                 care_intents = await self._get_care_intents(patient_id)
             care_text = self._format_care_intents_section(care_intents)
             if care_text:

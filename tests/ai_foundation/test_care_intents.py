@@ -802,3 +802,53 @@ class TestCareIntentCrud:
         assert out.status == "active"
         assert out.escalated_at is None
         assert out.review_date > date.today()
+
+
+# ── adherence quality: observational filter + no-data barrier + type in prompt ─
+
+
+class TestAdherenceQuality:
+    @pytest.mark.asyncio
+    async def test_watch_and_passive_intents_excluded_from_adherence(self, monkeypatch):
+        from lib.ai_foundation.agents.proactive_monitor.agent import ProactiveMonitorAgent
+        import lib.ai_foundation.care_intents.adherence as adherence_mod
+
+        captured = {}
+
+        async def fake_eval(gateway, *, intents, day_data_text, day_label, patient_context=""):
+            captured["intents"] = intents
+            return []
+
+        monkeypatch.setattr(adherence_mod, "evaluate_adherence", fake_eval)
+        reader = MagicMock()
+        reader.record_adherence = AsyncMock()
+        agent = ProactiveMonitorAgent(gateway=MagicMock(), qdrant=MagicMock(), care_intents=reader)
+
+        intents = [
+            {"care_intent_id": "a", "original_text": "walk after dinner", "intent_type": "remind", "cadence": "daily"},
+            {"care_intent_id": "b", "original_text": "keep an eye on sugars", "intent_type": "watch", "cadence": "passive"},
+            {"care_intent_id": "c", "original_text": "no rice at night", "intent_type": "restrict", "cadence": "passive"},
+        ]
+        # simulate the scan gate: only trackable intents reach the evaluator
+        trackable = [ci for ci in intents if ci.get("intent_type") != "watch" and ci.get("cadence") != "passive"]
+        await agent._record_adherence("p1", trackable, "data", "2026-07-19", "yesterday")
+        ids = {ci["care_intent_id"] for ci in captured["intents"]}
+        assert ids == {"a"}  # watch (b) and passive (c) both excluded
+
+    @pytest.mark.asyncio
+    async def test_intent_type_and_nodata_barrier_in_prompt(self):
+        from lib.ai_foundation.care_intents.adherence import AdherenceVerdicts, evaluate_adherence
+
+        gateway = MagicMock()
+        gateway.extract = AsyncMock(return_value=(AdherenceVerdicts(), None))
+        await evaluate_adherence(
+            gateway,
+            intents=[{"care_intent_id": "a", "original_text": "log your meals", "intent_type": "remind"}],
+            day_data_text="(no data logged)",
+            day_label="yesterday",
+        )
+        system = gateway.extract.call_args.kwargs["messages"][0]["content"]
+        user = gateway.extract.call_args.kwargs["messages"][1]["content"]
+        assert "[remind] log your meals" in user           # type is explicit
+        assert "no meals logged" in system.lower()          # barrier-note guidance present
+        assert "about logging" in system.lower()            # logging carve-out present
