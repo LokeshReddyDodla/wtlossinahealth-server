@@ -431,6 +431,13 @@ container.register(
     scope=Scope.singleton,
 )
 container.register(
+    "inbody_insights_collection",
+    factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
+        "inbody_insights"
+    ),
+    scope=Scope.singleton,
+)
+container.register(
     "inbody_analyses_collection",
     factory=lambda: cast(MongoStore, container.resolve(MongoStore)).get_collection(
         "inbody_analyses"
@@ -1297,6 +1304,36 @@ container.register(
             InbodyExtractionService,
             container.resolve(InbodyExtractionService),
         ),
+    ),
+    scope=Scope.singleton,
+)
+
+# 🔹 Patient Data Hub — read-only cross-domain aggregation layer
+from lib.services.patient_data_hub_service import PatientDataHubService
+from lib.services.inbody.insight_service import InbodyInsightService
+
+container.register(
+    PatientDataHubService,
+    lambda: PatientDataHubService(
+        holistic_data_service=cast(
+            HolisticDataService, container.resolve(HolisticDataService)
+        ),
+        clickhouse_store=cast(ClickHouseStore, container.resolve(ClickHouseStore)),
+    ),
+    scope=Scope.singleton,
+)
+
+# 🔹 InBody Insight Service — "since your last scan" contextual analysis
+container.register(
+    InbodyInsightService,
+    lambda: InbodyInsightService(
+        postgres_store=cast(PostgresStore, container.resolve(PostgresStore)),
+        analyses_collection=container.resolve("inbody_analyses_collection"),
+        insights_collection=container.resolve("inbody_insights_collection"),
+        data_hub=cast(
+            PatientDataHubService, container.resolve(PatientDataHubService)
+        ),
+        model_gateway=cast(ModelGateway, container.resolve(ModelGateway)),
     ),
     scope=Scope.singleton,
 )

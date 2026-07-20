@@ -15,6 +15,7 @@ from lib.dependencies.actor import Actor, get_current_actor
 from lib.dependencies.patient_access import resolve_patient_access
 from lib.dependencies.service_dependencies import (
     get_care_provider_access_service,
+    get_inbody_insight_service,
     get_inbody_report_service,
 )
 from lib.schemas.inbody import (
@@ -220,4 +221,77 @@ async def get_inbody_report(
         status="success",
         message="InBody report retrieved",
         data=report,
+    )
+
+
+@router.get(
+    "/insights/latest",
+    response_model=SuccessResponse[Optional[dict]],
+    summary="Get the latest completed InBody insight",
+    description=(
+        "The most recent 'since your last scan' insight for the patient — "
+        "progress story, what worked, likely causes, one thing to improve, "
+        "plus the care-provider summary."
+    ),
+)
+async def get_latest_inbody_insight(
+    patient_id: UUID,
+    insight_service=Depends(get_inbody_insight_service),
+    actor: Actor = Depends(
+        _actor_dependency(CareProviderPermissionAction.READ)
+    ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    resolved_patient_id = await resolve_patient_access(
+        actor=actor,
+        patient_id=patient_id,
+        care_provider_access_service=care_provider_access_service,
+    )
+    insight = await insight_service.get_latest_insight(resolved_patient_id)
+    return SuccessResponse(
+        status="success",
+        message=(
+            "Latest InBody insight retrieved"
+            if insight
+            else "No completed InBody insight yet"
+        ),
+        data=insight,
+    )
+
+
+@router.get(
+    "/{report_id}/insight",
+    response_model=SuccessResponse[Optional[dict]],
+    summary="Get the contextual insight for one InBody report",
+)
+async def get_inbody_report_insight(
+    patient_id: UUID,
+    report_id: UUID,
+    inbody_service: InbodyReportService = Depends(get_inbody_report_service),
+    insight_service=Depends(get_inbody_insight_service),
+    actor: Actor = Depends(
+        _actor_dependency(CareProviderPermissionAction.READ)
+    ),
+    care_provider_access_service: CareProviderAccessService = Depends(
+        get_care_provider_access_service
+    ),
+):
+    resolved_patient_id = await resolve_patient_access(
+        actor=actor,
+        patient_id=patient_id,
+        care_provider_access_service=care_provider_access_service,
+    )
+    # Ownership check: 404 if the report is not this patient's.
+    await inbody_service.get_report_detail(resolved_patient_id, report_id)
+    insight = await insight_service.get_insight(report_id)
+    return SuccessResponse(
+        status="success",
+        message=(
+            "InBody insight retrieved"
+            if insight
+            else "Insight not generated yet for this report"
+        ),
+        data=insight,
     )

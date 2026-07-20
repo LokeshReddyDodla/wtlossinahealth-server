@@ -430,6 +430,20 @@ def get_agentic_chat_service() -> AgenticChatService:
     return cast(AgenticChatService, container.resolve(AgenticChatService))
 
 
+def get_inbody_insight_service():
+    from lib.services.inbody.insight_service import InbodyInsightService
+
+    return cast(InbodyInsightService, container.resolve(InbodyInsightService))
+
+
+def get_patient_data_hub_service():
+    from lib.services.patient_data_hub_service import PatientDataHubService
+
+    return cast(
+        PatientDataHubService, container.resolve(PatientDataHubService)
+    )
+
+
 def get_inbody_report_service():
     from lib.services.inbody.service import InbodyReportService
 

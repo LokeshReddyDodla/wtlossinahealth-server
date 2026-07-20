@@ -34,6 +34,7 @@ _CATEGORY_CHANNEL: dict[
     "medication_refill": ("reminders", "reminder_group"),
     "medication_dose": ("reminders", "reminder_group"),
     "follow_up": ("reminders", "reminder_group"),
+    "inbody_insight": ("health_insights", "health_insights_group"),
 }
 
 

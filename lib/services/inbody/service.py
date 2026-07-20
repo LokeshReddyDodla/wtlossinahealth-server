@@ -224,6 +224,24 @@ class InbodyReportService:
             final_status,
             extraction.extraction_confidence,
         )
+
+        # Contextual insight only on clean extractions — needs_review data
+        # could mislead the patient until a human has looked at it.
+        if final_status == "extracted":
+            try:
+                from lib.workers.arq.redis import enqueue_job
+
+                await enqueue_job(
+                    "run_inbody_insight",
+                    str(report_id),
+                    _job_id=f"inbody-insight-{report_id}",
+                )
+            except Exception as exc:
+                logger.error(
+                    "inbody: failed to enqueue insight job report={}: {}",
+                    report_id,
+                    exc,
+                )
         return extraction
 
     async def reextract_report(

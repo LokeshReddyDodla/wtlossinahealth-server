@@ -139,3 +139,79 @@ class InbodyTrendsResponse(BaseModel):
     first_report_date: Optional[date] = None
     last_report_date: Optional[date] = None
     trends: List[InbodyTrend] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Contextual insight ("since your last scan")
+# ---------------------------------------------------------------------------
+
+InsightStatus = Literal["pending", "complete", "failed_retrying"]
+
+MetricDirection = Literal["improved", "worsened", "unchanged", "unknown"]
+
+
+class MetricDelta(BaseModel):
+    metric: str
+    previous: Optional[float] = None
+    current: Optional[float] = None
+    change: Optional[float] = None
+    direction: MetricDirection = "unknown"
+
+
+class InbodyContextualInsight(BaseModel):
+    """LLM output: one scan interpreted against the behaviour window."""
+
+    progress_story: str = Field(
+        ...,
+        description=(
+            "Patient-facing narrative of what changed since the last scan and "
+            "the likely behavioural reasons, grounded only in provided numbers. "
+            "Warm, specific, under 900 characters."
+        ),
+    )
+    what_worked: List[str] = Field(
+        default_factory=list, max_length=3,
+        description="Behaviours in the window that the scan results support",
+    )
+    likely_causes: List[str] = Field(
+        default_factory=list, max_length=3,
+        description="Behaviour-to-result explanations for adverse changes",
+    )
+    one_thing_to_improve: str = Field(
+        ...,
+        description="The single highest-impact change before the next scan",
+    )
+    care_provider_summary: str = Field(
+        ...,
+        description=(
+            "Clinical between-visits summary: composition changes, adherence "
+            "signals, risks worth discussing. Under 700 characters."
+        ),
+    )
+    notification_title: str = Field(
+        ..., description="Push title, under 60 characters"
+    )
+    notification_body: str = Field(
+        ..., description="Push body: one-line hook into the story, under 150 characters"
+    )
+    data_gaps: List[str] = Field(
+        default_factory=list,
+        description="Domains with no data in the window — say so, never guess",
+    )
+
+
+class InbodyInsightRecord(BaseModel):
+    insight_id: str
+    report_id: str
+    previous_report_id: Optional[str] = None
+    patient_id: str
+    status: InsightStatus
+    is_baseline: bool = False
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    deltas: List[MetricDelta] = Field(default_factory=list)
+    insight: Optional[InbodyContextualInsight] = None
+    error: Optional[str] = None
+    attempts: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
