@@ -348,6 +348,12 @@ class ProactiveMonitorAgent(BaseAgent):
             nudge_text = await self._load_active_nudges(patient_id)
             if nudge_text:
                 facts_text = f"{facts_text}\n\n{nudge_text}" if facts_text else nudge_text
+            # Feedback loop: categories the patient has thumbs-downed — ease off
+            # unless materially important. Closes the loop that used to dead-end
+            # in Langfuse.
+            disliked_text = await self._load_disliked_categories(patient_id)
+            if disliked_text:
+                facts_text = f"{facts_text}\n\n{disliked_text}" if facts_text else disliked_text
             med_text = await self._load_medications(patient_id)
             if med_text:
                 facts_text = (
@@ -783,6 +789,26 @@ class ProactiveMonitorAgent(BaseAgent):
         except Exception as exc:
             # Degrades to a scan without facts — must be visible, not silent.
             logger.warning("Failed to load facts for %s: %s", patient_id, exc)
+            return ""
+
+    async def _load_disliked_categories(self, patient_id: str) -> str:
+        """Prompt section listing insight categories the patient downvoted, so
+        the brain eases off them. Feedback that used to only hit Langfuse now
+        shapes what the patient actually sees."""
+        if not self._insight_tracker:
+            return ""
+        try:
+            disliked = await self._insight_tracker.get_disliked_categories(patient_id)
+            if not disliked:
+                return ""
+            return (
+                "PATIENT FEEDBACK — the patient found these insight types "
+                "unhelpful recently: " + ", ".join(disliked) + ". Don't send "
+                "more of them unless something in today's data is materially "
+                "important; prefer a different, genuinely useful angle."
+            )
+        except Exception as exc:
+            logger.warning("Failed to load disliked categories for %s: %s", patient_id, exc)
             return ""
 
     async def _load_active_nudges(self, patient_id: str) -> str:

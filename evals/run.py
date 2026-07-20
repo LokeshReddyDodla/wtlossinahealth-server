@@ -209,6 +209,24 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
 
         agent._daily_tasks = _NudgeReader(case["active_nudges"])
 
+    # `disliked_categories:` injects the patient's downvoted insight
+    # categories so feedback-driven suppression can be tested.
+    if case.get("disliked_categories"):
+        class _FeedbackTracker:
+            def __init__(self, cats):
+                self._cats = cats
+
+            async def get_disliked_categories(self, _pid, **_):
+                return self._cats
+
+            async def should_send(self, *a, **k):
+                return (True, 0, "info")
+
+            async def record(self, *a, **k):
+                return None
+
+        agent._insight_tracker = _FeedbackTracker(case["disliked_categories"])
+
     # Event-mode: `trigger: <event>` + `anchor: {...}` in the case runs the
     # event-scan path. Record-backed anchors (meal/smbg/symptom) are served
     # from the fixtures — the real fetch hits live Qdrant by point ID, which

@@ -909,3 +909,58 @@ class TestMessageGate:
         )
         service.create.assert_called_once()
         assert resp.data["care_intent"]["author_name"] == "Usha Rajesh"
+
+
+# ── Phase 3: freshness gate + feedback loop ───────────────────────────────────
+
+
+class TestEventFreshness:
+    def test_stale_event_suppressed_fresh_and_unknown_pass(self):
+        from types import SimpleNamespace
+        from datetime import datetime, timezone, timedelta
+        from lib.workers.tasks.proactive_monitor.event_scan import _is_stale_event
+
+        now = datetime.now(timezone.utc)
+        assert _is_stale_event(SimpleNamespace(event_time=(now - timedelta(hours=10)).isoformat())) is True
+        assert _is_stale_event(SimpleNamespace(event_time=(now - timedelta(minutes=20)).isoformat())) is False
+        assert _is_stale_event(SimpleNamespace(event_time=None)) is False
+        assert _is_stale_event(SimpleNamespace(event_time="not-a-date")) is False
+
+
+class TestFeedbackLoop:
+    @pytest.mark.asyncio
+    async def test_disliked_categories_net_negative_only(self):
+        from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+
+        docs = [
+            {"category": "meal_low_protein", "feedback": "down"},
+            {"category": "meal_low_protein", "feedback": "down"},
+            {"category": "glucose_spike", "feedback": "down"},
+            {"category": "glucose_spike", "feedback": "up"},   # net 0 → not disliked
+            {"category": "fitness_streak", "feedback": "up"},
+        ]
+
+        class _Cursor:
+            def __init__(self, items): self._items = items
+            def __aiter__(self): self._it = iter(self._items); return self
+            async def __anext__(self):
+                try: return next(self._it)
+                except StopIteration: raise StopAsyncIteration
+
+        tracker = InsightTracker.__new__(InsightTracker)
+        tracker._collection = MagicMock()
+        tracker._collection.find = MagicMock(return_value=_Cursor(docs))
+        out = await tracker.get_disliked_categories("p1")
+        assert out == ["meal_low_protein"]  # net-negative only; tied/positive excluded
+
+    @pytest.mark.asyncio
+    async def test_record_feedback_sets_flag(self):
+        from lib.ai_foundation.agents.proactive_monitor.insight_tracker import InsightTracker
+
+        tracker = InsightTracker.__new__(InsightTracker)
+        tracker._collection = MagicMock()
+        tracker._collection.update_one = AsyncMock()
+        await tracker.record_feedback("ins-1", thumbs_up=False)
+        args = tracker._collection.update_one.call_args
+        assert args.args[0] == {"insight_id": "ins-1"}
+        assert args.args[1]["$set"]["feedback"] == "down"
