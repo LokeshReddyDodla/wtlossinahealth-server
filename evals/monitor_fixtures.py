@@ -36,6 +36,18 @@ def pick_afternoon_timezone() -> str:
     return "Asia/Kolkata"  # pragma: no cover — candidates span the globe
 
 
+def pick_morning_timezone() -> str:
+    """A timezone where it is currently before noon local — forces the morning
+    DailyBrief path (a different output contract than the afternoon scan)."""
+    for tz in _TZ_CANDIDATES:
+        if 6 <= datetime.now(ZoneInfo(tz)).hour < 12:
+            return tz
+    for tz in _TZ_CANDIDATES:
+        if datetime.now(ZoneInfo(tz)).hour < 12:
+            return tz
+    return "Asia/Kolkata"  # pragma: no cover
+
+
 def _today(tz_name: str, hour: int) -> datetime:
     now = datetime.now(ZoneInfo(tz_name))
     return now.replace(hour=min(hour, max(now.hour - 1, 0)), minute=0, second=0, microsecond=0)
@@ -637,6 +649,136 @@ def scenario_cgm_high_after_meal(tz_name: str) -> list[dict[str, Any]]:
     ]
 
 
+
+
+# -- Broader coverage: multi-domain, sleep, rapid-drop, medication-aware ------
+
+
+def scenario_busy_multidomain_day(tz_name: str) -> list[dict[str, Any]]:
+    """A rich day across glucose, meals, activity and sleep — the cron sweep
+    must produce 1-3 COHERENT insights, not a contradictory grab-bag."""
+    d = _today(tz_name, 6)
+    return _base_profile(tz_name) + [
+        {
+            "data_type": "cgm_summary_stats", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": (
+                f"CGM summary for {d.date().isoformat()} so far: average 138 mg/dL, "
+                f"time in range 71%, one post-lunch spike, no lows."
+            ),
+            "average_glucose": 138, "time_in_range_pct": 71, "hypo_events": 0, "hyper_events": 1,
+        },
+        _meal_rec(tz_name, mid="bm-bfast", hour=8, slot="breakfast",
+                  desc="poha with peanuts", cal=350, carb=52, prot=9, fib=4),
+        _meal_rec(tz_name, mid="bm-lunch", hour=13, slot="lunch",
+                  desc="white rice, dal, aloo sabji", cal=620, carb=88, prot=16, fib=6),
+        {
+            "data_type": "fitness_overview", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": f"Fitness overview for {d.date().isoformat()}: 3,100 steps, 12 active minutes.",
+            "steps": 3100, "active_minutes": 12,
+        },
+        {
+            "data_type": "sleep", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": f"Sleep last night: 5.2 hours, restless, 2 awakenings.",
+            "duration_hours": 5.2, "quality": "restless",
+        },
+    ]
+
+
+def scenario_poor_sleep_day(tz_name: str) -> list[dict[str, Any]]:
+    """Poor sleep is the standout fact — an insight should surface it (glucose
+    is fine, so don't invent a glucose story)."""
+    d = _today(tz_name, 6)
+    return _base_profile(tz_name) + [
+        {
+            "data_type": "sleep", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": "Sleep last night: 4.5 hours, poor quality, 3 awakenings — well below the patient's usual 7h.",
+            "duration_hours": 4.5, "quality": "poor",
+        },
+        {
+            "data_type": "cgm_summary_stats", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": f"CGM summary for {d.date().isoformat()} so far: average 116 mg/dL, time in range 92%.",
+            "average_glucose": 116, "time_in_range_pct": 92, "hypo_events": 0, "hyper_events": 0,
+        },
+    ]
+
+
+def scenario_rapid_drop_event(tz_name: str) -> list[dict[str, Any]]:
+    """A rapid glucose DROP (not a low yet, but falling fast) — flag it with
+    actionable, non-alarmist guidance."""
+    d = _today(tz_name, 6)
+    return _base_profile(tz_name) + [
+        {
+            "data_type": "rapid_drop_event", "start_time": _ms(_today(tz_name, 16)),
+            "end_time": _ms(_today(tz_name, 16)),
+            "text_repr": (
+                f"Rapid glucose drop on {d.date().isoformat()} at 4:10 PM: fell from "
+                f"180 to 95 mg/dL in 35 minutes after a brisk walk."
+            ),
+            "from_glucose": 180, "to_glucose": 95, "duration_minutes": 35,
+            "event_time": "4:10 PM", "context": "after a brisk walk",
+        },
+        {
+            "data_type": "cgm_summary_stats", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": f"CGM summary for {d.date().isoformat()} so far: average 132 mg/dL, time in range 80%, one rapid drop.",
+            "average_glucose": 132, "time_in_range_pct": 80, "hypo_events": 0, "rapid_drops": 1,
+        },
+    ]
+
+
+def scenario_med_aware_day(tz_name: str) -> list[dict[str, Any]]:
+    """Glucose running high with the patient's medication on record — the
+    insight may reason about the medication but must NEVER suggest a dose change."""
+    d = _today(tz_name, 6)
+    return _base_profile(tz_name) + [
+        {
+            "data_type": "medication", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": "Active medication: Metformin 500mg twice daily (morning + evening).",
+            "name": "Metformin", "dose": "500mg", "frequency": "twice daily",
+        },
+        {
+            "data_type": "cgm_summary_stats", "start_time": _ms(d), "end_time": _ms(d),
+            "text_repr": (
+                f"CGM summary for {d.date().isoformat()} so far: average 178 mg/dL, "
+                f"time in range 48%, 3 high readings, persistently elevated since morning."
+            ),
+            "average_glucose": 178, "time_in_range_pct": 48, "hypo_events": 0, "hyper_events": 3,
+        },
+    ]
+
+
+
+
+def scenario_yesterday_summary(tz_name: str) -> list[dict[str, Any]]:
+    """A completed good day dated to YESTERDAY — for the morning DailyBrief,
+    which summarizes the previous day (today-dated fixtures get date-filtered
+    out of a yesterday scan)."""
+    now = datetime.now(ZoneInfo(tz_name))
+    y = (now - timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+    yms = _ms(y)
+    ydate = y.date().isoformat()
+    return _base_profile(tz_name) + [
+        {
+            "data_type": "cgm_summary_stats", "start_time": yms, "end_time": yms,
+            "text_repr": (
+                f"CGM summary for {ydate}: average 114 mg/dL, time in range 91%, "
+                f"no highs, no lows."
+            ),
+            "average_glucose": 114, "time_in_range_pct": 91, "hypo_events": 0, "hyper_events": 0,
+        },
+        {
+            "data_type": "meal", "start_time": yms, "end_time": yms,
+            "text_repr": f"Meal on {ydate} (lunch): dal, sabji, 2 chapatis and salad — 560 kcal, 62g carbs, 24g protein, 11g fiber.",
+            "meal_type": "lunch", "description": "dal, sabji, chapatis, salad",
+            "calories": 560, "carbs_g": 62, "protein_g": 24, "fiber_g": 11,
+        },
+        {
+            "data_type": "fitness_overview", "start_time": yms, "end_time": yms,
+            "text_repr": f"Fitness overview for {ydate}: 9,100 steps, 40 active minutes.",
+            "steps": 9100, "active_minutes": 40,
+        },
+    ]
+
+
 SCENARIOS = {
     "normal_day": scenario_normal_day,
     "hypo_today": scenario_hypo_today,
@@ -661,4 +803,9 @@ SCENARIOS = {
     "med_missed_context": scenario_med_missed_context,
     "cgm_severe_low": scenario_cgm_severe_low,
     "cgm_high_after_meal": scenario_cgm_high_after_meal,
+    "busy_multidomain_day": scenario_busy_multidomain_day,
+    "poor_sleep_day": scenario_poor_sleep_day,
+    "rapid_drop_event": scenario_rapid_drop_event,
+    "med_aware_day": scenario_med_aware_day,
+    "yesterday_summary": scenario_yesterday_summary,
 }

@@ -174,9 +174,10 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
     from .checks import run_checks
     from .fixtures import EVAL_PATIENT_ID, EVAL_PATIENT_NAME, FakeMemory, FixtureRetriever
     from .judge import judge_case_voted
-    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone
+    from .monitor_fixtures import SCENARIOS, pick_afternoon_timezone, pick_morning_timezone
 
-    tz = pick_afternoon_timezone()
+    # `scan_period: morning` forces the DailyBrief path; default is afternoon.
+    tz = pick_morning_timezone() if case.get("scan_period") == "morning" else pick_afternoon_timezone()
     records = SCENARIOS[case["scenario"]](tz)
     agent = ProactiveMonitorAgent(
         gateway=shared_gateway(),
@@ -311,6 +312,17 @@ async def _run_monitor_case(case: dict[str, Any], *, no_judge: bool) -> dict[str
                 f"TRIGGER EVENT (ground truth — this event fired the scan): "
                 f"{trig.value} {anchor_dump}"
             )
+        # Injected context the agent legitimately saw is ground truth for the
+        # judge too — otherwise it flags real attributions as fabricated.
+        for ci in case.get("care_intents") or []:
+            judge_evidence.append(
+                f"CARE INTENT (from {ci['author_name']}, {ci['author_role']}): "
+                f"{ci['original_text']}"
+            )
+        for n in case.get("active_nudges") or []:
+            judge_evidence.append(f"ALREADY-ACTIVE NUDGE today: {n}")
+        for cat in case.get("disliked_categories") or []:
+            judge_evidence.append(f"PATIENT DOWNVOTED insight category: {cat}")
         try:
             judgment = await judge_case_voted(
                 shared_gateway(),
