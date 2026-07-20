@@ -86,6 +86,16 @@ def _raise_if_unsafe(structured: StructuredCareIntent) -> None:
                 + (structured.safety_reason or "")
             ).strip(),
         )
+    if structured.is_message:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This reads as a one-off message to the patient, not a standing "
+                "focus the AI follows over time. To set an ongoing focus, phrase "
+                "it as an instruction (e.g. \"keep reminding her to update her "
+                "meal photos\"). To send a one-time message, use Chat."
+            ),
+        )
 
 
 def _view(i: CareIntent) -> CareIntentView:

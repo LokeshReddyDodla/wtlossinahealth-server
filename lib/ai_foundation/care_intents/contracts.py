@@ -84,6 +84,16 @@ class StructuredCareIntent(BaseModel):
         default=None,
         description="Why it was flagged — shown to the provider.",
     )
+    is_message: bool = Field(
+        default=False,
+        description=(
+            "true if this reads as a ONE-OFF message TO the patient ('Hi, please "
+            "send your meal pics today') rather than a STANDING instruction the AI "
+            "follows over time ('keep reminding her to log meals'). A greeting, a "
+            "one-time 'please do X now', or text addressed directly at the patient "
+            "signals a message, not a care intent."
+        ),
+    )
 
 
 class CareIntentView(BaseModel):

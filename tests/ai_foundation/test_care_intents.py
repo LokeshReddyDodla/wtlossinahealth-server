@@ -852,3 +852,60 @@ class TestAdherenceQuality:
         assert "[remind] log your meals" in user           # type is explicit
         assert "no meals logged" in system.lower()          # barrier-note guidance present
         assert "about logging" in system.lower()            # logging carve-out present
+
+
+# ── message-vs-intent gate ────────────────────────────────────────────────────
+
+
+class TestMessageGate:
+    def _actor(self):
+        return SimpleNamespace(model=SimpleNamespace(
+            care_provider_id=uuid4(), role="Dietitian", full_name="Usha Rajesh",
+        ))
+
+    @pytest.mark.asyncio
+    async def test_one_off_message_refused_not_stored(self, monkeypatch):
+        import importlib
+        router = importlib.import_module("rest_server.v1.care_intents.router")
+
+        monkeypatch.setattr(router, "resolve_patient_access", AsyncMock(return_value=uuid4()))
+        msg_like = _structured(is_message=True)
+        monkeypatch.setattr(router, "structure_care_intent", AsyncMock(return_value=msg_like))
+        service = MagicMock(); service.create = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc:
+            await router.create_care_intent(
+                payload=router.CareIntentCreateRequest(patient_id=uuid4(), text="Hi pl update your meal pics"),
+                current_actor=self._actor(), access=MagicMock(),
+                service=service, gateway=MagicMock(),
+            )
+        assert exc.value.status_code == 422
+        assert "one-off message" in exc.value.detail.lower()
+        service.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_standing_instruction_still_saves(self, monkeypatch):
+        import importlib
+        router = importlib.import_module("rest_server.v1.care_intents.router")
+        pid = uuid4()
+        monkeypatch.setattr(router, "resolve_patient_access", AsyncMock(return_value=pid))
+        monkeypatch.setattr(router, "structure_care_intent", AsyncMock(return_value=_structured(is_message=False)))
+        actor = self._actor()
+        stored = SimpleNamespace(
+            care_intent_id=uuid4(), patient_id=pid, author_id=actor.model.care_provider_id,
+            author_role="Dietitian", author_name="Usha Rajesh",
+            original_text="keep reminding her to log meals", intent_type="remind",
+            domain="nutrition", trigger_condition=None, cadence="daily",
+            patient_summary="x", success_criteria=None,
+            review_date=date.today() + timedelta(days=14), status="active",
+            created_at=datetime.now(),
+        )
+        service = MagicMock(); service.create = AsyncMock(return_value=stored)
+        service.get_active_context = AsyncMock(return_value=[])
+        monkeypatch.setattr(router, "detect_intent_conflicts", AsyncMock(return_value=[]))
+        resp = await router.create_care_intent(
+            payload=router.CareIntentCreateRequest(patient_id=pid, text="keep reminding her to log meals"),
+            current_actor=actor, access=MagicMock(), service=service, gateway=MagicMock(),
+        )
+        service.create.assert_called_once()
+        assert resp.data["care_intent"]["author_name"] == "Usha Rajesh"

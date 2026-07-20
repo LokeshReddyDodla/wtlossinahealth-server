@@ -43,6 +43,11 @@ SAFETY GATE — set safety_flag=true (with safety_reason) when the instruction:
 - gives a diagnosis or orders a clinical test
 - belongs in a prescription or clinical order, not a lifestyle nudge
 Lifestyle guidance (food, movement, sleep, logging, monitoring awareness) is NOT flagged. Reminding a patient to take an already-prescribed medication as prescribed is NOT flagged; changing how they take it IS.
+
+MESSAGE vs INSTRUCTION — set is_message=true when the text is a ONE-OFF message the provider is sending TO the patient right now, NOT a standing focus for the AI to weave in over the next weeks:
+- Greeting-prefixed or directly addressed: "Hi, please update your meal pics", "Send me today's readings" → message
+- A standing, ongoing focus: "keep reminding her to log meals", "watch his morning sugars", "she should keep rice portions small" → instruction (is_message=false)
+When unsure, prefer is_message=false — a genuine standing instruction must never be blocked.
 """
 
 

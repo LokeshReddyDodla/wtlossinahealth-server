@@ -310,6 +310,16 @@ class ProactiveMonitorAgent(BaseAgent):
             # where an adherence verdict isn't premature. Verdicts are
             # recorded BEFORE hints render so the brief never carries a
             # hint that excludes the day it is talking about.
+            if care_intents:
+                # Delivery observability: which intents were in the AI's context
+                # this scan (the "did we even try to nudge it" signal the
+                # adherence table can't give — adherence is the patient's half).
+                logger.info(
+                    "care_intents.injected | patient=%s mode=%s count=%d ids=%s",
+                    patient_id[:8], trigger.value if is_event else "cron",
+                    len(care_intents),
+                    [ci.get("care_intent_id", "")[:8] for ci in care_intents],
+                )
             if care_intents and not is_event and scan_period == "morning":
                 # Only BEHAVIORAL intents get an adherence verdict — a "watch"
                 # or passive intent asks the provider to observe, not the
