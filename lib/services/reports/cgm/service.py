@@ -465,7 +465,7 @@ class CGMReportService:
         sensor_status: Optional[str] = None,
         termination_reason: Optional[str] = None,
     ):
-        from pymongo import UpdateOne  # type: ignore
+        from pymongo import ReplaceOne  # type: ignore
 
         if not reports:
             logging.warning("No CGM reports to save")
@@ -513,8 +513,10 @@ class CGMReportService:
                 if termination_reason:
                     report_dict["termination_reason"] = termination_reason
 
+            # Full replace: a regenerated report must not inherit fields that
+            # exclude_none omits this time but a prior version had set.
             ops.append(
-                UpdateOne({"_id": report_id}, {"$set": report_dict}, upsert=True)
+                ReplaceOne({"_id": report_id}, report_dict, upsert=True)
             )
 
         await self.cgm_report_collection.bulk_write(ops)

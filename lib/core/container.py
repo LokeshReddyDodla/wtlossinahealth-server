@@ -1375,6 +1375,9 @@ container.register(
         checkin_vector_service=cast(
             CheckinVectorService, container.resolve(CheckinVectorService)
         ),
+        patient_profile_service=cast(
+            PatientProfileService, container.resolve(PatientProfileService)
+        ),
     ),
 )
 

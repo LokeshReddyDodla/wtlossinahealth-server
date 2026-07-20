@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import date
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -33,24 +33,22 @@ def enqueue_daily_meal_report_sync(patient_id: str, report_date: date) -> Option
 
 
 async def enqueue_meal_vector_async(
-    patient_id: str, meal_id: str, meal_data: Dict[str, Any]
+    patient_id: str, meal_id: str
 ) -> Optional[str]:
     """Enqueue meal vector generation (async)."""
     try:
-        return await _enqueue_meal_vector(patient_id, meal_id, meal_data)
+        return await _enqueue_meal_vector(patient_id, meal_id)
     except Exception as e:
         logger.error(f"Failed to enqueue meal vector for {patient_id}: {e}")
         return None
 
 
-def enqueue_meal_vector_sync(
-    patient_id: str, meal_id: str, meal_data: Dict[str, Any]
-) -> Optional[str]:
+def enqueue_meal_vector_sync(patient_id: str, meal_id: str) -> Optional[str]:
     """Enqueue meal vector generation (sync)."""
     import nest_asyncio
 
     nest_asyncio.apply()
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(
-        enqueue_meal_vector_async(patient_id, meal_id, meal_data)
+        enqueue_meal_vector_async(patient_id, meal_id)
     )
